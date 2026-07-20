@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  body{margin:0;background:oklch(0.94 0 240);font-family:'Work Sans',sans-serif;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:oklch(0.85 0 240);border-radius:8px;}
+  a{color:oklch(0.5 0.1 230);}
+  a:hover{color:oklch(0.4 0.1 230);}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;color:oklch(0.22 0.02 60)">
+
+  <!-- Sidebar -->
+  <div style="width:216px;flex-shrink:0;background:oklch(0.995 0 240);display:flex;flex-direction:column;padding:28px 18px;gap:36px">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px">
+      <div style="width:30px;height:30px;border-radius:9px;background:oklch(0.32 0.1 265);flex-shrink:0"></div>
+      <div style="font-size:18px;font-weight:700;letter-spacing:-0.01em">Beacon</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div onClick="{{ goDashboard }}" style="padding:10px 14px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;background:{{ navBg.dashboard }};color:{{ navColor.dashboard }}">Dashboard</div>
+      <div onClick="{{ goTasks }}" style="padding:10px 14px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;background:{{ navBg.tasks }};color:{{ navColor.tasks }}">Tasks</div>
+      <div onClick="{{ goReports }}" style="padding:10px 14px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;background:{{ navBg.reports }};color:{{ navColor.reports }}">Reports</div>
+      <div style="padding:10px 14px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:500;color:oklch(0.52 0.015 60)">Settings</div>
+    </div>
+    <div style="margin-top:auto;font-size:12px;color:oklch(0.55 0.015 60);line-height:1.6;padding:0 8px">
+      Manor Cremation<br/><span style="color:oklch(0.65 0.015 60)">3 staff online</span>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+    <!-- Top bar -->
+    <div style="height:72px;flex-shrink:0;display:flex;align-items:center;padding:0 32px;gap:16px">
+      <div style="flex:1;max-width:400px;position:relative">
+        <input value="{{ searchQuery }}" onChange="{{ onSearchChange }}" placeholder="Search by name, phone, tag number…" style="width:100%;box-sizing:border-box;padding:10px 16px;border-radius:10px;border:1px solid oklch(0.92 0 240);background:white;font-size:13.5px;font-family:inherit;outline:none"/>
+      </div>
+      <div style="flex:1"></div>
+      <button onClick="{{ openNewCaseModal }}" style="padding:10px 18px;border-radius:10px;border:none;background:oklch(0.32 0.1 265);color:white;font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer">+ New Case</button>
+      <div style="width:36px;height:36px;border-radius:50%;background:oklch(0.86 0.05 265);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:oklch(0.3 0.09 265)">MC</div>
+    </div>
+
+    <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;overflow-y:auto;padding:28px 32px 48px">
+
+        <div style="margin-bottom:28px">
+          <div style="font-size:26px;font-weight:700;letter-spacing:-0.015em">Good afternoon</div>
+          <div style="font-size:14px;color:oklch(0.55 0.015 60);margin-top:4px">{{ todayLabel }} · {{ activeCount }} active cases</div>
+        </div>
+
+        <!-- Needs attention + Crematory pickup -->
+        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:24px;align-items:start">
+          <div style="background:oklch(0.96 0.03 25);border-radius:20px;padding:22px 24px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div style="font-size:15px;font-weight:700;color:oklch(0.4 0.1 25)">Needs attention</div>
+              <div style="font-size:12.5px;font-weight:600;color:oklch(0.48 0.1 25)">{{ attentionCount }} cases</div>
+            </div>
+            <div style="display:flex;flex-direction:column">
+              <sc-for list="{{ urgentCases }}" as="c" hint-placeholder-count="2">
+                <div onClick="{{ c.open }}" style="cursor:pointer;padding:10px 0;box-shadow:inset 0 -1px 0 oklch(0.88 0.05 25 / 0.5);display:flex;align-items:center;justify-content:space-between;gap:12px">
+                  <div style="min-width:0">
+                    <div style="font-weight:600;font-size:13.5px;color:oklch(0.3 0.03 25)">{{ c.name }}</div>
+                    <div style="font-size:12px;color:oklch(0.45 0.08 25);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.attentionReason }}</div>
+                  </div>
+                  <div style="flex-shrink:0;text-align:right">
+                    <div style="font-size:11.5px;font-weight:700;color:oklch(0.4 0.1 25)">{{ c.daysWaiting }}d</div>
+                    <div style="font-size:10px;color:oklch(0.5 0.08 25);white-space:nowrap">expected {{ c.slaTarget }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="background:white;border-radius:20px;padding:22px 24px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03)">
+            <div style="font-size:15px;font-weight:700;margin-bottom:14px">Cases by stage</div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{ stageBreakdown }}" as="s" hint-placeholder-count="8">
+                <div onClick="{{ s.onClick }}" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:4px 6px;margin:-4px -6px;border-radius:8px;background:{{ s.rowBg }}">
+                  <div style="width:150px;flex-shrink:0;font-size:11px;color:oklch(0.5 0.015 60);line-height:1.2">{{ s.label }}</div>
+                  <div style="flex:1;height:6px;border-radius:4px;background:oklch(0.94 0 240)">
+                    <sc-if value="{{ s.count }}"><div style="height:100%;border-radius:4px;width:{{ s.pct }}%;background:oklch(0.32 0.1 265)"></div></sc-if>
+                  </div>
+                  <div style="width:16px;flex-shrink:0;text-align:right;font-size:12px;font-weight:700;color:oklch(0.3 0.02 60)">{{ s.count }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- All cases: search + stage filter results, no kanban -->
+        <sc-if value="{{ showAllCasesList }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:oklch(0.55 0.015 60);margin-bottom:12px">All cases</div>
+        <div style="background:white;border-radius:18px;padding:8px 14px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03);margin-bottom:24px">
+          <sc-for list="{{ searchFilteredCases }}" as="c" hint-placeholder-count="6">
+            <div onClick="{{ c.open }}" style="cursor:pointer;padding:12px 6px;box-shadow:inset 0 -1px 0 oklch(0.95 0 240);display:flex;align-items:center;gap:12px">
+              <div style="width:32px;height:32px;border-radius:50%;background:oklch(0.95 0 240);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:oklch(0.5 0.015 60);flex-shrink:0">{{ c.ownerInitials }}</div>
+              <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <div>
+                  <div style="font-weight:600;font-size:13.5px">{{ c.name }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:{{ c.actionColor }};font-weight:{{ c.actionWeight }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.rowSubtext }}</div>
+                </div>
+                <div style="flex-shrink:0;display:flex;align-items:center;gap:8px">
+                  <sc-if value="{{ c.slaOverdue }}"><span style="font-size:10.5px;font-weight:700;color:oklch(0.5 0.15 25)">overdue</span></sc-if>
+                  <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:{{ c.stageBg }};color:{{ c.stageColor }}">{{ c.stageLabel }}</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ noSearchResults }}"><div style="padding:20px 6px;font-size:13px;color:oklch(0.55 0.015 60)">No cases match "{{ searchQuery }}"</div></sc-if>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ stageFilterLabel }}">
+        <div style="background:white;border-radius:18px;padding:18px 22px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03);margin-bottom:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-size:15px;font-weight:700">{{ stageFilterLabel }}</div>
+            <div style="display:flex;align-items:center;gap:14px">
+              <sc-if value="{{ hasSelectedCases }}">
+                <span onClick="{{ bulkAdvance }}" style="cursor:pointer;font-size:12.5px;font-weight:600;color:white;background:oklch(0.32 0.1 265);padding:6px 14px;border-radius:20px">Advance {{ selectedCount }} to next stage</span>
+              </sc-if>
+              <span onClick="{{ clearStageFilter }}" style="cursor:pointer;font-size:12.5px;font-weight:600;color:oklch(0.5 0.015 60)">← back to all cases</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ stageFilteredCases }}" as="c" hint-placeholder-count="3">
+              <div style="cursor:pointer;padding:12px 14px;border-radius:12px;background:oklch(0.975 0 240);border-left:3px solid {{ c.rowAccent }};display:flex;align-items:center;gap:12px">
+                <div onClick="{{ c.toggleSelect }}" style="width:18px;height:18px;border-radius:5px;border:2px solid oklch(0.32 0.1 265);background:{{ c.selectBg }};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:800">{{ c.selectCheck }}</div>
+                <div onClick="{{ c.open }}" style="width:32px;height:32px;border-radius:50%;background:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:oklch(0.5 0.015 60);flex-shrink:0">{{ c.ownerInitials }}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:600;font-size:13.5px">{{ c.name }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:{{ c.actionColor }};font-weight:{{ c.actionWeight }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.rowSubtext }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="background:white;border-radius:18px;padding:18px 22px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03)">
+          <div style="font-size:14px;font-weight:700;margin-bottom:4px">Recent activity</div>
+          <div style="display:flex;flex-direction:column">
+            <sc-for list="{{ activityFeed }}" as="a" hint-placeholder-count="4">
+              <div style="padding:10px 0;box-shadow:inset 0 -1px 0 oklch(0.95 0 240);display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px">
+                <div><span style="font-weight:600">{{ a.who }}</span> <span style="color:oklch(0.55 0.015 60)">{{ a.what }}</span></div>
+                <div style="flex-shrink:0;color:oklch(0.65 0.012 60);font-size:11px">{{ a.when }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Case detail -->
+    <sc-if value="{{ isCaseView }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:24px 32px 48px">
+        <div onClick="{{ goDashboard }}" style="font-size:13px;font-weight:600;color:oklch(0.5 0.02 60);cursor:pointer;margin-bottom:16px;display:inline-flex;align-items:center;gap:6px">← Back to Dashboard</div>
+
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+          <div>
+            <div style="font-size:26px;font-weight:700;letter-spacing:-0.01em">{{ selectedCase.name }}</div>
+            <div style="font-size:14px;color:oklch(0.5 0.02 60);margin-top:4px">DOB {{ selectedCase.dob }} · DOD {{ selectedCase.dod }} · Case #{{ selectedCase.id }}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <span style="font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:20px;background:{{ selectedCase.stageBg }};color:{{ selectedCase.stageColor }};white-space:nowrap">{{ selectedCase.stageLabel }}</span>
+            <span style="font-size:11px;font-weight:600;color:{{ selectedCase.slaColor }}">{{ selectedCase.daysWaiting }}d in stage · target {{ selectedCase.slaTarget }}</span>
+          </div>
+        </div>
+
+        <!-- Stepper -->
+        <div style="display:flex;background:white;border:1px solid oklch(0.9 0 240);border-radius:12px;padding:16px 20px;margin-bottom:24px;overflow-x:auto">
+          <sc-for list="{{ stepperStages }}" as="st" hint-placeholder-count="9">
+            <div style="display:flex;align-items:center;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:88px;cursor:{{ st.cursor }}" onClick="{{ st.onStepClick }}">
+                <div style="width:22px;height:22px;border-radius:50%;background:{{ st.dotBg }};border:2px solid {{ st.dotBorder }};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:{{ st.dotText }}">{{ st.num }}</div>
+                <div style="font-size:10.5px;font-weight:600;text-align:center;color:{{ st.labelColor }};line-height:1.2">{{ st.label }}</div>
+              </div>
+              <sc-if value="{{ st.hasNext }}" hint-placeholder-val="{{ true }}"><div style="width:36px;height:2px;background:{{ st.lineColor }};margin:0 2px 20px"></div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div style="background:white;border:1px solid oklch(0.9 0 240);border-radius:14px;padding:18px 20px">
+              <div style="font-size:14px;font-weight:700;margin-bottom:14px">Case information</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:13px">
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Date of birth</div><div style="margin-top:3px;font-weight:500">{{ selectedCase.dob }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Date of death</div><div style="margin-top:3px;font-weight:500">{{ selectedCase.dod }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Time of death</div><div style="margin-top:3px;font-weight:500">{{ selectedCase.tod }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Location</div><div style="margin-top:3px;font-weight:500">{{ selectedCase.location }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Weight</div><div style="margin-top:3px;font-weight:700;color:{{ selectedCase.weightColor }}">{{ selectedCase.weight }}<sc-if value="{{ selectedCase.weightOver200 }}"><span style="margin-left:6px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:20px;background:oklch(0.95 0.045 25);color:oklch(0.48 0.13 25)">Notify crematory</span></sc-if></div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Next of kin</div><div style="margin-top:3px;font-weight:500">{{ selectedCase.nok }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">NOK phone</div><div style="margin-top:3px;font-weight:500">{{ selectedCase.nokPhone }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Payment</div><div style="margin-top:3px;font-weight:500;color:{{ selectedCase.paymentColor }}">{{ selectedCase.paymentStatus }}</div></div>
+                <div><div style="color:oklch(0.55 0.02 60);font-size:11.5px;font-weight:600;text-transform:uppercase">Owner</div>
+                  <select value="{{ selectedCase.owner }}" onChange="{{ selectedCase.onReassignOwner }}" style="margin-top:4px;font-size:13px;font-weight:500;font-family:inherit;padding:5px 8px;border-radius:7px;border:1px solid oklch(0.88 0 240);background:white;color:oklch(0.25 0.02 60);cursor:pointer">
+                    <sc-if value="{{ selectedCase.owner }}"><option value="{{ selectedCase.owner }}">{{ selectedCase.owner }}</option></sc-if>
+                    <sc-for list="{{ selectedCase.staffOptions }}" as="s" hint-placeholder-count="3"><option value="{{ s }}">{{ s }}</option></sc-for>
+                  </select>
+                </div>
+              </div>
+              <div onClick="{{ selectedCase.toggleVeteran }}" style="display:flex;align-items:center;gap:10px;cursor:{{ selectedCase.veteranCursor }};margin-top:16px;padding:10px 12px;border-radius:10px;background:oklch(0.97 0 240)">
+                <div style="width:18px;height:18px;border-radius:5px;border:2px solid oklch(0.32 0.1 265);background:{{ selectedCase.veteranBoxBg }};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:800">{{ selectedCase.veteranCheck }}</div>
+                <div style="font-size:13px;font-weight:500">Served in the armed forces</div>
+                <sc-if value="{{ selectedCase.veteranLocked }}"><div style="font-size:11px;color:oklch(0.6 0.015 60);margin-left:auto">editable during First Call &amp; Payment only</div></sc-if>
+              </div>
+              <sc-if value="{{ selectedCase.isVeteran }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;padding:12px;border-radius:10px;background:oklch(0.97 0 240)">
+                  <div style="font-size:12px;font-weight:600;color:oklch(0.4 0.02 60);margin-bottom:8px">VA notification</div>
+                  <sc-for list="{{ selectedCase.vaSteps }}" as="v" hint-placeholder-count="3">
+                    <div onClick="{{ v.toggle }}" style="display:flex;align-items:center;gap:10px;padding:6px 0;cursor:{{ v.cursor }}">
+                      <div style="width:16px;height:16px;border-radius:5px;border:2px solid {{ v.boxBorder }};background:{{ v.boxBg }};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:800">{{ v.check }}</div>
+                      <div style="font-size:12.5px;color:{{ v.textColor }}">{{ v.label }}</div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ selectedCase.vaCallbackDone }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:8px;padding-top:10px;box-shadow:inset 0 1px 0 oklch(0.92 0 240)">
+                      <div style="font-size:12px;color:oklch(0.45 0.02 60);margin-bottom:6px">Publish the service, or keep it private?</div>
+                      <div style="display:flex;gap:8px">
+                        <span onClick="{{ selectedCase.setVaPublishOn }}" style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;background:{{ selectedCase.vaPublishBg }};color:{{ selectedCase.vaPublishColor }};border:1px solid oklch(0.32 0.1 265)">Publish</span>
+                        <span onClick="{{ selectedCase.setVaPublishPrivate }}" style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;background:{{ selectedCase.vaPrivateBg }};color:{{ selectedCase.vaPrivateColor }};border:1px solid oklch(0.32 0.1 265)">Keep private</span>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+
+            </div>
+
+            <div style="background:white;border:1px solid oklch(0.9 0 240);border-radius:14px;padding:18px 20px">
+              <div style="font-size:14px;font-weight:700;margin-bottom:4px">Checklist</div>
+              <div style="font-size:12px;color:oklch(0.5 0.02 60);margin-bottom:14px">Required steps for this stage</div>
+              <sc-if value="{{ selectedCase.viewingStageLabel }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;background:oklch(0.95 0 240);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;color:oklch(0.4 0.02 60)">
+                  <span>Viewing <b>{{ selectedCase.viewingStageLabel }}</b> — read only</span>
+                  <span onClick="{{ selectedCase.backToCurrentStage }}" style="cursor:pointer;font-weight:600;color:oklch(0.32 0.1 265)">Back to current stage</span>
+                </div>
+              </sc-if>
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <sc-for list="{{ selectedCase.checklist }}" as="item" hint-placeholder-count="6">
+                  <div style="padding:7px 6px;border-radius:8px">
+                    <div onClick="{{ item.toggle }}" style="display:flex;align-items:center;gap:10px;cursor:{{ item.cursor }}">
+                      <div style="width:18px;height:18px;border-radius:5px;border:2px solid {{ item.boxBorder }};background:{{ item.boxBg }};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:800">{{ item.check }}</div>
+                      <div style="font-size:13.5px;color:{{ item.textColor }};text-decoration:{{ item.strike }}">{{ item.label }}</div>
+                    </div>
+                    <sc-if value="{{ item.hasField }}">
+                      <input type="{{ item.fieldType }}" value="{{ item.fieldValue }}" onChange="{{ item.onFieldChange }}" disabled="{{ item.fieldLocked }}" placeholder="Enter value to complete this step…" style="margin:6px 0 2px 28px;width:calc(100% - 28px);box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid oklch(0.88 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:12.5px;color:oklch(0.25 0.02 60);outline:none"/>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="background:white;border:1px solid oklch(0.9 0 240);border-radius:14px;padding:18px 20px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <div style="font-size:14px;font-weight:700">Case Log</div>
+                <span onClick="{{ selectedCase.printCaseLog }}" style="cursor:pointer;font-size:12px;font-weight:600;color:oklch(0.32 0.1 265)">Print</span>
+              </div>
+              <div style="font-size:12px;color:oklch(0.5 0.02 60);margin-bottom:12px">Preferences and special requests, plus every call to the ME, doctor's office, or next of kin — who was contacted, who you spoke with, and when.</div>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+                <sc-for list="{{ selectedCase.caseLog }}" as="e" hint-placeholder-count="0">
+                  <div style="padding:10px 12px;border-radius:10px;background:oklch(0.97 0 240);font-size:13px;color:oklch(0.25 0.02 60)">
+                    <sc-if value="{{ e.headline }}"><div style="font-weight:600">{{ e.headline }}</div></sc-if>
+                    <sc-if value="{{ e.body }}"><div style="margin-top:2px">{{ e.body }}</div></sc-if>
+                    <div style="margin-top:4px;font-size:11px;color:oklch(0.55 0.015 60)">{{ e.author }} · {{ e.when }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:10px">
+                <span onClick="{{ selectedCase.setLogTypeNote }}" style="cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px;background:{{ selectedCase.noteTabBg }};color:{{ selectedCase.noteTabColor }}">Note</span>
+                <span onClick="{{ selectedCase.setLogTypeContact }}" style="cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px;background:{{ selectedCase.contactTabBg }};color:{{ selectedCase.contactTabColor }}">Contact</span>
+              </div>
+              <sc-if value="{{ selectedCase.isNoteType }}">
+                <textarea value="{{ selectedCase.logDraft.text }}" onChange="{{ selectedCase.onLogTextChange }}" placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin." style="width:100%;box-sizing:border-box;min-height:60px;resize:vertical;padding:10px 12px;border-radius:10px;border:1px solid oklch(0.9 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:13px;outline:none"></textarea>
+              </sc-if>
+              <sc-if value="{{ selectedCase.isContactType }}">
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                  <input value="{{ selectedCase.logDraft.who }}" onChange="{{ selectedCase.onLogWhoChange }}" placeholder="Contacted — e.g. ME's office" style="flex:1;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid oklch(0.9 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:12.5px;outline:none"/>
+                  <input value="{{ selectedCase.logDraft.spoke }}" onChange="{{ selectedCase.onLogSpokeChange }}" placeholder="Spoke with — name" style="flex:1;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid oklch(0.9 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:12.5px;outline:none"/>
+                </div>
+                <textarea value="{{ selectedCase.logDraft.summary }}" onChange="{{ selectedCase.onLogSummaryChange }}" placeholder="Summary (optional)" style="width:100%;box-sizing:border-box;min-height:50px;resize:vertical;padding:10px 12px;border-radius:10px;border:1px solid oklch(0.9 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:13px;outline:none"></textarea>
+              </sc-if>
+              <div style="display:flex;justify-content:flex-end;margin-top:8px">
+                <span onClick="{{ selectedCase.addLogEntry }}" style="cursor:pointer;font-size:12.5px;font-weight:600;color:oklch(0.32 0.1 265);padding:6px 14px;border-radius:20px;background:oklch(0.87 0.05 265)">Add entry</span>
+              </div>
+            </div>
+
+            <div style="background:white;border:1px solid oklch(0.9 0 240);border-radius:14px;padding:18px 20px">
+              <div style="font-size:14px;font-weight:700;margin-bottom:12px">Tasks for this case</div>
+              <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:10px">
+                <sc-for list="{{ selectedCase.caseTasks }}" as="t" hint-placeholder-count="0">
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 0;box-shadow:inset 0 -1px 0 oklch(0.95 0 240)">
+                    <div onClick="{{ t.toggle }}" style="cursor:pointer;width:16px;height:16px;border-radius:5px;border:2px solid oklch(0.6 0.13 145);background:{{ t.boxBg }};flex-shrink:0"></div>
+                    <div style="flex:1;font-size:13px">{{ t.text }}</div>
+                    <div style="flex-shrink:0;font-size:11px;font-weight:600;color:oklch(0.55 0.015 60);background:oklch(0.95 0 240);padding:2px 8px;border-radius:20px">{{ t.assignee }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:8px">
+                <input value="{{ selectedCase.taskQuickDraft }}" onChange="{{ selectedCase.onTaskQuickChange }}" placeholder="Add a task for this case…" style="flex:1;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid oklch(0.9 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:12.5px;outline:none"/>
+                <span onClick="{{ selectedCase.addCaseTask }}" style="cursor:pointer;font-size:12.5px;font-weight:600;color:white;background:oklch(0.32 0.1 265);padding:8px 14px;border-radius:8px;white-space:nowrap">Add</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div style="background:white;border:1px solid oklch(0.9 0 240);border-radius:14px;padding:18px 20px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+                <div style="font-size:14px;font-weight:700">Activity log</div>
+                <span onClick="{{ selectedCase.printActivity }}" style="cursor:pointer;font-size:12px;font-weight:600;color:oklch(0.32 0.1 265)">Print</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <sc-for list="{{ selectedCase.timeline }}" as="t" hint-placeholder-count="5">
+                  <div style="display:flex;gap:10px">
+                    <div style="width:8px;height:8px;border-radius:50%;background:oklch(0.32 0.1 265);margin-top:5px;flex-shrink:0"></div>
+                    <div>
+                      <div style="font-size:13px"><span style="font-weight:600">{{ t.who }}</span> {{ t.what }}</div>
+                      <div style="font-size:11.5px;color:oklch(0.6 0.02 60);margin-top:1px">{{ t.when }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="background:white;border:1px solid oklch(0.9 0 240);border-radius:14px;padding:18px 20px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div style="font-size:14px;font-weight:700">Documents</div>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span onClick="{{ selectedCase.printAllDocs }}" style="cursor:pointer;font-size:12px;font-weight:600;color:oklch(0.32 0.1 265)">Print all</span>
+                  <span onClick="{{ selectedCase.uploadDoc }}" style="cursor:pointer;font-size:12px;font-weight:600;color:oklch(0.32 0.1 265);padding:5px 11px;border-radius:20px;background:oklch(0.87 0.05 265)">+ Upload</span>
+                </div>
+              </div>
+              <div style="font-size:11.5px;color:oklch(0.55 0.02 60);margin-bottom:12px">Permits, certificates, pickup ID, payment invoices — kept on file for audit</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ selectedCase.documents }}" as="d" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid oklch(0.93 0 240);border-radius:9px;font-size:13px">
+                    <div style="width:8px;height:10px;background:oklch(0.85 0.02 60);border-radius:2px;flex-shrink:0"></div>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ d.name }}</div>
+                      <sc-if value="{{ d.meta }}"><div style="font-size:10.5px;color:oklch(0.6 0.012 60);margin-top:1px">{{ d.meta }}</div></sc-if>
+                    </div>
+                    <div style="font-size:11.5px;color:oklch(0.55 0.02 60);white-space:nowrap">{{ d.status }}</div>
+                    <span onClick="{{ d.print }}" style="cursor:pointer;font-size:11.5px;font-weight:600;color:oklch(0.32 0.1 265)">Print</span>
+                    <sc-if value="{{ d.remove }}"><span onClick="{{ d.remove }}" style="cursor:pointer;color:oklch(0.55 0.02 60);font-size:14px;padding:0 2px">×</span></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <input ref="{{ fileInputRef }}" type="file" multiple="{{ true }}" onChange="{{ onFileSelected }}" style="display:none"/>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isTasksView }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:28px 32px 48px">
+        <div style="font-size:26px;font-weight:700;letter-spacing:-0.015em;margin-bottom:24px">Tasks</div>
+        <div style="background:white;border-radius:18px;padding:18px 22px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03);max-width:640px">
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <input value="{{ taskDraft }}" onChange="{{ onTaskDraftChange }}" placeholder="Add a follow-up, reminder, or to-do…" style="flex:1;box-sizing:border-box;padding:9px 12px;border-radius:9px;border:1px solid oklch(0.88 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:13px;outline:none"/>
+            <select value="{{ taskDraftAssignee }}" onChange="{{ onTaskAssigneeChange }}" style="font-size:13px;font-family:inherit;padding:9px 10px;border-radius:9px;border:1px solid oklch(0.88 0 240);background:white;cursor:pointer">
+              <sc-for list="{{ staffOptionsGlobal }}" as="s" hint-placeholder-count="3"><option value="{{ s }}">{{ s }}</option></sc-for>
+            </select>
+            <select value="{{ taskDraftCaseId }}" onChange="{{ onTaskCaseChange }}" style="font-size:13px;font-family:inherit;padding:9px 10px;border-radius:9px;border:1px solid oklch(0.88 0 240);background:white;cursor:pointer;max-width:160px">
+              <option value="">No linked case</option>
+              <sc-for list="{{ taskCaseOptions }}" as="tc" hint-placeholder-count="3"><option value="{{ tc.id }}">{{ tc.name }}</option></sc-for>
+            </select>
+            <span onClick="{{ addTask }}" style="cursor:pointer;font-size:13px;font-weight:600;color:white;background:oklch(0.32 0.1 265);padding:9px 18px;border-radius:9px;white-space:nowrap">Add</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ taskList }}" as="t" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:12px;padding:10px 6px;box-shadow:inset 0 -1px 0 oklch(0.95 0 240)">
+                <div onClick="{{ t.toggle }}" style="cursor:pointer;width:18px;height:18px;border-radius:5px;border:2px solid oklch(0.6 0.13 145);background:{{ t.checkboxBg }};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:800">{{ t.checkMark }}</div>
+                <div style="flex:1;font-size:13.5px;color:{{ t.textColor }};text-decoration:{{ t.strike }}">{{ t.text }}</div>
+                <sc-if value="{{ t.linkedCaseName }}"><span onClick="{{ t.goToCase }}" style="cursor:pointer;flex-shrink:0;font-size:11px;font-weight:600;color:oklch(0.32 0.1 265);text-decoration:underline">{{ t.linkedCaseName }}</span></sc-if>
+                <div style="flex-shrink:0;font-size:11.5px;font-weight:600;color:oklch(0.55 0.015 60);background:oklch(0.95 0 240);padding:3px 9px;border-radius:20px">{{ t.assignee }}</div>
+                <span onClick="{{ t.remove }}" style="cursor:pointer;color:oklch(0.6 0.012 60);font-size:15px;padding:0 2px">×</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isReportsView }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:28px 32px 48px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+          <div style="font-size:26px;font-weight:700;letter-spacing:-0.015em">Reports</div>
+          <select disabled="{{ true }}" style="font-size:13px;font-weight:600;font-family:inherit;padding:8px 12px;border-radius:9px;border:1px solid oklch(0.88 0 240);background:white;color:oklch(0.4 0.02 60)">
+            <option>Manor Cremation</option>
+            <option disabled="{{ true }}">Gus Camacho Funeral Home — coming soon</option>
+          </select>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+          <div style="background:white;border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 10px oklch(0 0 0 / 0.03)">
+            <div style="font-size:28px;font-weight:800;color:oklch(0.3 0.02 60)">{{ reportActiveCases }}</div>
+            <div style="font-size:12.5px;font-weight:600;color:oklch(0.55 0.015 60);margin-top:3px">Active cases</div>
+          </div>
+          <div style="background:white;border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 10px oklch(0 0 0 / 0.03)">
+            <div style="font-size:28px;font-weight:800;color:oklch(0.3 0.02 60)">{{ reportCompletedCases }}</div>
+            <div style="font-size:12.5px;font-weight:600;color:oklch(0.55 0.015 60);margin-top:3px">Completed</div>
+          </div>
+          <div style="background:oklch(0.95 0.045 25);border-radius:16px;padding:18px 20px">
+            <div style="font-size:28px;font-weight:800;color:oklch(0.48 0.15 25)">{{ reportOverdueCount }}</div>
+            <div style="font-size:12.5px;font-weight:600;color:oklch(0.45 0.09 25);margin-top:3px">Overdue on SLA</div>
+          </div>
+          <div style="background:white;border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 10px oklch(0 0 0 / 0.03)">
+            <div style="font-size:28px;font-weight:800;color:oklch(0.3 0.02 60)">{{ reportTotalCases }}</div>
+            <div style="font-size:12.5px;font-weight:600;color:oklch(0.55 0.015 60);margin-top:3px">Total cases on file</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start;margin-bottom:16px">
+          <div style="background:white;border-radius:18px;padding:20px 22px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03)">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">Time in stage</div>
+            <div style="font-size:12px;color:oklch(0.55 0.015 60);margin-bottom:14px">Average days waiting vs. target — flags where delays are piling up</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ reportStageBreakdown }}" as="s" hint-placeholder-count="7">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:220px;flex-shrink:0;font-size:12px;color:oklch(0.4 0.02 60)">{{ s.label }}</div>
+                  <div style="flex:1;font-size:12.5px;font-weight:600;color:{{ s.avgColor }}">{{ s.avgDays }}d avg</div>
+                  <div style="flex-shrink:0;font-size:11.5px;color:oklch(0.55 0.015 60)">target {{ s.target }}</div>
+                  <div style="flex-shrink:0;width:26px;text-align:right;font-size:12px;font-weight:700;color:oklch(0.3 0.02 60)">{{ s.count }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="background:white;border-radius:18px;padding:20px 22px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03)">
+            <div style="font-size:15px;font-weight:700;margin-bottom:14px">Staff workload</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <sc-for list="{{ reportStaffLoad }}" as="s" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <div style="font-size:13px;font-weight:600">{{ s.name }}</div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:12.5px;color:oklch(0.5 0.015 60)">{{ s.count }} active</span>
+                    <sc-if value="{{ s.overdue }}"><span style="font-size:11px;font-weight:700;color:oklch(0.5 0.15 25)">{{ s.overdue }} overdue</span></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:white;border-radius:18px;padding:20px 22px;box-shadow:0 1px 2px oklch(0 0 0 / 0.03),0 2px 12px oklch(0 0 0 / 0.03)">
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Veteran / VA cases</div>
+          <div style="font-size:12px;color:oklch(0.55 0.015 60);margin-bottom:14px">Cases flagged as armed forces — VA notification progress</div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ reportVeteranCases }}" as="v" hint-placeholder-count="0">
+              <div onClick="{{ v.open }}" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:10px 0;box-shadow:inset 0 -1px 0 oklch(0.95 0 240)">
+                <div style="font-size:13.5px;font-weight:600">{{ v.name }}</div>
+                <div style="font-size:12px;font-weight:600;color:{{ v.statusColor }}">{{ v.vaStatus }}</div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ noVeteranCases }}"><div style="font-size:13px;color:oklch(0.6 0.015 60);padding:8px 0">No veteran cases on file.</div></sc-if>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showNewCaseModal }}">
+      <div onClick="{{ closeNewCaseModal }}" style="position:fixed;inset:0;background:oklch(0.2 0 0 / 0.4);display:flex;align-items:center;justify-content:center;z-index:50">
+        <div onClick="{{ stopClick }}" style="background:white;border-radius:16px;width:560px;max-width:90vw;max-height:85vh;overflow-y:auto;padding:28px 32px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div style="font-size:18px;font-weight:700">New Case — First Call</div>
+            <span onClick="{{ closeNewCaseModal }}" style="cursor:pointer;font-size:20px;color:oklch(0.55 0.02 60)">×</span>
+          </div>
+          <div style="font-size:13px;color:oklch(0.5 0.02 60);margin-bottom:20px">Whatever you enter here carries straight into the case's First Call &amp; Payment checklist — no retyping. Anything left blank stays open there, and the case can't move past this stage until every item is complete.</div>
+          <sc-for list="{{ newCaseFieldGroups }}" as="g" hint-placeholder-count="3">
+            <div style="margin-bottom:18px">
+              <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:oklch(0.55 0.02 60);margin-bottom:10px">{{ g.group }}</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <sc-for list="{{ g.items }}" as="f" hint-placeholder-count="2">
+                  <div>
+                    <div style="font-size:12.5px;font-weight:500;color:oklch(0.3 0.02 60);margin-bottom:4px">{{ f.label }}</div>
+                    <input type="{{ f.type }}" value="{{ f.value }}" onChange="{{ f.onChange }}" placeholder="{{ f.placeholder }}" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:9px;border:1px solid oklch(0.88 0 240);background:oklch(0.99 0 240);font-family:inherit;font-size:13px;color:oklch(0.25 0.02 60);outline:none"/>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px;padding-top:16px;box-shadow:inset 0 1px 0 oklch(0.94 0 240)">
+            <span onClick="{{ closeNewCaseModal }}" style="cursor:pointer;font-size:13.5px;font-weight:600;color:oklch(0.5 0.02 60);padding:9px 16px">Cancel</span>
+            <span onClick="{{ submitNewCase }}" style="cursor:{{ createCaseCursor }};font-size:13.5px;font-weight:600;color:white;background:{{ createCaseBg }};padding:9px 20px;border-radius:9px">Create case</span>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+// First Call and Payment always happen together on the same call — never a separate stage
+const STAGES = [
+  "First Call & Payment","Jotform Application","EDRS & Doctor / Cause of Death","Permit & Authorization Sent to Crematory","DC Application Sent","Ready for Pickup / Contact Family","Completed"
+];
+function getStages(){ return STAGES; }
+// raw stage (0-8, matches CHECKLIST_BY_STAGE) -> display index in STAGES
+function toDisplayStage(rawStage){
+  return rawStage === 0 ? 0 : rawStage - 1;
+}
+function toRawStage(displayIdx){
+  return displayIdx === 0 ? 0 : displayIdx + 1;
+}
+// red reserved for things that need attention; blue for the current stage badge
+function chip(family){
+  if (family === 'red') return { bg:'oklch(0.93 0.045 25)', color:'oklch(0.42 0.14 25)', border:'oklch(0.85 0.06 25)' };
+  return { bg:'oklch(0.89 0.06 265)', color:'oklch(0.3 0.11 265)', border:'oklch(0.8 0.08 265)' };
+}
+function stageFamily(label){
+  return label === "EDRS & Doctor / Cause of Death" ? 'red' : 'neutral';
+}
+
+const RAW_CASES = [
+  { id:"1042", name:"Robert Ellison", dob:"03/14/1951", dod:"07/09/2026", tod:"06:12", location:"St. Mary's Hospital", weight:"178 lb", nok:"Karen Ellison", nokPhone:"(555) 201-4432", owner:"Dana", stage:3, daysWaiting:6, stalled:true, stalledReason:"Waiting on ME release — 6 days", paymentStatus:"Paid in full" },
+  { id:"1043", name:"Marie Suarez", dob:"11/02/1938", dod:"07/12/2026", tod:"23:40", location:"Hillcrest Hospice", weight:"142 lb", nok:"Luis Suarez", nokPhone:"(555) 330-8871", owner:"Chris", stage:2, daysWaiting:1, stalled:false, paymentStatus:"Paid in full" },
+  { id:"1044", name:"Walter Boone", dob:"06/22/1945", dod:"07/13/2026", tod:"14:05", location:"Riverside Nursing Facility", weight:"165 lb", nok:"Diane Boone", nokPhone:"(555) 442-0093", owner:"Dana", stage:0, daysWaiting:0, stalled:false, paymentStatus:"Awaiting payment" },
+  { id:"1045", name:"Helen Tran", dob:"09/30/1960", dod:"07/05/2026", tod:"08:50", location:"Family home", weight:"120 lb", nok:"Michael Tran", nokPhone:"(555) 118-2200", owner:"Chris", stage:6, daysWaiting:2, stalled:false, paymentStatus:"Paid in full" },
+  { id:"1046", name:"George Alvarez", dob:"01/09/1955", dod:"06/28/2026", tod:"04:30", location:"County Medical Examiner", weight:"215 lb", nok:"Sofia Alvarez", nokPhone:"(555) 771-6620", owner:"Priya", stage:3, daysWaiting:9, stalled:true, stalledReason:"Death cert not yet filed by physician — 9 days", seedFields:{0:"George Robert Alvarez",1:"County Medical Examiner — 1500 Grant Ave, San Jose — (408) 555-2231",2:"01/09/1955",3:"215 lb",4:"06/28/2026",5:"04:30",6:"Dr. Linda Choi — (408) 555-8890",7:"Sofia Alvarez — (555) 771-6620 — sofia.alvarez@email.com",8:"George R. Alvarez — •••• •••• •••• 4471 — 09/28 — 94112"}, paymentStatus:"Paid in full" },
+  { id:"1047", name:"Nancy Whitfield", dob:"04/18/1948", dod:"07/14/2026", tod:"21:22", location:"St. Mary's Hospital", weight:"—", nok:"Tom Whitfield", nokPhone:"(555) 902-1145", owner:"—", stage:0, daysWaiting:0, stalled:false, paymentStatus:"Awaiting payment" },
+  { id:"1048", name:"Arthur Kim", dob:"12/05/1942", dod:"07/01/2026", tod:"13:15", location:"Third-party crematory", weight:"156 lb", nok:"Grace Kim", nokPhone:"(555) 665-3390", owner:"Priya", stage:6, daysWaiting:1, stalled:false, paymentStatus:"Paid in full" },
+  { id:"1049", name:"Linda Ferro", dob:"08/27/1958", dod:"06/30/2026", tod:"07:05", location:"Office", weight:"—", nok:"Anna Ferro", nokPhone:"(555) 553-7712", owner:"Dana", stage:7, daysWaiting:0, stalled:false, paymentStatus:"Paid in full" },
+];
+
+const CHECKLIST_BY_STAGE = {
+  0:["Name of deceased","Place of death — name, address & phone number","Date of birth","Weight","Date of death","Time of death","Hospice or physician who will sign the DC — name & phone number","Family contact — name, phone number & email","Cardholder name, card number, exp, CVV & billing zip code"],
+  1:["Credit card payment collected by phone","Payment receipt sent — confirms cleared to dispatch"],
+  2:["Jotform application completed"],
+  3:["EDRS submitted & sent to doctor","Cause of death entered","Hardsave for state approval if not an online doctor"],
+  4:["Permit sent to crematory","Authorization of release sent to crematory"],
+  5:["DC application filled out","Sent day before ashes arrive"],
+  6:["Ashes picked up (Tue/Fri)","Tag photo taken","Tag/name/cert cross-checked","Labels made","Transferred to urn","Family contacted — ashes ready for pickup"],
+  7:["Family picked up ashes"]
+};
+
+function stageItemsForDisplay(d){
+  if (d === 0) return [...CHECKLIST_BY_STAGE[0], ...CHECKLIST_BY_STAGE[1]];
+  return CHECKLIST_BY_STAGE[d + 1] || [];
+}
+function lowerFirst(label){
+  // keep leading acronyms (e.g. "ME release received") capitalized
+  if (/^[A-Z]{2,}/.test(label)) return label;
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+function printTextLog(title, caseName, entries, renderEntry){
+  const w = window.open('', '_blank');
+  if (!w) return;
+  const rows = entries.length
+    ? entries.map(renderEntry).join('')
+    : '<p style="color:#888">Nothing logged yet.</p>';
+  w.document.write(`<html><head><title>${title} — ${caseName}</title></head><body style="font-family:sans-serif;padding:60px">
+    <h2>${title}</h2><p style="color:#555">Case: ${caseName}</p>
+    <div style="margin-top:24px">${rows}</div>
+  </body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+function printDoc(doc, caseName){
+  if (doc.file) {
+    const url = URL.createObjectURL(doc.file);
+    const w = window.open(url, '_blank');
+    if (w) w.addEventListener('load', () => { w.print(); });
+    return;
+  }
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(`<html><head><title>${doc.name}</title></head><body style="font-family:sans-serif;padding:60px">
+    <h2>${doc.name}</h2><p>Case: ${caseName}</p>
+    <p style="color:#888">Placeholder — attach or scan the physical copy of this document for the case file.</p>
+  </body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+const DEFAULT_SLA_TARGET = {
+  "First Call & Payment": 0.25, "Jotform Application": 1, "EDRS & Doctor / Cause of Death": 3,
+  "Permit & Authorization Sent to Crematory": 1, "DC Application Sent": 2, "Ready for Pickup / Contact Family": 4,
+};
+function slaLabelFor(days){
+  if (days == null) return '—';
+  return days < 1 ? 'same day' : `${days}d`;
+}
+const DEFAULT_STAFF = ["Dana", "Chris", "Priya"];
+const VA_STEPS = ["Called the VA", "VA called back with a date", "Called Military Honors"];
+const NEW_CASE_FIELDS = [
+  { key:'createdBy', label:'Your name (taking this call)', group:'Decedent' },
+  { key:'name', label:'Name of deceased', group:'Decedent' },
+  { key:'place', label:'Place of death — name, address & phone number', group:'Decedent' },
+  { key:'dob', label:'Date of birth', group:'Decedent', placeholder:'MM/DD/YYYY' },
+  { key:'weight', label:'Weight', group:'Decedent', placeholder:'e.g. 165 lb' },
+  { key:'dod', label:'Date of death', group:'Decedent', placeholder:'MM/DD/YYYY' },
+  { key:'tod', label:'Time of death', group:'Decedent', placeholder:'24hr, e.g. 14:30' },
+  { key:'dc', label:'Hospice or physician to sign DC — name & phone number', group:'Contacts' },
+  { key:'family', label:'Family contact — name, phone number & email', group:'Contacts' },
+  { key:'cardName', label:'Name on card', group:'Payment' },
+  { key:'cardNumber', label:'Card number', group:'Payment', password:true },
+  { key:'cardExp', label:'Expiration (MM/YY)', group:'Payment' },
+  { key:'cardCvv', label:'CVV', group:'Payment', password:true },
+  { key:'cardZip', label:'Billing zip code', group:'Payment' },
+];
+// index 0 = createdBy, 1 = name, shifting all prior indices by 1
+function actorFor(label, owner){
+  if (/removal team|dispatch texted/i.test(label)) return "Removal team";
+  if (/permit signed/i.test(label)) return "Funeral director";
+  return owner;
+}
+function buildTimeline(raw, currentChecklist, currentDisplayStage, owner){
+  const entries = [];
+  for (let d = 0; d < currentDisplayStage; d++) {
+    stageItemsForDisplay(d).forEach(label => entries.push({ who: actorFor(label, owner), what: lowerFirst(label) }));
+  }
+  currentChecklist.filter(item => item.done).forEach(item => entries.push({ who: actorFor(item.label, owner), what: lowerFirst(item.label) }));
+  const n = entries.length;
+  entries.forEach((e, i) => {
+    const daysAgo = n - 1 - i;
+    e.when = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
+  });
+  return entries.reverse(); // newest first
+}
+
+class Component extends DCLogic {
+  state = {
+    view: 'dashboard',
+    selectedId: null,
+    filterStage: null,
+    filterMode: 'all', // 'all' | 'attention'
+    stageFilter: null,
+    viewStage: {}, // caseId -> stage index being viewed read-only, or undefined = current
+    ownerOverride: {}, // caseId -> reassigned owner name
+    selectedCaseIds: {}, // caseId -> true, for bulk actions in a stage-filtered list
+    tasks: [
+      { id:1, text:"Call ME's office re: George Alvarez release", assignee:"Priya", done:false },
+      { id:2, text:"Order more wooden urns — running low", assignee:"Dana", done:false },
+      { id:3, text:"Follow up voicemail — Tran family", assignee:"Chris", done:true },
+    ],
+    taskNextId: 4,
+    taskDraft: '',
+    staffList: [...DEFAULT_STAFF],
+    newStaffDraft: '',
+    slaOverrides: {}, // stageLabel -> days
+    companyName: 'Manor Cremation',
+    pickupSchedule: 'Tue & Fri, after 1:00pm',
+    taskDraftAssignee: DEFAULT_STAFF[0],
+    taskDraftCaseId: '',
+    searchQuery: '',
+    checklistState: {}, // caseId -> {index: bool}
+    fieldValues: {}, // caseId -> {index: text}
+    extraCases: [], // cases created via the New Case modal
+    showNewCaseModal: false,
+    newCaseDraft: {},
+    newCaseNextId: 1050,
+    logState: {}, // caseId -> [{type:'note'|'contact', text, who, spoke, summary, author, when}]
+    logDraftType: {}, // caseId -> 'note' | 'contact'
+    logDraft: {}, // caseId -> {text, who, spoke, summary}
+    taskDraftCaseQuick: {}, // caseId -> in-progress quick-add text (Tasks for this case)
+    veteranStatus: {}, // caseId -> true if decedent served in the armed forces
+    vaSteps: {}, // caseId -> {index: bool}
+    vaPublish: {}, // caseId -> 'publish' | 'private' | undefined
+    uploadedDocs: {}, // caseId -> [{name}]
+  };
+
+  fileInputRef = React.createRef();
+
+  getSlaDays(label){
+    const override = this.state.slaOverrides[label];
+    if (override !== undefined) return override === '' ? null : Number(override);
+    return DEFAULT_SLA_TARGET[label] !== undefined ? DEFAULT_SLA_TARGET[label] : null;
+  }
+
+  getChecklist(caseId, stageIdx, readOnly){
+    const labels = stageIdx <= 1
+      ? [...CHECKLIST_BY_STAGE[0], ...CHECKLIST_BY_STAGE[1]]
+      : (CHECKLIST_BY_STAGE[stageIdx] || []);
+    const saved = this.state.checklistState[caseId] || {};
+    // every stage defaults to "all but the last" so the final required action always needs an explicit check
+    const defaultDone = (i) => i < labels.length - 1;
+    const isDone = (i) => saved[i] ?? defaultDone(i);
+    const seed = [...RAW_CASES, ...this.state.extraCases].find(r => r.id === caseId)?.seedFields || {};
+    const fields = this.state.fieldValues[caseId] || seed;
+    const hasField = stageIdx === 0; // First Call & Payment: a step is only complete once its info is entered
+    const fieldDone = (i) => Boolean((fields[i] ?? '').toString().trim());
+    return labels.map((label, i) => {
+      const done = hasField ? fieldDone(i) : isDone(i);
+      const priorDone = i === 0 ? true : (hasField ? fieldDone(i - 1) : isDone(i - 1));
+      const locked = i > 0 && !priorDone;
+      const isCard = /card|cvv/i.test(label);
+      return {
+        label,
+        done, locked,
+        toggle: () => {
+          if (readOnly || hasField || locked) return; // hasField items are marked done by entering data, not clicking
+          this.setState(s => ({ checklistState: { ...s.checklistState, [caseId]: { ...(s.checklistState[caseId]||{}), [i]: !isDone(i) } } }));
+        },
+        boxBg: done ? 'oklch(0.6 0.13 145)' : 'white',
+        boxBorder: done ? 'oklch(0.6 0.13 145)' : 'oklch(0.32 0.1 265)',
+        check: done ? '✓' : '',
+        textColor: done ? 'oklch(0.5 0.02 60)' : locked ? 'oklch(0.75 0.01 60)' : 'oklch(0.25 0.02 60)',
+        strike: done ? 'line-through' : 'none',
+        cursor: readOnly ? 'default' : (hasField ? 'default' : (locked ? 'not-allowed' : 'pointer')),
+        hasField,
+        fieldLocked: locked || readOnly,
+        readOnly,
+        fieldType: isCard ? 'password' : 'text',
+        fieldValue: fields[i] ?? '',
+        onFieldChange: (e) => { const v = e.target.value; this.setState(s => ({ fieldValues: { ...s.fieldValues, [caseId]: { ...(s.fieldValues[caseId]||{}), [i]: v } } })); },
+      };
+    });
+  }
+
+  buildCase(rawIn){
+    const raw = { ...rawIn, owner: this.state.ownerOverride[rawIn.id] || rawIn.owner };
+    const stages = getStages();
+    const displayIdx = toDisplayStage(raw.stage);
+    const label = stages[displayIdx];
+    const checklist = this.getChecklist(raw.id, raw.stage);
+    const firstUndone = checklist.find(i => !i.done);
+    // Completed can only be shown once ashes are actually picked up — otherwise fall back to the prior stage's label
+    const ashesPickedUp = checklist[0]?.done;
+    const isLastStage = displayIdx === stages.length - 1;
+    const effectiveDisplayIdx = (isLastStage && !ashesPickedUp) ? displayIdx - 1 : displayIdx;
+    const effectiveLabel = stages[effectiveDisplayIdx];
+    const c = chip(stageFamily(effectiveLabel));
+    const viewingDisplay = this.state.viewStage[raw.id];
+    const isViewingPast = viewingDisplay !== undefined && viewingDisplay !== displayIdx;
+    const displayedChecklist = isViewingPast
+      ? this.getChecklist(raw.id, toRawStage(viewingDisplay), true)
+      : checklist;
+    const viewingStageLabel = isViewingPast ? stages[viewingDisplay] : null;
+    const documents = [
+      ...(raw.stage >= 4
+        ? [{name:"Death Certificate.pdf", status: raw.stage >= 5 ? "Filed" : "Pending"}, {name:"Cremation Permit.pdf", status: raw.stage >= 4 ? "Signed" : "Pending"}]
+        : [{name:"Cremation Authorization.pdf", status: raw.stage >= 3 ? "Signed" : "Pending"}]),
+      ...(this.state.uploadedDocs[raw.id] || []).map((d, i) => ({
+        name: d.name, status: "Uploaded", file: d.file, meta: `${d.uploadedBy} · ${d.when}`,
+        remove: () => this.setState(s => ({ uploadedDocs: { ...s.uploadedDocs, [raw.id]: s.uploadedDocs[raw.id].filter((_, idx) => idx !== i) } })),
+      })),
+    ].map(d => ({ ...d, print: () => printDoc(d, raw.name) }));
+    return {
+      ...raw,
+      displayStage: effectiveDisplayIdx,
+      stageLabel: effectiveLabel,
+      stageBg: c.bg, stageColor: c.color,
+      waitColor: raw.stalled ? 'oklch(0.55 0.15 25)' : 'oklch(0.5 0.02 60)',
+      ownerInitials: raw.owner === '—' ? '?' : raw.owner.slice(0,2).toUpperCase(),
+      weightOver200: parseInt(raw.weight) > 200,
+      weightColor: parseInt(raw.weight) > 200 ? 'oklch(0.5 0.15 25)' : 'oklch(0.25 0.02 60)',
+      nextAction: firstUndone ? firstUndone.label : 'Review case',
+      rowSubtext: raw.stalled ? raw.stalledReason : (firstUndone ? firstUndone.label : 'Review case'),
+      slaTarget: slaLabelFor(this.getSlaDays(label)),
+      slaOverdue: this.getSlaDays(label) != null && raw.daysWaiting > this.getSlaDays(label) && raw.stage < 7,
+      slaColor: (this.getSlaDays(label) != null && raw.daysWaiting > this.getSlaDays(label) && raw.stage < 7) ? 'oklch(0.5 0.15 25)' : 'oklch(0.55 0.015 60)',
+      rowAccent: raw.stalled ? 'oklch(0.6 0.15 25)' : 'transparent',
+      actionColor: raw.stalled ? 'oklch(0.55 0.15 25)' : 'oklch(0.45 0.02 60)',
+      actionWeight: raw.stalled ? '600' : '400',
+      paymentColor: raw.paymentStatus === 'Paid in full' ? 'oklch(0.6 0.13 145)' : 'oklch(0.32 0.1 265)',
+      createdByDisplay: raw.createdBy ? `${raw.createdBy} · ${raw.createdWhen || ''}`.trim().replace(/·\s*$/, '') : '—',
+      staffOptions: this.state.staffList,
+      onReassignOwner: (e) => { const v = e.target.value; this.setState(s => ({ ownerOverride: { ...s.ownerOverride, [raw.id]: v } })); },
+      isVeteran: Boolean(this.state.veteranStatus[raw.id]),
+      veteranLocked: raw.stage > 1,
+      veteranCursor: raw.stage > 1 ? 'not-allowed' : 'pointer',
+      toggleVeteran: () => { if (raw.stage > 1) return; this.setState(s => ({ veteranStatus: { ...s.veteranStatus, [raw.id]: !s.veteranStatus[raw.id] } })); },
+      veteranBoxBg: this.state.veteranStatus[raw.id] ? 'oklch(0.32 0.1 265)' : 'white',
+      veteranCheck: this.state.veteranStatus[raw.id] ? '✓' : '',
+      vaSteps: (() => {
+        const saved = this.state.vaSteps[raw.id] || {};
+        return VA_STEPS.map((label, i) => {
+          const done = Boolean(saved[i]);
+          const locked = i > 0 && !saved[i - 1];
+          return {
+            label, done, locked,
+            toggle: () => { if (locked) return; this.setState(s => ({ vaSteps: { ...s.vaSteps, [raw.id]: { ...(s.vaSteps[raw.id]||{}), [i]: !saved[i] } } })); },
+            boxBg: done ? 'oklch(0.6 0.13 145)' : 'white',
+            boxBorder: done ? 'oklch(0.6 0.13 145)' : 'oklch(0.32 0.1 265)',
+            check: done ? '✓' : '',
+            textColor: locked ? 'oklch(0.7 0.01 60)' : 'oklch(0.25 0.02 60)',
+            cursor: locked ? 'not-allowed' : 'pointer',
+          };
+        });
+      })(),
+      vaAllDone: VA_STEPS.every((_, i) => Boolean((this.state.vaSteps[raw.id] || {})[i])) && Boolean(this.state.vaPublish[raw.id]),
+      vaNeedsAttention: Boolean(this.state.veteranStatus[raw.id]) && !(VA_STEPS.every((_, i) => Boolean((this.state.vaSteps[raw.id] || {})[i])) && Boolean(this.state.vaPublish[raw.id])),
+      attentionReason: raw.stalled ? raw.stalledReason : (Boolean(this.state.veteranStatus[raw.id]) && !(VA_STEPS.every((_, i) => Boolean((this.state.vaSteps[raw.id] || {})[i])) && Boolean(this.state.vaPublish[raw.id])) ? 'Veteran — VA process incomplete' : ''),
+      vaCallbackDone: Boolean((this.state.vaSteps[raw.id] || {})[1]),
+      vaPublishChoice: this.state.vaPublish[raw.id] || null,
+      setVaPublishOn: () => this.setState(s => ({ vaPublish: { ...s.vaPublish, [raw.id]: 'publish' } })),
+      setVaPublishPrivate: () => this.setState(s => ({ vaPublish: { ...s.vaPublish, [raw.id]: 'private' } })),
+      vaPublishBg: this.state.vaPublish[raw.id] === 'publish' ? 'oklch(0.32 0.1 265)' : 'white',
+      vaPublishColor: this.state.vaPublish[raw.id] === 'publish' ? 'white' : 'oklch(0.3 0.02 60)',
+      vaPrivateBg: this.state.vaPublish[raw.id] === 'private' ? 'oklch(0.32 0.1 265)' : 'white',
+      vaPrivateColor: this.state.vaPublish[raw.id] === 'private' ? 'white' : 'oklch(0.3 0.02 60)',
+      open: () => this.setState({ view:'case', selectedId: raw.id }),
+      checklist: displayedChecklist,
+      viewingStageLabel,
+      backToCurrentStage: () => this.setState(s => { const v = { ...s.viewStage }; delete v[raw.id]; return { viewStage: v }; }),
+      firstCallFields: (() => {
+        const intake = this.getChecklist(raw.id, 0);
+        const f = intake.filter(item => item.hasField && item.fieldValue).map(item => ({
+          label: item.label,
+          display: item.fieldType === 'password' ? '•'.repeat(Math.min(item.fieldValue.length, 12)) : item.fieldValue,
+        }));
+        return f.length ? f : null;
+      })(),
+      caseLog: (this.state.logState[raw.id] || []).map(e => ({
+        ...e,
+        headline: e.type === 'contact' ? `Called ${e.who} — spoke with ${e.spoke}` : null,
+        body: e.type === 'contact' ? e.summary : e.text,
+      })),
+      logDraftType: this.state.logDraftType[raw.id] || 'note',
+      isNoteType: (this.state.logDraftType[raw.id] || 'note') === 'note',
+      isContactType: (this.state.logDraftType[raw.id] || 'note') === 'contact',
+      setLogTypeNote: () => this.setState(s => ({ logDraftType: { ...s.logDraftType, [raw.id]: 'note' } })),
+      setLogTypeContact: () => this.setState(s => ({ logDraftType: { ...s.logDraftType, [raw.id]: 'contact' } })),
+      noteTabBg: (this.state.logDraftType[raw.id] || 'note') === 'note' ? 'oklch(0.87 0.05 265)' : 'oklch(0.95 0 240)',
+      noteTabColor: (this.state.logDraftType[raw.id] || 'note') === 'note' ? 'oklch(0.28 0.1 265)' : 'oklch(0.5 0.015 60)',
+      contactTabBg: (this.state.logDraftType[raw.id] || 'note') === 'contact' ? 'oklch(0.87 0.05 265)' : 'oklch(0.95 0 240)',
+      contactTabColor: (this.state.logDraftType[raw.id] || 'note') === 'contact' ? 'oklch(0.28 0.1 265)' : 'oklch(0.5 0.015 60)',
+      logDraft: this.state.logDraft[raw.id] || {},
+      onLogTextChange: (e) => { const v = e.target.value; this.setState(s => ({ logDraft: { ...s.logDraft, [raw.id]: { ...(s.logDraft[raw.id]||{}), text: v } } })); },
+      onLogWhoChange: (e) => { const v = e.target.value; this.setState(s => ({ logDraft: { ...s.logDraft, [raw.id]: { ...(s.logDraft[raw.id]||{}), who: v } } })); },
+      onLogSpokeChange: (e) => { const v = e.target.value; this.setState(s => ({ logDraft: { ...s.logDraft, [raw.id]: { ...(s.logDraft[raw.id]||{}), spoke: v } } })); },
+      onLogSummaryChange: (e) => { const v = e.target.value; this.setState(s => ({ logDraft: { ...s.logDraft, [raw.id]: { ...(s.logDraft[raw.id]||{}), summary: v } } })); },
+      printCaseLog: () => printTextLog('Case Log', raw.name, (this.state.logState[raw.id] || []), e =>
+        e.type === 'contact'
+          ? `<div style="padding:10px 0;border-bottom:1px solid #eee"><b>Called ${e.who} — spoke with ${e.spoke}</b>${e.summary ? `<div>${e.summary}</div>` : ''}<div style="font-size:12px;color:#888;margin-top:4px">${e.author} · ${e.when}</div></div>`
+          : `<div style="padding:10px 0;border-bottom:1px solid #eee">${e.text}<div style="font-size:12px;color:#888;margin-top:4px">${e.author} · ${e.when}</div></div>`),
+      addLogEntry: () => {
+        const type = this.state.logDraftType[raw.id] || 'note';
+        const d = this.state.logDraft[raw.id] || {};
+        const author = raw.owner === '—' ? 'Office' : raw.owner;
+        let entry;
+        if (type === 'note') {
+          const text = (d.text || '').trim();
+          if (!text) return;
+          entry = { type, text, author, when: 'Just now' };
+        } else {
+          const who = (d.who || '').trim(), spoke = (d.spoke || '').trim();
+          if (!who || !spoke) return;
+          entry = { type, who, spoke, summary: (d.summary || '').trim(), author, when: 'Just now' };
+        }
+        this.setState(s => ({
+          logState: { ...s.logState, [raw.id]: [...(s.logState[raw.id] || []), entry] },
+          logDraft: { ...s.logDraft, [raw.id]: {} },
+        }));
+      },
+      caseTasks: this.state.tasks.filter(t => t.caseId === raw.id).map(t => ({
+        ...t,
+        toggle: () => this.setState(s => ({ tasks: s.tasks.map(x => x.id === t.id ? { ...x, done: !x.done } : x) })),
+        boxBg: t.done ? 'oklch(0.6 0.13 145)' : 'white',
+      })),
+      taskQuickDraft: this.state.taskDraftCaseQuick[raw.id] ?? '',
+      onTaskQuickChange: (e) => { const v = e.target.value; this.setState(s => ({ taskDraftCaseQuick: { ...s.taskDraftCaseQuick, [raw.id]: v } })); },
+      addCaseTask: () => {
+        const text = (this.state.taskDraftCaseQuick[raw.id] || '').trim();
+        if (!text) return;
+        this.setState(s => ({
+          tasks: [...s.tasks, { id: s.taskNextId, text, assignee: raw.owner === '—' ? (s.staffList[0]||'—') : raw.owner, done: false, caseId: raw.id }],
+          taskNextId: s.taskNextId + 1,
+          taskDraftCaseQuick: { ...s.taskDraftCaseQuick, [raw.id]: '' },
+        }));
+      },
+      timeline: buildTimeline(raw, checklist, displayIdx, raw.owner === '—' ? 'Office' : raw.owner),
+      printActivity: () => printTextLog('Activity Log', raw.name, buildTimeline(raw, checklist, displayIdx, raw.owner === '—' ? 'Office' : raw.owner), t =>
+        `<div style="padding:10px 0;border-bottom:1px solid #eee"><b>${t.who}</b> ${t.what}<div style="font-size:12px;color:#888;margin-top:4px">${t.when}</div></div>`),
+      documents,
+      printAllDocs: () => documents.forEach((d, i) => setTimeout(() => printDoc(d, raw.name), i * 400)),
+      uploadDoc: () => { this.setState({ uploadTargetId: raw.id }); this.fileInputRef.current?.click(); },
+    };
+  }
+
+  renderVals(){
+    const stages = getStages();
+    const allRaw = [...RAW_CASES, ...this.state.extraCases];
+    const cases = allRaw.map(r => this.buildCase(r));
+    const maxStageCount = Math.max(1, ...stages.map((_, idx) => cases.filter(c => c.displayStage === idx).length));
+    const stageBreakdown = stages.map((label, idx) => {
+      const count = cases.filter(c => c.displayStage === idx).length;
+      return {
+        label, count, pct: Math.round((count / maxStageCount) * 100), isAlert: label === "EDRS & Doctor / Cause of Death",
+        rowBg: this.state.stageFilter === idx ? 'oklch(0.89 0.06 265)' : 'transparent',
+        onClick: () => this.setState(s => ({ stageFilter: s.stageFilter === idx ? null : idx })),
+      };
+    });
+    const stageFilterLabel = this.state.stageFilter !== null ? stages[this.state.stageFilter] : null;
+    const stageFilteredCases = (this.state.stageFilter !== null ? cases.filter(c => c.displayStage === this.state.stageFilter) : [])
+      .map(c => ({
+        ...c,
+        selectBg: this.state.selectedCaseIds[c.id] ? 'oklch(0.32 0.1 265)' : 'white',
+        selectCheck: this.state.selectedCaseIds[c.id] ? '✓' : '',
+        toggleSelect: () => this.setState(s => ({ selectedCaseIds: { ...s.selectedCaseIds, [c.id]: !s.selectedCaseIds[c.id] } })),
+      }));
+    const selectedCount = Object.values(this.state.selectedCaseIds).filter(Boolean).length;
+    const q = this.state.searchQuery.trim().toLowerCase();
+    const searchFilteredCases = (q ? cases.filter(c =>
+      c.name.toLowerCase().includes(q) || c.nokPhone.toLowerCase().includes(q) || c.id.includes(q)
+    ) : cases).sort((a, b) => (b.stalled - a.stalled) || (b.daysWaiting - a.daysWaiting));
+    const selected = this.state.selectedId ? cases.find(c => c.id === this.state.selectedId) : null;
+
+    const stepperStages = selected ? stages.map((label, idx) => {
+      const done = idx < selected.displayStage, current = idx === selected.displayStage;
+      const viewable = idx <= selected.displayStage;
+      const onStepClick = viewable ? () => this.setState(s => ({ viewStage: { ...s.viewStage, [selected.id]: idx } })) : undefined;
+      const dotBg = done ? 'oklch(0.6 0.13 145)' : current ? 'oklch(0.32 0.1 265)' : 'white';
+      const dotBorder = done ? 'oklch(0.6 0.13 145)' : 'oklch(0.32 0.1 265)';
+      return {
+        num: done ? '✓' : String(idx+1),
+        label, hasNext: idx < stages.length - 1,
+        dotBg, dotBorder, dotText: (done||current) ? 'white' : 'oklch(0.32 0.1 265)',
+        labelColor: current ? 'oklch(0.25 0.02 60)' : 'oklch(0.6 0.02 60)',
+        lineColor: done ? 'oklch(0.6 0.13 145)' : 'oklch(0.9 0 240)',
+        onStepClick, cursor: viewable ? 'pointer' : 'default',
+      };
+    }) : [];
+
+    return {
+      isDashboard: this.state.view === 'dashboard',
+      isCaseView: this.state.view === 'case',
+      isTasksView: this.state.view === 'tasks',
+      isReportsView: this.state.view === 'reports',
+      goDashboard: () => this.setState({ view:'dashboard', selectedId:null }),
+      goTasks: () => this.setState({ view:'tasks' }),
+      goReports: () => this.setState({ view:'reports' }),
+      navBg: { dashboard: this.state.view==='dashboard' ? 'oklch(0.86 0.05 265)' : 'transparent', tasks: this.state.view==='tasks' ? 'oklch(0.86 0.05 265)' : 'transparent', reports: this.state.view==='reports' ? 'oklch(0.86 0.05 265)' : 'transparent' },
+      navColor: { dashboard: this.state.view==='dashboard' ? 'oklch(0.28 0.1 265)' : 'oklch(0.45 0.02 60)', tasks: this.state.view==='tasks' ? 'oklch(0.28 0.1 265)' : 'oklch(0.45 0.02 60)', reports: this.state.view==='reports' ? 'oklch(0.28 0.1 265)' : 'oklch(0.45 0.02 60)' },
+      todayLabel: "Wednesday, July 15",
+      activeCount: cases.filter(c => c.displayStage < stages.length - 1).length,
+      attentionCount: cases.filter(c => c.stalled).length,
+      completedTodayCount: 1,
+      urgentCases: cases.filter(c => c.stalled),
+      stageBreakdown,
+      stageFilterLabel,
+      stageFilteredCases,
+      clearStageFilter: () => this.setState({ stageFilter: null, selectedCaseIds: {} }),
+      hasSelectedCases: selectedCount > 0,
+      selectedCount,
+      bulkAdvance: () => {
+        const idsToAdvance = Object.keys(this.state.selectedCaseIds).filter(id => this.state.selectedCaseIds[id]);
+        this.setState(s => ({
+          extraCases: s.extraCases.map(c => idsToAdvance.includes(c.id) ? { ...c, stage: c.stage + 1, daysWaiting: 0 } : c),
+          selectedCaseIds: {},
+        }));
+        // note: RAW_CASES (seed data) isn't mutated here since it's a shared const; extraCases (new cases) advance immediately
+      },
+      searchQuery: this.state.searchQuery,
+      onSearchChange: (e) => this.setState({ searchQuery: e.target.value }),
+      searchFilteredCases,
+      noSearchResults: q.length > 0 && searchFilteredCases.length === 0,
+      showAllCasesList: this.state.stageFilter === null,
+      showNewCaseModal: this.state.showNewCaseModal,
+      stopClick: (e) => e.stopPropagation(),
+      reportStageBreakdown: stages.map((lbl, idx) => {
+        const inStage = cases.filter(c => c.displayStage === idx);
+        const target = this.getSlaDays(lbl);
+        const avgDays = inStage.length ? (inStage.reduce((sum, c) => sum + c.daysWaiting, 0) / inStage.length) : 0;
+        const isBottleneck = target != null && avgDays > target;
+        return {
+          label: lbl, count: inStage.length,
+          avgDays: avgDays.toFixed(1),
+          target: slaLabelFor(target),
+          isBottleneck,
+          avgColor: isBottleneck ? 'oklch(0.5 0.15 25)' : 'oklch(0.3 0.02 60)',
+        };
+      }),
+      reportStaffLoad: this.state.staffList.map(name => {
+        const owned = cases.filter(c => c.owner === name && c.displayStage < stages.length - 1);
+        return { name, count: owned.length, overdue: owned.filter(c => c.slaOverdue).length };
+      }),
+      reportTotalCases: cases.length,
+      reportActiveCases: cases.filter(c => c.displayStage < stages.length - 1).length,
+      reportCompletedCases: cases.filter(c => c.displayStage === stages.length - 1).length,
+      reportOverdueCount: cases.filter(c => c.slaOverdue).length,
+      reportOverduePct: cases.length ? Math.round((cases.filter(c => c.slaOverdue).length / cases.filter(c => c.displayStage < stages.length - 1).length || 0) * 100) : 0,
+      reportVeteranCases: cases.filter(c => this.state.veteranStatus[c.id]).map(c => {
+        const complete = VA_STEPS.every((_, i) => Boolean((this.state.vaSteps[c.id] || {})[i])) && this.state.vaPublish[c.id];
+        return { name: c.name, vaStatus: complete ? 'Complete' : 'In progress', statusColor: complete ? 'oklch(0.5 0.11 145)' : 'oklch(0.5 0.15 25)', open: c.open };
+      }),
+      noVeteranCases: cases.filter(c => this.state.veteranStatus[c.id]).length === 0,
+      taskList: [...this.state.tasks].sort((a,b) => a.done - b.done).map(t => {
+        const linkedCase = cases.find(c => c.id === t.caseId);
+        return {
+          ...t,
+          toggle: () => this.setState(s => ({ tasks: s.tasks.map(x => x.id === t.id ? { ...x, done: !x.done } : x) })),
+          remove: () => this.setState(s => ({ tasks: s.tasks.filter(x => x.id !== t.id) })),
+          checkboxBg: t.done ? 'oklch(0.6 0.13 145)' : 'white',
+          checkMark: t.done ? '✓' : '',
+          textColor: t.done ? 'oklch(0.6 0.015 60)' : 'oklch(0.25 0.02 60)',
+          strike: t.done ? 'line-through' : 'none',
+          linkedCaseName: linkedCase ? linkedCase.name : null,
+          goToCase: linkedCase ? linkedCase.open : null,
+        };
+      }),
+      taskDraft: this.state.taskDraft,
+      onTaskDraftChange: (e) => this.setState({ taskDraft: e.target.value }),
+      taskDraftAssignee: this.state.taskDraftAssignee,
+      onTaskAssigneeChange: (e) => this.setState({ taskDraftAssignee: e.target.value }),
+      taskDraftCaseId: this.state.taskDraftCaseId,
+      onTaskCaseChange: (e) => this.setState({ taskDraftCaseId: e.target.value }),
+      taskCaseOptions: cases.map(c => ({ id: c.id, name: c.name })),
+      staffOptionsGlobal: this.state.staffList,
+      addTask: () => {
+        const text = this.state.taskDraft.trim();
+        if (!text) return;
+        this.setState(s => ({
+          tasks: [...s.tasks, { id: s.taskNextId, text, assignee: s.taskDraftAssignee, done: false, caseId: s.taskDraftCaseId || null }],
+          taskNextId: s.taskNextId + 1, taskDraft: '', taskDraftCaseId: '',
+        }));
+      },
+      openNewCaseModal: () => this.setState({ showNewCaseModal: true, newCaseDraft: {} }),
+      closeNewCaseModal: () => this.setState({ showNewCaseModal: false }),
+      newCaseFieldGroups: (() => {
+        const groups = {};
+        NEW_CASE_FIELDS.forEach((f, i) => {
+          (groups[f.group] = groups[f.group] || []).push({
+            ...f, index: i,
+            value: this.state.newCaseDraft[i] ?? '',
+            type: f.password ? 'password' : 'text',
+            onChange: (e) => { const v = e.target.value; this.setState(s => ({ newCaseDraft: { ...s.newCaseDraft, [i]: v } })); },
+          });
+        });
+        return Object.entries(groups).map(([group, items]) => ({ group, items }));
+      })(),
+      canSubmitNewCase: (this.state.newCaseDraft[0] || '').trim().length > 0,
+      createCaseCursor: (this.state.newCaseDraft[0] || '').trim() ? 'pointer' : 'not-allowed',
+      createCaseBg: (this.state.newCaseDraft[0] || '').trim() ? 'oklch(0.32 0.1 265)' : 'oklch(0.8 0.02 265)',
+      submitNewCase: () => {
+        // Only a name is required to open the case. Any field left blank stays open on the
+        // checklist — the case sits in First Call & Payment until an employee fills it in
+        // (later steps stay locked behind it).
+        const d = this.state.newCaseDraft;
+        const createdBy = (d[0] || '').trim();
+        const name = (d[1] || '').trim();
+        if (!name || !createdBy) return;
+        const id = String(this.state.newCaseNextId);
+        const nokParts = (d[8]||'').split(' — ');
+        const cardParts = [d[9], d[10], d[11], d[12], d[13]].filter(Boolean);
+        const cardCombined = cardParts.length ? cardParts.join(' — ') : '';
+        const newCase = {
+          id, name, dob: d[3]||'—', dod: d[5]||'—', tod: d[6]||'—', location: (d[2]||'').split(' — ')[0] || d[2] || '—',
+          weight: d[4]||'—', nok: nokParts[0] || '—', nokPhone: nokParts[1] || '—',
+          owner: createdBy, createdBy, createdWhen: 'Just now',
+          stage: 0, daysWaiting: 0, stalled: false, paymentStatus: 'Awaiting payment',
+          // carried straight into the checklist (indices 0-7 map 1:1; index 8 combines the 5 card sub-fields)
+          seedFields: { 0:d[1],1:d[2],2:d[3],3:d[4],4:d[5],5:d[6],6:d[7],7:d[8],8:cardCombined },
+        };
+        this.setState(s => ({
+          extraCases: [...s.extraCases, newCase],
+          newCaseNextId: s.newCaseNextId + 1,
+          showNewCaseModal: false,
+          view: 'case', selectedId: id,
+        }));
+      },
+      nextPickupDay: "Friday, July 17",
+      companyNameDisplay: this.state.companyName,
+      pickupScheduleDisplay: this.state.pickupSchedule,
+      readyForCrematoryCount: cases.filter(c => c.stage === 4).length, // stage 4 = Permit & Auth sent, i.e. ready to hand off to crematory
+      activityFeed: [
+        {who:"Chris", what:"confirmed payment for Marie Suarez", when:"10 min ago"},
+        {who:"Removal team", what:"confirmed pickup for Walter Boone", when:"1 hr ago"},
+        {who:"Priya", what:"marked ashes ready for Arthur Kim", when:"3 hrs ago"},
+        {who:"System", what:"flagged George Alvarez — 9 days awaiting cert", when:"Today, 8:00am"},
+      ],
+      selectedCase: selected || {},
+      stepperStages,
+      fileInputRef: this.fileInputRef,
+      onFileSelected: (e) => {
+        const targetId = this.state.uploadTargetId;
+        const files = Array.from(e.target.files || []).map(f => ({ name: f.name, file: f, uploadedBy: 'You', when: 'Just now' }));
+        if (targetId && files.length) {
+          this.setState(s => ({ uploadedDocs: { ...s.uploadedDocs, [targetId]: [...(s.uploadedDocs[targetId] || []), ...files] } }));
+        }
+        e.target.value = '';
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>
