@@ -1,0 +1,9 @@
+node_modules
+.next
+out
+build
+coverage
+design
+docs
+*.md
+package-lock.json
