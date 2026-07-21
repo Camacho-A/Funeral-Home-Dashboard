@@ -1,0 +1,68 @@
+.panel {
+  background: var(--color-surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-10) var(--space-11);
+  box-shadow: var(--shadow-card);
+}
+
+.title {
+  font-size: var(--font-size-15);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-2);
+}
+
+.subtitle {
+  font-size: var(--font-size-12);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-7);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.label {
+  width: 220px; /* literal fixed column width — same pattern as StageStepper's min-width */
+  flex-shrink: 0;
+  font-size: var(--font-size-12);
+  color: var(--color-text-secondary);
+}
+
+.avg {
+  flex: 1;
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-semibold);
+}
+
+.avgNeutral {
+  color: var(--color-text-primary);
+}
+
+.avgDanger {
+  color: var(--color-danger-text);
+}
+
+.target {
+  flex-shrink: 0;
+  font-size: var(--font-size-11-5);
+  color: var(--color-text-muted);
+}
+
+.count {
+  flex-shrink: 0;
+  width: 26px;
+  text-align: right;
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-bold);
+  /* Same literal (0.3 0.02 60) as KpiTile's value text — see that
+     component's comment for why --color-text-primary is reused here. */
+  color: var(--color-text-primary);
+}

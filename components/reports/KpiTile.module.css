@@ -1,0 +1,46 @@
+.tile {
+  border-radius: var(--radius-md); /* consolidates the prototype's literal 16px, per tokens.css's own note */
+  padding: var(--space-9) var(--space-10);
+}
+
+.tileNeutral {
+  background: var(--color-surface-card);
+  box-shadow: var(--shadow-card);
+}
+
+.tileDanger {
+  background: var(--color-danger-bg);
+}
+
+.value {
+  font-size: var(--font-size-28);
+  font-weight: var(--font-weight-extrabold);
+}
+
+.valueNeutral {
+  /* Prototype literal is oklch(0.3 0.02 60) — ~0.05 darker than
+     --color-text-primary (0.25). Reused rather than adding a third
+     near-identical primary-text token for one screen's stat numbers. */
+  color: var(--color-text-primary);
+}
+
+.valueDanger {
+  color: var(--color-danger-text);
+}
+
+.label {
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-semibold);
+  margin-top: 3px; /* literal — odd value, no --space-N step lands on 3px */
+}
+
+.labelNeutral {
+  color: var(--color-text-muted);
+}
+
+.labelDanger {
+  /* Prototype literal is oklch(0.45 0.09 25) — a slightly muted variant of
+     --color-danger-text (0.5 0.15 25) used only for this tile's caption;
+     kept as a literal since it doesn't recur elsewhere. */
+  color: oklch(0.45 0.09 25);
+}

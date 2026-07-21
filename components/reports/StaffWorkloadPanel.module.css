@@ -1,0 +1,46 @@
+.panel {
+  background: var(--color-surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-10) var(--space-11);
+  box-shadow: var(--shadow-card);
+}
+
+.title {
+  font-size: var(--font-size-15);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-7);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.name {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+}
+
+.counts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.active {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+}
+
+.overdue {
+  font-size: var(--font-size-11);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-danger-text);
+}
