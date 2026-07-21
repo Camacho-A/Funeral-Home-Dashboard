@@ -1,0 +1,87 @@
+/*
+ * This card's internal color variety (title/count/name/reason/meta each a
+ * distinct shade of the danger hue, 25) is local to this one panel in the
+ * prototype — five one-off shades used nowhere else in the whole file, not
+ * reused elsewhere the way --color-danger-bg/-text are. Kept as local
+ * literals rather than global tokens (same precedent as
+ * components/layout/UserAvatar.module.css's one-off brand-text color),
+ * since promoting single-use values to global tokens would just be
+ * token-catalog bloat with no reuse benefit.
+ */
+.panel {
+  background: oklch(0.96 0.03 25);
+  border-radius: var(--radius-xl);
+  padding: var(--space-11) var(--space-12);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.title {
+  font-size: var(--font-size-15);
+  font-weight: var(--font-weight-bold);
+  color: oklch(0.4 0.1 25);
+}
+
+.count {
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-semibold);
+  color: oklch(0.48 0.1 25);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  cursor: pointer;
+  padding: var(--space-5) 0;
+  box-shadow: inset 0 -1px 0 oklch(0.88 0.05 25 / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  text-decoration: none;
+  color: inherit;
+}
+
+.rowMain {
+  min-width: 0;
+}
+
+.name {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-13-5);
+  color: oklch(0.3 0.03 25);
+}
+
+.reason {
+  font-size: var(--font-size-12);
+  color: oklch(0.45 0.08 25);
+  margin-top: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.days {
+  font-size: var(--font-size-11-5);
+  font-weight: var(--font-weight-bold);
+  color: oklch(0.4 0.1 25);
+}
+
+.expected {
+  font-size: var(--font-size-10);
+  color: oklch(0.5 0.08 25);
+  white-space: nowrap;
+}

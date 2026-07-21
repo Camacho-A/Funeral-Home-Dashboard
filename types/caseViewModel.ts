@@ -76,6 +76,16 @@ export type CaseViewModel = {
   needsAttention: boolean;
   attentionReason: string;
 
+  /** The label of the first not-yet-done checklist item ("Review case" if
+      none) — the prototype's own `nextAction` concept (buildCase()), i.e.
+      "what should happen next on this case." */
+  nextActionLabel: string;
+  /** stalledReason when stalled, else nextActionLabel — computed once here
+      rather than in every row component that displays it (Dashboard's
+      AllCasesList and StageFilteredPanel both need this exact fallback). */
+  rowSummaryText: string;
+  rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
+
   paymentStatus: PaymentStatus;
   paymentStatusVariant: BadgeVariant;
 

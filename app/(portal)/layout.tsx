@@ -1,5 +1,10 @@
 import { AppShell } from '@/components/layout/AppShell';
+import { CaseSearchProvider } from '@/hooks/useCaseSearch';
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <CaseSearchProvider>
+      <AppShell>{children}</AppShell>
+    </CaseSearchProvider>
+  );
 }

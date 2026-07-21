@@ -276,3 +276,18 @@ export const taskFixtures: CaseTask[] = [
     createdAt: '07/14/2026',
   },
 ];
+
+/**
+ * The Dashboard's "Recent activity" feed, ported verbatim from
+ * design/support.js's renderVals(). This is static, decorative content in
+ * the prototype itself — not derived from any case's real state changes
+ * (there's no activity-log service backing it) — so it's kept here as mock
+ * content, same as the other fixtures, rather than invented as "real" data
+ * with no actual source.
+ */
+export const activityFeedFixtures: Array<{ who: string; what: string; when: string }> = [
+  { who: 'Chris', what: 'confirmed payment for Marie Suarez', when: '10 min ago' },
+  { who: 'Removal team', what: 'confirmed pickup for Walter Boone', when: '1 hr ago' },
+  { who: 'Priya', what: 'marked ashes ready for Arthur Kim', when: '3 hrs ago' },
+  { who: 'System', what: 'flagged George Alvarez — 9 days awaiting cert', when: 'Today, 8:00am' },
+];

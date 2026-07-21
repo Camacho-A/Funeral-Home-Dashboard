@@ -30,9 +30,20 @@ export type StageBreakdownRow = {
   avgColor: Extract<BadgeVariant, 'danger' | 'neutral'>;
 };
 
+/**
+ * The per-stage grouping every stage-breakdown view needs (Reports' fuller
+ * version here, and the Dashboard's simpler count+percentage bar chart) —
+ * factored out so both call one shared function instead of each re-deriving
+ * "filter cases by displayStage" independently.
+ */
+export function groupCasesByDisplayStage(cases: CaseViewModel[]): CaseViewModel[][] {
+  return STAGES.map((_, displayStage) => cases.filter((c) => c.displayStage === displayStage));
+}
+
 export function computeStageBreakdown(cases: CaseViewModel[]): StageBreakdownRow[] {
+  const grouped = groupCasesByDisplayStage(cases);
   return STAGES.map((label, displayStage) => {
-    const inStage = cases.filter((c) => c.displayStage === displayStage);
+    const inStage = grouped[displayStage];
     const target = getSlaTargetDays(displayStage);
     const avgDays = inStage.length
       ? inStage.reduce((sum, c) => sum + c.daysWaitingInStage, 0) / inStage.length

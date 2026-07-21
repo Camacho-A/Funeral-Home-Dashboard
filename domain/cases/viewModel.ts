@@ -73,6 +73,18 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
       ? 'Veteran — VA process incomplete'
       : '';
 
+  // Ported from design/support.js's buildCase(): `nextAction` is the first
+  // not-yet-done checklist item's label, falling back to "Review case".
+  // `rowSubtext`/`actionColor` there duplicate the same
+  // stalled-reason-or-next-action fallback in two separate row templates —
+  // computed once here instead (nextActionLabel/rowSummaryText/Variant) so
+  // Phase 5's two list components (AllCasesList, StageFilteredPanel) share
+  // it rather than re-deriving it.
+  const firstUndoneItem = currentChecklist.find((item) => !item.done);
+  const nextActionLabel = firstUndoneItem?.label ?? 'Review case';
+  const rowSummaryText = case_.isStalled ? (case_.stalledReason ?? '') : nextActionLabel;
+  const rowSummaryVariant: 'danger' | 'neutral' = case_.isStalled ? 'danger' : 'neutral';
+
   const viewedChecklist =
     viewingDisplayStage != null
       ? buildChecklist(case_, toRawStage(viewingDisplayStage))
@@ -106,6 +118,9 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     stalledReason: case_.stalledReason,
     needsAttention,
     attentionReason,
+    nextActionLabel,
+    rowSummaryText,
+    rowSummaryVariant,
 
     paymentStatus: case_.paymentStatus,
     paymentStatusVariant: case_.paymentStatus === 'paid_in_full' ? 'success' : 'brand',
@@ -128,4 +143,16 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     ),
     requiredDocuments: buildRequiredDocuments(case_.rawStage),
   };
+}
+
+/**
+ * Triage ordering for a case list — stalled cases first, then longest-waiting
+ * first — ported from design/support.js's searchFilteredCases sort. This is
+ * a business-meaningful prioritization rule (which cases most need eyes on),
+ * not generic list plumbing, so it lives here rather than being inlined in
+ * whichever page happens to render a case list first (currently the
+ * Dashboard; Phase 6+ screens can reuse this same comparator).
+ */
+export function compareCasesByUrgency(a: CaseViewModel, b: CaseViewModel): number {
+  return Number(b.isStalled) - Number(a.isStalled) || b.daysWaitingInStage - a.daysWaitingInStage;
 }
