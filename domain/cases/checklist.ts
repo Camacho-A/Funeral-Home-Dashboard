@@ -120,3 +120,48 @@ export function buildChecklist(
     };
   });
 }
+
+/**
+ * Maps the New Case modal's intake fields (Phase 9) onto
+ * CHECKLIST_BY_RAW_STAGE[0]'s field indices, so a new case opens with its
+ * First Call & Payment checklist already reflecting whatever the intake
+ * call captured — ported from design/support.js's submitNewCase() seedFields
+ * mapping. Index 7 ("Family contact") and 8 ("Cardholder...") each combine
+ * multiple intake fields into the checklist's one free-text item, matching
+ * how the checklist itself only has one field at each of those positions.
+ * Indices 9-10 (payment collected / receipt sent) aren't intake-time facts,
+ * so they're intentionally left unset here.
+ */
+export function buildIntakeFieldValues(input: {
+  decedentName: string;
+  placeOfDeath: string;
+  dateOfBirth: string;
+  weight: string;
+  dateOfDeath: string;
+  timeOfDeath: string;
+  dcContact: string;
+  nextOfKinName: string;
+  nextOfKinPhone: string;
+  cardName: string;
+  cardNumber: string;
+  cardExp: string;
+  cardCvv: string;
+  cardZip: string;
+}): Record<number, string> {
+  const familyContact = [input.nextOfKinName, input.nextOfKinPhone].filter(Boolean).join(' — ');
+  const cardCombined = [input.cardName, input.cardNumber, input.cardExp, input.cardCvv, input.cardZip]
+    .filter(Boolean)
+    .join(' — ');
+
+  return {
+    0: input.decedentName,
+    1: input.placeOfDeath,
+    2: input.dateOfBirth,
+    3: input.weight,
+    4: input.dateOfDeath,
+    5: input.timeOfDeath,
+    6: input.dcContact,
+    7: familyContact,
+    8: cardCombined,
+  };
+}

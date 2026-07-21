@@ -36,7 +36,12 @@ export type Case = {
   placeOfDeath: string;
   weight: string; // e.g. "178 lb" — parsed at derivation time for the >200lb flag, see domain/cases/viewModel.ts
   rawStage: number; // 0-8; see domain/cases/stages.ts for the raw->display mapping
-  assignedStaffId: string | null; // references StaffProfile.id; null = unassigned ("—" in the prototype)
+  /** references StaffProfile.id; null = unassigned ("—" in the prototype).
+      The *current* case handler — freely reassignable any time via
+      CaseInformationCard's owner select (see useCaseMutations.reassignOwner).
+      Distinct from intakeOwnerId below, which never changes after creation
+      even though the two happen to start out equal. */
+  assignedStaffId: string | null;
   nextOfKinName: string;
   nextOfKinPhone: string;
   paymentStatus: PaymentStatus;
@@ -48,17 +53,49 @@ export type Case = {
   daysWaitingInStage: number; // mock-static for this phase; a real backend would derive this from a stage-entry timestamp
   isStalled: boolean;
   stalledReason: string | null;
-  createdBy: string | null;
+  createdBy: string | null; // references StaffProfile.id, per docs/CMS_SCHEMA.md's "staff member who opened the case" — same FK convention as assignedStaffId, not a free-text name
+  /** The staff member who took the intake call, derived automatically from
+      the trusted session at creation time (see casesService.create) — never
+      accepted from the New Case form and never editable afterward, unlike
+      assignedStaffId. Enforced at three layers: NewCaseInput has no such
+      field (so the form literally cannot supply one), CaseUpdate omits it
+      below (a compile-time guarantee), and
+      domain/cases/intakeOwnership.ts's assertIntakeOwnerUnchanged is a
+      runtime backstop against anything that reaches the service anyway
+      (an `as any` cast, or a future non-TS caller). Null only for
+      historical/seed records that predate this field — a real gap, not a
+      fabricated backfill. */
+  intakeOwnerId: string | null;
   createdAt: string;
   isDeleted: boolean; // soft-delete only, per docs/DECISIONS.md and docs/adr — never hard-deleted
 };
 
-export type NewCaseInput = Pick<
-  Case,
-  'decedentName' | 'nextOfKinName' | 'nextOfKinPhone' | 'createdBy'
-> &
-  Partial<Pick<Case, 'dateOfBirth' | 'dateOfDeath' | 'timeOfDeath' | 'placeOfDeath' | 'weight'>> & {
+/**
+ * Deliberately excludes `createdBy`, `intakeOwnerId`, and `assignedStaffId`
+ * from the required fields a caller must supply — all three are staff
+ * references that casesService.create derives from the trusted session
+ * parameter (see its own signature), never from client-editable form state.
+ * `assignedStaffId` stays available as an *optional* override for a future
+ * caller with an explicit assignee picker; the New Case modal doesn't pass
+ * one, so it falls back to the session default, matching
+ * design/support.js's `owner: createdBy` behavior.
+ */
+export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOfKinPhone'> &
+  Partial<
+    Pick<
+      Case,
+      'dateOfBirth' | 'dateOfDeath' | 'timeOfDeath' | 'placeOfDeath' | 'weight' | 'assignedStaffId'
+    >
+  > & {
     fieldValues?: Record<number, string>;
   };
 
-export type CaseUpdate = Partial<Omit<Case, 'id' | 'organizationId' | 'createdAt' | 'createdBy'>>;
+/**
+ * `createdBy` and `intakeOwnerId` are excluded here, not just left off
+ * NewCaseInput — this is the compile-time half of intakeOwnerId's
+ * immutability guarantee; domain/cases/intakeOwnership.ts's
+ * assertIntakeOwnerUnchanged is the runtime half.
+ */
+export type CaseUpdate = Partial<
+  Omit<Case, 'id' | 'organizationId' | 'createdAt' | 'createdBy' | 'intakeOwnerId'>
+>;

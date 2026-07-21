@@ -1,9 +1,7 @@
 import { staffFixtures } from '@/services/__mocks__/fixtures';
+import type { Session } from '@/types/session';
 
-export type Session = {
-  staffId: string;
-  displayName: string;
-};
+export type { Session };
 
 /**
  * Stubbed to a fixed mock staff user for this frontend-only phase — see

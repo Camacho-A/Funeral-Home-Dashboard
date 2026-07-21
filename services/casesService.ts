@@ -1,5 +1,7 @@
 import type { OrganizationContext } from '../types/organization';
 import type { Case, CaseUpdate, NewCaseInput } from '../types/case';
+import type { Session } from '../types/session';
+import { assertIntakeOwnerUnchanged } from '../domain/cases/intakeOwnership';
 import { caseFixtures } from './__mocks__/fixtures';
 
 export type CaseFilters = {
@@ -44,7 +46,19 @@ export async function get(context: OrganizationContext, caseId: string): Promise
   return found ?? null;
 }
 
-export async function create(context: OrganizationContext, input: NewCaseInput): Promise<Case> {
+/**
+ * `session` is a separate, trusted parameter — never folded into `input` —
+ * specifically so `createdBy`/`intakeOwnerId` can never be supplied by the
+ * New Case form. Both are derived here from `session.staffId`, the only
+ * source of truth for "who is taking this call." `assignedStaffId` also
+ * defaults to it (matching design/support.js's `owner: createdBy`) unless
+ * the caller explicitly overrides it via `input.assignedStaffId`.
+ */
+export async function create(
+  context: OrganizationContext,
+  input: NewCaseInput,
+  session: Session,
+): Promise<Case> {
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
     organizationId: context.organizationId,
@@ -55,7 +69,7 @@ export async function create(context: OrganizationContext, input: NewCaseInput):
     placeOfDeath: input.placeOfDeath ?? '—',
     weight: input.weight ?? '—',
     rawStage: 0,
-    assignedStaffId: null,
+    assignedStaffId: input.assignedStaffId ?? session.staffId,
     nextOfKinName: input.nextOfKinName,
     nextOfKinPhone: input.nextOfKinPhone,
     paymentStatus: 'awaiting_payment',
@@ -67,7 +81,8 @@ export async function create(context: OrganizationContext, input: NewCaseInput):
     daysWaitingInStage: 0,
     isStalled: false,
     stalledReason: null,
-    createdBy: input.createdBy,
+    createdBy: session.staffId,
+    intakeOwnerId: session.staffId,
     createdAt: new Date().toISOString(),
     isDeleted: false,
   };
@@ -80,6 +95,7 @@ export async function update(
   caseId: string,
   patch: CaseUpdate,
 ): Promise<Case> {
+  assertIntakeOwnerUnchanged(patch);
   const index = caseFixtures.findIndex(
     (c) => c.id === caseId && c.organizationId === context.organizationId,
   );

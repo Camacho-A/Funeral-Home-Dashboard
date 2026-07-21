@@ -241,6 +241,7 @@ export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw) => ({
   isStalled: raw.stalled,
   stalledReason: raw.stalledReason ?? null,
   createdBy: null,
+  intakeOwnerId: null, // predates this field — who actually took these historical calls is genuinely unknown, not backfilled
   createdAt: raw.dod, // no separate case-creation timestamp in the original seed data
   isDeleted: false,
 }));
