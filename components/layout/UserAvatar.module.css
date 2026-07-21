@@ -1,0 +1,15 @@
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--color-brand-tint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-bold);
+  color: oklch(
+    0.3 0.09 265
+  ); /* single-use variant of the brand hue, distinct enough from --color-brand/--color-brand-hover to keep as-is rather than force a third brand text token */
+  flex-shrink: 0;
+}

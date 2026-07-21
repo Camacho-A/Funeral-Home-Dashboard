@@ -1,0 +1,25 @@
+.item {
+  display: block;
+  padding: var(--space-5) var(--space-7);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.itemActive {
+  background: var(--color-brand-tint);
+  color: var(--color-brand-hover);
+}
+
+.itemInert {
+  cursor: default;
+  font-weight: var(--font-weight-medium);
+  /* Prototype's literal one-off here is oklch(0.52 0.015 60), used nowhere
+     else — close enough to --color-text-muted to reuse rather than add a
+     single-use token for it. */
+  color: var(--color-text-muted);
+}

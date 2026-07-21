@@ -84,6 +84,9 @@
     0.55 0.015 60
   ); /* 15+14 occurrences combined — the dominant muted/meta tone */
   --color-text-disabled: oklch(0.7 0.01 60); /* locked checklist item text */
+  /* Consolidates a small 0.65-lightness cluster (chroma 0.012 and 0.015, 2
+     occurrences each) — sidebar "staff online" line, activity timestamps. */
+  --color-text-faint: oklch(0.65 0.015 60);
 
   /* ---------------------------------------------------------------------
    * Typography. Font family is loaded via next/font/google in app/layout.tsx

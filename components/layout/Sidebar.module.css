@@ -1,0 +1,48 @@
+.sidebar {
+  width: 216px;
+  flex-shrink: 0;
+  background: var(--color-surface-sidebar);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-14) var(--space-9);
+  gap: var(--space-18);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-4);
+}
+
+.brandMark {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  flex-shrink: 0;
+}
+
+.brandWordmark {
+  font-size: var(--font-size-18);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.footer {
+  margin-top: auto;
+  font-size: var(--font-size-12);
+  color: var(--color-text-muted);
+  line-height: var(--leading-relaxed);
+  padding: 0 var(--space-4);
+}
+
+.footerStaffOnline {
+  color: var(--color-text-faint);
+}
