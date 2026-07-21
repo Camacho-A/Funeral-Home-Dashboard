@@ -1,0 +1,13 @@
+.composer {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.textInput {
+  flex: 1;
+}
+
+.caseSelect {
+  max-width: 160px;
+}

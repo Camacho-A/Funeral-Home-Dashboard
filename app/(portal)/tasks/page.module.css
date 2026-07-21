@@ -1,0 +1,19 @@
+/* No page-level padding here — AppShell's <main> (components/layout/
+   AppShell.module.css) already applies the shared content padding, and it
+   happens to match this view's own prototype literal (28px 32px 48px)
+   exactly, so nothing needs overriding. */
+
+.title {
+  font-size: var(--font-size-26);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tight);
+  margin-bottom: var(--space-12);
+}
+
+.card {
+  background: var(--color-surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-9) var(--space-11);
+  box-shadow: var(--shadow-card);
+  max-width: 640px;
+}

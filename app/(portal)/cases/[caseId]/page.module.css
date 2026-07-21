@@ -1,9 +1,7 @@
-.page {
-  padding: var(--space-12) var(--space-16) var(--space-24);
-}
-
 .loading {
-  padding: var(--space-12) var(--space-16);
+  /* No padding here — AppShell's <main> (components/layout/AppShell.module.css)
+     already applies the shared content padding; adding our own on top of it
+     double-stacked the spacing (a real Phase 6 bug, fixed alongside Phase 7). */
   color: var(--color-text-secondary);
 }
 

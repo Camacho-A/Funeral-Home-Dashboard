@@ -101,7 +101,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   }));
 
   return (
-    <div className={styles.page}>
+    <div>
       <CaseHeader
         id={viewModel.id}
         decedentName={viewModel.decedentName}

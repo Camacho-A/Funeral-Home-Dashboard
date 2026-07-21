@@ -1,4 +1,5 @@
 import type { Case } from '../../types/case';
+import type { CaseTask } from '../../types/task';
 import type { StaffProfile } from '../../types/staffProfile';
 
 /**
@@ -12,4 +13,16 @@ import type { StaffProfile } from '../../types/staffProfile';
 export function defaultAssigneeForCase(case_: Case, staffList: StaffProfile[]): string | null {
   if (case_.assignedStaffId) return case_.assignedStaffId;
   return staffList[0]?.id ?? null;
+}
+
+/**
+ * The Tasks page's own ordering — not-yet-done tasks first, done tasks
+ * pushed to the bottom — ported from design/support.js's
+ * `[...tasks].sort((a,b) => a.done - b.done)`. A business-meaningful
+ * prioritization (what still needs doing surfaces above what's already
+ * handled), so it lives here rather than inlined on the page, matching
+ * domain/cases/viewModel.ts's compareCasesByUrgency precedent.
+ */
+export function compareTasksForDisplay(a: CaseTask, b: CaseTask): number {
+  return Number(a.isDone) - Number(b.isDone);
 }
