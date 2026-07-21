@@ -2,7 +2,27 @@
 
 This document is the authoritative, source-controlled specification of the six Wix Data collections approved for Beacon's first backend integration. It supersedes `docs/CMS_SCHEMA.md`'s `Cases`, `CaseTasks`, and `StaffProfiles` sections for the collections defined here (that document predates both Phase 11's workflow templates and Phase 13's authentication model, and its field lists no longer match reality — see "Migration notes" below). See [ADR-009](./adr/ADR-009-wix-data-schema.md) for why this shape was chosen.
 
-**Status: approved, not yet created.** Every collection, field, index, and permission below was reviewed and approved. Actually creating these resources in Wix's Beacon Development project requires either Wix MCP tool access (not available in any Claude Code session to date — see "Known limitations") or manual creation in the Wix dashboard by a human, following this document exactly. Nothing in this document has been created in Wix as of this writing.
+**Status: created in Wix (Phase 14A, 2026-07-21).** All six collections, and all planned indexes except one (see "Index limits discovered" below), were created in the Beacon Development Wix site via the Wix Data REST API (`https://www.wixapis.com/wix-data/v2/collections`, `/wix-data/v2/indexes`), authenticated with a local, gitignored API key never printed or committed. No Wix MCP tool was used or became available — creation was done via direct REST calls instead. See "Creation record" below for exact resource IDs.
+
+## Creation record (Phase 14A, 2026-07-21)
+
+| Collection | Wix `collectionType` | Fields (incl. 4 system fields) | Indexes created | Permissions |
+|---|---|---|---|---|
+| `organizations` | NATIVE | 3 + 4 | `unique_beaconOrganizationId` (unique) | insert/update/remove/read: ADMIN |
+| `organizationMemberships` | NATIVE | 6 + 4 | `userId_organizationId` (regular, composite) | ADMIN ×4 |
+| `workflowTemplates` | NATIVE | 6 + 4 | `unique_beaconTemplateId` (unique), `organizationId_isEnabled` (regular) | ADMIN ×4 |
+| `workflowTemplateVersions` | NATIVE | 6 + 4 (all 6 custom fields `immutable: true`) | `beaconTemplateId_version` (regular, `version` DESC) | ADMIN ×4 |
+| `cases` | NATIVE | 29 + 4 (9 fields `immutable: true`, incl. `intakeOwnerId`; `caseHandlerId` confirmed NOT immutable) | `organizationId_isArchived`, `organizationId_currentStage`, `organizationId_caseHandlerId` (all regular) | ADMIN ×4 |
+| `tasks` | NATIVE | 7 + 4 | `organizationId_isDone` (regular), `caseId` (regular) | ADMIN ×4 |
+
+Verified via a read-only `listDataCollections` call immediately after creation: exactly 10 collections exist in the site — the 4 pre-existing Wix Members system collections (`Members/Badges`, `Members/FullData`, `Members/PrivateMembersData`, `Members/PublicData`, untouched) plus these 6 new ones. No other collection was created, modified, or deleted.
+
+### Corrections discovered during creation (updating this document's earlier proposal)
+
+- **Wix Data *does* support native field-level immutability** (`immutable: true` per field), applied to `intakeOwnerId`, `workflowTemplateVersions`' 6 fields, and other append-only-by-design fields. This is a real database-level guarantee, not purely application-enforced as this document originally assumed — corrected in "Known limitations" below. It does not, by itself, prevent deleting an entire item (that's controlled by the collection's `remove` permission, set to `ADMIN` here).
+- **Wix Data caps each collection at 3 regular indexes + 1 unique index** (confirmed from the created collections' own `capabilities.indexLimits`). `cases` was originally proposed with 4 regular indexes; the fourth (case lookup by `beaconCaseId` + `organizationId`) was dropped in favor of a documented Phase 15 implementation note: set the Wix item's own system `_id` equal to `beaconCaseId` at insert time, so single-case lookup is served by Wix's own system index on `_id` at no extra index cost, combined with an `organizationId` check in the query for isolation.
+- **True composite-unique constraints are not supported** — Wix's `unique` index option accepts exactly one field. `organizationMemberships (userId, organizationId)` and `workflowTemplateVersions (beaconTemplateId, version)` are therefore **regular** (non-unique) composite indexes for query performance; actual uniqueness for both pairs remains application-enforced (check-before-insert), exactly as this document's original "Known limitations" anticipated as a fallback.
+- **`caseTypes` contains-match indexing** was not attempted — array-field indexes aren't part of this API's index model; the documented application-layer fallback (filter in code after an `organizationId`-indexed query) stands as originally planned.
 
 **This phase is schema-only.** No application code reads or writes any of these collections. `DATA_ADAPTER=mock` remains the default and the only functioning mode; every `services/*` function still reads `services/__mocks__/fixtures.ts`.
 
@@ -173,8 +193,11 @@ No public write access, no unauthenticated read access, no member-self read acce
 
 ## Known limitations
 
-- **The Wix collections described here do not yet exist.** Creating them requires either working Wix MCP tool access (undiscoverable in every Claude Code session to date, despite `claude mcp list` reporting the connection healthy) or manual creation in the Wix dashboard by a human, following this document. A real `WIX_API_KEY` now exists locally (gitignored `.env.local`, verified 2026-07-21 via `GET /api/wix-health` — see `docs/WIX_INTEGRATION.md`), but that verification only exercised a read-only site-properties call; no Data/CMS write capability or programmatic collection-creation path has been attempted or confirmed.
-- **`workflowTemplateVersions`' append-only guarantee is application-enforced, not database-enforced.** Wix Data has no native immutability constraint; a future service bug could still call `.update()` against an existing version row. Recorded here rather than assumed away.
+- **All six collections now exist in Wix** (see "Creation record" above) — this limitation from the original proposal is resolved.
+- **`workflowTemplateVersions`' append-only guarantee is now field-level database-enforced** (`immutable: true` on all 6 custom fields) **but not item-level.** A field's *value* can't be changed once set, but the collection's `remove` permission (`ADMIN`) still allows deleting an entire version item outright. Application code should still never call `.update()` or `.remove()` against this collection in practice; the field-level flag is a real backstop against accidental value mutation, not a complete guarantee against deletion.
 - **The `intakeOwnerId`/`caseHandlerId`/`assigneeId` identity-space decision is not yet reflected in application code.** `hooks/useSession.ts` and `services/casesService.ts` still derive these from a hardcoded `StaffProfile` stub, disconnected from Phase 13's real login. This schema anticipates the eventual fix; the fix itself is not part of this phase.
-- **`workflowTemplates.organizationId`'s conditional requirement (required unless `isSystemTemplate=true`) is application-enforced,** not a native Wix Data constraint.
-- **Compound-unique and array-field indexing support** (`(beaconCaseId, organizationId)`, `caseTypes` contains-match combined with `organizationId`) needs confirming against the actual Wix Data collection editor once created; a documented application-layer fallback exists for each case where Wix Data doesn't support it natively.
+- **`workflowTemplates.organizationId`'s conditional requirement (required unless `isSystemTemplate=true`) is application-enforced,** not a native Wix Data constraint — implemented as `required: false` at the Wix field level.
+- **`cases` has only 3 of its originally-proposed 4 regular indexes** — Wix Data caps every collection at 3 regular + 1 unique index. Case lookup by `beaconCaseId` is deferred to a Phase 15 implementation choice (set the item's own system `_id` to `beaconCaseId` at insert time) rather than a dedicated index.
+- **Compound-unique constraints are not natively supported** — confirmed, not just suspected: Wix's unique-index option accepts exactly one field. `organizationMemberships (userId, organizationId)` and `workflowTemplateVersions (beaconTemplateId, version)` rely on application-enforced uniqueness (check-before-insert).
+- **`caseTypes` contains-match indexing** was not attempted — confirmed out of scope for this index API; the application-layer fallback stands.
+- **All newly created indexes were `BUILDING` at creation time**, not yet `ACTIVE` — normal Wix behavior for new indexes; no query depends on them yet since no application code reads or writes these collections.
