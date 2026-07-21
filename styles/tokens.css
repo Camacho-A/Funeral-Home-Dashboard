@@ -1,0 +1,166 @@
+/*
+ * Beacon design tokens (Frontend Engineering Plan, Phase 1).
+ *
+ * Every value below was measured directly from design/Beacon.dc.html (the
+ * approved working prototype), not copied from design/Beacon-Design-System.md's
+ * approximate ranges — per the client's ADR-driven priority (docs/adr/README.md,
+ * docs/UI_COMPONENTS.md), the working prototype is the literal visual source of
+ * truth; the design-system doc is the style *guide*, used here only to name and
+ * organize what the prototype actually does.
+ *
+ * Two kinds of deliberate simplification happen below, both called out inline:
+ *   1. Where the prototype uses several near-identical values for what is
+ *      clearly the same intended color/radius (hand-authored drift, e.g. two
+ *      button radii one pixel apart), those are consolidated into one token.
+ *   2. Where the prototype deliberately uses many closely-spaced *font sizes*
+ *      as real hierarchy (its own stated philosophy: "weight and color carry
+ *      hierarchy more than size" — see Beacon-Design-System.md Section 3), each
+ *      distinct size is preserved as its own token rather than collapsed.
+ *
+ * One confirmed disagreement between the two source documents, resolved in
+ * favor of the literal prototype: Beacon-Design-System.md lists the page-canvas
+ * background as oklch(0.97 0 240); the prototype's actual <body> background is
+ * oklch(0.94 0 240) (confirmed 3 literal occurrences). --color-surface-page
+ * below uses 0.94, matching the working prototype.
+ */
+
+:root {
+  /* ---------------------------------------------------------------------
+   * Color — brand (hue 265)
+   * ------------------------------------------------------------------- */
+  --color-brand: oklch(
+    0.32 0.1 265
+  ); /* 30 occurrences — buttons, current stage, checked boxes, links inside pills */
+  --color-brand-hover: oklch(0.28 0.1 265); /* 5 occurrences */
+  /* Tint cluster (0.86/0.87/0.89 0.05-0.06 265, 10 occurrences total) consolidated to one value */
+  --color-brand-tint: oklch(0.87 0.05 265);
+
+  /* Anchor-tag color is a distinct hue (230) from the brand color (265) in the
+     prototype's own <style> block — preserved as its own token, not merged
+     into --color-brand. */
+  --color-link: oklch(0.5 0.1 230);
+  --color-link-hover: oklch(0.4 0.1 230);
+
+  /* ---------------------------------------------------------------------
+   * Color — danger / attention (hue 25). Reserved exclusively for overdue,
+   * blocked, or destructive states — never decorative (Beacon-Design-System.md
+   * Section 2, "Usage rule").
+   * ------------------------------------------------------------------- */
+  --color-danger-bg: oklch(0.95 0.045 25); /* consolidates the 0.93-0.96 background cluster */
+  --color-danger-text: oklch(
+    0.5 0.15 25
+  ); /* 6 occurrences — the anchor value for danger text/icons */
+  --color-danger-border: oklch(0.85 0.06 25);
+
+  /* ---------------------------------------------------------------------
+   * Color — success (hue 145). Reserved exclusively for true completion —
+   * never "in progress" (Beacon-Design-System.md Section 2).
+   * ------------------------------------------------------------------- */
+  --color-success: oklch(0.6 0.13 145); /* 12 occurrences — checkmarks, "Paid in full" */
+  --color-success-text: oklch(0.5 0.11 145);
+
+  /* ---------------------------------------------------------------------
+   * Color — neutral surfaces (hue 240, zero chroma)
+   * ------------------------------------------------------------------- */
+  --color-surface-page: oklch(0.94 0 240); /* literal <body> background — see note above */
+  --color-surface-card: #ffffff; /* cards use literal `white`, not an oklch value, throughout the prototype */
+  --color-surface-sidebar: oklch(0.995 0 240);
+  --color-surface-subtle: oklch(
+    0.95 0 240
+  ); /* 11 occurrences — chip/tag backgrounds, stage-bar track */
+  --color-surface-muted: oklch(0.97 0 240);
+  --color-border: oklch(0.9 0 240); /* 13 occurrences — the dominant border color */
+  --color-border-subtle: oklch(0.92 0 240);
+  --color-scrollbar-thumb: oklch(0.85 0 240);
+
+  /* ---------------------------------------------------------------------
+   * Color — text (hue 60, low chroma). Named by role, not by a generic
+   * light/dark scale, since the prototype uses each of these for a specific
+   * recurring purpose.
+   * ------------------------------------------------------------------- */
+  --color-text-primary: oklch(0.25 0.02 60); /* 9 occurrences — headings, primary values */
+  --color-text-secondary: oklch(0.5 0.02 60); /* 8 occurrences — secondary labels, field values */
+  --color-text-muted: oklch(
+    0.55 0.015 60
+  ); /* 15+14 occurrences combined — the dominant muted/meta tone */
+  --color-text-disabled: oklch(0.7 0.01 60); /* locked checklist item text */
+
+  /* ---------------------------------------------------------------------
+   * Typography. Font family is loaded via next/font/google in app/layout.tsx
+   * (see the ADR-001 rationale) rather than the prototype's literal
+   * <link>/@import — --font-sans below is set to the CSS variable next/font
+   * exposes, with the prototype's own fallback stack preserved after it.
+   * ------------------------------------------------------------------- */
+  --font-sans:
+    var(--font-work-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Every literal font-size found in design/Beacon.dc.html, preserved
+     individually — see the file header note on why these are not collapsed
+     into a coarser scale. */
+  --font-size-10: 10px;
+  --font-size-10-5: 10.5px;
+  --font-size-11: 11px;
+  --font-size-11-5: 11.5px;
+  --font-size-12: 12px;
+  --font-size-12-5: 12.5px;
+  --font-size-13: 13px;
+  --font-size-13-5: 13.5px;
+  --font-size-14: 14px;
+  --font-size-15: 15px;
+  --font-size-18: 18px; /* modal title */
+  --font-size-20: 20px; /* modal close glyph */
+  --font-size-26: 26px; /* page / case-detail title */
+  --font-size-28: 28px; /* Reports KPI stat numbers */
+
+  --font-weight-regular: 400; /* implicit default — rarely set explicitly in the prototype, but real */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600; /* the single most common weight in the prototype (53 occurrences) */
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* -0.01em (2 occurrences) consolidated into -0.015em (3 occurrences) — both
+     are the same "tight title tracking" intent. */
+  --tracking-tight: -0.015em;
+  /* 0.03em and 0.04em (1 occurrence each) consolidated to one "wide label
+     tracking" token. */
+  --tracking-wide: 0.03em;
+
+  --leading-tight: 1.2;
+  --leading-relaxed: 1.6;
+
+  /* ---------------------------------------------------------------------
+   * Spacing. --space-N = N × 2px — a simple, single formula that covers
+   * every literal gap/padding value found in the prototype (which uses 2px
+   * and 4px multiples throughout) without inventing a coarser scale that
+   * would force rounding on real values.
+   * ------------------------------------------------------------------- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 18px;
+  --space-10: 20px;
+  --space-11: 22px;
+  --space-12: 24px;
+  --space-14: 28px;
+  --space-16: 32px;
+  --space-18: 36px;
+  --space-24: 48px; /* outer scroll-container bottom padding */
+
+  /* ---------------------------------------------------------------------
+   * Radius. Grounded in a frequency count of every border-radius value in
+   * the prototype (see the Phase 1 verification notes) — six real,
+   * distinct tiers, refining the Frontend Engineering Plan's approximate
+   * "8-10 / 12-16 / 18-20 / 50%" description now that exact data is available.
+   * ------------------------------------------------------------------- */
+  --radius-xs: 5px; /* checkboxes / small square controls */
+  --radius-sm: 9px; /* buttons, text inputs, selects — consolidates the 8px/9px cluster */
+  --radius-md: 14px; /* detail-tier section cards — consolidates the 12px/14px/16px cluster */
+  --radius-lg: 18px; /* stepper container, modal panel */
+  --radius-xl: 20px; /* large dashboard panels + pill-shaped badges/buttons/chips — the single most common radius in the file */
+  --radius-full: 50%; /* avatars, status dots */
+}
