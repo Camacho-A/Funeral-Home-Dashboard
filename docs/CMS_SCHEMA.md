@@ -1,5 +1,7 @@
 # CMS Schema
 
+**As of Phase 14, the `Cases`, `CaseTasks`, and `StaffProfiles` sections below are superseded by [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md)** — this document predates Phase 11's workflow templates and Phase 13's authentication model, and its field lists (including a `decedentFirstName`/`decedentLastName` split that was never actually implemented) no longer match the real schema. `CaseContacts` and `CaseLogEntries` below remain out of WIX_DATA_SCHEMA.md's scope and are still accurately described here.
+
 This document defines the Wix Data collections that back Beacon's operational data, and the Postgres schema that backs the compliance/document service. See [ARCHITECTURE.md](./ARCHITECTURE.md) for why the two are split.
 
 Every collection and table below carries an `organizationId` field, even though Version 1 has exactly one organization. No query is ever written without filtering on it. This is the mechanism that lets Beacon become multi-tenant later without a schema change — see [DECISIONS.md](./DECISIONS.md).
