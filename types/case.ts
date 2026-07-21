@@ -23,6 +23,8 @@
  *   business data (once a checklist item is checked, that's a fact, not
  *   transient UI state), not something layered on top separately.
  */
+import type { CaseWorkflowSnapshot } from './workflowTemplate';
+
 export type PaymentStatus = 'awaiting_payment' | 'paid_in_full';
 export type VaPublishChoice = 'publish' | 'private';
 
@@ -68,17 +70,43 @@ export type Case = {
   intakeOwnerId: string | null;
   createdAt: string;
   isDeleted: boolean; // soft-delete only, per docs/DECISIONS.md and docs/adr — never hard-deleted
+
+  /**
+   * Phase 11 (Workflow Template Architecture). Which workflow template —
+   * and, critically, which *version* of it — this case was created from.
+   * See types/workflowTemplate.ts and docs/TEMPLATE_VERSIONING.md.
+   */
+  workflowTemplateId: string;
+  workflowTemplateVersion: number;
+  /** Which of the template's supported case types this specific case is —
+      a template can support more than one (e.g. cremation + burial), so
+      the case itself has to record which one applies to it. */
+  caseType: string;
+  /** Immutable copy of the resolved stages/checklist/intake structure at
+      creation time — see types/workflowTemplate.ts's CaseWorkflowSnapshot
+      comment. Every stage/checklist-resolving domain function
+      (domain/workflow/*, domain/cases/viewModel.ts) reads this, never the
+      live WorkflowTemplate fixture, so editing a template later can never
+      retroactively change an existing case. Null only for historical/seed
+      records migrated before this field existed — see
+      docs/TEMPLATE_VERSIONING.md's migration notes; every backfilled
+      fixture case is given the Managed Cremations v1 snapshot, so in
+      practice this is non-null for all current mock data. */
+  workflowSnapshot: CaseWorkflowSnapshot | null;
 };
 
 /**
- * Deliberately excludes `createdBy`, `intakeOwnerId`, and `assignedStaffId`
- * from the required fields a caller must supply — all three are staff
- * references that casesService.create derives from the trusted session
- * parameter (see its own signature), never from client-editable form state.
- * `assignedStaffId` stays available as an *optional* override for a future
- * caller with an explicit assignee picker; the New Case modal doesn't pass
- * one, so it falls back to the session default, matching
- * design/support.js's `owner: createdBy` behavior.
+ * Deliberately excludes `createdBy`, `intakeOwnerId`, `assignedStaffId`,
+ * and the Phase 11 workflow fields (`workflowTemplateId`,
+ * `workflowTemplateVersion`, `caseType`, `workflowSnapshot`) from the
+ * required fields a caller must supply — all of these are derived by
+ * casesService.create from trusted parameters (session, the resolved
+ * WorkflowTemplate/version — see its own signature), never from
+ * client-editable form state. `assignedStaffId` stays available as an
+ * *optional* override for a future caller with an explicit assignee
+ * picker; the New Case modal doesn't pass one, so it falls back to the
+ * session default, matching design/support.js's `owner: createdBy`
+ * behavior.
  */
 export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOfKinPhone'> &
   Partial<
@@ -91,11 +119,25 @@ export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOf
   };
 
 /**
- * `createdBy` and `intakeOwnerId` are excluded here, not just left off
- * NewCaseInput — this is the compile-time half of intakeOwnerId's
- * immutability guarantee; domain/cases/intakeOwnership.ts's
- * assertIntakeOwnerUnchanged is the runtime half.
+ * `createdBy`, `intakeOwnerId`, `workflowTemplateId`, and
+ * `workflowTemplateVersion` are excluded here, not just left off
+ * NewCaseInput — this is the compile-time half of their immutability
+ * guarantee; domain/cases/intakeOwnership.ts's assertIntakeOwnerUnchanged
+ * is the runtime half for intakeOwnerId (the only one of these with an
+ * explicit "Rules" requirement to enforce at runtime too).
+ * `workflowSnapshot` is likewise excluded — it's a point-in-time copy, not
+ * something an update patch should ever touch.
  */
 export type CaseUpdate = Partial<
-  Omit<Case, 'id' | 'organizationId' | 'createdAt' | 'createdBy' | 'intakeOwnerId'>
+  Omit<
+    Case,
+    | 'id'
+    | 'organizationId'
+    | 'createdAt'
+    | 'createdBy'
+    | 'intakeOwnerId'
+    | 'workflowTemplateId'
+    | 'workflowTemplateVersion'
+    | 'workflowSnapshot'
+  >
 >;

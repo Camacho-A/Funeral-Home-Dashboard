@@ -7,135 +7,78 @@ import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
 import { useCreateCase } from '@/hooks/useCreateCase';
-import { buildIntakeFieldValues } from '@/domain/cases/checklist';
+import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
+import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import styles from './NewCaseModal.module.css';
 
-type FieldKey =
-  | 'decedentName'
-  | 'placeOfDeath'
-  | 'dateOfBirth'
-  | 'weight'
-  | 'dateOfDeath'
-  | 'timeOfDeath'
-  | 'dcContact'
-  | 'nextOfKinName'
-  | 'nextOfKinPhone'
-  | 'cardName'
-  | 'cardNumber'
-  | 'cardExp'
-  | 'cardCvv'
-  | 'cardZip';
-
-type FieldMeta = {
-  key: FieldKey;
-  label: string;
-  placeholder?: string;
-  password?: boolean;
-};
-
 /**
- * Grouping/order/copy ported directly from design/support.js's
- * NEW_CASE_FIELDS. Two deliberate deviations from the source, each because
- * our typed data model is already better than the string it was hand-rolling:
+ * Phase 11 (Workflow Template Architecture): intake sections/fields are no
+ * longer hardcoded here — they render generically from the organization's
+ * resolved WorkflowTemplate (useWorkflowTemplates()), specifically its
+ * latest version's IntakeTemplate. Managed Cremations' rendered form is
+ * unchanged (same groups/labels/placeholders/order) because its template
+ * fixture mirrors the pre-Phase-11 hardcoded field list exactly — see
+ * services/__mocks__/workflowTemplates.ts.
+ *
+ * The modal's title and description text stay static English copy, not
+ * template-driven — templatizing UI copy (as opposed to field structure)
+ * wasn't part of this phase's required behavior, and "First Call & Payment"
+ * is specifically Managed Cremations' own stage name, so a second
+ * organization would need its own copy anyway; deferring that is a
+ * documented scope limit (docs/TEMPLATE_VERSIONING.md), not an oversight.
+ *
+ * Two deliberate deviations from the original design/support.js prototype,
+ * carried into the template fixture rather than this component (so they'd
+ * apply to any organization, not just this one):
  *
  * 1. "Your name (taking this call)" is shown read-only below, sourced from
- *    useSession(), not an editable picker — the original stored it as an
- *    arbitrary typed string and reused it verbatim as the new case's
- *    `owner`. It's the intake owner now (types/case.ts's `intakeOwnerId`),
- *    which is deliberately never form-editable: derived only from the
- *    trusted session, both here and again inside casesService.create.
+ *    useSession(), and isn't part of the intake template at all — the
+ *    original stored it as an arbitrary typed string and reused it verbatim
+ *    as the new case's `owner`. It's the intake owner now (types/case.ts's
+ *    `intakeOwnerId`), deliberately never form-editable: derived only from
+ *    the trusted session, both here and again inside casesService.create.
  * 2. "Family contact — name, phone number & email" is two fields (name,
- *    phone) instead of one combined string. The original parsed a single
- *    typed value by splitting on " — ", which only worked if the user typed
- *    the delimiter exactly right; our Case type already has separate
- *    nextOfKinName/nextOfKinPhone fields, so there's nothing to parse.
- *
- * The checklist's own "Family contact"/"Cardholder..." items are still each
- * a single free-text field, so buildIntakeFieldValues recombines these split
- * inputs back into one string for fieldValues — the split only exists at
- * the structured-data layer, not the checklist's.
+ *    phone) instead of one combined string, since our Case type already
+ *    has separate nextOfKinName/nextOfKinPhone fields — see the template
+ *    fixture's own comment for how they still recombine into the
+ *    checklist's one free-text item.
  */
-const FIELD_GROUPS: { group: string; fields: FieldMeta[] }[] = [
-  {
-    group: 'Decedent',
-    fields: [
-      { key: 'decedentName', label: 'Name of deceased' },
-      { key: 'placeOfDeath', label: 'Place of death — name, address & phone number' },
-      { key: 'dateOfBirth', label: 'Date of birth', placeholder: 'MM/DD/YYYY' },
-      { key: 'weight', label: 'Weight', placeholder: 'e.g. 165 lb' },
-      { key: 'dateOfDeath', label: 'Date of death', placeholder: 'MM/DD/YYYY' },
-      { key: 'timeOfDeath', label: 'Time of death', placeholder: '24hr, e.g. 14:30' },
-    ],
-  },
-  {
-    group: 'Contacts',
-    fields: [
-      { key: 'dcContact', label: 'Hospice or physician to sign DC — name & phone number' },
-      { key: 'nextOfKinName', label: 'Next of kin — name' },
-      { key: 'nextOfKinPhone', label: 'Next of kin — phone number' },
-    ],
-  },
-  {
-    group: 'Payment',
-    fields: [
-      { key: 'cardName', label: 'Name on card' },
-      { key: 'cardNumber', label: 'Card number', password: true },
-      { key: 'cardExp', label: 'Expiration (MM/YY)' },
-      { key: 'cardCvv', label: 'CVV', password: true },
-      { key: 'cardZip', label: 'Billing zip code' },
-    ],
-  },
-];
-
-const EMPTY_DRAFT: Record<FieldKey, string> = {
-  decedentName: '',
-  placeOfDeath: '',
-  dateOfBirth: '',
-  weight: '',
-  dateOfDeath: '',
-  timeOfDeath: '',
-  dcContact: '',
-  nextOfKinName: '',
-  nextOfKinPhone: '',
-  cardName: '',
-  cardNumber: '',
-  cardExp: '',
-  cardCvv: '',
-  cardZip: '',
-};
-
 export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const session = useSession();
   const createCase = useCreateCase();
+  const { data: templates } = useWorkflowTemplates();
+  const template = templates?.find((t) => t.isEnabled);
+  const intake = template?.versions[template.versions.length - 1]?.intake;
 
-  const [draft, setDraft] = useState<Record<FieldKey, string>>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<Record<string, string>>({});
 
-  function setField(key: FieldKey, value: string) {
+  function setField(key: string, value: string) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
   function handleClose() {
-    setDraft(EMPTY_DRAFT);
+    setDraft({});
     onClose();
   }
 
-  const canSubmit = draft.decedentName.trim().length > 0;
+  const structuredFields = intake ? buildStructuredCaseFields(intake, draft) : {};
+  const canSubmit = Boolean(structuredFields.decedentName?.trim());
 
   function handleSubmit() {
-    if (!canSubmit) return;
+    if (!canSubmit || !intake) return;
 
     createCase.mutate(
       {
-        decedentName: draft.decedentName.trim(),
-        nextOfKinName: draft.nextOfKinName.trim(),
-        nextOfKinPhone: draft.nextOfKinPhone.trim(),
-        dateOfBirth: draft.dateOfBirth.trim() || undefined,
-        dateOfDeath: draft.dateOfDeath.trim() || undefined,
-        timeOfDeath: draft.timeOfDeath.trim() || undefined,
-        placeOfDeath: draft.placeOfDeath.trim() || undefined,
-        weight: draft.weight.trim() || undefined,
-        fieldValues: buildIntakeFieldValues(draft),
+        decedentName: structuredFields.decedentName ?? '',
+        nextOfKinName: structuredFields.nextOfKinName ?? '',
+        nextOfKinPhone: structuredFields.nextOfKinPhone ?? '',
+        dateOfBirth: structuredFields.dateOfBirth || undefined,
+        dateOfDeath: structuredFields.dateOfDeath || undefined,
+        timeOfDeath: structuredFields.timeOfDeath || undefined,
+        placeOfDeath: structuredFields.placeOfDeath || undefined,
+        weight: structuredFields.weight || undefined,
+        fieldValues: buildIntakeFieldValues(intake, draft),
       },
       {
         onSuccess: (newCase) => {
@@ -173,16 +116,16 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         </div>
       </div>
 
-      {FIELD_GROUPS.map((group) => (
-        <div key={group.group} className={styles.group}>
-          <div className={styles.groupLabel}>{group.group}</div>
+      {intake?.sections.map((section) => (
+        <div key={section.key} className={styles.group}>
+          <div className={styles.groupLabel}>{section.label}</div>
           <div className={styles.groupFields}>
-            {group.fields.map((field) => (
+            {section.fields.map((field) => (
               <div key={field.key}>
                 <div className={styles.fieldLabel}>{field.label}</div>
                 <TextField
                   type={field.password ? 'password' : 'text'}
-                  value={draft[field.key]}
+                  value={draft[field.key] ?? ''}
                   onChange={(e) => setField(field.key, e.target.value)}
                   placeholder={field.placeholder}
                 />

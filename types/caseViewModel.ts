@@ -113,4 +113,13 @@ export type CaseViewModel = {
 
   timeline: TimelineEntryViewModel[];
   requiredDocuments: RequiredDocumentViewModel[];
+
+  /** Phase 11 (Workflow Template Architecture): ordered display-stage
+      labels from this case's own workflowSnapshot, one per stepper
+      position — lets the Case Detail page build its stepper and
+      viewing-stage-label from real per-case template data instead of a
+      hardcoded stage-list import, so a case belonging to a different
+      workflow template renders its own stages correctly through the same
+      shared StageStepper component. */
+  stageLabels: string[];
 };

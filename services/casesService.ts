@@ -1,7 +1,9 @@
 import type { OrganizationContext } from '../types/organization';
 import type { Case, CaseUpdate, NewCaseInput } from '../types/case';
 import type { Session } from '../types/session';
+import type { WorkflowTemplate } from '../types/workflowTemplate';
 import { assertIntakeOwnerUnchanged } from '../domain/cases/intakeOwnership';
+import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
 import { caseFixtures } from './__mocks__/fixtures';
 
 export type CaseFilters = {
@@ -47,18 +49,26 @@ export async function get(context: OrganizationContext, caseId: string): Promise
 }
 
 /**
- * `session` is a separate, trusted parameter — never folded into `input` —
- * specifically so `createdBy`/`intakeOwnerId` can never be supplied by the
- * New Case form. Both are derived here from `session.staffId`, the only
- * source of truth for "who is taking this call." `assignedStaffId` also
- * defaults to it (matching design/support.js's `owner: createdBy`) unless
- * the caller explicitly overrides it via `input.assignedStaffId`.
+ * `session` and `template` are separate, trusted parameters — never folded
+ * into `input` — specifically so `createdBy`/`intakeOwnerId` (from
+ * session) and `workflowTemplateId`/`workflowTemplateVersion`/
+ * `workflowSnapshot` (from template) can never be supplied by the New Case
+ * form. `createdBy`/`intakeOwnerId` are derived from `session.staffId`, the
+ * only source of truth for "who is taking this call." `assignedStaffId`
+ * also defaults to it (matching design/support.js's `owner: createdBy`)
+ * unless the caller explicitly overrides it via `input.assignedStaffId`.
+ * `template` is the caller's already-resolved WorkflowTemplate (see
+ * hooks/useCreateCase.ts's "workflow selection logic" — which enabled
+ * template applies) — this function only snapshots whichever one it's
+ * given, it doesn't do the choosing itself.
  */
 export async function create(
   context: OrganizationContext,
   input: NewCaseInput,
   session: Session,
+  template: WorkflowTemplate,
 ): Promise<Case> {
+  const version = latestTemplateVersion(template);
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
     organizationId: context.organizationId,
@@ -85,6 +95,10 @@ export async function create(
     intakeOwnerId: session.staffId,
     createdAt: new Date().toISOString(),
     isDeleted: false,
+    workflowTemplateId: template.id,
+    workflowTemplateVersion: version.version,
+    caseType: version.caseTypes[0],
+    workflowSnapshot: buildCaseWorkflowSnapshot(template, version),
   };
   caseFixtures.push(newCase);
   return newCase;

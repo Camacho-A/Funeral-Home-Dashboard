@@ -3,14 +3,18 @@ import type { StaffProfile } from '../../types/staffProfile';
 import type { CaseTask } from '../../types/task';
 import type { CaseLogEntry } from '../../types/caseLogEntry';
 import type { CaseDocument } from '../../types/document';
+import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
+import { managedCremationsWorkflowTemplateFixture } from './workflowTemplates';
+import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
 
 /**
- * The single mock organization this frontend-only phase operates against —
- * see docs/adr/ADR-002-multi-tenant-architecture.md and .env.example's
- * NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID (same value, kept in sync by hand
- * until a real backend replaces this constant).
+ * Re-exported from ./organizationIds (not declared here) so
+ * workflowTemplates.ts can depend on the same constant without a circular
+ * import back to this file — see organizationIds.ts's own comment. Existing
+ * callers (hooks/useOrganization.tsx, tests) keep importing it from here
+ * unchanged.
  */
-export const DEFAULT_ORGANIZATION_ID = 'managed-cremations';
+export { DEFAULT_ORGANIZATION_ID };
 
 export const staffFixtures: StaffProfile[] = [
   {
@@ -218,6 +222,17 @@ const RAW_SEED_CASES: RawSeedCase[] = [
   },
 ];
 
+const managedCremationsV1 = latestTemplateVersion(managedCremationsWorkflowTemplateFixture);
+
+/**
+ * Phase 11 migration (see docs/TEMPLATE_VERSIONING.md's migration notes):
+ * every pre-existing seed case is backfilled onto the Managed Cremations
+ * v1 template — the only workflow that has ever existed for this
+ * organization's data, so there's nothing ambiguous to migrate. Each case
+ * gets its own structuredClone (via buildCaseWorkflowSnapshot) rather than
+ * one shared object, so nothing could ever leak a mutation from one case's
+ * snapshot into another's even though none is ever mutated in practice.
+ */
 export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw) => ({
   id: raw.id,
   organizationId: DEFAULT_ORGANIZATION_ID,
@@ -244,6 +259,10 @@ export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw) => ({
   intakeOwnerId: null, // predates this field — who actually took these historical calls is genuinely unknown, not backfilled
   createdAt: raw.dod, // no separate case-creation timestamp in the original seed data
   isDeleted: false,
+  workflowTemplateId: managedCremationsWorkflowTemplateFixture.id,
+  workflowTemplateVersion: managedCremationsV1.version,
+  caseType: 'cremation',
+  workflowSnapshot: buildCaseWorkflowSnapshot(managedCremationsWorkflowTemplateFixture, managedCremationsV1),
 }));
 
 /**

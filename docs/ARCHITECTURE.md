@@ -51,6 +51,10 @@ On login, the Next.js app validates the Wix Member session server-side, looks up
 - **`styles/`** — the shared design-token layer (OKLCH color variables, type scale, radius scale) extracted from the design source, plus global resets, so every component pulls from one place rather than repeating inline styles.
 - **`design/`** — the original exported design artifacts (`Beacon.dc.html`, `support.js`). These are treated as an immutable specification and are never imported into the running application or edited.
 
+## Workflow Template Architecture
+
+As of Phase 11, an organization's case workflow — stages, checklist items, intake fields — is versioned configuration (`types/workflowTemplate.ts`, resolved by `domain/workflow/`), not hardcoded domain constants or React components. Every `Case` stores which template/version it was created from plus an immutable snapshot of it, so editing a template later never changes an existing case. See [TEMPLATE_VERSIONING.md](./TEMPLATE_VERSIONING.md) for the full model and [ADR-006](./adr/ADR-006-workflow-template-architecture.md) for why. Note: the "Folder-to-Concern Mapping" section above still describes stage/checklist/SLA logic as living in `utils/` — that predates [ADR-004](./adr/ADR-004-domain-layer.md)'s decision to give it its own `domain/` layer instead; this document hasn't been corrected for that yet.
+
 ## API Layer
 
 Route Handlers under `app/api/*` are the only code with access to backend credentials. The pattern for every mutating handler is: verify session → check role → validate input → call the appropriate `services/*` function (scoped by the session's `organizationId`) → write an audit log entry (for anything touching compliance-relevant data) → return a response. See [API_SPEC.md](./API_SPEC.md) for the proposed route list (not yet implemented).

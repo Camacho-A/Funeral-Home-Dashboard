@@ -3,8 +3,10 @@ import { casesService } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
 import { DEFAULT_ORGANIZATION_ID, staffFixtures } from './__mocks__/fixtures';
+import { managedCremationsWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 
 const organization: OrganizationContext = { organizationId: DEFAULT_ORGANIZATION_ID };
+const template = managedCremationsWorkflowTemplateFixture;
 
 function sessionFor(staffId: string): Session {
   const staff = staffFixtures.find((s) => s.id === staffId);
@@ -19,6 +21,7 @@ describe('casesService.create — intake owner derivation', () => {
       organization,
       { decedentName: 'Test Decedent', nextOfKinName: '', nextOfKinPhone: '' },
       session,
+      template,
     );
 
     expect(newCase.intakeOwnerId).toBe(session.staffId);
@@ -31,6 +34,7 @@ describe('casesService.create — intake owner derivation', () => {
       organization,
       { decedentName: 'Another Decedent', nextOfKinName: '', nextOfKinPhone: '' },
       session,
+      template,
     );
 
     expect(newCase.assignedStaffId).toBe(session.staffId);
@@ -50,6 +54,7 @@ describe('casesService.create — intake owner derivation', () => {
       organization,
       maliciousInput as unknown as Parameters<typeof casesService.create>[1],
       session,
+      template,
     );
 
     expect(newCase.intakeOwnerId).toBe(session.staffId);
@@ -64,6 +69,7 @@ describe('casesService.update — intake owner immutability', () => {
       organization,
       { decedentName: 'Immutable Owner Test', nextOfKinName: '', nextOfKinPhone: '' },
       session,
+      template,
     );
 
     await expect(
@@ -82,6 +88,7 @@ describe('casesService.update — intake owner immutability', () => {
       organization,
       { decedentName: 'Reassignment Test', nextOfKinName: '', nextOfKinPhone: '' },
       session,
+      template,
     );
 
     const reassignedStaffId = staffFixtures[1].id;
@@ -99,11 +106,59 @@ describe('casesService.update — intake owner immutability', () => {
       organization,
       { decedentName: 'Ordinary Update Test', nextOfKinName: '', nextOfKinPhone: '' },
       session,
+      template,
     );
 
     const updated = await casesService.update(organization, created.id, { isVeteran: true });
 
     expect(updated.isVeteran).toBe(true);
     expect(updated.intakeOwnerId).toBe(session.staffId);
+  });
+});
+
+describe('casesService.create — workflow template snapshot (Phase 11)', () => {
+  it('stores the resolved template id/version and a matching snapshot', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      organization,
+      { decedentName: 'Snapshot Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    expect(newCase.workflowTemplateId).toBe(template.id);
+    expect(newCase.workflowTemplateVersion).toBe(1);
+    expect(newCase.caseType).toBe('cremation');
+    expect(newCase.workflowSnapshot?.stages.length).toBe(template.versions[0].stages.length);
+  });
+
+  it("editing the live template fixture's stages after creation does not change an existing case's snapshot", async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      organization,
+      { decedentName: 'Immutable Snapshot Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    const originalStageCount = newCase.workflowSnapshot?.stages.length;
+    const originalFirstLabel = newCase.workflowSnapshot?.stages[0]?.label;
+
+    // Mutate the *live* template fixture directly, simulating a future
+    // template edit (no editor exists yet, but the fixture is still a
+    // plain mutable array in memory).
+    const liveStages = template.versions[0].stages;
+    const removed = liveStages.pop();
+    liveStages[0] = { ...liveStages[0], label: 'MUTATED LABEL' };
+
+    try {
+      expect(newCase.workflowSnapshot?.stages.length).toBe(originalStageCount);
+      expect(newCase.workflowSnapshot?.stages[0]?.label).toBe(originalFirstLabel);
+      expect(newCase.workflowSnapshot?.stages[0]?.label).not.toBe('MUTATED LABEL');
+    } finally {
+      // Restore the shared fixture so other tests in this run aren't affected.
+      liveStages[0] = { ...liveStages[0], label: originalFirstLabel ?? liveStages[0].label };
+      if (removed) liveStages.push(removed);
+    }
   });
 });

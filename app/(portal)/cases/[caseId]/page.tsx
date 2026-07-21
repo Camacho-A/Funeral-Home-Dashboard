@@ -9,7 +9,6 @@ import { useCaseDocuments } from '@/hooks/useCaseDocuments';
 import { useCaseTasks } from '@/hooks/useCaseTasks';
 import { useStaff } from '@/hooks/useStaff';
 import { useSession } from '@/hooks/useSession';
-import { STAGES } from '@/domain/cases/stages';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
 import { printFile, printTextLog } from '@/utils/print';
 import { formatDaysAgo, formatTimestamp } from '@/utils/format';
@@ -58,7 +57,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   }
   if (!case_ || !viewModel) return null;
 
-  const stepperStages: StepperStage[] = STAGES.map((label, index) => ({
+  // Phase 11: sourced from viewModel.stageLabels (the case's own
+  // workflowSnapshot) instead of a hardcoded STAGES import, so a case
+  // belonging to a different organization's workflow template renders its
+  // own stages correctly through this exact same page.
+  const stepperStages: StepperStage[] = viewModel.stageLabels.map((label, index) => ({
     label,
     done: index < viewModel.displayStage,
     current: index === viewModel.displayStage,
@@ -148,7 +151,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
           <ChecklistCard
             checklist={viewModel.checklist}
-            viewingStageLabel={viewingDisplayStage != null ? STAGES[viewingDisplayStage] : null}
+            viewingStageLabel={viewingDisplayStage != null ? viewModel.stageLabels[viewingDisplayStage] : null}
             onBackToCurrentStage={() => setViewingDisplayStage(null)}
             onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone)}
             onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}

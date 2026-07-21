@@ -1,10 +1,16 @@
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
 import type { CaseViewModel, RequiredDocumentViewModel } from '../../types/caseViewModel';
-import { isBottleneckStage, toDisplayStage, toRawStage } from './stages';
-import { buildChecklist } from './checklist';
-import { resolveEffectiveDisplayStage, stageLabelFor } from './transitions';
-import { getSlaTargetDays, formatSlaTarget, isOverdue } from './sla';
+import { resolveChecklist } from '../workflow/resolveChecklist';
+import {
+  findStageByRawStage,
+  findStageByDisplayStage,
+  displayStagesInOrder,
+  lastDisplayStage,
+  isOverdue,
+} from '../workflow/resolveStages';
+import { resolveEffectiveDisplayStage } from './transitions';
+import { formatSlaTarget } from './sla';
 import {
   buildVaSteps,
   isVaCallbackDone,
@@ -37,7 +43,9 @@ function resolveOwner(case_: Case, staffList: StaffProfile[]): { name: string; i
  * exactly. Uploaded documents (from the compliance/document service, see
  * docs/ARCHITECTURE.md) are merged in by the caller in Phase 6 — this only
  * computes the stage-driven baseline, which is pure domain logic with no
- * service dependency.
+ * service dependency. Unchanged by Phase 11 (see docs/TEMPLATE_VERSIONING.md's
+ * "Known scope limits" — required-document rules aren't templatized this
+ * phase; Managed Cremations is the only organization with real documents).
  */
 function buildRequiredDocuments(rawStage: number): RequiredDocumentViewModel[] {
   if (rawStage >= 4) {
@@ -49,13 +57,30 @@ function buildRequiredDocuments(rawStage: number): RequiredDocumentViewModel[] {
   return [{ label: 'Cremation Authorization', status: rawStage >= 3 ? 'signed' : 'pending' }];
 }
 
+/**
+ * Phase 11 (Workflow Template Architecture): stage/checklist/SLA resolution
+ * now reads case_.workflowSnapshot (via domain/workflow/*) instead of the
+ * hardcoded domain/cases/stages.ts constants — this is what actually lets a
+ * differently-shaped organization's case resolve correctly through this
+ * exact function, not a parallel/untested path. Managed Cremations behaves
+ * identically to before because its snapshot is built from those same
+ * constants (see services/__mocks__/workflowTemplates.ts).
+ */
 export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): CaseViewModel {
   const { staffList, viewingDisplayStage = null } = context;
 
-  const rawDisplayStage = toDisplayStage(case_.rawStage);
-  const currentChecklist = buildChecklist(case_, case_.rawStage);
-  const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, currentChecklist);
-  const stageLabel = stageLabelFor(effectiveDisplayStage);
+  const snapshot = case_.workflowSnapshot;
+  if (!snapshot) {
+    throw new Error(`Case ${case_.id} has no workflowSnapshot — cannot resolve its stages/checklist`);
+  }
+
+  const rawDisplayStage = findStageByRawStage(snapshot, case_.rawStage)?.displayStage ?? 0;
+  const currentStageItems = findStageByRawStage(snapshot, case_.rawStage)?.checklist.items ?? [];
+  const currentChecklist = resolveChecklist(currentStageItems, case_);
+  const lastStage = lastDisplayStage(snapshot);
+  const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, currentChecklist, lastStage);
+  const effectiveStage = findStageByDisplayStage(snapshot, effectiveDisplayStage);
+  const stageLabel = effectiveStage?.label ?? '';
 
   const owner = resolveOwner(case_, staffList);
   // Used for attribution wherever an actor name is needed but the case may
@@ -63,7 +88,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // design/support.js's repeated `raw.owner === '—' ? 'Office' : raw.owner`.
   // Named once here so it isn't re-derived at each call site.
   const effectiveOwnerName = owner.name === '—' ? 'Office' : owner.name;
-  const slaTargetDays = getSlaTargetDays(effectiveDisplayStage);
+  const slaTargetDays = effectiveStage?.slaTargetDays ?? null;
   const vaSteps = buildVaSteps(case_);
 
   // needsAttention/attentionReason: faithfully reproduces design/support.js's
@@ -92,14 +117,17 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   const rowSummaryVariant: 'danger' | 'neutral' = case_.isStalled ? 'danger' : 'neutral';
 
   // A stage the case has already moved beyond is complete by definition
-  // (see checklist.ts's buildChecklist doc comment) — determined here from
-  // the case's own effective stage, not assumed from how the caller (the
-  // StageStepper) happens to restrict which stages are clickable.
+  // (see domain/workflow/resolveChecklist.ts's doc comment) — determined
+  // here from the case's own effective stage, not assumed from how the
+  // caller (the StageStepper) happens to restrict which stages are
+  // clickable.
   const viewedChecklist =
     viewingDisplayStage != null
-      ? buildChecklist(case_, toRawStage(viewingDisplayStage), {
-          isPastStage: viewingDisplayStage < effectiveDisplayStage,
-        })
+      ? resolveChecklist(
+          findStageByDisplayStage(snapshot, viewingDisplayStage)?.checklist.items ?? [],
+          case_,
+          { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+        )
       : currentChecklist;
 
   return {
@@ -112,7 +140,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
 
     displayStage: effectiveDisplayStage,
     stageLabel,
-    stageBadgeVariant: isBottleneckStage(effectiveDisplayStage) ? 'danger' : 'neutral',
+    stageBadgeVariant: effectiveStage?.isAttentionStage ? 'danger' : 'neutral',
 
     ownerStaffId: case_.assignedStaffId,
     ownerName: owner.name,
@@ -125,7 +153,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     daysWaitingInStage: case_.daysWaitingInStage,
     slaTargetDays,
     slaTargetLabel: formatSlaTarget(slaTargetDays),
-    isOverdue: isOverdue(effectiveDisplayStage, case_.daysWaitingInStage),
+    isOverdue: isOverdue(slaTargetDays, case_.daysWaitingInStage, effectiveDisplayStage, snapshot),
 
     isStalled: case_.isStalled,
     stalledReason: case_.stalledReason,
@@ -149,8 +177,14 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     checklist: viewedChecklist,
     viewingDisplayStage,
 
-    timeline: buildTimeline(case_, currentChecklist, rawDisplayStage, effectiveOwnerName),
+    timeline: buildTimeline(case_, currentChecklist, rawDisplayStage, effectiveOwnerName, snapshot),
     requiredDocuments: buildRequiredDocuments(case_.rawStage),
+
+    // Ordered display-stage labels from the case's own snapshot — lets the
+    // Case Detail page build its stepper/viewing-stage-label from real,
+    // per-case template data instead of importing the hardcoded STAGES
+    // constant (which only ever describes Managed Cremations' workflow).
+    stageLabels: displayStagesInOrder(snapshot).map((stage) => stage.label),
   };
 }
 

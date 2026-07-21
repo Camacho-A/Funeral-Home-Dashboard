@@ -1,8 +1,8 @@
 import type { Case } from '../../types/case';
 import type { ChecklistItemViewModel, TimelineEntryViewModel } from '../../types/caseViewModel';
+import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
 import { lowerFirst } from '../../utils/string';
-import { getChecklistLabels } from './checklist';
-import { toRawStage } from './stages';
+import { findStageByDisplayStage } from '../workflow/resolveStages';
 
 const REMOVAL_TEAM_PATTERN = /removal team|dispatch texted/i;
 const FUNERAL_DIRECTOR_PATTERN = /permit signed/i;
@@ -26,17 +26,24 @@ function actorFor(label: string, ownerName: string): string {
  * Timeline"). `ownerName` should already have the "Office" fallback applied
  * by the caller (see domain/tasks/rules.ts's defaultAssigneeForCase for the
  * same fallback used elsewhere).
+ *
+ * Phase 11: past-stage checklist labels are read from `snapshot` (the
+ * case's own immutable workflow snapshot) via findStageByDisplayStage,
+ * instead of the hardcoded getChecklistLabels(toRawStage(displayStage)) —
+ * every past stage is assumed fully done, same as
+ * domain/workflow/resolveChecklist.ts's isPastStage handling.
  */
 export function buildTimeline(
   case_: Case,
   currentChecklist: ChecklistItemViewModel[],
   currentDisplayStage: number,
   ownerName: string,
+  snapshot: CaseWorkflowSnapshot,
 ): TimelineEntryViewModel[] {
   const entries: Array<{ who: string; what: string }> = [];
 
   for (let displayStage = 0; displayStage < currentDisplayStage; displayStage++) {
-    const labels = getChecklistLabels(toRawStage(displayStage));
+    const labels = findStageByDisplayStage(snapshot, displayStage)?.checklist.items.map((item) => item.label) ?? [];
     labels.forEach((label) =>
       entries.push({ who: actorFor(label, ownerName), what: lowerFirst(label) }),
     );
