@@ -36,3 +36,10 @@ next-env.d.ts
 
 # storybook (optional, Phase 2.5)
 /storybook-static
+
+# local Claude Code / MCP configuration (Phase 12) — none exists in this repo
+# today (MCP server config lives in the user's home directory, outside any
+# repo), but ignored defensively in case a project-scoped server config is
+# ever added here later.
+.claude/
+.mcp.json
