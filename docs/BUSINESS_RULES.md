@@ -4,7 +4,7 @@ This document is a faithful extraction of the domain logic embedded in `design/B
 
 ## The Case Lifecycle — 7 Stages
 
-The design tracks 9 *raw* internal stage indices (0–8), but always displays 7 stages, because "First Call" and "Payment" are two raw stages that are always handled on the same phone call and are shown to staff as a single combined stage:
+The design tracks 8 *raw* internal stage indices (0–7), but always displays 7 stages, because "First Call" and "Payment" are two raw stages that are always handled on the same phone call and are shown to staff as a single combined stage:
 
 1. **First Call & Payment** *(raw stages 0 and 1, merged)*
 2. **Jotform Application**
@@ -47,13 +47,15 @@ Each stage (except "Completed," which has no target since it's the terminal stat
 | DC Application Sent | 2 days |
 | Ready for Pickup / Contact Family | 4 days |
 
-A case is **overdue** when its days-waiting-in-current-stage exceeds the stage's target and the case is not yet completed. Overdue cases are surfaced on the Dashboard's "Needs attention" panel and counted on the Reports screen. SLA targets are configurable per-organization overrides on top of these defaults (an admin-level setting).
+A case is **overdue** when its days-waiting-in-current-stage exceeds the stage's target and the case is not yet completed. Overdue status is shown as an inline "overdue" tag on the case's row and counted on the Reports screen, but — per a precise re-check of the actual logic while grounding the domain layer in Phase 4 — it does **not** by itself add a case to the Dashboard's "Needs attention" panel; see the correction below. SLA targets are configurable per-organization overrides on top of these defaults (an admin-level setting).
 
 ## The "Needs Attention" Rule
 
-A case needs attention if either of the following is true:
-- It is **stalled** (has an explicit reason it's stuck — e.g. "waiting on ME release," "death cert not yet filed by physician") — stalled reasons are entered by staff, not auto-detected from SLA breach alone.
-- It is flagged as a **veteran** and the VA notification workflow is not yet fully complete (see below).
+**Correction (Phase 4):** an earlier version of this document stated that overdue and veteran-incomplete cases both surface on the Dashboard's "Needs attention" panel. Re-checking the actual working prototype's code line by line during Phase 4 domain-layer work showed that isn't what it does.
+
+The panel's case list and count (`urgentCases`/`attentionCount` in `design/support.js`) are filtered **solely** on a case's `stalled` flag — an explicit annotation staff set on a case (with a free-text reason, e.g. "waiting on ME release," "death cert not yet filed by physician"), not auto-detected from SLA breach or veteran status.
+
+Separately, `buildCase()` *does* compute an `attentionReason` string that falls back to `"Veteran — VA process incomplete"` for a veteran case whose VA workflow isn't done — but since that field is only ever displayed for cases already in `urgentCases` (which requires `stalled: true`), and a stalled case's `attentionReason` always resolves to its `stalledReason` instead, **that veteran-incomplete branch is unreachable in the current build** — it appears to be an incomplete or abandoned feature in the original prototype, not a working rule. The domain layer (`domain/cases/viewModel.ts`) faithfully reproduces the prototype's actual behavior (attention driven by `stalled` alone) rather than "fixing" this — see that module's comments, and flag it to the client if the intended behavior (veteran-incomplete cases *should* surface on the dashboard) is worth implementing as a deliberate improvement in a later phase.
 
 ## Veteran / VA Notification Workflow
 
