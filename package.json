@@ -15,6 +15,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
     "@wix/business-tools": "^1.0.225",
+    "@wix/members": "^1.0.491",
     "@wix/sdk": "^1.21.13",
     "next": "^15.0.0",
     "react": "^19.0.0",

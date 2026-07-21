@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
 import { useCaseSearch } from '@/hooks/useCaseSearch';
 import { initialsFromName } from '@/utils/string';
+import { logoutAction } from '@/app/login/actions';
 import { SearchInput } from './SearchInput';
 import { UserAvatar } from './UserAvatar';
 import styles from './TopBar.module.css';
@@ -23,6 +24,11 @@ import styles from './TopBar.module.css';
  *
  * `onNewCaseClick` is a no-op placeholder until Phase 9 wires it to
  * NewCaseModal.
+ *
+ * The "Sign out" form (Phase 13) posts directly to logoutAction — a
+ * Server Action imported straight into this Client Component, no
+ * client-side auth logic added here at all, matching "keep authentication
+ * and authorization logic out of presentational React components."
  */
 export function TopBar({ onNewCaseClick }: { onNewCaseClick?: () => void }) {
   const { query, setQuery } = useCaseSearch();
@@ -34,6 +40,11 @@ export function TopBar({ onNewCaseClick }: { onNewCaseClick?: () => void }) {
       <div className={styles.spacer} />
       <Button onClick={onNewCaseClick}>+ New Case</Button>
       <UserAvatar initials={initialsFromName(session.displayName)} />
+      <form action={logoutAction}>
+        <button type="submit" className={styles.signOutButton}>
+          Sign out
+        </button>
+      </form>
     </div>
   );
 }

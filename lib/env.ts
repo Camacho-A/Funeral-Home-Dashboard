@@ -65,3 +65,50 @@ export function getWixServerConfig(): WixServerConfig {
 
   return { apiKey: apiKey!, siteId: siteId! };
 }
+
+/**
+ * The OAuth app Client ID for member login (Phase 13) — distinct from
+ * WIX_API_KEY/WIX_SITE_ID above, which authenticate as an *admin*, never a
+ * specific member. Per Wix's own docs, headless member OAuth needs only a
+ * Client ID (no client secret) for the custom-login-page flow this phase
+ * uses — see docs/AUTHENTICATION.md.
+ */
+export function getWixOAuthClientId(): string {
+  const clientId = process.env.WIX_OAUTH_CLIENT_ID;
+  if (!clientId) {
+    throw new Error(
+      'DATA_ADAPTER=wix requires WIX_OAUTH_CLIENT_ID, which is not set. ' +
+        'Set it in .env.local (see .env.example and docs/AUTHENTICATION.md), or set DATA_ADAPTER back to "mock".',
+    );
+  }
+  return clientId;
+}
+
+/**
+ * The HMAC signing key for Beacon's own session cookie (lib/auth/sessionToken.ts)
+ * — not a Wix credential at all, needed in *every* mode including mock, since
+ * mock login also issues a real signed session. Reuses SESSION_JWT_SECRET,
+ * reserved in .env.example since Phase 0 for exactly this purpose ("Wix
+ * Members session -> first-party JWT") — this session token is that
+ * first-party token, so it gets that name rather than a second,
+ * redundantly-named variable.
+ *
+ * Falls back to a fixed, clearly-insecure development value outside
+ * production so mock mode keeps requiring zero configuration, per
+ * "preserve mock mode as the default local-development mode" — but throws
+ * in production if a real secret hasn't been set, since shipping with the
+ * dev fallback would let anyone forge a valid session.
+ */
+export function getSessionSecret(): string {
+  const secret = process.env.SESSION_JWT_SECRET;
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'SESSION_JWT_SECRET is not set. A real, random secret is required in production — ' +
+        'see docs/AUTHENTICATION.md. Refusing to fall back to the development default.',
+    );
+  }
+
+  return 'beacon-development-only-insecure-session-secret-do-not-use-in-production';
+}

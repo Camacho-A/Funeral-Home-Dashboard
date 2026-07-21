@@ -10,3 +10,14 @@
 .spacer {
   flex: 1;
 }
+
+.signOutButton {
+  cursor: pointer;
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 0;
+}
