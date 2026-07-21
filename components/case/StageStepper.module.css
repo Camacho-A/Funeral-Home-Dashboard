@@ -1,0 +1,94 @@
+.stepper {
+  display: flex;
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-10);
+  margin-bottom: var(--space-12);
+  overflow-x: auto;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.stepButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 88px;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+
+.stepButtonViewable {
+  cursor: pointer;
+}
+
+.stepButtonDisabled {
+  cursor: default;
+}
+
+.dot {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  border-width: 2px;
+  border-style: solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-11);
+  font-weight: var(--font-weight-bold);
+}
+
+.dotDone {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: var(--color-surface-card);
+}
+
+.dotCurrent {
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+  color: var(--color-surface-card);
+}
+
+.dotUpcoming {
+  background: var(--color-surface-card);
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.label {
+  font-size: var(--font-size-10-5);
+  font-weight: var(--font-weight-semibold);
+  text-align: center;
+  line-height: var(--leading-tight);
+}
+
+.labelCurrent {
+  color: var(--color-text-primary);
+}
+
+.labelOther {
+  color: var(--color-text-muted);
+}
+
+.connector {
+  width: 36px;
+  height: 2px;
+  margin: 0 var(--space-1) 20px;
+}
+
+.connectorDone {
+  background: var(--color-success);
+}
+
+.connectorUpcoming {
+  background: var(--color-border);
+}

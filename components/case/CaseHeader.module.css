@@ -1,0 +1,53 @@
+.backLink {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  margin-bottom: var(--space-8);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-10);
+}
+
+.name {
+  font-size: var(--font-size-26);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.meta {
+  font-size: var(--font-size-14);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-2);
+}
+
+.stageColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.slaLine {
+  font-size: var(--font-size-11);
+  font-weight: var(--font-weight-semibold);
+}
+
+.slaNeutral {
+  color: var(--color-text-muted);
+}
+
+.slaOverdue {
+  color: var(--color-danger-text);
+}

@@ -62,6 +62,10 @@ export type CaseViewModel = {
   ownerStaffId: string | null;
   ownerName: string; // resolved display name, or "—" if unassigned
   ownerInitials: string;
+  /** ownerName, falling back to "Office" when unassigned — used for
+      attribution (activity timeline, case log author) where "—" wouldn't
+      make sense as an actor name. */
+  effectiveOwnerName: string;
 
   weight: string;
   weightOver200: boolean;
@@ -93,6 +97,11 @@ export type CaseViewModel = {
   veteranFlagLocked: boolean; // locked once the case is past First Call & Payment
   vaSteps: VaStepViewModel[];
   vaAllStepsDone: boolean;
+  /** Step index 1 ("VA called back with a date") is done — gates whether the
+      publish/private choice appears. Named rather than left for callers to
+      re-derive from vaSteps[1], since "which step index this is" is domain
+      knowledge (see domain/cases/veteran.ts's isVaCallbackDone). */
+  vaCallbackDone: boolean;
   vaPublishChoice: VaPublishChoice | null;
   vaComplete: boolean; // all steps done AND a publish choice made
 

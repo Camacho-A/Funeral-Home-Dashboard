@@ -1,0 +1,21 @@
+.page {
+  padding: var(--space-12) var(--space-16) var(--space-24);
+}
+
+.loading {
+  padding: var(--space-12) var(--space-16);
+  color: var(--color-text-secondary);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-10);
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}

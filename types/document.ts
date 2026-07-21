@@ -1,8 +1,7 @@
 /**
- * Not consumed by any service or hook yet — built for Phase 6's
- * DocumentsCard, backed eventually by the Postgres/object-storage service
- * (docs/ARCHITECTURE.md), not Wix Data. Matches docs/CMS_SCHEMA.md's
- * Document model.
+ * Backs Phase 6's DocumentsCard, via services/documentsService.ts —
+ * eventually the Postgres/object-storage service (docs/ARCHITECTURE.md),
+ * not Wix Data. Matches docs/CMS_SCHEMA.md's Document model.
  */
 export type DocumentType =
   | 'death_certificate'
@@ -22,4 +21,10 @@ export type CaseDocument = {
   status: DocumentStatus;
   uploadedBy: string;
   uploadedAt: string;
+};
+
+export type NewDocumentInput = {
+  fileName: string;
+  uploadedBy: string;
+  documentType?: DocumentType;
 };

@@ -68,8 +68,25 @@ export function isFirstCallStage(rawStage: number): boolean {
  * (domain/cases/viewModel.ts) is rendering a read-only historical view.
  * Every item's `done`/`locked` state is derived from `case_`, never stored
  * separately — see docs/adr/ADR-004-domain-layer.md.
+ *
+ * `isPastStage` is the fix for a real bug: `case_.checklistState`/
+ * `fieldValues` are only ever written for whatever stage the case is
+ * *currently* in — a stage the case has since advanced beyond has no
+ * checklistState/fieldValues entries of its own (they were never needed,
+ * since the case moved on) and so read as "incomplete" by the plain
+ * per-item logic below. But a case cannot reach a later stage without
+ * having completed the earlier one — that's the whole point of
+ * transitions.ts's stage-advancement rule — so a past stage is complete by
+ * definition, regardless of what checklistState happens to hold. The
+ * caller (buildCaseViewModel) sets this whenever the requested rawStage is
+ * strictly behind the case's actual current stage.
  */
-export function buildChecklist(case_: Case, rawStage: number): ChecklistItemViewModel[] {
+export function buildChecklist(
+  case_: Case,
+  rawStage: number,
+  options: { isPastStage?: boolean } = {},
+): ChecklistItemViewModel[] {
+  const { isPastStage = false } = options;
   const labels = getChecklistLabels(rawStage);
   const hasField = isFirstCallStage(rawStage);
 
@@ -81,10 +98,12 @@ export function buildChecklist(case_: Case, rawStage: number): ChecklistItemView
   const isFieldDone = (index: number) => fieldValueAt(index).length > 0;
 
   return labels.map((label, index) => {
-    const done = hasField ? isFieldDone(index) : isManuallyDone(index);
+    const done = isPastStage || (hasField ? isFieldDone(index) : isManuallyDone(index));
     const priorDone =
-      index === 0 ? true : hasField ? isFieldDone(index - 1) : isManuallyDone(index - 1);
-    const locked = index > 0 && !priorDone;
+      index === 0
+        ? true
+        : isPastStage || (hasField ? isFieldDone(index - 1) : isManuallyDone(index - 1));
+    const locked = !isPastStage && index > 0 && !priorDone;
 
     return {
       index,

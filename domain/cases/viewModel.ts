@@ -7,6 +7,7 @@ import { resolveEffectiveDisplayStage, stageLabelFor } from './transitions';
 import { getSlaTargetDays, formatSlaTarget, isOverdue } from './sla';
 import {
   buildVaSteps,
+  isVaCallbackDone,
   isVaComplete,
   isVeteranFlagLocked,
   needsVeteranAttention,
@@ -57,6 +58,11 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   const stageLabel = stageLabelFor(effectiveDisplayStage);
 
   const owner = resolveOwner(case_, staffList);
+  // Used for attribution wherever an actor name is needed but the case may
+  // be unowned (the timeline, and Phase 6's case log author) — ported from
+  // design/support.js's repeated `raw.owner === '—' ? 'Office' : raw.owner`.
+  // Named once here so it isn't re-derived at each call site.
+  const effectiveOwnerName = owner.name === '—' ? 'Office' : owner.name;
   const slaTargetDays = getSlaTargetDays(effectiveDisplayStage);
   const vaSteps = buildVaSteps(case_);
 
@@ -85,9 +91,15 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   const rowSummaryText = case_.isStalled ? (case_.stalledReason ?? '') : nextActionLabel;
   const rowSummaryVariant: 'danger' | 'neutral' = case_.isStalled ? 'danger' : 'neutral';
 
+  // A stage the case has already moved beyond is complete by definition
+  // (see checklist.ts's buildChecklist doc comment) — determined here from
+  // the case's own effective stage, not assumed from how the caller (the
+  // StageStepper) happens to restrict which stages are clickable.
   const viewedChecklist =
     viewingDisplayStage != null
-      ? buildChecklist(case_, toRawStage(viewingDisplayStage))
+      ? buildChecklist(case_, toRawStage(viewingDisplayStage), {
+          isPastStage: viewingDisplayStage < effectiveDisplayStage,
+        })
       : currentChecklist;
 
   return {
@@ -105,6 +117,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     ownerStaffId: case_.assignedStaffId,
     ownerName: owner.name,
     ownerInitials: owner.initials,
+    effectiveOwnerName,
 
     weight: case_.weight,
     weightOver200: parseInt(case_.weight, 10) > 200,
@@ -129,18 +142,14 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     veteranFlagLocked: isVeteranFlagLocked(case_.rawStage),
     vaSteps,
     vaAllStepsDone: VA_STEPS.every((_, index) => vaSteps[index]?.done ?? false),
+    vaCallbackDone: isVaCallbackDone(case_),
     vaPublishChoice: case_.vaPublishChoice,
     vaComplete: isVaComplete(case_),
 
     checklist: viewedChecklist,
     viewingDisplayStage,
 
-    timeline: buildTimeline(
-      case_,
-      currentChecklist,
-      rawDisplayStage,
-      owner.name === '—' ? 'Office' : owner.name,
-    ),
+    timeline: buildTimeline(case_, currentChecklist, rawDisplayStage, effectiveOwnerName),
     requiredDocuments: buildRequiredDocuments(case_.rawStage),
   };
 }

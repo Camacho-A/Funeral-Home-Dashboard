@@ -1,0 +1,79 @@
+.card {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-9) var(--space-10);
+}
+
+.title {
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-2);
+}
+
+.subtitle {
+  font-size: var(--font-size-12);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-7);
+}
+
+.viewingBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-6);
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-primary);
+}
+
+.backToCurrentButton {
+  cursor: pointer;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-brand);
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.item {
+  padding: 7px var(--space-3); /* 7px literal — between --space-3 (6px) and --space-4 (8px), no exact step */
+  border-radius: var(--radius-sm);
+}
+
+.itemRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.itemLabel {
+  font-size: var(--font-size-13-5);
+}
+
+.itemLabelDone {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+.itemLabelLocked {
+  color: var(--color-text-disabled);
+}
+
+.itemLabelActive {
+  color: var(--color-text-primary);
+}
+
+.fieldInput {
+  margin: var(--space-3) 0 var(--space-1) 28px;
+  width: calc(100% - 28px);
+}

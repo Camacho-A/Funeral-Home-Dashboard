@@ -1,6 +1,6 @@
 /**
- * Not consumed by any service or hook yet — built for Phase 6's
- * CaseLogCard. Matches docs/CMS_SCHEMA.md's CaseLogEntries collection.
+ * Backs Phase 6's CaseLogCard, via services/caseLogService.ts. Matches
+ * docs/CMS_SCHEMA.md's CaseLogEntries collection.
  */
 export type CaseLogEntry = {
   id: string;
@@ -13,4 +13,13 @@ export type CaseLogEntry = {
   contactSummary: string | null;
   author: string;
   createdAt: string;
+};
+
+export type NewCaseLogEntryInput = {
+  type: 'note' | 'contact';
+  text?: string;
+  contactedWho?: string;
+  contactedSpoke?: string;
+  contactSummary?: string;
+  author: string;
 };

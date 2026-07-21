@@ -1,6 +1,8 @@
 import type { Case, PaymentStatus } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
 import type { CaseTask } from '../../types/task';
+import type { CaseLogEntry } from '../../types/caseLogEntry';
+import type { CaseDocument } from '../../types/document';
 
 /**
  * The single mock organization this frontend-only phase operates against —
@@ -291,3 +293,20 @@ export const activityFeedFixtures: Array<{ who: string; what: string; when: stri
   { who: 'Priya', what: 'marked ashes ready for Arthur Kim', when: '3 hrs ago' },
   { who: 'System', what: 'flagged George Alvarez — 9 days awaiting cert', when: 'Today, 8:00am' },
 ];
+
+/**
+ * Both start empty — matching design/support.js's initial `logState: {}`
+ * and `uploadedDocs: {}` exactly: no case in the prototype's seed data has
+ * any case log entries or uploaded documents until a user adds them.
+ */
+export const caseLogFixtures: CaseLogEntry[] = [];
+export const documentFixtures: CaseDocument[] = [];
+
+/**
+ * Uploaded documents' actual browser File objects, keyed by document id —
+ * kept out of the CaseDocument type itself (a real backend would store
+ * bytes in object storage, not a JS File reference; see
+ * docs/ARCHITECTURE.md). Used only by documentsService's mock
+ * implementation to support the Print feature (utils/print.ts's printFile).
+ */
+export const documentFilesById = new Map<string, File>();
