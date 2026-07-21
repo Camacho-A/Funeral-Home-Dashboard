@@ -1,0 +1,41 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-xl);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-11-5);
+  padding: var(--space-1) var(--space-4);
+  white-space: nowrap;
+}
+
+.neutral {
+  background: var(--color-brand-tint);
+  color: var(--color-brand);
+}
+
+.brand {
+  background: var(--color-brand);
+  color: var(--color-surface-card);
+}
+
+.danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+/*
+ * No literal green-filled badge exists anywhere in the prototype — every use
+ * of green there is either a checkbox fill or plain text color (payment
+ * status, VA status). docs/UI_COMPONENTS.md's component inventory lists
+ * "green" as one of Badge's three variants regardless, for a future case
+ * such as an "Approved" document badge. Since there's no real value to
+ * measure, this tint is *constructed*, not measured: it mirrors the same
+ * lightness/chroma relationship --color-danger-bg has to --color-danger-text
+ * (roughly +0.45 lightness, chroma divided by ~3), applied to the success
+ * hue. Flagging this explicitly since every other token in this file is a
+ * literal measured value and this one deliberately isn't.
+ */
+.success {
+  background: oklch(0.95 0.035 145);
+  color: var(--color-success-text);
+}

@@ -1,0 +1,18 @@
+.card {
+  background: var(--color-surface-card);
+}
+
+/* Detail-tier: flat with a hairline border (Case Information, Checklist,
+   Case Log, Documents, etc.) */
+.bordered {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-9) var(--space-10);
+}
+
+/* Dashboard/stat-tier: soft shadow, no border */
+.elevated {
+  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-xl);
+  padding: var(--space-11) var(--space-12);
+}

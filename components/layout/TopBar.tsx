@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/Button';
 import { SearchInput } from './SearchInput';
 import { UserAvatar } from './UserAvatar';
 import styles from './TopBar.module.css';
@@ -35,9 +36,7 @@ export function TopBar({
     <div className={styles.topBar}>
       <SearchInput value={value} onChange={handleChange} />
       <div className={styles.spacer} />
-      <button type="button" className={styles.newCaseButton} onClick={onNewCaseClick}>
-        + New Case
-      </button>
+      <Button onClick={onNewCaseClick}>+ New Case</Button>
       <UserAvatar initials="MC" />
     </div>
   );

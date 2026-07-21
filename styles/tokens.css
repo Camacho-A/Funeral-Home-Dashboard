@@ -34,6 +34,9 @@
   --color-brand-hover: oklch(0.28 0.1 265); /* 5 occurrences */
   /* Tint cluster (0.86/0.87/0.89 0.05-0.06 265, 10 occurrences total) consolidated to one value */
   --color-brand-tint: oklch(0.87 0.05 265);
+  --color-brand-disabled: oklch(
+    0.8 0.02 265
+  ); /* disabled primary-button fill (New Case modal's "Create case" button) */
 
   /* Anchor-tag color is a distinct hue (230) from the brand color (265) in the
      prototype's own <style> block — preserved as its own token, not merged
@@ -69,9 +72,16 @@
     0.95 0 240
   ); /* 11 occurrences — chip/tag backgrounds, stage-bar track */
   --color-surface-muted: oklch(0.97 0 240);
-  --color-border: oklch(0.9 0 240); /* 13 occurrences — the dominant border color */
-  --color-border-subtle: oklch(0.92 0 240);
+  --color-surface-input: oklch(
+    0.99 0 240
+  ); /* 8 occurrences — text field/textarea backgrounds, distinct from card white */
+  --color-border: oklch(0.9 0 240); /* 12 occurrences — the dominant card/panel border color */
+  --color-border-subtle: oklch(0.92 0 240); /* consolidates the 0.92/0.93 single-use variants */
+  --color-border-input: oklch(
+    0.88 0 240
+  ); /* 7 occurrences — form control borders, a shade darker than card borders */
   --color-scrollbar-thumb: oklch(0.85 0 240);
+  --color-scrim: oklch(0.2 0 0 / 0.4); /* modal backdrop */
 
   /* ---------------------------------------------------------------------
    * Color — text (hue 60, low chroma). Named by role, not by a generic
@@ -166,4 +176,10 @@
   --radius-lg: 18px; /* stepper container, modal panel */
   --radius-xl: 20px; /* large dashboard panels + pill-shaped badges/buttons/chips — the single most common radius in the file */
   --radius-full: 50%; /* avatars, status dots */
+
+  /* ---------------------------------------------------------------------
+   * Shadow. Single elevation tier used throughout (Beacon-Design-System.md
+   * Section 9: "two-tier system only — flat-with-border or shadow-no-border").
+   * ------------------------------------------------------------------- */
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.03), 0 2px 12px oklch(0 0 0 / 0.03);
 }

@@ -1,0 +1,19 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.panel {
+  background: var(--color-surface-card);
+  border-radius: var(--radius-md);
+  width: 560px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--space-14) var(--space-16);
+}

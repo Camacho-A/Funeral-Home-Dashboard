@@ -1,0 +1,32 @@
+/*
+ * Select background is literally `white` everywhere in the prototype (never
+ * the 0.99 input tint TextField/TextArea use) — kept as its own distinct
+ * treatment rather than merged with TextField's background.
+ *
+ * Padding and radius vary across the prototype's own select instances
+ * (5px 8px/7px radius for owner-reassign vs. 9px 10px/9px radius for the
+ * Tasks page selects) — consolidated to the more common 9px/9px pairing,
+ * per "native select styling kept minimal/consistent" (Beacon-Design-System.md
+ * Section 7).
+ */
+.field {
+  font-family: inherit;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-input);
+  background: var(--color-surface-card);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.field:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+.field:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-disabled);
+}

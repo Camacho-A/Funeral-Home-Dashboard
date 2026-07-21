@@ -10,31 +10,3 @@
 .spacer {
   flex: 1;
 }
-
-/*
- * This is a one-off "+ New Case" button styled directly here rather than via
- * a shared Button component, since the Button primitive doesn't exist until
- * Phase 3. Revisit in Phase 3/9 — this should likely become
- * <Button variant="primary"> once that component exists, rather than staying
- * as its own styled element.
- */
-.newCaseButton {
-  padding: var(--space-5) var(--space-9);
-  border-radius: var(--radius-md);
-  border: none;
-  background: var(--color-brand);
-  color: var(--color-surface-card);
-  font-size: var(--font-size-13-5);
-  font-weight: var(--font-weight-semibold);
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.newCaseButton:hover {
-  background: var(--color-brand-hover);
-}
-
-.newCaseButton:focus-visible {
-  outline: 2px solid var(--color-brand-hover);
-  outline-offset: 2px;
-}

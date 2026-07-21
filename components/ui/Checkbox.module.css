@@ -1,0 +1,47 @@
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  border-width: 2px;
+  border-style: solid;
+  background: var(--color-surface-card);
+  color: var(--color-surface-card);
+  font-size: var(--font-size-11);
+  font-weight: var(--font-weight-extrabold);
+  cursor: pointer;
+  padding: 0;
+}
+
+.checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.sizeMd {
+  width: 18px;
+  height: 18px;
+}
+
+.sizeSm {
+  width: 16px;
+  height: 16px;
+}
+
+/* --- tone: brand (veteran toggle, bulk-select, dashboard stage-filter row) --- */
+.toneBrand {
+  border-color: var(--color-brand);
+}
+
+.toneBrand.checked {
+  background: var(--color-brand);
+}
+
+/* --- tone: success (checklist done-state, VA steps done-state, case tasks) --- */
+.toneSuccess {
+  border-color: var(--color-success);
+}
+
+.toneSuccess.checked {
+  background: var(--color-success);
+}
