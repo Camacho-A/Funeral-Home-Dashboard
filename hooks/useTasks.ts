@@ -6,6 +6,6 @@ export function useTasks(filters: TaskFilters = {}) {
   const organization = useOrganization();
   return useQuery({
     queryKey: ['tasks', organization.organizationId, filters],
-    queryFn: () => tasksService.list(organization, filters),
+    queryFn: () => tasksService.list(organization, filters, organization.dataAdapterMode),
   });
 }
