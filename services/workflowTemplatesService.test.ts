@@ -1,49 +1,100 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { workflowTemplatesService } from './workflowTemplatesService';
-import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
-import {
-  STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID,
-  SECOND_ORG_WORKFLOW_TEMPLATE_ID,
-} from './__mocks__/workflowTemplates';
+import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
+import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 
-describe('workflowTemplatesService — template loading', () => {
-  it("lists Managed Cremations' own template for its organization", async () => {
+/**
+ * Phase 15B: workflowTemplatesService now always fetch()es the Route
+ * Handlers under app/api/workflow-templates/ (see that file's own comment
+ * for why) — the actual mock-vs-Wix branching and organization-filtering
+ * logic now lives there and is tested directly in
+ * app/api/workflow-templates/route.test.ts and
+ * app/api/workflow-templates/[templateId]/route.test.ts. These tests
+ * cover only the service's own thin responsibilities: building the right
+ * URL, parsing the response, and getEnabledForCaseType()'s filter logic.
+ */
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('workflowTemplatesService.list', () => {
+  it('fetches the correct URL and returns the parsed templates', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ workflowTemplates: [standardCremationWorkflowTemplateFixture] }),
+    });
+
     const templates = await workflowTemplatesService.list({ organizationId: DEFAULT_ORGANIZATION_ID });
-    expect(templates.map((t) => t.id)).toEqual([STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID]);
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/workflow-templates?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+    expect(templates).toEqual([standardCremationWorkflowTemplateFixture]);
   });
 
+  it('throws on a non-ok response', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503 });
+    await expect(workflowTemplatesService.list({ organizationId: DEFAULT_ORGANIZATION_ID })).rejects.toThrow(
+      'Failed to load workflow templates.',
+    );
+  });
+});
+
+describe('workflowTemplatesService.get', () => {
+  it('fetches the correct URL, including organizationId as a query param', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ workflowTemplate: standardCremationWorkflowTemplateFixture }),
+    });
+
+    const template = await workflowTemplatesService.get(
+      { organizationId: DEFAULT_ORGANIZATION_ID },
+      standardCremationWorkflowTemplateFixture.id,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/workflow-templates/${standardCremationWorkflowTemplateFixture.id}?organizationId=${DEFAULT_ORGANIZATION_ID}`,
+    );
+    expect(template).toEqual(standardCremationWorkflowTemplateFixture);
+  });
+
+  it('returns null on a 404 rather than throwing', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 404 });
+    const template = await workflowTemplatesService.get({ organizationId: DEFAULT_ORGANIZATION_ID }, 'no-such-id');
+    expect(template).toBeNull();
+  });
+});
+
+describe('workflowTemplatesService.getEnabledForCaseType', () => {
   it('resolves the enabled template for a supported case type', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ workflowTemplates: [standardCremationWorkflowTemplateFixture] }),
+    });
+
     const template = await workflowTemplatesService.getEnabledForCaseType(
       { organizationId: DEFAULT_ORGANIZATION_ID },
       'cremation',
     );
-    expect(template?.id).toBe(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID);
+    expect(template?.id).toBe(standardCremationWorkflowTemplateFixture.id);
   });
 
-  it('returns null for a case type the organization has no enabled template for', async () => {
+  it('returns null for a case type with no enabled template', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ workflowTemplates: [standardCremationWorkflowTemplateFixture] }),
+    });
+
     const template = await workflowTemplatesService.getEnabledForCaseType(
       { organizationId: DEFAULT_ORGANIZATION_ID },
       'burial',
     );
     expect(template).toBeNull();
-  });
-});
-
-describe('workflowTemplatesService — organization isolation', () => {
-  it("does not return Managed Cremations' template when queried under a different organizationId", async () => {
-    const templates = await workflowTemplatesService.list({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
-    expect(templates.map((t) => t.id)).not.toContain(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID);
-  });
-
-  it("returns the second organization's own, differently-shaped template under its own context", async () => {
-    const templates = await workflowTemplatesService.list({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
-    expect(templates.map((t) => t.id)).toEqual([SECOND_ORG_WORKFLOW_TEMPLATE_ID]);
-    expect(templates[0].caseTypes).toEqual(['burial']);
-    expect(templates[0].versions[0].stages).toHaveLength(3); // vs. Managed Cremations' 8 raw stages
-  });
-
-  it('a mismatched organizationId returns an empty list, not a cross-tenant leak', async () => {
-    const templates = await workflowTemplatesService.list({ organizationId: 'some-other-org' });
-    expect(templates).toEqual([]);
   });
 });
