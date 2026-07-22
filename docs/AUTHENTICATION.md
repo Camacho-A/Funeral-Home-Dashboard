@@ -23,7 +23,8 @@ GET /login?next=/dashboard
  (mock: email+password;
   wix: same form, same
   fields — the action
-  branches on DATA_ADAPTER)
+  branches on AUTH_ADAPTER,
+  independent of DATA_ADAPTER)
 
 POST /login (form submit) ────────────────────────────────────────► loginAction (Server Action)
                                                                        │
@@ -74,7 +75,7 @@ Two independent checks must both pass before any portal page renders:
 
 With exactly one active membership (today's default mock user), it's auto-selected — no UI needed. With more than one and no explicit selection, `resolveAuthorizationContext` returns `selection_required` rather than guessing; this phase doesn't build a switcher UI, just the mechanism a future one would call into.
 
-**What "membership data" means today:** there is no Wix data collection for organization memberships (creating one is out of this phase's scope), so `resolveAuthorizationContext` reads `services/__mocks__/authFixtures.ts` regardless of `DATA_ADAPTER`. A real Wix member can log in for real (if `DATA_ADAPTER=wix` and an OAuth app exists — see below), but their organization access is *not yet* resolved from anything Wix-hosted; see "Known limitations."
+**What "membership data" means today:** organization membership data always lives in `services/__mocks__/authFixtures.ts`, regardless of `DATA_ADAPTER` or `AUTH_ADAPTER` — there is no Wix data collection for organization memberships (creating one is out of this phase's scope). A real Wix member can log in for real (if `AUTH_ADAPTER=wix` and an OAuth app exists — see below), but their organization access is *not yet* resolved from anything Wix-hosted; see "Known limitations."
 
 ## Files created
 
@@ -116,9 +117,30 @@ No other new package. Session signing uses the platform's own Web Crypto API, no
 | Variable | Public/Private | Notes |
 |---|---|---|
 | `SESSION_JWT_SECRET` | **Private** | HMAC key for Beacon's own session cookie — reuses the name reserved in `.env.example` since Phase 0. Falls back to a fixed, clearly-insecure development value outside production (so mock mode needs zero new configuration); **throws in production if unset** |
-| `WIX_OAUTH_CLIENT_ID` | Private-ish (a client ID, not a secret by Wix's own design — headless member OAuth needs no client secret) | Required only when `DATA_ADAPTER=wix` and a real login attempt happens |
+| `WIX_OAUTH_CLIENT_ID` | Private-ish (a client ID, not a secret by Wix's own design — headless member OAuth needs no client secret) | Required only when `AUTH_ADAPTER=wix` |
+| `AUTH_ADAPTER` | Public-ish (just `"mock"` or `"wix"`, no secret value) | Controls which login provider is used — independent of `DATA_ADAPTER`; defaults to `"mock"` if unset. See "Development vs. production adapter combinations" below. |
 
 `WIX_API_KEY`/`WIX_SITE_ID` (Phase 12) are unrelated to member login — those authenticate as an *admin*, never as a specific member, and stay reserved for the Phase 12 health check only.
+
+## Development vs. production adapter combinations
+
+`DATA_ADAPTER` and `AUTH_ADAPTER` are independent switches (Phase 15A.1 — see [ADR-011](./adr/ADR-011-auth-data-adapter-separation.md)). All four combinations are valid; the two below are the ones actually expected to be used:
+
+**Development** — real Wix-backed data, without needing a real Wix member account yet:
+```
+DATA_ADAPTER=wix
+AUTH_ADAPTER=mock
+```
+Reads (organizations today) come from the real Wix project; login still uses the mock credentials (`dana@managedcremations.test` / `mock-password-not-real`). This is the combination Phase 15A's own read integration was verified against.
+
+**Future production** — everything real:
+```
+DATA_ADAPTER=wix
+AUTH_ADAPTER=wix
+```
+Requires a real Wix Member account to exist and a verified `WIX_OAUTH_CLIENT_ID` (see "Wix dashboard setup" below) — neither exists yet as of this writing.
+
+Mock mode for both (`DATA_ADAPTER=mock`, `AUTH_ADAPTER=mock` — the default when both are unset) and the fourth combination (mock data, real Wix login) are also fully supported; the latter is mainly useful for testing the Wix login flow in isolation before real Wix-backed data reads are needed.
 
 ## Wix dashboard setup required (not done — presented for your approval)
 
@@ -159,7 +181,7 @@ Every mock identity's `id` is prefixed `mock-` (e.g. `mock-user-dana`) — a rea
 
 ## Known limitations
 
-- **Organization membership has no real data source.** Even in `DATA_ADAPTER=wix` mode, `resolveAuthorizationContext` reads the same mock fixtures mock mode does — there's no Wix (or other) collection for memberships yet. A real Wix member who successfully logs in today would still need a membership record invented for them somehow before they could access any organization; this phase doesn't solve that.
+- **Organization membership has no real data source.** Regardless of `DATA_ADAPTER` or `AUTH_ADAPTER`, `resolveAuthorizationContext` reads the same mock fixtures mock mode does — there's no Wix (or other) collection for memberships yet. A real Wix member who successfully logs in today would still need a membership record invented for them somehow before they could access any organization; this phase doesn't solve that.
 - **No token persistence for real Wix members.** `loginWithWix` discards the Wix access/refresh tokens immediately after resolving identity. This means a real member's Beacon session proves who they are but grants no ability for Beacon to call further Wix APIs on their behalf — by design for this phase (no service calls Wix on a user's behalf yet either), but a real gap for whenever that changes.
 - **No organization-switcher UI.** `resolveAuthorizationContext`'s `selection_required` case is a real, tested code path with no UI consumer — a user with multiple memberships is currently sent back to login with a message telling them to contact an administrator, not offered a picker.
 - **Password reset, email verification, and CAPTCHA states** in `lib/auth/wixAuth.ts` are recognized and returned as distinct failure reasons, but none has dedicated UI — they all currently render as a generic message on the login page.

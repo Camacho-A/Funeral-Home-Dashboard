@@ -17,16 +17,6 @@ export const mockOrganizationFixtures: Organization[] = [
 ];
 
 /**
- * Resolves an organizationId to its display name for UI use (e.g. Sidebar,
- * Reports' org selector) — the mock-mode equivalent of a real lookup
- * against a future organizations data source. Falls back to the raw id if
- * no fixture matches, rather than throwing, since this is presentation-only.
- */
-export function getMockOrganizationName(organizationId: string): string {
-  return mockOrganizationFixtures.find((org) => org.id === organizationId)?.name ?? organizationId;
-}
-
-/**
  * The default mock user — used by the mock login flow and local dev.
  * Belongs to exactly one organization (Managed Cremations), per this
  * phase's own requirement. Named after the same person hooks/useSession.ts

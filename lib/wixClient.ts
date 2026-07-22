@@ -13,13 +13,23 @@
  * Component uses, or any module reachable from either. See
  * docs/WIX_INTEGRATION.md's "Security boundary" section for the full
  * reasoning, including why the `server-only` npm package wasn't added
- * (a documented, deliberate scope decision for this phase).
+ * (a documented, deliberate scope decision carried forward from Phase 12).
  *
- * Only the `siteProperties` module is wired in — enough for the
- * connectivity health check this phase adds, and nothing else. No
- * Data/CMS module is included; "do not create the full production data
- * schema yet" applies to what this client can even call, not just to
- * what collections exist.
+ * Only the `siteProperties` module is wired in. Phase 15A (Wix
+ * Organization Read Integration) needed to read the `organizations` Data
+ * collection too, but installing `@wix/data` and adding its `items` module
+ * here reproducibly crashes at createClient() construction time —
+ * `@wix/sdk@1.21.13`'s internal `isAmbassadorModule()` check throws inside
+ * `@wix/sdk-runtime`'s `wql-builder-utils.js` when probing that module,
+ * independent of dependency deduping (confirmed with a single, deduped
+ * `@wix/sdk-runtime` version — still crashes). This is a genuine upstream
+ * compatibility bug between these package versions, not a query-shape
+ * issue. Phase 15A's organization read therefore calls the Wix Data REST
+ * API directly (authenticated fetch, see
+ * app/api/organizations/[organizationId]/route.ts) instead of going
+ * through this SDK client — the same REST endpoints already proven
+ * reliable via curl in Phases 14A/14B. Revisit adding `items` here once a
+ * compatible `@wix/sdk`/`@wix/data` version pairing exists.
  */
 import { createClient, ApiKeyStrategy } from '@wix/sdk';
 import { siteProperties } from '@wix/business-tools';

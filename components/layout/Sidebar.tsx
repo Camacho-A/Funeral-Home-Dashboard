@@ -1,19 +1,23 @@
 'use client';
 
 import { useOrganization } from '@/hooks/useOrganization';
-import { getMockOrganizationName } from '@/services/__mocks__/authFixtures';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { SidebarNavItem, SidebarNavItemInert } from './SidebarNavItem';
 import styles from './Sidebar.module.css';
 
 /**
- * Persistent app sidebar (Frontend Engineering Plan, Phase 2). Org name now
- * reads from useOrganization() (Organization Naming Cleanup) instead of a
- * hardcoded literal — staff-online count remains a static placeholder,
- * unchanged, until useStaff()-backed aggregation exists.
+ * Persistent app sidebar (Frontend Engineering Plan, Phase 2). Org name
+ * reads from useOrganizationRecord() (Phase 15A — Wix-backed in `wix` mode,
+ * fixture-backed in `mock` mode, same Organization shape either way).
+ * Falls back to the raw organizationId if the record hasn't loaded yet or
+ * couldn't be found — the same "always show something" behavior the prior
+ * mock-only lookup already had. Staff-online count remains a static
+ * placeholder, unchanged, until useStaff()-backed aggregation exists.
  */
 export function Sidebar() {
   const { organizationId } = useOrganization();
-  const organizationName = getMockOrganizationName(organizationId);
+  const { data: organization } = useOrganizationRecord();
+  const organizationName = organization?.name ?? organizationId;
 
   return (
     <nav className={styles.sidebar} aria-label="Primary">

@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { getDataAdapterMode } from '@/lib/env';
+import { getAuthAdapterMode } from '@/lib/env';
 import { verifyMockCredentials } from '@/lib/auth/mockAuth';
 import { loginWithWix } from '@/lib/auth/wixAuth';
 import { createSession, clearSession } from '@/lib/auth/session';
@@ -20,6 +20,13 @@ import { sanitizeRedirectPath } from '@/lib/auth/redirect';
  * deliberately non-specific message (lib/auth/mockAuth.ts's own comment
  * explains why "invalid email or password" is used regardless of which
  * part was actually wrong).
+ *
+ * Phase 15A.1 (Auth/Data Adapter Separation): branches on AUTH_ADAPTER,
+ * not DATA_ADAPTER — which login provider is used is now independent of
+ * which backend `services/*` read/write against, so e.g. DATA_ADAPTER=wix
+ * with AUTH_ADAPTER=mock (real Wix-backed reads, mock login) works as a
+ * real local-development combination. Neither verifyMockCredentials nor
+ * loginWithWix themselves changed at all.
  */
 export async function loginAction(formData: FormData): Promise<void> {
   const email = String(formData.get('email') ?? '');
@@ -27,9 +34,9 @@ export async function loginAction(formData: FormData): Promise<void> {
   const next = sanitizeRedirectPath(String(formData.get('next') ?? ''));
   const nextParam = encodeURIComponent(next);
 
-  const adapter = getDataAdapterMode();
+  const authAdapter = getAuthAdapterMode();
 
-  if (adapter === 'mock') {
+  if (authAdapter === 'mock') {
     const result = verifyMockCredentials(email, password);
     if (!result.success) {
       redirect(`/login?error=invalid_credentials&next=${nextParam}`);

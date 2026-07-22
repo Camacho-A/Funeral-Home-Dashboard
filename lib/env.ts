@@ -4,28 +4,52 @@
  * docs/WIX_INTEGRATION.md for the full environment reference and
  * docs/adr/ADR-007-wix-integration-foundation.md for why this shape.
  *
+ * Phase 15A.1 (Auth/Data Adapter Separation) split authentication out of
+ * this same switch — see getAuthAdapterMode() below and
+ * docs/adr/ADR-011-auth-data-adapter-separation.md for why: DATA_ADAPTER
+ * and AUTH_ADAPTER are independent, so e.g. real Wix data can be read
+ * while still signing in with mock credentials for local development.
+ *
  * Every function here reads `process.env` lazily, at call time, never at
  * module load — this is what lets `next build` succeed with zero Wix
- * environment variables set as long as DATA_ADAPTER stays at its "mock"
- * default. Nothing in this file is imported by any Client Component; it's
- * meant to be read only from server-side code (Route Handlers today,
- * Server Components/Actions in future phases).
+ * environment variables set as long as both adapters stay at their
+ * "mock" default. Nothing in this file is imported by any Client
+ * Component; it's meant to be read only from server-side code (Route
+ * Handlers, Server Components/Actions).
  */
 
 export type DataAdapterMode = 'mock' | 'wix';
 
 /**
- * Which backend the app is configured to use. Defaults to "mock" — the
- * only mode that exists as a real, working implementation today (Phases
- * 0-11's fixture-backed services). "wix" is the foundation this phase
- * establishes for later phases to build on; no service actually branches
- * on this value yet (see docs/adr/ADR-007's "Consequences").
+ * Which backend `services/*` read/write against. Defaults to "mock".
+ * Controls DATA access only — see getAuthAdapterMode() for the
+ * independent switch controlling which login provider is used.
  */
 export function getDataAdapterMode(): DataAdapterMode {
   const raw = (process.env.DATA_ADAPTER ?? 'mock').trim().toLowerCase();
   if (raw !== 'mock' && raw !== 'wix') {
     throw new Error(
       `Invalid DATA_ADAPTER value "${process.env.DATA_ADAPTER}" — must be "mock" or "wix". See docs/WIX_INTEGRATION.md.`,
+    );
+  }
+  return raw;
+}
+
+export type AuthAdapterMode = 'mock' | 'wix';
+
+/**
+ * Which login provider app/login/actions.ts and app/login/page.tsx use.
+ * Defaults to "mock" for developer convenience — independent of
+ * DATA_ADAPTER, so DATA_ADAPTER=wix + AUTH_ADAPTER=mock (real data, mock
+ * login) is a fully supported, and expected, local development
+ * combination. See docs/AUTHENTICATION.md's "Development vs. production
+ * adapter combinations" section.
+ */
+export function getAuthAdapterMode(): AuthAdapterMode {
+  const raw = (process.env.AUTH_ADAPTER ?? 'mock').trim().toLowerCase();
+  if (raw !== 'mock' && raw !== 'wix') {
+    throw new Error(
+      `Invalid AUTH_ADAPTER value "${process.env.AUTH_ADAPTER}" — must be "mock" or "wix". See docs/AUTHENTICATION.md.`,
     );
   }
   return raw;
@@ -71,14 +95,16 @@ export function getWixServerConfig(): WixServerConfig {
  * WIX_API_KEY/WIX_SITE_ID above, which authenticate as an *admin*, never a
  * specific member. Per Wix's own docs, headless member OAuth needs only a
  * Client ID (no client secret) for the custom-login-page flow this phase
- * uses — see docs/AUTHENTICATION.md.
+ * uses — see docs/AUTHENTICATION.md. Gated by AUTH_ADAPTER, not
+ * DATA_ADAPTER (Phase 15A.1) — this is an authentication concern, not a
+ * data-access one.
  */
 export function getWixOAuthClientId(): string {
   const clientId = process.env.WIX_OAUTH_CLIENT_ID;
   if (!clientId) {
     throw new Error(
-      'DATA_ADAPTER=wix requires WIX_OAUTH_CLIENT_ID, which is not set. ' +
-        'Set it in .env.local (see .env.example and docs/AUTHENTICATION.md), or set DATA_ADAPTER back to "mock".',
+      'AUTH_ADAPTER=wix requires WIX_OAUTH_CLIENT_ID, which is not set. ' +
+        'Set it in .env.local (see .env.example and docs/AUTHENTICATION.md), or set AUTH_ADAPTER back to "mock".',
     );
   }
   return clientId;

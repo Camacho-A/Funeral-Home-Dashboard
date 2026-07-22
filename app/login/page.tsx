@@ -1,4 +1,4 @@
-import { getDataAdapterMode } from '@/lib/env';
+import { getAuthAdapterMode } from '@/lib/env';
 import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/authFixtures';
 import { sanitizeRedirectPath } from '@/lib/auth/redirect';
 import { loginAction } from './actions';
@@ -27,10 +27,14 @@ const ERROR_MESSAGES: Record<string, string> = {
  * that logic entirely server-side per "keep authentication and
  * authorization logic out of presentational React components."
  *
- * Renders identically in shape regardless of DATA_ADAPTER; only the
+ * Renders identically in shape regardless of AUTH_ADAPTER; only the
  * button label and the mock-credentials hint change. In both modes the
  * same email/password fields post to the same action, which is what
  * branches on the adapter — the form itself doesn't need to know.
+ *
+ * Phase 15A.1 (Auth/Data Adapter Separation): branches on AUTH_ADAPTER,
+ * not DATA_ADAPTER — this page's appearance no longer depends on which
+ * backend `services/*` happen to be reading/writing against.
  */
 export default async function LoginPage({
   searchParams,
@@ -39,7 +43,7 @@ export default async function LoginPage({
 }) {
   const { next: rawNext, error } = await searchParams;
   const next = sanitizeRedirectPath(rawNext);
-  const adapter = getDataAdapterMode();
+  const authAdapter = getAuthAdapterMode();
   const errorMessage = error ? (ERROR_MESSAGES[error] ?? ERROR_MESSAGES.unknown) : null;
 
   return (
@@ -77,11 +81,11 @@ export default async function LoginPage({
             />
           </label>
           <button type="submit" className={styles.submit}>
-            {adapter === 'wix' ? 'Sign in with Wix' : 'Sign in (mock mode)'}
+            {authAdapter === 'wix' ? 'Sign in with Wix' : 'Sign In (Development)'}
           </button>
         </form>
 
-        {adapter === 'mock' && (
+        {authAdapter === 'mock' && (
           <p className={styles.hint}>
             Mock mode — sign in with {MOCK_LOGIN_EMAIL} / {MOCK_LOGIN_PASSWORD}
           </p>

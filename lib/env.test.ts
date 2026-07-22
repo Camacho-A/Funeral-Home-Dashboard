@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getDataAdapterMode, getWixServerConfig } from './env';
+import { getAuthAdapterMode, getDataAdapterMode, getWixServerConfig } from './env';
 
-const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
+const ENV_KEYS = ['DATA_ADAPTER', 'AUTH_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -35,6 +35,39 @@ describe('getDataAdapterMode', () => {
   it('throws a clear error for an invalid value', () => {
     process.env.DATA_ADAPTER = 'postgres';
     expect(() => getDataAdapterMode()).toThrow(/Invalid DATA_ADAPTER value "postgres"/);
+  });
+});
+
+describe('getAuthAdapterMode', () => {
+  it('defaults to "mock" when AUTH_ADAPTER is unset', () => {
+    expect(getAuthAdapterMode()).toBe('mock');
+  });
+
+  it('returns "wix" when explicitly set', () => {
+    process.env.AUTH_ADAPTER = 'wix';
+    expect(getAuthAdapterMode()).toBe('wix');
+  });
+
+  it('is case-insensitive', () => {
+    process.env.AUTH_ADAPTER = 'WIX';
+    expect(getAuthAdapterMode()).toBe('wix');
+  });
+
+  it('throws a clear error for an invalid value', () => {
+    process.env.AUTH_ADAPTER = 'postgres';
+    expect(() => getAuthAdapterMode()).toThrow(/Invalid AUTH_ADAPTER value "postgres"/);
+  });
+
+  it('is fully independent of DATA_ADAPTER — every combination is valid', () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.AUTH_ADAPTER = 'mock';
+    expect(getDataAdapterMode()).toBe('wix');
+    expect(getAuthAdapterMode()).toBe('mock');
+
+    process.env.DATA_ADAPTER = 'mock';
+    process.env.AUTH_ADAPTER = 'wix';
+    expect(getDataAdapterMode()).toBe('mock');
+    expect(getAuthAdapterMode()).toBe('wix');
   });
 });
 

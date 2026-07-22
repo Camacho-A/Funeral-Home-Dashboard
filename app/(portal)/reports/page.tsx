@@ -5,7 +5,7 @@ import { useCases } from '@/hooks/useCases';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
 import { useStaff } from '@/hooks/useStaff';
 import { useOrganization } from '@/hooks/useOrganization';
-import { getMockOrganizationName } from '@/services/__mocks__/authFixtures';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import {
   computeKpis,
   computeStageBreakdown,
@@ -29,7 +29,8 @@ import styles from './page.module.css';
  */
 export default function ReportsPage() {
   const { organizationId } = useOrganization();
-  const organizationName = getMockOrganizationName(organizationId);
+  const { data: organization } = useOrganizationRecord();
+  const organizationName = organization?.name ?? organizationId;
   const { data: cases } = useCases();
   const { data: staffList = [] } = useStaff();
   const viewModels = useCaseViewModels(cases);
