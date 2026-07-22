@@ -9,6 +9,7 @@ import {
   type WixWorkflowTemplateVersionItem,
 } from '@/lib/wixWorkflowTemplateMapper';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
+import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Retrieves one
@@ -26,10 +27,16 @@ export async function GET(
   { params }: { params: Promise<{ templateId: string }> },
 ) {
   const { templateId } = await params;
-  const organizationId = new URL(request.url).searchParams.get('organizationId');
-  if (!organizationId) {
+  const requestedOrganizationId = new URL(request.url).searchParams.get('organizationId');
+  if (!requestedOrganizationId) {
     return NextResponse.json({ workflowTemplate: null, error: 'organizationId is required.' }, { status: 400 });
   }
+
+  // Phase 15X (Multi-Tenant Authorization Hardening): re-derived from the
+  // caller's session/membership, never trusted from the query param.
+  const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
+  if (!authResult.authorized) return authResult.response;
+  const { organizationId } = authResult.context;
 
   const adapter = getDataAdapterMode();
 

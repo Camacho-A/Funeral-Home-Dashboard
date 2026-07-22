@@ -5,6 +5,7 @@ import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
 import type { Case } from '@/types/case';
+import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 
 /**
  * Phase 15C (Wix Case Read Integration). Lists cases for one organization
@@ -27,12 +28,18 @@ import type { Case } from '@/types/case';
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const organizationId = url.searchParams.get('organizationId');
+  const requestedOrganizationId = url.searchParams.get('organizationId');
   const searchQuery = url.searchParams.get('searchQuery') ?? '';
 
-  if (!organizationId) {
+  if (!requestedOrganizationId) {
     return NextResponse.json({ cases: [], error: 'organizationId is required.' }, { status: 400 });
   }
+
+  // Phase 15X (Multi-Tenant Authorization Hardening): re-derived from the
+  // caller's session/membership, never trusted from the query param.
+  const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
+  if (!authResult.authorized) return authResult.response;
+  const { organizationId } = authResult.context;
 
   const adapter = getDataAdapterMode();
 

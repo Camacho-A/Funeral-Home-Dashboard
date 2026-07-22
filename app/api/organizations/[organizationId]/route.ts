@@ -3,6 +3,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixOrganizationItem } from '@/lib/wixOrganizationMapper';
 import { mockOrganizationFixtures } from '@/services/__mocks__/authFixtures';
+import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 
 /**
  * Phase 15A (Wix Organization Read Integration). Replaces the mock-only
@@ -24,9 +25,21 @@ import { mockOrganizationFixtures } from '@/services/__mocks__/authFixtures';
  * raw Wix item shape is ever touched. Callers
  * (services/organizationsService.ts, and everything above it) only ever
  * see the same Organization domain type mock mode already returned.
+ *
+ * Phase 15X (Multi-Tenant Authorization Hardening): the path's
+ * `organizationId` is untrusted input like any other Route Handler
+ * parameter — requireAuthorizedOrganization re-derives it from the
+ * caller's own session/membership before it's used for anything below,
+ * closing the gap formerly documented in docs/AUTHENTICATION.md's "Known
+ * limitations" and docs/ROADMAP.md.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ organizationId: string }> }) {
-  const { organizationId } = await params;
+  const { organizationId: requestedOrganizationId } = await params;
+
+  const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
+  if (!authResult.authorized) return authResult.response;
+  const { organizationId } = authResult.context;
+
   const adapter = getDataAdapterMode();
 
   if (adapter === 'mock') {

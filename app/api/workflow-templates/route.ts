@@ -10,6 +10,7 @@ import {
 } from '@/lib/wixWorkflowTemplateMapper';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import type { WorkflowTemplate } from '@/types/workflowTemplate';
+import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Lists workflow
@@ -56,10 +57,17 @@ async function fetchWixWorkflowTemplates(organizationId: string): Promise<Workfl
 }
 
 export async function GET(request: Request) {
-  const organizationId = new URL(request.url).searchParams.get('organizationId');
-  if (!organizationId) {
+  const requestedOrganizationId = new URL(request.url).searchParams.get('organizationId');
+  if (!requestedOrganizationId) {
     return NextResponse.json({ workflowTemplates: [], error: 'organizationId is required.' }, { status: 400 });
   }
+
+  // Phase 15X (Multi-Tenant Authorization Hardening): the query param is
+  // untrusted — re-derived from the caller's session/membership below,
+  // never used directly. See lib/auth/requireAuthorizedOrganization.ts.
+  const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
+  if (!authResult.authorized) return authResult.response;
+  const { organizationId } = authResult.context;
 
   const adapter = getDataAdapterMode();
 

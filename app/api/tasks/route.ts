@@ -4,6 +4,7 @@ import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixTaskItem, type WixTaskItem } from '@/lib/wixTaskMapper';
 import { taskFixtures } from '@/services/__mocks__/fixtures';
 import type { CaseTask } from '@/types/task';
+import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 
 /**
  * Phase 15D (Wix Task Read Integration). Lists tasks for one organization,
@@ -30,12 +31,18 @@ import type { CaseTask } from '@/types/task';
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const organizationId = url.searchParams.get('organizationId');
+  const requestedOrganizationId = url.searchParams.get('organizationId');
   const caseId = url.searchParams.get('caseId');
 
-  if (!organizationId) {
+  if (!requestedOrganizationId) {
     return NextResponse.json({ tasks: [], error: 'organizationId is required.' }, { status: 400 });
   }
+
+  // Phase 15X (Multi-Tenant Authorization Hardening): re-derived from the
+  // caller's session/membership, never trusted from the query param.
+  const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
+  if (!authResult.authorized) return authResult.response;
+  const { organizationId } = authResult.context;
 
   const adapter = getDataAdapterMode();
 

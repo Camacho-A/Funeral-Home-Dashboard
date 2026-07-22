@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -23,6 +25,20 @@ vi.mock('@/lib/wixDataApi', async () => {
   };
 });
 
+// Phase 15X (Multi-Tenant Authorization Hardening): lib/auth/session.ts's
+// getSession() depends on next/headers's cookies(), which throws outside a
+// real request context — mocked here so the route's real authorization
+// logic (requireAuthorizedOrganization -> resolveAuthorizationContext) is
+// still genuinely exercised against the real mock membership fixtures,
+// only the "read the cookie" step is faked. Defaults to the standard
+// single-org mock user (member of DEFAULT_ORGANIZATION_ID only); individual
+// tests override mockSession to exercise the unauthenticated/unauthorized
+// paths.
+let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+vi.mock('@/lib/auth/session', () => ({
+  getSession: async () => mockSession,
+}));
+
 const { GET } = await import('./route');
 
 function paramsFor(organizationId: string) {
@@ -33,6 +49,7 @@ beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
+  mockSession = { user: mockDefaultUser };
 });
 
 afterEach(() => {
@@ -40,6 +57,44 @@ afterEach(() => {
     const value = originalEnv[key];
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
+  });
+});
+
+describe('GET /api/organizations/[organizationId] — authorization', () => {
+  it('returns 401 when there is no session at all', async () => {
+    mockSession = null;
+    const response = await GET(new Request('http://localhost/api/organizations/managed-cremations'), paramsFor(DEFAULT_ORGANIZATION_ID));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toBeTruthy();
+    expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a forged organizationId the session's user has no membership in — rejected before any data lookup", async () => {
+    const response = await GET(
+      new Request('http://localhost/api/organizations/evergreen-memorial-group'),
+      paramsFor(SECOND_MOCK_ORGANIZATION_ID),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBeTruthy();
+    expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+  });
+
+  it('the 403 response never reveals whether the requested organization actually exists', async () => {
+    const realButUnauthorized = await GET(
+      new Request('http://localhost/api/organizations/evergreen-memorial-group'),
+      paramsFor(SECOND_MOCK_ORGANIZATION_ID),
+    );
+    const fabricated = await GET(
+      new Request('http://localhost/api/organizations/not-a-real-org'),
+      paramsFor('not-a-real-org'),
+    );
+
+    expect(realButUnauthorized.status).toBe(fabricated.status);
+    expect(await realButUnauthorized.json()).toEqual(await fabricated.json());
   });
 });
 
@@ -52,12 +107,12 @@ describe('GET /api/organizations/[organizationId] — mock mode', () => {
     expect(body.organization).toEqual({ id: 'managed-cremations', name: "Manor's Cremation", isActive: true });
   });
 
-  it('returns 404 for an unknown organization id, never attempting a Wix call', async () => {
+  it('returns 403 (not 404) for an organizationId the caller has no membership in — the authorization layer rejects it before the fixture lookup is even attempted', async () => {
     const response = await GET(new Request('http://localhost/api/organizations/no-such-org'), paramsFor('no-such-org'));
     const body = await response.json();
 
-    expect(response.status).toBe(404);
-    expect(body.organization).toBeNull();
+    expect(response.status).toBe(403);
+    expect(body.organization).toBeUndefined();
     expect(mockQueryWixDataItems).not.toHaveBeenCalled();
   });
 });

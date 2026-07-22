@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, SECOND_ORG_WORKFLOW_TEMPLATE_ID } from '@/services/__mocks__/workflowTemplates';
+import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -22,6 +23,16 @@ vi.mock('@/lib/wixDataApi', async () => {
   };
 });
 
+// Phase 15X (Multi-Tenant Authorization Hardening): see the identical
+// comment in app/api/organizations/[organizationId]/route.test.ts. Defaults
+// to mockDefaultUser (member of DEFAULT_ORGANIZATION_ID only); tests that
+// need the second organization use mockMultiOrgUser instead, which has
+// active memberships in both.
+let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+vi.mock('@/lib/auth/session', () => ({
+  getSession: async () => mockSession,
+}));
+
 const { GET } = await import('./route');
 
 function requestFor(organizationId: string | null) {
@@ -35,6 +46,7 @@ beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
+  mockSession = { user: mockDefaultUser };
 });
 
 afterEach(() => {
@@ -52,6 +64,32 @@ describe('GET /api/workflow-templates — request validation', () => {
   });
 });
 
+describe('GET /api/workflow-templates — authorization', () => {
+  it('returns 401 when there is no session at all', async () => {
+    mockSession = null;
+    const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toBeTruthy();
+    expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for an organizationId the session's user has no membership in — the authorization layer rejects it before the fixture lookup is even attempted", async () => {
+    const response = await GET(requestFor('some-other-org'));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBeTruthy();
+    expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+  });
+
+  it("rejects the single-org default user's request for the second organization's data — a forged organizationId, not a real membership", async () => {
+    const response = await GET(requestFor(SECOND_MOCK_ORGANIZATION_ID));
+    expect(response.status).toBe(403);
+  });
+});
+
 describe('GET /api/workflow-templates — mock mode', () => {
   it("lists Manor's Cremation own template for its organization", async () => {
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
@@ -62,6 +100,7 @@ describe('GET /api/workflow-templates — mock mode', () => {
   });
 
   it("returns the second organization's own, differently-shaped template under its own context", async () => {
+    mockSession = { user: mockMultiOrgUser };
     const response = await GET(requestFor(SECOND_MOCK_ORGANIZATION_ID));
     const body = await response.json();
 
@@ -69,10 +108,12 @@ describe('GET /api/workflow-templates — mock mode', () => {
     expect(body.workflowTemplates[0].caseTypes).toEqual(['burial']);
   });
 
-  it('a mismatched organizationId returns an empty list, not a cross-tenant leak', async () => {
-    const response = await GET(requestFor('some-other-org'));
+  it("a user with memberships in both organizations still only gets the requested organization's templates, never both at once", async () => {
+    mockSession = { user: mockMultiOrgUser };
+    const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const body = await response.json();
-    expect(body.workflowTemplates).toEqual([]);
+
+    expect(body.workflowTemplates.map((t: { id: string }) => t.id)).toEqual([STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID]);
   });
 });
 
@@ -155,13 +196,13 @@ describe('GET /api/workflow-templates — wix mode', () => {
     });
   });
 
-  it('returns an empty array for an organization with no workflow templates', async () => {
+  it('returns an empty array for an authorized organization with no workflow templates in Wix', async () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
     mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
 
-    const response = await GET(requestFor('org-with-nothing'));
+    const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const body = await response.json();
 
     expect(response.status).toBe(200);
