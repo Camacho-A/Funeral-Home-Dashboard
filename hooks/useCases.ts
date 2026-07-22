@@ -6,6 +6,6 @@ export function useCases(filters: CaseFilters = {}) {
   const organization = useOrganization();
   return useQuery({
     queryKey: ['cases', organization.organizationId, filters],
-    queryFn: () => casesService.list(organization, filters),
+    queryFn: () => casesService.list(organization, filters, organization.dataAdapterMode),
   });
 }

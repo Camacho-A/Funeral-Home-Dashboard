@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { casesService } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
-import { DEFAULT_ORGANIZATION_ID, staffFixtures } from './__mocks__/fixtures';
+import { DEFAULT_ORGANIZATION_ID, caseFixtures, staffFixtures } from './__mocks__/fixtures';
+import { SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 
 const organization: OrganizationContext = { organizationId: DEFAULT_ORGANIZATION_ID };
@@ -160,5 +161,75 @@ describe('casesService.create — workflow template snapshot (Phase 11)', () => 
       liveStages[0] = { ...liveStages[0], label: originalFirstLabel ?? liveStages[0].label };
       if (removed) liveStages.push(removed);
     }
+  });
+});
+
+describe('casesService.list/get — mock mode (dataAdapterMode omitted or "mock")', () => {
+  it('list() returns only this organization\'s non-deleted cases, unchanged from before Phase 15C', async () => {
+    const cases = await casesService.list(organization);
+    expect(cases.length).toBeGreaterThan(0);
+    expect(cases.every((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)).toBe(true);
+  });
+
+  it('a mismatched organizationId returns an empty list, not a cross-tenant leak', async () => {
+    const cases = await casesService.list({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
+    expect(cases).toEqual([]);
+  });
+
+  it('get() finds an existing fixture case by id for its own organization', async () => {
+    const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted);
+    expect(known).toBeDefined();
+    const found = await casesService.get(organization, known!.id);
+    expect(found?.id).toBe(known!.id);
+  });
+
+  it('get() explicitly passed "mock" behaves identically to omitting the parameter', async () => {
+    const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted);
+    const found = await casesService.get(organization, known!.id, 'mock');
+    expect(found?.id).toBe(known!.id);
+  });
+});
+
+describe('casesService.list/get — wix mode (dataAdapterMode = "wix")', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('list() fetches /api/cases with organizationId, never touching caseFixtures directly', async () => {
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ cases: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await casesService.list(organization, {}, 'wix');
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/cases?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+  });
+
+  it('list() includes searchQuery in the fetch URL when provided', async () => {
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ cases: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await casesService.list(organization, { searchQuery: 'Ellison' }, 'wix');
+
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    expect(calledUrl).toContain('searchQuery=Ellison');
+  });
+
+  it('get() fetches /api/cases/[caseId] with organizationId and returns null on 404', async () => {
+    fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await casesService.get(organization, 'no-such-case', 'wix');
+
+    expect(result).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/cases/no-such-case?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+  });
+
+  it('list() throws on a non-ok response', async () => {
+    fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(casesService.list(organization, {}, 'wix')).rejects.toThrow('Failed to load cases.');
   });
 });

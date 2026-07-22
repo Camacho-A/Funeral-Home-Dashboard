@@ -4,6 +4,7 @@ import { CaseSearchProvider } from '@/hooks/useCaseSearch';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { getSession } from '@/lib/auth/session';
 import { resolveAuthorizationContext } from '@/lib/auth/authorize';
+import { getDataAdapterMode } from '@/lib/env';
 
 /**
  * Phase 13 (Authentication & Organizations). Middleware (middleware.ts)
@@ -32,9 +33,11 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect(`/login?error=${result.reason}`);
   }
 
+  const dataAdapterMode = getDataAdapterMode();
+
   return (
     <CaseSearchProvider>
-      <OrganizationProvider organizationId={result.context.organizationId}>
+      <OrganizationProvider organizationId={result.context.organizationId} dataAdapterMode={dataAdapterMode}>
         <AppShell>{children}</AppShell>
       </OrganizationProvider>
     </CaseSearchProvider>

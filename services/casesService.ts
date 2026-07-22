@@ -2,6 +2,7 @@ import type { OrganizationContext } from '../types/organization';
 import type { Case, CaseUpdate, NewCaseInput } from '../types/case';
 import type { Session } from '../types/session';
 import type { WorkflowTemplate } from '../types/workflowTemplate';
+import type { DataAdapterMode } from '../lib/env';
 import { assertIntakeOwnerUnchanged } from '../domain/cases/intakeOwnership';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
 import { caseFixtures } from './__mocks__/fixtures';
@@ -14,12 +15,25 @@ export type CaseFilters = {
  * Mock implementation backed by services/__mocks__/fixtures.ts. Every
  * function filters by `context.organizationId` for real — a call with a
  * mismatched organizationId returns empty/not-found rather than assuming
- * isolation, per docs/adr/ADR-002-multi-tenant-architecture.md. Swapping
- * this for real Wix Headless calls later changes only the bodies below —
- * no caller (hooks/services consumers) needs to change.
+ * isolation, per docs/adr/ADR-002-multi-tenant-architecture.md.
+ *
+ * Phase 15C (Wix Case Read Integration): list()/get() gained a
+ * `dataAdapterMode` parameter (see docs/adr/ADR-013), read from
+ * useOrganization()'s server-resolved value (hooks/useOrganization.tsx),
+ * never from a client-side env var read. When it's "mock" (the default,
+ * for any caller not yet passing it), this runs the *exact same*
+ * fixture-filtering code that ran here before this phase — zero behavior
+ * change, no network call, still sharing state with create()/update()
+ * below, which are entirely untouched. When it's "wix", list()/get()
+ * instead fetch app/api/cases' Route Handlers, which alone talk to Wix.
+ * create()/update() remain mock-only regardless of this parameter, per
+ * this phase's explicit scope — a case created while dataAdapterMode is
+ * "wix" still won't appear in a Wix-sourced list, since it was never
+ * written to Wix; this is an accepted, documented limitation (see
+ * ADR-013), not something this phase resolves.
  */
 
-function matchesSearch(case_: Case, query: string): boolean {
+export function matchesSearch(case_: Case, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return (
@@ -29,10 +43,7 @@ function matchesSearch(case_: Case, query: string): boolean {
   );
 }
 
-export async function list(
-  context: OrganizationContext,
-  filters: CaseFilters = {},
-): Promise<Case[]> {
+function listMock(context: OrganizationContext, filters: CaseFilters): Case[] {
   return caseFixtures.filter(
     (c) =>
       c.organizationId === context.organizationId &&
@@ -41,11 +52,50 @@ export async function list(
   );
 }
 
-export async function get(context: OrganizationContext, caseId: string): Promise<Case | null> {
-  const found = caseFixtures.find(
-    (c) => c.id === caseId && c.organizationId === context.organizationId && !c.isDeleted,
+export async function list(
+  context: OrganizationContext,
+  filters: CaseFilters = {},
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<Case[]> {
+  if (dataAdapterMode === 'mock') {
+    return listMock(context, filters);
+  }
+
+  const params = new URLSearchParams({ organizationId: context.organizationId });
+  if (filters.searchQuery) params.set('searchQuery', filters.searchQuery);
+
+  const response = await fetch(`/api/cases?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to load cases.');
+  }
+  const body = (await response.json()) as { cases: Case[] };
+  return body.cases;
+}
+
+export async function get(
+  context: OrganizationContext,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<Case | null> {
+  if (dataAdapterMode === 'mock') {
+    return (
+      caseFixtures.find(
+        (c) => c.id === caseId && c.organizationId === context.organizationId && !c.isDeleted,
+      ) ?? null
+    );
+  }
+
+  const response = await fetch(
+    `/api/cases/${encodeURIComponent(caseId)}?organizationId=${encodeURIComponent(context.organizationId)}`,
   );
-  return found ?? null;
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error('Failed to load case.');
+  }
+  const body = (await response.json()) as { case: Case | null };
+  return body.case;
 }
 
 /**

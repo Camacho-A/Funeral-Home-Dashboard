@@ -12,6 +12,6 @@ export function useCase(caseId: string) {
   const organization = useOrganization();
   return useQuery({
     queryKey: ['case', organization.organizationId, caseId],
-    queryFn: () => casesService.get(organization, caseId),
+    queryFn: () => casesService.get(organization, caseId, organization.dataAdapterMode),
   });
 }
