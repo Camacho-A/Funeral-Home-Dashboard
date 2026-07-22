@@ -1,4 +1,4 @@
-import type { Case, PaymentStatus, VaPublishChoice } from '../types/case';
+import type { Case, CaseUpdate, PaymentStatus, VaPublishChoice } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 
 /**
@@ -161,4 +161,195 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     caseType: item.caseType,
     workflowSnapshot: item.workflowSnapshot,
   };
+}
+
+/**
+ * Phase 16 (Wix Write Integration). The inverse of mapWixCaseItem: builds a
+ * complete `cases` Wix item's `data` object for insertion. Every field
+ * here is either server-derived (organizationId from
+ * requireAuthorizedOrganization, workflowTemplateId/Version/workflowSnapshot
+ * from the server's own template resolution, createdAt from the server
+ * clock) or comes from validated request-body input — never a raw,
+ * unvalidated client value. See app/api/cases/route.ts's POST handler.
+ */
+export function buildWixCaseData(params: {
+  beaconCaseId: string;
+  organizationId: string;
+  caseType: string;
+  workflowTemplateId: string;
+  workflowTemplateVersion: number;
+  workflowSnapshot: CaseWorkflowSnapshot;
+  intakeOwnerId: string;
+  createdBy: string;
+  assignedStaffId: string | null;
+  decedentName: string;
+  dateOfBirth: string;
+  dateOfDeath: string;
+  timeOfDeath: string;
+  placeOfDeath: string;
+  weight: string;
+  nextOfKinName: string;
+  nextOfKinPhone: string;
+  fieldValues: Record<number, string>;
+  createdAt: string;
+}): WixCaseItem {
+  return {
+    beaconCaseId: params.beaconCaseId,
+    organizationId: params.organizationId,
+    caseType: params.caseType,
+    workflowTemplateId: params.workflowTemplateId,
+    workflowTemplateVersion: params.workflowTemplateVersion,
+    workflowSnapshot: params.workflowSnapshot,
+    intakeOwnerId: params.intakeOwnerId,
+    caseHandlerId: params.assignedStaffId,
+    currentStage: 0,
+    checklistState: {},
+    fieldValues: params.fieldValues,
+    decedentName: params.decedentName,
+    dateOfBirth: params.dateOfBirth,
+    dateOfDeath: params.dateOfDeath,
+    timeOfDeath: params.timeOfDeath,
+    placeOfDeath: params.placeOfDeath,
+    weight: params.weight,
+    nextOfKinName: params.nextOfKinName,
+    nextOfKinPhone: params.nextOfKinPhone,
+    paymentStatus: 'awaiting_payment',
+    isVeteran: false,
+    vaStepsState: {},
+    vaPublishChoice: null,
+    daysWaitingInStage: 0,
+    isStalled: false,
+    stalledReason: null,
+    createdBy: params.createdBy,
+    isArchived: false,
+    createdAt: params.createdAt,
+  };
+}
+
+/**
+ * Runtime allowlist + type validation for a case update request body.
+ * Mirrors types/case.ts's `CaseUpdate` exactly — anything not in this list
+ * (organizationId, beaconCaseId/id, workflowTemplateId/Version,
+ * workflowSnapshot, intakeOwnerId, createdBy, createdAt, or any unknown
+ * key) is silently ignored, never applied, regardless of what a caller
+ * puts in the JSON body. This is the runtime backstop CaseUpdate's type
+ * only enforces at compile time — a raw HTTP JSON body has no compile-time
+ * protection. "Do not allow arbitrary object spreading into Wix updates."
+ *
+ * Returns `errors` (present-but-wrong-typed fields) rather than silently
+ * dropping them — app/api/cases/[caseId]/route.ts rejects the whole
+ * request with 400 if `errors` is non-empty, rather than partially
+ * applying a payload that didn't validate.
+ */
+export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; errors: string[] } {
+  const patch: CaseUpdate = {};
+  const errors: string[] = [];
+
+  if (!body || typeof body !== 'object') {
+    return { patch, errors: ['body must be an object'] };
+  }
+  const b = body as Record<string, unknown>;
+
+  function stringField(key: keyof CaseUpdate) {
+    if (key in b) {
+      if (typeof b[key] === 'string') (patch as Record<string, unknown>)[key] = b[key];
+      else errors.push(String(key));
+    }
+  }
+  function nullableStringField(key: keyof CaseUpdate) {
+    if (key in b) {
+      if (b[key] === null || typeof b[key] === 'string') (patch as Record<string, unknown>)[key] = b[key];
+      else errors.push(String(key));
+    }
+  }
+  function booleanField(key: keyof CaseUpdate) {
+    if (key in b) {
+      if (typeof b[key] === 'boolean') (patch as Record<string, unknown>)[key] = b[key];
+      else errors.push(String(key));
+    }
+  }
+  function numberField(key: keyof CaseUpdate) {
+    if (key in b) {
+      if (typeof b[key] === 'number') (patch as Record<string, unknown>)[key] = b[key];
+      else errors.push(String(key));
+    }
+  }
+  function plainObjectField(key: keyof CaseUpdate) {
+    if (key in b) {
+      if (isPlainObject(b[key])) (patch as Record<string, unknown>)[key] = b[key];
+      else errors.push(String(key));
+    }
+  }
+
+  stringField('decedentName');
+  stringField('dateOfBirth');
+  stringField('dateOfDeath');
+  stringField('timeOfDeath');
+  stringField('placeOfDeath');
+  stringField('weight');
+  stringField('nextOfKinName');
+  stringField('nextOfKinPhone');
+  numberField('rawStage');
+  numberField('daysWaitingInStage');
+  booleanField('isVeteran');
+  booleanField('isStalled');
+  booleanField('isDeleted');
+  nullableStringField('assignedStaffId');
+  nullableStringField('stalledReason');
+  plainObjectField('checklistState');
+  plainObjectField('fieldValues');
+  plainObjectField('vaStepsState');
+
+  if ('paymentStatus' in b) {
+    if (b.paymentStatus === 'awaiting_payment' || b.paymentStatus === 'paid_in_full') {
+      patch.paymentStatus = b.paymentStatus;
+    } else {
+      errors.push('paymentStatus');
+    }
+  }
+  if ('vaPublishChoice' in b) {
+    if (b.vaPublishChoice === null || b.vaPublishChoice === 'publish' || b.vaPublishChoice === 'private') {
+      patch.vaPublishChoice = b.vaPublishChoice;
+    } else {
+      errors.push('vaPublishChoice');
+    }
+  }
+
+  return { patch, errors };
+}
+
+/**
+ * Applies a validated CaseUpdate patch onto an existing `cases` Wix item's
+ * raw data, renaming Beacon field names to their Wix collection
+ * equivalents (assignedStaffId->caseHandlerId, rawStage->currentStage,
+ * isDeleted->isArchived — the same three renames mapWixCaseItem already
+ * documents, applied in reverse). Returns a *complete* object suitable for
+ * updateWixDataItem's full-replace semantics — every field from `existing`
+ * is preserved except the ones the patch explicitly changes.
+ */
+export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdate): WixCaseItem {
+  const next: WixCaseItem = { ...existing };
+
+  if (patch.decedentName !== undefined) next.decedentName = patch.decedentName;
+  if (patch.dateOfBirth !== undefined) next.dateOfBirth = patch.dateOfBirth;
+  if (patch.dateOfDeath !== undefined) next.dateOfDeath = patch.dateOfDeath;
+  if (patch.timeOfDeath !== undefined) next.timeOfDeath = patch.timeOfDeath;
+  if (patch.placeOfDeath !== undefined) next.placeOfDeath = patch.placeOfDeath;
+  if (patch.weight !== undefined) next.weight = patch.weight;
+  if (patch.nextOfKinName !== undefined) next.nextOfKinName = patch.nextOfKinName;
+  if (patch.nextOfKinPhone !== undefined) next.nextOfKinPhone = patch.nextOfKinPhone;
+  if (patch.rawStage !== undefined) next.currentStage = patch.rawStage;
+  if (patch.assignedStaffId !== undefined) next.caseHandlerId = patch.assignedStaffId;
+  if (patch.paymentStatus !== undefined) next.paymentStatus = patch.paymentStatus;
+  if (patch.isVeteran !== undefined) next.isVeteran = patch.isVeteran;
+  if (patch.vaStepsState !== undefined) next.vaStepsState = patch.vaStepsState;
+  if (patch.vaPublishChoice !== undefined) next.vaPublishChoice = patch.vaPublishChoice;
+  if (patch.checklistState !== undefined) next.checklistState = patch.checklistState;
+  if (patch.fieldValues !== undefined) next.fieldValues = patch.fieldValues;
+  if (patch.daysWaitingInStage !== undefined) next.daysWaitingInStage = patch.daysWaitingInStage;
+  if (patch.isStalled !== undefined) next.isStalled = patch.isStalled;
+  if (patch.stalledReason !== undefined) next.stalledReason = patch.stalledReason;
+  if (patch.isDeleted !== undefined) next.isArchived = patch.isDeleted;
+
+  return next;
 }

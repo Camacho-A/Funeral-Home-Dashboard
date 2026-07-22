@@ -35,7 +35,7 @@ export function useCreateCase() {
       if (!template) {
         throw new Error(`No enabled workflow template found for organization ${organization.organizationId}`);
       }
-      return casesService.create(organization, input, session, template);
+      return casesService.create(organization, input, session, template, organization.dataAdapterMode);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });

@@ -24,13 +24,17 @@ export type CaseFilters = {
  * for any caller not yet passing it), this runs the *exact same*
  * fixture-filtering code that ran here before this phase — zero behavior
  * change, no network call, still sharing state with create()/update()
- * below, which are entirely untouched. When it's "wix", list()/get()
- * instead fetch app/api/cases' Route Handlers, which alone talk to Wix.
- * create()/update() remain mock-only regardless of this parameter, per
- * this phase's explicit scope — a case created while dataAdapterMode is
- * "wix" still won't appear in a Wix-sourced list, since it was never
- * written to Wix; this is an accepted, documented limitation (see
- * ADR-013), not something this phase resolves.
+ * below.
+ *
+ * Phase 16 (Wix Write Integration): create()/update() gained the exact
+ * same `dataAdapterMode` parameter, for the exact same reason — see
+ * docs/adr/ADR-016. When "mock" (the default), both run the *unchanged*
+ * pre-Phase-16 fixture-mutating code below, byte for byte. When "wix",
+ * they instead POST/PATCH app/api/cases' Route Handlers, which alone
+ * write to Wix and are the only place organizationId is ever re-verified
+ * against the caller's session (see
+ * lib/auth/requireAuthorizedOrganization.ts) — this service never adds
+ * its own authorization logic, it only calls the Route Handler.
  */
 
 export function matchesSearch(case_: Case, query: string): boolean {
@@ -117,7 +121,35 @@ export async function create(
   input: NewCaseInput,
   session: Session,
   template: WorkflowTemplate,
+  dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<Case> {
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        organizationId: context.organizationId,
+        decedentName: input.decedentName,
+        nextOfKinName: input.nextOfKinName,
+        nextOfKinPhone: input.nextOfKinPhone,
+        dateOfBirth: input.dateOfBirth,
+        dateOfDeath: input.dateOfDeath,
+        timeOfDeath: input.timeOfDeath,
+        placeOfDeath: input.placeOfDeath,
+        weight: input.weight,
+        assignedStaffId: input.assignedStaffId ?? session.staffId,
+        fieldValues: input.fieldValues,
+        createdBy: session.staffId,
+        intakeOwnerId: session.staffId,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to create case.');
+    }
+    const body = (await response.json()) as { case: Case };
+    return body.case;
+  }
+
   const version = latestTemplateVersion(template);
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
@@ -158,8 +190,23 @@ export async function update(
   context: OrganizationContext,
   caseId: string,
   patch: CaseUpdate,
+  dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<Case> {
   assertIntakeOwnerUnchanged(patch);
+
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organizationId: context.organizationId, patch }),
+    });
+    if (!response.ok) {
+      throw new Error(`Case ${caseId} not found for this organization`);
+    }
+    const body = (await response.json()) as { case: Case };
+    return body.case;
+  }
+
   const index = caseFixtures.findIndex(
     (c) => c.id === caseId && c.organizationId === context.organizationId,
   );

@@ -18,7 +18,7 @@ export function useCaseMutations(caseId: string) {
 
   const updateCase = useMutation({
     mutationFn: (patch: Parameters<typeof casesService.update>[2]) =>
-      casesService.update(organization, caseId, patch),
+      casesService.update(organization, caseId, patch, organization.dataAdapterMode),
     onSuccess: (updated) => {
       queryClient.setQueryData(['case', organization.organizationId, caseId], updated);
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });

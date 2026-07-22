@@ -1,4 +1,4 @@
-import type { CaseTask } from '../types/task';
+import type { CaseTask, TaskUpdate } from '../types/task';
 
 /**
  * Phase 15D (Wix Task Read Integration). Mirrors lib/wixCaseMapper.ts's
@@ -70,4 +70,78 @@ export function mapWixTaskItem(item: WixTaskItem | undefined): CaseTask | null {
     caseId: typeof item.caseId === 'string' ? item.caseId : null,
     createdAt: item.createdAt,
   };
+}
+
+/**
+ * Phase 16 (Wix Write Integration). The inverse of mapWixTaskItem: builds a
+ * complete `tasks` Wix item's `data` object for insertion. `organizationId`
+ * is always server-derived (requireAuthorizedOrganization); `caseId`, if
+ * present, has already been verified to belong to that same organization
+ * by the caller (see app/api/tasks/route.ts's POST handler) before this is
+ * called.
+ */
+export function buildWixTaskData(params: {
+  beaconTaskId: string;
+  organizationId: string;
+  text: string;
+  assigneeStaffId: string | null;
+  caseId: string | null;
+  createdAt: string;
+}): WixTaskItem {
+  return {
+    beaconTaskId: params.beaconTaskId,
+    organizationId: params.organizationId,
+    text: params.text,
+    assigneeId: params.assigneeStaffId,
+    isDone: false,
+    caseId: params.caseId,
+    createdAt: params.createdAt,
+  };
+}
+
+/**
+ * Runtime allowlist + type validation for a task update request body —
+ * mirrors types/task.ts's TaskUpdate exactly (text/isDone/assigneeStaffId
+ * only). Anything else (organizationId, caseId, beaconTaskId/id,
+ * createdAt, or any unknown key) is silently ignored, never applied. See
+ * lib/wixCaseMapper.ts's validateAndPickCaseUpdate for why this returns
+ * `errors` rather than silently dropping malformed fields.
+ */
+export function validateAndPickTaskUpdate(body: unknown): { patch: TaskUpdate; errors: string[] } {
+  const patch: TaskUpdate = {};
+  const errors: string[] = [];
+
+  if (!body || typeof body !== 'object') {
+    return { patch, errors: ['body must be an object'] };
+  }
+  const b = body as Record<string, unknown>;
+
+  if ('text' in b) {
+    if (typeof b.text === 'string') patch.text = b.text;
+    else errors.push('text');
+  }
+  if ('isDone' in b) {
+    if (typeof b.isDone === 'boolean') patch.isDone = b.isDone;
+    else errors.push('isDone');
+  }
+  if ('assigneeStaffId' in b) {
+    if (b.assigneeStaffId === null || typeof b.assigneeStaffId === 'string') {
+      patch.assigneeStaffId = b.assigneeStaffId;
+    } else {
+      errors.push('assigneeStaffId');
+    }
+  }
+
+  return { patch, errors };
+}
+
+/** Applies a validated TaskUpdate patch onto an existing `tasks` Wix
+    item's raw data, renaming assigneeStaffId->assigneeId. Returns a
+    *complete* object for updateWixDataItem's full-replace semantics. */
+export function applyTaskUpdateToWixData(existing: WixTaskItem, patch: TaskUpdate): WixTaskItem {
+  const next: WixTaskItem = { ...existing };
+  if (patch.text !== undefined) next.text = patch.text;
+  if (patch.isDone !== undefined) next.isDone = patch.isDone;
+  if (patch.assigneeStaffId !== undefined) next.assigneeId = patch.assigneeStaffId;
+  return next;
 }

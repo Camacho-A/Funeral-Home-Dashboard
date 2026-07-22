@@ -233,3 +233,98 @@ describe('casesService.list/get — wix mode (dataAdapterMode = "wix")', () => {
     await expect(casesService.list(organization, {}, 'wix')).rejects.toThrow('Failed to load cases.');
   });
 });
+
+describe('casesService.create/update — wix mode (dataAdapterMode = "wix")', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('create() POSTs /api/cases with organizationId and session-derived identity fields, never touching caseFixtures', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const fakeCase = { id: 'new-1', organizationId: DEFAULT_ORGANIZATION_ID, decedentName: 'Test' };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ case: fakeCase }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const before = caseFixtures.length;
+    const result = await casesService.create(
+      organization,
+      { decedentName: 'Test', nextOfKinName: 'NOK', nextOfKinPhone: '555-0000' },
+      session,
+      template,
+      'wix',
+    );
+
+    expect(result).toEqual(fakeCase);
+    expect(caseFixtures.length).toBe(before); // never mutated the mock fixture array
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/cases',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          decedentName: 'Test',
+          nextOfKinName: 'NOK',
+          nextOfKinPhone: '555-0000',
+          dateOfBirth: undefined,
+          dateOfDeath: undefined,
+          timeOfDeath: undefined,
+          placeOfDeath: undefined,
+          weight: undefined,
+          assignedStaffId: session.staffId,
+          fieldValues: undefined,
+          createdBy: session.staffId,
+          intakeOwnerId: session.staffId,
+        }),
+      }),
+    );
+  });
+
+  it('create() throws a clear error on a non-ok response', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+
+    await expect(
+      casesService.create(
+        organization,
+        { decedentName: 'Test', nextOfKinName: '', nextOfKinPhone: '' },
+        session,
+        template,
+        'wix',
+      ),
+    ).rejects.toThrow('Failed to create case.');
+  });
+
+  it('update() PATCHes /api/cases/[caseId] with organizationId and the patch, never touching caseFixtures', async () => {
+    const fakeUpdated = { id: '1042', organizationId: DEFAULT_ORGANIZATION_ID, decedentName: 'Renamed' };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ case: fakeUpdated }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await casesService.update(organization, '1042', { decedentName: 'Renamed' }, 'wix');
+
+    expect(result).toEqual(fakeUpdated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/cases/1042',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } }),
+      }),
+    );
+  });
+
+  it('update() still enforces intakeOwnerId immutability locally before ever calling fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      casesService.update(organization, '1042', { intakeOwnerId: 'staff-x' } as unknown as Parameters<typeof casesService.update>[2], 'wix'),
+    ).rejects.toThrow(/intakeOwnerId cannot be changed/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('update() throws a clear error on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    await expect(casesService.update(organization, 'no-such-case', { decedentName: 'x' }, 'wix')).rejects.toThrow(
+      /not found for this organization/,
+    );
+  });
+});

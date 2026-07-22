@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { mapWixCaseItem } from './wixCaseMapper';
+import {
+  mapWixCaseItem,
+  buildWixCaseData,
+  validateAndPickCaseUpdate,
+  applyCaseUpdateToWixData,
+} from './wixCaseMapper';
 
 const validItem = {
   beaconCaseId: '1042',
@@ -104,5 +109,133 @@ describe('mapWixCaseItem', () => {
     expect(mapWixCaseItem({ ...validItem, paymentStatus: 'refunded' })).toBeNull();
     expect(mapWixCaseItem({ ...validItem, isVeteran: 'no' })).toBeNull();
     expect(mapWixCaseItem({ ...validItem, checklistState: 'not-an-object' })).toBeNull();
+  });
+});
+
+describe('buildWixCaseData', () => {
+  const params = {
+    beaconCaseId: 'new-case-1',
+    organizationId: 'managed-cremations',
+    caseType: 'cremation',
+    workflowTemplateId: 'workflow-template-standard-cremation',
+    workflowTemplateVersion: 1,
+    workflowSnapshot: validItem.workflowSnapshot,
+    intakeOwnerId: 'staff-dana',
+    createdBy: 'staff-dana',
+    assignedStaffId: 'staff-dana',
+    decedentName: 'New Decedent',
+    dateOfBirth: '01/01/1950',
+    dateOfDeath: '07/20/2026',
+    timeOfDeath: '10:00',
+    placeOfDeath: 'Test Hospital',
+    weight: '160 lb',
+    nextOfKinName: 'NOK',
+    nextOfKinPhone: '555-0000',
+    fieldValues: {},
+    createdAt: '2026-07-23T00:00:00.000Z',
+  };
+
+  it('builds a complete Wix cases item, round-trippable through mapWixCaseItem', () => {
+    const data = buildWixCaseData(params);
+    const mapped = mapWixCaseItem(data);
+
+    expect(mapped).not.toBeNull();
+    expect(mapped?.id).toBe('new-case-1');
+    expect(mapped?.organizationId).toBe('managed-cremations');
+    expect(mapped?.assignedStaffId).toBe('staff-dana');
+    expect(mapped?.rawStage).toBe(0);
+    expect(mapped?.isDeleted).toBe(false);
+    expect(mapped?.paymentStatus).toBe('awaiting_payment');
+  });
+
+  it('defaults a new case to stage 0, an empty checklist, and not archived', () => {
+    const data = buildWixCaseData(params);
+    expect(data.currentStage).toBe(0);
+    expect(data.checklistState).toEqual({});
+    expect(data.isArchived).toBe(false);
+  });
+});
+
+describe('validateAndPickCaseUpdate', () => {
+  it('picks only known, correctly-typed fields', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      decedentName: 'Renamed',
+      isVeteran: true,
+      checklistState: { 0: true },
+    });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ decedentName: 'Renamed', isVeteran: true, checklistState: { 0: true } });
+  });
+
+  it('silently drops immutable/unknown fields even when present in the body', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      decedentName: 'Renamed',
+      organizationId: 'evergreen-memorial-group',
+      workflowTemplateId: 'forged-template',
+      workflowTemplateVersion: 99,
+      workflowSnapshot: { stages: [] },
+      intakeOwnerId: 'staff-someone-else',
+      createdBy: 'staff-someone-else',
+      createdAt: '2000-01-01T00:00:00.000Z',
+      id: 'forged-id',
+    });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ decedentName: 'Renamed' });
+  });
+
+  it('rejects a present-but-wrong-typed field rather than silently dropping or coercing it', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ rawStage: 'not-a-number', isVeteran: 'yes' });
+    expect(errors).toContain('rawStage');
+    expect(errors).toContain('isVeteran');
+    expect(patch).toEqual({});
+  });
+
+  it('validates the paymentStatus and vaPublishChoice enums', () => {
+    expect(validateAndPickCaseUpdate({ paymentStatus: 'refunded' }).errors).toContain('paymentStatus');
+    expect(validateAndPickCaseUpdate({ paymentStatus: 'paid_in_full' }).patch.paymentStatus).toBe('paid_in_full');
+    expect(validateAndPickCaseUpdate({ vaPublishChoice: 'invalid' }).errors).toContain('vaPublishChoice');
+    expect(validateAndPickCaseUpdate({ vaPublishChoice: null }).patch.vaPublishChoice).toBeNull();
+  });
+
+  it('allows assignedStaffId and stalledReason to be null', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ assignedStaffId: null, stalledReason: null });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ assignedStaffId: null, stalledReason: null });
+  });
+
+  it('returns an error for a non-object body', () => {
+    expect(validateAndPickCaseUpdate(null).errors.length).toBeGreaterThan(0);
+    expect(validateAndPickCaseUpdate('a string').errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('applyCaseUpdateToWixData', () => {
+  it('merges a patch onto the existing data, preserving every untouched field', () => {
+    const existing = { ...validItem };
+    const result = applyCaseUpdateToWixData(existing, { decedentName: 'Renamed' });
+
+    expect(result.decedentName).toBe('Renamed');
+    expect(result.organizationId).toBe(existing.organizationId);
+    expect(result.workflowSnapshot).toBe(existing.workflowSnapshot);
+    expect(result.nextOfKinName).toBe(existing.nextOfKinName);
+  });
+
+  it('renames Beacon field names to their Wix collection equivalents', () => {
+    const existing = { ...validItem };
+    const result = applyCaseUpdateToWixData(existing, {
+      assignedStaffId: 'staff-new',
+      rawStage: 5,
+      isDeleted: true,
+    });
+
+    expect(result.caseHandlerId).toBe('staff-new');
+    expect(result.currentStage).toBe(5);
+    expect(result.isArchived).toBe(true);
+  });
+
+  it('does not mutate the original existing object', () => {
+    const existing = { ...validItem };
+    applyCaseUpdateToWixData(existing, { decedentName: 'Renamed' });
+    expect(existing.decedentName).toBe(validItem.decedentName);
   });
 });

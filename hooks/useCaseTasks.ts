@@ -27,13 +27,14 @@ export function useCaseTasks(caseId: string) {
   }
 
   const addTask = useMutation({
-    mutationFn: (input: NewTaskInput) => tasksService.create(organization, { ...input, caseId }),
+    mutationFn: (input: NewTaskInput) =>
+      tasksService.create(organization, { ...input, caseId }, organization.dataAdapterMode),
     onSuccess: invalidate,
   });
 
   const toggleTask = useMutation({
     mutationFn: ({ taskId, isDone }: { taskId: string; isDone: boolean }) =>
-      tasksService.update(organization, taskId, { isDone }),
+      tasksService.update(organization, taskId, { isDone }, organization.dataAdapterMode),
     onSuccess: invalidate,
   });
 

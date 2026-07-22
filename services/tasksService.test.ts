@@ -105,8 +105,8 @@ describe('tasksService.list — wix mode (dataAdapterMode = "wix")', () => {
   });
 });
 
-describe('tasksService.create/update/remove — untouched by Phase 15D', () => {
-  it('create/update/remove continue to operate on the shared client-side taskFixtures array regardless of dataAdapterMode', async () => {
+describe('tasksService.create/update/remove — mock mode (dataAdapterMode omitted or "mock")', () => {
+  it('create/update/remove continue to operate on the shared client-side taskFixtures array, unchanged since before Phase 16', async () => {
     const before = taskFixtures.length;
     const created = await tasksService.create(organization, {
       text: 'Untouched write path check',
@@ -120,5 +120,83 @@ describe('tasksService.create/update/remove — untouched by Phase 15D', () => {
 
     await tasksService.remove(organization, created.id);
     expect(taskFixtures.some((t) => t.id === created.id)).toBe(false);
+  });
+});
+
+describe('tasksService.create/update/remove — wix mode (dataAdapterMode = "wix")', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('create() POSTs /api/tasks with organizationId, never touching taskFixtures', async () => {
+    const fakeTask = { id: 'new-task', organizationId: DEFAULT_ORGANIZATION_ID, text: 'New', isDone: false, assigneeStaffId: null, caseId: null, createdAt: '2026-07-23T00:00:00.000Z' };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ task: fakeTask }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const before = taskFixtures.length;
+    const result = await tasksService.create(organization, { text: 'New', assigneeStaffId: null }, 'wix');
+
+    expect(result).toEqual(fakeTask);
+    expect(taskFixtures.length).toBe(before);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tasks',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ organizationId: DEFAULT_ORGANIZATION_ID, text: 'New', assigneeStaffId: null, caseId: undefined }),
+      }),
+    );
+  });
+
+  it('create() throws a clear error on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+    await expect(tasksService.create(organization, { text: 'x', assigneeStaffId: null }, 'wix')).rejects.toThrow(
+      'Failed to create task.',
+    );
+  });
+
+  it('update() PATCHes /api/tasks/[taskId] with organizationId and the patch, never touching taskFixtures', async () => {
+    const fakeUpdated = { id: 'task-1', organizationId: DEFAULT_ORGANIZATION_ID, text: 'Renamed', isDone: false, assigneeStaffId: null, caseId: null, createdAt: '2026-07-23T00:00:00.000Z' };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ task: fakeUpdated }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await tasksService.update(organization, 'task-1', { text: 'Renamed' }, 'wix');
+
+    expect(result).toEqual(fakeUpdated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tasks/task-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ organizationId: DEFAULT_ORGANIZATION_ID, patch: { text: 'Renamed' } }),
+      }),
+    );
+  });
+
+  it('update() throws a clear error on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    await expect(tasksService.update(organization, 'no-such-task', { isDone: true }, 'wix')).rejects.toThrow(
+      /not found for this organization/,
+    );
+  });
+
+  it('remove() DELETEs /api/tasks/[taskId] with organizationId as a query param', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await tasksService.remove(organization, 'task-1', 'wix');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/task-1?organizationId=${DEFAULT_ORGANIZATION_ID}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('remove() treats a 404 as success (already gone), matching mock mode\'s "removing a nonexistent task is a no-op"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    await expect(tasksService.remove(organization, 'no-such-task', 'wix')).resolves.toBeUndefined();
+  });
+
+  it('remove() throws on a genuine failure (not 404)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+    await expect(tasksService.remove(organization, 'task-1', 'wix')).rejects.toThrow(/Failed to remove task/);
   });
 });

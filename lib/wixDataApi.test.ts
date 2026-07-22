@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { queryWixDataItems } from './wixDataApi';
+import { queryWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem } from './wixDataApi';
 
 const ENV_KEYS = ['WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -62,5 +62,91 @@ describe('queryWixDataItems', () => {
     );
 
     await expect(queryWixDataItems('organizations', {})).rejects.not.toThrow(/test-key-value/);
+  });
+});
+
+describe('insertWixDataItem', () => {
+  it('POSTs with the correct headers and body shape, including a custom item id when given', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ dataItem: { id: 'case-1', dataCollectionId: 'cases', data: { beaconCaseId: 'case-1' } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await insertWixDataItem('cases', { beaconCaseId: 'case-1' }, 'case-1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.wixapis.com/wix-data/v2/items',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'test-key-value', 'wix-site-id': 'test-site-id' },
+        body: JSON.stringify({ dataCollectionId: 'cases', dataItem: { id: 'case-1', data: { beaconCaseId: 'case-1' } } }),
+      }),
+    );
+    expect(result.id).toBe('case-1');
+  });
+
+  it('omits the id field when no custom item id is given, letting Wix auto-generate one', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ dataItem: { id: 'auto-generated', dataCollectionId: 'tasks', data: {} } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await insertWixDataItem('tasks', { text: 'hi' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ body: JSON.stringify({ dataCollectionId: 'tasks', dataItem: { data: { text: 'hi' } } }) }),
+    );
+  });
+
+  it('throws a clean error naming the collection and status on failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }));
+    await expect(insertWixDataItem('cases', {})).rejects.toThrow(/cases.*400/);
+  });
+});
+
+describe('updateWixDataItem', () => {
+  it('PUTs to the item-scoped URL with the full data object', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ dataItem: { id: 'case-1', dataCollectionId: 'cases', data: { decedentName: 'Updated' } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await updateWixDataItem('cases', 'case-1', { decedentName: 'Updated' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.wixapis.com/wix-data/v2/items/case-1?dataCollectionId=cases',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ dataItem: { id: 'case-1', data: { decedentName: 'Updated' } } }),
+      }),
+    );
+  });
+
+  it('throws a clean error naming the collection and status on failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
+    await expect(updateWixDataItem('cases', 'no-such-id', {})).rejects.toThrow(/cases.*404/);
+  });
+});
+
+describe('deleteWixDataItem', () => {
+  it('DELETEs to the item-scoped URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deleteWixDataItem('tasks', 'task-1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.wixapis.com/wix-data/v2/items/task-1?dataCollectionId=tasks',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('throws a clean error naming the collection and status on failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
+    await expect(deleteWixDataItem('tasks', 'task-1')).rejects.toThrow(/tasks.*500/);
   });
 });

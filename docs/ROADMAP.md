@@ -14,6 +14,14 @@ Notably, the Reports screen's org switcher in the current design already lists a
 
 **Resolution:** a single reusable helper, `lib/auth/requireAuthorizedOrganization.ts`'s `requireAuthorizedOrganization(requestedOrganizationId)`, composes the already-existing, already-tested `resolveAuthorizationContext` (Phase 13) with session resolution and a standardized `401`/`403` `NextResponse`. All six Route Handlers now call it before using `organizationId` for anything, and use only the returned, trusted `context.organizationId` downstream. See ADR-015 for the full design, the architecture-review findings that preceded implementation, and what remains explicitly deferred (real Wix-backed membership data, still mock-fixture-only; Phase 16 write endpoints must reuse this same helper rather than re-deriving authorization inline).
 
+## Completed: Wix Write Integration (Phase 16)
+
+**Status: closed 2026-07-23.** Full writeup: [ADR-016](./adr/ADR-016-wix-write-integration.md).
+
+**The gap (now closed):** `casesService.create/update` and `tasksService.create/update/remove` were mock-only — a case or task created/edited while `DATA_ADAPTER=wix` never persisted to Wix, so it never appeared in a subsequent Wix-sourced read (documented in ADR-013/014). Real Wix writes now exist for case create/update and task create/update/delete, all reusing Phase 15X's `requireAuthorizedOrganization` — no new authorization logic was written. `lib/wixDataApi.ts` gained `insertWixDataItem`/`updateWixDataItem`/`deleteWixDataItem`; `lib/wixCaseMapper.ts`/`lib/wixTaskMapper.ts` gained matching write-side build/validate/merge functions; four Route Handlers were added or extended (`POST /api/cases`, `PATCH /api/cases/[caseId]`, `POST /api/tasks`, and a new `app/api/tasks/[taskId]/route.ts` for `PATCH`/`DELETE`).
+
+**Remaining, explicitly deferred (unchanged by this phase):** `createdBy`/`intakeOwnerId` still derive from `hooks/useSession.ts`'s hardcoded stub, not a real server-resolved identity — Identity Model Hardening remains open. Real Wix-backed `organizationMemberships` reads (Phase 15X's own deferred item) are also still outstanding — both are prerequisites for a genuine second organization to operate through this app, not just exist in fixtures.
+
 ## Version 2 Candidates (not committed, not scheduled)
 
 These are logical next steps once V1 is in production use at Managed Cremations, in roughly the order they'd likely be needed:

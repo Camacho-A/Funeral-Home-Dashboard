@@ -7,6 +7,7 @@ const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
 
 let mockQueryWixDataItems = vi.fn();
+let mockInsertWixDataItem = vi.fn();
 
 vi.mock('@/lib/wixDataApi', async () => {
   const { getWixServerConfig } = await import('@/lib/env');
@@ -14,6 +15,10 @@ vi.mock('@/lib/wixDataApi', async () => {
     queryWixDataItems: (...args: unknown[]) => {
       getWixServerConfig();
       return mockQueryWixDataItems(...args);
+    },
+    insertWixDataItem: (...args: unknown[]) => {
+      getWixServerConfig();
+      return mockInsertWixDataItem(...args);
     },
   };
 });
@@ -27,7 +32,57 @@ vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
 }));
 
-const { GET } = await import('./route');
+const { GET, POST } = await import('./route');
+
+const WORKFLOW_TEMPLATE_ITEM = {
+  id: 'workflow-template-standard-cremation',
+  dataCollectionId: 'workflowTemplates',
+  data: {
+    beaconTemplateId: 'workflow-template-standard-cremation',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    isSystemTemplate: false,
+    name: 'Standard Cremation Workflow',
+    isEnabled: true,
+    caseTypes: ['cremation'],
+  },
+};
+const WORKFLOW_TEMPLATE_VERSION_ITEM = {
+  id: 'v1',
+  dataCollectionId: 'workflowTemplateVersions',
+  data: {
+    beaconTemplateId: 'workflow-template-standard-cremation',
+    version: 1,
+    caseTypes: ['cremation'],
+    stages: [{ rawStage: 0, displayStage: 0, label: 'First Call & Payment', slaTargetDays: 1, checklist: { items: [] } }],
+    intake: { sections: [] },
+    createdAt: '2026-07-22T00:49:03.000Z',
+  },
+};
+
+function mockEnabledTemplate() {
+  mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+    if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
+    if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+    return Promise.resolve({ dataItems: [] });
+  });
+}
+
+function postRequest(body: unknown) {
+  return new Request('http://localhost/api/cases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+const VALID_CREATE_BODY = {
+  organizationId: DEFAULT_ORGANIZATION_ID,
+  decedentName: 'Test Decedent',
+  nextOfKinName: 'Test NOK',
+  nextOfKinPhone: '555-0000',
+  createdBy: 'staff-dana',
+  intakeOwnerId: 'staff-dana',
+};
 
 function requestFor(organizationId: string | null, searchQuery?: string) {
   const params = new URLSearchParams();
@@ -40,6 +95,7 @@ beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
+  mockInsertWixDataItem = vi.fn();
   mockSession = { user: mockDefaultUser };
 });
 
@@ -203,5 +259,135 @@ describe('GET /api/cases — wix mode', () => {
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const bodyText = await response.text();
     expect(bodyText).not.toContain('super-secret-test-value');
+  });
+});
+
+describe('POST /api/cases — authorization', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('returns 401 when there is no session at all', async () => {
+    mockSession = null;
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(401);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 for a forged organizationId the session has no membership in — rejected before any write', async () => {
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, organizationId: SECOND_MOCK_ORGANIZATION_ID }));
+    expect(response.status).toBe(403);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/cases — validation', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('returns 400 when organizationId is missing from the body', async () => {
+    const { organizationId, ...rest } = VALID_CREATE_BODY;
+    void organizationId;
+    const response = await POST(postRequest(rest));
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 400 for invalid JSON', async () => {
+    const response = await POST(new Request('http://localhost/api/cases', { method: 'POST', body: '{not json' }));
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 400 when a required field is missing or empty', async () => {
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, decedentName: '' }));
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/decedentName/);
+  });
+
+  it('returns 400 when an optional field has the wrong type', async () => {
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, weight: 123 }));
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 400 when DATA_ADAPTER is not wix', async () => {
+    process.env.DATA_ADAPTER = 'mock';
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('POST /api/cases — creation', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('resolves the organization\'s enabled workflow template server-side and creates the case', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.decedentName).toBe('Test Decedent');
+    expect(body.case.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+    expect(body.case.workflowTemplateId).toBe('workflow-template-standard-cremation');
+    expect(body.case.rawStage).toBe(0);
+    expect(body.case.isDeleted).toBe(false);
+  });
+
+  it('sets the Wix item id to the generated beaconCaseId at insert time', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    await POST(postRequest(VALID_CREATE_BODY));
+
+    const [collectionId, , itemId] = mockInsertWixDataItem.mock.calls[0];
+    expect(collectionId).toBe('cases');
+    expect(typeof itemId).toBe('string');
+    expect(itemId.length).toBeGreaterThan(0);
+  });
+
+  it('never trusts a client-supplied workflowTemplateId — ignores it and resolves the template independently', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(
+      postRequest({ ...VALID_CREATE_BODY, workflowTemplateId: 'forged-template-id', workflowSnapshot: { stages: [] } }),
+    );
+    const body = await response.json();
+
+    expect(body.case.workflowTemplateId).toBe('workflow-template-standard-cremation');
+  });
+
+  it('returns 422 when the organization has no enabled workflow template', async () => {
+    mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(422);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('propagates a Wix write failure as a 503 without leaking internal details', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockRejectedValue(new Error('Wix Data insert failed for collection "cases" (HTTP 500).'));
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).not.toMatch(/test-key/);
   });
 });

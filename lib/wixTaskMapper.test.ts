@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { mapWixTaskItem } from './wixTaskMapper';
+import {
+  mapWixTaskItem,
+  buildWixTaskData,
+  validateAndPickTaskUpdate,
+  applyTaskUpdateToWixData,
+} from './wixTaskMapper';
 
 const validItem = {
   beaconTaskId: 'task-1',
@@ -74,5 +79,97 @@ describe('mapWixTaskItem', () => {
     expect(result).not.toHaveProperty('priority');
     expect(result).not.toHaveProperty('status');
     expect(result).not.toHaveProperty('completedAt');
+  });
+});
+
+describe('buildWixTaskData', () => {
+  it('builds a complete Wix tasks item, round-trippable through mapWixTaskItem', () => {
+    const data = buildWixTaskData({
+      beaconTaskId: 'new-task-1',
+      organizationId: 'managed-cremations',
+      text: 'New task',
+      assigneeStaffId: 'staff-dana',
+      caseId: '1046',
+      createdAt: '2026-07-23T00:00:00.000Z',
+    });
+    const mapped = mapWixTaskItem(data);
+
+    expect(mapped).not.toBeNull();
+    expect(mapped?.id).toBe('new-task-1');
+    expect(mapped?.assigneeStaffId).toBe('staff-dana');
+    expect(mapped?.isDone).toBe(false);
+    expect(mapped?.caseId).toBe('1046');
+  });
+
+  it('defaults a new task to isDone: false', () => {
+    const data = buildWixTaskData({
+      beaconTaskId: 'x',
+      organizationId: 'managed-cremations',
+      text: 'x',
+      assigneeStaffId: null,
+      caseId: null,
+      createdAt: '2026-07-23T00:00:00.000Z',
+    });
+    expect(data.isDone).toBe(false);
+  });
+});
+
+describe('validateAndPickTaskUpdate', () => {
+  it('picks only known, correctly-typed fields', () => {
+    const { patch, errors } = validateAndPickTaskUpdate({ text: 'Renamed', isDone: true });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ text: 'Renamed', isDone: true });
+  });
+
+  it('silently drops immutable/unknown fields even when present in the body', () => {
+    const { patch, errors } = validateAndPickTaskUpdate({
+      text: 'Renamed',
+      organizationId: 'evergreen-memorial-group',
+      caseId: 'forged-case-id',
+      id: 'forged-id',
+      createdAt: '2000-01-01T00:00:00.000Z',
+    });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ text: 'Renamed' });
+  });
+
+  it('rejects a present-but-wrong-typed field rather than silently dropping or coercing it', () => {
+    const { patch, errors } = validateAndPickTaskUpdate({ isDone: 'yes', text: 42 });
+    expect(errors).toContain('isDone');
+    expect(errors).toContain('text');
+    expect(patch).toEqual({});
+  });
+
+  it('allows assigneeStaffId to be null (unassigning a task)', () => {
+    const { patch, errors } = validateAndPickTaskUpdate({ assigneeStaffId: null });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ assigneeStaffId: null });
+  });
+
+  it('returns an error for a non-object body', () => {
+    expect(validateAndPickTaskUpdate(null).errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('applyTaskUpdateToWixData', () => {
+  it('merges a patch onto the existing data, preserving every untouched field', () => {
+    const existing = { ...validItem };
+    const result = applyTaskUpdateToWixData(existing, { text: 'Renamed' });
+
+    expect(result.text).toBe('Renamed');
+    expect(result.organizationId).toBe(existing.organizationId);
+    expect(result.caseId).toBe(existing.caseId);
+  });
+
+  it('renames assigneeStaffId to assigneeId', () => {
+    const existing = { ...validItem };
+    const result = applyTaskUpdateToWixData(existing, { assigneeStaffId: 'staff-new' });
+    expect(result.assigneeId).toBe('staff-new');
+  });
+
+  it('does not mutate the original existing object', () => {
+    const existing = { ...validItem };
+    applyTaskUpdateToWixData(existing, { text: 'Renamed' });
+    expect(existing.text).toBe(validItem.text);
   });
 });

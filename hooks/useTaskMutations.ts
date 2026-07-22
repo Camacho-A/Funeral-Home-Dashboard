@@ -18,18 +18,18 @@ export function useTaskMutations() {
   }
 
   const addTask = useMutation({
-    mutationFn: (input: NewTaskInput) => tasksService.create(organization, input),
+    mutationFn: (input: NewTaskInput) => tasksService.create(organization, input, organization.dataAdapterMode),
     onSuccess: invalidate,
   });
 
   const toggleTask = useMutation({
     mutationFn: ({ taskId, isDone }: { taskId: string; isDone: boolean }) =>
-      tasksService.update(organization, taskId, { isDone }),
+      tasksService.update(organization, taskId, { isDone }, organization.dataAdapterMode),
     onSuccess: invalidate,
   });
 
   const removeTask = useMutation({
-    mutationFn: (taskId: string) => tasksService.remove(organization, taskId),
+    mutationFn: (taskId: string) => tasksService.remove(organization, taskId, organization.dataAdapterMode),
     onSuccess: invalidate,
   });
 

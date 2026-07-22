@@ -1,4 +1,5 @@
 import type { StageTemplate, IntakeTemplate, WorkflowTemplate, WorkflowTemplateVersion } from '../types/workflowTemplate';
+import { queryWixDataItems } from './wixDataApi';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Mirrors
@@ -157,4 +158,38 @@ export function buildWorkflowTemplate(
     caseTypes: summary.caseTypes,
     versions: sortedVersions,
   };
+}
+
+/**
+ * Phase 15B (originally inline in app/api/workflow-templates/route.ts,
+ * moved here in Phase 16 so app/api/cases/route.ts's case-create handler
+ * can reuse the exact same join logic when independently resolving an
+ * organization's enabled workflow template server-side, rather than
+ * duplicating it). Queries `workflowTemplates` filtered by organizationId,
+ * then joins each with its `workflowTemplateVersions` rows. A template
+ * with zero valid versions is excluded; a malformed record is skipped.
+ */
+export async function fetchWixWorkflowTemplates(organizationId: string): Promise<WorkflowTemplate[]> {
+  const templatesResponse = await queryWixDataItems<WixWorkflowTemplateItem>('workflowTemplates', {
+    filter: { organizationId },
+  });
+
+  const summaries = templatesResponse.dataItems
+    .map((item) => mapWixWorkflowTemplateItem(item.data))
+    .filter((summary) => summary !== null);
+
+  const templates = await Promise.all(
+    summaries.map(async (summary) => {
+      const versionsResponse = await queryWixDataItems<WixWorkflowTemplateVersionItem>('workflowTemplateVersions', {
+        filter: { beaconTemplateId: summary.id },
+      });
+      const versions = versionsResponse.dataItems
+        .map((item) => mapWixWorkflowTemplateVersionItem(item.data))
+        .filter((version) => version !== null);
+
+      return buildWorkflowTemplate(summary, versions);
+    }),
+  );
+
+  return templates.filter((template) => template !== null);
 }

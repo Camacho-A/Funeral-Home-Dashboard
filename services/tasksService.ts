@@ -1,5 +1,5 @@
 import type { OrganizationContext } from '../types/organization';
-import type { CaseTask, NewTaskInput } from '../types/task';
+import type { CaseTask, NewTaskInput, TaskUpdate } from '../types/task';
 import type { DataAdapterMode } from '../lib/env';
 import { taskFixtures } from './__mocks__/fixtures';
 
@@ -42,7 +42,37 @@ export async function list(
   return body.tasks;
 }
 
-export async function create(context: OrganizationContext, input: NewTaskInput): Promise<CaseTask> {
+/**
+ * Phase 16 (Wix Write Integration): create()/update()/remove() gained the
+ * same `dataAdapterMode` parameter list()/get() already had (see
+ * docs/adr/ADR-014, ADR-016) — "mock" (the default) runs the exact
+ * pre-Phase-16 fixture-mutating code, unchanged; "wix" instead
+ * POST/PATCH/DELETEs app/api/tasks' Route Handlers, which alone write to
+ * Wix and re-verify organizationId server-side.
+ */
+export async function create(
+  context: OrganizationContext,
+  input: NewTaskInput,
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<CaseTask> {
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        organizationId: context.organizationId,
+        text: input.text,
+        assigneeStaffId: input.assigneeStaffId,
+        caseId: input.caseId,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to create task.');
+    }
+    const body = (await response.json()) as { task: CaseTask };
+    return body.task;
+  }
+
   const newTask: CaseTask = {
     id: `task-${taskFixtures.length + 1}`,
     organizationId: context.organizationId,
@@ -59,8 +89,22 @@ export async function create(context: OrganizationContext, input: NewTaskInput):
 export async function update(
   context: OrganizationContext,
   taskId: string,
-  patch: Partial<Pick<CaseTask, 'isDone' | 'text' | 'assigneeStaffId'>>,
+  patch: TaskUpdate,
+  dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<CaseTask> {
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organizationId: context.organizationId, patch }),
+    });
+    if (!response.ok) {
+      throw new Error(`Task ${taskId} not found for this organization`);
+    }
+    const body = (await response.json()) as { task: CaseTask };
+    return body.task;
+  }
+
   const index = taskFixtures.findIndex(
     (t) => t.id === taskId && t.organizationId === context.organizationId,
   );
@@ -70,7 +114,22 @@ export async function update(
   return updated;
 }
 
-export async function remove(context: OrganizationContext, taskId: string): Promise<void> {
+export async function remove(
+  context: OrganizationContext,
+  taskId: string,
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<void> {
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch(
+      `/api/tasks/${encodeURIComponent(taskId)}?organizationId=${encodeURIComponent(context.organizationId)}`,
+      { method: 'DELETE' },
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Failed to remove task ${taskId}`);
+    }
+    return;
+  }
+
   const index = taskFixtures.findIndex(
     (t) => t.id === taskId && t.organizationId === context.organizationId,
   );

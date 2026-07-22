@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
-import { queryWixDataItems } from '@/lib/wixDataApi';
-import { mapWixTaskItem, type WixTaskItem } from '@/lib/wixTaskMapper';
+import { queryWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
+import { mapWixTaskItem, buildWixTaskData, type WixTaskItem } from '@/lib/wixTaskMapper';
+import type { WixCaseItem } from '@/lib/wixCaseMapper';
 import { taskFixtures } from '@/services/__mocks__/fixtures';
 import type { CaseTask } from '@/types/task';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -67,5 +68,90 @@ export async function GET(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
     return NextResponse.json({ tasks: [], error: message }, { status: 503 });
+  }
+}
+
+/**
+ * Phase 16 (Wix Write Integration). Creates a task, persisted to Wix — see
+ * docs/adr/ADR-016-wix-write-integration.md. Requires DATA_ADAPTER=wix
+ * (mock-mode task creation stays on tasksService.create's existing
+ * client-side path, which never calls this route).
+ *
+ * If `caseId` is provided, it's verified to belong to the same
+ * organizationId (a fresh Wix query, not trusted from the body) before
+ * the task is created — "if the task belongs to a case, verify tenant
+ * consistency." A caseId that doesn't resolve is rejected with 400, not
+ * silently ignored or silently linked anyway.
+ */
+export async function POST(request: Request) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ task: null, error: 'Invalid JSON body.' }, { status: 400 });
+  }
+  if (!body || typeof body !== 'object') {
+    return NextResponse.json({ task: null, error: 'Invalid request body.' }, { status: 400 });
+  }
+  const b = body as Record<string, unknown>;
+
+  if (typeof b.organizationId !== 'string') {
+    return NextResponse.json({ task: null, error: 'organizationId is required.' }, { status: 400 });
+  }
+
+  const authResult = await requireAuthorizedOrganization(b.organizationId);
+  if (!authResult.authorized) return authResult.response;
+  const { organizationId } = authResult.context;
+
+  if (getDataAdapterMode() !== 'wix') {
+    return NextResponse.json({ task: null, error: 'This endpoint requires DATA_ADAPTER=wix.' }, { status: 400 });
+  }
+
+  if (typeof b.text !== 'string' || b.text.trim() === '') {
+    return NextResponse.json({ task: null, error: 'Invalid or missing required field: text' }, { status: 400 });
+  }
+  if ('assigneeStaffId' in b && b.assigneeStaffId !== null && typeof b.assigneeStaffId !== 'string') {
+    return NextResponse.json({ task: null, error: 'Invalid field: assigneeStaffId' }, { status: 400 });
+  }
+  if ('caseId' in b && b.caseId !== null && b.caseId !== undefined && typeof b.caseId !== 'string') {
+    return NextResponse.json({ task: null, error: 'Invalid field: caseId' }, { status: 400 });
+  }
+  const caseId = typeof b.caseId === 'string' ? b.caseId : null;
+  const assigneeStaffId = typeof b.assigneeStaffId === 'string' ? b.assigneeStaffId : null;
+
+  try {
+    if (caseId !== null) {
+      const caseResponse = await queryWixDataItems<WixCaseItem>('cases', {
+        filter: { beaconCaseId: caseId, organizationId, isArchived: false },
+        paging: { limit: 1 },
+      });
+      if (!caseResponse.dataItems[0]) {
+        return NextResponse.json(
+          { task: null, error: 'caseId does not refer to a case in this organization.' },
+          { status: 400 },
+        );
+      }
+    }
+
+    const beaconTaskId = crypto.randomUUID();
+    const data = buildWixTaskData({
+      beaconTaskId,
+      organizationId,
+      text: b.text,
+      assigneeStaffId,
+      caseId,
+      createdAt: new Date().toISOString(),
+    });
+
+    const inserted = await insertWixDataItem<WixTaskItem>('tasks', data, beaconTaskId);
+    const created = mapWixTaskItem(inserted.data);
+    if (!created) {
+      return NextResponse.json({ task: null, error: 'Failed to create task.' }, { status: 500 });
+    }
+
+    return NextResponse.json({ task: created }, { status: 201 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
+    return NextResponse.json({ task: null, error: message }, { status: 503 });
   }
 }
