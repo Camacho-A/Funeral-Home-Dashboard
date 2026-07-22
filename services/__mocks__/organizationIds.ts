@@ -2,7 +2,7 @@
  * Organization IDs live in their own module, separate from fixtures.ts,
  * specifically so services/__mocks__/workflowTemplates.ts and fixtures.ts
  * can both depend on them without importing from each other — fixtures.ts
- * needs the Managed Cremations workflow template (to backfill
+ * needs the standard cremation workflow template (to backfill
  * Case.workflowSnapshot on every seed case), and workflowTemplates.ts needs
  * to know which organizationId each template belongs to; either direction
  * of a direct fixtures.ts ⇄ workflowTemplates.ts import would be circular.

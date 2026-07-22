@@ -3,14 +3,14 @@ import { buildCaseViewModel } from './viewModel';
 import type { Case } from '../../types/case';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../workflow/snapshot';
 import {
-  managedCremationsWorkflowTemplateFixture,
+  standardCremationWorkflowTemplateFixture,
   secondOrgWorkflowTemplateFixture,
 } from '../../services/__mocks__/workflowTemplates';
 import { JOTFORM_INTEGRATION_ID } from '../../services/__mocks__/externalFormIntegrations';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '../../services/__mocks__/organizationIds';
 
 function baseCase(overrides: Partial<Case>): Case {
-  const template = managedCremationsWorkflowTemplateFixture;
+  const template = standardCremationWorkflowTemplateFixture;
   const version = latestTemplateVersion(template);
   return {
     id: 'test-case',
@@ -102,7 +102,7 @@ describe('buildCaseViewModel — JotForm modeled as an integration, not a domain
     // resolveChecklist deliberately doesn't surface it, since done/locked
     // resolution never branches on it. The reference lives only in the
     // template (proven directly against the fixture, not the view model).
-    const templateItem = managedCremationsWorkflowTemplateFixture.versions[0].stages.find(
+    const templateItem = standardCremationWorkflowTemplateFixture.versions[0].stages.find(
       (s) => s.rawStage === 2,
     )?.checklist.items[0];
     expect(templateItem?.externalFormIntegrationId).toBe(JOTFORM_INTEGRATION_ID);

@@ -45,7 +45,7 @@ function buildChecklistItems(rawStage: number): ChecklistItemTemplate[] {
   }));
 }
 
-const managedCremationsStages: StageTemplate[] = Array.from(
+const standardCremationStages: StageTemplate[] = Array.from(
   { length: RAW_STAGE_COUNT },
   (_, rawStage) => {
     const displayStage = toDisplayStage(rawStage);
@@ -73,7 +73,7 @@ const managedCremationsStages: StageTemplate[] = Array.from(
  * aren't intake-time facts, so no field maps to them, matching the old
  * buildIntakeFieldValues exactly.
  */
-const managedCremationsIntake: IntakeTemplate = {
+const standardCremationIntake: IntakeTemplate = {
   sections: [
     {
       key: 'decedent',
@@ -148,20 +148,20 @@ const managedCremationsIntake: IntakeTemplate = {
   ],
 };
 
-export const MANAGED_CREMATIONS_WORKFLOW_TEMPLATE_ID = 'workflow-template-managed-cremations-cremation';
+export const STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID = 'workflow-template-standard-cremation';
 
-export const managedCremationsWorkflowTemplateFixture: WorkflowTemplate = {
-  id: MANAGED_CREMATIONS_WORKFLOW_TEMPLATE_ID,
+export const standardCremationWorkflowTemplateFixture: WorkflowTemplate = {
+  id: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID,
   organizationId: DEFAULT_ORGANIZATION_ID,
-  name: 'Managed Cremations — Standard Cremation Workflow',
+  name: 'Standard Cremation Workflow',
   isEnabled: true,
   caseTypes: ['cremation'],
   versions: [
     {
       version: 1,
       caseTypes: ['cremation'],
-      stages: managedCremationsStages,
-      intake: managedCremationsIntake,
+      stages: standardCremationStages,
+      intake: standardCremationIntake,
       createdAt: '2026-01-01T00:00:00.000Z',
     },
   ],
@@ -241,6 +241,6 @@ export const secondOrgWorkflowTemplateFixture: WorkflowTemplate = {
 };
 
 export const workflowTemplateFixtures: WorkflowTemplate[] = [
-  managedCremationsWorkflowTemplateFixture,
+  standardCremationWorkflowTemplateFixture,
   secondOrgWorkflowTemplateFixture,
 ];

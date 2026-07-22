@@ -1,12 +1,20 @@
+'use client';
+
+import { useOrganization } from '@/hooks/useOrganization';
+import { getMockOrganizationName } from '@/services/__mocks__/authFixtures';
 import { SidebarNavItem, SidebarNavItemInert } from './SidebarNavItem';
 import styles from './Sidebar.module.css';
 
 /**
- * Persistent app sidebar (Frontend Engineering Plan, Phase 2). Org name and
- * staff-online count are static placeholders for now — Phase 4 wires these to
- * useOrganization()/useStaff() once those exist.
+ * Persistent app sidebar (Frontend Engineering Plan, Phase 2). Org name now
+ * reads from useOrganization() (Organization Naming Cleanup) instead of a
+ * hardcoded literal — staff-online count remains a static placeholder,
+ * unchanged, until useStaff()-backed aggregation exists.
  */
 export function Sidebar() {
+  const { organizationId } = useOrganization();
+  const organizationName = getMockOrganizationName(organizationId);
+
   return (
     <nav className={styles.sidebar} aria-label="Primary">
       <div className={styles.brand}>
@@ -22,7 +30,7 @@ export function Sidebar() {
       </div>
 
       <div className={styles.footer}>
-        Manor Cremation
+        {organizationName}
         <br />
         <span className={styles.footerStaffOnline}>3 staff online</span>
       </div>

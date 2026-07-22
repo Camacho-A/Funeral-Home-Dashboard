@@ -4,7 +4,7 @@ import type { CaseTask } from '../../types/task';
 import type { CaseLogEntry } from '../../types/caseLogEntry';
 import type { CaseDocument } from '../../types/document';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
-import { managedCremationsWorkflowTemplateFixture } from './workflowTemplates';
+import { standardCremationWorkflowTemplateFixture } from './workflowTemplates';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
 
 /**
@@ -222,7 +222,7 @@ const RAW_SEED_CASES: RawSeedCase[] = [
   },
 ];
 
-const managedCremationsV1 = latestTemplateVersion(managedCremationsWorkflowTemplateFixture);
+const standardCremationV1 = latestTemplateVersion(standardCremationWorkflowTemplateFixture);
 
 /**
  * Phase 11 migration (see docs/TEMPLATE_VERSIONING.md's migration notes):
@@ -259,10 +259,10 @@ export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw) => ({
   intakeOwnerId: null, // predates this field — who actually took these historical calls is genuinely unknown, not backfilled
   createdAt: raw.dod, // no separate case-creation timestamp in the original seed data
   isDeleted: false,
-  workflowTemplateId: managedCremationsWorkflowTemplateFixture.id,
-  workflowTemplateVersion: managedCremationsV1.version,
+  workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+  workflowTemplateVersion: standardCremationV1.version,
   caseType: 'cremation',
-  workflowSnapshot: buildCaseWorkflowSnapshot(managedCremationsWorkflowTemplateFixture, managedCremationsV1),
+  workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, standardCremationV1),
 }));
 
 /**

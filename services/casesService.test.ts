@@ -3,10 +3,10 @@ import { casesService } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
 import { DEFAULT_ORGANIZATION_ID, staffFixtures } from './__mocks__/fixtures';
-import { managedCremationsWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
+import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 
 const organization: OrganizationContext = { organizationId: DEFAULT_ORGANIZATION_ID };
-const template = managedCremationsWorkflowTemplateFixture;
+const template = standardCremationWorkflowTemplateFixture;
 
 function sessionFor(staffId: string): Session {
   const staff = staffFixtures.find((s) => s.id === staffId);

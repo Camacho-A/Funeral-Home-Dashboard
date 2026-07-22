@@ -12,9 +12,19 @@ import { staffFixtures } from './fixtures';
  */
 
 export const mockOrganizationFixtures: Organization[] = [
-  { id: DEFAULT_ORGANIZATION_ID, name: 'Managed Cremations', isActive: true },
+  { id: DEFAULT_ORGANIZATION_ID, name: "Manor's Cremation", isActive: true },
   { id: SECOND_MOCK_ORGANIZATION_ID, name: 'Evergreen Memorial Group', isActive: true },
 ];
+
+/**
+ * Resolves an organizationId to its display name for UI use (e.g. Sidebar,
+ * Reports' org selector) — the mock-mode equivalent of a real lookup
+ * against a future organizations data source. Falls back to the raw id if
+ * no fixture matches, rather than throwing, since this is presentation-only.
+ */
+export function getMockOrganizationName(organizationId: string): string {
+  return mockOrganizationFixtures.find((org) => org.id === organizationId)?.name ?? organizationId;
+}
 
 /**
  * The default mock user — used by the mock login flow and local dev.

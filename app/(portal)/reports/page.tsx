@@ -4,6 +4,8 @@ import { useMemo } from 'react';
 import { useCases } from '@/hooks/useCases';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
 import { useStaff } from '@/hooks/useStaff';
+import { useOrganization } from '@/hooks/useOrganization';
+import { getMockOrganizationName } from '@/services/__mocks__/authFixtures';
 import {
   computeKpis,
   computeStageBreakdown,
@@ -26,6 +28,8 @@ import styles from './page.module.css';
  * codebase rather than the plan's original, superseded mention of it.
  */
 export default function ReportsPage() {
+  const { organizationId } = useOrganization();
+  const organizationName = getMockOrganizationName(organizationId);
   const { data: cases } = useCases();
   const { data: staffList = [] } = useStaff();
   const viewModels = useCaseViewModels(cases);
@@ -42,9 +46,9 @@ export default function ReportsPage() {
     <div>
       <div className={styles.header}>
         <h1 className={styles.title}>Reports</h1>
-        <SelectField className={styles.orgSelect} disabled defaultValue="Manor Cremation">
-          <option>Manor Cremation</option>
-          <option disabled>Gus Camacho Funeral Home — coming soon</option>
+        <SelectField className={styles.orgSelect} disabled defaultValue={organizationName}>
+          <option>{organizationName}</option>
+          <option disabled>Second Organization — coming soon</option>
         </SelectField>
       </div>
 
