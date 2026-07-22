@@ -29,6 +29,19 @@ export function Modal({
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
+  // Callers routinely pass an inline onClose (e.g. `() => setOpen(false)`),
+  // a new function identity on every render of the caller — including
+  // renders triggered by something entirely unrelated to opening/closing,
+  // like a keystroke updating the caller's own form state. Reading the
+  // latest onClose through a ref, rather than depending on it directly,
+  // keeps the effect below from re-running (and re-stealing focus into the
+  // panel) on every such render — it should only run on real open/close
+  // transitions.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return;
 
@@ -37,7 +50,7 @@ export function Modal({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -65,7 +78,7 @@ export function Modal({
       document.removeEventListener('keydown', handleKeyDown);
       triggerRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
