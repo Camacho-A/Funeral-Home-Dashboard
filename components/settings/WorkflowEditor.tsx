@@ -42,6 +42,7 @@ const VALIDATION_TYPE_OPTIONS = [
   'currency',
   'creditCard',
   'expiration',
+  'time',
 ] as const;
 
 function generateUniqueFieldKey(intake: IntakeTemplate): string {

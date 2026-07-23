@@ -11,6 +11,7 @@ import {
   isValidCurrencyAmount,
   isValidCreditCardNumber,
   getValidationError,
+  normalizeTimeInput,
 } from './inputMask';
 
 describe('formatDateInput', () => {
@@ -258,8 +259,123 @@ describe('getValidationError (Phase 19)', () => {
   });
 
   it('treats an empty value as valid for every type (required-ness is a separate concern)', () => {
-    (['email', 'phone', 'date', 'zip', 'numeric', 'currency', 'creditCard', 'expiration'] as const).forEach((type) => {
-      expect(getValidationError(type, '')).toBeNull();
+    (['email', 'phone', 'date', 'zip', 'numeric', 'currency', 'creditCard', 'expiration', 'time'] as const).forEach(
+      (type) => {
+        expect(getValidationError(type, '')).toBeNull();
+      },
+    );
+  });
+});
+
+describe('normalizeTimeInput (Phase 19.1 — Time Input Normalization)', () => {
+  it('treats an empty string as valid, returning empty (nothing to normalize yet)', () => {
+    expect(normalizeTimeInput('')).toBe('');
+    expect(normalizeTimeInput('   ')).toBe('');
+  });
+
+  describe('PM', () => {
+    it('normalizes an afternoon/evening PM time to 24-hour', () => {
+      expect(normalizeTimeInput('2:30 PM')).toBe('14:30');
+      expect(normalizeTimeInput('2:30PM')).toBe('14:30'); // no space
+      expect(normalizeTimeInput('11:59 PM')).toBe('23:59');
+    });
+
+    it('accepts an hour with no minutes ("2 PM"), defaulting minutes to 00', () => {
+      expect(normalizeTimeInput('2 PM')).toBe('14:00');
+    });
+  });
+
+  describe('AM', () => {
+    it('normalizes a morning AM time to 24-hour', () => {
+      expect(normalizeTimeInput('2:30 AM')).toBe('02:30');
+      expect(normalizeTimeInput('11:15 AM')).toBe('11:15');
+    });
+  });
+
+  describe('noon and midnight — the 12 o\'clock special case', () => {
+    it('normalizes 12:00 PM (noon) to 12:00, not 24:00', () => {
+      expect(normalizeTimeInput('12:00 PM')).toBe('12:00');
+    });
+
+    it('normalizes 12:00 AM (midnight) to 00:00, not 12:00', () => {
+      expect(normalizeTimeInput('12:00 AM')).toBe('00:00');
+    });
+
+    it('normalizes other 12:xx PM/AM values correctly too', () => {
+      expect(normalizeTimeInput('12:15 PM')).toBe('12:15');
+      expect(normalizeTimeInput('12:15 AM')).toBe('00:15');
+    });
+  });
+
+  describe('lowercase input', () => {
+    it('accepts lowercase am/pm', () => {
+      expect(normalizeTimeInput('02:30 am')).toBe('02:30');
+      expect(normalizeTimeInput('2:30pm')).toBe('14:30');
+    });
+
+    it('accepts mixed case', () => {
+      expect(normalizeTimeInput('2:30 Pm')).toBe('14:30');
+    });
+  });
+
+  describe('whitespace', () => {
+    it('trims leading/trailing whitespace around the whole value', () => {
+      expect(normalizeTimeInput('  2:30 PM  ')).toBe('14:30');
+    });
+
+    it('tolerates extra internal whitespace before the meridiem', () => {
+      expect(normalizeTimeInput('2:30    PM')).toBe('14:30');
+    });
+  });
+
+  describe('direct 24-hour input', () => {
+    it('accepts an unambiguous 24-hour value (hour 13-23) with no AM/PM marker', () => {
+      expect(normalizeTimeInput('14:30')).toBe('14:30');
+      expect(normalizeTimeInput('23:59')).toBe('23:59');
+      expect(normalizeTimeInput('13:00')).toBe('13:00');
+    });
+
+    it('accepts hour 0 (midnight, 24-hour notation) with no AM/PM marker', () => {
+      expect(normalizeTimeInput('0:30')).toBe('00:30');
+      expect(normalizeTimeInput('00:00')).toBe('00:00');
+    });
+  });
+
+  describe('missing AM/PM (ambiguous)', () => {
+    it('rejects an hour 1-12 with no AM/PM marker — genuinely ambiguous', () => {
+      expect(normalizeTimeInput('2:30')).toBeNull();
+      expect(normalizeTimeInput('12:00')).toBeNull();
+      expect(normalizeTimeInput('9:00')).toBeNull();
+    });
+  });
+
+  describe('invalid hours', () => {
+    it('rejects an out-of-range 24-hour value', () => {
+      expect(normalizeTimeInput('25:00')).toBeNull();
+      expect(normalizeTimeInput('24:00')).toBeNull();
+    });
+
+    it('rejects an hour outside 1-12 when an AM/PM marker is present', () => {
+      expect(normalizeTimeInput('13:00 PM')).toBeNull();
+      expect(normalizeTimeInput('0:30 PM')).toBeNull();
+    });
+  });
+
+  describe('invalid minutes', () => {
+    it('rejects out-of-range minutes with an AM/PM marker', () => {
+      expect(normalizeTimeInput('12:75 PM')).toBeNull();
+    });
+
+    it('rejects out-of-range minutes in direct 24-hour input', () => {
+      expect(normalizeTimeInput('14:75')).toBeNull();
+    });
+  });
+
+  describe('malformed input', () => {
+    it('rejects non-time garbage', () => {
+      expect(normalizeTimeInput('not a time')).toBeNull();
+      expect(normalizeTimeInput('14:30:00')).toBeNull();
+      expect(normalizeTimeInput('PM')).toBeNull();
     });
   });
 });

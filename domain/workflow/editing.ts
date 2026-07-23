@@ -139,6 +139,7 @@ const VALID_VALIDATION_TYPES = new Set([
   'currency',
   'creditCard',
   'expiration',
+  'time',
 ]);
 
 /**

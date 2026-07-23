@@ -47,6 +47,26 @@ describe('resolveIntakeField — defaults for a pre-Phase-19 record', () => {
     expect(resolveIntakeField(field, 0).displayOrder).toBe(7);
   });
 
+  it('Phase 19.1: defaults validationType to "time" for a time field with no explicit validationType', () => {
+    const field: IntakeFieldTemplate = { key: 'timeOfDeath', label: 'Time of death', fieldType: 'time' };
+    expect(resolveIntakeField(field, 0).validationType).toBe('time');
+  });
+
+  it('Phase 19.1: an explicit validationType on a time field still wins over the "time" default', () => {
+    const field: IntakeFieldTemplate = {
+      key: 'x',
+      label: 'X',
+      fieldType: 'time',
+      validationType: 'none',
+    };
+    expect(resolveIntakeField(field, 0).validationType).toBe('none');
+  });
+
+  it('Phase 19.1: a non-time field never gets the "time" validationType default', () => {
+    const field: IntakeFieldTemplate = { key: 'x', label: 'X', fieldType: 'text' };
+    expect(resolveIntakeField(field, 0).validationType).toBe('none');
+  });
+
   it('passes through explicitly configured Phase 19 properties unchanged', () => {
     const field: IntakeFieldTemplate = {
       key: 'email',

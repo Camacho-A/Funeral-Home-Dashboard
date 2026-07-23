@@ -16,7 +16,7 @@ import { useMutation } from '@tanstack/react-query';
 import { caseLogService } from '@/services/caseLogService';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
-import { formatDateInput, formatCardExpiryInput, getValidationError } from '@/utils/inputMask';
+import { formatDateInput, formatCardExpiryInput, getValidationError, normalizeTimeInput } from '@/utils/inputMask';
 import type { Case } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import styles from './NewCaseModal.module.css';
@@ -164,6 +164,24 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setTouched((prev) => ({ ...prev, [key]: true }));
   }
 
+  /**
+   * Phase 19.1 (Time Input Normalization). On blur, a time field's raw
+   * typed text ("2:30 PM") is replaced with its canonical "HH:mm" form via
+   * the one shared utils/inputMask.ts#normalizeTimeInput — the same
+   * function components/case/CaseInformationCard.tsx's inline editor uses.
+   * An invalid/ambiguous value is left exactly as typed (per "preserve
+   * invalid user input for correction") — getValidationError's own 'time'
+   * case (below, in renderIntakeField) then reports the same failure as an
+   * inline error once `touched` is set.
+   */
+  function handleFieldBlur(field: ResolvedIntakeField) {
+    markTouched(field.key);
+    if (field.fieldType === 'time') {
+      const normalized = normalizeTimeInput(draft[field.key] ?? field.defaultValue);
+      if (normalized !== null) setDraftValue(field.key, normalized);
+    }
+  }
+
   function toggleReveal(key: string) {
     setRevealedFields((prev) => ({ ...prev, [key]: !prev[key] }));
   }
@@ -262,7 +280,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         <SelectField
           value={value}
           onChange={(e) => setDraftValue(field.key, e.target.value)}
-          onBlur={() => markTouched(field.key)}
+          onBlur={() => handleFieldBlur(field)}
           aria-label={field.label}
         >
           <option value="">{field.placeholder ?? 'Select…'}</option>
@@ -286,7 +304,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         <TextArea
           value={value}
           onChange={(e) => setIntakeFieldValue(field, e.target.value)}
-          onBlur={() => markTouched(field.key)}
+          onBlur={() => handleFieldBlur(field)}
           placeholder={field.placeholder}
           aria-label={field.label}
         />
@@ -298,7 +316,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
             type={field.masked && !isRevealed ? 'password' : 'text'}
             value={value}
             onChange={(e) => setIntakeFieldValue(field, e.target.value)}
-            onBlur={() => markTouched(field.key)}
+            onBlur={() => handleFieldBlur(field)}
             placeholder={field.placeholder}
           />
           {field.masked && (

@@ -95,7 +95,8 @@ export type IntakeValidationType =
   | 'numeric'
   | 'currency'
   | 'creditCard'
-  | 'expiration';
+  | 'expiration'
+  | 'time';
 
 export type IntakeFieldTemplate = {
   /** Stable key used both as the New Case form's draft-state key and,

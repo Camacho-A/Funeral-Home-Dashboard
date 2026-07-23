@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NewCaseModal } from './NewCaseModal';
 import { OrganizationProvider } from '@/hooks/useOrganization';
-import { staffFixtures } from '@/services/__mocks__/fixtures';
+import { staffFixtures, caseFixtures } from '@/services/__mocks__/fixtures';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseLogService } from '@/services/caseLogService';
@@ -348,6 +348,114 @@ describe('NewCaseModal — calendar date and expiry validation', () => {
 
     expect(screen.getByText(/enter a valid expiration/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+});
+
+describe('NewCaseModal — time input normalization (Phase 19.1)', () => {
+  it('normalizes a 12-hour PM value to 24-hour HH:mm once the field is blurred', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '2:30 PM' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('14:30');
+  });
+
+  it('normalizes a 12-hour AM value to 24-hour HH:mm', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '2:30 AM' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('02:30');
+  });
+
+  it('normalizes noon and midnight correctly', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '12:00 PM' } });
+    fireEvent.blur(timeOfDeath);
+    expect(timeOfDeath).toHaveValue('12:00');
+
+    fireEvent.change(timeOfDeath, { target: { value: '12:00 AM' } });
+    fireEvent.blur(timeOfDeath);
+    expect(timeOfDeath).toHaveValue('00:00');
+  });
+
+  it('accepts direct 24-hour input unchanged', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '14:30' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('14:30');
+  });
+
+  it('accepts lowercase am/pm', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '02:30 am' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('02:30');
+  });
+
+  it('preserves invalid input for correction and shows an inline error, without normalizing it', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '25:00' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('25:00'); // unchanged, not silently cleared or altered
+    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+
+  it('rejects an ambiguous value with no AM/PM marker', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '2:30' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('2:30');
+    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
+  });
+
+  it('rejects an invalid hour/minute combination like "12:75 PM"', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '12:75 PM' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+
+  it('persists the normalized HH:mm value — not the raw typed text — on the created case', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '2:30 PM' } });
+    fireEvent.blur(timeOfDeath);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const createdCase = caseFixtures.find((c) => c.id === newCaseId);
+    expect(createdCase?.timeOfDeath).toBe('14:30');
   });
 });
 

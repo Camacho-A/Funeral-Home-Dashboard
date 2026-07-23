@@ -52,7 +52,11 @@ export function resolveIntakeField(field: IntakeFieldTemplate, indexInSection: n
     uppercase: field.uppercase ?? false,
     masked: field.masked ?? field.password ?? false,
     multiline: fieldType === 'textarea',
-    validationType: field.validationType ?? 'none',
+    // Phase 19.1 (Time Input Normalization): a fieldType of 'time' implies
+    // time validation/normalization by default — an admin configuring a
+    // time field shouldn't also have to separately remember to set
+    // validationType — but an explicit validationType (rare) still wins.
+    validationType: field.validationType ?? (fieldType === 'time' ? 'time' : 'none'),
     options: field.options ?? [],
   };
 }

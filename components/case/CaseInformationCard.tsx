@@ -6,7 +6,7 @@ import { SelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
 import type { CaseUpdate, PaymentStatus, VaPublishChoice } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
-import { formatDateInput, isValidCalendarDate } from '@/utils/inputMask';
+import { formatDateInput, isValidCalendarDate, normalizeTimeInput } from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
 import styles from './CaseInformationCard.module.css';
 
@@ -43,7 +43,7 @@ function EditableField({
   label: string;
   value: string;
   onSave: (newValue: string) => void;
-  kind?: 'text' | 'date';
+  kind?: 'text' | 'date' | 'time';
   uppercase?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -75,11 +75,11 @@ function EditableField({
     setError(null);
   }
 
-  function commit() {
+  function commit(valueToCommit: string = draft) {
     setIsEditing(false);
-    if (draft !== displayValue) {
-      setPendingValue(draft);
-      onSave(draft);
+    if (valueToCommit !== displayValue) {
+      setPendingValue(valueToCommit);
+      onSave(valueToCommit);
     }
   }
 
@@ -87,6 +87,22 @@ function EditableField({
     if (kind === 'date' && draft !== '' && !isValidCalendarDate(draft)) {
       setDraft(displayValue);
       setIsEditing(false);
+      return;
+    }
+    if (kind === 'time') {
+      // Phase 19.1 (Time Input Normalization): the same shared
+      // utils/inputMask.ts#normalizeTimeInput components/modals/NewCaseModal.tsx
+      // uses — a blur away from an invalid/ambiguous value reverts (same
+      // "don't fight the browser's own blur order" reasoning as 'date'
+      // above), but a *valid* one commits its normalized canonical form,
+      // not the raw text the user actually typed.
+      const normalized = normalizeTimeInput(draft);
+      if (normalized === null) {
+        setDraft(displayValue);
+        setIsEditing(false);
+        return;
+      }
+      commit(normalized);
       return;
     }
     commit();
@@ -97,6 +113,15 @@ function EditableField({
       e.preventDefault();
       if (kind === 'date' && draft !== '' && !isValidCalendarDate(draft)) {
         setError('Enter a valid date (MM/DD/YYYY).');
+        return;
+      }
+      if (kind === 'time') {
+        const normalized = normalizeTimeInput(draft);
+        if (normalized === null) {
+          setError('Enter a valid time (e.g. 2:30 PM or 14:30).');
+          return;
+        }
+        commit(normalized);
         return;
       }
       commit();
@@ -120,7 +145,7 @@ function EditableField({
             onChange={(e) => handleChange(e.target.value)}
             onBlur={commitOrRevert}
             onKeyDown={handleKeyDown}
-            placeholder={kind === 'date' ? 'MM/DD/YYYY' : undefined}
+            placeholder={kind === 'date' ? 'MM/DD/YYYY' : kind === 'time' ? 'e.g. 2:30 PM' : undefined}
           />
           {error && (
             <div className={styles.fieldError} role="alert">
@@ -201,6 +226,7 @@ export function CaseInformationCard({
         <EditableField
           label="Time of death"
           value={timeOfDeath}
+          kind="time"
           onSave={(v) => onUpdateCaseInfo({ timeOfDeath: v })}
         />
         <EditableField

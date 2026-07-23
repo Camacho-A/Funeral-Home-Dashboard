@@ -147,8 +147,62 @@ export function isValidCreditCardNumber(value: string): boolean {
  * EXPIRY_FIELD_KEYS) instead of reading a field's own configured
  * validationType. Returns null for a valid (or empty/untouched) value.
  */
+/**
+ * Phase 19.1 (Time Input Normalization). Parses familiar 12-hour input
+ * ("2:30 PM", "2:30PM", "2 PM", "02:30 am") as well as direct 24-hour input
+ * ("14:30") into a canonical, zero-padded 24-hour "HH:mm" string — the only
+ * form ever persisted (see components/modals/NewCaseModal.tsx and
+ * components/case/CaseInformationCard.tsx, the two callers, neither of
+ * which re-implements this parsing). Returns `null` for anything invalid
+ * or ambiguous; returns `''` for an empty string (an untouched optional
+ * field isn't invalid, same convention as isValidCalendarDate above).
+ *
+ * Ambiguity rule: a bare "HH:mm" with no AM/PM marker is only accepted
+ * when it's *unambiguously* 24-hour notation — hour 0, or 13-23. Hours
+ * 1-12 without an AM/PM marker are rejected outright ("2:30" alone is
+ * genuinely ambiguous between 2 AM and 2 PM); with an AM/PM marker, only
+ * hours 1-12 are valid (12-hour clocks have no "13 PM" or "0 PM").
+ */
+export function normalizeTimeInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return '';
+
+  const twelveHourMatch = /^(\d{1,2})(?::(\d{2}))?\s*([aApP][mM])$/.exec(trimmed);
+  if (twelveHourMatch) {
+    const hour = Number(twelveHourMatch[1]);
+    const minute = twelveHourMatch[2] !== undefined ? Number(twelveHourMatch[2]) : 0;
+    const meridiem = twelveHourMatch[3].toLowerCase();
+    if (hour < 1 || hour > 12) return null;
+    if (minute < 0 || minute > 59) return null;
+    const hour24 = (hour % 12) + (meridiem === 'pm' ? 12 : 0);
+    return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  const twentyFourHourMatch = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
+  if (twentyFourHourMatch) {
+    const hour = Number(twentyFourHourMatch[1]);
+    const minute = Number(twentyFourHourMatch[2]);
+    if (hour < 0 || hour > 23) return null;
+    if (minute < 0 || minute > 59) return null;
+    if (hour >= 1 && hour <= 12) return null; // ambiguous without AM/PM
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
 export function getValidationError(
-  validationType: 'none' | 'email' | 'phone' | 'date' | 'zip' | 'numeric' | 'currency' | 'creditCard' | 'expiration',
+  validationType:
+    | 'none'
+    | 'email'
+    | 'phone'
+    | 'date'
+    | 'zip'
+    | 'numeric'
+    | 'currency'
+    | 'creditCard'
+    | 'expiration'
+    | 'time',
   value: string,
 ): string | null {
   switch (validationType) {
@@ -170,6 +224,8 @@ export function getValidationError(
       return isValidCreditCardNumber(value) ? null : 'Enter a valid card number.';
     case 'expiration':
       return isValidExpiryMonth(value) ? null : 'Enter a valid expiration (MM/YY).';
+    case 'time':
+      return normalizeTimeInput(value) !== null ? null : 'Enter a valid time (e.g. 2:30 PM or 14:30).';
     default:
       return null;
   }
