@@ -5,26 +5,30 @@ import {
   fetchWixWorkflowTemplateById,
   buildWixWorkflowTemplateVersionData,
   validateWorkflowStagesPayload,
+  validateIntakeTemplatePayload,
 } from '@/lib/wixWorkflowTemplateMapper';
-import { validateStageSequencing } from '@/domain/workflow/editing';
+import { validateStageSequencing, validateIntakeFields } from '@/domain/workflow/editing';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import type { WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflowTemplate';
 
 /**
- * Phase 18 (Workflow Management). Creates a new WorkflowTemplateVersion
- * from an admin's edited `stages` array — the only write operation this
- * phase adds. Always an INSERT, never an UPDATE: `workflowTemplateVersions`
- * is append-only (docs/WIX_DATA_SCHEMA.md's Collection 4), so "editing a
+ * Phase 18 (Workflow Management) / Phase 19 (Configurable Intake Form
+ * Builder). Creates a new WorkflowTemplateVersion from an admin's edited
+ * `stages` and `intake` — the only write operation either phase adds.
+ * Always an INSERT, never an UPDATE: `workflowTemplateVersions` is
+ * append-only (docs/WIX_DATA_SCHEMA.md's Collection 4), so "editing a
  * workflow" means "compute the next version number and add a new row,"
- * never touching version 1..N-1. See docs/adr/ADR-019-workflow-management.md.
+ * never touching version 1..N-1. See docs/adr/ADR-019-workflow-management.md
+ * and docs/adr/ADR-020-configurable-intake-form-builder.md.
  *
- * `caseTypes`/`intake` are always carried over unchanged from the latest
- * version — this phase's edit scope (stage names, checklist item labels,
- * SLA targets, attention stages, display order) never touches either, so
- * there's nothing in the request body for them; a future phase that adds
- * intake or case-type editing would extend the body here, not invent a
- * second endpoint.
+ * `stages` and `intake` are both required in the body — one
+ * WorkflowTemplateVersion is one cohesive snapshot of both, the same way
+ * buildCaseWorkflowSnapshot always clones both together (never one without
+ * the other). The Workflow Editor always submits its full current draft of
+ * each; whichever the admin didn't touch this save is simply the same
+ * value the form loaded. `caseTypes` still always carries over unchanged
+ * from the latest version — neither phase's edit scope touches it.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ templateId: string }> }) {
   const { templateId } = await params;
@@ -45,14 +49,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
 
-  const { stages, errors: shapeErrors } = validateWorkflowStagesPayload(body);
+  const { stages, errors: stageShapeErrors } = validateWorkflowStagesPayload(body);
   if (!stages) {
-    return NextResponse.json({ error: 'Invalid stages payload.', details: shapeErrors }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid stages payload.', details: stageShapeErrors }, { status: 400 });
+  }
+
+  const { intake, errors: intakeShapeErrors } = validateIntakeTemplatePayload(body);
+  if (!intake) {
+    return NextResponse.json({ error: 'Invalid intake payload.', details: intakeShapeErrors }, { status: 400 });
   }
 
   const sequencingErrors = validateStageSequencing(stages);
   if (sequencingErrors.length > 0) {
     return NextResponse.json({ error: 'Invalid workflow structure.', details: sequencingErrors }, { status: 400 });
+  }
+
+  const intakeErrors = validateIntakeFields(intake);
+  if (intakeErrors.length > 0) {
+    return NextResponse.json({ error: 'Invalid intake structure.', details: intakeErrors }, { status: 400 });
   }
 
   const adapter = getDataAdapterMode();
@@ -73,7 +87,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       version: latest.version + 1,
       caseTypes: latest.caseTypes,
       stages,
-      intake: latest.intake,
+      intake,
       createdAt: new Date().toISOString(),
     };
     template.versions.push(newVersion);
@@ -98,7 +112,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       version: nextVersionNumber,
       caseTypes: latest.caseTypes,
       stages,
-      intake: latest.intake,
+      intake,
       createdAt,
     });
 
@@ -120,7 +134,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       version: nextVersionNumber,
       caseTypes: latest.caseTypes,
       stages,
-      intake: latest.intake,
+      intake,
       createdAt,
     };
     const workflowTemplate: WorkflowTemplate = {

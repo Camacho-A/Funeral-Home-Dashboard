@@ -59,13 +59,60 @@ export type StageTemplate = {
   checklist: ChecklistTemplate;
 };
 
+/**
+ * Phase 19 (Configurable Intake Form Builder). The field types an admin can
+ * choose from in the Workflow Editor's intake builder — see
+ * domain/workflow/resolveIntakeField.ts for the fieldType -> rendering/
+ * masking/validation defaults NewCaseModal.tsx resolves each field through.
+ */
+export type IntakeFieldType =
+  | 'text'
+  | 'textarea'
+  | 'date'
+  | 'time'
+  | 'phone'
+  | 'email'
+  | 'number'
+  | 'currency'
+  | 'checkbox'
+  | 'select'
+  | 'creditCard'
+  | 'expiration'
+  | 'cvv';
+
+/**
+ * Which shared utils/inputMask.ts validator (if any) NewCaseModal runs
+ * against this field's value — 'none' is a real, explicit choice (some
+ * fields, like a hospice contact's name, have nothing to validate against),
+ * not the same as "unset."
+ */
+export type IntakeValidationType =
+  | 'none'
+  | 'email'
+  | 'phone'
+  | 'date'
+  | 'zip'
+  | 'numeric'
+  | 'currency'
+  | 'creditCard'
+  | 'expiration';
+
 export type IntakeFieldTemplate = {
   /** Stable key used both as the New Case form's draft-state key and,
       when set, to populate a structured Case field directly (decedentName,
-      nextOfKinName, ...) — see mapsToCaseField. */
+      nextOfKinName, ...) — see mapsToCaseField. Doubles as this field's
+      "id": nothing else on an IntakeFieldTemplate ever needs a second,
+      separate identifier. */
   key: string;
   label: string;
   placeholder?: string;
+  /** Legacy name for "renders masked with a Show/Hide toggle," predating
+      Phase 19's `masked` (see below) — still honored on its own so every
+      pre-Phase-19 record (the mock fixture, and the real Wix template
+      created before this phase) keeps masking exactly the fields it
+      always did, with no data migration. New/edited fields should set
+      `masked` instead; domain/workflow/resolveIntakeField.ts is the one
+      place that reads both and picks whichever is set. */
   password?: boolean;
   /** Which checklist item (by index, within the stage this intake feeds)
       this field's value seeds at case-creation time. Multiple fields can
@@ -79,6 +126,43 @@ export type IntakeFieldTemplate = {
       (the five card sub-fields feed the checklist only; decedentName
       feeds both). */
   mapsToCaseField?: string;
+
+  /**
+   * Phase 19 (Configurable Intake Form Builder) additions — every one of
+   * these is optional so every IntakeFieldTemplate that predates this phase
+   * (the mock fixture below and the real, already-created Wix
+   * `workflowTemplateVersions` row) remains a fully valid value of this
+   * type with no migration; domain/workflow/resolveIntakeField.ts's
+   * resolveIntakeField supplies a safe default for anything left unset,
+   * and is the *only* place that does — NewCaseModal.tsx and
+   * components/settings/'s intake editor both call it rather than each
+   * re-deriving their own defaults. See docs/adr/ADR-020-configurable-intake-form-builder.md.
+   */
+  fieldType?: IntakeFieldType;
+  /** Blocks New Case submission while blank — generalizes what was
+      previously hardcoded as "decedentName specifically is required." */
+  required?: boolean;
+  defaultValue?: string;
+  /** Explicit position within this field's section — defaults to the
+      field's own array index when absent (a pre-Phase-19 record has no
+      opinion on this, so it renders in the order it's already stored in,
+      unchanged). A *hint* the render order sorts by, not a strict,
+      no-gaps invariant the way StageTemplate.rawStage is — see
+      domain/workflow/editing.ts's validateIntakeFields for why. */
+  displayOrder?: number;
+  uppercase?: boolean;
+  /** Preferred name for "renders masked with a Show/Hide toggle" — see
+      `password` above for the legacy name it supersedes. */
+  masked?: boolean;
+  /** Mirrors `fieldType === 'textarea'` — kept as its own explicit
+      property because Phase 19's own field schema names it, but it isn't
+      independently settable in the Workflow Editor (that would allow the
+      contradictory `fieldType: 'text', multiline: true`); resolveIntakeField
+      always derives it from fieldType. */
+  multiline?: boolean;
+  validationType?: IntakeValidationType;
+  /** Only meaningful for fieldType 'select' — the option labels. */
+  options?: string[];
 };
 
 export type IntakeSectionTemplate = {

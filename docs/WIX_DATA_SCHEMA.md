@@ -113,6 +113,7 @@ This is a deliberate change in direction from what the current codebase actually
 - **TS type:** matches `WorkflowTemplateVersion` exactly.
 - **Mapping:** direct field-for-field.
 - **Item `_id` (Phase 18):** set to `` `${beaconTemplateId}-v${version}` `` at insert time — the same "system id doubles as the natural key" convention `cases`/`tasks`/`caseSequences` already use — so a same-version race between two concurrent edits collides on Wix's own `_id` uniqueness (409) instead of silently creating two rows both claiming the same version number.
+- **`intake` internal shape (Phase 19):** `IntakeFieldTemplate` gained several new optional properties (`fieldType`, `required`, `displayOrder`, `uppercase`, `masked`, `validationType`, `options`, ...) — see [ADR-020](./adr/ADR-020-configurable-intake-form-builder.md). Since `intake` is stored as one opaque JSON object (not broken into its own fields/columns here), **this required zero schema change to this collection** — the new properties simply ride along inside the same JSON blob this collection already stores.
 
 ## Collection 5 — `cases`
 

@@ -2,6 +2,8 @@ import type {
   StageTemplate,
   ChecklistItemTemplate,
   IntakeTemplate,
+  IntakeFieldTemplate,
+  IntakeSectionTemplate,
   WorkflowTemplate,
   WorkflowTemplateVersion,
 } from '../types/workflowTemplate';
@@ -342,6 +344,113 @@ export function validateWorkflowStagesPayload(body: unknown): { stages: StageTem
     return { stages: null, errors };
   }
   return { stages: stages as StageTemplate[], errors: [] };
+}
+
+/**
+ * Phase 19 (Configurable Intake Form Builder). Shape/type DTO validation
+ * for an admin's edited `intake` structure — the untrusted-JSON-body
+ * counterpart to validateWorkflowStagesPayload above, same reasoning: an
+ * HTTP body has no compile-time protection. Every Phase 19 property on
+ * IntakeFieldTemplate is optional (see that type's own comment), so this
+ * only rejects a property that's *present with the wrong type* — an
+ * absent one is fine and left undefined, exactly matching what a
+ * pre-Phase-19 record already looks like. Business-rule validation
+ * (unique keys, non-empty labels, select-needs-options) is a separate,
+ * deliberately later step — domain/workflow/editing.ts's
+ * validateIntakeFields, run by the Route Handler only after this passes.
+ */
+function isStringArrayIfPresent(value: unknown): value is string[] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
+}
+
+function validateIntakeFieldPayload(value: unknown, path: string, errors: string[]): IntakeFieldTemplate | null {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object.`);
+    return null;
+  }
+  if (typeof value.key !== 'string') errors.push(`${path}.key must be a string.`);
+  if (typeof value.label !== 'string') errors.push(`${path}.label must be a string.`);
+  if (value.placeholder !== undefined && typeof value.placeholder !== 'string') {
+    errors.push(`${path}.placeholder must be a string if present.`);
+  }
+  if (value.password !== undefined && typeof value.password !== 'boolean') {
+    errors.push(`${path}.password must be a boolean if present.`);
+  }
+  if (value.checklistItemIndex !== undefined && typeof value.checklistItemIndex !== 'number') {
+    errors.push(`${path}.checklistItemIndex must be a number if present.`);
+  }
+  if (value.mapsToCaseField !== undefined && typeof value.mapsToCaseField !== 'string') {
+    errors.push(`${path}.mapsToCaseField must be a string if present.`);
+  }
+  if (value.fieldType !== undefined && typeof value.fieldType !== 'string') {
+    errors.push(`${path}.fieldType must be a string if present.`);
+  }
+  if (value.required !== undefined && typeof value.required !== 'boolean') {
+    errors.push(`${path}.required must be a boolean if present.`);
+  }
+  if (value.defaultValue !== undefined && typeof value.defaultValue !== 'string') {
+    errors.push(`${path}.defaultValue must be a string if present.`);
+  }
+  if (value.displayOrder !== undefined && typeof value.displayOrder !== 'number') {
+    errors.push(`${path}.displayOrder must be a number if present.`);
+  }
+  if (value.uppercase !== undefined && typeof value.uppercase !== 'boolean') {
+    errors.push(`${path}.uppercase must be a boolean if present.`);
+  }
+  if (value.masked !== undefined && typeof value.masked !== 'boolean') {
+    errors.push(`${path}.masked must be a boolean if present.`);
+  }
+  if (value.multiline !== undefined && typeof value.multiline !== 'boolean') {
+    errors.push(`${path}.multiline must be a boolean if present.`);
+  }
+  if (value.validationType !== undefined && typeof value.validationType !== 'string') {
+    errors.push(`${path}.validationType must be a string if present.`);
+  }
+  if (!isStringArrayIfPresent(value.options)) {
+    errors.push(`${path}.options must be an array of strings if present.`);
+  }
+
+  if (typeof value.key !== 'string' || typeof value.label !== 'string') {
+    return null;
+  }
+  return value as unknown as IntakeFieldTemplate;
+}
+
+function validateIntakeSectionPayload(value: unknown, path: string, errors: string[]): IntakeSectionTemplate | null {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object.`);
+    return null;
+  }
+  if (typeof value.key !== 'string') errors.push(`${path}.key must be a string.`);
+  if (typeof value.label !== 'string') errors.push(`${path}.label must be a string.`);
+  if (!Array.isArray(value.fields)) {
+    errors.push(`${path}.fields must be an array.`);
+    return null;
+  }
+
+  const fields = value.fields.map((field, i) => validateIntakeFieldPayload(field, `${path}.fields[${i}]`, errors));
+
+  if (typeof value.key !== 'string' || typeof value.label !== 'string' || fields.some((f) => f === null)) {
+    return null;
+  }
+  return { key: value.key, label: value.label, fields: fields as IntakeFieldTemplate[] };
+}
+
+export function validateIntakeTemplatePayload(body: unknown): { intake: IntakeTemplate | null; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!isPlainObject(body) || !isPlainObject(body.intake) || !Array.isArray(body.intake.sections)) {
+    return { intake: null, errors: ['body.intake.sections must be an array.'] };
+  }
+
+  const sections = body.intake.sections.map((section, i) =>
+    validateIntakeSectionPayload(section, `intake.sections[${i}]`, errors),
+  );
+
+  if (errors.length > 0 || sections.some((section) => section === null)) {
+    return { intake: null, errors };
+  }
+  return { intake: { sections: sections as IntakeSectionTemplate[] }, errors: [] };
 }
 
 /**

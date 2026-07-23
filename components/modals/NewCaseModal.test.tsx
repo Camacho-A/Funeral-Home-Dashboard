@@ -7,6 +7,7 @@ import { staffFixtures } from '@/services/__mocks__/fixtures';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseLogService } from '@/services/caseLogService';
+import type { WorkflowTemplate } from '@/types/workflowTemplate';
 
 // A stable, shared mock so tests can assert on navigation — useRouter() is
 // called on every render (React hook rules), so an inline `() => vi.fn()`
@@ -87,6 +88,40 @@ async function renderModalWithFields() {
   const result = renderModal();
   await waitFor(() => expect(intakeInputs(result.container).length).toBeGreaterThan(0));
   return result;
+}
+
+/** Phase 19: stubs the workflow-templates fetch with a single custom
+    template so a test can exercise a specific fieldType/validationType
+    combination without depending on Managed Cremations' own 14-field
+    fixture. */
+function stubTemplateFetch(template: WorkflowTemplate | null) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ workflowTemplates: template ? [template] : [] }),
+    }),
+  );
+}
+
+function customTemplate(overrides: Partial<WorkflowTemplate['versions'][0]>): WorkflowTemplate {
+  return {
+    id: 'custom-template',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    name: 'Custom',
+    isEnabled: true,
+    caseTypes: ['cremation'],
+    versions: [
+      {
+        version: 1,
+        caseTypes: ['cremation'],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        intake: { sections: [] },
+        stages: [],
+        ...overrides,
+      },
+    ],
+  };
 }
 
 describe('NewCaseModal — intake owner is read-only', () => {
@@ -407,5 +442,185 @@ describe('NewCaseModal — partial-failure handling when the note fails to save'
 
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
     expect(vi.mocked(caseLogService.create).mock.calls.length).toBe(callsBeforeContinue);
+  });
+});
+
+describe('NewCaseModal — configurable field types render correctly (Phase 19)', () => {
+  it('renders a select field with its configured options', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'referral', label: 'Referral source', fieldType: 'select', options: ['Hospital', 'Hospice', 'Web'] },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderModal();
+    const select = (await screen.findByLabelText('Referral source')) as HTMLSelectElement;
+    const optionTexts = Array.from(select.options).map((o) => o.textContent);
+    expect(optionTexts).toEqual(['Select…', 'Hospital', 'Hospice', 'Web']);
+  });
+
+  it('renders a checkbox field and toggles its value', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'wantsService', label: 'Wants a memorial service', fieldType: 'checkbox' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderModal();
+    const checkbox = await screen.findByRole('checkbox', { name: 'Wants a memorial service' });
+    expect(checkbox).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(checkbox);
+    expect(checkbox).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('renders a textarea for a textarea-type field', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'specialInstructions', label: 'Special instructions', fieldType: 'textarea' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderModal();
+    // Two textareas exist once loaded: this field, plus the always-present
+    // Notes field.
+    expect(await screen.findByLabelText('Special instructions')).toBeInTheDocument();
+  });
+
+  it('validates an email field using the configured validationType', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'familyEmail', label: 'Family email', fieldType: 'email', validationType: 'email' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { container } = renderModal();
+    // Intake <input>s only — excludes the always-present Notes <textarea>,
+    // which also has an implicit "textbox" role and would otherwise collide
+    // with a role-based query.
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(2));
+    const emailInput = container.querySelectorAll('input')[1];
+
+    fireEvent.change(emailInput, { target: { value: 'not-an-email' } });
+    fireEvent.blur(emailInput);
+    expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
+
+    fireEvent.change(emailInput, { target: { value: 'family@example.com' } });
+    expect(screen.queryByText(/valid email/i)).not.toBeInTheDocument();
+  });
+
+  it('generically gates submission on any field marked required, not just decedentName', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'referredBy', label: 'Referred by', fieldType: 'text', required: true },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { container } = renderModal();
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(2));
+    const inputs = container.querySelectorAll('input');
+
+    fireEvent.change(inputs[0], { target: { value: 'Test Decedent' } });
+    // decedentName alone is filled, but "Referred by" is also required and still blank.
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+
+    fireEvent.change(inputs[1], { target: { value: 'Hospital' } });
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
+  });
+});
+
+describe('NewCaseModal — backward compatibility (Phase 19)', () => {
+  it('falls back to a minimal default intake form when the enabled template has zero intake sections', async () => {
+    stubTemplateFetch(customTemplate({ intake: { sections: [] } }));
+    renderModal();
+
+    // The fallback's three fields (decedent name, next of kin name/phone) —
+    // not a blank form.
+    await waitFor(() => expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(3));
+    expect(screen.getByText('Name of deceased')).toBeInTheDocument();
+    expect(screen.getByText('Next of kin — name')).toBeInTheDocument();
+    expect(screen.getByText('Next of kin — phone number')).toBeInTheDocument();
+  });
+
+  it('falls back to the default form when there is no enabled template at all', async () => {
+    stubTemplateFetch(null);
+    renderModal();
+    await waitFor(() => expect(screen.getAllByRole('textbox').length).toBeGreaterThanOrEqual(3));
+    expect(screen.getByText('Name of deceased')).toBeInTheDocument();
+  });
+
+  it('does not show the fallback form momentarily while the real template is still loading', async () => {
+    let resolveFetch!: (value: unknown) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+      ),
+    );
+    const { container } = renderModal();
+
+    // While the fetch is still pending, nothing dynamic has rendered yet —
+    // no fallback flash before the real data (or genuine absence of it) is
+    // known.
+    expect(container.querySelectorAll('input').length).toBe(0);
+
+    resolveFetch({
+      ok: true,
+      json: async () => ({
+        workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
+      }),
+    });
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(14));
   });
 });

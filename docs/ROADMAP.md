@@ -46,6 +46,16 @@ The first real admin surface for workflow templates: a new `/settings` page (act
 
 **Deferred, unchanged by this phase:** adding/removing a stage or checklist item; editing intake fields, case types, or a template's own name/enabled flag; reordering that preserves a combined display stage; full optimistic-concurrency retry for version-number races (a same-version collision 409s once rather than auto-retrying, per the ADR's own reasoning on why that's proportionate here).
 
+## Completed: Configurable Intake Form Builder (Phase 19)
+
+**Status: closed 2026-07-23.** Full writeup: [ADR-020](./adr/ADR-020-configurable-intake-form-builder.md).
+
+The New Case intake form is now fully data-driven. `IntakeFieldTemplate` gained `fieldType` (13 supported types), `required`, `defaultValue`, `displayOrder`, `uppercase`, `masked`, `multiline`, `validationType`, and `options` — every property optional, so every pre-existing field (mock fixture and the real Wix template) keeps working with zero migration. `components/modals/NewCaseModal.tsx` no longer hardcodes per-field behavior by literal key name (the old `UPPERCASE_FIELD_KEYS`/`DATE_FIELD_KEYS`/`EXPIRY_FIELD_KEYS` are gone) — it renders and validates purely from each field's own resolved configuration. The Workflow Editor (Phase 18) gained a matching intake-field builder: add/edit/delete/reorder fields, all saved as part of the same new `WorkflowTemplateVersion` as any stage edits. No changes to `Case`, `NewCaseInput`, or the Wix `cases`/`workflowTemplateVersions` schemas were needed — configurable fields either map to an existing structured `Case` property or land in the pre-existing `fieldValues` bucket, exactly as before.
+
+**Deferred, unchanged by this phase:** adding/removing an intake section (only fields within an existing section); editing the template's own name/`isEnabled`/`caseTypes`; live input masking for phone/currency (validation only, no auto-formatting); Phase 18's own deferred items (stage/checklist-item add/remove, combined-display-stage-aware reordering).
+
+**Security follow-up flagged, not implemented (see ADR-020's own section):** payment field (`cardNumber`/`cardExp`/`cardCvv`) persistence is unchanged by this phase and remains a real gap — values are stored as plaintext in `Case.fieldValues`, CVV is retained indefinitely, and the new `masked` property is a UI-only affordance with no encryption or PCI protection behind it. Full card data should eventually route through a PCI-compliant payment provider and be stored only as a token/reference; until then, any new logging/analytics/error-reporting work must explicitly exclude masked/payment fields.
+
 ## Version 2 Candidates (not committed, not scheduled)
 
 These are logical next steps once V1 is in production use at Managed Cremations, in roughly the order they'd likely be needed:

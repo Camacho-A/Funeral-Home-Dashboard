@@ -73,18 +73,40 @@ const standardCremationStages: StageTemplate[] = Array.from(
  * aren't intake-time facts, so no field maps to them, matching the old
  * buildIntakeFieldValues exactly.
  */
+/**
+ * Phase 19 (Configurable Intake Form Builder): every field below now sets
+ * the fieldType/uppercase/required/validationType that
+ * components/modals/NewCaseModal.tsx used to hardcode by literal key name
+ * (UPPERCASE_FIELD_KEYS/DATE_FIELD_KEYS/EXPIRY_FIELD_KEYS, now removed) —
+ * chosen to reproduce that exact prior behavior, not to add new
+ * validation Managed Cremations never had (e.g. cardZip still has no
+ * validationType, matching that it was never validated before either).
+ * `password` (cardNumber/cardCvv) is left exactly as it already was — the
+ * new `masked` property doesn't need to be set alongside it; see
+ * IntakeFieldTemplate's own comment on why resolveIntakeField reads either.
+ */
 const standardCremationIntake: IntakeTemplate = {
   sections: [
     {
       key: 'decedent',
       label: 'Decedent',
       fields: [
-        { key: 'decedentName', label: 'Name of deceased', checklistItemIndex: 0, mapsToCaseField: 'decedentName' },
+        {
+          key: 'decedentName',
+          label: 'Name of deceased',
+          checklistItemIndex: 0,
+          mapsToCaseField: 'decedentName',
+          fieldType: 'text',
+          uppercase: true,
+          required: true,
+        },
         {
           key: 'placeOfDeath',
           label: 'Place of death — name, address & phone number',
           checklistItemIndex: 1,
           mapsToCaseField: 'placeOfDeath',
+          fieldType: 'text',
+          uppercase: true,
         },
         {
           key: 'dateOfBirth',
@@ -92,6 +114,8 @@ const standardCremationIntake: IntakeTemplate = {
           placeholder: 'MM/DD/YYYY',
           checklistItemIndex: 2,
           mapsToCaseField: 'dateOfBirth',
+          fieldType: 'date',
+          validationType: 'date',
         },
         {
           key: 'weight',
@@ -99,6 +123,7 @@ const standardCremationIntake: IntakeTemplate = {
           placeholder: 'e.g. 165 lb',
           checklistItemIndex: 3,
           mapsToCaseField: 'weight',
+          fieldType: 'text',
         },
         {
           key: 'dateOfDeath',
@@ -106,6 +131,8 @@ const standardCremationIntake: IntakeTemplate = {
           placeholder: 'MM/DD/YYYY',
           checklistItemIndex: 4,
           mapsToCaseField: 'dateOfDeath',
+          fieldType: 'date',
+          validationType: 'date',
         },
         {
           key: 'timeOfDeath',
@@ -113,6 +140,7 @@ const standardCremationIntake: IntakeTemplate = {
           placeholder: '24hr, e.g. 14:30',
           checklistItemIndex: 5,
           mapsToCaseField: 'timeOfDeath',
+          fieldType: 'time',
         },
       ],
     },
@@ -124,13 +152,23 @@ const standardCremationIntake: IntakeTemplate = {
           key: 'dcContact',
           label: 'Hospice or physician to sign DC — name & phone number',
           checklistItemIndex: 6,
+          fieldType: 'text',
+          uppercase: true,
         },
-        { key: 'nextOfKinName', label: 'Next of kin — name', checklistItemIndex: 7, mapsToCaseField: 'nextOfKinName' },
+        {
+          key: 'nextOfKinName',
+          label: 'Next of kin — name',
+          checklistItemIndex: 7,
+          mapsToCaseField: 'nextOfKinName',
+          fieldType: 'text',
+          uppercase: true,
+        },
         {
           key: 'nextOfKinPhone',
           label: 'Next of kin — phone number',
           checklistItemIndex: 7,
           mapsToCaseField: 'nextOfKinPhone',
+          fieldType: 'phone',
         },
       ],
     },
@@ -138,11 +176,17 @@ const standardCremationIntake: IntakeTemplate = {
       key: 'payment',
       label: 'Payment',
       fields: [
-        { key: 'cardName', label: 'Name on card', checklistItemIndex: 8 },
-        { key: 'cardNumber', label: 'Card number', password: true, checklistItemIndex: 8 },
-        { key: 'cardExp', label: 'Expiration (MM/YY)', checklistItemIndex: 8 },
-        { key: 'cardCvv', label: 'CVV', password: true, checklistItemIndex: 8 },
-        { key: 'cardZip', label: 'Billing zip code', checklistItemIndex: 8 },
+        { key: 'cardName', label: 'Name on card', checklistItemIndex: 8, fieldType: 'text' },
+        { key: 'cardNumber', label: 'Card number', password: true, checklistItemIndex: 8, fieldType: 'creditCard' },
+        {
+          key: 'cardExp',
+          label: 'Expiration (MM/YY)',
+          checklistItemIndex: 8,
+          fieldType: 'expiration',
+          validationType: 'expiration',
+        },
+        { key: 'cardCvv', label: 'CVV', password: true, checklistItemIndex: 8, fieldType: 'cvv' },
+        { key: 'cardZip', label: 'Billing zip code', checklistItemIndex: 8, fieldType: 'text' },
       ],
     },
   ],

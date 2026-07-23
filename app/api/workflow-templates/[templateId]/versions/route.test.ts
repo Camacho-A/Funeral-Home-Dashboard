@@ -5,7 +5,7 @@ import {
   STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID,
 } from '@/services/__mocks__/workflowTemplates';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
-import type { StageTemplate } from '@/types/workflowTemplate';
+import type { IntakeTemplate, StageTemplate } from '@/types/workflowTemplate';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -48,11 +48,18 @@ function stage(rawStage: number, label: string): StageTemplate {
   };
 }
 
-function postRequest(templateId: string, body: unknown) {
+const DEFAULT_TEST_INTAKE: IntakeTemplate = {
+  sections: [{ key: 'decedent', label: 'Decedent', fields: [{ key: 'decedentName', label: 'Name of deceased' }] }],
+};
+
+function postRequest(templateId: string, body: Record<string, unknown>) {
   return POST(
     new Request(`http://localhost/api/workflow-templates/${templateId}/versions`, {
       method: 'POST',
-      body: JSON.stringify(body),
+      // Stage-focused tests below only care about `stages`; a valid
+      // minimal `intake` is filled in here by default so they don't all
+      // need to repeat one, matching Phase 19's DTO requiring both.
+      body: JSON.stringify({ intake: DEFAULT_TEST_INTAKE, ...body }),
     }),
     { params: Promise.resolve({ templateId }) },
   );
@@ -159,7 +166,7 @@ describe('POST /api/workflow-templates/[templateId]/versions — validation', ()
 });
 
 describe('POST /api/workflow-templates/[templateId]/versions — mock mode', () => {
-  it('appends a new version with number = latest + 1, preserving caseTypes/intake from the latest version', async () => {
+  it('appends a new version with number = latest + 1, preserving caseTypes from the latest version', async () => {
     const editedStages = [stage(0, 'Renamed First Stage')];
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
       organizationId: DEFAULT_ORGANIZATION_ID,
@@ -173,7 +180,60 @@ describe('POST /api/workflow-templates/[templateId]/versions — mock mode', () 
     expect(newVersion.version).toBe(2);
     expect(newVersion.stages[0].label).toBe('Renamed First Stage');
     expect(newVersion.caseTypes).toEqual(standardCremationWorkflowTemplateFixture.versions[0].caseTypes);
-    expect(newVersion.intake).toEqual(standardCremationWorkflowTemplateFixture.versions[0].intake);
+  });
+
+  it('persists an edited intake structure as part of the new version (Phase 19)', async () => {
+    const editedIntake: IntakeTemplate = {
+      sections: [
+        {
+          key: 'decedent',
+          label: 'Decedent',
+          fields: [
+            {
+              key: 'decedentName',
+              label: 'Name of deceased',
+              fieldType: 'text',
+              required: true,
+              uppercase: true,
+            },
+            { key: 'email', label: 'Email', fieldType: 'email', validationType: 'email' },
+          ],
+        },
+      ],
+    };
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'A')],
+      intake: editedIntake,
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    const newVersion = body.workflowTemplate.versions[1];
+    expect(newVersion.intake).toEqual(editedIntake);
+  });
+
+  it('rejects an intake with a duplicate field key with 400 and never touches the fixture', async () => {
+    const beforeCount = standardCremationWorkflowTemplateFixture.versions.length;
+    const badIntake: IntakeTemplate = {
+      sections: [{ key: 's', label: 'S', fields: [{ key: 'dup', label: 'A' }, { key: 'dup', label: 'B' }] }],
+    };
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'A')],
+      intake: badIntake,
+    });
+    expect(response.status).toBe(400);
+    expect(standardCremationWorkflowTemplateFixture.versions.length).toBe(beforeCount);
+  });
+
+  it('rejects a malformed intake payload (wrong-typed Phase 19 property) with 400', async () => {
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'A')],
+      intake: { sections: [{ key: 's', label: 'S', fields: [{ key: 'x', label: 'X', required: 'yes' }] }] },
+    });
+    expect(response.status).toBe(400);
   });
 
   it('never mutates the historical version — version 1 is untouched after editing', async () => {

@@ -5,6 +5,7 @@ import {
   mapWixWorkflowTemplateItem,
   mapWixWorkflowTemplateVersionItem,
   validateWorkflowStagesPayload,
+  validateIntakeTemplatePayload,
 } from './wixWorkflowTemplateMapper';
 import type { StageTemplate } from '../types/workflowTemplate';
 
@@ -189,5 +190,76 @@ describe('buildWixWorkflowTemplateVersionData — Phase 18', () => {
       intake: { sections: [] },
       createdAt: '2026-07-23T00:00:00.000Z',
     });
+  });
+});
+
+describe('validateIntakeTemplatePayload — Phase 19 (Configurable Intake Form Builder)', () => {
+  it('accepts a well-formed intake with a fully-configured Phase 19 field', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: {
+        sections: [
+          {
+            key: 'decedent',
+            label: 'Decedent',
+            fields: [
+              {
+                key: 'decedentName',
+                label: 'Name of deceased',
+                fieldType: 'text',
+                required: true,
+                uppercase: true,
+                masked: false,
+                validationType: 'none',
+                options: [],
+                displayOrder: 0,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.intake?.sections[0].fields[0]).toMatchObject({ key: 'decedentName', fieldType: 'text' });
+  });
+
+  it('accepts a minimal pre-Phase-19-shaped field (no new properties at all)', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: { sections: [{ key: 's', label: 'S', fields: [{ key: 'x', label: 'X' }] }] },
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it('rejects a body with no intake.sections array', () => {
+    const result = validateIntakeTemplatePayload({ notIntake: true });
+    expect(result.intake).toBeNull();
+    expect(result.errors).toContain('body.intake.sections must be an array.');
+  });
+
+  it('rejects a section missing key/label/fields', () => {
+    const result = validateIntakeTemplatePayload({ intake: { sections: [{}] } });
+    expect(result.intake).toBeNull();
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it('rejects a field with a wrong-typed Phase 19 property', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: { sections: [{ key: 's', label: 'S', fields: [{ key: 'x', label: 'X', required: 'yes' }] }] },
+    });
+    expect(result.intake).toBeNull();
+    expect(result.errors.some((e) => e.includes('required must be a boolean'))).toBe(true);
+  });
+
+  it('rejects options that are not an array of strings', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: { sections: [{ key: 's', label: 'S', fields: [{ key: 'x', label: 'X', options: [1, 2] }] }] },
+    });
+    expect(result.intake).toBeNull();
+    expect(result.errors.some((e) => e.includes('options must be an array of strings'))).toBe(true);
+  });
+
+  it('accepts an empty sections array (the backward-compatible fallback case)', () => {
+    const result = validateIntakeTemplatePayload({ intake: { sections: [] } });
+    expect(result.errors).toEqual([]);
+    expect(result.intake).toEqual({ sections: [] });
   });
 });

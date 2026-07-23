@@ -1,5 +1,5 @@
 import type { OrganizationContext } from '../types/organization';
-import type { StageTemplate, WorkflowTemplate } from '../types/workflowTemplate';
+import type { IntakeTemplate, StageTemplate, WorkflowTemplate } from '../types/workflowTemplate';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Like
@@ -56,21 +56,22 @@ export async function getEnabledForCaseType(
 }
 
 /**
- * Phase 18 (Workflow Management). Submits an admin's edited `stages` array
- * as a brand-new WorkflowTemplateVersion — the Route Handler (never this
- * function) decides mock-vs-Wix, computes the next version number, and
- * validates the payload server-side; this is purely "call the endpoint,
- * parse the response," same division of responsibility as list()/get().
+ * Phase 18 (Workflow Management) / Phase 19 (Configurable Intake Form
+ * Builder). Submits an admin's edited `stages` and `intake` as one brand-new
+ * WorkflowTemplateVersion — the Route Handler (never this function) decides
+ * mock-vs-Wix, computes the next version number, and validates the payload
+ * server-side; this is purely "call the endpoint, parse the response," same
+ * division of responsibility as list()/get().
  */
 export async function createVersion(
   context: OrganizationContext,
   templateId: string,
-  stages: StageTemplate[],
+  input: { stages: StageTemplate[]; intake: IntakeTemplate },
 ): Promise<WorkflowTemplate> {
   const response = await fetch(`/api/workflow-templates/${encodeURIComponent(templateId)}/versions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId: context.organizationId, stages }),
+    body: JSON.stringify({ organizationId: context.organizationId, ...input }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);

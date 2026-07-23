@@ -40,6 +40,10 @@ IntakeFieldTemplate
   key, label, placeholder?, password?
   checklistItemIndex?                        — which checklist item this field's value seeds
   mapsToCaseField?                           — which structured Case field this value also populates
+  fieldType?, required?, defaultValue?, displayOrder?,
+  uppercase?, masked?, multiline?, validationType?, options?
+                                              — Phase 19 (see ADR-020) — all optional, defaulted by
+                                                domain/workflow/resolveIntakeField.ts for any pre-Phase-19 record
 
 CaseWorkflowSnapshot (embedded on every Case, not a separate collection)
   workflowTemplateId, workflowTemplateVersion
@@ -82,4 +86,6 @@ Deliberately not addressed in Phase 11 — each is safe today only because no UI
 - **No case-type picker.** A `WorkflowTemplate` can list multiple `caseTypes`, but `NewCaseModal`/`useCreateCase` simply pick "the organization's first enabled template" rather than asking the user which case type they're creating. Sufficient today since Managed Cremations has exactly one template and one case type.
 - **No admin editor, settings page, or drag-and-drop** — explicitly out of scope per the phase's own rules. Templates are only ever edited by hand in `services/__mocks__/workflowTemplates.ts`.
 
-**Update (Phase 18, Workflow Management):** an admin editor now exists (`app/(portal)/settings/`, `POST /api/workflow-templates/[templateId]/versions`) — see [ADR-019](./adr/ADR-019-workflow-management.md). It covers editing an existing stage's label/SLA target/attention flag/checklist item labels and reordering existing stages; every edit creates a brand-new `WorkflowTemplateVersion` rather than modifying history, so everything above this note remains accurate. Still not built: adding/removing a stage or checklist item, editing `intake`/`caseTypes`/`name`/`isEnabled`, and drag-and-drop (reordering uses explicit up/down controls instead).
+**Update (Phase 18, Workflow Management):** an admin editor now exists (`app/(portal)/settings/`, `POST /api/workflow-templates/[templateId]/versions`) — see [ADR-019](./adr/ADR-019-workflow-management.md). It covers editing an existing stage's label/SLA target/attention flag/checklist item labels and reordering existing stages; every edit creates a brand-new `WorkflowTemplateVersion` rather than modifying history, so everything above this note remains accurate. Still not built: adding/removing a stage or checklist item, editing `caseTypes`/`name`/`isEnabled`, and drag-and-drop (reordering uses explicit up/down controls instead).
+
+**Update (Phase 19, Configurable Intake Form Builder):** `intake` is now fully editable too — see [ADR-020](./adr/ADR-020-configurable-intake-form-builder.md). The same editor gained add/edit/delete/reorder for intake fields (field type, required, placeholder, uppercase, masking, validation, select options), and `NewCaseModal.tsx`'s New Case form now renders and behaves entirely from each field's own configured properties instead of hardcoding behavior by literal field key. Still not built: adding/removing an intake *section*, editing intake as anything other than "fields within an existing section."

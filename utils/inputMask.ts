@@ -60,3 +60,117 @@ export function isValidExpiryMonth(value: string): boolean {
   const month = Number(match[1]);
   return month >= 1 && month <= 12;
 }
+
+/**
+ * Phase 19 (Configurable Intake Form Builder). Validators for the
+ * additional IntakeValidationType options a configurable intake field can
+ * select — generic, domain-independent (any form with an email/phone/zip/
+ * currency/card-number field would want these), same as everything else
+ * in this file. Each follows the same "empty string is valid — an
+ * untouched optional field isn't invalid" convention as isValidCalendarDate/
+ * isValidExpiryMonth above; a required-but-blank field is a separate
+ * concern (IntakeFieldTemplate.required), not this function's job.
+ */
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(value: string): boolean {
+  if (value === '') return true;
+  return EMAIL_PATTERN.test(value);
+}
+
+/** Loose on purpose — accepts any punctuation/spacing a caller typed
+    (parens, dashes, a leading +1, ...) and just checks there are enough
+    digits to plausibly be a phone number (7-15, per the international
+    E.164 length range). No formatting mask is applied — nextOfKinPhone
+    has never been auto-formatted (see components/modals/NewCaseModal.tsx's
+    Phase 16A comment on what's deliberately excluded from masking), and
+    this phase doesn't change that. */
+export function isValidPhoneNumber(value: string): boolean {
+  if (value === '') return true;
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
+
+export function isValidZip(value: string): boolean {
+  if (value === '') return true;
+  return ZIP_PATTERN.test(value);
+}
+
+const NUMERIC_PATTERN = /^-?\d+(\.\d+)?$/;
+
+export function isValidNumeric(value: string): boolean {
+  if (value === '') return true;
+  return NUMERIC_PATTERN.test(value);
+}
+
+/** Accepts a plain number, optionally with a leading "$" and/or thousands
+    commas (e.g. "1234.56", "$1,234.56") — validation only, no live
+    formatting mask (this phase's scope is "validationType: currency," not
+    a currency-input-masking library). */
+const CURRENCY_PATTERN = /^\$?\d{1,3}(,\d{3})*(\.\d{1,2})?$|^\$?\d+(\.\d{1,2})?$/;
+
+export function isValidCurrencyAmount(value: string): boolean {
+  if (value === '') return true;
+  return CURRENCY_PATTERN.test(value);
+}
+
+/** Strips spaces/dashes, requires 13-19 digits (the real-world PAN length
+    range), then applies the Luhn checksum — a genuine structural check,
+    not just "looks like digits." */
+export function isValidCreditCardNumber(value: string): boolean {
+  if (value === '') return true;
+  const digits = value.replace(/[\s-]/g, '');
+  if (!/^\d{13,19}$/.test(digits)) return false;
+
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let digit = Number(digits[i]);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * Single dispatcher from an IntakeFieldTemplate's `validationType` to the
+ * right validator above (or the date/expiry ones already established) plus
+ * a user-facing message — replaces components/modals/NewCaseModal.tsx's
+ * old fieldValidationError, which hardcoded per-*key* checks (DATE_FIELD_KEYS,
+ * EXPIRY_FIELD_KEYS) instead of reading a field's own configured
+ * validationType. Returns null for a valid (or empty/untouched) value.
+ */
+export function getValidationError(
+  validationType: 'none' | 'email' | 'phone' | 'date' | 'zip' | 'numeric' | 'currency' | 'creditCard' | 'expiration',
+  value: string,
+): string | null {
+  switch (validationType) {
+    case 'none':
+      return null;
+    case 'email':
+      return isValidEmail(value) ? null : 'Enter a valid email address.';
+    case 'phone':
+      return isValidPhoneNumber(value) ? null : 'Enter a valid phone number.';
+    case 'date':
+      return isValidCalendarDate(value) ? null : 'Enter a valid date (MM/DD/YYYY).';
+    case 'zip':
+      return isValidZip(value) ? null : 'Enter a valid ZIP code.';
+    case 'numeric':
+      return isValidNumeric(value) ? null : 'Enter a number.';
+    case 'currency':
+      return isValidCurrencyAmount(value) ? null : 'Enter a valid amount.';
+    case 'creditCard':
+      return isValidCreditCardNumber(value) ? null : 'Enter a valid card number.';
+    case 'expiration':
+      return isValidExpiryMonth(value) ? null : 'Enter a valid expiration (MM/YY).';
+    default:
+      return null;
+  }
+}

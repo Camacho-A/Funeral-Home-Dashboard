@@ -1,12 +1,14 @@
-import type { StageTemplate } from '../../types/workflowTemplate';
+import type { IntakeFieldTemplate, IntakeTemplate, StageTemplate } from '../../types/workflowTemplate';
 
 /**
- * Phase 18 (Workflow Management). Pure structural operations over a draft
- * `stages` array, used by the admin editor (components/settings/) before
- * submitting an edited copy as a brand-new WorkflowTemplateVersion — never
- * mutating a historical version in place (see docs/adr/ADR-019-workflow-management.md).
- * These are business invariants specific to Beacon's workflow model (not
- * generic array helpers), so they live in domain/, not utils/, per
+ * Phase 18 (Workflow Management) / Phase 19 (Configurable Intake Form
+ * Builder). Pure structural operations over a draft `stages`/`intake`
+ * array, used by the admin editor (components/settings/) before submitting
+ * an edited copy as a brand-new WorkflowTemplateVersion — never mutating a
+ * historical version in place (see docs/adr/ADR-019-workflow-management.md,
+ * docs/adr/ADR-020-configurable-intake-form-builder.md). These are business
+ * invariants specific to Beacon's workflow model (not generic array
+ * helpers), so they live in domain/, not utils/, per
  * docs/adr/ADR-004-domain-layer.md.
  */
 
@@ -39,6 +41,30 @@ export function moveStage(stages: StageTemplate[], index: number, direction: 'up
 
 function renumberStages(stages: StageTemplate[]): StageTemplate[] {
   return stages.map((stage, i) => ({ ...stage, rawStage: i, displayStage: i }));
+}
+
+/**
+ * Phase 19 (Configurable Intake Form Builder). Same swap-and-renumber
+ * pattern as moveStage above, scoped to one intake section's fields —
+ * renumbers every field's `displayOrder` sequentially from 0 afterward, so
+ * the section always has a clean, gap-free order for
+ * resolveIntakeField.ts's resolveSectionFields to sort by (that fallback
+ * only matters pre-move; once an admin has explicitly reordered anything,
+ * every field in the section gets an explicit, correct displayOrder).
+ */
+export function moveIntakeField(
+  fields: IntakeFieldTemplate[],
+  index: number,
+  direction: 'up' | 'down',
+): IntakeFieldTemplate[] {
+  const targetIndex = direction === 'up' ? index - 1 : index + 1;
+  if (index < 0 || index >= fields.length || targetIndex < 0 || targetIndex >= fields.length) {
+    return fields;
+  }
+
+  const reordered = [...fields];
+  [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+  return reordered.map((field, i) => ({ ...field, displayOrder: i }));
 }
 
 /**
@@ -80,6 +106,81 @@ export function validateStageSequencing(stages: StageTemplate[]): string[] {
       }
       if (!item.label.trim()) {
         errors.push(`Checklist item ${itemIndex} in stage "${stage.label}" must have a non-empty label.`);
+      }
+    });
+  });
+
+  return errors;
+}
+
+const VALID_FIELD_TYPES = new Set([
+  'text',
+  'textarea',
+  'date',
+  'time',
+  'phone',
+  'email',
+  'number',
+  'currency',
+  'checkbox',
+  'select',
+  'creditCard',
+  'expiration',
+  'cvv',
+]);
+
+const VALID_VALIDATION_TYPES = new Set([
+  'none',
+  'email',
+  'phone',
+  'date',
+  'zip',
+  'numeric',
+  'currency',
+  'creditCard',
+  'expiration',
+]);
+
+/**
+ * Phase 19 (Configurable Intake Form Builder). Business-rule validation for
+ * an admin's edited `intake` structure, run server-side (alongside
+ * validateStageSequencing) before it's accepted as part of a new
+ * WorkflowTemplateVersion. Deliberately *not* as strict as
+ * validateStageSequencing about ordering: `displayOrder` is a sort hint
+ * with a per-field array-index fallback (see resolveIntakeField.ts), not a
+ * structural invariant other code depends on the way rawStage's
+ * no-gaps-from-zero requirement is — so this never rejects a "non-
+ * sequential" displayOrder. What it does enforce: every field key is
+ * globally unique (the New Case form's draft state is keyed by it — a
+ * collision would silently merge two fields' values), every field has a
+ * non-empty label, `fieldType`/`validationType` (when present) are one of
+ * the supported values, and a 'select' field has at least one option.
+ */
+export function validateIntakeFields(intake: IntakeTemplate): string[] {
+  const errors: string[] = [];
+  const seenKeys = new Set<string>();
+
+  intake.sections.forEach((section) => {
+    section.fields.forEach((field) => {
+      if (!field.key.trim()) {
+        errors.push(`A field in section "${section.label}" is missing a key.`);
+      } else if (seenKeys.has(field.key)) {
+        errors.push(`Duplicate field key "${field.key}" — every intake field key must be unique.`);
+      } else {
+        seenKeys.add(field.key);
+      }
+
+      if (!field.label.trim()) {
+        errors.push(`Field "${field.key}" in section "${section.label}" must have a non-empty label.`);
+      }
+      if (field.fieldType !== undefined && !VALID_FIELD_TYPES.has(field.fieldType)) {
+        errors.push(`Field "${field.key}" has an unrecognized fieldType "${field.fieldType}".`);
+      }
+      if (field.validationType !== undefined && !VALID_VALIDATION_TYPES.has(field.validationType)) {
+        errors.push(`Field "${field.key}" has an unrecognized validationType "${field.validationType}".`);
+      }
+      if (field.fieldType === 'select' && (!field.options || field.options.length === 0)) {
+        errors.push(`Field "${field.key}" is a select field but has no options.`);
       }
     });
   });

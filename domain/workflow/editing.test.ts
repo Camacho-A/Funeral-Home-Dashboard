@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { moveStage, validateStageSequencing } from './editing';
-import type { StageTemplate } from '../../types/workflowTemplate';
+import { moveStage, validateStageSequencing, validateIntakeFields, moveIntakeField } from './editing';
+import type { IntakeFieldTemplate, IntakeTemplate, StageTemplate } from '../../types/workflowTemplate';
 
 function stage(rawStage: number, label: string, itemCount = 1): StageTemplate {
   return {
@@ -105,5 +105,104 @@ describe('validateStageSequencing', () => {
     withBlank.checklist.items[0].label = '  ';
     const errors = validateStageSequencing([withBlank]);
     expect(errors.some((e) => e.includes('must have a non-empty label'))).toBe(true);
+  });
+});
+
+describe('validateIntakeFields (Phase 19 — Configurable Intake Form Builder)', () => {
+  function intake(fields: Array<Record<string, unknown>>): IntakeTemplate {
+    return { sections: [{ key: 'decedent', label: 'Decedent', fields: fields as never }] };
+  }
+
+  it('accepts a well-formed intake', () => {
+    const template = intake([
+      { key: 'decedentName', label: 'Name of deceased', fieldType: 'text', required: true },
+      { key: 'email', label: 'Email', fieldType: 'email', validationType: 'email' },
+    ]);
+    expect(validateIntakeFields(template)).toEqual([]);
+  });
+
+  it('rejects duplicate field keys across the whole intake, even across different sections', () => {
+    const template: IntakeTemplate = {
+      sections: [
+        { key: 's1', label: 'Section 1', fields: [{ key: 'dup', label: 'A' }] },
+        { key: 's2', label: 'Section 2', fields: [{ key: 'dup', label: 'B' }] },
+      ],
+    };
+    const errors = validateIntakeFields(template);
+    expect(errors.some((e) => e.includes('Duplicate field key "dup"'))).toBe(true);
+  });
+
+  it('rejects a blank field key', () => {
+    const template = intake([{ key: '', label: 'No key' }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('missing a key'))).toBe(true);
+  });
+
+  it('rejects a blank field label', () => {
+    const template = intake([{ key: 'x', label: '' }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('non-empty label'))).toBe(true);
+  });
+
+  it('rejects an unrecognized fieldType', () => {
+    const template = intake([{ key: 'x', label: 'X', fieldType: 'not-a-real-type' }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('unrecognized fieldType'))).toBe(true);
+  });
+
+  it('rejects an unrecognized validationType', () => {
+    const template = intake([{ key: 'x', label: 'X', validationType: 'not-a-real-validation' }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('unrecognized validationType'))).toBe(true);
+  });
+
+  it('rejects a select field with no options', () => {
+    const template = intake([{ key: 'x', label: 'X', fieldType: 'select', options: [] }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('no options'))).toBe(true);
+  });
+
+  it('accepts a select field with at least one option', () => {
+    const template = intake([{ key: 'x', label: 'X', fieldType: 'select', options: ['A'] }]);
+    expect(validateIntakeFields(template)).toEqual([]);
+  });
+
+  it('does not require sequential displayOrder — it is a sort hint, not a structural invariant', () => {
+    const template = intake([
+      { key: 'a', label: 'A', displayOrder: 5 },
+      { key: 'b', label: 'B', displayOrder: 100 },
+    ]);
+    expect(validateIntakeFields(template)).toEqual([]);
+  });
+
+  it('accepts an intake with zero sections/fields (the backward-compatible empty case)', () => {
+    expect(validateIntakeFields({ sections: [] })).toEqual([]);
+  });
+});
+
+describe('moveIntakeField (Phase 19 — Configurable Intake Form Builder)', () => {
+  function field(key: string, displayOrder: number): IntakeFieldTemplate {
+    return { key, label: key, displayOrder };
+  }
+
+  it('swaps a field with its upward neighbor and renumbers displayOrder sequentially', () => {
+    const fields = [field('a', 0), field('b', 1), field('c', 2)];
+    const result = moveIntakeField(fields, 1, 'up');
+    expect(result.map((f) => f.key)).toEqual(['b', 'a', 'c']);
+    expect(result.map((f) => f.displayOrder)).toEqual([0, 1, 2]);
+  });
+
+  it('swaps a field with its downward neighbor', () => {
+    const fields = [field('a', 0), field('b', 1)];
+    expect(moveIntakeField(fields, 0, 'down').map((f) => f.key)).toEqual(['b', 'a']);
+  });
+
+  it('is a no-op moving the first field up or the last field down', () => {
+    const fields = [field('a', 0), field('b', 1)];
+    expect(moveIntakeField(fields, 0, 'up')).toBe(fields);
+    expect(moveIntakeField(fields, 1, 'down')).toBe(fields);
+  });
+
+  it('preserves every other property on the moved fields', () => {
+    const a: IntakeFieldTemplate = { key: 'a', label: 'A', fieldType: 'email', required: true, validationType: 'email' };
+    const b: IntakeFieldTemplate = { key: 'b', label: 'B', fieldType: 'select', options: ['x'] };
+    const result = moveIntakeField([a, b], 0, 'down');
+    expect(result[0]).toMatchObject({ key: 'b', fieldType: 'select', options: ['x'] });
+    expect(result[1]).toMatchObject({ key: 'a', fieldType: 'email', required: true, validationType: 'email' });
   });
 });

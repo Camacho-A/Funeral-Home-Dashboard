@@ -54,6 +54,15 @@
   margin-bottom: var(--space-2);
 }
 
+/* Phase 19: a pure-CSS "*" via ::after (not a JSX text node) — so a
+   `required` field's label stays exact-string-matchable by tests/queries
+   (getByText('Name of deceased')) with no trailing " *" baked into the
+   DOM's actual text content. */
+.fieldLabelRequired::after {
+  content: ' *';
+  color: var(--color-danger-text);
+}
+
 .readOnlyValue {
   /* Same box shape as TextField, but --color-surface-subtle (not
      --color-surface-input) signals non-interactive at a glance — this
