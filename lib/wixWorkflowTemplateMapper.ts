@@ -1,4 +1,10 @@
-import type { StageTemplate, IntakeTemplate, WorkflowTemplate, WorkflowTemplateVersion } from '../types/workflowTemplate';
+import type {
+  StageTemplate,
+  ChecklistItemTemplate,
+  IntakeTemplate,
+  WorkflowTemplate,
+  WorkflowTemplateVersion,
+} from '../types/workflowTemplate';
 import { queryWixDataItems } from './wixDataApi';
 
 /**
@@ -192,4 +198,175 @@ export async function fetchWixWorkflowTemplates(organizationId: string): Promise
   );
 
   return templates.filter((template) => template !== null);
+}
+
+/**
+ * Phase 18 (Workflow Management). Fetches and joins exactly one template by
+ * (organizationId, templateId), for both the existing single-template GET
+ * route and the new create-version route below — extracted here (rather
+ * than left inline in app/api/workflow-templates/[templateId]/route.ts, as
+ * it was before this phase) so the two Route Handlers share one join
+ * implementation instead of two copies, matching the precedent
+ * fetchWixWorkflowTemplates already set in Phase 16 for the list endpoint.
+ * Returns null on "not found, not this organization's, or malformed" —
+ * the caller decides the HTTP status; this function never throws for those
+ * cases, only for a genuine Wix connectivity failure.
+ */
+export async function fetchWixWorkflowTemplateById(
+  organizationId: string,
+  templateId: string,
+): Promise<WorkflowTemplate | null> {
+  const templatesResponse = await queryWixDataItems<WixWorkflowTemplateItem>('workflowTemplates', {
+    filter: { beaconTemplateId: templateId, organizationId },
+    paging: { limit: 1 },
+  });
+
+  const summary = mapWixWorkflowTemplateItem(templatesResponse.dataItems[0]?.data);
+  if (!summary) {
+    return null;
+  }
+
+  const versionsResponse = await queryWixDataItems<WixWorkflowTemplateVersionItem>('workflowTemplateVersions', {
+    filter: { beaconTemplateId: summary.id },
+  });
+  const versions = versionsResponse.dataItems
+    .map((item) => mapWixWorkflowTemplateVersionItem(item.data))
+    .filter((version) => version !== null);
+
+  return buildWorkflowTemplate(summary, versions);
+}
+
+/**
+ * Phase 18 (Workflow Management). Runtime shape/type validation for an
+ * admin's edited `stages` array — the DTO validation layer for the new
+ * create-version endpoint, mirroring lib/wixCaseMapper.ts's
+ * validateAndPickCaseUpdate in spirit (an untrusted HTTP JSON body gets no
+ * compile-time protection) but deep, since a stage nests a checklist which
+ * nests items. This only checks *shape* (right keys, right primitive
+ * types) — the business invariants (sequential rawStage/index, non-empty
+ * labels) are domain/workflow/editing.ts's validateStageSequencing's job,
+ * run separately by the Route Handler after this passes. Returns `stages:
+ * null` with a non-empty `errors` list on any failure, rather than
+ * silently dropping bad fields — a malformed edit should be rejected
+ * outright (400), never partially applied.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateChecklistItemPayload(value: unknown, path: string, errors: string[]): ChecklistItemTemplate | null {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object.`);
+    return null;
+  }
+  if (typeof value.index !== 'number') errors.push(`${path}.index must be a number.`);
+  if (typeof value.label !== 'string') errors.push(`${path}.label must be a string.`);
+  if (typeof value.hasField !== 'boolean') errors.push(`${path}.hasField must be a boolean.`);
+  if (value.isPasswordField !== undefined && typeof value.isPasswordField !== 'boolean') {
+    errors.push(`${path}.isPasswordField must be a boolean if present.`);
+  }
+  if (
+    value.externalFormIntegrationId !== undefined &&
+    value.externalFormIntegrationId !== null &&
+    typeof value.externalFormIntegrationId !== 'string'
+  ) {
+    errors.push(`${path}.externalFormIntegrationId must be a string or null if present.`);
+  }
+
+  if (typeof value.index !== 'number' || typeof value.label !== 'string' || typeof value.hasField !== 'boolean') {
+    return null;
+  }
+  return {
+    index: value.index,
+    label: value.label,
+    hasField: value.hasField,
+    isPasswordField: typeof value.isPasswordField === 'boolean' ? value.isPasswordField : undefined,
+    externalFormIntegrationId:
+      typeof value.externalFormIntegrationId === 'string' ? value.externalFormIntegrationId : null,
+  };
+}
+
+function validateStagePayload(value: unknown, path: string, errors: string[]): StageTemplate | null {
+  if (!isPlainObject(value)) {
+    errors.push(`${path} must be an object.`);
+    return null;
+  }
+  if (typeof value.rawStage !== 'number') errors.push(`${path}.rawStage must be a number.`);
+  if (typeof value.displayStage !== 'number') errors.push(`${path}.displayStage must be a number.`);
+  if (typeof value.label !== 'string') errors.push(`${path}.label must be a string.`);
+  if (value.isAttentionStage !== undefined && typeof value.isAttentionStage !== 'boolean') {
+    errors.push(`${path}.isAttentionStage must be a boolean if present.`);
+  }
+  if (value.slaTargetDays !== null && typeof value.slaTargetDays !== 'number') {
+    errors.push(`${path}.slaTargetDays must be a number or null.`);
+  }
+  if (!isPlainObject(value.checklist) || !Array.isArray(value.checklist.items)) {
+    errors.push(`${path}.checklist.items must be an array.`);
+    return null;
+  }
+
+  const items = value.checklist.items.map((item, i) =>
+    validateChecklistItemPayload(item, `${path}.checklist.items[${i}]`, errors),
+  );
+
+  if (
+    typeof value.rawStage !== 'number' ||
+    typeof value.displayStage !== 'number' ||
+    typeof value.label !== 'string' ||
+    (value.slaTargetDays !== null && typeof value.slaTargetDays !== 'number') ||
+    items.some((item) => item === null)
+  ) {
+    return null;
+  }
+
+  return {
+    rawStage: value.rawStage,
+    displayStage: value.displayStage,
+    label: value.label,
+    isAttentionStage: typeof value.isAttentionStage === 'boolean' ? value.isAttentionStage : undefined,
+    slaTargetDays: value.slaTargetDays as number | null,
+    checklist: { items: items as ChecklistItemTemplate[] },
+  };
+}
+
+export function validateWorkflowStagesPayload(body: unknown): { stages: StageTemplate[] | null; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!isPlainObject(body) || !Array.isArray(body.stages)) {
+    return { stages: null, errors: ['body.stages must be an array.'] };
+  }
+
+  const stages = body.stages.map((stage, i) => validateStagePayload(stage, `stages[${i}]`, errors));
+
+  if (errors.length > 0 || stages.some((stage) => stage === null)) {
+    return { stages: null, errors };
+  }
+  return { stages: stages as StageTemplate[], errors: [] };
+}
+
+/**
+ * Phase 18 (Workflow Management). Builds a `workflowTemplateVersions` Wix
+ * item's data for insertion — this collection is append-only (see
+ * docs/WIX_DATA_SCHEMA.md's Collection 4 "Immutability caveat": Wix Data
+ * has no native insert-only enforcement, so the application layer must
+ * only ever insert, never update, and this function's only caller
+ * (app/api/workflow-templates/[templateId]/versions/route.ts) does exactly
+ * that).
+ */
+export function buildWixWorkflowTemplateVersionData(params: {
+  beaconTemplateId: string;
+  version: number;
+  caseTypes: string[];
+  stages: StageTemplate[];
+  intake: IntakeTemplate;
+  createdAt: string;
+}): WixWorkflowTemplateVersionItem {
+  return {
+    beaconTemplateId: params.beaconTemplateId,
+    version: params.version,
+    caseTypes: params.caseTypes,
+    stages: params.stages,
+    intake: params.intake,
+    createdAt: params.createdAt,
+  };
 }

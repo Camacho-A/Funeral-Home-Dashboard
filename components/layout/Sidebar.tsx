@@ -2,7 +2,7 @@
 
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
-import { SidebarNavItem, SidebarNavItemInert } from './SidebarNavItem';
+import { SidebarNavItem } from './SidebarNavItem';
 import styles from './Sidebar.module.css';
 
 /**
@@ -30,7 +30,7 @@ export function Sidebar() {
         <SidebarNavItem href="/dashboard" label="Dashboard" />
         <SidebarNavItem href="/tasks" label="Tasks" />
         <SidebarNavItem href="/reports" label="Reports" />
-        <SidebarNavItemInert label="Settings" />
+        <SidebarNavItem href="/settings" label="Settings" />
       </div>
 
       <div className={styles.footer}>

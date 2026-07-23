@@ -38,6 +38,14 @@ Every case now has a permanent, human-facing `B{YYYY}-{###}` identifier (e.g. `B
 
 **Deferred, unchanged by this phase:** case notes still have no Wix write path (Phase 16A's own reported gap); identity model hardening remains open (Phase 16's own reported gap).
 
+## Completed: Workflow Management (Phase 18)
+
+**Status: closed 2026-07-23.** Full writeup: [ADR-019](./adr/ADR-019-workflow-management.md).
+
+The first real admin surface for workflow templates: a new `/settings` page (activating the Sidebar's previously-inert "Settings" entry) lists an organization's templates and lets an admin view every version's stages/checklist items and edit an existing stage's label, SLA target, attention flag, and checklist item labels, plus reorder stages. Every edit is saved via a new `POST /api/workflow-templates/[templateId]/versions`, which always **inserts** a brand-new `WorkflowTemplateVersion` — historical versions are never modified, and existing cases keep resolving against their own `Case.workflowSnapshot` exactly as before (both guarantees were already structurally true; this phase's write path simply never violates them). `workflowTemplateVersions`' previously-aspirational "insert-only, application-enforced" contract (`docs/WIX_DATA_SCHEMA.md`) is now genuinely enforced by the one code path that writes to it.
+
+**Deferred, unchanged by this phase:** adding/removing a stage or checklist item; editing intake fields, case types, or a template's own name/enabled flag; reordering that preserves a combined display stage; full optimistic-concurrency retry for version-number races (a same-version collision 409s once rather than auto-retrying, per the ADR's own reasoning on why that's proportionate here).
+
 ## Version 2 Candidates (not committed, not scheduled)
 
 These are logical next steps once V1 is in production use at Managed Cremations, in roughly the order they'd likely be needed:

@@ -14,12 +14,3 @@
   background: var(--color-brand-tint);
   color: var(--color-brand-hover);
 }
-
-.itemInert {
-  cursor: default;
-  font-weight: var(--font-weight-medium);
-  /* Prototype's literal one-off here is oklch(0.52 0.015 60), used nowhere
-     else — close enough to --color-text-muted to reuse rather than add a
-     single-use token for it. */
-  color: var(--color-text-muted);
-}

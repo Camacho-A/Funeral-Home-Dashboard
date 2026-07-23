@@ -1,13 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
-import { queryWixDataItems } from '@/lib/wixDataApi';
-import {
-  buildWorkflowTemplate,
-  mapWixWorkflowTemplateItem,
-  mapWixWorkflowTemplateVersionItem,
-  type WixWorkflowTemplateItem,
-  type WixWorkflowTemplateVersionItem,
-} from '@/lib/wixWorkflowTemplateMapper';
+import { fetchWixWorkflowTemplateById } from '@/lib/wixWorkflowTemplateMapper';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 
@@ -50,24 +43,7 @@ export async function GET(
   }
 
   try {
-    const templatesResponse = await queryWixDataItems<WixWorkflowTemplateItem>('workflowTemplates', {
-      filter: { beaconTemplateId: templateId, organizationId },
-      paging: { limit: 1 },
-    });
-
-    const summary = mapWixWorkflowTemplateItem(templatesResponse.dataItems[0]?.data);
-    if (!summary) {
-      return NextResponse.json({ workflowTemplate: null }, { status: 404 });
-    }
-
-    const versionsResponse = await queryWixDataItems<WixWorkflowTemplateVersionItem>('workflowTemplateVersions', {
-      filter: { beaconTemplateId: summary.id },
-    });
-    const versions = versionsResponse.dataItems
-      .map((item) => mapWixWorkflowTemplateVersionItem(item.data))
-      .filter((version) => version !== null);
-
-    const workflowTemplate = buildWorkflowTemplate(summary, versions);
+    const workflowTemplate = await fetchWixWorkflowTemplateById(organizationId, templateId);
     if (!workflowTemplate) {
       return NextResponse.json({ workflowTemplate: null }, { status: 404 });
     }

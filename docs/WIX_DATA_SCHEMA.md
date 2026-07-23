@@ -109,9 +109,10 @@ This is a deliberate change in direction from what the current codebase actually
 
 - **Indexes:** unique composite `(beaconTemplateId, version)`; `(beaconTemplateId)` sorted descending by `version` for latest-version lookups.
 - **Permissions:** backend/Admin only.
-- **Immutability caveat:** Wix Data has no native "insert-only" enforcement. This collection's append-only guarantee **must be enforced at the application service layer** — only ever call insert against it, never update — the same way `types/workflowTemplate.ts` already documents versions as "append-only" by convention today. This is a real gap, not an oversight; recorded under "Known limitations."
+- **Immutability caveat:** Wix Data has no native "insert-only" enforcement. This collection's append-only guarantee **must be enforced at the application service layer** — only ever call insert against it, never update — the same way `types/workflowTemplate.ts` already documents versions as "append-only" by convention today. **Update (Phase 18):** this is no longer purely aspirational — `app/api/workflow-templates/[templateId]/versions/route.ts` is now the one code path that writes here, and it only ever calls `insertWixDataItem`, never `updateWixDataItem`. See [ADR-019](./adr/ADR-019-workflow-management.md).
 - **TS type:** matches `WorkflowTemplateVersion` exactly.
 - **Mapping:** direct field-for-field.
+- **Item `_id` (Phase 18):** set to `` `${beaconTemplateId}-v${version}` `` at insert time — the same "system id doubles as the natural key" convention `cases`/`tasks`/`caseSequences` already use — so a same-version race between two concurrent edits collides on Wix's own `_id` uniqueness (409) instead of silently creating two rows both claiming the same version number.
 
 ## Collection 5 — `cases`
 

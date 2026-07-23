@@ -1,5 +1,5 @@
 import type { OrganizationContext } from '../types/organization';
-import type { WorkflowTemplate } from '../types/workflowTemplate';
+import type { StageTemplate, WorkflowTemplate } from '../types/workflowTemplate';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Like
@@ -55,4 +55,29 @@ export async function getEnabledForCaseType(
   return templates.find((t) => t.isEnabled && t.caseTypes.includes(caseType)) ?? null;
 }
 
-export const workflowTemplatesService = { list, get, getEnabledForCaseType };
+/**
+ * Phase 18 (Workflow Management). Submits an admin's edited `stages` array
+ * as a brand-new WorkflowTemplateVersion — the Route Handler (never this
+ * function) decides mock-vs-Wix, computes the next version number, and
+ * validates the payload server-side; this is purely "call the endpoint,
+ * parse the response," same division of responsibility as list()/get().
+ */
+export async function createVersion(
+  context: OrganizationContext,
+  templateId: string,
+  stages: StageTemplate[],
+): Promise<WorkflowTemplate> {
+  const response = await fetch(`/api/workflow-templates/${encodeURIComponent(templateId)}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId: context.organizationId, stages }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error ?? 'Failed to save workflow changes.');
+  }
+  const body = (await response.json()) as { workflowTemplate: WorkflowTemplate };
+  return body.workflowTemplate;
+}
+
+export const workflowTemplatesService = { list, get, getEnabledForCaseType, createVersion };

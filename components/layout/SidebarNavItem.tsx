@@ -20,12 +20,3 @@ export function SidebarNavItem({ href, label }: { href: string; label: string })
     </Link>
   );
 }
-
-/**
- * The prototype's "Settings" row has no onClick and no active state — it's
- * inert, present for visual completeness only (there is no Settings screen
- * in the approved V1 scope, see docs/UI_COMPONENTS.md).
- */
-export function SidebarNavItemInert({ label }: { label: string }) {
-  return <div className={`${styles.item} ${styles.itemInert}`}>{label}</div>;
-}
