@@ -1,4 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import type { CaseTask } from '@/types/task';
 import type { NewTaskInput } from '@/types/task';
 import { tasksService } from '@/services/tasksService';
 import { useTasks } from './useTasks';
@@ -32,10 +33,37 @@ export function useCaseTasks(caseId: string) {
     onSuccess: invalidate,
   });
 
+  /**
+   * Phase 17 (Case Detail Experience): optimistic toggle so a checkbox
+   * click reflects instantly instead of waiting on the PATCH round trip.
+   * `setQueriesData` (not `setQueryData`) matches every cached ['tasks', ...]
+   * query by prefix, so this also keeps the standalone Tasks page's cache
+   * (a different filter shape, ['tasks', orgId, {}]) in sync if it happens
+   * to be mounted at the same time — no authorization logic changes here;
+   * the actual write still goes through the same tasksService.update ->
+   * PATCH /api/tasks/[taskId], which is what re-verifies organizationId
+   * server-side.
+   */
   const toggleTask = useMutation({
     mutationFn: ({ taskId, isDone }: { taskId: string; isDone: boolean }) =>
       tasksService.update(organization, taskId, { isDone }, organization.dataAdapterMode),
-    onSuccess: invalidate,
+    onMutate: async ({ taskId, isDone }) => {
+      const queryFilter = { queryKey: ['tasks', organization.organizationId] };
+      await queryClient.cancelQueries(queryFilter);
+
+      const previousQueries = queryClient.getQueriesData<CaseTask[]>(queryFilter);
+      queryClient.setQueriesData<CaseTask[]>(queryFilter, (old) =>
+        old?.map((task) => (task.id === taskId ? { ...task, isDone } : task)),
+      );
+
+      return { previousQueries };
+    },
+    onError: (_error, _variables, context) => {
+      context?.previousQueries.forEach(([queryKey, data]: [QueryKey, CaseTask[] | undefined]) => {
+        queryClient.setQueryData(queryKey, data);
+      });
+    },
+    onSettled: invalidate,
   });
 
   return { ...tasksQuery, addTask: addTask.mutate, toggleTask: toggleTask.mutate };

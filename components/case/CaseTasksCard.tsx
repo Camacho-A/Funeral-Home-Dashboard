@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './CaseTasksCard.module.css';
 
 export type CaseTaskItem = {
@@ -40,21 +41,25 @@ export function CaseTasksCard({
   return (
     <div className={styles.card}>
       <div className={styles.title}>Tasks for this case</div>
-      <div className={styles.list}>
-        {tasks.map((task) => (
-          <div key={task.id} className={styles.row}>
-            <Checkbox
-              checked={task.isDone}
-              onChange={() => onToggleTask(task.id, !task.isDone)}
-              tone="success"
-              size="sm"
-              aria-label={task.text}
-            />
-            <span className={styles.text}>{task.text}</span>
-            <span className={styles.assignee}>{task.assigneeName}</span>
-          </div>
-        ))}
-      </div>
+      {tasks.length === 0 ? (
+        <EmptyState message="No tasks for this case yet — add one below." />
+      ) : (
+        <div className={styles.list}>
+          {tasks.map((task) => (
+            <div key={task.id} className={styles.row}>
+              <Checkbox
+                checked={task.isDone}
+                onChange={() => onToggleTask(task.id, !task.isDone)}
+                tone="success"
+                size="sm"
+                aria-label={task.text}
+              />
+              <span className={task.isDone ? styles.textDone : styles.text}>{task.text}</span>
+              <span className={styles.assignee}>{task.assigneeName}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className={styles.composer}>
         <TextField
           value={draft}

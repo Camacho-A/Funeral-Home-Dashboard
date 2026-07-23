@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Case, VaPublishChoice } from '@/types/case';
+import type { Case, CaseUpdate, VaPublishChoice } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { useOrganization } from './useOrganization';
 
@@ -38,6 +38,19 @@ export function useCaseMutations(caseId: string) {
 
     reassignOwner(staffId: string | null) {
       updateCase.mutate({ assignedStaffId: staffId });
+    },
+
+    /**
+     * Phase 17 (Case Detail Experience): the single generic entry point for
+     * CaseInformationCard's inline-editable fields (dates, location, next of
+     * kin, payment status, ...). No new update logic — it's the exact same
+     * updateCase mutation every other method here already uses, which
+     * already branches on dataAdapterMode to hit the real Wix PATCH route;
+     * this method just exists so the component doesn't need one
+     * differently-named mutator per field.
+     */
+    updateCaseInfo(patch: CaseUpdate) {
+      updateCase.mutate(patch);
     },
 
     setVeteranFlag(newValue: boolean) {

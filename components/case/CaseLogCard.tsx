@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { TextField } from '@/components/ui/TextField';
-import { TextArea } from '@/components/ui/TextArea';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import textAreaFieldStyles from '@/components/ui/TextArea.module.css';
 import type { CaseLogEntry, NewCaseLogEntryInput } from '@/types/caseLogEntry';
 import { formatTimestamp } from '@/utils/format';
 import styles from './CaseLogCard.module.css';
@@ -18,14 +19,22 @@ function entrySummary(entry: CaseLogEntry): { headline: string | null; body: str
   return { headline: null, body: entry.text };
 }
 
+/** Passed through to `onAddEntry` as react-query's own per-call mutate
+    options — CaseLogCard never touches the mutation itself, it just asks
+    to be told whether *this* save succeeded so it can clear the draft and
+    scroll to the new entry only once the write is confirmed (Phase 17),
+    instead of the previous optimistic-clear-then-hope behavior. */
+export type AddCaseLogEntryOptions = {
+  onSuccess: (entry: CaseLogEntry) => void;
+  onError: () => void;
+};
+
 /**
  * Note/Contact tab selection and the in-progress draft are local UI state —
  * nothing outside this card needs them, so they aren't lifted to the page.
- * Submitting calls onAddEntry with a resolved NewCaseLogEntryInput; the page
- * supplies `author` indirectly by having useCaseLog's mutation already
- * scoped to the case, but the actual author name (effectiveOwnerName) is
- * threaded in as a prop rather than looked up here, keeping this
- * presentational.
+ * `entries` is expected pre-sorted newest-first by the caller (Phase 17 —
+ * see the page's own sort, shared with its Print callback so the two never
+ * disagree on order); this card only renders in the order it's given.
  */
 export function CaseLogCard({
   entries,
@@ -35,7 +44,7 @@ export function CaseLogCard({
 }: {
   entries: CaseLogEntry[];
   authorName: string;
-  onAddEntry: (input: NewCaseLogEntryInput) => void;
+  onAddEntry: (input: NewCaseLogEntryInput, options: AddCaseLogEntryOptions) => void;
   onPrint: () => void;
 }) {
   const [logType, setLogType] = useState<'note' | 'contact'>('note');
@@ -43,27 +52,83 @@ export function CaseLogCard({
   const [contactWho, setContactWho] = useState('');
   const [contactSpoke, setContactSpoke] = useState('');
   const [contactSummary, setContactSummary] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [justAddedId, setJustAddedId] = useState<string | null>(null);
+
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const entryRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Autofocus the note editor whenever it's the active tab — including on
+  // first mount, since "note" is the default tab (Phase 17).
+  useEffect(() => {
+    if (logType === 'note') noteInputRef.current?.focus();
+  }, [logType]);
+
+  // Once a just-saved entry actually shows up in the (newest-first) list
+  // the page hands down, scroll it into view.
+  useEffect(() => {
+    if (!justAddedId) return;
+    entryRefs.current[justAddedId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    setJustAddedId(null);
+  }, [justAddedId, entries]);
 
   function handleAddEntry() {
+    setSaveFailed(false);
+
     if (logType === 'note') {
       const text = noteText.trim();
       if (!text) return;
-      onAddEntry({ type: 'note', text, author: authorName });
-      setNoteText('');
-    } else {
-      const who = contactWho.trim();
-      const spoke = contactSpoke.trim();
-      if (!who || !spoke) return;
-      onAddEntry({
+      setIsSaving(true);
+      onAddEntry(
+        { type: 'note', text, author: authorName },
+        {
+          onSuccess: (entry) => {
+            setIsSaving(false);
+            setNoteText('');
+            setJustAddedId(entry.id);
+          },
+          onError: () => {
+            setIsSaving(false);
+            setSaveFailed(true);
+          },
+        },
+      );
+      return;
+    }
+
+    const who = contactWho.trim();
+    const spoke = contactSpoke.trim();
+    if (!who || !spoke) return;
+    setIsSaving(true);
+    onAddEntry(
+      {
         type: 'contact',
         contactedWho: who,
         contactedSpoke: spoke,
         contactSummary: contactSummary.trim(),
         author: authorName,
-      });
-      setContactWho('');
-      setContactSpoke('');
-      setContactSummary('');
+      },
+      {
+        onSuccess: (entry) => {
+          setIsSaving(false);
+          setContactWho('');
+          setContactSpoke('');
+          setContactSummary('');
+          setJustAddedId(entry.id);
+        },
+        onError: () => {
+          setIsSaving(false);
+          setSaveFailed(true);
+        },
+      },
+    );
+  }
+
+  function handleNoteKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleAddEntry();
     }
   }
 
@@ -81,18 +146,28 @@ export function CaseLogCard({
       </div>
 
       <div className={styles.entries}>
-        {entries.map((entry) => {
-          const { headline, body } = entrySummary(entry);
-          return (
-            <div key={entry.id} className={styles.entry}>
-              {headline && <div className={styles.entryHeadline}>{headline}</div>}
-              {body && <div className={styles.entryBody}>{body}</div>}
-              <div className={styles.entryMeta}>
-                {entry.author} · {formatTimestamp(entry.createdAt)}
+        {entries.length === 0 ? (
+          <EmptyState message="No case log entries yet — add a note or logged call below." />
+        ) : (
+          entries.map((entry) => {
+            const { headline, body } = entrySummary(entry);
+            return (
+              <div
+                key={entry.id}
+                ref={(el) => {
+                  entryRefs.current[entry.id] = el;
+                }}
+                className={styles.entry}
+              >
+                {headline && <div className={styles.entryHeadline}>{headline}</div>}
+                {body && <div className={styles.entryBody}>{body}</div>}
+                <div className={styles.entryMeta}>
+                  {entry.author} · {formatTimestamp(entry.createdAt)}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       <div className={styles.tabs}>
@@ -113,10 +188,13 @@ export function CaseLogCard({
       </div>
 
       {logType === 'note' ? (
-        <TextArea
+        <textarea
+          ref={noteInputRef}
+          className={textAreaFieldStyles.field}
           value={noteText}
           onChange={(e) => setNoteText(e.target.value)}
-          placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin."
+          onKeyDown={handleNoteKeyDown}
+          placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin.  (⌘/Ctrl + Enter to save)"
         />
       ) : (
         <>
@@ -132,7 +210,8 @@ export function CaseLogCard({
               placeholder="Spoke with — name"
             />
           </div>
-          <TextArea
+          <textarea
+            className={textAreaFieldStyles.field}
             value={contactSummary}
             onChange={(e) => setContactSummary(e.target.value)}
             placeholder="Summary (optional)"
@@ -140,9 +219,15 @@ export function CaseLogCard({
         </>
       )}
 
+      {saveFailed && (
+        <div className={styles.saveError} role="alert">
+          Couldn&apos;t save that entry — please try again.
+        </div>
+      )}
+
       <div className={styles.footer}>
-        <Button variant="secondary" onClick={handleAddEntry}>
-          Add entry
+        <Button variant="secondary" onClick={handleAddEntry} disabled={isSaving}>
+          {isSaving ? 'Saving…' : 'Add entry'}
         </Button>
       </div>
     </div>

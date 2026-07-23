@@ -70,7 +70,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   const staffOptions = staffList.map((staff) => ({ id: staff.id, name: staff.displayName }));
 
-  const logEntries = caseLog.data ?? [];
+  // Phase 17: newest first — a single sort shared by the on-screen list and
+  // the Print callback below, so print output never disagrees with what's
+  // actually on screen.
+  const logEntries = [...(caseLog.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const uploadedDocuments = documents.data ?? [];
   const caseLinkedTasks = caseTasks.data ?? [];
 
@@ -139,6 +142,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             ownerStaffId={viewModel.ownerStaffId}
             staffOptions={staffOptions}
             onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
+            onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
             isVeteran={viewModel.isVeteran}
             veteranFlagLocked={viewModel.veteranFlagLocked}
             onToggleVeteran={(newValue) => mutations.setVeteranFlag(newValue)}
@@ -160,7 +164,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           <CaseLogCard
             entries={logEntries}
             authorName={viewModel.effectiveOwnerName}
-            onAddEntry={(input) => caseLog.addEntry(input)}
+            onAddEntry={(input, options) => caseLog.addEntry(input, options)}
             onPrint={() =>
               printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
                 const headline =

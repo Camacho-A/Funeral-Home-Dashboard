@@ -31,6 +31,13 @@
   font-size: var(--font-size-13);
 }
 
+.textDone {
+  flex: 1;
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
 .assignee {
   flex-shrink: 0;
   font-size: var(--font-size-11);
