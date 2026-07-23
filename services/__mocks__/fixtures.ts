@@ -6,6 +6,7 @@ import type { CaseDocument } from '../../types/document';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './workflowTemplates';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
+import { formatCaseNumber } from '../../domain/cases/caseNumber';
 
 /**
  * Re-exported from ./organizationIds (not declared here) so
@@ -233,9 +234,19 @@ const standardCremationV1 = latestTemplateVersion(standardCremationWorkflowTempl
  * one shared object, so nothing could ever leak a mutation from one case's
  * snapshot into another's even though none is ever mutated in practice.
  */
-export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw) => ({
+/**
+ * Phase 16B migration: every pre-existing seed case predates the Case
+ * Number feature, so each is backfilled with a `caseNumber` in seed order
+ * (B2026-001 for RAW_SEED_CASES[0], ...008 for the last) — the same
+ * "historical record, not a fabricated value" treatment already applied to
+ * `createdBy`/`intakeOwnerId` above. New mock-mode cases continue this
+ * exact sequence (see services/casesService.ts's create()), so the very
+ * next one created is B2026-009.
+ */
+export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw, index) => ({
   id: raw.id,
   organizationId: DEFAULT_ORGANIZATION_ID,
+  caseNumber: formatCaseNumber(2026, index + 1),
   decedentName: raw.name,
   dateOfBirth: raw.dob,
   dateOfDeath: raw.dod,

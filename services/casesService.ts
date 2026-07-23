@@ -5,6 +5,7 @@ import type { WorkflowTemplate } from '../types/workflowTemplate';
 import type { DataAdapterMode } from '../lib/env';
 import { assertIntakeOwnerUnchanged } from '../domain/cases/intakeOwnership';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
+import { formatCaseNumber, parseCaseNumber, assertCaseNumberUnchanged } from '../domain/cases/caseNumber';
 import { caseFixtures } from './__mocks__/fixtures';
 
 export type CaseFilters = {
@@ -43,8 +44,28 @@ export function matchesSearch(case_: Case, query: string): boolean {
   return (
     case_.decedentName.toLowerCase().includes(q) ||
     case_.nextOfKinPhone.toLowerCase().includes(q) ||
+    case_.caseNumber.toLowerCase().includes(q) ||
     case_.id.includes(q)
   );
+}
+
+/**
+ * Phase 16B (Case Number Generation), mock-mode side: scans this
+ * organization's existing case numbers for the given year and returns the
+ * next one. Mock case creation is single-threaded (one browser tab, no
+ * real concurrent writers), so a plain scan-and-increment is safe here —
+ * the concurrency-safe mechanism this feature requires only matters for
+ * the real, multi-client Wix-mode path; see
+ * lib/wixCaseNumberSequence.ts's reserveNextCaseNumber for that one.
+ */
+function nextMockCaseNumber(organizationId: string, year: number): string {
+  const highestSequence = caseFixtures
+    .filter((c) => c.organizationId === organizationId)
+    .reduce((max, c) => {
+      const parsed = parseCaseNumber(c.caseNumber);
+      return parsed && parsed.year === year && parsed.sequence > max ? parsed.sequence : max;
+    }, 0);
+  return formatCaseNumber(year, highestSequence + 1);
 }
 
 function listMock(context: OrganizationContext, filters: CaseFilters): Case[] {
@@ -151,9 +172,11 @@ export async function create(
   }
 
   const version = latestTemplateVersion(template);
+  const creationYear = new Date().getFullYear();
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
     organizationId: context.organizationId,
+    caseNumber: nextMockCaseNumber(context.organizationId, creationYear),
     decedentName: input.decedentName,
     dateOfBirth: input.dateOfBirth ?? '—',
     dateOfDeath: input.dateOfDeath ?? '—',
@@ -193,6 +216,7 @@ export async function update(
   dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<Case> {
   assertIntakeOwnerUnchanged(patch);
+  assertCaseNumberUnchanged(patch);
 
   if (dataAdapterMode === 'wix') {
     const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}`, {

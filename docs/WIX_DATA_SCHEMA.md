@@ -1,6 +1,6 @@
 # Wix Data Schema (Phase 14)
 
-This document is the authoritative, source-controlled specification of the six Wix Data collections approved for Beacon's first backend integration. It supersedes `docs/CMS_SCHEMA.md`'s `Cases`, `CaseTasks`, and `StaffProfiles` sections for the collections defined here (that document predates both Phase 11's workflow templates and Phase 13's authentication model, and its field lists no longer match reality — see "Migration notes" below). See [ADR-009](./adr/ADR-009-wix-data-schema.md) for why this shape was chosen.
+This document is the authoritative, source-controlled specification of the Wix Data collections backing Beacon's Wix integration — six approved for Beacon's first backend integration (Phase 14A), plus `caseSequences` (Collection 7, Phase 16B). It supersedes `docs/CMS_SCHEMA.md`'s `Cases`, `CaseTasks`, and `StaffProfiles` sections for the collections defined here (that document predates both Phase 11's workflow templates and Phase 13's authentication model, and its field lists no longer match reality — see "Migration notes" below). See [ADR-009](./adr/ADR-009-wix-data-schema.md) for why this shape was chosen, and [ADR-018](./adr/ADR-018-case-number-generation.md) for `caseSequences`.
 
 **Status: created in Wix (Phase 14A, 2026-07-21).** All six collections, and all planned indexes except one (see "Index limits discovered" below), were created in the Beacon Development Wix site via the Wix Data REST API (`https://www.wixapis.com/wix-data/v2/collections`, `/wix-data/v2/indexes`), authenticated with a local, gitignored API key never printed or committed. No Wix MCP tool was used or became available — creation was done via direct REST calls instead. See "Creation record" below for exact resource IDs.
 
@@ -26,10 +26,14 @@ Verified via a read-only `listDataCollections` call immediately after creation: 
 
 **This phase is schema-only.** No application code reads or writes any of these collections. `DATA_ADAPTER=mock` remains the default and the only functioning mode; every `services/*` function still reads `services/__mocks__/fixtures.ts`.
 
+## Creation record (Phase 16B, 2026-07-23)
+
+`caseSequences` (Collection 7) was created the same way, via the same REST endpoint, using the same gitignored API key: 3 fields (`organizationId`, `year`, `nextSequence`) + 4 system fields, permissions `ADMIN` ×4, no additional indexes (every access is `_id`-scoped). Verified via a follow-up `listDataCollections` call: 11 collections total (the same 4 Wix Members system collections + the 6 from Phase 14A + this one). Also added at this time: `cases.caseNumber` (Text, required, immutable) — see Collection 5's field table above.
+
 ## Cross-cutting principles
 
 1. **Wix metadata is kept separate from Beacon domain identifiers.** Every collection has Wix's own system `_id` (opaque, Wix-managed, never referenced by Beacon code) *and* an explicit `beacon<Thing>Id` text field — a Beacon-generated stable string id matching the existing `id` field on the corresponding `types/*.ts` type. Every cross-collection reference below is a plain text field holding another collection's `beacon<Thing>Id`, not a formal Wix "Reference" field type (which keys off system `_id`) — so Beacon's own code, including `resolveAuthorizationContext`, never has to reason about a Wix-internal identifier.
-2. **`organizationId` is required on every organization-owned collection** (all six below except the top-level identity it establishes in `organizations` itself).
+2. **`organizationId` is required on every organization-owned collection** (all seven below except the top-level identity it establishes in `organizations` itself).
 3. **Wix collection permissions are a backstop, not the isolation mechanism.** Every collection defaults to backend/API-Key access only — no Member read, no Visitor read, no public write, not even member-self read. The actual tenant-isolation guarantee is that Beacon's server code always derives `organizationId` from `resolveAuthorizationContext()` (Phase 13) before issuing any query — the same discipline the mock services already apply by filtering `services/__mocks__/fixtures.ts` on `context.organizationId`. If a Wix permission were ever misconfigured, the application-layer check is still what stands between a request and another organization's data.
 4. **No secrets, tokens, or passwords are stored in any collection.** Nothing below stores a Wix access/refresh token, a password, or a session-signing secret.
 
@@ -117,6 +121,7 @@ This is a deliberate change in direction from what the current codebase actually
 |---|---|---|---|
 | `beaconCaseId` | Text | Required | Immutable |
 | `organizationId` | Text | Required | Immutable |
+| `caseNumber` | Text | Required | **Immutable** — the human-facing `B{YYYY}-{###}` identifier (Phase 16B); always read-only in the application, generated once at creation via `caseSequences` (Collection 7) and never reassignable — see [ADR-018](./adr/ADR-018-case-number-generation.md) |
 | `caseType` | Text | Required | Immutable |
 | `workflowTemplateId` | Text | Required | Immutable — → `workflowTemplates.beaconTemplateId` |
 | `workflowTemplateVersion` | Number | Required | Immutable |
@@ -159,6 +164,22 @@ This is a deliberate change in direction from what the current codebase actually
 - **Permissions:** backend/Admin only.
 - **TS type:** matches `types/task.ts`'s `CaseTask` (`assigneeId` renamed from `assigneeStaffId`, per the identity-space direction above — not yet applied to the TS type or any service).
 
+## Collection 7 — `caseSequences`
+
+**Purpose:** backs atomic Case Number generation (Phase 16B) — one row per organization+year, holding the next sequence number to hand out. Not read by any client-facing service; only ever touched by `lib/wixCaseNumberSequence.ts`, server-side, at case-creation time. **Ownership:** organization-owned (one row per organization+year).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId` | Text | Required | Immutable |
+| `year` | Number | Required | Immutable |
+| `nextSequence` | Number | Required | Mutable — only ever changed via an atomic `INCREMENT_FIELD` patch, never a plain update |
+
+- **`_id` is set to `{organizationId}-{year}`** at insert time (e.g. `managed-cremations-2026`) — the same "system `_id` doubles as the natural key" convention already used for `cases`/`tasks`, giving free per-organization-per-year uniqueness without a dedicated (and here, unnecessary) unique index.
+- **Concurrency safety:** the whole point of this collection. See [ADR-018](./adr/ADR-018-case-number-generation.md) for the full design and the empirical verification (against the live Wix project) that concurrent claims never collide.
+- **Indexes:** none needed beyond the system `_id` index — every access is a direct id-scoped PATCH/insert, never a query.
+- **Permissions:** backend/Admin only, same as every other collection.
+- **TS type:** no corresponding domain type — this collection's shape (`{organizationId, year, nextSequence}`) is internal to `lib/wixCaseNumberSequence.ts` and never surfaces as a `Case`-adjacent domain object.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -169,7 +190,7 @@ This is a deliberate change in direction from what the current codebase actually
 | `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all six collections)
+## Permissions summary (all seven collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -193,7 +214,7 @@ No public write access, no unauthenticated read access, no member-self read acce
 
 ## Known limitations
 
-- **All six collections now exist in Wix** (see "Creation record" above) — this limitation from the original proposal is resolved.
+- **All seven collections now exist in Wix** (see "Creation record" sections above) — this limitation from the original proposal is resolved.
 - **`workflowTemplateVersions`' append-only guarantee is now field-level database-enforced** (`immutable: true` on all 6 custom fields) **but not item-level.** A field's *value* can't be changed once set, but the collection's `remove` permission (`ADMIN`) still allows deleting an entire version item outright. Application code should still never call `.update()` or `.remove()` against this collection in practice; the field-level flag is a real backstop against accidental value mutation, not a complete guarantee against deletion.
 - **The `intakeOwnerId`/`caseHandlerId`/`assigneeId` identity-space decision is not yet reflected in application code.** `hooks/useSession.ts` and `services/casesService.ts` still derive these from a hardcoded `StaffProfile` stub, disconnected from Phase 13's real login. This schema anticipates the eventual fix; the fix itself is not part of this phase.
 - **`workflowTemplates.organizationId`'s conditional requirement (required unless `isSystemTemplate=true`) is application-enforced,** not a native Wix Data constraint — implemented as `required: false` at the Wix field level.

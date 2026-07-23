@@ -6,6 +6,8 @@ import styles from './StageFilteredPanel.module.css';
 
 export type StageFilteredCase = {
   id: string;
+  /** Phase 16B (Case Number Generation) — see AllCasesList's identical field. */
+  caseNumber: string;
   decedentName: string;
   ownerInitials: string;
   rowSummaryText: string;
@@ -58,7 +60,9 @@ export function StageFilteredPanel({
               {c.ownerInitials}
             </Link>
             <Link href={`/cases/${c.id}`} className={styles.main}>
-              <div className={styles.name}>{c.decedentName}</div>
+              <div className={styles.name}>
+                {c.decedentName} <span className={styles.caseNumber}>#{c.caseNumber}</span>
+              </div>
               <div
                 className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
               >

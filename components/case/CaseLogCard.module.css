@@ -54,6 +54,13 @@
 
 .entryBody {
   margin-top: var(--space-1);
+  /* Phase 16A: note text can contain user-typed line breaks (the New Case
+     modal's initial note, and this card's own Note textarea) — without
+     this, a plain <div> collapses \n into a single space, silently
+     discarding a line break that was faithfully preserved all the way
+     through storage. pre-line still collapses repeated spaces/tabs, just
+     not newlines. */
+  white-space: pre-line;
 }
 
 .entryMeta {

@@ -23,6 +23,14 @@ vi.mock('@/lib/wixDataApi', async () => {
   };
 });
 
+// Phase 16B (Case Number Generation): mocked at the module boundary so
+// these tests don't need to also simulate the caseSequences collection —
+// lib/wixCaseNumberSequence.test.ts already exercises that logic directly.
+let mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
+vi.mock('@/lib/wixCaseNumberSequence', () => ({
+  reserveNextCaseNumber: (...args: unknown[]) => mockReserveNextCaseNumber(...args),
+}));
+
 // Phase 15X (Multi-Tenant Authorization Hardening): see the identical
 // comment in app/api/organizations/[organizationId]/route.test.ts. Tests
 // that legitimately need to reach the second organization use
@@ -96,6 +104,7 @@ beforeEach(() => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
   mockInsertWixDataItem = vi.fn();
+  mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
   mockSession = { user: mockDefaultUser };
 });
 
@@ -181,6 +190,7 @@ describe('GET /api/cases — wix mode', () => {
           data: {
             beaconCaseId: '1042',
             organizationId: DEFAULT_ORGANIZATION_ID,
+            caseNumber: 'B2026-001',
             caseType: 'cremation',
             workflowTemplateId: 'workflow-template-standard-cremation',
             workflowTemplateVersion: 1,
@@ -377,6 +387,44 @@ describe('POST /api/cases — creation', () => {
     mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
     const response = await POST(postRequest(VALID_CREATE_BODY));
     expect(response.status).toBe(422);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('reserves the Case Number server-side via reserveNextCaseNumber for the authorized organization and the current year', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, new Date().getFullYear());
+    expect(body.case.caseNumber).toBe('B2026-001');
+  });
+
+  it('never trusts a client-supplied caseNumber — the request body value is ignored entirely', async () => {
+    mockEnabledTemplate();
+    mockReserveNextCaseNumber.mockResolvedValue('B2026-042');
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, caseNumber: 'B2026-999' }));
+    const body = await response.json();
+
+    expect(body.case.caseNumber).toBe('B2026-042');
+  });
+
+  it('propagates a Case Number reservation failure as a 503 without leaking internal details', async () => {
+    mockEnabledTemplate();
+    mockReserveNextCaseNumber.mockRejectedValue(new Error('Wix Data increment failed for collection "caseSequences" (HTTP 500).'));
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).not.toMatch(/test-key/);
     expect(mockInsertWixDataItem).not.toHaveBeenCalled();
   });
 

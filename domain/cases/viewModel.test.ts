@@ -15,6 +15,7 @@ function baseCase(overrides: Partial<Case>): Case {
   return {
     id: 'test-case',
     organizationId: DEFAULT_ORGANIZATION_ID,
+    caseNumber: 'B2026-001',
     decedentName: 'Test Decedent',
     dateOfBirth: '—',
     dateOfDeath: '—',

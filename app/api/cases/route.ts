@@ -4,6 +4,7 @@ import { queryWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, buildWixCaseData, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
+import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
 import type { Case } from '@/types/case';
@@ -96,6 +97,12 @@ export async function GET(request: Request) {
  * route at all — see services/casesService.ts), so there is no mock
  * branch to duplicate here. See the ADR for why this was a deliberate
  * simplification rather than an oversight.
+ *
+ * Phase 16B (Case Number Generation): the Case Number is reserved here,
+ * server-side, via lib/wixCaseNumberSequence.ts's reserveNextCaseNumber —
+ * never accepted from the request body (there is no client-supplied
+ * caseNumber field at all; the New Case form has no such input). See
+ * docs/adr/ADR-018-case-number-generation.md.
  */
 export async function POST(request: Request) {
   let body: unknown;
@@ -163,10 +170,12 @@ export async function POST(request: Request) {
     const createdBy = b.createdBy as string;
     const intakeOwnerId = b.intakeOwnerId as string;
     const assignedStaffId = typeof b.assignedStaffId === 'string' ? b.assignedStaffId : createdBy;
+    const caseNumber = await reserveNextCaseNumber(organizationId, new Date().getFullYear());
 
     const data = buildWixCaseData({
       beaconCaseId,
       organizationId,
+      caseNumber,
       caseType: version.caseTypes[0],
       workflowTemplateId: template.id,
       workflowTemplateVersion: version.version,

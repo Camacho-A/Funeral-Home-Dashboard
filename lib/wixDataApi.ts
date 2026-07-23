@@ -23,6 +23,26 @@ type WixDataQueryResponse<Item> = {
   dataItems: Array<{ id: string; dataCollectionId: string; data: Item }>;
 };
 
+/**
+ * Phase 16B (Case Number Generation): a thrown Error subclass carrying the
+ * real HTTP status, additive to every function below's pre-existing
+ * "Wix Data X failed for collection... (HTTP NNN)" message (so old
+ * `.rejects.toThrow(/regex/)` test assertions against that message keep
+ * working unchanged). lib/wixCaseNumberSequence.ts's reserveNextCaseNumber
+ * needs to reliably tell "the sequence row doesn't exist yet" (404) apart
+ * from "another request just created it first" (409) apart from a genuine
+ * failure — checking `error.status` is more robust than string-matching
+ * the message.
+ */
+export class WixDataApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'WixDataApiError';
+    this.status = status;
+  }
+}
+
 export async function queryWixDataItems<Item = Record<string, unknown>>(
   dataCollectionId: string,
   query: WixDataQueryRequest,
@@ -40,7 +60,10 @@ export async function queryWixDataItems<Item = Record<string, unknown>>(
   });
 
   if (!response.ok) {
-    throw new Error(`Wix Data query failed for collection "${dataCollectionId}" (HTTP ${response.status}).`);
+    throw new WixDataApiError(
+      `Wix Data query failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
+      response.status,
+    );
   }
 
   return response.json();
@@ -85,7 +108,10 @@ export async function insertWixDataItem<Item = Record<string, unknown>>(
   });
 
   if (!response.ok) {
-    throw new Error(`Wix Data insert failed for collection "${dataCollectionId}" (HTTP ${response.status}).`);
+    throw new WixDataApiError(
+      `Wix Data insert failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
+      response.status,
+    );
   }
 
   const body = await response.json();
@@ -121,7 +147,10 @@ export async function updateWixDataItem<Item = Record<string, unknown>>(
   );
 
   if (!response.ok) {
-    throw new Error(`Wix Data update failed for collection "${dataCollectionId}" (HTTP ${response.status}).`);
+    throw new WixDataApiError(
+      `Wix Data update failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
+      response.status,
+    );
   }
 
   const body = await response.json();
@@ -140,6 +169,58 @@ export async function deleteWixDataItem(dataCollectionId: string, wixItemId: str
   );
 
   if (!response.ok) {
-    throw new Error(`Wix Data delete failed for collection "${dataCollectionId}" (HTTP ${response.status}).`);
+    throw new WixDataApiError(
+      `Wix Data delete failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
+      response.status,
+    );
   }
+}
+
+/**
+ * Phase 16B (Case Number Generation). Atomically increments a numeric
+ * field on an existing item via Wix's `patchDataItem` INCREMENT_FIELD
+ * action — the "concurrency-safe mechanism" this feature's uniqueness
+ * requirement calls for, confirmed empirically (not assumed) against the
+ * live Wix project: two concurrent increments on the same item never lose
+ * an update, and a patch against a nonexistent item fails with HTTP 404
+ * (`WDE0073`), which lib/wixCaseNumberSequence.ts relies on to detect
+ * "this is the first claim of the year" and fall back to an insert. Only
+ * ever call this on a row a caller intends to use as an atomic counter
+ * (see docs/adr/ADR-018-case-number-generation.md) — it is not a general
+ * partial-update mechanism the way updateWixDataItem's full-replace is.
+ */
+export async function incrementWixDataField<Item = Record<string, unknown>>(
+  dataCollectionId: string,
+  wixItemId: string,
+  fieldPath: string,
+  incrementBy: number,
+): Promise<WixDataItem<Item>> {
+  const { apiKey, siteId } = getWixServerConfig();
+
+  const response = await fetch(
+    `https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}`,
+    {
+      method: 'PATCH',
+      headers: wixDataHeaders(apiKey, siteId),
+      body: JSON.stringify({
+        dataCollectionId,
+        patch: {
+          dataItemId: wixItemId,
+          fieldModifications: [
+            { fieldPath, action: 'INCREMENT_FIELD', incrementFieldOptions: { value: incrementBy } },
+          ],
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new WixDataApiError(
+      `Wix Data increment failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
+      response.status,
+    );
+  }
+
+  const body = await response.json();
+  return body.dataItem;
 }

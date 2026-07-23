@@ -9,6 +9,7 @@ import {
 const validItem = {
   beaconCaseId: '1042',
   organizationId: 'managed-cremations',
+  caseNumber: 'B2026-001',
   caseType: 'cremation',
   workflowTemplateId: 'workflow-template-standard-cremation',
   workflowTemplateVersion: 1,
@@ -110,12 +111,23 @@ describe('mapWixCaseItem', () => {
     expect(mapWixCaseItem({ ...validItem, isVeteran: 'no' })).toBeNull();
     expect(mapWixCaseItem({ ...validItem, checklistState: 'not-an-object' })).toBeNull();
   });
+
+  it('returns null when caseNumber is missing or the wrong type', () => {
+    expect(mapWixCaseItem({ ...validItem, caseNumber: undefined })).toBeNull();
+    expect(mapWixCaseItem({ ...validItem, caseNumber: 2026 })).toBeNull();
+  });
+
+  it('maps caseNumber through unchanged (no reformatting at the mapper boundary)', () => {
+    const result = mapWixCaseItem(validItem);
+    expect(result?.caseNumber).toBe('B2026-001');
+  });
 });
 
 describe('buildWixCaseData', () => {
   const params = {
     beaconCaseId: 'new-case-1',
     organizationId: 'managed-cremations',
+    caseNumber: 'B2026-001',
     caseType: 'cremation',
     workflowTemplateId: 'workflow-template-standard-cremation',
     workflowTemplateVersion: 1,
@@ -178,9 +190,11 @@ describe('validateAndPickCaseUpdate', () => {
       createdBy: 'staff-someone-else',
       createdAt: '2000-01-01T00:00:00.000Z',
       id: 'forged-id',
+      caseNumber: 'B2026-999',
     });
     expect(errors).toEqual([]);
     expect(patch).toEqual({ decedentName: 'Renamed' });
+    expect(patch).not.toHaveProperty('caseNumber');
   });
 
   it('rejects a present-but-wrong-typed field rather than silently dropping or coercing it', () => {

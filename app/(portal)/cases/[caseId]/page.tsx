@@ -79,7 +79,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       id: `required-${doc.label}`,
       name: doc.label,
       status: capitalize(doc.status),
-      onPrint: () => printFile(undefined, doc.label, viewModel.decedentName),
+      onPrint: () => printFile(undefined, doc.label, viewModel.decedentName, viewModel.caseNumber),
     })),
     ...uploadedDocuments.map((doc) => ({
       id: doc.id,
@@ -90,7 +90,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       // display text) — matched here rather than surfacing the raw enum.
       status: 'Uploaded',
       meta: `${doc.uploadedBy} · ${formatTimestamp(doc.uploadedAt)}`,
-      onPrint: () => printFile(documents.getFile(doc.id), doc.fileName, viewModel.decedentName),
+      onPrint: () => printFile(documents.getFile(doc.id), doc.fileName, viewModel.decedentName, viewModel.caseNumber),
       onRemove: () => documents.remove(doc.id),
     })),
   ];
@@ -106,7 +106,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   return (
     <div>
       <CaseHeader
-        id={viewModel.id}
+        caseNumber={viewModel.caseNumber}
         decedentName={viewModel.decedentName}
         dateOfBirth={viewModel.dateOfBirth}
         dateOfDeath={viewModel.dateOfDeath}
@@ -162,7 +162,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             authorName={viewModel.effectiveOwnerName}
             onAddEntry={(input) => caseLog.addEntry(input)}
             onPrint={() =>
-              printTextLog('Case Log', viewModel.decedentName, logEntries, (entry) => {
+              printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
                 const headline =
                   entry.type === 'contact'
                     ? `<div style="font-weight:600">Called ${entry.contactedWho} — spoke with ${entry.contactedSpoke}</div>`
@@ -189,7 +189,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           <ActivityLogCard
             timeline={viewModel.timeline}
             onPrint={() =>
-              printTextLog('Activity Log', viewModel.decedentName, viewModel.timeline, (entry) => {
+              printTextLog('Activity Log', viewModel.decedentName, viewModel.caseNumber, viewModel.timeline, (entry) => {
                 return `<div style="margin-bottom:10px"><span style="font-weight:600">${entry.who}</span> ${entry.what}<div style="font-size:12px;color:#888">${formatDaysAgo(entry.daysAgo)}</div></div>`;
               })
             }

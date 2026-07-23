@@ -31,6 +31,19 @@ export type VaPublishChoice = 'publish' | 'private';
 export type Case = {
   id: string;
   organizationId: string;
+  /**
+   * Phase 16B (Case Number Generation). The human-facing case identifier —
+   * distinct from `id` (an internal, never-displayed key — a UUID in Wix
+   * mode, a small mock-only number in mock mode). Format: `B{YYYY}-{###}`
+   * (e.g. `B2026-001`) — see domain/cases/caseNumber.ts, the single source
+   * of truth for that format, and docs/adr/ADR-018-case-number-generation.md
+   * for why. Always server-generated at creation time (casesService.create
+   * / app/api/cases/route.ts's POST handler); never present in
+   * NewCaseInput, never editable via CaseUpdate (see below) — a case's
+   * number is permanent for its entire lifetime, including after it's
+   * archived, exactly like its own `id`.
+   */
+  caseNumber: string;
   decedentName: string;
   dateOfBirth: string; // display-formatted (MM/DD/YYYY), matching the prototype — no date math is ever performed on it directly
   dateOfDeath: string;
@@ -139,5 +152,6 @@ export type CaseUpdate = Partial<
     | 'workflowTemplateId'
     | 'workflowTemplateVersion'
     | 'workflowSnapshot'
+    | 'caseNumber'
   >
 >;

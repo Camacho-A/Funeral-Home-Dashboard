@@ -4,7 +4,7 @@ import type { BadgeVariant } from '@/types/caseViewModel';
 import styles from './CaseHeader.module.css';
 
 export function CaseHeader({
-  id,
+  caseNumber,
   decedentName,
   dateOfBirth,
   dateOfDeath,
@@ -14,7 +14,11 @@ export function CaseHeader({
   slaTargetLabel,
   isOverdue,
 }: {
-  id: string;
+  /** Phase 16B (Case Number Generation): the human-facing, always
+      read-only identifier — displayed here instead of the internal id
+      (a UUID in Wix mode), per "display the Case Number prominently near
+      the top of the Case Details page." */
+  caseNumber: string;
   decedentName: string;
   dateOfBirth: string;
   dateOfDeath: string;
@@ -33,7 +37,7 @@ export function CaseHeader({
         <div>
           <div className={styles.name}>{decedentName}</div>
           <div className={styles.meta}>
-            DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{id}
+            DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
           </div>
         </div>
         <div className={styles.stageColumn}>

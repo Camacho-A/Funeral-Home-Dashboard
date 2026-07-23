@@ -44,6 +44,7 @@ function requestFor(caseId: string, organizationId: string | null) {
 const EXISTING_WIX_CASE_DATA = {
   beaconCaseId: '1042',
   organizationId: DEFAULT_ORGANIZATION_ID,
+  caseNumber: 'B2026-001',
   caseType: 'cremation',
   workflowTemplateId: 'workflow-template-standard-cremation',
   workflowTemplateVersion: 1,
@@ -154,6 +155,7 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
           data: {
             beaconCaseId: '1042',
             organizationId: DEFAULT_ORGANIZATION_ID,
+            caseNumber: 'B2026-001',
             caseType: 'cremation',
             workflowTemplateId: 'workflow-template-standard-cremation',
             workflowTemplateVersion: 1,
@@ -307,6 +309,18 @@ describe('PATCH /api/cases/[caseId]', () => {
       const mergedData = mockUpdateWixDataItem.mock.calls[0][2];
       expect(mergedData.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
       expect(mergedData.decedentName).toBe('Renamed');
+    });
+
+    it('ignores an attempt to reassign caseNumber via the patch — the Case Number is permanent and always read-only', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { decedentName: 'Renamed', caseNumber: 'B2026-999' },
+      });
+      const body = await response.json();
+
+      const mergedData = mockUpdateWixDataItem.mock.calls[0][2];
+      expect(mergedData.caseNumber).toBe(EXISTING_WIX_CASE_DATA.caseNumber);
+      expect(body.case.caseNumber).toBe(EXISTING_WIX_CASE_DATA.caseNumber);
     });
 
     it('ignores an attempt to reassign workflowTemplateId/intakeOwnerId/createdBy/workflowSnapshot via the patch', async () => {

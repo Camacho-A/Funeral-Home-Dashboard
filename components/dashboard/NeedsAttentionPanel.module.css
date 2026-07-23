@@ -60,6 +60,12 @@
   color: oklch(0.3 0.03 25);
 }
 
+.caseNumber {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-12);
+  color: var(--color-text-secondary);
+}
+
 .reason {
   font-size: var(--font-size-12);
   color: oklch(0.45 0.08 25);

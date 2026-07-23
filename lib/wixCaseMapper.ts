@@ -27,6 +27,10 @@ import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
  *   docs/WIX_DATA_SCHEMA.md's Collection 5 mapping table exactly).
  * - `currentStage` → Case.rawStage (RENAMED).
  * - `isArchived` → Case.isDeleted (RENAMED).
+ * - `caseNumber` → Case.caseNumber (unchanged name; Phase 16B — see
+ *   docs/adr/ADR-018-case-number-generation.md). Server-generated only
+ *   (lib/wixCaseNumberSequence.ts at creation time); this mapper only ever
+ *   reads it, never derives or reformats it.
  * - `intakeOwnerId`/`createdBy` → same names, no rename — see
  *   docs/WIX_DATA_SCHEMA.md's "Open design decision" for the still-unresolved
  *   identity-space question (StaffProfile.id vs. authenticated-identity id);
@@ -41,6 +45,7 @@ import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 export type WixCaseItem = {
   beaconCaseId?: unknown;
   organizationId?: unknown;
+  caseNumber?: unknown;
   caseType?: unknown;
   workflowTemplateId?: unknown;
   workflowTemplateVersion?: unknown;
@@ -100,6 +105,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     !item ||
     typeof item.beaconCaseId !== 'string' ||
     typeof item.organizationId !== 'string' ||
+    typeof item.caseNumber !== 'string' ||
     typeof item.caseType !== 'string' ||
     typeof item.workflowTemplateId !== 'string' ||
     typeof item.workflowTemplateVersion !== 'number' ||
@@ -133,6 +139,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   return {
     id: item.beaconCaseId,
     organizationId: item.organizationId,
+    caseNumber: item.caseNumber,
     decedentName: item.decedentName,
     dateOfBirth: item.dateOfBirth,
     dateOfDeath: item.dateOfDeath,
@@ -175,6 +182,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
 export function buildWixCaseData(params: {
   beaconCaseId: string;
   organizationId: string;
+  caseNumber: string;
   caseType: string;
   workflowTemplateId: string;
   workflowTemplateVersion: number;
@@ -196,6 +204,7 @@ export function buildWixCaseData(params: {
   return {
     beaconCaseId: params.beaconCaseId,
     organizationId: params.organizationId,
+    caseNumber: params.caseNumber,
     caseType: params.caseType,
     workflowTemplateId: params.workflowTemplateId,
     workflowTemplateVersion: params.workflowTemplateVersion,

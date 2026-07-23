@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { casesService } from './casesService';
+import { casesService, matchesSearch } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
 import { DEFAULT_ORGANIZATION_ID, caseFixtures, staffFixtures } from './__mocks__/fixtures';
@@ -161,6 +161,110 @@ describe('casesService.create — workflow template snapshot (Phase 11)', () => 
       liveStages[0] = { ...liveStages[0], label: originalFirstLabel ?? liveStages[0].label };
       if (removed) liveStages.push(removed);
     }
+  });
+});
+
+describe('matchesSearch — Case Number is searchable from the global search bar (Phase 16B)', () => {
+  it('matches on a full or partial caseNumber, case-insensitively', () => {
+    const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)!;
+    expect(matchesSearch(known, known.caseNumber)).toBe(true);
+    expect(matchesSearch(known, known.caseNumber.toLowerCase())).toBe(true);
+    expect(matchesSearch(known, known.caseNumber.slice(0, 6))).toBe(true); // e.g. "b2026-"
+  });
+
+  it('still matches on decedentName and nextOfKinPhone as before — caseNumber is additive, not a replacement', () => {
+    const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)!;
+    expect(matchesSearch(known, known.decedentName)).toBe(true);
+    expect(matchesSearch(known, known.nextOfKinPhone)).toBe(true);
+  });
+
+  it('does not match an unrelated caseNumber', () => {
+    const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)!;
+    expect(matchesSearch(known, 'B2099-999')).toBe(false);
+  });
+});
+
+describe('casesService.create — mock-mode Case Number generation (Phase 16B)', () => {
+  it('assigns every new case a well-formed B{YYYY}-{###} caseNumber', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      organization,
+      { decedentName: 'Case Number Format Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    expect(newCase.caseNumber).toMatch(/^B\d{4}-\d{3,}$/);
+    expect(newCase.caseNumber).toMatch(new RegExp(`^B${new Date().getFullYear()}-`));
+  });
+
+  it('assigns strictly increasing sequential numbers within the same organization and year', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const first = await casesService.create(
+      organization,
+      { decedentName: 'Sequential Test A', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const second = await casesService.create(
+      organization,
+      { decedentName: 'Sequential Test B', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    const firstSeq = Number(first.caseNumber.split('-')[1]);
+    const secondSeq = Number(second.caseNumber.split('-')[1]);
+    expect(secondSeq).toBe(firstSeq + 1);
+  });
+
+  it('never assigns the same caseNumber twice among existing fixtures', () => {
+    const caseNumbers = caseFixtures.map((c) => c.caseNumber);
+    expect(new Set(caseNumbers).size).toBe(caseNumbers.length);
+  });
+
+  it('scopes the sequence per organization — a different organization starts its own count', async () => {
+    const secondOrgContext: OrganizationContext = { organizationId: SECOND_MOCK_ORGANIZATION_ID };
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      secondOrgContext,
+      { decedentName: 'Second Org Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    try {
+      expect(newCase.caseNumber).toMatch(/^B\d{4}-001$/); // this org has no prior fixtures at all
+    } finally {
+      // This test is the only one in the suite that creates a case for
+      // SECOND_MOCK_ORGANIZATION_ID — remove it afterward so later tests
+      // (e.g. "a mismatched organizationId returns an empty list") that
+      // assert this organization has zero fixture cases aren't affected by
+      // a leftover from this test.
+      const index = caseFixtures.findIndex((c) => c.id === newCase.id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+});
+
+describe('casesService.update — caseNumber is always read-only (Phase 16B)', () => {
+  it('throws when a patch tries to change caseNumber, and leaves the stored case untouched', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Case Number Immutability Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    await expect(
+      casesService.update(organization, created.id, {
+        caseNumber: 'B2026-999',
+      } as unknown as Parameters<typeof casesService.update>[2]),
+    ).rejects.toThrow(/caseNumber cannot be changed/);
+
+    const fetched = await casesService.get(organization, created.id);
+    expect(fetched?.caseNumber).toBe(created.caseNumber);
   });
 });
 

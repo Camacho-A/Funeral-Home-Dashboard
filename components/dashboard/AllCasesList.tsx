@@ -6,6 +6,9 @@ import styles from './AllCasesList.module.css';
 
 export type AllCasesListItem = {
   id: string;
+  /** Phase 16B (Case Number Generation) — displayed in every case list per
+      "display the Case Number in all case lists and tables." */
+  caseNumber: string;
   decedentName: string;
   ownerInitials: string;
   rowSummaryText: string;
@@ -37,7 +40,9 @@ export function AllCasesList({
             <div className={styles.avatar}>{c.ownerInitials}</div>
             <div className={styles.main}>
               <div>
-                <div className={styles.name}>{c.decedentName}</div>
+                <div className={styles.name}>
+                  {c.decedentName} <span className={styles.caseNumber}>#{c.caseNumber}</span>
+                </div>
                 <div
                   className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
                 >

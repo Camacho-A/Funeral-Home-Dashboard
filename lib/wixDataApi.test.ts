@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem } from './wixDataApi';
+import {
+  queryWixDataItems,
+  insertWixDataItem,
+  updateWixDataItem,
+  deleteWixDataItem,
+  incrementWixDataField,
+  WixDataApiError,
+} from './wixDataApi';
 
 const ENV_KEYS = ['WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -148,5 +155,51 @@ describe('deleteWixDataItem', () => {
   it('throws a clean error naming the collection and status on failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
     await expect(deleteWixDataItem('tasks', 'task-1')).rejects.toThrow(/tasks.*500/);
+  });
+});
+
+describe('incrementWixDataField', () => {
+  it('PATCHes the item with an INCREMENT_FIELD modification', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ dataItem: { id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: { nextSequence: 2 } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await incrementWixDataField('caseSequences', 'managed-cremations-2026', 'nextSequence', 1);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.wixapis.com/wix-data/v2/items/managed-cremations-2026',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          dataCollectionId: 'caseSequences',
+          patch: {
+            dataItemId: 'managed-cremations-2026',
+            fieldModifications: [{ fieldPath: 'nextSequence', action: 'INCREMENT_FIELD', incrementFieldOptions: { value: 1 } }],
+          },
+        }),
+      }),
+    );
+    expect(result.data.nextSequence).toBe(2);
+  });
+
+  it('throws a WixDataApiError carrying the real HTTP status on failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
+
+    await expect(incrementWixDataField('caseSequences', 'no-such-row', 'nextSequence', 1)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
+describe('WixDataApiError — status is attached across every function, additive to the existing message', () => {
+  it('queryWixDataItems / insertWixDataItem / updateWixDataItem / deleteWixDataItem all throw a WixDataApiError with the real status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({}) }));
+
+    await expect(queryWixDataItems('cases', {})).rejects.toBeInstanceOf(WixDataApiError);
+    await expect(insertWixDataItem('cases', {})).rejects.toMatchObject({ status: 409 });
+    await expect(updateWixDataItem('cases', 'x', {})).rejects.toMatchObject({ status: 409 });
+    await expect(deleteWixDataItem('cases', 'x')).rejects.toMatchObject({ status: 409 });
   });
 });

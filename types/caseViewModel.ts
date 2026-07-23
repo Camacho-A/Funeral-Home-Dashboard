@@ -49,6 +49,11 @@ export type RequiredDocumentViewModel = {
 
 export type CaseViewModel = {
   id: string;
+  /** Phase 16B (Case Number Generation) — the human-facing identifier
+      (`B{YYYY}-{###}`), always server-generated and read-only. See
+      types/case.ts's own field comment and
+      docs/adr/ADR-018-case-number-generation.md. */
+  caseNumber: string;
   decedentName: string;
   dateOfBirth: string;
   dateOfDeath: string;

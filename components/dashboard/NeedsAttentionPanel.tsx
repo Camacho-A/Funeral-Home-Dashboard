@@ -3,6 +3,8 @@ import styles from './NeedsAttentionPanel.module.css';
 
 export type NeedsAttentionCase = {
   id: string;
+  /** Phase 16B (Case Number Generation) — see AllCasesList's identical field. */
+  caseNumber: string;
   decedentName: string;
   attentionReason: string;
   daysWaitingInStage: number;
@@ -26,7 +28,9 @@ export function NeedsAttentionPanel({ cases }: { cases: NeedsAttentionCase[] }) 
         {cases.map((c) => (
           <Link key={c.id} href={`/cases/${c.id}`} className={styles.row}>
             <div className={styles.rowMain}>
-              <div className={styles.name}>{c.decedentName}</div>
+              <div className={styles.name}>
+                {c.decedentName} <span className={styles.caseNumber}>#{c.caseNumber}</span>
+              </div>
               <div className={styles.reason}>{c.attentionReason}</div>
             </div>
             <div className={styles.meta}>

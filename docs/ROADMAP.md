@@ -22,6 +22,22 @@ Notably, the Reports screen's org switcher in the current design already lists a
 
 **Remaining, explicitly deferred (unchanged by this phase):** `createdBy`/`intakeOwnerId` still derive from `hooks/useSession.ts`'s hardcoded stub, not a real server-resolved identity — Identity Model Hardening remains open. Real Wix-backed `organizationMemberships` reads (Phase 15X's own deferred item) are also still outstanding — both are prerequisites for a genuine second organization to operate through this app, not just exist in fixtures.
 
+## Completed: New Case UX Polish and Initial Note (Phase 16A)
+
+**Status: closed 2026-07-24.** Full writeup: [ADR-017](./adr/ADR-017-new-case-ux-polish-and-initial-note.md).
+
+Uppercase transform, MM/DD/YYYY and MM/YY input masks with real calendar/month validation, and a show/hide toggle for card fields (replacing permanent unmasking) were added to the New Case form (`utils/inputMask.ts`, `components/modals/NewCaseModal.tsx`). An optional initial note is now saved through the existing `caseLogService`, with independent partial-failure handling (a note-save failure never re-creates the case, never loses the typed text, and is clearly distinguished from a case-creation failure).
+
+**Gap found, not resolved here (out of this phase's "UX polish" scope):** case notes (`services/caseLogService.ts`) have no Wix write path at all — no collection, no Route Handler, no `dataAdapterMode` — in any phase to date. A note saved through this form (or any existing Case Log note) lives only in client-side mock memory regardless of `DATA_ADAPTER`, unlike cases/tasks (Phase 16). Building real Wix-backed case notes is future work, sized similarly to Phases 15B/15D (schema + mapper + Route Handler + adapter wiring).
+
+## Completed: Case Number Generation (Phase 16B)
+
+**Status: closed 2026-07-23.** Full writeup: [ADR-018](./adr/ADR-018-case-number-generation.md).
+
+Every case now has a permanent, human-facing `B{YYYY}-{###}` identifier (e.g. `B2026-001`), always server-generated and read-only, displayed prominently on Case Detail and in every case list/table, and searchable from the global search bar. Mock-mode generation is a simple scan of existing fixtures (safe — single-threaded); Wix-mode generation uses a new `caseSequences` collection and an atomic `INCREMENT_FIELD` patch, empirically verified against the live Wix project to be race-free under concurrent case creation, with a race-safe bootstrap path for a year's first case. Case Numbers are never reused — Beacon's existing soft-delete-only model (cases are never hard-deleted) already guarantees this structurally, with no new code needed for that guarantee.
+
+**Deferred, unchanged by this phase:** case notes still have no Wix write path (Phase 16A's own reported gap); identity model hardening remains open (Phase 16's own reported gap).
+
 ## Version 2 Candidates (not committed, not scheduled)
 
 These are logical next steps once V1 is in production use at Managed Cremations, in roughly the order they'd likely be needed:

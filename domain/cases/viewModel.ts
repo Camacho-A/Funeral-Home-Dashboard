@@ -132,6 +132,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
 
   return {
     id: case_.id,
+    caseNumber: case_.caseNumber,
     decedentName: case_.decedentName,
     dateOfBirth: case_.dateOfBirth,
     dateOfDeath: case_.dateOfDeath,
