@@ -45,6 +45,7 @@ const SEED: PaymentRecord = {
   id: 'payment-1',
   organizationId: DEFAULT_ORGANIZATION_ID,
   caseId: 'case-1',
+  caseOrderId: null,
   provider: 'clover',
   providerCheckoutId: 'checkout-1',
   providerPaymentId: null,

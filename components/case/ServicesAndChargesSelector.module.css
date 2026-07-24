@@ -1,0 +1,97 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+
+.staticRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+}
+
+.readOnlyBadge {
+  font-size: var(--font-size-11-5);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.legend {
+  font-size: var(--font-size-11-5);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-secondary);
+  padding: 0 var(--space-2);
+}
+
+.radioRow,
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-size-13);
+}
+
+.quantityRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.quantityInput {
+  max-width: 80px;
+  margin-left: var(--space-9);
+}
+
+.priceHint {
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+.summary {
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.summaryTitle {
+  font-size: var(--font-size-11-5);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-13);
+  color: var(--color-text-secondary);
+}
+
+.summaryTotalRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-bold);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  box-shadow: inset 0 1px 0 var(--color-border);
+}

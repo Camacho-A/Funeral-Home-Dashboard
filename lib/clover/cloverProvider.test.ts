@@ -20,6 +20,7 @@ const RECORD: PaymentRecord = {
   id: 'payment-1',
   organizationId: 'org-1',
   caseId: 'case-1',
+  caseOrderId: null,
   provider: 'clover',
   providerCheckoutId: 'checkout-1',
   providerPaymentId: null,

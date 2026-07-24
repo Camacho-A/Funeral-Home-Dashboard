@@ -39,7 +39,7 @@ export function useCreateCloverCheckout(caseId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { amount: number; currency?: string; purpose: string; idempotencyKey: string }) =>
+    mutationFn: (input: { purpose?: string; idempotencyKey: string }) =>
       paymentsClient.createCloverCheckout(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });

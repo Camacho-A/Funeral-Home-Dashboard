@@ -205,6 +205,7 @@ export async function createIdempotentPendingPaymentRecord(
     id: string;
     organizationId: string;
     caseId: string;
+    caseOrderId?: string | null;
     provider: string;
     amount: number;
     currency: string;
@@ -220,6 +221,7 @@ export async function createIdempotentPendingPaymentRecord(
     id: params.id,
     organizationId: params.organizationId,
     caseId: params.caseId,
+    caseOrderId: params.caseOrderId ?? null,
     provider: params.provider,
     providerCheckoutId: `pending:${params.id}`,
     providerPaymentId: null,

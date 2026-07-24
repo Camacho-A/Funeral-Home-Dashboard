@@ -29,6 +29,16 @@ export type PaymentRecord = {
   id: string;
   organizationId: string;
   caseId: string;
+  /** Phase 19C (Service Catalog, Case Order & Pricing Engine). Which
+      CaseOrder version's balanceDue this payment was collected against —
+      set whenever a checkout is created from a case that has a CaseOrder
+      (every case created from this phase onward). Null only for
+      historical Phase 19B payments that predate CaseOrders, and for any
+      future payment purpose genuinely unrelated to a case's itemized
+      order. Never used to recompute a *historical* order's totals — see
+      types/caseOrder.ts's own comment on why balances still look across
+      all of a case's payments regardless of which version they reference. */
+  caseOrderId: string | null;
   /** e.g. 'clover'. Not a literal union — see file comment above. */
   provider: string;
   /** The provider's hosted-checkout session identifier — the field every

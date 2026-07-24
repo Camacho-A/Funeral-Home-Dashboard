@@ -23,7 +23,7 @@ function postCancel(caseId: string, paymentId: string, organizationId: unknown) 
 }
 
 const SEED: PaymentRecord = {
-  id: 'payment-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', provider: 'clover',
+  id: 'payment-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', caseOrderId: null, provider: 'clover',
   providerCheckoutId: 'checkout-1', providerPaymentId: null, idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-1`, checkoutUrl: 'https://clover.test/x',
   status: 'pending', amount: 1000, currency: 'usd', purpose: 'Fee',
   cardBrand: null, cardLast4: null, receiptReference: null, failureCode: null, failureMessage: null,

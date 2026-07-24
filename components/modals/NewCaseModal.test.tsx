@@ -5,9 +5,22 @@ import { NewCaseModal } from './NewCaseModal';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { staffFixtures, caseFixtures } from '@/services/__mocks__/fixtures';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
+import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseLogService } from '@/services/caseLogService';
 import type { WorkflowTemplate } from '@/types/workflowTemplate';
+
+/**
+ * Phase 19C (Service Catalog, Case Order & Pricing Engine). The "Services &
+ * Charges" section (ServicesAndChargesSelector) always renders these five
+ * <input> elements once the service catalog fetch resolves — 3 weight
+ * radios (under_200 always, plus 201_250/251_300 found in the catalog) and
+ * 2 addon checkboxes (Mail Cremated Remains, Extra Death Certificate). The
+ * quantity <input type="number"> only appears once a quantity is > 0, so
+ * it's never part of this fixed count. Every fixed input-count assertion
+ * below that predates this phase now adds this constant.
+ */
+const SERVICES_AND_CHARGES_INPUT_COUNT = 5;
 
 // A stable, shared mock so tests can assert on navigation — useRouter() is
 // called on every render (React hook rules), so an inline `() => vi.fn()`
@@ -49,6 +62,7 @@ beforeEach(() => {
       ok: true,
       json: async () => ({
         workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
+        catalog: serviceCatalogFixtures,
       }),
     }),
   );
@@ -83,10 +97,15 @@ function renderModal() {
 }
 
 /** Renders the modal and waits for the workflow template's intake fields
-    (fetched asynchronously) to actually appear before returning. */
+    (fetched asynchronously) to actually appear before returning. Waits for
+    the full known count (9), not just "> 0" — Services & Charges' own
+    catalog-driven <input>s (Phase 19C) are fetched by a separate query
+    that can resolve before or after the intake fields', so a lower
+    threshold could false-positive on those alone while intake fields are
+    still loading. */
 async function renderModalWithFields() {
   const result = renderModal();
-  await waitFor(() => expect(intakeInputs(result.container).length).toBeGreaterThan(0));
+  await waitFor(() => expect(intakeInputs(result.container).length).toBeGreaterThanOrEqual(9));
   return result;
 }
 
@@ -99,7 +118,7 @@ function stubTemplateFetch(template: WorkflowTemplate | null) {
     'fetch',
     vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ workflowTemplates: template ? [template] : [] }),
+      json: async () => ({ workflowTemplates: template ? [template] : [], catalog: serviceCatalogFixtures }),
     }),
   );
 }
@@ -157,13 +176,14 @@ describe('NewCaseModal — intake owner is read-only', () => {
  * Phase 16A (New Case UX Polish). Intake fields render in this fixed order
  * (services/__mocks__/workflowTemplates.ts's Managed Cremations template):
  * 0 decedentName, 1 placeOfDeath, 2 dateOfBirth, 3 weight, 4 dateOfDeath,
- * 5 timeOfDeath, 6 dcContact, 7 nextOfKinName, 8 nextOfKinPhone. The
- * Payment section (Phase 19B) contributes zero inputs — it is purely
- * informational now (see NewCaseModal.tsx's renderPaymentField), so 9 is
- * the total. None of these fields have a <label htmlFor>/aria-label
- * association with their visible text (the label is a plain sibling
- * <div>), so tests below select by this fixed position rather than by
- * accessible name.
+ * 5 timeOfDeath, 6 dcContact, 7 nextOfKinName, 8 nextOfKinPhone — 9 total.
+ * The old Payment field (Phase 19B) contributed zero inputs and is now
+ * fully retired (Phase 19C's Services &amp; Charges section replaces it —
+ * see the describe block below); Services &amp; Charges' own <input>s
+ * always render *after* these 9, so positional indices 0-8 stay stable.
+ * None of these fields have a <label htmlFor>/aria-label association with
+ * their visible text (the label is a plain sibling <div>), so tests below
+ * select by this fixed position rather than by accessible name.
  */
 function intakeInputs(container: HTMLElement) {
   return container.querySelectorAll('input');
@@ -246,51 +266,113 @@ describe('NewCaseModal — MM/DD/YYYY date mask', () => {
 });
 
 /**
- * Phase 19B (Clover Hosted Checkout Integration). The New Case form's
- * Payment section is now purely informational — real, verified payment
- * collection happens afterward, on Case Detail, via
- * components/case/PaymentCard.tsx's "Collect with Clover" redirect. These
- * tests replace Phase 19A's now-obsolete "credit card fields masked..."
- * and "secure payment section" suites, which exercised a browser-only
- * card-entry form that no longer exists.
+ * Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces the
+ * old informational-only Payment intake field entirely — a hardcoded
+ * section (like "Your name (taking this call)"), never template-driven,
+ * fetching whatever the organization's real service catalog contains
+ * rather than hardcoding any service code (see
+ * components/case/ServicesAndChargesSelector.tsx).
  */
-describe('NewCaseModal — payment section is informational only (Phase 19B)', () => {
-  it('renders the payment section with no inputs of any kind — no card number, expiration, or CVV field', async () => {
+describe('NewCaseModal — Services & Charges (Phase 19C)', () => {
+  it('renders the base service, weight tier options, and add-ons from the fetched catalog — never a hardcoded price', async () => {
+    await renderModalWithFields();
+    expect((await screen.findAllByText('Direct Cremation')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Under 200 lb')).toBeInTheDocument();
+    expect(screen.getByText(/201–250 lb/)).toBeInTheDocument();
+    expect(screen.getByText(/251–300 lb/)).toBeInTheDocument();
+    expect(screen.getByText('Mail Cremated Remains')).toBeInTheDocument();
+    expect(screen.getByText('Extra Death Certificate')).toBeInTheDocument();
+  });
+
+  it('renders no card number, expiration, or CVV input anywhere', async () => {
     const { container } = await renderModalWithFields();
-    // Exactly the 9 ordinary intake fields — the Payment section
-    // contributes zero <input> elements.
-    expect(intakeInputs(container)).toHaveLength(9);
     expect(container.querySelectorAll('input[type="password"]')).toHaveLength(0);
   });
 
-  it('shows the configured payment purpose/description and a note that collection happens via Clover afterward', async () => {
-    await renderModalWithFields();
-    expect(screen.getByText('Cremation service fee')).toBeInTheDocument();
-    expect(screen.getAllByText(/collected securely via clover/i).length).toBeGreaterThan(0);
-  });
+  it('shows a live itemized summary that updates as selections change, and never gates submission', async () => {
+    const { container } = await renderModalWithFields();
+    await screen.findAllByText('Direct Cremation');
+    fillRequiredFields(container);
 
-  it('never gates submission on the payment section, even when the field is configured required', async () => {
-    stubTemplateFetch(
-      customTemplate({
-        intake: {
-          sections: [
-            {
-              key: 's',
-              label: 'S',
-              fields: [
-                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
-                { key: 'payment', label: 'Payment', fieldType: 'payment', required: true, paymentPurpose: 'Fee' },
-              ],
-            },
-          ],
-        },
-      }),
-    );
-    const { container } = renderModal();
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(1));
-    fireEvent.change(container.querySelectorAll('input')[0], { target: { value: 'Test Decedent' } });
+    expect(screen.getByText('Live Itemized Summary')).toBeInTheDocument();
+    // base only, under_200 selected by default — appears in both the line
+    // item and the total row, since they're equal at this point.
+    expect(screen.getAllByText('$890.00').length).toBeGreaterThanOrEqual(2);
+
+    const surchargeRadio = screen.getByText(/201–250 lb/).closest('label')!.querySelector('input')!;
+    fireEvent.click(surchargeRadio);
+    expect(screen.getByText('$1,180.00')).toBeInTheDocument(); // $890 + $290, total row (line item shows $290 alone)
 
     expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
+  });
+
+  it('never renders a hardcoded price if the catalog fetch returns nothing (still renders the rest of the form)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
+          catalog: [],
+        }),
+      }),
+    );
+    const { container } = await renderModalWithFields();
+    expect(screen.queryByText('Direct Cremation')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeInTheDocument();
+    fillRequiredFields(container);
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
+  });
+});
+
+describe('NewCaseModal — Create Case & Collect with Clover (Phase 19C)', () => {
+  it('creates the case order, starts a Clover checkout for its balanceDue, and redirects — never a manually-entered amount', async () => {
+    const originalLocation = window.location;
+    // @ts-expect-error — redefining window.location for a redirect assertion, standard JSDOM pattern
+    delete window.location;
+    // @ts-expect-error — partial Location stand-in, only `href` is exercised
+    window.location = { href: '' };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/api/cases/') && url.includes('/order')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              order: { id: 'order-1', balanceDue: 89_000 },
+              lineItems: [],
+              auditEntries: [],
+            }),
+          });
+        }
+        if (url.includes('/payments/clover/checkout')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ paymentId: 'payment-1', checkoutUrl: 'https://clover.test/checkout-1' }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
+            catalog: serviceCatalogFixtures,
+          }),
+        });
+      }),
+    );
+
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Case & Collect with Clover' }));
+
+    await waitFor(() => expect(window.location.href).toBe('https://clover.test/checkout-1'));
+    expect(pushMock).not.toHaveBeenCalled(); // redirected to Clover instead of navigating in-app
+
+    // @ts-expect-error — restoring the real window.location after the test
+    window.location = originalLocation;
   });
 });
 
@@ -638,8 +720,9 @@ describe('NewCaseModal — configurable field types render correctly (Phase 19)'
     const { container } = renderModal();
     // Intake <input>s only — excludes the always-present Notes <textarea>,
     // which also has an implicit "textbox" role and would otherwise collide
-    // with a role-based query.
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(2));
+    // with a role-based query. Plus Services & Charges' own fixed input
+    // count, which always renders after these.
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(2 + SERVICES_AND_CHARGES_INPUT_COUNT));
     const emailInput = container.querySelectorAll('input')[1];
 
     fireEvent.change(emailInput, { target: { value: 'not-an-email' } });
@@ -668,7 +751,7 @@ describe('NewCaseModal — configurable field types render correctly (Phase 19)'
       }),
     );
     const { container } = renderModal();
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(2));
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(2 + SERVICES_AND_CHARGES_INPUT_COUNT));
     const inputs = container.querySelectorAll('input');
 
     fireEvent.change(inputs[0], { target: { value: 'Test Decedent' } });
@@ -719,11 +802,16 @@ describe('NewCaseModal — backward compatibility (Phase 19)', () => {
 
     resolveFetch({
       ok: true,
+      // A single shared promise resolves every pending fetch call
+      // (workflow-templates AND service-catalog both awaited the same
+      // one) — merging both response shapes into one object lets each
+      // caller read its own key regardless of which call this resolves.
       json: async () => ({
         workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
+        catalog: serviceCatalogFixtures,
       }),
     });
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(9));
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(9 + SERVICES_AND_CHARGES_INPUT_COUNT));
   });
 });
 

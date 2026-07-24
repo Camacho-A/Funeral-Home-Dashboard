@@ -205,7 +205,7 @@ const standardCremationIntake: IntakeTemplate = {
          * a payment field (see NewCaseModal.tsx's hasMissingRequired),
          * since there is nothing to fill in here at all. Real, verified
          * payment collection happens afterward, on Case Detail, via
-         * components/case/PaymentCard.tsx's "Collect with Clover" flow.
+         * components/case/CaseOrderCard.tsx's "Collect with Clover" flow.
          * See docs/adr/ADR-022-clover-hosted-checkout-integration.md.
          */
         {

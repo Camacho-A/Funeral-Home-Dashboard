@@ -111,6 +111,7 @@ beforeEach(() => {
     id: 'payment-1',
     organizationId: DEFAULT_ORGANIZATION_ID,
     caseId: originalCaseFixture.id,
+    caseOrderId: null,
     provider: 'clover',
     providerCheckoutId: 'checkout-uuid-1',
     providerPaymentId: null,

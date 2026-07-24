@@ -8,17 +8,22 @@ import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Button } from '@/components/ui/Button';
+import { ServicesAndChargesSelector } from '@/components/case/ServicesAndChargesSelector';
 import { useSession } from '@/hooks/useSession';
 import { useCreateCase } from '@/hooks/useCreateCase';
 import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
 import { useOrganization } from '@/hooks/useOrganization';
+import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useMutation } from '@tanstack/react-query';
 import { caseLogService } from '@/services/caseLogService';
+import { pricingClient } from '@/services/pricingClient';
+import { paymentsClient } from '@/services/paymentsClient';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
 import { formatDateInput, getValidationError, normalizeTimeInput } from '@/utils/inputMask';
 import type { Case } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
+import type { ServiceSelections } from '@/types/caseOrder';
 import styles from './NewCaseModal.module.css';
 
 /**
@@ -139,9 +144,37 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // note-save retry never re-creates the case (never a duplicate).
   const [createdCase, setCreatedCase] = useState<Case | null>(null);
 
+  // Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces the
+  // old informational-only payment intake field — see
+  // ServicesAndChargesSelector's own comment. Starts at the zero-cost
+  // selection (base service only) so the Live Itemized Summary is
+  // meaningful from the moment the modal opens, before staff touches
+  // anything.
+  const { data: serviceCatalog = [], isSuccess: catalogLoaded } = useServiceCatalog();
+  const [servicesSelections, setServicesSelections] = useState<ServiceSelections>({
+    weightTier: 'under_200',
+    extraDeathCertificateQuantity: 0,
+    mailCremated: false,
+  });
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const addNote = useMutation({
     mutationFn: ({ caseId, text }: { caseId: string; text: string }) =>
       caseLogService.create(organization, caseId, { type: 'note', text, author: session.displayName }),
+  });
+
+  const createOrder = useMutation({
+    mutationFn: (input: { caseId: string; selections: ServiceSelections }) =>
+      pricingClient.createCaseOrder(organization, input.caseId, {
+        selections: input.selections,
+        performedBy: session.displayName,
+      }),
+  });
+
+  const createCheckout = useMutation({
+    mutationFn: (input: { caseId: string }) =>
+      paymentsClient.createCloverCheckout(organization, input.caseId, { idempotencyKey: crypto.randomUUID() }),
   });
 
   function setDraftValue(key: string, value: string) {
@@ -189,6 +222,9 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setTouched({});
     setRevealedFields({});
     setCreatedCase(null);
+    setServicesSelections({ weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false });
+    setSubmitError(null);
+    setIsSubmitting(false);
     addNote.reset();
   }
 
@@ -214,7 +250,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     // Phase 19B (Clover Hosted Checkout Integration): a payment field is
     // purely informational at intake time now — real collection happens
     // afterward, on Case Detail, via a verified Clover checkout (see
-    // components/case/PaymentCard.tsx). There is nothing here to fill in
+    // components/case/CaseOrderCard.tsx). There is nothing here to fill in
     // or gate submission on, regardless of `required`.
     if (field.fieldType === 'payment') return false;
     return field.required && !(draft[field.key] ?? field.defaultValue).trim();
@@ -234,11 +270,29 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     );
   }
 
-  function handleSubmit() {
-    if (!canSubmit) return;
+  /**
+   * Phase 19C (Service Catalog, Case Order & Pricing Engine). Case
+   * Creation Flow, per the phase's own numbered sequence: 1. validate
+   * intake (canSubmit, already checked by callers below) — 2. create Case
+   * — 3-6. create the Case Order (server calculates line items/totals,
+   * never a client-submitted total) — 7. if collecting with Clover, start
+   * a checkout for CaseOrder.balanceDue (never a manually-entered amount)
+   * and redirect immediately.
+   *
+   * A failure after the Case already exists (order creation, or the
+   * Clover checkout) never stays silently stuck in the modal — it
+   * surfaces a message and still navigates to the new case, where Case
+   * Detail's "Edit Services"/"Collect Balance with Clover" can pick up
+   * where this flow left off.
+   */
+  async function handleSubmit(collectWithClover: boolean) {
+    if (!canSubmit || isSubmitting) return;
+    setSubmitError(null);
+    setIsSubmitting(true);
 
-    createCase.mutate(
-      {
+    let newCase: Case;
+    try {
+      newCase = await createCase.mutateAsync({
         decedentName: structuredFields.decedentName ?? '',
         nextOfKinName: structuredFields.nextOfKinName ?? '',
         nextOfKinPhone: structuredFields.nextOfKinPhone ?? '',
@@ -248,22 +302,45 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         placeOfDeath: structuredFields.placeOfDeath || undefined,
         weight: structuredFields.weight || undefined,
         fieldValues: buildIntakeFieldValues(effectiveIntake, draft),
-      },
-      {
-        onSuccess: (newCase) => {
-          const noteText = (draft[NOTES_KEY] ?? '').trim();
-          if (!noteText) {
-            goToCase(newCase.id);
-            return;
-          }
-          // The case is now real; remember it so a note-save failure never
-          // re-triggers case creation, and the "Retry saving note"/
-          // "Continue without note" panel below has something to act on.
-          setCreatedCase(newCase);
-          saveNoteThenNavigate(newCase.id, noteText);
-        },
-      },
-    );
+      });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Failed to create case.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      await createOrder.mutateAsync({ caseId: newCase.id, selections: servicesSelections });
+    } catch {
+      setSubmitError('Case created, but the case order failed to save — set up services from the case page.');
+      goToCase(newCase.id);
+      return;
+    }
+
+    if (collectWithClover) {
+      try {
+        const { checkoutUrl } = await createCheckout.mutateAsync({ caseId: newCase.id });
+        resetForm();
+        onClose();
+        window.location.href = checkoutUrl;
+        return;
+      } catch {
+        setSubmitError('Case created, but starting the Clover checkout failed — collect payment from the case page.');
+        goToCase(newCase.id);
+        return;
+      }
+    }
+
+    const noteText = (draft[NOTES_KEY] ?? '').trim();
+    if (!noteText) {
+      goToCase(newCase.id);
+      return;
+    }
+    // The case is now real; remember it so a note-save failure never
+    // re-triggers case creation, and the "Retry saving note"/
+    // "Continue without note" panel below has something to act on.
+    setCreatedCase(newCase);
+    saveNoteThenNavigate(newCase.id, noteText);
   }
 
   // Partial-failure state: the case was created, but its note failed to
@@ -272,35 +349,14 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // via the Create Case button below.
   const noteSaveFailed = Boolean(createdCase) && addNote.isError;
 
-  /**
-   * Phase 19B (Clover Hosted Checkout Integration). Purely informational
-   * now — no input of any kind. Real payment collection happens after the
-   * case exists, on Case Detail's PaymentCard, via a verified Clover
-   * Hosted Checkout redirect (components/case/PaymentCard.tsx); a Clover
-   * checkout session requires an existing caseId, so there is no way for
-   * it to happen during New Case creation, and Phase 19A's interim
-   * browser-only card-entry section (the phase before a real provider
-   * existed) is retired along with it. Never renders a card number,
-   * expiration, or CVV input — see
-   * docs/adr/ADR-022-clover-hosted-checkout-integration.md.
-   */
-  function renderPaymentField(field: ResolvedIntakeField): ReactNode {
-    return (
-      <div key={field.key} className={styles.paymentSection}>
-        <div className={styles.fieldLabel}>{field.label}</div>
-        {field.paymentPurpose && <div className={styles.paymentPurpose}>{field.paymentPurpose}</div>}
-        {field.paymentAmount && <div className={styles.paymentAmount}>{field.paymentAmount}</div>}
-        {field.paymentDescription && <div className={styles.paymentDescription}>{field.paymentDescription}</div>}
-
-        <div className={styles.paymentNotice} role="note">
-          Payment is collected securely via Clover once this case is created — not here.
-        </div>
-      </div>
-    );
-  }
-
   function renderIntakeField(field: ResolvedIntakeField): ReactNode {
-    if (field.fieldType === 'payment') return renderPaymentField(field);
+    // Phase 19C (Service Catalog, Case Order & Pricing Engine): the
+    // template's old informational-only 'payment' field is fully
+    // superseded by the hardcoded "Services & Charges" section rendered
+    // below (see ServicesAndChargesSelector) — nothing renders here for
+    // it anymore, matching how "Your name (taking this call)" is already a
+    // hardcoded section rather than a template field.
+    if (field.fieldType === 'payment') return null;
 
     const value = draft[field.key] ?? field.defaultValue;
     const error = touched[field.key] ? getValidationError(field.validationType, value) : null;
@@ -446,6 +502,32 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           ))}
 
+          {/* Phase 19C (Service Catalog, Case Order & Pricing Engine):
+              replaces the old informational-only payment intake field.
+              Beacon calculates every total server-side once the case is
+              created — this preview is for the staff member's benefit
+              only, never submitted as a trusted amount. See
+              ServicesAndChargesSelector's own comment and
+              docs/adr/ADR-023-case-order-pricing-engine.md.
+
+              Gated on the catalog fetch having genuinely resolved with
+              data — same anti-flicker principle as `intake` above: never
+              show a lone/partial control set (e.g. just the always-on
+              "Under 200 lb" weight radio with nothing else) while the
+              real catalog is still loading. */}
+          {catalogLoaded && serviceCatalog.length > 0 && (
+            <div className={styles.group}>
+              <div className={styles.groupLabel}>Services &amp; Charges</div>
+              <div className={styles.groupFields}>
+                <ServicesAndChargesSelector
+                  catalog={serviceCatalog}
+                  selections={servicesSelections}
+                  onChange={setServicesSelections}
+                />
+              </div>
+            </div>
+          )}
+
           <div className={styles.group}>
             <div className={styles.groupLabel}>Notes (optional)</div>
             <div className={styles.groupFields}>
@@ -457,12 +539,21 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           </div>
 
+          {submitError && (
+            <div className={styles.fieldError} role="alert">
+              {submitError}
+            </div>
+          )}
+
           <div className={styles.footer}>
             <Button variant="secondary" onClick={handleClose}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={!canSubmit || createCase.isPending}>
+            <Button variant="secondary" onClick={() => handleSubmit(false)} disabled={!canSubmit || isSubmitting}>
               Create case
+            </Button>
+            <Button onClick={() => handleSubmit(true)} disabled={!canSubmit || isSubmitting}>
+              {isSubmitting ? 'Working…' : 'Create Case & Collect with Clover'}
             </Button>
           </div>
         </>

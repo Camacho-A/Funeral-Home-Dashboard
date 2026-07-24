@@ -11,7 +11,7 @@ import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsSe
  * directly from the client's own request, unlike a "succeeded" status:
  * "cancelled" carries no claim that money changed hands, so nothing here
  * needs webhook confirmation — the worst case of a wrong cancel mark is
- * an extra, always-available retry via PaymentCard, never a false
+ * an extra, always-available retry via CaseOrderCard, never a false
  * "payment collected" state.
  *
  * A no-op (still returns the current record) if the payment has already

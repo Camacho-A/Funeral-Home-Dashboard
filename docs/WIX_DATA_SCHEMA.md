@@ -55,6 +55,31 @@ Empirically confirmed against the live collections during this pass (not merely 
 - A duplicate system `_id` insert (used for `webhookEvents`' fingerprint-as-`_id` dedup design) fails with HTTP 409, error code `WDE0074`.
 - A newly-created unique index begins enforcing uniqueness immediately, while its own `status` still reports `BUILDING` (not yet `ACTIVE`) — confirmed by a real duplicate-key insert attempt against `unique_idempotencyKey` shortly after creation.
 
+## Creation record (Phase 19C, 2026-07-24)
+
+`serviceCatalog` (Collection 11), `caseOrders` (Collection 12), `caseOrderLineItems` (Collection 13), and `caseOrderAuditEntries` (Collection 14) were created the same way, via the same REST endpoints, using the same gitignored API key. See [ADR-023](./adr/ADR-023-case-order-pricing-engine.md).
+
+| Collection | Fields (incl. 4 system fields) | Indexes created | Permissions |
+|---|---|---|---|
+| `serviceCatalog` | 10 + 4 | `organizationId` (regular) | ADMIN ×4 |
+| `caseOrders` | 11 + 4 | `organizationId_caseId` (regular) | ADMIN ×4 |
+| `caseOrderLineItems` | 10 + 4 | `organizationId_caseOrderId` (regular) | ADMIN ×4 |
+| `caseOrderAuditEntries` | 10 + 4 | `organizationId_caseId` (regular) | ADMIN ×4 |
+
+Verified via a follow-up `listDataCollections` call: 15 collections total (the 4 Wix Members system collections + the 10 from Phases 14A/16B/19B + these 4). No unique index was requested for any of these four — unlike `paymentRecords`, none of them has a client-supplied idempotency concept to protect: `serviceCatalog` rows are seeded once by staff/an admin script, and `caseOrders`/`caseOrderLineItems`/`caseOrderAuditEntries` are always server-generated (a fresh UUID minted by the Route Handler), never a value a duplicate request could race on the way `paymentRecords.idempotencyKey` can.
+
+Manor's Cremation's (`managed-cremations`) five-row v1 service catalog was seeded into `serviceCatalog` immediately after creation:
+
+| `serviceCode` | `displayName` | `category` | `pricingType` | `defaultPrice` (cents) | `sortOrder` |
+|---|---|---|---|---|---|
+| `DIRECT_CREMATION` | Direct Cremation | `base` | `flat` | 89000 | 1 |
+| `WEIGHT_SURCHARGE_201_250` | Weight Surcharge (201–250 lb) | `weight_surcharge` | `flat` | 29000 | 2 |
+| `WEIGHT_SURCHARGE_251_300` | Weight Surcharge (251–300 lb) | `weight_surcharge` | `flat` | 39000 | 2 |
+| `EXTRA_DEATH_CERTIFICATE` | Extra Death Certificate | `addon` | `per_unit` | 2500 | 3 |
+| `MAIL_CREMATED_REMAINS` | Mail Cremated Remains | `addon` | `flat` | 18500 | 4 |
+
+No "under 200 lb" row exists — a $0 weight surcharge is nothing to itemize, so the pricing engine (`domain/pricing/calculateOrder.ts`) simply omits a weight-surcharge line item entirely when that tier is selected, rather than the catalog carrying a $0 placeholder row.
+
 ## Cross-cutting principles
 
 1. **Wix metadata is kept separate from Beacon domain identifiers.** Every collection has Wix's own system `_id` (opaque, Wix-managed, never referenced by Beacon code) *and* an explicit `beacon<Thing>Id` text field — a Beacon-generated stable string id matching the existing `id` field on the corresponding `types/*.ts` type. Every cross-collection reference below is a plain text field holding another collection's `beacon<Thing>Id`, not a formal Wix "Reference" field type (which keys off system `_id`) — so Beacon's own code, including `resolveAuthorizationContext`, never has to reason about a Wix-internal identifier.
@@ -272,6 +297,88 @@ This is a deliberate change in direction from what the current codebase actually
 - **Indexes:** none beyond the system `_id` index — every access is a direct id-scoped insert or `_id`-filtered query, never a broader scan.
 - **TS type:** `types/webhookEvent.ts`'s `WebhookEventRecord`/`WebhookEventState`.
 
+## Collection 11 — `serviceCatalog`
+
+**Purpose:** the organization-scoped catalog of billable services and their server-only prices (Phase 19C — Service Catalog, Case Order & Pricing Engine). The one source of truth `domain/pricing/calculateOrder.ts` reads through `services/pricingService.ts`'s `getServiceCatalog` — never hardcoded in a React component. **Ownership:** organization-owned.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconServiceCatalogId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `serviceCode` | Text | Required | Immutable — e.g. `DIRECT_CREMATION`; the pricing engine's stable key |
+| `displayName` | Text | Required | Mutable |
+| `category` | Text (`base`/`weight_surcharge`/`addon`, open-ended) | Required | Mutable |
+| `pricingType` | Text (`flat`/`per_unit`, open-ended) | Required | Mutable |
+| `defaultPrice` | Number | Required | Mutable — integer cents |
+| `isActive` | Boolean | Required | Mutable |
+| `sortOrder` | Number | Required | Mutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **`_id` is set to a fresh generated id** at insert time (not a natural key — a catalog is small and rarely inserted into after initial seeding, so there's no meaningful collision risk to guard against with a composed `_id`).
+- **`category`/`pricingType` are plain text, not a closed enum at the Wix level** — matching `types/serviceCatalog.ts`'s deliberately open typing, so a future pricing rule this phase doesn't anticipate can be added as a new catalog row without a schema change.
+- **Indexes:** `organizationId` (regular) — every catalog read is organization-scoped.
+- **TS type:** `types/serviceCatalog.ts`'s `ServiceCatalogItem`.
+
+## Collection 12 — `caseOrders`
+
+**Purpose:** the authoritative, itemized pricing record for one case (Phase 19C). Append-only/versioned — editing a case's services never mutates an existing row, it inserts a new one with `version` incremented and marks the row it replaces `status: 'superseded'`. Exactly one row per case has `status: 'active'` at a time. **Ownership:** organization- and case-scoped.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCaseOrderId` | Text | Required | Immutable |
+| `organizationId`, `caseId` | Text | Required | Immutable |
+| `status` | Text (`active`/`superseded`) | Required | Mutable — the only field ever changed after insert, aside from `balanceDue` |
+| `subtotal`, `discountTotal`, `taxTotal`, `total` | Number | Required | Immutable — fixed at creation time for this version; `discountTotal`/`taxTotal` are always 0 today, reserved for a future feature |
+| `balanceDue` | Number | Required | Mutable — refreshed whenever a payment against this case succeeds (`services/pricingService.ts`'s `refreshBalanceForCase`); never recalculated from `total` alone, since it also nets out every succeeded `PaymentRecord` for the case across all versions |
+| `version` | Number | Required | Immutable — starts at 1, increments per edit |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **`_id` is set to a fresh generated id** at insert time.
+- **Historical immutability is structural, not just a convention:** `subtotal`/`discountTotal`/`taxTotal`/`total`/`version` never change after insert — verified by `services/pricingService.test.ts`'s "never rewrites the superseded version's own totals" test. Only `status` (active→superseded) and `balanceDue` (as payments arrive) are ever updated on an existing row.
+- **Indexes:** `organizationId_caseId` (regular) — serves both "get this case's active order" (filtered further by `status: 'active'` in the query) and "list every version" (Collection Detail's future audit/reporting needs).
+- **TS type:** `types/caseOrder.ts`'s `CaseOrder`.
+
+## Collection 13 — `caseOrderLineItems`
+
+**Purpose:** the itemized services making up one `CaseOrder` version (Phase 19C). Write-once — created alongside their CaseOrder and never edited or deleted; an edit produces a whole new CaseOrder version with its own fresh line items. **Ownership:** organization-scoped, belongs to one `caseOrders` row.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconLineItemId` | Text | Required | Immutable |
+| `organizationId`, `caseOrderId` | Text | Required | Immutable — → `caseOrders.beaconCaseOrderId` |
+| `serviceCode` | Text | Required | Immutable — → `serviceCatalog.serviceCode` |
+| `description` | Text | Required | Immutable — copied from the catalog's `displayName` at calculation time, so a later catalog rename never retroactively changes a historical order's line item text |
+| `quantity` | Number | Required | Immutable |
+| `unitPrice`, `lineTotal` | Number | Required | Immutable — `unitPrice` likewise copied from the catalog at calculation time, not a live reference |
+| `sortOrder` | Number | Required | Immutable |
+| `metadata` | Object (JSON), nullable | Optional | Immutable — reserved for future line-item-specific data; always `null` in this phase's own writes |
+| `createdAt` | Date | Required | Immutable |
+
+- **`_id` is set to a fresh generated id** at insert time.
+- **Indexes:** `organizationId_caseOrderId` (regular) — serves "list this order version's line items."
+- **TS type:** `types/caseOrder.ts`'s `CaseOrderLineItem`.
+
+## Collection 14 — `caseOrderAuditEntries`
+
+**Purpose:** immutable audit trail for edits to a case's services (Phase 19C) — distinct from `caseOrders`' own version history (which records *what the order was*), this records *who changed it, when, and why the total moved*. Append-only. **Ownership:** organization- and case-scoped.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconAuditEntryId` | Text | Required | Immutable |
+| `organizationId`, `caseId` | Text | Required | Immutable |
+| `caseOrderId` | Text | Required | Immutable — → `caseOrders.beaconCaseOrderId`; the version this entry's change resulted in |
+| `action` | Text (open-ended, e.g. `order_created`/`weight_tier_changed`/`death_certificate_quantity_changed`/`mail_cremated_remains_added`/`mail_cremated_remains_removed`) | Required | Immutable |
+| `previousValue`, `newValue` | Text, nullable | Optional | Immutable |
+| `amountDeltaCents` | Number | Required | Immutable — signed; 0 for the initial `order_created` entry |
+| `description` | Text | Required | Immutable — precomposed human-readable line, e.g. `"Changed: Weight, Under 200 lb → 201–250 lb, +$290"`, matching this phase's own spec examples exactly so Case Detail/Print Order can render it with no further formatting |
+| `performedBy` | Text | Required | Immutable — the staff member's display name, sourced from the trusted client session at request time; same trust model as `cases.createdBy`/`intakeOwnerId` (see "Open design decision" above) |
+| `createdAt` | Date | Required | Immutable |
+
+- **`_id` is set to a fresh generated id** at insert time.
+- **Not a fourth collection this phase's own spec explicitly named** — the spec's "New Wix Collections" list named `serviceCatalog`/`caseOrders`/`caseOrderLineItems` only. This collection was added because "Track: user, timestamp, action, previous value, new value" has no clean home in any of those three (their own field lists have no `action`/`previousValue`/`newValue`/`performedBy`), the same judgment call that added `webhookEvents` beyond Phase 19B's own three-collection list. Flagged here for the same reason that addition was flagged in ADR-022.
+- **Indexes:** `organizationId_caseId` (regular) — serves "list this case's full audit history," most-recent-first (sorted in application code).
+- **TS type:** `types/caseOrderAudit.ts`'s `CaseOrderAuditEntry`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -282,7 +389,7 @@ This is a deliberate change in direction from what the current codebase actually
 | `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all ten collections)
+## Permissions summary (all fourteen collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -301,6 +408,10 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Payment history for one case | `paymentRecords (organizationId, caseId)` |
 | Org-scoped payment update by checkout id | `paymentRecords (organizationId, providerCheckoutId)` (regular, not unique) |
 | Durable webhook delivery dedup (correction pass) | `webhookEvents` — system `_id` uniqueness only (`_id` = event fingerprint), no custom index |
+| Service catalog by organization | `serviceCatalog (organizationId)` |
+| Case order (active + version history) by case | `caseOrders (organizationId, caseId)` |
+| Line items for one case order version | `caseOrderLineItems (organizationId, caseOrderId)` |
+| Audit history for one case | `caseOrderAuditEntries (organizationId, caseId)` |
 
 ## Migration notes
 

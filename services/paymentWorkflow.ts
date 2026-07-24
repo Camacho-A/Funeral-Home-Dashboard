@@ -3,6 +3,7 @@ import { queryWixDataItems, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixCaseItem, applyCaseUpdateToWixData, type WixCaseItem } from '../lib/wixCaseMapper';
 import { caseFixtures } from './__mocks__/fixtures';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
+import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). The one place a
@@ -23,12 +24,30 @@ import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentCh
  * harmless no-op, which is exactly what's needed for duplicate/out-of-
  * order webhook delivery (this function may run more than once for the
  * same case).
+ *
+ * Phase 19C (Service Catalog, Case Order & Pricing Engine) correction: a
+ * case with an itemized CaseOrder supports multiple payments against one
+ * balance (a deposit followed by a final payment, for instance) — a
+ * single verified success no longer automatically means "fully paid" for
+ * such a case. This function now refreshes the CaseOrder's own balanceDue
+ * (services/pricingService.ts's refreshBalanceForCase) first, and only
+ * marks the Case paymentStatus 'paid_in_full' once that balance has
+ * actually reached 0. A case with no CaseOrder at all (pre-Phase-19C data)
+ * keeps the original unconditional behavior — one verified payment means
+ * paid, exactly as Phase 19B specified for a case with a single freeform
+ * amount.
  */
 export async function markCasePaidIfVerified(
   organizationId: string,
   caseId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<void> {
+  const activeOrder = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  if (activeOrder) {
+    const refreshed = await refreshBalanceForCase(organizationId, caseId, dataAdapterMode);
+    if ((refreshed?.balanceDue ?? 0) > 0) return; // still owes a balance — not fully paid yet
+  }
+
   if (dataAdapterMode === 'mock') {
     const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === organizationId);
     if (index === -1) return;

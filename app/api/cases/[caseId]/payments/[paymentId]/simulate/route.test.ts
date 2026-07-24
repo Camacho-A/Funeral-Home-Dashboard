@@ -37,7 +37,7 @@ beforeEach(() => {
   knownCaseId = originalCaseFixture.id;
 
   const seed: PaymentRecord = {
-    id: 'payment-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: knownCaseId, provider: 'clover',
+    id: 'payment-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: knownCaseId, caseOrderId: null, provider: 'clover',
     providerCheckoutId: 'mock-checkout-payment-1', providerPaymentId: null, idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-1`, checkoutUrl: 'https://beacon.test/mock',
     status: 'pending', amount: 1000, currency: 'usd', purpose: 'Fee',
     cardBrand: null, cardLast4: null, receiptReference: null, failureCode: null, failureMessage: null,

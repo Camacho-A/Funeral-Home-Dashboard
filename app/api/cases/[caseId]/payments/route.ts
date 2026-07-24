@@ -6,7 +6,7 @@ import { listPaymentRecordsForCase } from '@/services/paymentsService';
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Lists every payment
  * attempt (pending, succeeded, failed, cancelled) for one case, most
- * recent first — the "payment history" PaymentCard renders. Read-only
+ * recent first — the "payment history" CaseOrderCard renders. Read-only
  * and org-scoped by the query itself (a caseId belonging to a different
  * organization simply matches zero records under this organizationId, so
  * there is nothing to leak) — see the checkout route for the stricter,

@@ -11,6 +11,7 @@ import {
   createIdempotentPendingPaymentRecord,
   updatePaymentRecord,
 } from '@/services/paymentsService';
+import { getActiveCaseOrder } from '@/services/pricingService';
 import { cloverProvider } from '@/lib/clover/cloverProvider';
 
 /**
@@ -27,11 +28,24 @@ import { cloverProvider } from '@/lib/clover/cloverProvider';
  * internally on getDataAdapterMode() exactly like every read route does.
  * In mock mode, no real Clover API is ever called — see the mock branch
  * below.
+ *
+ * Phase 19C (Service Catalog, Case Order & Pricing Engine) correction:
+ * `amount` is no longer accepted from the client at all — "Never allow
+ * Clover amount to be entered manually" / "Clover receives
+ * CaseOrder.balanceDue." The amount charged is always this case's active
+ * CaseOrder's own `balanceDue`, fetched server-side; a request body naming
+ * an `amount` field is rejected outright (see findForbiddenAmountField
+ * below) rather than silently ignored, so a stale client can never be
+ * misled into thinking its number had any effect. A case with no active
+ * CaseOrder (pre-Phase-19C data, or a case whose order somehow wasn't
+ * created) can't check out at all — 422 — and a CaseOrder already paid
+ * down to $0 can't either — 400 — since there would be nothing for Clover
+ * to collect.
  */
 
-const MAX_AMOUNT_CENTS = 10_000_000; // $100,000 — a sanity ceiling, not a real business limit
 const MAX_PURPOSE_LENGTH = 200;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
+const DEFAULT_PURPOSE = 'Case order balance due';
 
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params;
@@ -67,19 +81,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
 
-  // Amount/purpose validation (step 4) — done before any lookup so a
-  // malformed request never triggers a Clover call or a stray pending
-  // PaymentRecord.
-  if (typeof b.amount !== 'number' || !Number.isInteger(b.amount) || b.amount <= 0 || b.amount > MAX_AMOUNT_CENTS) {
-    return NextResponse.json({ error: 'amount must be a positive integer number of cents.' }, { status: 400 });
+  // Phase 19C: `amount` must never arrive from the client at all — reject
+  // outright rather than silently ignore, so a stale/tampered client can
+  // never be misled into thinking its number mattered.
+  if ('amount' in b) {
+    return NextResponse.json(
+      { error: 'amount must not be supplied — the balance due on this case\'s current CaseOrder is always used.' },
+      { status: 400 },
+    );
   }
-  if (typeof b.purpose !== 'string' || b.purpose.trim().length === 0 || b.purpose.length > MAX_PURPOSE_LENGTH) {
-    return NextResponse.json({ error: 'purpose is required and must be a non-empty string.' }, { status: 400 });
-  }
-  const currency = typeof b.currency === 'string' && b.currency.trim() ? b.currency.trim().toLowerCase() : 'usd';
-  if (!/^[a-z]{3}$/.test(currency)) {
-    return NextResponse.json({ error: 'currency must be a 3-letter ISO 4217 code.' }, { status: 400 });
-  }
+  const purpose =
+    typeof b.purpose === 'string' && b.purpose.trim().length > 0 && b.purpose.length <= MAX_PURPOSE_LENGTH
+      ? b.purpose.trim()
+      : DEFAULT_PURPOSE;
+  const currency = 'usd'; // CaseOrder carries no currency field yet — see docs/adr/ADR-023.
   if (
     typeof b.idempotencyKey !== 'string' ||
     b.idempotencyKey.trim().length === 0 ||
@@ -87,8 +102,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   ) {
     return NextResponse.json({ error: 'idempotencyKey is required and must be a non-empty string.' }, { status: 400 });
   }
-  const amount = b.amount;
-  const purpose = b.purpose.trim();
   const idempotencyKey = b.idempotencyKey;
 
   const dataAdapterMode = getDataAdapterMode();
@@ -113,6 +126,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'Case not found for this organization.' }, { status: 404 });
   }
 
+  // Phase 19C: the amount Clover ever collects is always this case's
+  // active CaseOrder's own balanceDue — fetched fresh, right before
+  // creating the pending PaymentRecord, never trusted from the client in
+  // any form.
+  const order = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  if (!order) {
+    return NextResponse.json({ error: 'This case has no case order yet — services must be selected first.' }, { status: 422 });
+  }
+  if (order.balanceDue <= 0) {
+    return NextResponse.json({ error: 'This case order has no remaining balance to collect.' }, { status: 400 });
+  }
+  const amount = order.balanceDue;
+
   // 3. Confirm Clover is enabled for this organization.
   const integration = await getEnabledIntegration(organizationId, 'clover', dataAdapterMode);
   if (!integration) {
@@ -132,7 +158,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const paymentId = crypto.randomUUID();
   const nowIso = new Date(now).toISOString();
   const { record: pendingRecord, isNew } = await createIdempotentPendingPaymentRecord(
-    { id: paymentId, organizationId, caseId, provider: 'clover', amount, currency, purpose, idempotencyKey, createdAt: nowIso },
+    { id: paymentId, organizationId, caseId, caseOrderId: order.id, provider: 'clover', amount, currency, purpose, idempotencyKey, createdAt: nowIso },
     dataAdapterMode,
   );
 

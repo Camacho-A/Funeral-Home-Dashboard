@@ -39,7 +39,7 @@ export async function getPayment(
 export async function createCloverCheckout(
   context: OrganizationContext,
   caseId: string,
-  input: { amount: number; currency?: string; purpose: string; idempotencyKey: string },
+  input: { purpose?: string; idempotencyKey: string },
 ): Promise<{ paymentId: string; checkoutUrl: string }> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/payments/clover/checkout`, {
     method: 'POST',

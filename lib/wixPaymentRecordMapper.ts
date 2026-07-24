@@ -21,6 +21,7 @@ export type WixPaymentRecordItem = {
   beaconPaymentId?: unknown;
   organizationId?: unknown;
   caseId?: unknown;
+  caseOrderId?: unknown;
   provider?: unknown;
   providerCheckoutId?: unknown;
   providerPaymentId?: unknown;
@@ -67,6 +68,7 @@ export function mapWixPaymentRecordItem(item: WixPaymentRecordItem | undefined):
     id: item.beaconPaymentId,
     organizationId: item.organizationId,
     caseId: item.caseId,
+    caseOrderId: typeof item.caseOrderId === 'string' ? item.caseOrderId : null,
     provider: item.provider,
     providerCheckoutId: item.providerCheckoutId,
     providerPaymentId: typeof item.providerPaymentId === 'string' ? item.providerPaymentId : null,
@@ -92,6 +94,7 @@ export function buildWixPaymentRecordData(record: PaymentRecord): WixPaymentReco
     beaconPaymentId: record.id,
     organizationId: record.organizationId,
     caseId: record.caseId,
+    caseOrderId: record.caseOrderId,
     provider: record.provider,
     providerCheckoutId: record.providerCheckoutId,
     providerPaymentId: record.providerPaymentId,
