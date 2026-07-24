@@ -189,30 +189,31 @@ const standardCremationIntake: IntakeTemplate = {
       label: 'Payment',
       fields: [
         /**
-         * Phase 19A (Secure Payment Architecture): this single field
-         * replaces the five separate card sub-fields (cardName/cardNumber/
-         * cardExp/cardCvv/cardZip) that used to share checklistItemIndex 8
-         * — that shape let buildIntakeFieldValues concatenate a PAN,
-         * expiration, and CVV into one plaintext string and persist it in
-         * Case.fieldValues, in Wix, permanently. A 'payment' field has no
-         * checklistItemIndex and no mapsToCaseField — it structurally
-         * cannot contribute to fieldValues or a Case property (see
+         * Phase 19A (Secure Payment Architecture) replaced five separate
+         * card sub-fields (cardName/cardNumber/cardExp/cardCvv/cardZip)
+         * with this single field, since that shape let
+         * buildIntakeFieldValues concatenate a PAN, expiration, and CVV
+         * into one plaintext string and persist it in Case.fieldValues, in
+         * Wix, permanently. A 'payment' field has no checklistItemIndex
+         * and no mapsToCaseField — it structurally cannot contribute to
+         * fieldValues or a Case property (see
          * domain/workflow/resolveIntake.ts's explicit skip for this
-         * fieldType). What it collects (until a real payment provider is
-         * integrated) never leaves the browser. See
-         * docs/adr/ADR-021-secure-payment-architecture.md.
+         * fieldType).
+         *
+         * Phase 19B (Clover Hosted Checkout Integration): now purely
+         * informational at intake time — `required` is never checked for
+         * a payment field (see NewCaseModal.tsx's hasMissingRequired),
+         * since there is nothing to fill in here at all. Real, verified
+         * payment collection happens afterward, on Case Detail, via
+         * components/case/PaymentCard.tsx's "Collect with Clover" flow.
+         * See docs/adr/ADR-022-clover-hosted-checkout-integration.md.
          */
         {
           key: 'payment',
           label: 'Payment',
           fieldType: 'payment',
-          // Not required — matches the pre-existing behavior exactly: none
-          // of the five card sub-fields this replaces were ever required
-          // either, so New Case submission was never gated on payment
-          // being entered. See NewCaseModal.tsx's own comment on what
-          // `required` means for a payment field where it *is* set.
           paymentPurpose: 'Cremation service fee',
-          paymentDescription: 'Collected by phone at First Call — confirmed via the checklist, not stored here.',
+          paymentDescription: 'Collected securely via Clover once the case is created — not during intake.',
         },
       ],
     },

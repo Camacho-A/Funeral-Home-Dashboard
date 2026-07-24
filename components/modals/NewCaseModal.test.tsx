@@ -157,11 +157,13 @@ describe('NewCaseModal — intake owner is read-only', () => {
  * Phase 16A (New Case UX Polish). Intake fields render in this fixed order
  * (services/__mocks__/workflowTemplates.ts's Managed Cremations template):
  * 0 decedentName, 1 placeOfDeath, 2 dateOfBirth, 3 weight, 4 dateOfDeath,
- * 5 timeOfDeath, 6 dcContact, 7 nextOfKinName, 8 nextOfKinPhone,
- * 9 cardName, 10 cardNumber, 11 cardExp, 12 cardCvv, 13 cardZip. None of
- * these fields have a <label htmlFor>/aria-label association with their
- * visible text (the label is a plain sibling <div>), so tests below select
- * by this fixed position rather than by accessible name.
+ * 5 timeOfDeath, 6 dcContact, 7 nextOfKinName, 8 nextOfKinPhone. The
+ * Payment section (Phase 19B) contributes zero inputs — it is purely
+ * informational now (see NewCaseModal.tsx's renderPaymentField), so 9 is
+ * the total. None of these fields have a <label htmlFor>/aria-label
+ * association with their visible text (the label is a plain sibling
+ * <div>), so tests below select by this fixed position rather than by
+ * accessible name.
  */
 function intakeInputs(container: HTMLElement) {
   return container.querySelectorAll('input');
@@ -196,22 +198,6 @@ describe('NewCaseModal — uppercase transform on free-text fields', () => {
     expect(inputs[5]).toHaveValue('14:30pm');
   });
 
-  it('does not uppercase any Payment-group field, including cardName (a name field, but a "credit card value" per this phase\'s own scope)', async () => {
-    const { container } = await renderModalWithFields();
-    const inputs = intakeInputs(container);
-
-    fireEvent.change(inputs[9], { target: { value: 'john smith' } }); // cardName
-    fireEvent.change(inputs[10], { target: { value: '4111 1111 1111 1111' } }); // cardNumber
-    fireEvent.change(inputs[11], { target: { value: '12/28' } }); // cardExp
-    fireEvent.change(inputs[12], { target: { value: '123' } }); // cardCvv
-    fireEvent.change(inputs[13], { target: { value: '94112' } }); // cardZip
-
-    expect(inputs[9]).toHaveValue('john smith');
-    expect(inputs[10]).toHaveValue('4111 1111 1111 1111');
-    expect(inputs[11]).toHaveValue('12/28');
-    expect(inputs[12]).toHaveValue('123');
-    expect(inputs[13]).toHaveValue('94112');
-  });
 });
 
 describe('NewCaseModal — MM/DD/YYYY date mask', () => {
@@ -259,40 +245,52 @@ describe('NewCaseModal — MM/DD/YYYY date mask', () => {
   });
 });
 
-describe('NewCaseModal — credit card fields masked by default with a show/hide toggle', () => {
-  it('renders cardNumber and cardCvv masked (type="password") by default; other fields, including cardExp/cardZip, are plain text', async () => {
+/**
+ * Phase 19B (Clover Hosted Checkout Integration). The New Case form's
+ * Payment section is now purely informational — real, verified payment
+ * collection happens afterward, on Case Detail, via
+ * components/case/PaymentCard.tsx's "Collect with Clover" redirect. These
+ * tests replace Phase 19A's now-obsolete "credit card fields masked..."
+ * and "secure payment section" suites, which exercised a browser-only
+ * card-entry form that no longer exists.
+ */
+describe('NewCaseModal — payment section is informational only (Phase 19B)', () => {
+  it('renders the payment section with no inputs of any kind — no card number, expiration, or CVV field', async () => {
     const { container } = await renderModalWithFields();
-    const inputs = intakeInputs(container);
-
-    expect(inputs[10].getAttribute('type')).toBe('password'); // cardNumber
-    expect(inputs[12].getAttribute('type')).toBe('password'); // cardCvv
-    expect(inputs[11].getAttribute('type')).toBe('text'); // cardExp — never password-flagged
-    expect(inputs[13].getAttribute('type')).toBe('text'); // cardZip — never password-flagged
-    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(2);
+    // Exactly the 9 ordinary intake fields — the Payment section
+    // contributes zero <input> elements.
+    expect(intakeInputs(container)).toHaveLength(9);
+    expect(container.querySelectorAll('input[type="password"]')).toHaveLength(0);
   });
 
-  it('reveals cardNumber as plain text after clicking its Show toggle, and can be hidden again', async () => {
-    const { container } = await renderModalWithFields();
-    const inputs = intakeInputs(container);
-    fireEvent.change(inputs[10], { target: { value: '4111111111111111' } });
-
-    const showButton = screen.getByRole('button', { name: /show card number/i });
-    fireEvent.click(showButton);
-    expect(intakeInputs(container)[10].getAttribute('type')).toBe('text');
-    expect(intakeInputs(container)[10]).toHaveValue('4111111111111111');
-
-    const hideButton = screen.getByRole('button', { name: /hide card number/i });
-    fireEvent.click(hideButton);
-    expect(intakeInputs(container)[10].getAttribute('type')).toBe('password');
+  it('shows the configured payment purpose/description and a note that collection happens via Clover afterward', async () => {
+    await renderModalWithFields();
+    expect(screen.getByText('Cremation service fee')).toBeInTheDocument();
+    expect(screen.getAllByText(/collected securely via clover/i).length).toBeGreaterThan(0);
   });
 
-  it('reveals cardCvv independently of cardNumber', async () => {
-    const { container } = await renderModalWithFields();
-    fireEvent.click(screen.getByRole('button', { name: /show cvv/i }));
+  it('never gates submission on the payment section, even when the field is configured required', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'payment', label: 'Payment', fieldType: 'payment', required: true, paymentPurpose: 'Fee' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { container } = renderModal();
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(1));
+    fireEvent.change(container.querySelectorAll('input')[0], { target: { value: 'Test Decedent' } });
 
-    const inputs = intakeInputs(container);
-    expect(inputs[12].getAttribute('type')).toBe('text'); // cardCvv revealed
-    expect(inputs[10].getAttribute('type')).toBe('password'); // cardNumber still masked
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
   });
 });
 
@@ -725,175 +723,7 @@ describe('NewCaseModal — backward compatibility (Phase 19)', () => {
         workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
       }),
     });
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(14));
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(9));
   });
 });
 
-/**
- * Phase 19A (Secure Payment Architecture). Proves the guarantees the phase
- * itself calls for at the UI layer: payment sub-field values never reach
- * the created case's fieldValues (or any other part of the mutate
- * payload), never appear in any console output, and are cleared back to
- * empty on Close — a page refresh (which these tests can't literally
- * simulate in jsdom, but plain useState with no storage write means a
- * remount is equally empty) loses them by construction.
- */
-describe('NewCaseModal — secure payment section (Phase 19A)', () => {
-  const FORGED_CARD_NUMBER = '4111111111111199';
-  const FORGED_CVV = '987';
-
-  function fillPaymentFields(container: HTMLElement) {
-    const inputs = intakeInputs(container);
-    fireEvent.change(inputs[9], { target: { value: 'Jane Doe' } }); // cardholderName
-    fireEvent.change(inputs[10], { target: { value: FORGED_CARD_NUMBER } }); // cardNumber
-    fireEvent.change(inputs[11], { target: { value: '12/28' } }); // cardExpiration
-    fireEvent.change(inputs[12], { target: { value: FORGED_CVV } }); // cardCvv
-    fireEvent.change(inputs[13], { target: { value: '94112' } }); // billingZip
-  }
-
-  it('never includes any payment sub-field value in the created case, its fieldValues, or anywhere in its serialized form', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    fillPaymentFields(container);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
-    await waitFor(() => expect(pushMock).toHaveBeenCalled());
-
-    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
-    const createdCase = caseFixtures.find((c) => c.id === newCaseId);
-    expect(createdCase).toBeTruthy();
-
-    const serialized = JSON.stringify(createdCase);
-    expect(serialized).not.toContain(FORGED_CARD_NUMBER);
-    expect(serialized).not.toContain(FORGED_CVV);
-    expect(serialized).not.toContain('Jane Doe');
-    expect(Object.values(createdCase!.fieldValues).join(' ')).not.toContain(FORGED_CARD_NUMBER);
-  });
-
-  it('clears every payment sub-field back to empty after a successful submit', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    fillPaymentFields(container);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
-    await waitFor(() => expect(pushMock).toHaveBeenCalled());
-
-    const inputsAfter = intakeInputs(container);
-    expect(inputsAfter[10]).toHaveValue(''); // cardNumber
-    expect(inputsAfter[12]).toHaveValue(''); // cardCvv
-  });
-
-  it('clears every payment sub-field back to empty when Close is clicked, without submitting', async () => {
-    const { container } = await renderModalWithFields();
-    fillPaymentFields(container);
-    expect(intakeInputs(container)[10]).toHaveValue(FORGED_CARD_NUMBER);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-
-    const inputsAfter = intakeInputs(container);
-    expect(inputsAfter[9]).toHaveValue('');
-    expect(inputsAfter[10]).toHaveValue('');
-    expect(inputsAfter[11]).toHaveValue('');
-    expect(inputsAfter[12]).toHaveValue('');
-    expect(inputsAfter[13]).toHaveValue('');
-  });
-
-  it('clears every payment sub-field back to empty when Cancel is clicked, without submitting', async () => {
-    const { container } = await renderModalWithFields();
-    fillPaymentFields(container);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(intakeInputs(container)[10]).toHaveValue('');
-    expect(pushMock).not.toHaveBeenCalled();
-  });
-
-  it('leaving the payment section entirely blank never blocks submission — it is not required by default', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-
-    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
-  });
-
-  it('never logs a payment value to the console during a successful submit', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    fillPaymentFields(container);
-    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
-    await waitFor(() => expect(pushMock).toHaveBeenCalled());
-
-    const allLoggedText = [...logSpy.mock.calls, ...warnSpy.mock.calls, ...errorSpy.mock.calls]
-      .flat()
-      .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
-      .join(' ');
-    expect(allLoggedText).not.toContain(FORGED_CARD_NUMBER);
-    expect(allLoggedText).not.toContain(FORGED_CVV);
-
-    logSpy.mockRestore();
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
-  it('never logs a payment value to the console on the note-save partial-failure error path', async () => {
-    vi.mocked(caseLogService.create).mockRejectedValueOnce(new Error('network error'));
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    fillPaymentFields(container);
-    fireEvent.change(container.querySelector('textarea')!, { target: { value: 'Important note' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
-    await screen.findByRole('alert');
-
-    const allLoggedText = [...logSpy.mock.calls, ...warnSpy.mock.calls, ...errorSpy.mock.calls]
-      .flat()
-      .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
-      .join(' ');
-    expect(allLoggedText).not.toContain(FORGED_CARD_NUMBER);
-    expect(allLoggedText).not.toContain(FORGED_CVV);
-
-    logSpy.mockRestore();
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
-  it('a payment field configured as required gates submission on the local payment draft being fully filled', async () => {
-    stubTemplateFetch(
-      customTemplate({
-        intake: {
-          sections: [
-            {
-              key: 's',
-              label: 'S',
-              fields: [
-                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
-                { key: 'payment', label: 'Payment', fieldType: 'payment', required: true, paymentPurpose: 'Fee' },
-              ],
-            },
-          ],
-        },
-      }),
-    );
-    const { container } = renderModal();
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(6));
-    const inputs = container.querySelectorAll('input');
-    fireEvent.change(inputs[0], { target: { value: 'Test Decedent' } });
-
-    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
-
-    fireEvent.change(inputs[1], { target: { value: 'Jane Doe' } }); // cardholderName
-    fireEvent.change(inputs[2], { target: { value: FORGED_CARD_NUMBER } }); // cardNumber
-    fireEvent.change(inputs[3], { target: { value: '12/28' } }); // cardExpiration
-    fireEvent.change(inputs[4], { target: { value: FORGED_CVV } }); // cardCvv
-    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled(); // billingZip still blank
-
-    fireEvent.change(inputs[5], { target: { value: '94112' } }); // billingZip
-    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
-  });
-});

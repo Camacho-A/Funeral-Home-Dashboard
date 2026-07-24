@@ -30,6 +30,31 @@ Verified via a read-only `listDataCollections` call immediately after creation: 
 
 `caseSequences` (Collection 7) was created the same way, via the same REST endpoint, using the same gitignored API key: 3 fields (`organizationId`, `year`, `nextSequence`) + 4 system fields, permissions `ADMIN` ×4, no additional indexes (every access is `_id`-scoped). Verified via a follow-up `listDataCollections` call: 11 collections total (the same 4 Wix Members system collections + the 6 from Phase 14A + this one). Also added at this time: `cases.caseNumber` (Text, required, immutable) — see Collection 5's field table above.
 
+## Creation record (Phase 19B, 2026-07-24)
+
+`paymentIntegrations` (Collection 8) and `paymentRecords` (Collection 9) were created the same way, via the same REST endpoints, using the same gitignored API key. See [ADR-022](./adr/ADR-022-clover-hosted-checkout-integration.md).
+
+| Collection | Fields (incl. 4 system fields) | Indexes created | Permissions |
+|---|---|---|---|
+| `paymentIntegrations` | 11 + 4 | none (small, admin-only collection; every access is organizationId+provider scoped and the row count per organization is tiny — see `caseSequences`' identical reasoning) | ADMIN ×4 |
+| `paymentRecords` | 20 + 4 | `organizationId_caseId` (regular), `organizationId_providerCheckoutId` (regular), `unique_idempotencyKey` (unique) | ADMIN ×4 |
+
+One row was inserted into `paymentIntegrations`: Manor's Cremation's (`managed-cremations`) Clover sandbox configuration, with `isEnabled: false` and empty reference values — a placeholder awaiting real Clover sandbox credentials, which were not available during this phase (per explicit instruction: "do not connect Manor's production Clover credentials yet," and no sandbox credentials existed either). `merchantIdReference`/`credentialReference`/`webhookSecretReference` name the env vars (`CLOVER_MANORS_SANDBOX_MERCHANT_ID`, `CLOVER_MANORS_SANDBOX_PRIVATE_KEY`, `CLOVER_MANORS_SANDBOX_WEBHOOK_SECRET`) a future setup step should populate — enabling this integration is then a matter of setting those three env vars and flipping `isEnabled` to `true`; no code change.
+
+### Correction pass (2026-07-24, same day)
+
+Three schema changes were made after live empirical testing surfaced two real gaps (see ADR-022's "Idempotency (correction pass)" and "Durable webhook deduplication (correction pass)" sections for the full reasoning):
+
+1. **`paymentRecords` gained an `idempotencyKey` field** (added via `PUT /wix-data/v2/collections`, revision 1→2, resending the full existing field list plus the new one — Wix's "Update Data Collection" replaces the entire `fields` array, so omitting existing fields would have silently dropped them).
+2. **The unique index moved from `providerCheckoutId` to `idempotencyKey`.** Wix Data caps a collection at exactly **one** unique index total (confirmed from `capabilities.indexLimits`) — `unique_providerCheckoutId` (created in the original Phase 19B pass) was dropped via `DELETE /wix-data/v2/indexes?dataCollectionId=paymentRecords&indexName=unique_providerCheckoutId` (an asynchronous operation — the index remained in `DROPPING` status for roughly a minute before the slot was actually freed), then `unique_idempotencyKey` was created in its place. `providerCheckoutId` keeps only its existing regular compound index (`organizationId_providerCheckoutId`).
+3. **`paymentIntegrations` gained a `merchantIdReference` field** (same `PUT`-with-full-field-list pattern, revision 1→2), and the existing Manor's Cremation row was rewritten to use it (plus the renamed `credentialReference`/`webhookSecretReference` values) in place of the original plain-text `merchantId` field.
+4. **A new `webhookEvents` collection (Collection 10) was created** — see its own section below.
+
+Empirically confirmed against the live collections during this pass (not merely assumed):
+- Two `paymentRecords` items with the same value in a unique-indexed field — including two **empty strings** — both fail to insert the second one, with HTTP 409 and error code `WDE0123`. This is why `providerCheckoutId` is now seeded with a per-record placeholder (`pending:{id}`) rather than an empty string at creation time.
+- A duplicate system `_id` insert (used for `webhookEvents`' fingerprint-as-`_id` dedup design) fails with HTTP 409, error code `WDE0074`.
+- A newly-created unique index begins enforcing uniqueness immediately, while its own `status` still reports `BUILDING` (not yet `ACTIVE`) — confirmed by a real duplicate-key insert attempt against `unique_idempotencyKey` shortly after creation.
+
 ## Cross-cutting principles
 
 1. **Wix metadata is kept separate from Beacon domain identifiers.** Every collection has Wix's own system `_id` (opaque, Wix-managed, never referenced by Beacon code) *and* an explicit `beacon<Thing>Id` text field — a Beacon-generated stable string id matching the existing `id` field on the corresponding `types/*.ts` type. Every cross-collection reference below is a plain text field holding another collection's `beacon<Thing>Id`, not a formal Wix "Reference" field type (which keys off system `_id`) — so Beacon's own code, including `resolveAuthorizationContext`, never has to reason about a Wix-internal identifier.
@@ -182,6 +207,71 @@ This is a deliberate change in direction from what the current codebase actually
 - **Permissions:** backend/Admin only, same as every other collection.
 - **TS type:** no corresponding domain type — this collection's shape (`{organizationId, year, nextSequence}`) is internal to `lib/wixCaseNumberSequence.ts` and never surfaces as a `Case`-adjacent domain object.
 
+## Collection 8 — `paymentIntegrations`
+
+**Purpose:** organization-scoped payment-provider configuration (Phase 19B — Clover Hosted Checkout Integration). One row per organization+provider. Never holds a secret value directly — `merchantIdReference`/`credentialReference`/`webhookSecretReference` are all environment-variable *names*, resolved server-side by `lib/clover/cloverConfig.ts`. **Ownership:** organization-owned.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId` | Text | Required | Immutable |
+| `provider` | Text | Required | Immutable |
+| `environment` | Text (`sandbox`/`production`) | Required | Mutable |
+| `merchantIdReference` | Text | Required | Mutable — an env var *name* (correction pass: originally a plain-text `merchantId`, folded into the same reference pattern as the other two for one consistent resolution mechanism, not because it's actually secret) |
+| `credentialReference` | Text | Required | Mutable — an env var *name*, never a secret value |
+| `webhookSecretReference` | Text | Required | Mutable — an env var *name*, never a secret value |
+| `isEnabled` | Boolean | Required | Mutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **`_id` is set to `{organizationId}-{provider}`** at insert time (e.g. `managed-cremations-clover`) — the same natural-key convention as `caseSequences`.
+- **No secret ever touches this collection.** See ADR-021/ADR-022's PCI-boundary reasoning — a compromise of this collection's data (or of the Wix API key that can read it) exposes only which env vars to look up, not the secrets themselves.
+- **Indexes:** none — see the Creation record above.
+- **TS type:** `types/payment.ts`'s `PaymentIntegration`.
+
+## Collection 9 — `paymentRecords`
+
+**Purpose:** one row per payment *attempt* (Phase 19B). A case can have many — deposits, balances, a failed attempt followed by a retry. Provider-neutral, non-sensitive metadata only — no PAN, CVV, expiration, track/PIN data, or raw provider credential ever has a field here (see `lib/paymentFieldGuard.ts`, ADR-021). **Ownership:** organization- and case-scoped.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId`, `caseId` | Text | Required | Immutable |
+| `provider` | Text | Required | Immutable |
+| `providerCheckoutId` | Text | Required | Mutable once — seeded with a per-record placeholder (`pending:{id}`), overwritten once Clover assigns a real session id. Correction pass: no longer uniquely indexed (see below) |
+| `providerPaymentId` | Text | Optional | Mutable — set once a webhook confirms one exists |
+| `idempotencyKey` | Text | Required | Immutable — correction-pass addition; the composed `{organizationId}:{clientKey}` value backing the atomic duplicate-checkout guard (see ADR-022's "Idempotency (correction pass)") |
+| `checkoutUrl` | Text | Optional | Mutable — cleared implicitly once a session expires; see types/payment.ts's own comment on why this field exists beyond the phase's original list |
+| `status` | Text (`pending`/`succeeded`/`failed`/`cancelled`/`refunded`) | Required | Mutable — only ever transitions forward from `pending`; see `app/api/webhooks/clover/route.ts`'s idempotency handling |
+| `amount` | Number | Required | Immutable |
+| `currency`, `purpose` | Text | Required | Immutable |
+| `cardBrand`, `cardLast4`, `receiptReference`, `failureCode`, `failureMessage` | Text | Optional | Mutable — set from a verified webhook only |
+| `createdAt` | Date | Required | Immutable |
+| `paidAt`, `updatedAt` | Date | Optional/Required | Mutable |
+
+- **`_id` is set to `beaconPaymentId`** at insert time — the same convention as `cases`/`tasks`, making a single-payment lookup free via Wix's system `_id` index.
+- **`unique_idempotencyKey`** (correction pass — replaces the original `unique_providerCheckoutId`) guarantees an organization can never have two `PaymentRecord`s for the same client-supplied idempotency key, enforced atomically by Wix, not by an application-level check-then-insert. Wix caps a collection at exactly one unique index total, which is why `providerCheckoutId` gave up its own unique constraint here — see ADR-022 for the full reasoning and the empirical confirmation that this cap is real (`WDE0141: Index quota exceeded`).
+- **`organizationId_caseId`** serves the payment-history list query (`PaymentCard`'s "payment history").
+- **`organizationId_providerCheckoutId`** (regular, not unique) serves the org-scoped update-by-checkout-id path (`updatePaymentRecordByCheckoutId`) — correctness there comes from the `idempotencyKey` guard upstream (only one record is ever created per attempt), not from this index enforcing uniqueness itself.
+- **TS type:** `types/payment.ts`'s `PaymentRecord`.
+
+## Collection 10 — `webhookEvents`
+
+**Purpose:** durable, cross-instance, restart-surviving processing-lifecycle tracking for Clover webhook deliveries (two correction passes — see ADR-022's "Durable webhook deduplication (two correction passes)"). Not a general audit log — holds only enough to prove "this exact event has (or hasn't) finished processing," nothing about the payment's sensitive-adjacent details. **Ownership:** none (no `organizationId` field) — correlation happens through `providerCheckoutId` for debugging/reference only; the collection's real key is its own `_id`.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `provider` | Text | Required | Immutable |
+| `providerCheckoutId` | Text | Required | Immutable — reference only, not the dedup key itself |
+| `receivedAt` | Date | Required | Immutable — maps to `WebhookEventRecord.firstReceivedAt`; never changes across a reclaim |
+| `state` | Text (`processing`/`completed`/`failed`) | Required | Mutable — added in the final correction pass; see below |
+| `attemptCount` | Number | Required | Mutable — starts at 1, incremented on every reclaim |
+| `lastAttemptAt` | Date | Required | Mutable — updated on every claim, reclaim, and completion |
+| `completedAt` | Date | Optional | Mutable — set only once `state` becomes `completed` |
+
+- **`_id` is set to the event's own `eventFingerprint`** — `sha256(merchantId|checkoutSessionId|paymentId|status)`, computed from the already-signature-verified webhook payload's stable fields, deliberately excluding the delivery timestamp (see `lib/wixWebhookEventMapper.ts`'s own comment for why Clover doesn't supply a usable event id itself). Wix's system `_id` uniqueness — always enforced, confirmed empirically via a duplicate-`_id` insert returning HTTP 409 (`WDE0074`) — is what makes the *initial* claim of a brand-new fingerprint atomic.
+- **Final correction pass:** the original design (this collection's first version) treated a successful *insert* as the entire dedup signal — a fingerprint present at all meant "already handled." This conflated *claiming* an event with *completing* it: if the downstream `PaymentRecord` update then failed, the row's mere existence would silently swallow every future retry. `state`/`attemptCount`/`lastAttemptAt`/`completedAt` were added (via the same PUT-full-field-list pattern as every other field addition in this document) so "claimed" and "successfully finished" are distinguishable, durable states — see `services/paymentsService.ts`'s `claimWebhookEvent`/`markWebhookEventCompleted`/`markWebhookEventFailed`.
+- **No secret, PAN, or CVV of any kind is ever eligible to reach this collection** — it only ever receives values `app/api/webhooks/clover/route.ts` has already verified via signature and mapped through `cloverProvider.mapProviderPayment`.
+- **Indexes:** none beyond the system `_id` index — every access is a direct id-scoped insert or `_id`-filtered query, never a broader scan.
+- **TS type:** `types/webhookEvent.ts`'s `WebhookEventRecord`/`WebhookEventState`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -192,7 +282,7 @@ This is a deliberate change in direction from what the current codebase actually
 | `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all seven collections)
+## Permissions summary (all ten collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -207,6 +297,10 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Tasks by organization and status | `tasks (organizationId, isDone)` |
 | Membership lookup by authenticated identity | `organizationMemberships (userId, organizationId)` unique |
 | Enabled workflow templates by organization and case type | `workflowTemplates (organizationId, isEnabled)` + `caseTypes` |
+| Atomic duplicate-checkout-attempt prevention (correction pass) | `paymentRecords (idempotencyKey)` unique |
+| Payment history for one case | `paymentRecords (organizationId, caseId)` |
+| Org-scoped payment update by checkout id | `paymentRecords (organizationId, providerCheckoutId)` (regular, not unique) |
+| Durable webhook delivery dedup (correction pass) | `webhookEvents` — system `_id` uniqueness only (`_id` = event fingerprint), no custom index |
 
 ## Migration notes
 

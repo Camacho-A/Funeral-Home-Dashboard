@@ -15,6 +15,7 @@ import { formatDaysAgo, formatTimestamp } from '@/utils/format';
 import { CaseHeader } from '@/components/case/CaseHeader';
 import { StageStepper, type StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
+import { PaymentCard } from '@/components/case/PaymentCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
 import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCard';
@@ -152,6 +153,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onToggleVaStep={(index, newDone) => mutations.toggleVaStep(case_, index, newDone)}
             onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
           />
+
+          <PaymentCard caseId={caseId} />
 
           <ChecklistCard
             checklist={viewModel.checklist}

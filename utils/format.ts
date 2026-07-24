@@ -26,3 +26,15 @@ export function formatTimestamp(isoString: string): string {
     minute: '2-digit',
   });
 }
+
+/**
+ * Phase 19B (Clover Hosted Checkout Integration). Generic cents→display
+ * string formatting — Clover (and every other major payment provider)
+ * represents an amount in the smallest currency unit, matching
+ * types/payment.ts's PaymentRecord.amount; this is the one place that gets
+ * converted back to a human-facing string. Not a funeral-home business
+ * rule, so it lives here rather than in domain/.
+ */
+export function formatCentsAsCurrency(cents: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(cents / 100);
+}
