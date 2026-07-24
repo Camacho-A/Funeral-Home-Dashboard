@@ -64,6 +64,19 @@ export type StageTemplate = {
  * choose from in the Workflow Editor's intake builder — see
  * domain/workflow/resolveIntakeField.ts for the fieldType -> rendering/
  * masking/validation defaults NewCaseModal.tsx resolves each field through.
+ *
+ * Phase 19A (Secure Payment Architecture) removed 'creditCard' | 'expiration'
+ * | 'cvv' — Phase 19 originally modeled a payment section as three separate,
+ * ordinary intake fields sharing one checklistItemIndex, which meant
+ * domain/workflow/resolveIntake.ts's buildIntakeFieldValues concatenated the
+ * PAN, expiration, and CVV into one plaintext string and persisted it in
+ * Case.fieldValues — in Wix, permanently, unencrypted. 'payment' replaces
+ * all three: one field represents an entire secure payment *section*, never
+ * an ordinary data-entry field — see docs/adr/ADR-021-secure-payment-architecture.md.
+ * This is a breaking removal, not a deprecation: the live Wix template
+ * predating this phase never had `fieldType` set on its card fields at all
+ * (confirmed empirically, not assumed — see the ADR), so no stored data
+ * anywhere references the removed type strings.
  */
 export type IntakeFieldType =
   | 'text'
@@ -76,15 +89,23 @@ export type IntakeFieldType =
   | 'currency'
   | 'checkbox'
   | 'select'
-  | 'creditCard'
-  | 'expiration'
-  | 'cvv';
+  | 'payment';
 
 /**
  * Which shared utils/inputMask.ts validator (if any) NewCaseModal runs
  * against this field's value — 'none' is a real, explicit choice (some
  * fields, like a hospice contact's name, have nothing to validate against),
  * not the same as "unset."
+ *
+ * Phase 19A (Secure Payment Architecture) removed 'creditCard' | 'expiration'
+ * — not just the matching fieldTypes above. Leaving either as a selectable
+ * validationType would have left a back door open: an admin (or a forged
+ * request) could set fieldType: 'text' with validationType: 'creditCard' on
+ * a checklistItemIndex-linked field and reconstruct the exact vulnerability
+ * this phase closes, just via a different field-type combination. The
+ * underlying validators (isValidCreditCardNumber, isValidExpiryMonth,
+ * formatCardExpiryInput in utils/inputMask.ts) are unchanged and still
+ * exported — only their reachability from workflow configuration is gone.
  */
 export type IntakeValidationType =
   | 'none'
@@ -94,8 +115,6 @@ export type IntakeValidationType =
   | 'zip'
   | 'numeric'
   | 'currency'
-  | 'creditCard'
-  | 'expiration'
   | 'time';
 
 export type IntakeFieldTemplate = {
@@ -164,6 +183,23 @@ export type IntakeFieldTemplate = {
   validationType?: IntakeValidationType;
   /** Only meaningful for fieldType 'select' — the option labels. */
   options?: string[];
+
+  /**
+   * Phase 19A (Secure Payment Architecture). Only meaningful for
+   * fieldType 'payment' — what an admin configures for a payment section
+   * (what it's collecting, for how much, and any guidance text). There is
+   * deliberately no field here (or anywhere on IntakeFieldTemplate) for a
+   * card number, expiration, or CVV — those are never workflow
+   * configuration; they're the future payment provider's own implementation
+   * detail. See docs/adr/ADR-021-secure-payment-architecture.md.
+   */
+  paymentPurpose?: string;
+  /** Informational only in this phase (no provider exists yet to actually
+      charge it) — e.g. "$1,200.00". A plain string, not validated as
+      currency here, since it's descriptive text shown to staff/family, not
+      a value anything computes with. */
+  paymentAmount?: string;
+  paymentDescription?: string;
 };
 
 export type IntakeSectionTemplate = {

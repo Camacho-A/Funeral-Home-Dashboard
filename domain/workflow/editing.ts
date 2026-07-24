@@ -124,23 +124,10 @@ const VALID_FIELD_TYPES = new Set([
   'currency',
   'checkbox',
   'select',
-  'creditCard',
-  'expiration',
-  'cvv',
+  'payment',
 ]);
 
-const VALID_VALIDATION_TYPES = new Set([
-  'none',
-  'email',
-  'phone',
-  'date',
-  'zip',
-  'numeric',
-  'currency',
-  'creditCard',
-  'expiration',
-  'time',
-]);
+const VALID_VALIDATION_TYPES = new Set(['none', 'email', 'phone', 'date', 'zip', 'numeric', 'currency', 'time']);
 
 /**
  * Phase 19 (Configurable Intake Form Builder). Business-rule validation for
@@ -182,6 +169,9 @@ export function validateIntakeFields(intake: IntakeTemplate): string[] {
       }
       if (field.fieldType === 'select' && (!field.options || field.options.length === 0)) {
         errors.push(`Field "${field.key}" is a select field but has no options.`);
+      }
+      if (field.fieldType === 'payment' && !field.paymentPurpose?.trim()) {
+        errors.push(`Field "${field.key}" is a payment field but has no paymentPurpose.`);
       }
     });
   });

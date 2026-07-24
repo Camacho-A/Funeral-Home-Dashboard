@@ -5,6 +5,7 @@ import { mapWixCaseItem, buildWixCaseData, type WixCaseItem } from '@/lib/wixCas
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
+import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
 import type { Case } from '@/types/case';
@@ -116,6 +117,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ case: null, error: 'Invalid request body.' }, { status: 400 });
   }
   const b = body as Record<string, unknown>;
+
+  // Phase 19A (Secure Payment Architecture): mandatory server-side
+  // enforcement, checked before anything else in this handler — a forged
+  // request naming a raw card field is rejected outright, never silently
+  // dropped or persisted. See docs/adr/ADR-021-secure-payment-architecture.md.
+  const forbiddenPaymentFields = findForbiddenPaymentFields(b);
+  if (forbiddenPaymentFields.length > 0) {
+    return NextResponse.json(
+      { case: null, error: `Request must not contain payment card data (found: ${forbiddenPaymentFields.join(', ')}).` },
+      { status: 400 },
+    );
+  }
 
   if (typeof b.organizationId !== 'string') {
     return NextResponse.json({ case: null, error: 'organizationId is required.' }, { status: 400 });

@@ -263,3 +263,97 @@ describe('validateIntakeTemplatePayload — Phase 19 (Configurable Intake Form B
     expect(result.intake).toEqual({ sections: [] });
   });
 });
+
+describe('validateIntakeTemplatePayload — payment field rejection (Phase 19A)', () => {
+  it('accepts a well-formed payment field (label/required/purpose/amount/description only)', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: {
+        sections: [
+          {
+            key: 'payment',
+            label: 'Payment',
+            fields: [
+              {
+                key: 'payment',
+                label: 'Payment',
+                fieldType: 'payment',
+                required: false,
+                paymentPurpose: 'Cremation service fee',
+                paymentAmount: '$1,200',
+                paymentDescription: 'Collected by phone.',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.intake?.sections[0].fields[0]).toMatchObject({ fieldType: 'payment' });
+  });
+
+  it.each(['cardNumber', 'cardExp', 'cardExpiration', 'cardCvv', 'cvv', 'cardholderName', 'billingZip'])(
+    'rejects a field definition carrying a forged literal "%s" property, outright — not stripped, the whole request fails',
+    (key) => {
+      const result = validateIntakeTemplatePayload({
+        intake: {
+          sections: [
+            {
+              key: 'payment',
+              label: 'Payment',
+              fields: [{ key: 'payment', label: 'Payment', fieldType: 'payment', [key]: 'forged-value' }],
+            },
+          ],
+        },
+      });
+      expect(result.intake).toBeNull();
+      expect(result.errors.some((e) => e.includes('must not contain payment card data') && e.includes(key))).toBe(
+        true,
+      );
+    },
+  );
+
+  it('never echoes the forged card value back in the returned errors', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: {
+        sections: [
+          {
+            key: 'payment',
+            label: 'Payment',
+            fields: [{ key: 'payment', label: 'Payment', fieldType: 'payment', cardNumber: '4111111111111111' }],
+          },
+        ],
+      },
+    });
+    expect(result.errors.join(' ')).not.toContain('4111111111111111');
+  });
+
+  it('rejects a payment field with no paymentPurpose (business-rule validation, not DTO shape, but exercised here for completeness)', () => {
+    // validateIntakeTemplatePayload only checks that paymentPurpose is a
+    // string *if present* — the "must be non-empty" rule lives in
+    // domain/workflow/editing.ts's validateIntakeFields, tested separately.
+    const result = validateIntakeTemplatePayload({
+      intake: {
+        sections: [
+          { key: 'payment', label: 'Payment', fields: [{ key: 'payment', label: 'Payment', fieldType: 'payment' }] },
+        ],
+      },
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it('rejects a non-string paymentAmount/paymentDescription', () => {
+    const result = validateIntakeTemplatePayload({
+      intake: {
+        sections: [
+          {
+            key: 'payment',
+            label: 'Payment',
+            fields: [{ key: 'payment', label: 'Payment', fieldType: 'payment', paymentAmount: 1200 }],
+          },
+        ],
+      },
+    });
+    expect(result.intake).toBeNull();
+    expect(result.errors.some((e) => e.includes('paymentAmount must be a string'))).toBe(true);
+  });
+});

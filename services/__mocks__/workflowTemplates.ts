@@ -5,7 +5,12 @@ import type {
   IntakeTemplate,
 } from '../../types/workflowTemplate';
 import { STAGES, isBottleneckStage } from '../../domain/cases/stages';
-import { getChecklistLabels, isFirstCallStage, PASSWORD_FIELD_PATTERN } from '../../domain/cases/checklist';
+import {
+  getChecklistLabels,
+  isFirstCallStage,
+  PASSWORD_FIELD_PATTERN,
+  PAYMENT_CONFIRMATION_LABEL,
+} from '../../domain/cases/checklist';
 import { getSlaTargetDays } from '../../domain/cases/sla';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './organizationIds';
 import { JOTFORM_INTEGRATION_ID } from './externalFormIntegrations';
@@ -35,11 +40,17 @@ const RAW_STAGE_COUNT = 8;
 
 function buildChecklistItems(rawStage: number): ChecklistItemTemplate[] {
   const labels = getChecklistLabels(rawStage);
-  const hasField = isFirstCallStage(rawStage);
+  const stageHasFields = isFirstCallStage(rawStage);
   return labels.map((label, index) => ({
     index,
     label,
-    hasField,
+    // Phase 19A (Secure Payment Architecture): "Payment collected" is a
+    // permanent exception to "every First Call & Payment item is a
+    // data-entry field" — it's always a plain checkbox confirmation, never
+    // a free-text box, so there is no field on Case Detail for a payment
+    // value to ever be typed into. See domain/cases/checklist.ts's own
+    // comment on isFirstCallStage.
+    hasField: stageHasFields && label !== PAYMENT_CONFIRMATION_LABEL,
     isPasswordField: PASSWORD_FIELD_PATTERN.test(label),
     externalFormIntegrationId: label === 'Jotform application completed' ? JOTFORM_INTEGRATION_ID : null,
   }));
@@ -79,11 +90,12 @@ const standardCremationStages: StageTemplate[] = Array.from(
  * components/modals/NewCaseModal.tsx used to hardcode by literal key name
  * (UPPERCASE_FIELD_KEYS/DATE_FIELD_KEYS/EXPIRY_FIELD_KEYS, now removed) —
  * chosen to reproduce that exact prior behavior, not to add new
- * validation Managed Cremations never had (e.g. cardZip still has no
- * validationType, matching that it was never validated before either).
- * `password` (cardNumber/cardCvv) is left exactly as it already was — the
- * new `masked` property doesn't need to be set alongside it; see
- * IntakeFieldTemplate's own comment on why resolveIntakeField reads either.
+ * validation Managed Cremations never had.
+ *
+ * Phase 19A (Secure Payment Architecture): the "Payment" section's five
+ * separate card sub-fields (cardName/cardNumber/cardExp/cardCvv/cardZip,
+ * the last two `password: true`) are gone — replaced by one `fieldType:
+ * 'payment'` field below. See that field's own comment.
  */
 const standardCremationIntake: IntakeTemplate = {
   sections: [
@@ -176,17 +188,32 @@ const standardCremationIntake: IntakeTemplate = {
       key: 'payment',
       label: 'Payment',
       fields: [
-        { key: 'cardName', label: 'Name on card', checklistItemIndex: 8, fieldType: 'text' },
-        { key: 'cardNumber', label: 'Card number', password: true, checklistItemIndex: 8, fieldType: 'creditCard' },
+        /**
+         * Phase 19A (Secure Payment Architecture): this single field
+         * replaces the five separate card sub-fields (cardName/cardNumber/
+         * cardExp/cardCvv/cardZip) that used to share checklistItemIndex 8
+         * — that shape let buildIntakeFieldValues concatenate a PAN,
+         * expiration, and CVV into one plaintext string and persist it in
+         * Case.fieldValues, in Wix, permanently. A 'payment' field has no
+         * checklistItemIndex and no mapsToCaseField — it structurally
+         * cannot contribute to fieldValues or a Case property (see
+         * domain/workflow/resolveIntake.ts's explicit skip for this
+         * fieldType). What it collects (until a real payment provider is
+         * integrated) never leaves the browser. See
+         * docs/adr/ADR-021-secure-payment-architecture.md.
+         */
         {
-          key: 'cardExp',
-          label: 'Expiration (MM/YY)',
-          checklistItemIndex: 8,
-          fieldType: 'expiration',
-          validationType: 'expiration',
+          key: 'payment',
+          label: 'Payment',
+          fieldType: 'payment',
+          // Not required — matches the pre-existing behavior exactly: none
+          // of the five card sub-fields this replaces were ever required
+          // either, so New Case submission was never gated on payment
+          // being entered. See NewCaseModal.tsx's own comment on what
+          // `required` means for a payment field where it *is* set.
+          paymentPurpose: 'Cremation service fee',
+          paymentDescription: 'Collected by phone at First Call — confirmed via the checklist, not stored here.',
         },
-        { key: 'cardCvv', label: 'CVV', password: true, checklistItemIndex: 8, fieldType: 'cvv' },
-        { key: 'cardZip', label: 'Billing zip code', checklistItemIndex: 8, fieldType: 'text' },
       ],
     },
   ],

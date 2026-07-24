@@ -270,6 +270,68 @@ describe('PATCH /api/cases/[caseId]', () => {
     });
   });
 
+  describe('payment data rejection (Phase 19A)', () => {
+    it.each(['cardNumber', 'cardExp', 'cardExpiration', 'cardCvv', 'cvv', 'cardholderName', 'billingZip'])(
+      'rejects a request with "%s" nested in patch, with 400, before any lookup or write',
+      async (key) => {
+        const response = await patchRequest('1042', {
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          patch: { decedentName: 'Renamed', [key]: 'forged-value' },
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(body.error).toMatch(new RegExp(key));
+        expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+        expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a request with a forbidden field at the top level (outside patch) too', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        cardNumber: 'forged-value',
+        patch: { decedentName: 'Renamed' },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error).toMatch(/cardNumber/);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('de-duplicates and lists every forbidden field found across both the top level and patch', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        cardNumber: 'forged-value',
+        patch: { decedentName: 'Renamed', cardNumber: 'also-forged', cardCvv: '123' },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error).toMatch(/cardNumber/);
+      expect(body.error).toMatch(/cardCvv/);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('never echoes the forged card value back in the error response', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { cardNumber: '4111111111111111' },
+      });
+      const bodyText = await response.text();
+      expect(bodyText).not.toContain('4111111111111111');
+    });
+
+    it('still allows a legitimate patch with no forbidden fields', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { decedentName: 'Renamed' },
+      });
+      expect(response.status).toBe(200);
+    });
+  });
+
   describe('validation', () => {
     it('returns 400 when organizationId is missing from the body', async () => {
       const response = await patchRequest('1042', { patch: { decedentName: 'x' } });

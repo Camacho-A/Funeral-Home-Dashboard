@@ -23,7 +23,7 @@ const CHECKLIST_BY_RAW_STAGE: Record<number, string[]> = {
     'Time of death',
     'Hospice or physician who will sign the DC — name & phone number',
     'Family contact — name, phone number & email',
-    'Cardholder name, card number, exp, CVV & billing zip code',
+    'Payment collected',
   ],
   1: [
     'Credit card payment collected by phone',
@@ -53,6 +53,20 @@ export function getChecklistLabels(rawStage: number): string[] {
   return CHECKLIST_BY_RAW_STAGE[rawStage] ?? [];
 }
 
+/**
+ * Phase 19A (Secure Payment Architecture): no checklist item label ever
+ * triggers password-style masking anymore — "Payment collected" (see
+ * CHECKLIST_BY_RAW_STAGE[0] above) replaced the old "Cardholder name, card
+ * number, exp, CVV & billing zip code" data-entry item, which used to be a
+ * hasField/isPasswordField text box writing raw payment data straight to
+ * Case.fieldValues[8] from Case Detail — a leak path entirely independent
+ * of the New Case intake form (see domain/workflow/resolveIntake.ts's own
+ * Phase 19A comment for the intake-side half of this fix). Kept as a named
+ * export, still matched against every label the same way, so a future
+ * password-shaped checklist item (if one is ever legitimately needed) is
+ * still masked by default — it just never matches "card"/"cvv" wording,
+ * since that wording no longer describes a checklist item anywhere.
+ */
 export const PASSWORD_FIELD_PATTERN = /card|cvv/i;
 
 /**
@@ -66,7 +80,16 @@ export const PASSWORD_FIELD_PATTERN = /card|cvv/i;
  * fixture builder now — each raw stage's ChecklistItemTemplate.hasField is
  * set from this at fixture-construction time (see
  * services/__mocks__/workflowTemplates.ts), not recomputed per-case.
+ *
+ * Phase 19A: "Payment collected" is a deliberate, permanent exception —
+ * even within the First Call & Payment stage, it's a plain checkbox
+ * confirmation (hasField: false), never a free-text field, so there is no
+ * data-entry box on Case Detail for a payment value to ever be typed into.
+ * See services/__mocks__/workflowTemplates.ts's buildChecklistItems, the
+ * one caller that applies this exception.
  */
 export function isFirstCallStage(rawStage: number): boolean {
   return rawStage === 0;
 }
+
+export const PAYMENT_CONFIRMATION_LABEL = 'Payment collected';

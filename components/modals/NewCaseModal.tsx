@@ -110,6 +110,34 @@ const FALLBACK_INTAKE: IntakeTemplate = {
   ],
 };
 
+/**
+ * Phase 19A (Secure Payment Architecture). The fixed sub-fields a
+ * `fieldType: 'payment'` section renders — never individually configurable
+ * by an admin (see IntakeFieldTemplate's own comment: administrators
+ * configure label/required/purpose/amount/description, never the card
+ * fields themselves). `masked` mirrors what those fields have always
+ * needed for a Show/Hide toggle; `mask` is the same live-formatting
+ * function the old standalone 'expiration' fieldType used, reused here
+ * rather than reimplemented.
+ */
+const PAYMENT_SUBFIELDS: Array<{
+  key: string;
+  label: string;
+  masked: boolean;
+  mask?: (raw: string) => string;
+  placeholder?: string;
+}> = [
+  { key: 'cardholderName', label: 'Name on card', masked: false },
+  { key: 'cardNumber', label: 'Card number', masked: true },
+  { key: 'cardExpiration', label: 'Expiration (MM/YY)', masked: false, mask: formatCardExpiryInput, placeholder: 'MM/YY' },
+  { key: 'cardCvv', label: 'CVV', masked: true },
+  { key: 'billingZip', label: 'Billing zip code', masked: false },
+];
+
+function isPaymentSectionFilled(paymentDraft: Record<string, string>): boolean {
+  return PAYMENT_SUBFIELDS.every((sub) => (paymentDraft[sub.key] ?? '').trim().length > 0);
+}
+
 export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const session = useSession();
@@ -134,6 +162,21 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
 
+  /**
+   * Phase 19A (Secure Payment Architecture). A payment field's collected
+   * values live in this entirely separate state — never `draft` — so
+   * there is no code path by which they could reach
+   * buildIntakeFieldValues/buildStructuredCaseFields (both of which only
+   * ever read from `draft`) or the createCase.mutate(...) payload below.
+   * Cleared by resetForm() on every submit, cancel, and close, the same as
+   * every other piece of this form's state; never persisted to
+   * localStorage/sessionStorage, so a page refresh loses it for free —
+   * that's the point, not an oversight. See
+   * docs/adr/ADR-021-secure-payment-architecture.md.
+   */
+  const [paymentDraft, setPaymentDraft] = useState<Record<string, string>>({});
+  const [paymentRevealed, setPaymentRevealed] = useState<Record<string, boolean>>({});
+
   // Set only once a case has actually been created — distinguishes "not
   // submitted yet" from "case exists, but its note failed to save," so a
   // note-save retry never re-creates the case (never a duplicate).
@@ -152,8 +195,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     let value = rawValue;
     if (field.fieldType === 'date') {
       value = formatDateInput(rawValue);
-    } else if (field.fieldType === 'expiration') {
-      value = formatCardExpiryInput(rawValue);
     } else if (field.uppercase) {
       value = rawValue.toUpperCase();
     }
@@ -186,12 +227,25 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setRevealedFields((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  function setPaymentSubfieldValue(subfieldKey: string, rawValue: string, mask?: (raw: string) => string) {
+    setPaymentDraft((prev) => ({ ...prev, [subfieldKey]: mask ? mask(rawValue) : rawValue }));
+  }
+
+  function togglePaymentReveal(subfieldKey: string) {
+    setPaymentRevealed((prev) => ({ ...prev, [subfieldKey]: !prev[subfieldKey] }));
+  }
+
   function resetForm() {
     setDraft({});
     setTouched({});
     setRevealedFields({});
     setCreatedCase(null);
     addNote.reset();
+    // Phase 19A: cleared unconditionally on every submit, cancel, and
+    // close — see this state's own declaration comment for why nothing
+    // else ever needs to reach in and clear it selectively.
+    setPaymentDraft({});
+    setPaymentRevealed({});
   }
 
   function handleClose() {
@@ -208,11 +262,19 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const structuredFields = buildStructuredCaseFields(effectiveIntake, draft);
 
   const hasFieldErrors = allResolvedFields.some(
-    (field) => getValidationError(field.validationType, draft[field.key] ?? field.defaultValue) !== null,
+    (field) =>
+      field.fieldType !== 'payment' &&
+      getValidationError(field.validationType, draft[field.key] ?? field.defaultValue) !== null,
   );
-  const hasMissingRequired = allResolvedFields.some(
-    (field) => field.required && !(draft[field.key] ?? field.defaultValue).trim(),
-  );
+  const hasMissingRequired = allResolvedFields.some((field) => {
+    if (field.fieldType === 'payment') {
+      // Phase 19A: "required" on a payment field gates submission on the
+      // section being filled out locally — never on what was typed into
+      // it, which this check never reads.
+      return field.required && !isPaymentSectionFilled(paymentDraft);
+    }
+    return field.required && !(draft[field.key] ?? field.defaultValue).trim();
+  });
   const canSubmit = !hasMissingRequired && !hasFieldErrors;
 
   function goToCase(caseId: string) {
@@ -266,7 +328,68 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // via the Create Case button below.
   const noteSaveFailed = Boolean(createdCase) && addNote.isError;
 
+  /**
+   * Phase 19A (Secure Payment Architecture). A dedicated renderer, not a
+   * branch inside the generic per-field switch below — a payment field is
+   * an entire secure *section*, not an ordinary data-entry control (see
+   * IntakeFieldTemplate's own comment). Every sub-field here reads from
+   * and writes to `paymentDraft`/`paymentRevealed` exclusively; nothing in
+   * this function ever touches `draft`, `setDraftValue`, or
+   * setIntakeFieldValue, which is what keeps a payment field's collected
+   * values structurally unreachable from buildIntakeFieldValues/
+   * buildStructuredCaseFields and therefore from the request this form
+   * ultimately sends.
+   */
+  function renderPaymentField(field: ResolvedIntakeField): ReactNode {
+    return (
+      <div key={field.key} className={styles.paymentSection}>
+        <div className={field.required ? `${styles.fieldLabel} ${styles.fieldLabelRequired}` : styles.fieldLabel}>
+          {field.label}
+        </div>
+        {field.paymentPurpose && <div className={styles.paymentPurpose}>{field.paymentPurpose}</div>}
+        {field.paymentAmount && <div className={styles.paymentAmount}>{field.paymentAmount}</div>}
+        {field.paymentDescription && <div className={styles.paymentDescription}>{field.paymentDescription}</div>}
+
+        <div className={styles.paymentNotice} role="note">
+          This information is never saved by Beacon and is cleared as soon as you leave this form — enter it only
+          when you&apos;re ready to process payment by phone or terminal.
+        </div>
+
+        {PAYMENT_SUBFIELDS.map((sub) => {
+          const value = paymentDraft[sub.key] ?? '';
+          const isRevealed = paymentRevealed[sub.key];
+          return (
+            <div key={sub.key}>
+              <div className={styles.fieldLabel}>{sub.label}</div>
+              <div className={sub.masked ? styles.revealableFieldRow : undefined}>
+                <TextField
+                  type={sub.masked && !isRevealed ? 'password' : 'text'}
+                  value={value}
+                  onChange={(e) => setPaymentSubfieldValue(sub.key, e.target.value, sub.mask)}
+                  placeholder={sub.placeholder}
+                  autoComplete="off"
+                />
+                {sub.masked && (
+                  <button
+                    type="button"
+                    className={styles.revealToggle}
+                    onClick={() => togglePaymentReveal(sub.key)}
+                    aria-label={`${isRevealed ? 'Hide' : 'Show'} ${sub.label}`}
+                  >
+                    {isRevealed ? 'Hide' : 'Show'}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderIntakeField(field: ResolvedIntakeField): ReactNode {
+    if (field.fieldType === 'payment') return renderPaymentField(field);
+
     const value = draft[field.key] ?? field.defaultValue;
     const error = touched[field.key] ? getValidationError(field.validationType, value) : null;
     const isRevealed = revealedFields[field.key];

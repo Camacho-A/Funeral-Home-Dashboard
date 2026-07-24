@@ -338,17 +338,13 @@ describe('NewCaseModal — calendar date and expiry validation', () => {
     expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
   });
 
-  it('shows an error and blocks submission for an out-of-range expiry month', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    const cardExp = intakeInputs(container)[11];
-
-    fireEvent.change(cardExp, { target: { value: '1328' } }); // month 13
-    fireEvent.blur(cardExp);
-
-    expect(screen.getByText(/enter a valid expiration/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
-  });
+  // Phase 19A (Secure Payment Architecture): the old "cardExp" expiration
+  // field/validation test that lived here is gone along with the
+  // standalone 'expiration' fieldType and validationType it exercised —
+  // card expiration is now collected only inside the isolated, non-
+  // validated, non-persisted payment section (see the "secure payment
+  // section" describe block below), which never gates Create Case on
+  // anything typed into it.
 });
 
 describe('NewCaseModal — time input normalization (Phase 19.1)', () => {
@@ -730,5 +726,174 @@ describe('NewCaseModal — backward compatibility (Phase 19)', () => {
       }),
     });
     await waitFor(() => expect(container.querySelectorAll('input').length).toBe(14));
+  });
+});
+
+/**
+ * Phase 19A (Secure Payment Architecture). Proves the guarantees the phase
+ * itself calls for at the UI layer: payment sub-field values never reach
+ * the created case's fieldValues (or any other part of the mutate
+ * payload), never appear in any console output, and are cleared back to
+ * empty on Close — a page refresh (which these tests can't literally
+ * simulate in jsdom, but plain useState with no storage write means a
+ * remount is equally empty) loses them by construction.
+ */
+describe('NewCaseModal — secure payment section (Phase 19A)', () => {
+  const FORGED_CARD_NUMBER = '4111111111111199';
+  const FORGED_CVV = '987';
+
+  function fillPaymentFields(container: HTMLElement) {
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[9], { target: { value: 'Jane Doe' } }); // cardholderName
+    fireEvent.change(inputs[10], { target: { value: FORGED_CARD_NUMBER } }); // cardNumber
+    fireEvent.change(inputs[11], { target: { value: '12/28' } }); // cardExpiration
+    fireEvent.change(inputs[12], { target: { value: FORGED_CVV } }); // cardCvv
+    fireEvent.change(inputs[13], { target: { value: '94112' } }); // billingZip
+  }
+
+  it('never includes any payment sub-field value in the created case, its fieldValues, or anywhere in its serialized form', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fillPaymentFields(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const createdCase = caseFixtures.find((c) => c.id === newCaseId);
+    expect(createdCase).toBeTruthy();
+
+    const serialized = JSON.stringify(createdCase);
+    expect(serialized).not.toContain(FORGED_CARD_NUMBER);
+    expect(serialized).not.toContain(FORGED_CVV);
+    expect(serialized).not.toContain('Jane Doe');
+    expect(Object.values(createdCase!.fieldValues).join(' ')).not.toContain(FORGED_CARD_NUMBER);
+  });
+
+  it('clears every payment sub-field back to empty after a successful submit', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fillPaymentFields(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const inputsAfter = intakeInputs(container);
+    expect(inputsAfter[10]).toHaveValue(''); // cardNumber
+    expect(inputsAfter[12]).toHaveValue(''); // cardCvv
+  });
+
+  it('clears every payment sub-field back to empty when Close is clicked, without submitting', async () => {
+    const { container } = await renderModalWithFields();
+    fillPaymentFields(container);
+    expect(intakeInputs(container)[10]).toHaveValue(FORGED_CARD_NUMBER);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    const inputsAfter = intakeInputs(container);
+    expect(inputsAfter[9]).toHaveValue('');
+    expect(inputsAfter[10]).toHaveValue('');
+    expect(inputsAfter[11]).toHaveValue('');
+    expect(inputsAfter[12]).toHaveValue('');
+    expect(inputsAfter[13]).toHaveValue('');
+  });
+
+  it('clears every payment sub-field back to empty when Cancel is clicked, without submitting', async () => {
+    const { container } = await renderModalWithFields();
+    fillPaymentFields(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(intakeInputs(container)[10]).toHaveValue('');
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('leaving the payment section entirely blank never blocks submission — it is not required by default', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
+  });
+
+  it('never logs a payment value to the console during a successful submit', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fillPaymentFields(container);
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const allLoggedText = [...logSpy.mock.calls, ...warnSpy.mock.calls, ...errorSpy.mock.calls]
+      .flat()
+      .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+      .join(' ');
+    expect(allLoggedText).not.toContain(FORGED_CARD_NUMBER);
+    expect(allLoggedText).not.toContain(FORGED_CVV);
+
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('never logs a payment value to the console on the note-save partial-failure error path', async () => {
+    vi.mocked(caseLogService.create).mockRejectedValueOnce(new Error('network error'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fillPaymentFields(container);
+    fireEvent.change(container.querySelector('textarea')!, { target: { value: 'Important note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await screen.findByRole('alert');
+
+    const allLoggedText = [...logSpy.mock.calls, ...warnSpy.mock.calls, ...errorSpy.mock.calls]
+      .flat()
+      .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+      .join(' ');
+    expect(allLoggedText).not.toContain(FORGED_CARD_NUMBER);
+    expect(allLoggedText).not.toContain(FORGED_CVV);
+
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('a payment field configured as required gates submission on the local payment draft being fully filled', async () => {
+    stubTemplateFetch(
+      customTemplate({
+        intake: {
+          sections: [
+            {
+              key: 's',
+              label: 'S',
+              fields: [
+                { key: 'decedentName', label: 'Name', fieldType: 'text', required: true, mapsToCaseField: 'decedentName' },
+                { key: 'payment', label: 'Payment', fieldType: 'payment', required: true, paymentPurpose: 'Fee' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { container } = renderModal();
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(6));
+    const inputs = container.querySelectorAll('input');
+    fireEvent.change(inputs[0], { target: { value: 'Test Decedent' } });
+
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+
+    fireEvent.change(inputs[1], { target: { value: 'Jane Doe' } }); // cardholderName
+    fireEvent.change(inputs[2], { target: { value: FORGED_CARD_NUMBER } }); // cardNumber
+    fireEvent.change(inputs[3], { target: { value: '12/28' } }); // cardExpiration
+    fireEvent.change(inputs[4], { target: { value: FORGED_CVV } }); // cardCvv
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled(); // billingZip still blank
+
+    fireEvent.change(inputs[5], { target: { value: '94112' } }); // billingZip
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
   });
 });

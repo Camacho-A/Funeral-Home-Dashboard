@@ -293,6 +293,54 @@ describe('POST /api/cases — authorization', () => {
   });
 });
 
+describe('POST /api/cases — payment data rejection (Phase 19A)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it.each(['cardNumber', 'cardExp', 'cardExpiration', 'cardCvv', 'cvv', 'cardholderName', 'billingZip'])(
+    'rejects a request whose body contains "%s" with 400, before any authorization/write happens',
+    async (key) => {
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, [key]: 'forged-value' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error).toMatch(new RegExp(key));
+      expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a request containing multiple forbidden fields at once, listing all of them', async () => {
+    const response = await POST(
+      postRequest({ ...VALID_CREATE_BODY, cardNumber: '4111111111111111', cardCvv: '123' }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/cardNumber/);
+    expect(body.error).toMatch(/cardCvv/);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('never echoes the forged card value back in the error response', async () => {
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, cardNumber: '4111111111111111' }));
+    const bodyText = await response.text();
+    expect(bodyText).not.toContain('4111111111111111');
+  });
+
+  it('still accepts a legitimate request with fieldValues that contain no forbidden keys', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, fieldValues: { 0: 'Test value' } }));
+    expect(response.status).toBe(201);
+  });
+});
+
 describe('POST /api/cases — validation', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';

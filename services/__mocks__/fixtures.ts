@@ -170,7 +170,12 @@ const RAW_SEED_CASES: RawSeedCase[] = [
       5: '04:30',
       6: 'Dr. Linda Choi — (408) 555-8890',
       7: 'Sofia Alvarez — (555) 771-6620 — sofia.alvarez@email.com',
-      8: 'George R. Alvarez — •••• •••• •••• 4471 — 09/28 — 94112',
+      // Phase 19A (Secure Payment Architecture): index 8 used to hold a
+      // concatenated cardholder-name/PAN/expiration/zip string — the exact
+      // insecure pattern this phase eliminates. Checklist item 8 is now
+      // "Payment collected," a plain checkbox (hasField: false), so
+      // fieldValues has nothing to hold for it at all; removed, not
+      // blanked out, per this phase's own migration instructions.
     },
   },
   {

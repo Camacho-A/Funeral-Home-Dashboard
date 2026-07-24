@@ -114,6 +114,39 @@
   margin-bottom: var(--space-8);
 }
 
+/* Phase 19A (Secure Payment Architecture) */
+
+.paymentSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.paymentPurpose {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.paymentAmount {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-brand);
+}
+
+.paymentDescription {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+}
+
+.paymentNotice {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5) var(--space-6);
+}
+
 .footer {
   display: flex;
   justify-content: flex-end;

@@ -132,7 +132,7 @@ This is a deliberate change in direction from what the current codebase actually
 | `caseHandlerId` | Text (nullable) | Optional | **Mutable** — freely reassignable; maps to today's `assignedStaffId` |
 | `currentStage` | Number | Required | Mutable — → `rawStage` |
 | `checklistState` | Object (JSON, index→bool) | Required | Mutable |
-| `fieldValues` | Object (JSON, index→string) | Required | Mutable — intake-derived fields; never populated with realistic SSNs/medical/payment data, mock or real |
+| `fieldValues` | Object (JSON, index→string) | Required | Mutable — intake-derived fields; never populated with realistic SSNs/medical data, mock or real. Payment data (PAN/CVV/expiration) is structurally excluded, not just a fixture convention — see [ADR-021](./adr/ADR-021-secure-payment-architecture.md) |
 | `decedentName`, `dateOfBirth`, `dateOfDeath`, `timeOfDeath`, `placeOfDeath`, `weight`, `nextOfKinName`, `nextOfKinPhone` | Text | Required | Mutable |
 | `paymentStatus` | Text enum | Required | Mutable |
 | `isVeteran` | Boolean | Required | Mutable |

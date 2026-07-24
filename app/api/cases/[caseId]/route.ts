@@ -4,6 +4,7 @@ import { queryWixDataItems, updateWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, validateAndPickCaseUpdate, applyCaseUpdateToWixData, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Beacon
@@ -90,6 +91,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     return NextResponse.json({ case: null, error: 'Invalid request body.' }, { status: 400 });
   }
   const b = body as Record<string, unknown>;
+
+  // Phase 19A (Secure Payment Architecture): mandatory server-side
+  // enforcement, checked before anything else — both the top-level body
+  // and the nested `patch` object are checked, since a forged update could
+  // try either shape. See docs/adr/ADR-021-secure-payment-architecture.md.
+  const forbiddenPaymentFields = [...findForbiddenPaymentFields(b), ...findForbiddenPaymentFields(b.patch)];
+  if (forbiddenPaymentFields.length > 0) {
+    return NextResponse.json(
+      {
+        case: null,
+        error: `Request must not contain payment card data (found: ${[...new Set(forbiddenPaymentFields)].join(', ')}).`,
+      },
+      { status: 400 },
+    );
+  }
 
   if (typeof b.organizationId !== 'string') {
     return NextResponse.json({ case: null, error: 'organizationId is required.' }, { status: 400 });

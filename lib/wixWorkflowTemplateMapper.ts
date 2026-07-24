@@ -8,6 +8,7 @@ import type {
   WorkflowTemplateVersion,
 } from '../types/workflowTemplate';
 import { queryWixDataItems } from './wixDataApi';
+import { findForbiddenPaymentFields } from './paymentFieldGuard';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Mirrors
@@ -368,6 +369,18 @@ function validateIntakeFieldPayload(value: unknown, path: string, errors: string
     errors.push(`${path} must be an object.`);
     return null;
   }
+
+  // Phase 19A (Secure Payment Architecture): reject outright — not
+  // silently strip — if a forged or mistaken workflow edit tries to attach
+  // a literal card-data property directly to a field definition. Checked
+  // first, before any other validation, so this can never be masked by an
+  // otherwise-valid field.
+  const forbidden = findForbiddenPaymentFields(value);
+  if (forbidden.length > 0) {
+    errors.push(`${path} must not contain payment card data (found: ${forbidden.join(', ')}).`);
+    return null;
+  }
+
   if (typeof value.key !== 'string') errors.push(`${path}.key must be a string.`);
   if (typeof value.label !== 'string') errors.push(`${path}.label must be a string.`);
   if (value.placeholder !== undefined && typeof value.placeholder !== 'string') {
@@ -408,6 +421,15 @@ function validateIntakeFieldPayload(value: unknown, path: string, errors: string
   }
   if (!isStringArrayIfPresent(value.options)) {
     errors.push(`${path}.options must be an array of strings if present.`);
+  }
+  if (value.paymentPurpose !== undefined && typeof value.paymentPurpose !== 'string') {
+    errors.push(`${path}.paymentPurpose must be a string if present.`);
+  }
+  if (value.paymentAmount !== undefined && typeof value.paymentAmount !== 'string') {
+    errors.push(`${path}.paymentAmount must be a string if present.`);
+  }
+  if (value.paymentDescription !== undefined && typeof value.paymentDescription !== 'string') {
+    errors.push(`${path}.paymentDescription must be a string if present.`);
   }
 
   if (typeof value.key !== 'string' || typeof value.label !== 'string') {

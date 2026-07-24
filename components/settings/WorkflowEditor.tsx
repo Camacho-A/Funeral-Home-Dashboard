@@ -27,23 +27,15 @@ const FIELD_TYPE_OPTIONS: { value: IntakeFieldType; label: string }[] = [
   { value: 'currency', label: 'Currency' },
   { value: 'checkbox', label: 'Checkbox' },
   { value: 'select', label: 'Select' },
-  { value: 'creditCard', label: 'Credit Card' },
-  { value: 'expiration', label: 'Expiration' },
-  { value: 'cvv', label: 'CVV' },
+  // Phase 19A (Secure Payment Architecture): 'creditCard' | 'expiration' |
+  // 'cvv' — three separate, ordinary-field card sub-types — are gone.
+  // 'payment' represents an entire secure payment section instead; see
+  // NewCaseModal.tsx's own PAYMENT_SUBFIELDS and
+  // docs/adr/ADR-021-secure-payment-architecture.md.
+  { value: 'payment', label: 'Payment (secure)' },
 ];
 
-const VALIDATION_TYPE_OPTIONS = [
-  'none',
-  'email',
-  'phone',
-  'date',
-  'zip',
-  'numeric',
-  'currency',
-  'creditCard',
-  'expiration',
-  'time',
-] as const;
+const VALIDATION_TYPE_OPTIONS = ['none', 'email', 'phone', 'date', 'zip', 'numeric', 'currency', 'time'] as const;
 
 function generateUniqueFieldKey(intake: IntakeTemplate): string {
   const existingKeys = new Set(intake.sections.flatMap((section) => section.fields.map((field) => field.key)));
@@ -347,66 +339,112 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
                   </button>
                 </div>
 
-                <div className={styles.intakeFieldRowBottom}>
-                  <TextField
-                    value={field.placeholder ?? ''}
-                    onChange={(e) => updateIntakeField(sectionIndex, fieldIndex, { placeholder: e.target.value })}
-                    placeholder="Placeholder text"
-                    aria-label={`"${field.label}" placeholder`}
-                  />
-                  <SelectField
-                    value={field.validationType ?? 'none'}
-                    onChange={(e) =>
-                      updateIntakeField(sectionIndex, fieldIndex, {
-                        validationType: e.target.value as IntakeFieldTemplate['validationType'],
-                      })
-                    }
-                    aria-label={`"${field.label}" validation`}
-                  >
-                    {VALIDATION_TYPE_OPTIONS.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <div
-                    className={styles.intakeFieldToggle}
-                    onClick={() => updateIntakeField(sectionIndex, fieldIndex, { required: !field.required })}
-                  >
-                    <Checkbox
-                      checked={Boolean(field.required)}
-                      onChange={() => updateIntakeField(sectionIndex, fieldIndex, { required: !field.required })}
-                      aria-label={`"${field.label}" is required`}
+                {field.fieldType === 'payment' ? (
+                  // Phase 19A (Secure Payment Architecture): a payment
+                  // field's only configurable properties are purpose/
+                  // amount/description (plus label/required above) —
+                  // never placeholder/validationType/uppercase/masked/
+                  // options, none of which mean anything for an entire
+                  // secure section rather than an ordinary data field.
+                  <div className={styles.intakeFieldRowBottom}>
+                    <TextField
+                      value={field.paymentPurpose ?? ''}
+                      onChange={(e) =>
+                        updateIntakeField(sectionIndex, fieldIndex, { paymentPurpose: e.target.value })
+                      }
+                      placeholder="Payment purpose (e.g. Cremation service fee)"
+                      aria-label={`"${field.label}" payment purpose`}
                     />
-                    <span>Required</span>
-                  </div>
-                  <div
-                    className={styles.intakeFieldToggle}
-                    onClick={() => updateIntakeField(sectionIndex, fieldIndex, { uppercase: !field.uppercase })}
-                  >
-                    <Checkbox
-                      checked={Boolean(field.uppercase)}
-                      onChange={() => updateIntakeField(sectionIndex, fieldIndex, { uppercase: !field.uppercase })}
-                      aria-label={`"${field.label}" uppercases as typed`}
+                    <TextField
+                      value={field.paymentAmount ?? ''}
+                      onChange={(e) =>
+                        updateIntakeField(sectionIndex, fieldIndex, { paymentAmount: e.target.value })
+                      }
+                      placeholder="Amount (optional)"
+                      aria-label={`"${field.label}" payment amount`}
                     />
-                    <span>Uppercase</span>
+                    <TextField
+                      value={field.paymentDescription ?? ''}
+                      onChange={(e) =>
+                        updateIntakeField(sectionIndex, fieldIndex, { paymentDescription: e.target.value })
+                      }
+                      placeholder="Description (optional)"
+                      aria-label={`"${field.label}" payment description`}
+                    />
+                    <div
+                      className={styles.intakeFieldToggle}
+                      onClick={() => updateIntakeField(sectionIndex, fieldIndex, { required: !field.required })}
+                    >
+                      <Checkbox
+                        checked={Boolean(field.required)}
+                        onChange={() => updateIntakeField(sectionIndex, fieldIndex, { required: !field.required })}
+                        aria-label={`"${field.label}" is required`}
+                      />
+                      <span>Required</span>
+                    </div>
                   </div>
-                  <div
-                    className={styles.intakeFieldToggle}
-                    onClick={() =>
-                      updateIntakeField(sectionIndex, fieldIndex, { masked: !(field.masked ?? field.password) })
-                    }
-                  >
-                    <Checkbox
-                      checked={Boolean(field.masked ?? field.password)}
-                      onChange={() =>
+                ) : (
+                  <div className={styles.intakeFieldRowBottom}>
+                    <TextField
+                      value={field.placeholder ?? ''}
+                      onChange={(e) => updateIntakeField(sectionIndex, fieldIndex, { placeholder: e.target.value })}
+                      placeholder="Placeholder text"
+                      aria-label={`"${field.label}" placeholder`}
+                    />
+                    <SelectField
+                      value={field.validationType ?? 'none'}
+                      onChange={(e) =>
+                        updateIntakeField(sectionIndex, fieldIndex, {
+                          validationType: e.target.value as IntakeFieldTemplate['validationType'],
+                        })
+                      }
+                      aria-label={`"${field.label}" validation`}
+                    >
+                      {VALIDATION_TYPE_OPTIONS.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </SelectField>
+                    <div
+                      className={styles.intakeFieldToggle}
+                      onClick={() => updateIntakeField(sectionIndex, fieldIndex, { required: !field.required })}
+                    >
+                      <Checkbox
+                        checked={Boolean(field.required)}
+                        onChange={() => updateIntakeField(sectionIndex, fieldIndex, { required: !field.required })}
+                        aria-label={`"${field.label}" is required`}
+                      />
+                      <span>Required</span>
+                    </div>
+                    <div
+                      className={styles.intakeFieldToggle}
+                      onClick={() => updateIntakeField(sectionIndex, fieldIndex, { uppercase: !field.uppercase })}
+                    >
+                      <Checkbox
+                        checked={Boolean(field.uppercase)}
+                        onChange={() => updateIntakeField(sectionIndex, fieldIndex, { uppercase: !field.uppercase })}
+                        aria-label={`"${field.label}" uppercases as typed`}
+                      />
+                      <span>Uppercase</span>
+                    </div>
+                    <div
+                      className={styles.intakeFieldToggle}
+                      onClick={() =>
                         updateIntakeField(sectionIndex, fieldIndex, { masked: !(field.masked ?? field.password) })
                       }
-                      aria-label={`"${field.label}" is masked`}
-                    />
-                    <span>Masked</span>
+                    >
+                      <Checkbox
+                        checked={Boolean(field.masked ?? field.password)}
+                        onChange={() =>
+                          updateIntakeField(sectionIndex, fieldIndex, { masked: !(field.masked ?? field.password) })
+                        }
+                        aria-label={`"${field.label}" is masked`}
+                      />
+                      <span>Masked</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {field.fieldType === 'select' && (
                   <TextField

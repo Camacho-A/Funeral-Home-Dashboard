@@ -175,6 +175,43 @@ describe('validateIntakeFields (Phase 19 — Configurable Intake Form Builder)',
   });
 });
 
+describe('validateIntakeFields — payment field rules (Phase 19A)', () => {
+  function intake(fields: Array<Record<string, unknown>>): IntakeTemplate {
+    return { sections: [{ key: 'payment', label: 'Payment', fields: fields as never }] };
+  }
+
+  it('accepts a payment field with a non-empty paymentPurpose', () => {
+    const template = intake([{ key: 'payment', label: 'Payment', fieldType: 'payment', paymentPurpose: 'Cremation service fee' }]);
+    expect(validateIntakeFields(template)).toEqual([]);
+  });
+
+  it('rejects a payment field with no paymentPurpose at all', () => {
+    const template = intake([{ key: 'payment', label: 'Payment', fieldType: 'payment' }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('no paymentPurpose'))).toBe(true);
+  });
+
+  it('rejects a payment field whose paymentPurpose is only whitespace', () => {
+    const template = intake([{ key: 'payment', label: 'Payment', fieldType: 'payment', paymentPurpose: '   ' }]);
+    expect(validateIntakeFields(template).some((e) => e.includes('no paymentPurpose'))).toBe(true);
+  });
+
+  it.each(['creditCard', 'expiration', 'cvv'])(
+    'rejects the removed standalone fieldType "%s" as unrecognized — payment data can no longer be configured this way',
+    (fieldType) => {
+      const template = intake([{ key: 'x', label: 'X', fieldType }]);
+      expect(validateIntakeFields(template).some((e) => e.includes('unrecognized fieldType'))).toBe(true);
+    },
+  );
+
+  it.each(['creditCard', 'expiration'])(
+    'rejects the removed validationType "%s" as unrecognized — closes the back door of a text field validated as card data',
+    (validationType) => {
+      const template = intake([{ key: 'x', label: 'X', fieldType: 'text', validationType }]);
+      expect(validateIntakeFields(template).some((e) => e.includes('unrecognized validationType'))).toBe(true);
+    },
+  );
+});
+
 describe('moveIntakeField (Phase 19 — Configurable Intake Form Builder)', () => {
   function field(key: string, displayOrder: number): IntakeFieldTemplate {
     return { key, label: key, displayOrder };

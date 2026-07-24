@@ -29,6 +29,11 @@ export type ResolvedIntakeField = {
   multiline: boolean;
   validationType: IntakeValidationType;
   options: string[];
+  /** Phase 19A (Secure Payment Architecture) — only meaningful for
+      fieldType 'payment'. See IntakeFieldTemplate's own comment. */
+  paymentPurpose: string;
+  paymentAmount: string;
+  paymentDescription: string;
 };
 
 /**
@@ -58,6 +63,9 @@ export function resolveIntakeField(field: IntakeFieldTemplate, indexInSection: n
     // validationType — but an explicit validationType (rare) still wins.
     validationType: field.validationType ?? (fieldType === 'time' ? 'time' : 'none'),
     options: field.options ?? [],
+    paymentPurpose: field.paymentPurpose ?? '',
+    paymentAmount: field.paymentAmount ?? '',
+    paymentDescription: field.paymentDescription ?? '',
   };
 }
 

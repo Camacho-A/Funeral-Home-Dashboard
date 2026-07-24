@@ -22,6 +22,9 @@ describe('resolveIntakeField — defaults for a pre-Phase-19 record', () => {
       multiline: false,
       validationType: 'none',
       options: [],
+      paymentPurpose: '',
+      paymentAmount: '',
+      paymentDescription: '',
     });
   });
 
