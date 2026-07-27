@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { createPaymentIntegrationPlaceholder, markStepCompleted, type PaymentSetupChoice } from '@/services/organizationProvisioningService';
 
@@ -16,6 +17,9 @@ const VALID_CHOICES: PaymentSetupChoice[] = ['clover', 'not_configured', 'config
  * steps, unchanged by this phase).
  */
 export async function PATCH(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
   const b = parsed.body;

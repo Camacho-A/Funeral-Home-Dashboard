@@ -61,11 +61,11 @@ function seedActiveOrder(caseId: string, balanceDue: number, overrides: Partial<
   return order;
 }
 
-function postRequest(caseId: string, body: unknown) {
+function postRequest(caseId: string, body: unknown, headers: Record<string, string> = {}) {
   return POST(
     new Request(`http://localhost/api/cases/${caseId}/payments/clover/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
       body: JSON.stringify(body),
     }),
     { params: Promise.resolve({ caseId }) },
@@ -105,6 +105,12 @@ afterEach(() => {
 });
 
 describe('POST .../payments/clover/checkout — authorization', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const response = await postRequest(KNOWN_CASE().id, VALID_BODY, { origin: 'https://evil.example.com' });
+    expect(response.status).toBe(403);
+  });
+
   it('returns 401 when there is no session at all', async () => {
     mockSession = null;
     seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
@@ -122,7 +128,7 @@ describe('POST .../payments/clover/checkout — authorization', () => {
 describe('POST .../payments/clover/checkout — request validation', () => {
   it('returns 400 for invalid JSON', async () => {
     const response = await POST(
-      new Request('http://localhost/x', { method: 'POST', body: '{not json' }),
+      new Request('http://localhost/x', { method: 'POST', headers: { origin: 'http://localhost', host: 'localhost' }, body: '{not json' }),
       { params: Promise.resolve({ caseId: KNOWN_CASE().id }) },
     );
     expect(response.status).toBe(400);

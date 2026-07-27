@@ -39,11 +39,16 @@ export async function getSession(): Promise<AuthSession | null> {
   return verifySessionToken(token);
 }
 
-/** Issues a fresh session and sets it as the response's session cookie.
-    Server Actions/Route Handlers only — cookies() can't be mutated from a
-    Server Component during render. */
-export async function createSession(user: AuthSession['user']): Promise<void> {
-  const token = await createSessionToken(user);
+/** Issues a fresh session and sets it as the response's session cookie —
+    every call creates a brand-new signed token, which is what makes this
+    the mechanism behind "session rotation after authentication"/"after
+    password reset": callers never mutate an existing cookie, they always
+    call this again. Server Actions/Route Handlers only — cookies() can't
+    be mutated from a Server Component during render. `sessionId` (Phase
+    21) links an `'identity'`-source session to its server-side registry
+    row — see lib/auth/sessionToken.ts's own comment. */
+export async function createSession(user: AuthSession['user'], sessionId?: string): Promise<void> {
+  const token = await createSessionToken(user, undefined, sessionId);
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, token, cookieOptions());
 }

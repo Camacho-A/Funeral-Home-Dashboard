@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requirePlatformAdministrator } from '@/lib/auth/requireOnboardingAccess';
 import { startOnboarding } from '@/services/organizationProvisioningService';
 import { validateOrganizationProfile } from '@/domain/onboarding/validation';
@@ -19,6 +20,9 @@ import { parseJsonBody } from '@/lib/onboarding/routeHelpers';
  * services/organizationProvisioningService.ts's `startOnboarding`.
  */
 export async function POST(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const access = await requirePlatformAdministrator();
   if (!access.authorized) return access.response;
 

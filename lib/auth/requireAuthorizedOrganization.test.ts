@@ -131,3 +131,76 @@ describe('requireAuthorizedOrganization — standardized failures do not leak in
     }
   });
 });
+
+describe('requireAuthorizedOrganization — AUTH_ADAPTER=identity sessions', () => {
+  // Phase 21: identity-mode sessions must resolve through
+  // resolveIdentitySession + resolveMembershipAuthorizationContext (the
+  // Membership model), never through resolveAuthorizationContext (the
+  // mock-fixture OrganizationMembership model those sessions have no rows
+  // in at all) — without this branch every one of this function's callers
+  // would 403 every identity-mode request.
+  let idCounter = 0;
+  const idFactory = () => {
+    idCounter += 1;
+    return `require-org-identity-test-${idCounter}`;
+  };
+
+  async function seedIdentitySession(email: string, organizationId?: string) {
+    const { findOrCreateIdentity, updateIdentity } = await import('../../services/identityService');
+    const { createMembership } = await import('../../services/membershipService');
+    const { createIdentitySession } = await import('../../services/sessionService');
+    const { identity } = await findOrCreateIdentity({ email, displayName: 'Identity Test', idFactory }, 'mock');
+    await updateIdentity(identity.id, { status: 'active' }, 'mock');
+    if (organizationId) {
+      await createMembership(
+        { identityId: identity.id, organizationId, role: 'staff', status: 'active', invitedBy: null, idFactory },
+        'mock',
+      );
+    }
+    const identitySession = await createIdentitySession(
+      { identityId: identity.id, deviceId: 'device-1', rememberDevice: false, passwordVersionAtIssue: identity.passwordVersion, idFactory },
+      'mock',
+    );
+    return { identity, identitySession };
+  }
+
+  it('grants access when the identity holds an active Membership in the requested organization', async () => {
+    const { identity, identitySession } = await seedIdentitySession('req-org-identity-ok@example.com', DEFAULT_ORGANIZATION_ID);
+    mockSession = {
+      user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' },
+      sessionId: identitySession.id,
+    } as never;
+
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(true);
+    if (result.authorized) {
+      expect(result.context).toEqual({ userId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff' });
+    }
+  });
+
+  it('rejects an organizationId the identity has no active Membership in', async () => {
+    const { identity, identitySession } = await seedIdentitySession('req-org-identity-mismatch@example.com', DEFAULT_ORGANIZATION_ID);
+    mockSession = {
+      user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' },
+      sessionId: identitySession.id,
+    } as never;
+
+    const result = await requireAuthorizedOrganization(SECOND_MOCK_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(403);
+  });
+
+  it('returns 401 when the identity session has been revoked', async () => {
+    const { revokeSession } = await import('../../services/sessionService');
+    const { identity, identitySession } = await seedIdentitySession('req-org-identity-revoked@example.com', DEFAULT_ORGANIZATION_ID);
+    await revokeSession(identitySession.id, 'mock');
+    mockSession = {
+      user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' },
+      sessionId: identitySession.id,
+    } as never;
+
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(401);
+  });
+});

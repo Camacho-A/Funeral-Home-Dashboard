@@ -35,5 +35,11 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|login|_next/static|_next/image|favicon.ico).*)'],
+  // Phase 21 (Identity, Authentication & Session Management) adds the four
+  // new public identity pages (forgot/reset password, verify email, accept
+  // invitation) alongside /login — every one of them is reached by someone
+  // who, by definition, has no valid session yet.
+  matcher: [
+    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|_next/static|_next/image|favicon.ico).*)',
+  ],
 };

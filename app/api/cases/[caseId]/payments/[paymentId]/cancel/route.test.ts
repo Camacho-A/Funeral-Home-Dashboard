@@ -11,11 +11,11 @@ vi.mock('@/lib/auth/session', () => ({
 
 const { POST } = await import('./route');
 
-function postCancel(caseId: string, paymentId: string, organizationId: unknown) {
+function postCancel(caseId: string, paymentId: string, organizationId: unknown, headers: Record<string, string> = {}) {
   return POST(
     new Request(`http://localhost/x`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
       body: JSON.stringify({ organizationId }),
     }),
     { params: Promise.resolve({ caseId, paymentId }) },
@@ -42,6 +42,11 @@ afterEach(() => {
 });
 
 describe('POST .../payments/[paymentId]/cancel', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await postCancel('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID, { origin: 'https://evil.example.com' });
+    expect(response.status).toBe(403);
+  });
+
   it('returns 401 with no session', async () => {
     mockSession = null;
     expect((await postCancel('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID)).status).toBe(401);

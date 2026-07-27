@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import type { AuthorizationContext } from '../../types/authorization';
 import { getSession } from './session';
 import { resolveAuthorizationContext } from './authorize';
+import { resolveIdentitySession } from './resolveIdentitySession';
+import { resolveMembershipAuthorizationContext } from './resolveMembershipAuthorizationContext';
+import { getDataAdapterMode } from '../env';
 
 /**
  * Phase 15X (Multi-Tenant Authorization Hardening). The one function every
@@ -35,6 +38,19 @@ import { resolveAuthorizationContext } from './authorize';
  * "do not leak organization existence or membership information" forbids.
  * No session at all is the only case distinguished (401 vs. 403) — that
  * distinction is standard HTTP semantics, not a membership-shaped leak.
+ *
+ * Phase 21 (Identity, Authentication & Session Management): branches on
+ * `session.user.source`, exactly like app/(portal)/layout.tsx does for
+ * page rendering — an `'identity'` session is re-validated against its
+ * server-side registry row (lib/auth/resolveIdentitySession.ts) and
+ * authorized against the Membership model (resolveMembershipAuthorization-
+ * Context.ts) instead of the mock-fixture-based resolveAuthorizationContext.
+ * Without this branch, every one of this function's ~14 existing callers
+ * (cases/tasks/workflow-templates/etc. Route Handlers) would 403 every
+ * identity-mode request, since resolveAuthorizationContext has no notion of
+ * the Membership model at all — this is the one central point that keeps
+ * every already-existing protected route working for the new auth mode
+ * with no per-route change required.
  */
 export type RouteAuthorizationResult =
   | { authorized: true; context: AuthorizationContext }
@@ -52,6 +68,19 @@ export async function requireAuthorizedOrganization(
   const session = await getSession();
   if (!session) {
     return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
+  }
+
+  if (session.user.source === 'identity') {
+    const dataAdapterMode = getDataAdapterMode();
+    const resolved = await resolveIdentitySession(session, dataAdapterMode);
+    if (!resolved.valid) {
+      return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
+    }
+    const result = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, requestedOrganizationId);
+    if (!result.granted) {
+      return { authorized: false, response: FORBIDDEN_RESPONSE() };
+    }
+    return { authorized: true, context: result.context };
   }
 
   const result = resolveAuthorizationContext(session, requestedOrganizationId);

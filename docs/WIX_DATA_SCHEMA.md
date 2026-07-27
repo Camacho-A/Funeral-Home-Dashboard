@@ -93,6 +93,23 @@ No "under 200 lb" row exists — a $0 weight surcharge is nothing to itemize, so
 
 Verified via a follow-up query: 19 collections total (the 4 Wix Members system collections + the 14 from Phases 14A/16B/19B/19C + these 4). Manor's Cremation's (`managed-cremations`) existing `organizations` row was backfilled with the nine new profile fields (`slug: 'manors-cremation'`, `status: 'active'`, etc.) — its pre-existing `name`/`isActive` values were left untouched — and its migration was run live: a primary `organizationLocations` row was created (Manor's never had one before this phase), its existing `workflowTemplates`/`serviceCatalog`/`paymentIntegrations` rows were confirmed present (none recreated or modified), and a `completed`-status `onboardingSessions` row plus one `onboardingAuditEntries` row were recorded. See the phase report for the exact resulting record ids.
 
+## Creation record (Phase 21, 2026-07-25)
+
+`identities` (Collection 19), `sessions` (Collection 20), `emailVerificationTokens` (Collection 21), `passwordResetTokens` (Collection 22), and `loginActivityEvents` (Collection 23) were created the same way, via the same REST endpoints, using the same gitignored API key. `organizationMemberships` (Collection 2) was extended in place to serve a second, independent row shape — see its own section above for the full story of the name collision this surfaced and how it was resolved. See [ADR-025](./adr/ADR-025-identity-authentication-architecture.md).
+
+| Collection | Fields (incl. 4 system fields) | Indexes created | Permissions |
+|---|---|---|---|
+| `identities` | 15 + 4 | `unique_normalizedEmail` (unique), `beaconIdentityId` (regular) | ADMIN ×4 |
+| `sessions` | 13 + 4 | `identityId` (regular), `beaconSessionId` (regular) | ADMIN ×4 |
+| `emailVerificationTokens` | 6 + 4 | `unique_tokenHash` (unique), `identityId` (regular) | ADMIN ×4 |
+| `passwordResetTokens` | 6 + 4 | `unique_tokenHash` (unique), `identityId` (regular) | ADMIN ×4 |
+| `loginActivityEvents` | 7 + 4 | `identityId` (regular) | ADMIN ×4 |
+| `organizationMemberships` (extended) | 10 + 4 (was 6 + 4) | `identityId` (regular, new) added alongside the pre-existing `userId_organizationId` | ADMIN ×4 (unchanged) |
+
+Verified via a follow-up `GET /wix-data/v2/collections` (list): 27 collections total (the 4 Wix Members system collections + the 18 from Phases 14A/16B/19B/19C/20 + these 5 new ones; `organizationMemberships` extended in place, not counted twice). The identity migration (`services/identityMigrationService.ts`'s `migrateExistingUsers`) was run live against `DATA_ADAPTER=wix`, migrating all three named mock identities from `services/__mocks__/authFixtures.ts` (Dana/Manor's Cremation administrator, the multi-org test user, and the inactive-membership test user) into real `identities`/`organizationMemberships` rows — 3 identities created, 4 memberships created (one carried over as `status: 'disabled'`, preserving the legacy inactive row rather than dropping it), 0 pre-existing (the collection held zero rows before this run). Re-run immediately afterward to confirm idempotency: 0 created, all 3 identities / 4 memberships reported as already existing, identical ids returned both times. A full live auth round-trip was also verified for Manor's Cremation's migrated administrator identity: forgot-password token creation, password reset, and both correct- and incorrect-password verification all succeeded against the live collections (that identity's demo password was subsequently rotated during the post-approval security review — see the phase report). See the phase report for exact resulting record ids.
+
+**Cross-cutting principle correction:** point 4 below ("No secrets, tokens, or passwords are stored in any collection") no longer holds universally as of this phase — `identities.passwordHash`/`mfaSecretReference` and `emailVerificationTokens`/`passwordResetTokens`' `tokenHash` are secret-*adjacent* fields (a salted hash, an AES-256-GCM encrypted value, and a SHA-256 hash respectively — never a plaintext password, raw token, or Wix/session credential). The original principle's actual intent — no *plaintext* secret or Wix/session credential ever lands in Wix Data — still holds exactly as stated.
+
 ## Cross-cutting principles
 
 1. **Wix metadata is kept separate from Beacon domain identifiers.** Every collection has Wix's own system `_id` (opaque, Wix-managed, never referenced by Beacon code) *and* an explicit `beacon<Thing>Id` text field — a Beacon-generated stable string id matching the existing `id` field on the corresponding `types/*.ts` type. Every cross-collection reference below is a plain text field holding another collection's `beacon<Thing>Id`, not a formal Wix "Reference" field type (which keys off system `_id`) — so Beacon's own code, including `resolveAuthorizationContext`, never has to reason about a Wix-internal identifier.
@@ -132,21 +149,29 @@ This is a deliberate change in direction from what the current codebase actually
 
 ## Collection 2 — `organizationMemberships`
 
-**Purpose:** connects an authenticated identity to an organization with a role — the real data source `resolveAuthorizationContext()` (Phase 13) needs; today it reads mock fixtures regardless of `DATA_ADAPTER`. **Ownership:** organization-owned join record. **Retention:** deactivate via `isActive=false`, never hard-deleted (preserves an access audit trail).
+**Purpose:** connects an authenticated identity to an organization with a role. **Ownership:** organization-owned join record. **Retention:** never hard-deleted (preserves an access audit trail).
 
-| Field | Type | Required | Mutable |
-|---|---|---|---|
-| `beaconMembershipId` | Text | Required | Immutable |
-| `organizationId` | Text | Required | Immutable — → `organizations.beaconOrganizationId` |
-| `userId` | Text | Required | Immutable — Wix member `_id` or a Beacon-issued id; never a `StaffProfile.id` |
-| `identitySource` | Text enum (`wix` \| `other`) | Required | Immutable |
-| `role` | Text enum (`owner`\|`administrator`\|`caseManager`\|`staff`\|`readOnly`) | Required | Mutable |
-| `isActive` | Boolean | Required | Mutable (default `true`) |
+**Phase 21 correction (2026-07-25): this collection now holds two independent row shapes side by side, discovered and resolved during Phase 21's live-Wix step.** The Phase 21 identity system's own `services/membershipService.ts`/`lib/wixMembershipMapper.ts` were designed and built (Task 130/131) under the mistaken belief that no live Wix collection named `organizationMemberships` existed yet — `lib/auth/authorize.ts`'s pre-existing comment ("no real Wix membership data collection exists yet") was accurate about *no code reading it*, not about the collection's *existence*: it was in fact created back in Phase 14A and has sat empty and unread ever since. This was only caught at Phase 21's own live-verification step (this document's own Phase 14A record, above, was the tell), not during design — flagged and resolved with the user before any live schema change was made. The user's explicit choice: **extend the existing collection's schema to serve both models, rather than route Phase 21 into a differently-named collection.**
 
-- **Indexes:** unique composite `(userId, organizationId)`; index on `organizationId`.
-- **Permissions:** backend/Admin only — not even member-self read. A logged-in user must never read their own role or other-org memberships directly; only server code resolves this.
-- **TS type:** extends `types/organization.ts`'s `OrganizationMembership` with `beaconMembershipId` and `identitySource` (the existing TS type has no id field of its own today).
-- **Mapping:** `organizationId → organizationId`, `userId → userId`, `role → role`, `isActive → isActive`.
+Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `userId`, `identitySource`, `role`, `isActive`) were resent via `PUT /wix-data/v2/collections` (revision 1→2) with `userId`/`identitySource`/`isActive` relaxed from `required: true` to `required: false` (a Phase 21 row has none of the three), alongside six new fields for the Phase 21 `Membership` model. `beaconMembershipId`, `organizationId`, and `role` are shared verbatim between both models — same meaning, same 5-value role enum — so they were left untouched. Live-verified with zero data loss: the collection held **zero rows** at the time of this change (confirmed via a query immediately before extending it), so there was no existing data to migrate or risk.
+
+| Field | Type | Required | Mutable | Model |
+|---|---|---|---|---|
+| `beaconMembershipId` | Text | Required | Immutable | Shared |
+| `organizationId` | Text | Required | Immutable — → `organizations.beaconOrganizationId` | Shared |
+| `role` | Text enum (`owner`\|`administrator`\|`caseManager`\|`staff`\|`readOnly`) | Required | Mutable | Shared |
+| `userId` | Text | Optional (Phase 21 correction: was Required) | Immutable — Wix member `_id` or a Beacon-issued id; never a `StaffProfile.id` | Legacy (`AUTH_ADAPTER=mock\|wix`) |
+| `identitySource` | Text enum (`wix` \| `other`) | Optional (Phase 21 correction: was Required) | Immutable | Legacy |
+| `isActive` | Boolean | Optional (Phase 21 correction: was Required) | Mutable (default `true`) | Legacy |
+| `identityId` | Text | Optional | Immutable — → `identities.beaconIdentityId` | Phase 21 |
+| `status` | Text enum (`invited`\|`active`\|`disabled`\|`removed`) | Optional | Mutable | Phase 21 |
+| `invitedBy` | Text, nullable | Optional | Immutable — the inviting identity's id | Phase 21 |
+| `joinedAt` | Text (ISO timestamp), nullable | Optional | Mutable — set once on `invited`→`active` | Phase 21 |
+| `createdAt`, `updatedAt` | Text (ISO timestamp) | Optional | `createdAt` immutable, `updatedAt` mutable | Phase 21 |
+
+- **Indexes:** `userId_organizationId` (regular composite, pre-existing) plus a new `identityId` (regular, Phase 21) — 2 of 3 regular index slots now used, 0 of 1 unique. A row belongs to exactly one model at a time in practice (an application-level convention, not a database constraint Wix Data can express across two disjoint field sets); `services/membershipService.ts` only ever reads/writes the Phase 21 fields, `lib/auth/authorize.ts`'s `resolveAuthorizationContext` still reads mock fixtures unchanged and has never queried this collection at all (unaffected either way).
+- **Permissions:** backend/Admin only, unchanged.
+- **TS types:** legacy rows map to `types/organization.ts`'s `OrganizationMembership`; Phase 21 rows map to `types/membership.ts`'s `Membership` (see that file's own comment on why these are two deliberately separate types, not a shared one).
 
 ## Collection 3 — `workflowTemplates` (template identity)
 
@@ -481,6 +506,107 @@ This is a deliberate change in direction from what the current codebase actually
 - **Indexes:** `organizationId` (regular) — serves "list this organization's full onboarding audit history."
 - **TS type:** `types/onboardingAudit.ts`'s `OnboardingAuditEntry`.
 
+## Collection 19 — `identities`
+
+**Purpose:** a real, Beacon-owned identity — email/password login, invitations, MFA (Phase 21). Answers "who is this person," never which organizations they belong to or what they can do there. **Ownership:** not organization-scoped — one identity can belong to many organizations via `organizationMemberships`. **Retention:** never hard-deleted; `status: 'deleted'` instead.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconIdentityId` | Text | Required | Immutable |
+| `email` | Text | Required | Mutable |
+| `normalizedEmail` | Text | Required | Mutable — lowercased/trimmed; the field every uniqueness check keys on |
+| `displayName` | Text | Required | Mutable |
+| `status` | Text enum (`pending`\|`active`\|`locked`\|`disabled`\|`deleted`) | Required | Mutable |
+| `emailVerified` | Boolean | Required | Mutable |
+| `passwordVersion` | Number | Required | Mutable — incremented on every password change |
+| `mfaEnabled` | Boolean | Required | Mutable |
+| `lastLoginAt` | Text (ISO timestamp), nullable | Optional | Mutable |
+| `createdAt`, `updatedAt` | Text (ISO timestamp) | Required | `createdAt` immutable, `updatedAt` mutable |
+| `passwordHash` | Text, nullable | Optional | Mutable — secret. `{saltHex}:{derivedKeyHex}` via `scryptSync`, never a plaintext password |
+| `mfaSecretReference` | Text, nullable | Optional | Mutable — secret. AES-256-GCM encrypted TOTP secret, decryptable only server-side |
+| `mfaVerifiedAt` | Text (ISO timestamp), nullable | Optional | Mutable |
+| `mfaRecoveryCodeHashes` | Array\<Text\> | Optional | Mutable — secret. SHA-256 hashes only, spliced out as each code is consumed |
+
+- **Indexes:** `unique_normalizedEmail` (unique — the mechanism behind "identity must never be duplicated between organizations": `findOrCreateIdentity` inserts and catches the 409 on a race); `beaconIdentityId` (regular, single-record lookup).
+- **Permissions:** backend/Admin only. Never member-self read — even the identity's own row is only ever read through `services/identityService.ts`'s narrow accessors, and secrets (`passwordHash`/`mfa*`) are only ever read/written by `services/passwordService.ts`/`services/mfaService.ts`.
+- **TS types:** `types/identity.ts`'s `Identity` (public fields) and `IdentitySecrets` (the four secret fields) — deliberately split into two TS types even though they live on the same Wix row, so no caller of the public accessor can accidentally receive a secret field.
+
+## Collection 20 — `sessions`
+
+**Purpose:** the server-side session *registry* for `AUTH_ADAPTER=identity` logins — makes revocation, "sign out everywhere," sliding expiration, and device listing possible for a session whose signed cookie (`lib/auth/sessionToken.ts`) is otherwise stateless. **Ownership:** identity-owned, not organization-owned (an identity can have sessions with no organization selected yet).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconSessionId` | Text | Required | Immutable |
+| `identityId` | Text | Required | Immutable — → `identities.beaconIdentityId` |
+| `organizationId` | Text, nullable | Optional | Mutable — which organization this session is *currently* viewing; null until chosen |
+| `deviceId` | Text | Required | Immutable |
+| `deviceName` | Text, nullable | Optional | Immutable |
+| `ipAddress` | Text, nullable | Optional | Immutable |
+| `userAgent` | Text, nullable | Optional | Immutable |
+| `expiresAt` | Text (ISO timestamp) | Required | Mutable — sliding, extended on every validated request |
+| `lastSeenAt` | Text (ISO timestamp) | Required | Mutable |
+| `rememberDevice` | Boolean | Required | Immutable |
+| `passwordVersionAtIssue` | Number | Required | Mutable — see `services/sessionService.ts`'s `refreshSessionPasswordVersion`; a mismatch against the identity's current `passwordVersion` invalidates the session regardless of `revokedAt`/`expiresAt` |
+| `revokedAt` | Text (ISO timestamp), nullable | Optional | Mutable |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `identityId` (regular — "list my active sessions"/"sign out everywhere"), `beaconSessionId` (regular — single-session lookup by the signed cookie's own claim).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/identitySession.ts`'s `IdentitySession`.
+
+## Collection 21 — `emailVerificationTokens`
+
+**Purpose:** single-use, hashed tokens proving email ownership — drives both plain signup verification and invitation acceptance (see `types/membership.ts`'s comment on why there is no separate invitation-token type). **Ownership:** identity-owned.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconTokenId` | Text | Required | Immutable |
+| `identityId` | Text | Required | Immutable |
+| `tokenHash` | Text | Required | Immutable — SHA-256 hash only; the raw token is never persisted anywhere |
+| `expiresAt` | Text (ISO timestamp) | Required | Immutable |
+| `usedAt` | Text (ISO timestamp), nullable | Optional | Mutable — set once, single-use enforcement |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `unique_tokenHash` (unique — a raw token is 32 random bytes; collision probability is negligible, and uniqueness also serves as a fast, correct lookup), `identityId` (regular).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/emailVerificationToken.ts`'s `EmailVerificationToken`.
+
+## Collection 22 — `passwordResetTokens`
+
+**Purpose:** single-use, hashed tokens for the forgot-password flow. **Ownership:** identity-owned. Structurally identical to Collection 21 — a deliberately separate collection rather than one shared token table, so a verification token and a reset token can never be confused with each other by type alone.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconTokenId` | Text | Required | Immutable |
+| `identityId` | Text | Required | Immutable |
+| `tokenHash` | Text | Required | Immutable |
+| `expiresAt` | Text (ISO timestamp) | Required | Immutable |
+| `usedAt` | Text (ISO timestamp), nullable | Optional | Mutable |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `unique_tokenHash` (unique), `identityId` (regular).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/passwordResetToken.ts`'s `PasswordResetToken`.
+
+## Collection 23 — `loginActivityEvents`
+
+**Purpose:** the audit trail behind brute-force protection, account lockout, and "Login Activity" (login succeeded/failed, password reset, email verified, invitation accepted, MFA enabled/disabled, session revoked). **Ownership:** identity-owned where known; `identityId`/`organizationId` are both nullable so a failed attempt against an *unknown* email can still be recorded without leaking whether that email exists.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconEventId` | Text | Required | Immutable |
+| `identityId` | Text, nullable | Optional | Immutable — null for a failed attempt against an unknown email |
+| `organizationId` | Text, nullable | Optional | Immutable |
+| `eventType` | Text enum (`login_succeeded`\|`login_failed`\|`password_reset`\|`email_verified`\|`invitation_accepted`\|`mfa_enabled`\|`mfa_disabled`\|`session_revoked`) | Required | Immutable |
+| `ipAddress` | Text, nullable | Optional | Immutable |
+| `userAgent` | Text, nullable | Optional | Immutable |
+| `timestamp` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `identityId` (regular — `services/accountRecoveryService.ts`'s `countRecentFailedAttempts` fetches every event for an identity and filters by timestamp in application code, deliberately not relying on an unverified Wix Data range-filter operator).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/loginActivityEvent.ts`'s `LoginActivityEvent`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -491,7 +617,7 @@ This is a deliberate change in direction from what the current codebase actually
 | `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all eighteen collections)
+## Permissions summary (all twenty-three collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -504,7 +630,8 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Cases by current stage | `cases (organizationId, currentStage)` |
 | Cases by handler | `cases (organizationId, caseHandlerId)` |
 | Tasks by organization and status | `tasks (organizationId, isDone)` |
-| Membership lookup by authenticated identity | `organizationMemberships (userId, organizationId)` unique |
+| Legacy membership lookup by authenticated identity | `organizationMemberships (userId, organizationId)` (regular, not unique — corrected 2026-07-25; empirically re-confirmed non-unique, matching this document's own earlier "true composite-unique constraints are not supported" correction) |
+| Phase 21 membership lookup by identity | `organizationMemberships (identityId)` (regular) |
 | Enabled workflow templates by organization and case type | `workflowTemplates (organizationId, isEnabled)` + `caseTypes` |
 | Atomic duplicate-checkout-attempt prevention (correction pass) | `paymentRecords (idempotencyKey)` unique |
 | Payment history for one case | `paymentRecords (organizationId, caseId)` |
@@ -520,6 +647,15 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Onboarding session by organization / by starting user | `onboardingSessions (organizationId)` / `onboardingSessions (startedByUserId)` |
 | Branding for one organization | `organizationBranding (organizationId)` |
 | Onboarding audit history for one organization | `onboardingAuditEntries (organizationId)` |
+| Identity uniqueness + lookup by email | `identities (normalizedEmail)` unique |
+| Identity lookup by id | `identities (beaconIdentityId)` |
+| Active/all sessions for one identity | `sessions (identityId)` |
+| Session lookup by id (from the signed cookie's claim) | `sessions (beaconSessionId)` |
+| Email verification token lookup (uniqueness + lookup) | `emailVerificationTokens (tokenHash)` unique |
+| Verification tokens for one identity | `emailVerificationTokens (identityId)` |
+| Password reset token lookup (uniqueness + lookup) | `passwordResetTokens (tokenHash)` unique |
+| Reset tokens for one identity | `passwordResetTokens (identityId)` |
+| Login/lockout activity for one identity | `loginActivityEvents (identityId)` |
 
 ## Migration notes
 

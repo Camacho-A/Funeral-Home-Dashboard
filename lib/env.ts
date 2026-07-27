@@ -35,7 +35,7 @@ export function getDataAdapterMode(): DataAdapterMode {
   return raw;
 }
 
-export type AuthAdapterMode = 'mock' | 'wix';
+export type AuthAdapterMode = 'mock' | 'wix' | 'identity';
 
 /**
  * Which login provider app/login/actions.ts and app/login/page.tsx use.
@@ -44,12 +44,18 @@ export type AuthAdapterMode = 'mock' | 'wix';
  * login) is a fully supported, and expected, local development
  * combination. See docs/AUTHENTICATION.md's "Development vs. production
  * adapter combinations" section.
+ *
+ * Phase 21 (Identity, Authentication & Session Management) adds
+ * `"identity"` — Beacon's own real email+password identity system
+ * (`services/identityService.ts` and friends). Purely additive: `"mock"`
+ * and `"wix"` behave exactly as before. See
+ * docs/adr/ADR-025-identity-authentication-architecture.md.
  */
 export function getAuthAdapterMode(): AuthAdapterMode {
   const raw = (process.env.AUTH_ADAPTER ?? 'mock').trim().toLowerCase();
-  if (raw !== 'mock' && raw !== 'wix') {
+  if (raw !== 'mock' && raw !== 'wix' && raw !== 'identity') {
     throw new Error(
-      `Invalid AUTH_ADAPTER value "${process.env.AUTH_ADAPTER}" — must be "mock" or "wix". See docs/AUTHENTICATION.md.`,
+      `Invalid AUTH_ADAPTER value "${process.env.AUTH_ADAPTER}" — must be "mock", "wix", or "identity". See docs/AUTHENTICATION.md.`,
     );
   }
   return raw;

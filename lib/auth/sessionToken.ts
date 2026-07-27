@@ -56,20 +56,26 @@ function isValidAuthSessionShape(value: unknown): value is AuthSession {
     typeof candidate.user.id === 'string' &&
     typeof candidate.user.email === 'string' &&
     typeof candidate.user.displayName === 'string' &&
-    (candidate.user.source === 'mock' || candidate.user.source === 'wix')
+    (candidate.user.source === 'mock' || candidate.user.source === 'wix' || candidate.user.source === 'identity') &&
+    (candidate.sessionId === undefined || typeof candidate.sessionId === 'string')
   );
 }
 
 /** Builds a fresh, signed session token for a user, expiring
-    SESSION_DURATION_SECONDS from now. */
+    SESSION_DURATION_SECONDS from now. `sessionId` (Phase 21) links an
+    `'identity'`-source token to its server-side `IdentitySession` registry
+    row — omitted entirely for `'mock'`/`'wix'` sessions, which have no
+    such row. */
 export async function createSessionToken(
   user: AuthSession['user'],
   now: number = Math.floor(Date.now() / 1000),
+  sessionId?: string,
 ): Promise<string> {
   const payload: AuthSession = {
     user,
     issuedAt: now,
     expiresAt: now + SESSION_DURATION_SECONDS,
+    ...(sessionId ? { sessionId } : {}),
   };
 
   const payloadPart = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));

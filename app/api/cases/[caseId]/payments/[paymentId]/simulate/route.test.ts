@@ -12,11 +12,11 @@ vi.mock('@/lib/auth/session', () => ({
 
 const { POST } = await import('./route');
 
-function postSimulate(caseId: string, paymentId: string, organizationId: unknown) {
+function postSimulate(caseId: string, paymentId: string, organizationId: unknown, headers: Record<string, string> = {}) {
   return POST(
     new Request(`http://localhost/x`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
       body: JSON.stringify({ organizationId }),
     }),
     { params: Promise.resolve({ caseId, paymentId }) },
@@ -52,6 +52,11 @@ afterEach(() => {
 });
 
 describe('POST .../payments/[paymentId]/simulate', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await postSimulate(knownCaseId, 'payment-1', DEFAULT_ORGANIZATION_ID, { origin: 'https://evil.example.com' });
+    expect(response.status).toBe(403);
+  });
+
   it('returns 400 in wix mode — simulated outcomes are mock-only', async () => {
     process.env.DATA_ADAPTER = 'wix';
     const response = await postSimulate(knownCaseId, 'payment-1', DEFAULT_ORGANIZATION_ID);

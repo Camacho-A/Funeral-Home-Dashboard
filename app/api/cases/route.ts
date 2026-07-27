@@ -10,6 +10,7 @@ import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
 import type { Case } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 
 /**
  * Phase 15C (Wix Case Read Integration). Lists cases for one organization
@@ -106,6 +107,9 @@ export async function GET(request: Request) {
  * docs/adr/ADR-018-case-number-generation.md.
  */
 export async function POST(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   let body: unknown;
   try {
     body = await request.json();

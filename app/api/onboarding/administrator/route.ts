@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { assignInitialAdministrator, markStepCompleted } from '@/services/organizationProvisioningService';
 
@@ -18,6 +19,9 @@ import { assignInitialAdministrator, markStepCompleted } from '@/services/organi
  * permissions" structurally, not just by convention.
  */
 export async function PATCH(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
   const b = parsed.body;

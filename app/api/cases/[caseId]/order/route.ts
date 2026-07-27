@@ -4,6 +4,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import {
   getActiveCaseOrder,
@@ -54,6 +55,9 @@ async function parseAuthorizedBody(
   | { ok: true; organizationId: string; selections: unknown; performedBy: string }
   | { ok: false; response: NextResponse }
 > {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return { ok: false, response: csrfResponse };
+
   let body: unknown;
   try {
     body = await request.json();

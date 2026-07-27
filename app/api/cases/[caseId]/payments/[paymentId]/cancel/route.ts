@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsService';
 
 /**
@@ -19,6 +20,9 @@ import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsSe
  * cancel redirect to the server) — never overwrites a real outcome.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string; paymentId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const { caseId, paymentId } = await params;
 
   let body: unknown;

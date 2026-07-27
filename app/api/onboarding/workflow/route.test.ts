@@ -54,11 +54,17 @@ async function seedSession() {
   );
 }
 
-function patchRequest(body: unknown) {
-  return PATCH(new Request('http://localhost/api/onboarding/workflow', { method: 'PATCH', body: JSON.stringify(body) }));
+function patchRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
+  return PATCH(new Request('http://localhost/api/onboarding/workflow', { method: 'PATCH', headers, body: JSON.stringify(body) }));
 }
 
 describe('PATCH /api/onboarding/workflow', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const { session } = await seedSession();
+    const response = await patchRequest({ mode: 'starter', onboardingSessionId: session.id }, { origin: 'https://evil.example.com', host: 'localhost' });
+    expect(response.status).toBe(403);
+  });
+
   it('returns 403 for an unrelated user', async () => {
     const { session } = await seedSession();
     mockSession = { user: mockMultiOrgUser };

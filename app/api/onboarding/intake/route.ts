@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { provisionIntakeConfiguration, markStepCompleted } from '@/services/organizationProvisioningService';
 
@@ -15,6 +16,9 @@ import { provisionIntakeConfiguration, markStepCompleted } from '@/services/orga
  * defensively filters them (see its own comment).
  */
 export async function PATCH(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
   const b = parsed.body;

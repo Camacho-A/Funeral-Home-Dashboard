@@ -8,6 +8,7 @@ import {
   type WixTaskItem,
 } from '@/lib/wixTaskMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 
 /**
  * Phase 16 (Wix Write Integration). Updates or deletes one task by its
@@ -37,6 +38,9 @@ async function findAuthorizedTask(taskId: string, organizationId: string) {
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ taskId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const { taskId } = await params;
 
   let body: unknown;
@@ -88,6 +92,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ taskId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const { taskId } = await params;
   const requestedOrganizationId = new URL(request.url).searchParams.get('organizationId');
   if (!requestedOrganizationId) {

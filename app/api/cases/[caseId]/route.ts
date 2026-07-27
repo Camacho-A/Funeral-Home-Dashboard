@@ -4,6 +4,7 @@ import { queryWixDataItems, updateWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, validateAndPickCaseUpdate, applyCaseUpdateToWixData, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 
 /**
@@ -79,6 +80,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
  * full object, never sent as a bare partial.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const { caseId } = await params;
 
   let body: unknown;

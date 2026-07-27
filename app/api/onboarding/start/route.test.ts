@@ -19,8 +19,8 @@ const VALID_BODY = {
   defaultCurrency: 'usd',
 };
 
-function postRequest(body: unknown) {
-  return POST(new Request('http://localhost/api/onboarding/start', { method: 'POST', body: JSON.stringify(body) }));
+function postRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
+  return POST(new Request('http://localhost/api/onboarding/start', { method: 'POST', headers, body: JSON.stringify(body) }));
 }
 
 let orgLengthBefore: number;
@@ -39,6 +39,11 @@ afterEach(() => {
 });
 
 describe('POST /api/onboarding/start — authorization', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await postRequest(VALID_BODY, { origin: 'https://evil.example.com', host: 'localhost' });
+    expect(response.status).toBe(403);
+  });
+
   it('returns 401 with no session', async () => {
     mockSession = null;
     expect((await postRequest(VALID_BODY)).status).toBe(401);
@@ -52,7 +57,9 @@ describe('POST /api/onboarding/start — authorization', () => {
 
 describe('POST /api/onboarding/start — validation', () => {
   it('returns 400 for invalid JSON', async () => {
-    const response = await POST(new Request('http://localhost/x', { method: 'POST', body: '{not json' }));
+    const response = await POST(
+      new Request('http://localhost/x', { method: 'POST', headers: { origin: 'http://localhost', host: 'localhost' }, body: '{not json' }),
+    );
     expect(response.status).toBe(400);
   });
 

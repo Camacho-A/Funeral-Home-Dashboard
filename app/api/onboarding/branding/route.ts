@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { saveBranding, markStepCompleted } from '@/services/organizationProvisioningService';
 
@@ -11,6 +12,9 @@ import { saveBranding, markStepCompleted } from '@/services/organizationProvisio
  * structural guarantee.
  */
 export async function PATCH(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
   const b = parsed.body;

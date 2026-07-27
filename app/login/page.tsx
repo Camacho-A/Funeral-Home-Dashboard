@@ -15,7 +15,22 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_active_membership: 'Your account is not currently associated with an organization.',
   organization_mismatch: 'Your account is not currently associated with an organization.',
   selection_required: 'Your account belongs to more than one organization. Contact an administrator.',
+  // Phase 21 (Identity, Authentication & Session Management) — from
+  // app/login/actions.ts's identity branch and
+  // lib/auth/resolveIdentitySession.ts (via app/(portal)/layout.tsx).
+  account_locked: 'Too many failed attempts. Your account is temporarily locked — try again in a few minutes.',
+  mfa_required: 'Multi-factor authentication is required for this account. This login flow does not yet support it.',
+  revoked: 'This session was signed out. Please sign in again.',
+  expired: 'Your session has expired. Please sign in again.',
+  password_changed: 'Your password was recently changed. Please sign in again.',
+  session_not_found: 'Your session is no longer valid. Please sign in again.',
+  identity_not_active: 'Your account is not currently active.',
   unknown: 'Something went wrong. Please try again.',
+};
+
+const NOTICE_MESSAGES: Record<string, string> = {
+  password_reset: 'Your password has been reset. Please sign in.',
+  invitation_accepted: 'Your account is ready. Please sign in.',
 };
 
 /**
@@ -39,12 +54,13 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; notice?: string }>;
 }) {
-  const { next: rawNext, error } = await searchParams;
+  const { next: rawNext, error, notice } = await searchParams;
   const next = sanitizeRedirectPath(rawNext);
   const authAdapter = getAuthAdapterMode();
   const errorMessage = error ? (ERROR_MESSAGES[error] ?? ERROR_MESSAGES.unknown) : null;
+  const noticeMessage = !errorMessage && notice ? NOTICE_MESSAGES[notice] : null;
 
   return (
     <div className={styles.page}>
@@ -55,6 +71,11 @@ export default async function LoginPage({
         {errorMessage && (
           <div className={styles.error} role="alert">
             {errorMessage}
+          </div>
+        )}
+        {noticeMessage && (
+          <div className={styles.success} role="status">
+            {noticeMessage}
           </div>
         )}
 
@@ -80,11 +101,22 @@ export default async function LoginPage({
               className={styles.input}
             />
           </label>
+          {authAdapter === 'identity' && (
+            <label className={styles.label}>
+              <input type="checkbox" name="rememberDevice" />
+              {' '}Remember this device
+            </label>
+          )}
           <button type="submit" className={styles.submit}>
-            {authAdapter === 'wix' ? 'Sign in with Wix' : 'Sign In (Development)'}
+            {authAdapter === 'wix' ? 'Sign in with Wix' : authAdapter === 'identity' ? 'Sign In' : 'Sign In (Development)'}
           </button>
         </form>
 
+        {authAdapter === 'identity' && (
+          <p className={styles.hint}>
+            <a className={styles.hintLink} href="/forgot-password">Forgot password?</a>
+          </p>
+        )}
         {authAdapter === 'mock' && (
           <p className={styles.hint}>
             Mock mode — sign in with {MOCK_LOGIN_EMAIL} / {MOCK_LOGIN_PASSWORD}

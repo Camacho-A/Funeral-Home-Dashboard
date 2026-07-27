@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NewCaseModal } from '@/components/modals/NewCaseModal';
@@ -16,14 +17,20 @@ import styles from './AppShell.module.css';
  * opens has to live at this same shared-chrome level rather than in a
  * specific route. Became a Client Component for this reason.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  authAdapterMode,
+}: {
+  children: React.ReactNode;
+  authAdapterMode?: AuthAdapterMode;
+}) {
   const [isNewCaseModalOpen, setNewCaseModalOpen] = useState(false);
 
   return (
     <div className={styles.shell}>
       <Sidebar />
       <div className={styles.mainColumn}>
-        <TopBar onNewCaseClick={() => setNewCaseModalOpen(true)} />
+        <TopBar onNewCaseClick={() => setNewCaseModalOpen(true)} authAdapterMode={authAdapterMode} />
         <main id="main-content" className={styles.content}>
           {children}
         </main>

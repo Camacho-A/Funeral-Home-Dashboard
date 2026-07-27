@@ -45,14 +45,16 @@ function getRequest(caseId: string, organizationId: string | null) {
   return GET(new Request(url), { params: Promise.resolve({ caseId }) });
 }
 
-function postRequest(caseId: string, body: unknown) {
-  return POST(new Request(`http://localhost/api/cases/${caseId}/order`, { method: 'POST', body: JSON.stringify(body) }), {
+const SAME_ORIGIN_HEADERS = { origin: 'http://localhost', host: 'localhost' };
+
+function postRequest(caseId: string, body: unknown, headers: Record<string, string> = SAME_ORIGIN_HEADERS) {
+  return POST(new Request(`http://localhost/api/cases/${caseId}/order`, { method: 'POST', headers, body: JSON.stringify(body) }), {
     params: Promise.resolve({ caseId }),
   });
 }
 
-function patchRequest(caseId: string, body: unknown) {
-  return PATCH(new Request(`http://localhost/api/cases/${caseId}/order`, { method: 'PATCH', body: JSON.stringify(body) }), {
+function patchRequest(caseId: string, body: unknown, headers: Record<string, string> = SAME_ORIGIN_HEADERS) {
+  return PATCH(new Request(`http://localhost/api/cases/${caseId}/order`, { method: 'PATCH', headers, body: JSON.stringify(body) }), {
     params: Promise.resolve({ caseId }),
   });
 }
@@ -89,6 +91,15 @@ describe('GET /api/cases/[caseId]/order', () => {
 });
 
 describe('POST /api/cases/[caseId]/order', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await postRequest(
+      KNOWN_CASE().id,
+      { organizationId: DEFAULT_ORGANIZATION_ID, selections: {}, performedBy: 'Jordan Ellis' },
+      { origin: 'https://evil.example.com', host: 'localhost' },
+    );
+    expect(response.status).toBe(403);
+  });
+
   it('returns 401 with no session', async () => {
     mockSession = null;
     const response = await postRequest(KNOWN_CASE().id, {
@@ -147,6 +158,15 @@ describe('POST /api/cases/[caseId]/order', () => {
 });
 
 describe('PATCH /api/cases/[caseId]/order', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await patchRequest(
+      KNOWN_CASE().id,
+      { organizationId: DEFAULT_ORGANIZATION_ID, selections: {}, performedBy: 'Jordan Ellis' },
+      { origin: 'https://evil.example.com', host: 'localhost' },
+    );
+    expect(response.status).toBe(403);
+  });
+
   it('returns 404 when the case has no order to edit', async () => {
     const response = await patchRequest(KNOWN_CASE().id, {
       organizationId: DEFAULT_ORGANIZATION_ID,

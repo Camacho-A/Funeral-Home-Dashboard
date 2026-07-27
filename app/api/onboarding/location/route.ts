@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { createPrimaryLocation, markStepCompleted } from '@/services/organizationProvisioningService';
 import { validatePrimaryLocation } from '@/domain/onboarding/validation';
@@ -9,6 +10,9 @@ import { validatePrimaryLocation } from '@/domain/onboarding/validation';
     Primary Location. Idempotent: retrying returns the org's existing
     primary location unchanged (see createPrimaryLocation's own comment). */
 export async function PATCH(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
   const b = parsed.body;

@@ -87,11 +87,16 @@ async function seedFullyProvisionedSession() {
   return { organization, session: current };
 }
 
-function postRequest(body: unknown) {
-  return POST(new Request('http://localhost/api/onboarding/complete', { method: 'POST', body: JSON.stringify(body) }));
+function postRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
+  return POST(new Request('http://localhost/api/onboarding/complete', { method: 'POST', headers, body: JSON.stringify(body) }));
 }
 
 describe('POST /api/onboarding/complete', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const { session } = await seedIncompleteSession();
+    const response = await postRequest({ onboardingSessionId: session.id }, { origin: 'https://evil.example.com', host: 'localhost' });
+    expect(response.status).toBe(403);
+  });
 
   it('returns 403 for an unrelated user', async () => {
     const { session } = await seedIncompleteSession();

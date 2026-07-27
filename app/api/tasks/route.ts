@@ -6,6 +6,7 @@ import type { WixCaseItem } from '@/lib/wixCaseMapper';
 import { taskFixtures } from '@/services/__mocks__/fixtures';
 import type { CaseTask } from '@/types/task';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 
 /**
  * Phase 15D (Wix Task Read Integration). Lists tasks for one organization,
@@ -84,6 +85,9 @@ export async function GET(request: Request) {
  * silently ignored or silently linked anyway.
  */
 export async function POST(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   let body: unknown;
   try {
     body = await request.json();

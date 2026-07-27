@@ -17,7 +17,16 @@ import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
  * Phase 19B (Clover Hosted Checkout Integration). Public endpoint — no
  * session, no organizationId query param; Clover itself is the caller.
  * Authenticity comes entirely from the `Clover-Signature` header (see
- * lib/clover/cloverWebhook.ts). This is the one authoritative source for
+ * lib/clover/cloverWebhook.ts).
+ *
+ * Deliberately exempt from the Origin/Host CSRF check
+ * (lib/auth/csrf.ts's requireSameOrigin, applied to every other
+ * state-changing Route Handler as of the 2026-07-25 security review) —
+ * CSRF is a cookie-riding attack, and this route never reads or trusts a
+ * session cookie at all. Its own signature verification is the actual,
+ * appropriate authenticity mechanism here, not a substitute for one.
+ *
+ * This is the one authoritative source for
  * "did a payment actually succeed" — the browser return-redirect never is
  * (see the payments/return page's own comment and
  * docs/adr/ADR-022-clover-hosted-checkout-integration.md).

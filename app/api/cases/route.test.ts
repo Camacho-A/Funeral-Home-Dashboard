@@ -75,10 +75,10 @@ function mockEnabledTemplate() {
   });
 }
 
-function postRequest(body: unknown) {
+function postRequest(body: unknown, headers: Record<string, string> = {}) {
   return new Request('http://localhost/api/cases', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -279,6 +279,12 @@ describe('POST /api/cases — authorization', () => {
     process.env.WIX_SITE_ID = 'test-site';
   });
 
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await POST(postRequest(VALID_CREATE_BODY, { origin: 'https://evil.example.com' }));
+    expect(response.status).toBe(403);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
   it('returns 401 when there is no session at all', async () => {
     mockSession = null;
     const response = await POST(postRequest(VALID_CREATE_BODY));
@@ -356,7 +362,9 @@ describe('POST /api/cases — validation', () => {
   });
 
   it('returns 400 for invalid JSON', async () => {
-    const response = await POST(new Request('http://localhost/api/cases', { method: 'POST', body: '{not json' }));
+    const response = await POST(
+      new Request('http://localhost/api/cases', { method: 'POST', headers: { origin: 'http://localhost', host: 'localhost' }, body: '{not json' }),
+    );
     expect(response.status).toBe(400);
   });
 

@@ -1,5 +1,6 @@
 'use client';
 
+import type { AuthAdapterMode } from '@/lib/env';
 import { Button } from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
 import { useCaseSearch } from '@/hooks/useCaseSearch';
@@ -7,6 +8,7 @@ import { initialsFromName } from '@/utils/string';
 import { logoutAction } from '@/app/login/actions';
 import { SearchInput } from './SearchInput';
 import { UserAvatar } from './UserAvatar';
+import { OrganizationSwitcher } from './OrganizationSwitcher';
 import styles from './TopBar.module.css';
 
 /**
@@ -29,8 +31,21 @@ import styles from './TopBar.module.css';
  * Server Action imported straight into this Client Component, no
  * client-side auth logic added here at all, matching "keep authentication
  * and authorization logic out of presentational React components."
+ *
+ * Phase 21 (Identity, Authentication & Session Management): `authAdapterMode`
+ * is server-resolved by app/(portal)/layout.tsx and threaded down through
+ * AppShell, the same trusted-server-value pattern OrganizationProvider's
+ * dataAdapterMode already established — the "Security" link (Change
+ * Password / Manage Sessions) only renders for `'identity'` sessions,
+ * since it's the only mode with anything there to manage.
  */
-export function TopBar({ onNewCaseClick }: { onNewCaseClick?: () => void }) {
+export function TopBar({
+  onNewCaseClick,
+  authAdapterMode,
+}: {
+  onNewCaseClick?: () => void;
+  authAdapterMode?: AuthAdapterMode;
+}) {
   const { query, setQuery } = useCaseSearch();
   const session = useSession();
 
@@ -39,6 +54,12 @@ export function TopBar({ onNewCaseClick }: { onNewCaseClick?: () => void }) {
       <SearchInput value={query} onChange={setQuery} />
       <div className={styles.spacer} />
       <Button onClick={onNewCaseClick}>+ New Case</Button>
+      {authAdapterMode === 'identity' && <OrganizationSwitcher />}
+      {authAdapterMode === 'identity' && (
+        <a href="/settings/security" className={styles.signOutButton}>
+          Security
+        </a>
+      )}
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
         <button type="submit" className={styles.signOutButton}>

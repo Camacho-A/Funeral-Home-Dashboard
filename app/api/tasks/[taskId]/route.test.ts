@@ -44,22 +44,25 @@ const EXISTING_WIX_TASK_DATA = {
   createdAt: '2026-07-22T00:00:00.000Z',
 };
 
-function patchRequest(taskId: string, body: unknown) {
+function patchRequest(taskId: string, body: unknown, headers: Record<string, string> = {}) {
   return PATCH(
     new Request(`http://localhost/api/tasks/${taskId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
       body: JSON.stringify(body),
     }),
     { params: Promise.resolve({ taskId }) },
   );
 }
 
-function deleteRequest(taskId: string, organizationId: string | null) {
+function deleteRequest(taskId: string, organizationId: string | null, headers: Record<string, string> = {}) {
   const url = organizationId
     ? `http://localhost/api/tasks/${taskId}?organizationId=${organizationId}`
     : `http://localhost/api/tasks/${taskId}`;
-  return DELETE(new Request(url, { method: 'DELETE' }), { params: Promise.resolve({ taskId }) });
+  return DELETE(
+    new Request(url, { method: 'DELETE', headers: { origin: 'http://localhost', host: 'localhost', ...headers } }),
+    { params: Promise.resolve({ taskId }) },
+  );
 }
 
 beforeEach(() => {
@@ -87,6 +90,16 @@ afterEach(() => {
 });
 
 describe('PATCH /api/tasks/[taskId] — authorization', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await patchRequest(
+      'task-100',
+      { organizationId: DEFAULT_ORGANIZATION_ID, patch: { text: 'x' } },
+      { origin: 'https://evil.example.com' },
+    );
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
   it('returns 401 when there is no session at all', async () => {
     mockSession = null;
     const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { text: 'x' } });
@@ -124,7 +137,11 @@ describe('PATCH /api/tasks/[taskId] — validation', () => {
 
   it('returns 400 for invalid JSON', async () => {
     const response = await PATCH(
-      new Request('http://localhost/api/tasks/task-100', { method: 'PATCH', body: '{not json' }),
+      new Request('http://localhost/api/tasks/task-100', {
+        method: 'PATCH',
+        headers: { origin: 'http://localhost', host: 'localhost' },
+        body: '{not json',
+      }),
       { params: Promise.resolve({ taskId: 'task-100' }) },
     );
     expect(response.status).toBe(400);
@@ -203,6 +220,11 @@ describe('PATCH /api/tasks/[taskId] — Wix failure handling', () => {
 });
 
 describe('DELETE /api/tasks/[taskId] — authorization', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await deleteRequest('task-100', DEFAULT_ORGANIZATION_ID, { origin: 'https://evil.example.com' });
+    expect(response.status).toBe(403);
+  });
+
   it('returns 401 when there is no session at all', async () => {
     mockSession = null;
     const response = await deleteRequest('task-100', DEFAULT_ORGANIZATION_ID);

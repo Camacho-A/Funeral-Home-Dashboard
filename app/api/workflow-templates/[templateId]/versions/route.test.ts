@@ -52,10 +52,11 @@ const DEFAULT_TEST_INTAKE: IntakeTemplate = {
   sections: [{ key: 'decedent', label: 'Decedent', fields: [{ key: 'decedentName', label: 'Name of deceased' }] }],
 };
 
-function postRequest(templateId: string, body: Record<string, unknown>) {
+function postRequest(templateId: string, body: Record<string, unknown>, headers: Record<string, string> = {}) {
   return POST(
     new Request(`http://localhost/api/workflow-templates/${templateId}/versions`, {
       method: 'POST',
+      headers: { origin: 'http://localhost', host: 'localhost', ...headers },
       // Stage-focused tests below only care about `stages`; a valid
       // minimal `intake` is filled in here by default so they don't all
       // need to repeat one, matching Phase 19's DTO requiring both.
@@ -112,6 +113,15 @@ afterEach(() => {
 });
 
 describe('POST /api/workflow-templates/[templateId]/versions — authorization', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const response = await postRequest(
+      STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID,
+      { organizationId: DEFAULT_ORGANIZATION_ID, stages: [stage(0, 'Renamed')] },
+      { origin: 'https://evil.example.com' },
+    );
+    expect(response.status).toBe(403);
+  });
+
   it('returns 401 when there is no session', async () => {
     mockSession = null;
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {

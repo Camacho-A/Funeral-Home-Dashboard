@@ -74,11 +74,11 @@ const EXISTING_WIX_CASE_DATA = {
   createdAt: '2026-07-22T00:00:00.000Z',
 };
 
-function patchRequest(caseId: string, body: unknown) {
+function patchRequest(caseId: string, body: unknown, headers: Record<string, string> = {}) {
   return PATCH(
     new Request(`http://localhost/api/cases/${caseId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
       body: JSON.stringify(body),
     }),
     { params: Promise.resolve({ caseId }) },
@@ -247,6 +247,15 @@ describe('PATCH /api/cases/[caseId]', () => {
   });
 
   describe('authorization', () => {
+    it('rejects a cross-site request (CSRF)', async () => {
+      const response = await patchRequest(
+        '1042',
+        { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'x' } },
+        { origin: 'https://evil.example.com' },
+      );
+      expect(response.status).toBe(403);
+    });
+
     it('returns 401 when there is no session at all', async () => {
       mockSession = null;
       const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'x' } });
@@ -340,7 +349,11 @@ describe('PATCH /api/cases/[caseId]', () => {
 
     it('returns 400 for invalid JSON', async () => {
       const response = await PATCH(
-        new Request('http://localhost/api/cases/1042', { method: 'PATCH', body: '{not json' }),
+        new Request('http://localhost/api/cases/1042', {
+          method: 'PATCH',
+          headers: { origin: 'http://localhost', host: 'localhost' },
+          body: '{not json',
+        }),
         { params: Promise.resolve({ caseId: '1042' }) },
       );
       expect(response.status).toBe(400);

@@ -53,11 +53,19 @@ async function seedSession() {
   );
 }
 
-function patchRequest(body: unknown) {
-  return PATCH(new Request('http://localhost/api/onboarding/branding', { method: 'PATCH', body: JSON.stringify(body) }));
+function patchRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
+  return PATCH(new Request('http://localhost/api/onboarding/branding', { method: 'PATCH', headers, body: JSON.stringify(body) }));
 }
 
 describe('PATCH /api/onboarding/branding', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    const { session } = await seedSession();
+    const response = await patchRequest(
+      { emailFromName: 'Test Org', primaryColor: '#112233', logoUrl: 'https://cdn.example.com/logo.png', onboardingSessionId: session.id },
+      { origin: 'https://evil.example.com', host: 'localhost' },
+    );
+    expect(response.status).toBe(403);
+  });
 
   it('saves branding and marks the step completed', async () => {
     const { session } = await seedSession();

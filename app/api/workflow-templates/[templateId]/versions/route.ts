@@ -10,6 +10,7 @@ import {
 import { validateStageSequencing, validateIntakeFields } from '@/domain/workflow/editing';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import type { WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflowTemplate';
 
 /**
@@ -31,6 +32,9 @@ import type { WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflow
  * from the latest version — neither phase's edit scope touches it.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ templateId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const { templateId } = await params;
 
   const body: unknown = await request.json().catch(() => null);

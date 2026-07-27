@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { provisionWorkflow, markStepCompleted, type ProvisionWorkflowMode } from '@/services/organizationProvisioningService';
 
@@ -14,6 +15,9 @@ const VALID_MODES: ProvisionWorkflowMode[] = ['starter', 'clone_existing', 'mini
  * returns the org's already-provisioned workflow unchanged.
  */
 export async function PATCH(request: Request) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
   const b = parsed.body;

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsService';
 import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
 
@@ -17,6 +18,9 @@ import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
  * best-effort Clover reconciliation.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string; paymentId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const dataAdapterMode = getDataAdapterMode();
   if (dataAdapterMode !== 'mock') {
     return NextResponse.json({ error: 'Simulated outcomes are only available in mock mode.' }, { status: 400 });

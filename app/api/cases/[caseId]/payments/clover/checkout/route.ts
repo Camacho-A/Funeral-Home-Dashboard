@@ -4,6 +4,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import {
@@ -48,6 +49,9 @@ const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 const DEFAULT_PURPOSE = 'Case order balance due';
 
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
+  const csrfResponse = requireSameOrigin(request);
+  if (csrfResponse) return csrfResponse;
+
   const { caseId } = await params;
 
   let body: unknown;
