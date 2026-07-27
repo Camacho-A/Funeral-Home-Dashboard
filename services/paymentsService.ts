@@ -92,6 +92,31 @@ export async function getEnabledIntegration(
   return integration && integration.isEnabled ? integration : null;
 }
 
+/**
+ * Phase 20 (Organization Onboarding & Tenant Provisioning). Same lookup as
+ * `getEnabledIntegration`, but regardless of `isEnabled` — used by
+ * `services/organizationProvisioningService.ts`'s
+ * `createPaymentIntegrationPlaceholder` to idempotently detect "does this
+ * organization already have a (possibly still-disabled) integration row"
+ * without `getEnabledIntegration`'s own enabled-only filter hiding the
+ * very placeholder row onboarding itself creates.
+ */
+export async function getIntegration(
+  organizationId: string,
+  provider: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<PaymentIntegration | null> {
+  if (dataAdapterMode === 'mock') {
+    return paymentIntegrationFixtures.find((i) => i.organizationId === organizationId && i.provider === provider) ?? null;
+  }
+
+  const response = await queryWixDataItems<WixPaymentIntegrationItem>('paymentIntegrations', {
+    filter: { organizationId, provider },
+    paging: { limit: 1 },
+  });
+  return mapWixPaymentIntegrationItem(response.dataItems[0]?.data);
+}
+
 export async function listPaymentRecordsForCase(
   organizationId: string,
   caseId: string,

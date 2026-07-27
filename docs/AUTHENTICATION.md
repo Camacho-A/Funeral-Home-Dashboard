@@ -77,6 +77,8 @@ With exactly one active membership (today's default mock user), it's auto-select
 
 **What "membership data" means today:** organization membership data always lives in `services/__mocks__/authFixtures.ts`, regardless of `DATA_ADAPTER` or `AUTH_ADAPTER` — there is no Wix data collection for organization memberships (creating one is out of this phase's scope). A real Wix member can log in for real (if `AUTH_ADAPTER=wix` and an OAuth app exists — see below), but their organization access is *not yet* resolved from anything Wix-hosted; see "Known limitations."
 
+**Platform administrator (Phase 20 — Organization Onboarding & Tenant Provisioning):** a third, deliberately separate authorization concept, distinct from `OrganizationRole` — creating a brand-new tenant (`POST /api/onboarding/start`) happens *before* any `OrganizationMembership` can exist for it, so it can't be gated by `resolveAuthorizationContext` at all. `lib/auth/platformAdmin.ts`'s `isPlatformAdminUser` checks a session's `userId` against a plain comma-separated allowlist (`PLATFORM_ADMIN_USER_IDS`) — no new role, no granular permission system, matching this project's existing "deliberately small" philosophy. Every other onboarding route is gated differently (`lib/auth/requireOnboardingAccess.ts`'s `requireOnboardingSessionAccess`): authorized if the caller is a platform administrator, the specific user who started that session, or already holds an owner/administrator membership in its organization. See [ADR-024](./adr/ADR-024-organization-onboarding-tenant-provisioning.md).
+
 ## Files created
 
 | File | Purpose |
@@ -119,6 +121,7 @@ No other new package. Session signing uses the platform's own Web Crypto API, no
 | `SESSION_JWT_SECRET` | **Private** | HMAC key for Beacon's own session cookie — reuses the name reserved in `.env.example` since Phase 0. Falls back to a fixed, clearly-insecure development value outside production (so mock mode needs zero new configuration); **throws in production if unset** |
 | `WIX_OAUTH_CLIENT_ID` | Private-ish (a client ID, not a secret by Wix's own design — headless member OAuth needs no client secret) | Required only when `AUTH_ADAPTER=wix` |
 | `AUTH_ADAPTER` | Public-ish (just `"mock"` or `"wix"`, no secret value) | Controls which login provider is used — independent of `DATA_ADAPTER`; defaults to `"mock"` if unset. See "Development vs. production adapter combinations" below. |
+| `PLATFORM_ADMIN_USER_IDS` | Private-ish (user ids, not secrets) | Phase 20 — comma-separated allowlist gating `POST /api/onboarding/start`. Empty/unset means no one can create a new tenant. See `lib/auth/platformAdmin.ts`. |
 
 `WIX_API_KEY`/`WIX_SITE_ID` (Phase 12) are unrelated to member login — those authenticate as an *admin*, never as a specific member, and stay reserved for the Phase 12 health check only.
 

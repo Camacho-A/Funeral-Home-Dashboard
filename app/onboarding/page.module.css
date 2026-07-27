@@ -1,0 +1,51 @@
+.page {
+  min-height: 100vh;
+  background: var(--color-surface-page, var(--color-surface-subtle));
+  padding: var(--space-11) var(--space-10);
+}
+
+.header {
+  max-width: 960px;
+  margin: 0 auto var(--space-9);
+}
+
+.title {
+  font-size: var(--font-size-24);
+  font-weight: var(--font-weight-bold);
+}
+
+.resumeNotice {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-3);
+}
+
+.layout {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  gap: var(--space-11);
+  align-items: flex-start;
+}
+
+.card {
+  flex: 1;
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-10);
+}
+
+.startCard {
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-10);
+}
+
+.loading {
+  font-size: var(--font-size-13);
+  color: var(--color-text-secondary);
+}

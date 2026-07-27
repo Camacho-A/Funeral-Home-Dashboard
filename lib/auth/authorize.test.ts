@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAuthorizationContext } from './authorize';
+import { hasAdminTierMembership, resolveAuthorizationContext } from './authorize';
 import type { AuthSession } from '../../types/auth';
 import {
   mockDefaultUser,
@@ -88,5 +88,36 @@ describe('resolveAuthorizationContext — no memberships at all', () => {
 
     expect(result.granted).toBe(false);
     if (!result.granted) expect(result.reason).toBe('no_active_membership');
+  });
+});
+
+/**
+ * Phase 20 (Organization Onboarding & Tenant Provisioning).
+ * `hasAdminTierMembership` — used by
+ * lib/auth/requireOnboardingAccess.ts to let an organization's own
+ * administrator resume its onboarding session.
+ */
+describe('hasAdminTierMembership', () => {
+  it('returns true for an administrator-role active membership', () => {
+    // mockDefaultUser holds an 'administrator' membership in DEFAULT_ORGANIZATION_ID.
+    expect(hasAdminTierMembership(mockDefaultUser.id, DEFAULT_ORGANIZATION_ID)).toBe(true);
+  });
+
+  it('returns false for a staff-role membership — not admin-tier', () => {
+    // mockMultiOrgUser holds a 'staff' membership in DEFAULT_ORGANIZATION_ID.
+    expect(hasAdminTierMembership(mockMultiOrgUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
+  });
+
+  it('returns false for a caseManager-role membership in a different organization — admin-tier but not owner/administrator', () => {
+    // mockMultiOrgUser holds a 'caseManager' membership in SECOND_MOCK_ORGANIZATION_ID.
+    expect(hasAdminTierMembership(mockMultiOrgUser.id, SECOND_MOCK_ORGANIZATION_ID)).toBe(false);
+  });
+
+  it('returns false for an inactive membership row, regardless of role', () => {
+    expect(hasAdminTierMembership(mockInactiveMembershipUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
+  });
+
+  it('returns false for a user with no membership in the organization at all', () => {
+    expect(hasAdminTierMembership('mock-user-nobody', DEFAULT_ORGANIZATION_ID)).toBe(false);
   });
 });

@@ -80,6 +80,19 @@ Manor's Cremation's (`managed-cremations`) five-row v1 service catalog was seede
 
 No "under 200 lb" row exists — a $0 weight surcharge is nothing to itemize, so the pricing engine (`domain/pricing/calculateOrder.ts`) simply omits a weight-surcharge line item entirely when that tier is selected, rather than the catalog carrying a $0 placeholder row.
 
+## Creation record (Phase 20, 2026-07-24)
+
+`organizationLocations` (Collection 15), `onboardingSessions` (Collection 16), `organizationBranding` (Collection 17), and `onboardingAuditEntries` (Collection 18) were created the same way, via the same REST endpoints, using the same gitignored API key. `organizations` (Collection 1) was extended in place — see its own section above — rather than a new collection being created for it. See [ADR-024](./adr/ADR-024-organization-onboarding-tenant-provisioning.md).
+
+| Collection | Fields (incl. 4 system fields) | Indexes created | Permissions |
+|---|---|---|---|
+| `organizationLocations` | 15 + 4 | `organizationId_isPrimary` (regular) | ADMIN ×4 |
+| `onboardingSessions` | 12 + 4 | `unique_idempotencyKey` (unique), `organizationId` (regular), `startedByUserId` (regular) | ADMIN ×4 |
+| `organizationBranding` | 9 + 4 | `organizationId` (regular) | ADMIN ×4 |
+| `onboardingAuditEntries` | 5 + 4 | `organizationId` (regular) | ADMIN ×4 |
+
+Verified via a follow-up query: 19 collections total (the 4 Wix Members system collections + the 14 from Phases 14A/16B/19B/19C + these 4). Manor's Cremation's (`managed-cremations`) existing `organizations` row was backfilled with the nine new profile fields (`slug: 'manors-cremation'`, `status: 'active'`, etc.) — its pre-existing `name`/`isActive` values were left untouched — and its migration was run live: a primary `organizationLocations` row was created (Manor's never had one before this phase), its existing `workflowTemplates`/`serviceCatalog`/`paymentIntegrations` rows were confirmed present (none recreated or modified), and a `completed`-status `onboardingSessions` row plus one `onboardingAuditEntries` row were recorded. See the phase report for the exact resulting record ids.
+
 ## Cross-cutting principles
 
 1. **Wix metadata is kept separate from Beacon domain identifiers.** Every collection has Wix's own system `_id` (opaque, Wix-managed, never referenced by Beacon code) *and* an explicit `beacon<Thing>Id` text field — a Beacon-generated stable string id matching the existing `id` field on the corresponding `types/*.ts` type. Every cross-collection reference below is a plain text field holding another collection's `beacon<Thing>Id`, not a formal Wix "Reference" field type (which keys off system `_id`) — so Beacon's own code, including `resolveAuthorizationContext`, never has to reason about a Wix-internal identifier.
@@ -102,11 +115,20 @@ This is a deliberate change in direction from what the current codebase actually
 | `beaconOrganizationId` | Text | Required | Immutable |
 | `name` | Text | Required | Mutable |
 | `isActive` | Boolean | Required | Mutable (default `true`) |
+| `legalName` | Text | Optional (Phase 20) | Mutable |
+| `slug` | Text | Optional (Phase 20) | Mutable while `status` is `draft`/`onboarding`; immutable once `active` by convention (not Wix-enforced) |
+| `status` | Text (`draft`/`onboarding`/`active`/`suspended`/`archived`) | Optional (Phase 20) | Mutable |
+| `timezone` | Text | Optional (Phase 20) | Mutable |
+| `defaultCurrency` | Text | Optional (Phase 20) | Mutable |
+| `primaryEmail`, `primaryPhone` | Text | Optional (Phase 20) | Mutable |
+| `website` | Text, nullable | Optional (Phase 20) | Mutable |
+| `createdAt`, `updatedAt` | Text | Optional (Phase 20) | `createdAt` immutable, `updatedAt` mutable |
 
-- **Indexes:** unique on `beaconOrganizationId`.
+- **Indexes:** unique on `beaconOrganizationId` (pre-existing — occupies this collection's one allowed unique-index slot, confirmed empirically); regular index on `slug` (Phase 20, since a second unique index isn't available).
 - **Permissions:** backend/Admin only.
-- **TS type:** matches `types/organization.ts`'s `Organization` exactly.
-- **Mapping:** `id → beaconOrganizationId`, `name → name`, `isActive → isActive`.
+- **TS type:** `types/organization.ts`'s `Organization` — the nine Phase 20 fields are all optional, so a pre-Phase-20 record (or a not-yet-migrated live row) remains fully valid.
+- **Mapping:** `id → beaconOrganizationId`, `name → name`, `isActive → isActive`, plus a direct field-for-field mapping for every Phase 20 addition.
+- **Phase 20 correction (2026-07-24):** this collection's fields were extended via `PUT /wix-data/v2/collections` (revision 1→2, resending the full existing field list plus the nine new ones — Wix's "Update Data Collection" replaces the entire `fields` array, so omitting existing fields would have silently dropped them) rather than creating a second, conflicting `organizations`-shaped collection. See [ADR-024](./adr/ADR-024-organization-onboarding-tenant-provisioning.md).
 
 ## Collection 2 — `organizationMemberships`
 
@@ -379,6 +401,86 @@ This is a deliberate change in direction from what the current codebase actually
 - **Indexes:** `organizationId_caseId` (regular) — serves "list this case's full audit history," most-recent-first (sorted in application code).
 - **TS type:** `types/caseOrderAudit.ts`'s `CaseOrderAuditEntry`.
 
+## Collection 15 — `organizationLocations`
+
+**Purpose:** one or more physical (or mailing-only) locations belonging to an organization, seeded during onboarding's "Primary Location" step (Phase 20). **Ownership:** organization-owned.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconLocationId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `name` | Text | Required | Mutable |
+| `locationType` | Text (`office`/`funeral_home`/`crematory`/`mailing_only`) | Required | Mutable |
+| `addressLine1` | Text | Required | Mutable |
+| `addressLine2` | Text, nullable | Optional | Mutable |
+| `city`, `state`, `postalCode`, `country`, `phone` | Text | Required | Mutable |
+| `email` | Text, nullable | Optional | Mutable |
+| `isPrimary` | Boolean | Required | Mutable — application-enforced exactly-one-per-organization (no Wix conditional-uniqueness primitive exists) |
+| `isActive` | Boolean | Required | Mutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **`_id` is set to a fresh generated id** at insert time.
+- **Indexes:** `organizationId_isPrimary` (regular) — serves "find this organization's primary location," the one query pattern this collection needs today.
+- **TS type:** `types/organizationLocation.ts`'s `OrganizationLocation`.
+
+## Collection 16 — `onboardingSessions`
+
+**Purpose:** the durable record of one organization's progress through onboarding (Phase 20) — see [ADR-024](./adr/ADR-024-organization-onboarding-tenant-provisioning.md)'s "Onboarding state model." **Ownership:** organization-owned (exactly one active/completed session per organization in practice, though nothing prevents more).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconOnboardingSessionId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `status` | Text (`not_started`/`in_progress`/`blocked`/`completed`) | Required | Mutable |
+| `currentStep` | Text (one of the nine `OnboardingStepKey` values) | Required | Mutable |
+| `completedSteps` | Array\<Text\> | Required | Mutable |
+| `startedByUserId` | Text | Required | Immutable |
+| `startedAt`, `lastSavedAt` | Date | Required | Mutable |
+| `completedAt` | Date, nullable | Optional | Mutable — set only once `status` becomes `completed` |
+| `version` | Number | Required | Mutable — incremented on every step save |
+| `idempotencyKey` | Text | Required | Immutable — client-supplied at `/start` time; not part of this phase's own literal field list, added for the same reason `paymentRecords.idempotencyKey` was in Phase 19B (see ADR-024) |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **`_id` is set to a fresh generated id** at insert time (not `idempotencyKey` itself, so the unique index below can be a plain field index rather than doubling as the system id).
+- **`unique_idempotencyKey`** guarantees a retried `/start` call can never create a second tenant for the same logical attempt — the atomic guard `startOnboarding` relies on, identical in mechanism to `paymentRecords.idempotencyKey`.
+- **Indexes:** `unique_idempotencyKey` (unique); `organizationId` (regular, serves per-organization lookup); `startedByUserId` (regular, serves the "resume my own in-progress session" convenience in `GET /api/onboarding/session`).
+- **TS type:** `types/onboarding.ts`'s `OnboardingSession` (the type itself has no `idempotencyKey` field — it's a write-time-only concern internal to `startOnboarding`, not part of the domain shape every other function passes around).
+
+## Collection 17 — `organizationBranding`
+
+**Purpose:** organization-scoped branding (Phase 20) — logo reference, document colors, email sender name, document footer. **Ownership:** organization-owned, exactly one row per organization.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId` | Text | Required | Immutable |
+| `logoUrl` | Text, nullable | Optional | Mutable — a hosted URL only; this collection has no field capable of holding binary/base64 image data at all |
+| `primaryColor`, `secondaryColor`, `accentColor` | Text, nullable | Optional | Mutable |
+| `emailFromName` | Text, nullable | Optional | Mutable |
+| `documentFooter` | Text, nullable | Optional | Mutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **`_id` is set to `organizationId`** at insert time — the same "system id doubles as the natural key" convention `paymentIntegrations`/`caseSequences` already use, giving free per-organization uniqueness with no separate unique index needed.
+- **Indexes:** `organizationId` (regular) — not strictly required given the `_id` convention above, but present for query-path consistency with every other organization-scoped collection.
+- **TS type:** `types/organizationBranding.ts`'s `OrganizationBranding`.
+
+## Collection 18 — `onboardingAuditEntries`
+
+**Purpose:** immutable audit trail for onboarding/provisioning actions (Phase 20) — organization created, administrator assigned, workflow provisioned, catalog seeded, payment placeholder created, onboarding completed. **Ownership:** organization-owned.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconAuditEntryId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `actorUserId` | Text | Required | Immutable |
+| `action` | Text (open-ended, e.g. `organization_created`/`onboarding_completed`) | Required | Immutable |
+| `metadata` | Object (JSON), nullable | Optional | Immutable — non-secret, display-safe key/value context only; never a credential value |
+| `timestamp` | Date | Required | Immutable |
+
+- **`_id` is set to a fresh generated id** at insert time.
+- **Structurally the same pattern as `caseOrderAuditEntries` (Phase 19C), a genuinely separate collection rather than a literal reuse** — see ADR-024's "Reusing the audit architecture, not the collection."
+- **Indexes:** `organizationId` (regular) — serves "list this organization's full onboarding audit history."
+- **TS type:** `types/onboardingAudit.ts`'s `OnboardingAuditEntry`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -389,7 +491,7 @@ This is a deliberate change in direction from what the current codebase actually
 | `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all fourteen collections)
+## Permissions summary (all eighteen collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -412,6 +514,12 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Case order (active + version history) by case | `caseOrders (organizationId, caseId)` |
 | Line items for one case order version | `caseOrderLineItems (organizationId, caseOrderId)` |
 | Audit history for one case | `caseOrderAuditEntries (organizationId, caseId)` |
+| Organization lookup by slug | `organizations (slug)` (regular, not unique) |
+| Primary location for one organization | `organizationLocations (organizationId, isPrimary)` |
+| Atomic duplicate-onboarding-attempt prevention | `onboardingSessions (idempotencyKey)` unique |
+| Onboarding session by organization / by starting user | `onboardingSessions (organizationId)` / `onboardingSessions (startedByUserId)` |
+| Branding for one organization | `organizationBranding (organizationId)` |
+| Onboarding audit history for one organization | `onboardingAuditEntries (organizationId)` |
 
 ## Migration notes
 

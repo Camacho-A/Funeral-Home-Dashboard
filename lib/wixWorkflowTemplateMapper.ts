@@ -501,3 +501,29 @@ export function buildWixWorkflowTemplateVersionData(params: {
     createdAt: params.createdAt,
   };
 }
+
+/**
+ * Phase 20 (Organization Onboarding & Tenant Provisioning). Builds a
+ * `workflowTemplates` (template-identity) row — no prior phase needed
+ * this, since every existing WorkflowTemplate was created via mock
+ * fixture/direct Wix seeding, never a Route Handler. Used by
+ * `services/organizationProvisioningService.ts`'s `provisionWorkflow`,
+ * the first code path that actually creates a brand-new organization-
+ * owned template rather than only ever adding a version to one that
+ * already exists.
+ */
+export function buildWixWorkflowTemplateData(template: {
+  id: string;
+  organizationId: string;
+  name: string;
+  isEnabled: boolean;
+  caseTypes: string[];
+}): WixWorkflowTemplateItem {
+  return {
+    beaconTemplateId: template.id,
+    organizationId: template.organizationId,
+    name: template.name,
+    isEnabled: template.isEnabled,
+    caseTypes: template.caseTypes,
+  };
+}

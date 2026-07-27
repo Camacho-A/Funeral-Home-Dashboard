@@ -75,3 +75,20 @@ export function resolveAuthorizationContext(
 
   return { granted: false, reason: 'selection_required' };
 }
+
+/**
+ * Phase 20 (Organization Onboarding & Tenant Provisioning). Whether a user
+ * already holds an owner/administrator-tier active membership in one
+ * specific organization — used by
+ * `lib/auth/requireOnboardingAccess.ts` to let an organization's own
+ * administrator resume its onboarding session without needing platform-
+ * administrator status. Reuses the same `findActiveMemberships` lookup
+ * every other authorization decision in this file goes through — never a
+ * second, divergent membership query.
+ */
+export function hasAdminTierMembership(userId: string, organizationId: string): boolean {
+  return findActiveMemberships(userId).some(
+    (membership) =>
+      membership.organizationId === organizationId && (membership.role === 'owner' || membership.role === 'administrator'),
+  );
+}
