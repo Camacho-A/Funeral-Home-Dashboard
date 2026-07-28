@@ -94,3 +94,42 @@ describe('resendVerification', () => {
     if (!result.success) expect(result.reason).toBe('expired_token');
   });
 });
+
+describe('Phase 23: listTokensForIdentity / invalidateTokensForIdentity', () => {
+  it('lists every token ever issued for an identity, including superseded ones', async () => {
+    const { createVerificationToken, resendVerification, listTokensForIdentity } = await import('./emailVerificationService');
+    const identity = await seedPendingIdentity('list-tokens@example.com');
+    await createVerificationToken(identity.id, idFactory, 'mock');
+    await resendVerification(identity.id, idFactory, 'mock');
+
+    const tokens = await listTokensForIdentity(identity.id, 'mock');
+    expect(tokens).toHaveLength(2);
+    expect(tokens.every((t) => t.identityId === identity.id)).toBe(true);
+  });
+
+  it('invalidates every live token so none of them can later verify', async () => {
+    const { createVerificationToken, resendVerification, invalidateTokensForIdentity, verifyEmailWithToken } = await import('./emailVerificationService');
+    const identity = await seedPendingIdentity('invalidate-tokens@example.com');
+    const { token: firstToken } = await createVerificationToken(identity.id, idFactory, 'mock');
+    const { token: secondToken } = await resendVerification(identity.id, idFactory, 'mock');
+
+    await invalidateTokensForIdentity(identity.id, 'mock');
+
+    const firstResult = await verifyEmailWithToken(firstToken, 'mock');
+    const secondResult = await verifyEmailWithToken(secondToken, 'mock');
+    expect(firstResult.success).toBe(false);
+    expect(secondResult.success).toBe(false);
+    if (!firstResult.success) expect(firstResult.reason).toBe('already_used');
+    if (!secondResult.success) expect(secondResult.reason).toBe('already_used');
+  });
+
+  it('is idempotent — invalidating an already-used or already-invalidated token is a no-op, not an error', async () => {
+    const { createVerificationToken, invalidateTokensForIdentity, verifyEmailWithToken } = await import('./emailVerificationService');
+    const identity = await seedPendingIdentity('invalidate-idempotent@example.com');
+    const { token } = await createVerificationToken(identity.id, idFactory, 'mock');
+    await verifyEmailWithToken(token, 'mock'); // already used via the normal verification path
+
+    await expect(invalidateTokensForIdentity(identity.id, 'mock')).resolves.toBeUndefined();
+    await expect(invalidateTokensForIdentity(identity.id, 'mock')).resolves.toBeUndefined();
+  });
+});

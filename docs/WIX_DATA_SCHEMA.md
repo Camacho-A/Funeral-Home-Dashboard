@@ -110,6 +110,32 @@ Verified via a follow-up `GET /wix-data/v2/collections` (list): 27 collections t
 
 **Cross-cutting principle correction:** point 4 below ("No secrets, tokens, or passwords are stored in any collection") no longer holds universally as of this phase — `identities.passwordHash`/`mfaSecretReference` and `emailVerificationTokens`/`passwordResetTokens`' `tokenHash` are secret-*adjacent* fields (a salted hash, an AES-256-GCM encrypted value, and a SHA-256 hash respectively — never a plaintext password, raw token, or Wix/session credential). The original principle's actual intent — no *plaintext* secret or Wix/session credential ever lands in Wix Data — still holds exactly as stated.
 
+## Creation record (Phase 22, 2026-07-27)
+
+`permissions` (Collection 24), `roles` (Collection 25), `rolePermissions` (Collection 26), `organizationRoles` (Collection 27), and `organizationRoleAuditEntries` (Collection 28) were created the same way, via the same REST endpoints, using the same gitignored API key. `organizationMemberships` (Collection 2) needed no live field-type change this phase — see its own section's Phase 22 correction note above (a documentation correction to the application-level contract, not a Wix Data schema migration). See [ADR-026](./adr/ADR-026-role-based-authorization-architecture.md).
+
+| Collection | Fields (incl. 4 system fields) | Indexes created | Permissions |
+|---|---|---|---|
+| `permissions` | 5 + 4 | none (22 rows, always a full scan) | ADMIN ×4 |
+| `roles` | 8 + 4 | `key` (regular) | ADMIN ×4 |
+| `rolePermissions` | 4 + 4 | `roleId` (regular) | ADMIN ×4 |
+| `organizationRoles` | 4 + 4 | `organizationId` (regular) | ADMIN ×4 |
+| `organizationRoleAuditEntries` | 8 + 4 | `organizationId` (regular) | ADMIN ×4 |
+
+Seeded live: all 22 catalog permissions into `permissions`; all seven platform-default roles (`domain/rbac/defaultRoles.ts`) into `roles` (`organizationId: null`, `isSystemDefault: true`) with their full permission grants into `rolePermissions`; Manor's Cremation's own seven-role enablement roster into `organizationRoles` (`RoleService.seedDefaultRoles`, `isNew: true` on first run). Re-run immediately afterward to confirm idempotency: the permission seed and all seven default roles reported already existing (0 duplicates), and Manor's Cremation's enablement roster reported `isNew: false` with the same seven roles returned.
+
+**Live permission-resolution verification against Manor's Cremation's real, already-migrated (Phase 21) membership rows — no membership row was touched by this phase.** Three identity-mode `organizationMemberships` rows exist for Manor's Cremation from Phase 21's migration: one `role: 'administrator'` (`status: 'active'`), and two `role: 'staff'` (one `'active'`, one `'disabled'`, preserving the legacy-inactive carryover). Resolving permissions live for each: the `administrator` row resolved to all 22 permissions (including `organization.manage`); both `staff` rows resolved to 6 permissions (matching the `officeStaff` default role's grant set via `domain/rbac/legacyRoleAliases.ts`), correctly excluding `organization.manage` — confirming the legacy role values continue to resolve to exactly the permission sets their pre-Phase-22 behavior implied, against real production data, not just mock fixtures.
+
+### Security-correction round (2026-07-27/28) — reseed with deterministic ids, `organizationRoleLocks` created
+
+The original seeding above used random `idFactory()` ids for `permissions`/`roles`/`rolePermissions`/`organizationRoles`. The correction round switched seeding to deterministic ids (`domain/rbac/deterministicIds.ts`), so the live rows had to be reseeded to actually get those ids (a randomly-id'd row and a deterministically-id'd row for the same logical entity would otherwise coexist as a duplicate). Live procedure: deleted the old randomly-id'd rows (7 roles, 77 rolePermissions grants, 7 organizationRoles enablements, 22 permissions — confirmed via query immediately beforehand, matching the exact counts the original seed had produced) — safe because none of these are ever referenced by id from outside this subsystem (`Membership.role` stores the semantic role *key*, never a row id) — then re-seeded fresh with the new deterministic-id functions. Re-verified afterward: `Membership` rows were never touched; Manor's Cremation's real `administrator` row still resolved to all 22 permissions immediately after the reseed.
+
+**Idempotency and concurrency, proved live, not just in mock-mode tests:** a full additional re-seed pass afterward produced zero new rows (roles/permissions/rolePermissions/organizationRoles counts identical before and after). `organizationRoleLocks` (Collection 29) was created the same way as every other collection. `services/organizationLockService.ts`'s lock mechanism was exercised directly against the live collection: a basic acquire/release round trip, and a genuine concurrent-acquisition test (two callers racing for the same organization's lock) — the second caller's work only began after the first's fully completed, confirming true mutual exclusion against the real Wix Data API's insert-conflict behavior, not an assumption verified only against mock fixtures.
+
+### Third security-correction round (2026-07-30) — `organizationRoleWriteClaims` created, write-claim mechanism verified live
+
+Before designing the write-claim mechanism, a throwaway script confirmed live (against a scratch row in `organizationRoleLocks`, deleted after use — never committed) that Wix Data's `items` API returns no `revision` field on insert/update/query and silently applies a stale-tagged update unconditionally — see ADR-026's "Third security-correction round" section for the full result. `organizationRoleWriteClaims` (Collection 30) was then created live via `POST /wix-data/v2/collections`, and its own insert-conflict behavior was directly confirmed: a first insert at a given organization's id succeeded (HTTP 200), a second insert at the same id returned HTTP 409, and delete + a follow-up query confirmed the row was actually gone — the exact atomic primitive `tryClaimWriteOnce`/`commitProtectedWrite` depend on. `services/organizationLockService.ts`'s real `withOrganizationRoleLock`/`commitProtectedWrite` functions (not raw REST calls) were then exercised directly against the live collection with `DATA_ADAPTER=wix`: a basic acquire → claim → write → release round trip succeeded, and a genuine concurrency test (two `commitProtectedWrite` calls racing for the same held lease) produced strictly serialized ordering (`first-start, first-end, second-start, second-end`), confirming the write claim actually serializes concurrent writes against the real Wix Data API, not only against mock fixtures.
+
 ## Cross-cutting principles
 
 1. **Wix metadata is kept separate from Beacon domain identifiers.** Every collection has Wix's own system `_id` (opaque, Wix-managed, never referenced by Beacon code) *and* an explicit `beacon<Thing>Id` text field — a Beacon-generated stable string id matching the existing `id` field on the corresponding `types/*.ts` type. Every cross-collection reference below is a plain text field holding another collection's `beacon<Thing>Id`, not a formal Wix "Reference" field type (which keys off system `_id`) — so Beacon's own code, including `resolveAuthorizationContext`, never has to reason about a Wix-internal identifier.
@@ -159,7 +185,7 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 |---|---|---|---|---|
 | `beaconMembershipId` | Text | Required | Immutable | Shared |
 | `organizationId` | Text | Required | Immutable — → `organizations.beaconOrganizationId` | Shared |
-| `role` | Text enum (`owner`\|`administrator`\|`caseManager`\|`staff`\|`readOnly`) | Required | Mutable | Shared |
+| `role` | Text (Phase 22 correction: was a 5-value enum) | Required | Mutable | Shared |
 | `userId` | Text | Optional (Phase 21 correction: was Required) | Immutable — Wix member `_id` or a Beacon-issued id; never a `StaffProfile.id` | Legacy (`AUTH_ADAPTER=mock\|wix`) |
 | `identitySource` | Text enum (`wix` \| `other`) | Optional (Phase 21 correction: was Required) | Immutable | Legacy |
 | `isActive` | Boolean | Optional (Phase 21 correction: was Required) | Mutable (default `true`) | Legacy |
@@ -170,6 +196,7 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | `createdAt`, `updatedAt` | Text (ISO timestamp) | Optional | `createdAt` immutable, `updatedAt` mutable | Phase 21 |
 
 - **Indexes:** `userId_organizationId` (regular composite, pre-existing) plus a new `identityId` (regular, Phase 21) — 2 of 3 regular index slots now used, 0 of 1 unique. A row belongs to exactly one model at a time in practice (an application-level convention, not a database constraint Wix Data can express across two disjoint field sets); `services/membershipService.ts` only ever reads/writes the Phase 21 fields, `lib/auth/authorize.ts`'s `resolveAuthorizationContext` still reads mock fixtures unchanged and has never queried this collection at all (unaffected either way).
+- **Phase 22 correction:** `role`'s field type was loosened from a fixed 5-value enum to a plain Text field — no live schema field-type change was actually needed (Wix Data's own field type here was already a general Text field with the 5-value enum enforced only at the application/mapper layer, per `lib/wixMembershipMapper.ts`'s own `isValidRole`), so this is a documentation correction reflecting the widened application-level contract, not a Wix Data schema migration. Every value ever written (`owner`/`administrator`/`caseManager`/`staff`/`readOnly`) remains valid and now additionally resolves through the RBAC permission model (`domain/rbac/legacyRoleAliases.ts`) — see [ADR-026](./adr/ADR-026-role-based-authorization-architecture.md).
 - **Permissions:** backend/Admin only, unchanged.
 - **TS types:** legacy rows map to `types/organization.ts`'s `OrganizationMembership`; Phase 21 rows map to `types/membership.ts`'s `Membership` (see that file's own comment on why these are two deliberately separate types, not a shared one).
 
@@ -607,6 +634,127 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/loginActivityEvent.ts`'s `LoginActivityEvent`.
 
+## Collection 24 — `permissions`
+
+**Purpose:** a materialized, queryable copy of `domain/rbac/permissionCatalog.ts`'s static `PERMISSION_KEYS` — seeded once, never written to by ordinary application logic (Phase 22). Exists so the Permission Matrix/Permission Inspector UI could in principle list the catalog from data rather than a bundled constant; today's routes actually serve the catalog directly from the domain constant instead (see `app/api/rbac/permissions/route.ts`'s own comment on why), so this collection is a seeded reference mirror, read by nothing at runtime. **Ownership:** platform-wide, not organization-scoped. **Retention:** never deleted; adding a new permission is an additive seed, not a schema change.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconPermissionId` | Text | Required | Immutable |
+| `key` | Text enum (the 22 `resource.action` keys in `domain/rbac/permissionCatalog.ts`) | Required | Immutable |
+| `category` | Text | Required | Immutable — the `key`'s resource prefix (`case`, `payment`, ...) |
+| `description` | Text | Required | Mutable |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** none beyond system `_id` — 22 rows total, always read as a full unfiltered scan.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/permission.ts`'s `Permission`.
+
+## Collection 25 — `roles`
+
+**Purpose:** a named, ordered set of permissions — either one of the seven immutable platform defaults (`organizationId: null`) or an organization's own custom role (`organizationId` set, cloned from a default or created from scratch). **Ownership:** platform-wide for defaults; organization-owned for custom roles. **Retention:** platform defaults never deleted; a custom role is hard-deleted by `RoleService.deleteRole` (refused if still assigned to any active member).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconRoleId` | Text | Required | Immutable |
+| `key` | Text | Required | Immutable — one of the seven default keys, or a generated UUID for a custom role |
+| `name` | Text | Required | Mutable (custom roles only — `updateRole` refuses to act on a default) |
+| `description` | Text | Required | Mutable (custom roles only) |
+| `organizationId` | Text, nullable | Optional | Immutable — → `organizations.beaconOrganizationId`; `null` means platform default |
+| `isSystemDefault` | Boolean | Required | Immutable |
+| `createdAt`, `updatedAt` | Text (ISO timestamp) | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes:** `key` (regular — `resolveRoleForKey`'s own lookup; not unique, since Wix Data does not enforce true composite-unique constraints across `key`+`organizationId`, matching this document's existing "true composite-unique constraints are not supported" correction elsewhere — cross-tenant collision is prevented in application code, not the database, by `resolveRoleForKey` rejecting a resolved custom role whose `organizationId` doesn't match the caller's).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/role.ts`'s `Role` — deliberately not named `OrganizationRole` to avoid colliding with the pre-existing closed-union type of that name in `types/organization.ts` (unrelated to this collection).
+
+## Collection 26 — `rolePermissions`
+
+**Purpose:** one (role, permission) grant per row — a `Role`'s full permission set is every row whose `roleId` matches it, not an array field on `roles` itself, so granting/revoking one permission is a single insert/delete. **Ownership:** inherits its role's ownership (platform-wide for a default role's grants, organization-owned for a custom role's). **Retention:** deleted alongside its role, or individually via `RoleService.updateRole`'s `removePermissions`.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconRolePermissionId` | Text | Required | Immutable |
+| `roleId` | Text | Required | Immutable — → `roles.beaconRoleId` |
+| `permissionKey` | Text enum (same 22 keys as `permissions.key`) | Required | Immutable |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `roleId` (regular — every permission-resolution call fetches all grants for one role).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/rolePermission.ts`'s `RolePermission`.
+
+## Collection 27 — `organizationRoles`
+
+**Purpose:** the materialized roster of which `roles` rows (default or custom) are currently available for assignment within one organization. Every organization gets seven of these at creation time (one per default role, seeded by `RoleService.seedDefaultRoles`); cloning a role adds one more pointing at the new custom role. Exists as its own collection, rather than a filtered query over `roles`, so both the Organization Roles Page and permission resolution can read one collection scoped by `organizationId` in a single query. **Ownership:** organization-owned. **Retention:** removed alongside a deleted custom role; a default role's enablement is never removed by this phase (no "disable a default role for this org" feature is built yet — see ADR-026's deferred list).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconOrganizationRoleId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable — → `organizations.beaconOrganizationId` |
+| `roleId` | Text | Required | Immutable — → `roles.beaconRoleId` |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `organizationId` (regular — `listOrganizationRoleEnablements`'s own lookup, the Organization Roles Page's data source).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/organizationRole.ts`'s `OrganizationRoleEnablement` — named to avoid the same collision `roles`'s TS type avoids with `types/organization.ts`'s pre-existing `OrganizationRole`.
+
+## Collection 28 — `organizationRoleAuditEntries`
+
+**Purpose:** an append-only record of every role-lifecycle event (created/cloned/updated/deleted), role-assignment event (assigned/removed), and — Phase 23 (Team Management) — invitation/membership-lifecycle event (revoked/disabled/reactivated/removed) within an organization — the same audit-trail pattern as `onboardingAuditEntries` (Phase 20) and `loginActivityEvents` (Phase 21). Never read by any authorization decision — purely a history for the Role Management/Team Management UIs and future investigation. **Ownership:** organization-owned. **Retention:** never deleted.
+
+**Phase 23 correction:** `setMembershipStatus` previously recorded every membership-status change as `role_removed`, conflating role-lifecycle and membership-lifecycle events. It now uses the specific new actions below. `action` is stored as free `TEXT` at the Wix level, not a Wix-enforced enum — the four new values required no `PUT /wix-data/v2/collections` schema change, confirmed live.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconAuditEntryId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `actorIdentityId` | Text | Required | Immutable |
+| `action` | Text (application-level enum: `role_created`\|`role_cloned`\|`role_updated`\|`role_deleted`\|`role_assigned`\|`role_removed`\|`invitation_revoked`\|`membership_disabled`\|`membership_reactivated`\|`membership_removed`) | Required | Immutable |
+| `roleId` | Text, nullable | Optional | Immutable |
+| `targetIdentityId` | Text, nullable | Optional | Immutable — set only for `role_assigned`/`role_removed` |
+| `previousRoleKey` | Text, nullable | Optional | Immutable — set only for `role_assigned`/`role_removed` |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes:** `organizationId` (regular — `listAuditEntries`'s own lookup).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/organizationRoleAuditEntry.ts`'s `OrganizationRoleAuditEntry`.
+
+## Collection 29 — `organizationRoleLocks`
+
+**Purpose:** a durable, per-organization mutual-exclusion **lease** (first security-correction round, 2026-07-27/28; extended to a renewable lease with a fencing token in the second round, 2026-07-29) — the mechanism behind "an organization can never be left with zero active administrators" being safe under concurrent requests (`services/organizationLockService.ts`'s `withOrganizationRoleLock`, used by every `services/roleService.ts` mutation that can affect who counts as an administrator). **Ownership:** organization-owned. **Retention:** ephemeral — a row exists only while its organization's lease is actually held; released rows are deleted, not archived.
+
+Deliberately the one collection in this schema **without** its own `beacon<Thing>Id` field — this row's identity *is* the organization it locks, so its Wix system `_id` is set directly to the `organizationId` at insert time (see `services/organizationLockService.ts`'s own comment for why: acquiring the lease is exactly "insert a row whose id is the organizationId itself," relying only on ordinary unique-id insert conflict behavior, not Wix Data revision/optimistic-concurrency semantics this project has not independently confirmed).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId` | Text | Required | Immutable — also the row's own system `_id` |
+| `lockToken` | Text | Required | Mutable — only via delete+reinsert on reclaim, never an in-place update |
+| `fenceToken` | Number | Required (added second security-correction round) | Immutable per acquisition — incremented only when the lease is reclaimed from a stale holder |
+| `lockedAt` | Text (ISO timestamp) | Required | Mutable (same as `lockToken`) |
+| `expiresAt` | Text (ISO timestamp) | Required | Mutable — extended in place on every successful lease renewal, the one field a live holder updates without reclaiming |
+
+- **Indexes:** none beyond the system `_id` — every lookup is a direct read/write by `organizationId`/`_id`, and at most one row per organization ever exists.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/organizationRoleLock.ts`'s `OrganizationRoleLock`.
+
+## Collection 30 — `organizationRoleWriteClaims`
+
+**Purpose:** a second, shorter-lived atomic gate (third security-correction round, 2026-07-30) that a protected mutation claims immediately before its actual persistence calls, closing the gap the second round's fencing check left open: `assertFenceStillCurrent` and the write it guards are two separate operations, and a lease could still be reclaimed in the gap between them. Structurally, `organizationRoleLocks`' own stale-reclaim path now refuses to reclaim an expired lease while a live write claim exists for that organization — making reclaim impossible while a write is genuinely in flight, rather than trying to detect a stale write after the fact (see `services/organizationLockService.ts`'s own comment, and ADR-026's third-correction-round section, for the full mechanism and its one honest, remaining limitation). **Ownership:** organization-owned. **Retention:** ephemeral — a row exists only for the few hundred milliseconds a protected write is actually in flight; released rows are deleted, not archived.
+
+Like `organizationRoleLocks`, this is the one other collection without its own `beacon<Thing>Id` field — the row's identity *is* the organization whose write it gates, so its Wix system `_id` is set directly to the `organizationId` at insert time, relying on the same ordinary unique-id insert-conflict primitive as every other lock/claim mechanism in this project (the only atomic primitive Wix Data's `items` API has been confirmed to actually provide — see ADR-026).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId` | Text | Required | Immutable — also the row's own system `_id` |
+| `lockToken` | Text | Required | Immutable per claim — the claiming holder's lease token, carried through so a claim can be attributed back to its owner |
+| `fenceToken` | Number | Required | Immutable per claim — the claiming holder's fence token at claim time |
+| `claimedAt` | Text (ISO timestamp) | Required | Immutable |
+| `expiresAt` | Text (ISO timestamp) | Required | Immutable — a claim is never renewed; it is released (deleted) or left to expire (`WRITE_CLAIM_TTL_MS`, 5 seconds) if its holder crashes mid-write |
+
+- **Indexes:** none beyond the system `_id` — every lookup is a direct read/write by `organizationId`/`_id`, and at most one row per organization ever exists.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/organizationRoleWriteClaim.ts`'s `OrganizationRoleWriteClaim`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -617,7 +765,7 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all twenty-three collections)
+## Permissions summary (all thirty collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -656,6 +804,12 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Password reset token lookup (uniqueness + lookup) | `passwordResetTokens (tokenHash)` unique |
 | Reset tokens for one identity | `passwordResetTokens (identityId)` |
 | Login/lockout activity for one identity | `loginActivityEvents (identityId)` |
+| Role lookup by key (`resolveRoleForKey`) | `roles (key)` (regular, not unique — cross-tenant collision prevented in application code, not the database) |
+| Permission grants for one role | `rolePermissions (roleId)` |
+| Enabled roles for one organization | `organizationRoles (organizationId)` |
+| Role audit history for one organization | `organizationRoleAuditEntries (organizationId)` |
+| Per-organization role-change mutex (security correction) | `organizationRoleLocks` — system `_id` (= `organizationId`) uniqueness only, no custom index |
+| Per-organization in-flight-write gate (third security-correction round) | `organizationRoleWriteClaims` — system `_id` (= `organizationId`) uniqueness only, no custom index |
 
 ## Migration notes
 

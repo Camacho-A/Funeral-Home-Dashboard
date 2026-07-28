@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { identityFixtures, membershipFixtures, identitySessionFixtures, emailVerificationTokenFixtures } from '@/services/__mocks__/identityFixtures';
+import { organizationRoleAuditEntryFixtures } from '@/services/__mocks__/rbacFixtures';
 import { capturedIdentityMessages } from '@/services/__mocks__/identityMessageSender';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 let idCounter = 0;
 function idFactory() {
@@ -19,7 +20,7 @@ vi.mock('@/lib/identity/messageSender', async () => {
   return { getIdentityMessageSender: () => capturingIdentityMessageSender };
 });
 
-const { POST, PATCH } = await import('./route');
+const { GET, POST, PATCH, DELETE } = await import('./route');
 
 function postRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
   return POST(new Request('http://localhost/api/auth/invitations', { method: 'POST', headers, body: JSON.stringify(body) }));
@@ -27,8 +28,14 @@ function postRequest(body: unknown, headers: Record<string, string> = { origin: 
 function patchRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
   return PATCH(new Request('http://localhost/api/auth/invitations', { method: 'PATCH', headers, body: JSON.stringify(body) }));
 }
+function getRequest(organizationId: string) {
+  return GET(new Request(`http://localhost/api/auth/invitations?organizationId=${organizationId}`, { method: 'GET' }));
+}
+function deleteRequest(body: unknown, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
+  return DELETE(new Request('http://localhost/api/auth/invitations', { method: 'DELETE', headers, body: JSON.stringify(body) }));
+}
 
-let lengths: { identity: number; membership: number; sessions: number; tokens: number; messages: number };
+let lengths: { identity: number; membership: number; sessions: number; tokens: number; messages: number; audit: number };
 beforeEach(() => {
   idCounter = 0;
   mockSession = null;
@@ -38,6 +45,7 @@ beforeEach(() => {
     sessions: identitySessionFixtures.length,
     tokens: emailVerificationTokenFixtures.length,
     messages: capturedIdentityMessages.length,
+    audit: organizationRoleAuditEntryFixtures.length,
   };
 });
 afterEach(() => {
@@ -46,6 +54,7 @@ afterEach(() => {
   identitySessionFixtures.length = lengths.sessions;
   emailVerificationTokenFixtures.length = lengths.tokens;
   capturedIdentityMessages.length = lengths.messages;
+  organizationRoleAuditEntryFixtures.length = lengths.audit;
 });
 
 async function seedAdminCaller(role: 'owner' | 'administrator' | 'staff' = 'administrator') {
@@ -138,6 +147,115 @@ describe('PATCH /api/auth/invitations (regenerate)', () => {
   it('rejects a membershipId/invitedIdentityId pair that does not actually belong to the caller\'s organization', async () => {
     await seedAdminCaller('owner');
     const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'fabricated-membership-id', invitedIdentityId: 'fabricated-identity-id' });
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('GET /api/auth/invitations (Phase 23: list pending invitations)', () => {
+  it('returns 401 with no session', async () => {
+    expect((await getRequest(DEFAULT_ORGANIZATION_ID)).status).toBe(401);
+  });
+
+  it('an ordinary staff-tier caller may not list pending invitations', async () => {
+    await seedAdminCaller('staff');
+    expect((await getRequest(DEFAULT_ORGANIZATION_ID)).status).toBe(403);
+  });
+
+  it('lists a pending invitation with the fields the Team page needs, excluding another organization\'s invitations', async () => {
+    await seedAdminCaller('administrator');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'list.pending@example.com', displayName: 'List Pending', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const row = body.invitations.find((i: { membershipId: string }) => i.membershipId === inviteBody.membership.id);
+    expect(row).toBeTruthy();
+    expect(row.email).toBe('list.pending@example.com');
+    expect(row.status).toBe('pending');
+    expect(JSON.stringify(body)).not.toMatch(/tokenHash/i);
+  });
+});
+
+describe('DELETE /api/auth/invitations (Phase 23: revoke)', () => {
+  it('rejects a cross-site request (CSRF)', async () => {
+    await seedAdminCaller('owner');
+    const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'x' }, { origin: 'https://evil.example.com', host: 'localhost' });
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 401 with no session', async () => {
+    expect((await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'x' })).status).toBe(401);
+  });
+
+  it('an ordinary staff-tier caller may not revoke invitations', async () => {
+    await seedAdminCaller('staff');
+    const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'x' });
+    expect(response.status).toBe(403);
+  });
+
+  it('revokes a genuine pending invitation and records an audit entry', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'revoke.route@example.com', displayName: 'Revoke Route', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.membership.status).toBe('removed');
+
+    expect(
+      organizationRoleAuditEntryFixtures.some((e) => e.targetIdentityId === inviteBody.membership.identityId && e.action === 'invitation_revoked'),
+    ).toBe(true);
+  });
+
+  it('is idempotent when the invitation was already revoked', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'revoke.route.twice@example.com', displayName: 'Revoke Twice', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const first = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id });
+    expect(first.status).toBe(200);
+    const second = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id });
+    expect(second.status).toBe(200);
+  });
+
+  it('refuses to revoke an already-accepted invitation (409), leaving the active member untouched', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'revoke.accepted@example.com', displayName: 'Revoke Accepted', role: 'staff' });
+    const inviteBody = await invite.json();
+    const sent = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'revoke.accepted@example.com') as { token: string };
+
+    const { acceptInvitation } = await import('@/services/invitationService');
+    await acceptInvitation({ token: sent.token, membershipId: inviteBody.membership.id, password: 'Accepted1!' }, 'mock');
+
+    const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id });
+    expect(response.status).toBe(409);
+  });
+
+  it('returns 404 for an unknown membershipId', async () => {
+    await seedAdminCaller('owner');
+    const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'fabricated-membership-id' });
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for a genuine pending invitation belonging to a different organization', async () => {
+    await seedAdminCaller('owner');
+
+    // A genuinely pending invitation, but scoped to a different
+    // organization than the caller's own — constructed directly via the
+    // service layer since the caller (a DEFAULT_ORGANIZATION_ID member) is
+    // not authorized to invite into SECOND_MOCK_ORGANIZATION_ID through the
+    // route itself; this isolates the DELETE route's own cross-org check.
+    const { createMembership } = await import('@/services/membershipService');
+    const { findOrCreateIdentity } = await import('@/services/identityService');
+    const { identity } = await findOrCreateIdentity({ email: 'cross.org.revoke.route@example.com', displayName: 'Cross Org', idFactory }, 'mock');
+    const { membership } = await createMembership(
+      { identityId: identity.id, organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'staff', status: 'invited', invitedBy: null, idFactory },
+      'mock',
+    );
+
+    const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: membership.id });
     expect(response.status).toBe(404);
   });
 });

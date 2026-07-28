@@ -100,6 +100,33 @@ export async function verifyEmailWithToken(rawToken: string, dataAdapterMode: Da
   return { success: true, identityId: record.identityId };
 }
 
+/** Every token ever issued for one identity, oldest first — Phase 23's
+    `invitationService.ts` uses this (via `invalidateTokensForIdentity`) to
+    find every live invitation/verification token before revoking an
+    invitation. `resendVerification` never deletes an old token (see this
+    module's own comment above), so more than one row can exist here. */
+export async function listTokensForIdentity(identityId: string, dataAdapterMode: DataAdapterMode): Promise<EmailVerificationToken[]> {
+  if (dataAdapterMode === 'mock') {
+    return emailVerificationTokenFixtures.filter((t) => t.identityId === identityId);
+  }
+  const response = await queryWixDataItems<WixEmailVerificationTokenItem>('emailVerificationTokens', { filter: { identityId } });
+  return response.dataItems.map((item) => mapWixEmailVerificationTokenItem(item.data)).filter((t): t is EmailVerificationToken => t !== null);
+}
+
+/** Phase 23 (Team Management): marks every not-yet-used token for this
+    identity as used, via the same `markTokenUsed` a successful
+    verification already uses — so a revoked invitation's token (however
+    many times it was resent) can never be replayed to accept it after the
+    fact. Already-used tokens are left untouched; safe to call more than
+    once (idempotent). */
+export async function invalidateTokensForIdentity(identityId: string, dataAdapterMode: DataAdapterMode): Promise<void> {
+  const tokens = await listTokensForIdentity(identityId, dataAdapterMode);
+  for (const token of tokens) {
+    if (token.usedAt) continue;
+    await markTokenUsed(token, dataAdapterMode);
+  }
+}
+
 async function markTokenUsed(token: EmailVerificationToken, dataAdapterMode: DataAdapterMode): Promise<void> {
   const usedAt = nowIso();
   if (dataAdapterMode === 'mock') {
