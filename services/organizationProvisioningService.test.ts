@@ -9,6 +9,7 @@ import {
   organizationBrandingFixtures,
   onboardingAuditFixtures,
 } from './__mocks__/onboardingFixtures';
+import { roleFixtures, rolePermissionFixtures, organizationRoleFixtures, organizationRoleAuditEntryFixtures } from './__mocks__/rbacFixtures';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
 
 let idCounter = 0;
@@ -35,6 +36,10 @@ beforeEach(() => {
     session: onboardingSessionFixtures.length,
     branding: organizationBrandingFixtures.length,
     audit: onboardingAuditFixtures.length,
+    role: roleFixtures.length,
+    rolePermission: rolePermissionFixtures.length,
+    organizationRole: organizationRoleFixtures.length,
+    roleAudit: organizationRoleAuditEntryFixtures.length,
   };
 });
 
@@ -48,6 +53,10 @@ afterEach(() => {
   onboardingSessionFixtures.length = lengths.session;
   organizationBrandingFixtures.length = lengths.branding;
   onboardingAuditFixtures.length = lengths.audit;
+  roleFixtures.length = lengths.role;
+  rolePermissionFixtures.length = lengths.rolePermission;
+  organizationRoleFixtures.length = lengths.organizationRole;
+  organizationRoleAuditEntryFixtures.length = lengths.roleAudit;
 });
 
 describe('generateUniqueSlug', () => {
@@ -525,5 +534,173 @@ describe('markStepCompleted', () => {
     // Revisit and re-save the first step — its own completion is idempotent.
     current = (await markStepCompleted(current, 'organization_profile', 'mock'))!;
     expect(current.completedSteps).toEqual(['organization_profile', 'primary_location']);
+  });
+});
+
+describe('RBAC provisioning integration (security-correction round, 2026-07-29)', () => {
+  function startInput(overrides: Record<string, unknown> = {}) {
+    return {
+      idempotencyKey: idFactory(),
+      legalName: 'RBAC Test Org, LLC',
+      displayName: `RBAC Test Org ${idFactory()}`,
+      primaryEmail: 'staff@rbactest.test',
+      primaryPhone: '(555) 000-9999',
+      timezone: 'America/Chicago',
+      defaultCurrency: 'usd',
+      actorUserId: 'platform-admin-1',
+      idFactory,
+      ...overrides,
+    };
+  }
+
+  it('a newly provisioned organization automatically receives all seven default roles', async () => {
+    const { startOnboarding } = await import('./organizationProvisioningService');
+    const { listRolesForOrganization } = await import('./roleService');
+
+    const { organization } = await startOnboarding(startInput(), 'mock');
+    const roles = await listRolesForOrganization(organization.id, 'mock');
+
+    expect(roles).toHaveLength(7);
+    expect(roles.map((r) => r.key).sort()).toEqual(['accounting', 'administrator', 'arranger', 'funeralDirector', 'manager', 'officeStaff', 'readOnly']);
+  });
+
+  it("the initial administrator's role resolves to the expected full permission set", async () => {
+    const { startOnboarding, assignInitialAdministrator } = await import('./organizationProvisioningService');
+    const { resolvePermissionKeysForRole } = await import('./permissionService');
+
+    const { organization } = await startOnboarding(startInput(), 'mock');
+    await assignInitialAdministrator(organization.id, 'new-owner-user', idFactory, 'mock');
+
+    const permissions = await resolvePermissionKeysForRole('administrator', organization.id, 'mock');
+    expect(permissions.size).toBe(22);
+    expect(permissions.has('organization.manage')).toBe(true);
+  });
+
+  it('assignInitialAdministrator refuses if the administrator role is not yet resolvable for the organization', async () => {
+    const { assignInitialAdministrator } = await import('./organizationProvisioningService');
+    // An organization that never went through startOnboarding (so its RBAC
+    // roster was never seeded) and has no platform-default roles seeded
+    // globally either — simulate by clearing every role fixture entirely.
+    const savedRoles = [...roleFixtures];
+    const savedRolePermissions = [...rolePermissionFixtures];
+    roleFixtures.length = 0;
+    rolePermissionFixtures.length = 0;
+    try {
+      await expect(assignInitialAdministrator('org-with-no-rbac-seed', 'someone', idFactory, 'mock')).rejects.toThrow(/not yet resolvable/);
+    } finally {
+      roleFixtures.push(...savedRoles);
+      rolePermissionFixtures.push(...savedRolePermissions);
+    }
+  });
+
+  it('repeated provisioning (retrying startOnboarding for the same organization) creates no duplicate RBAC records', async () => {
+    const { startOnboarding } = await import('./organizationProvisioningService');
+    const { listOrganizationRoleEnablements } = await import('./roleService');
+
+    const input = startInput();
+    const { organization: first } = await startOnboarding(input, 'mock');
+    const beforeRoles = roleFixtures.length;
+    const beforeGrants = rolePermissionFixtures.length;
+
+    const { organization: second, isNew } = await startOnboarding(input, 'mock');
+    expect(isNew).toBe(false);
+    expect(second.id).toBe(first.id);
+
+    const enablements = await listOrganizationRoleEnablements(first.id, 'mock');
+    expect(enablements).toHaveLength(7);
+    expect(roleFixtures.length).toBe(beforeRoles);
+    expect(rolePermissionFixtures.length).toBe(beforeGrants);
+  });
+
+  it('retry after a simulated partial failure (organization/session created, RBAC seeding not yet completed) finishes seeding successfully', async () => {
+    const { startOnboarding } = await import('./organizationProvisioningService');
+    const { listOrganizationRoleEnablements } = await import('./roleService');
+
+    const input = startInput();
+    const { organization } = await startOnboarding(input, 'mock');
+
+    // Simulate "the process crashed after creating the organization/session
+    // but before RBAC seeding completed" by removing this organization's
+    // enablement roster after the fact — the organization and session rows
+    // themselves remain, exactly as a real partial failure would leave them.
+    for (let i = organizationRoleFixtures.length - 1; i >= 0; i--) {
+      if (organizationRoleFixtures[i].organizationId === organization.id) organizationRoleFixtures.splice(i, 1);
+    }
+    expect(await listOrganizationRoleEnablements(organization.id, 'mock')).toHaveLength(0);
+
+    // Retry: startOnboarding is called again with the same idempotencyKey,
+    // exactly as a client retrying a failed request would.
+    const { organization: retried, isNew } = await startOnboarding(input, 'mock');
+    expect(isNew).toBe(false);
+    expect(retried.id).toBe(organization.id);
+
+    const enablements = await listOrganizationRoleEnablements(organization.id, 'mock');
+    expect(enablements).toHaveLength(7);
+  });
+
+  it("existing custom roles and role assignments are preserved across repeated provisioning calls for the same organization", async () => {
+    const { startOnboarding, assignInitialAdministrator } = await import('./organizationProvisioningService');
+    const { createCustomRole, listRolesForOrganization } = await import('./roleService');
+
+    const input = startInput();
+    const { organization } = await startOnboarding(input, 'mock');
+    await assignInitialAdministrator(organization.id, 'the-owner', idFactory, 'mock');
+
+    const custom = await createCustomRole(
+      { organizationId: organization.id, name: 'Night Shift', description: 'After hours', permissions: ['case.read'], actorIdentityId: 'the-owner', idFactory },
+      'mock',
+    );
+
+    // Re-run provisioning for the same organization (idempotent retry).
+    await startOnboarding(input, 'mock');
+
+    const roles = await listRolesForOrganization(organization.id, 'mock');
+    expect(roles).toHaveLength(8); // 7 defaults + the custom role, untouched
+    expect(roles.some((r) => r.id === custom.id)).toBe(true);
+
+    const adminMembership = mockMembershipFixtures.find((m) => m.organizationId === organization.id && m.userId === 'the-owner');
+    expect(adminMembership?.role).toBe('administrator');
+  });
+
+  it("one organization's provisioning does not affect another organization's RBAC roster", async () => {
+    const { startOnboarding } = await import('./organizationProvisioningService');
+    const { listRolesForOrganization, createCustomRole } = await import('./roleService');
+
+    const { organization: orgA } = await startOnboarding(startInput(), 'mock');
+    const { organization: orgB } = await startOnboarding(startInput(), 'mock');
+
+    await createCustomRole({ organizationId: orgA.id, name: 'Org A Only', description: '', permissions: ['case.read'], actorIdentityId: 'actor', idFactory }, 'mock');
+
+    const rolesForA = await listRolesForOrganization(orgA.id, 'mock');
+    const rolesForB = await listRolesForOrganization(orgB.id, 'mock');
+
+    expect(rolesForA).toHaveLength(8);
+    expect(rolesForB).toHaveLength(7);
+    expect(rolesForB.some((r) => r.name === 'Org A Only')).toBe(false);
+  });
+
+  it("migrateExistingOrganization also seeds the RBAC roster for a pre-existing tenant", async () => {
+    const { migrateExistingOrganization } = await import('./organizationProvisioningService');
+    const { listRolesForOrganization } = await import('./roleService');
+
+    const orgId = `migrated-org-${idFactory()}`;
+    await migrateExistingOrganization(
+      {
+        organizationId: orgId,
+        legalName: 'Migrated Org LLC',
+        displayName: 'Migrated Org',
+        primaryEmail: 'staff@migrated.test',
+        primaryPhone: '(555) 000-8888',
+        timezone: 'America/Chicago',
+        defaultCurrency: 'usd',
+        actorUserId: 'platform-admin-1',
+        primaryLocation: { name: 'Main', addressLine1: '1 Main St', city: 'Chicago', state: 'IL', postalCode: '60601', country: 'US', phone: '(555) 000-8888' },
+      },
+      idFactory,
+      'mock',
+    );
+
+    const roles = await listRolesForOrganization(orgId, 'mock');
+    expect(roles).toHaveLength(7);
   });
 });

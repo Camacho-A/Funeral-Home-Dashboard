@@ -1,0 +1,22 @@
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.roleKey {
+  font-size: 11px;
+  color: var(--color-text-muted, #6b7280);
+  font-family: monospace;
+}

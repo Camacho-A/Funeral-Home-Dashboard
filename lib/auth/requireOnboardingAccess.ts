@@ -62,7 +62,7 @@ export async function requireOnboardingSessionAccess(
   const authorized =
     isPlatformAdminUser(userId) ||
     userId === onboardingSession.startedByUserId ||
-    hasAdminTierMembership(userId, onboardingSession.organizationId);
+    (await hasAdminTierMembership(userId, onboardingSession.organizationId));
 
   if (!authorized) return { authorized: false, response: FORBIDDEN_RESPONSE() };
   return { authorized: true, session };

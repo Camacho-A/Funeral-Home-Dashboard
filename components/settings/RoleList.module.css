@@ -1,0 +1,48 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.item:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.itemActive {
+  background: var(--color-brand-tint, #e8e9f5);
+}
+
+.itemName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+}
+
+.itemMeta {
+  font-size: 11px;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.newRoleForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}

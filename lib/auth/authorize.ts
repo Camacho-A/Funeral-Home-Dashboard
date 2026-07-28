@@ -2,6 +2,7 @@ import type { AuthSession } from '../../types/auth';
 import type { AuthorizationContext } from '../../types/authorization';
 import type { OrganizationMembership } from '../../types/organization';
 import { mockMembershipFixtures, mockOrganizationFixtures } from '../../services/__mocks__/authFixtures';
+import { isAdminTier } from '../../services/authorizationPolicyService';
 
 /**
  * Phase 13 (Authentication & Organizations). Looks up a user's ACTIVE,
@@ -85,10 +86,23 @@ export function resolveAuthorizationContext(
  * administrator status. Reuses the same `findActiveMemberships` lookup
  * every other authorization decision in this file goes through — never a
  * second, divergent membership query.
+ *
+ * Phase 22 (Role-Based Access Control) migration: no longer compares
+ * `membership.role` against a literal role name — delegates to
+ * `authorizationPolicyService.isAdminTier`, which resolves the role's
+ * actual permission set (`organization.manage`) instead. Behavior is
+ * unchanged: `domain/rbac/legacyRoleAliases.ts` maps `owner`/`administrator`
+ * onto the same `administrator` default role, the only one granted
+ * `organization.manage`, so the exact same two role values still (and
+ * only) satisfy this check. Always resolved against `dataAdapterMode:
+ * 'mock'` — this function reads mock membership fixtures regardless of
+ * `DATA_ADAPTER` (see `findActiveMemberships`'s own comment), so its role
+ * resolution stays consistent with that same mock-only data source.
  */
-export function hasAdminTierMembership(userId: string, organizationId: string): boolean {
-  return findActiveMemberships(userId).some(
-    (membership) =>
-      membership.organizationId === organizationId && (membership.role === 'owner' || membership.role === 'administrator'),
+export async function hasAdminTierMembership(userId: string, organizationId: string): Promise<boolean> {
+  const memberships = findActiveMemberships(userId).filter((membership) => membership.organizationId === organizationId);
+  const results = await Promise.all(
+    memberships.map((membership) => isAdminTier({ identityId: userId, organizationId, roleKey: membership.role }, 'mock')),
   );
+  return results.some(Boolean);
 }

@@ -1,5 +1,8 @@
 import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
+import { isAdminTier } from './authorizationPolicyService';
+import { seedDefaultRoles } from './roleService';
+import { resolveRoleForKey } from './permissionService';
 import {
   mapWixOrganizationItem,
   buildWixOrganizationData,
@@ -407,6 +410,19 @@ export async function startOnboarding(
     if (flipped) organization = flipped;
   }
 
+  // Phase 22 (Role-Based Access Control) integration: every organization
+  // gets its RBAC roster (platform permissions/default roles seeded
+  // globally, then enabled for this specific organization) as soon as it
+  // exists — before Step 3 (`assignInitialAdministrator`) can possibly
+  // run, and long before `completeOnboarding` can activate it. Called
+  // unconditionally on every `startOnboarding` invocation, not only when
+  // `isNew` — `seedDefaultRoles`/`seedPlatformDefaultRoles` are fully
+  // idempotent (deterministic ids; a conflict on re-seeding is treated as
+  // "already seeded," never an error), so a resumed/retried onboarding
+  // session that already has RBAC seeded incurs a handful of cheap
+  // no-op lookups, not a duplicate-creation risk.
+  await seedDefaultRoles(session.organizationId, dataAdapterMode);
+
   return { organization, session, isNew };
 }
 
@@ -553,6 +569,16 @@ async function findAdminMembership(
  * ever writes is the literal string `'administrator'`). Idempotent: an
  * existing active membership for this (organizationId, userId) pair is
  * returned unchanged rather than duplicated.
+ *
+ * Phase 22 (Role-Based Access Control) integration: refuses to assign the
+ * literal `'administrator'` role unless it actually resolves to a real
+ * `Role` for this organization first (`resolveRoleForKey`) — in ordinary
+ * operation this always succeeds, since `startOnboarding` (Step 1) already
+ * seeded the organization's RBAC roster before this step can run; the
+ * check exists as defense in depth against any future call path that
+ * might reach this function without going through `startOnboarding`
+ * first, rather than silently writing a role assignment that would
+ * resolve to zero permissions.
  */
 export async function assignInitialAdministrator(
   organizationId: string,
@@ -562,6 +588,11 @@ export async function assignInitialAdministrator(
 ): Promise<{ membership: OrganizationMembership; isNew: boolean }> {
   const existing = await findAdminMembership(organizationId, administratorUserId, dataAdapterMode);
   if (existing) return { membership: existing, isNew: false };
+
+  const administratorRole = await resolveRoleForKey('administrator', organizationId, dataAdapterMode);
+  if (!administratorRole) {
+    throw new Error(`The administrator role is not yet resolvable for organization ${organizationId} — its RBAC roster has not been seeded.`);
+  }
 
   const membership: OrganizationMembership = {
     organizationId,
@@ -988,16 +1019,34 @@ export async function validateLaunchReadiness(
   return { checklist: buildLaunchChecklist(input), ready: isReadyToLaunch(input) };
 }
 
+/**
+ * Phase 22 (Role-Based Access Control) migration: counts active
+ * memberships whose role resolves to admin-tier (`organization.manage`)
+ * via `authorizationPolicyService.isAdminTier`, instead of comparing
+ * `role === 'owner' || role === 'administrator'` directly. Behavior is
+ * unchanged — `domain/rbac/legacyRoleAliases.ts` maps both of those
+ * values onto the same `administrator` default role, the only one this
+ * permission is granted to.
+ */
 async function countAdminMemberships(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
+  type RoleBearingMembership = { userId: string; role: string };
+  let candidates: RoleBearingMembership[];
+
   if (dataAdapterMode === 'mock') {
-    return mockMembershipFixtures.filter(
-      (m) => m.organizationId === organizationId && m.isActive && (m.role === 'owner' || m.role === 'administrator'),
-    ).length;
+    candidates = mockMembershipFixtures.filter((m) => m.organizationId === organizationId && m.isActive);
+  } else {
+    const response = await queryWixDataItems<Record<string, unknown>>('organizationMemberships', {
+      filter: { organizationId, isActive: true },
+    });
+    candidates = response.dataItems
+      .filter((item): item is typeof item & { data: { userId: string; role: string } } => typeof item.data.userId === 'string' && typeof item.data.role === 'string')
+      .map((item) => ({ userId: item.data.userId, role: item.data.role }));
   }
-  const response = await queryWixDataItems<Record<string, unknown>>('organizationMemberships', {
-    filter: { organizationId, isActive: true },
-  });
-  return response.dataItems.filter((item) => item.data.role === 'owner' || item.data.role === 'administrator').length;
+
+  const adminChecks = await Promise.all(
+    candidates.map((m) => isAdminTier({ identityId: m.userId, organizationId, roleKey: m.role }, dataAdapterMode)),
+  );
+  return adminChecks.filter(Boolean).length;
 }
 
 /**
@@ -1031,6 +1080,16 @@ export async function completeOnboarding(
   if (!ready) {
     return { success: false, checklist };
   }
+
+  // Phase 22 (Role-Based Access Control) integration: "completion before
+  // organization activation." `startOnboarding` already seeds this
+  // organization's RBAC roster (Step 1), but re-asserting it here —
+  // idempotently, a cheap no-op if already seeded — guarantees the
+  // invariant holds regardless of which code path actually created this
+  // organization (defense in depth against, e.g., a future direct-creation
+  // path that bypasses `startOnboarding`), and never activates an
+  // organization whose roster isn't confirmed seeded.
+  await seedDefaultRoles(session.organizationId, dataAdapterMode);
 
   const now = nowIso();
   const organization = await updateOrganization(session.organizationId, { status: 'active', isActive: true }, dataAdapterMode);
@@ -1242,6 +1301,14 @@ export async function migrateExistingOrganization(
       if (updated) organization = updated;
     }
   }
+
+  // Phase 22 (Role-Based Access Control) integration: a pre-existing,
+  // already-live tenant migrated through this path needs its RBAC roster
+  // exactly as much as a brand-new one provisioned through
+  // `startOnboarding` — "Manor's Cremation must not depend on manual setup
+  // that future tenants will not receive." Idempotent; a no-op if already
+  // seeded (as Manor's Cremation's own roster already is).
+  await seedDefaultRoles(input.organizationId, dataAdapterMode);
 
   const { location, isNew: locationCreated } = await createPrimaryLocation(
     input.organizationId,

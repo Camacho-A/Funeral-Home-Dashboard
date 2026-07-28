@@ -21,17 +21,30 @@
  */
 export type MembershipStatus = 'invited' | 'active' | 'disabled' | 'removed';
 
-/** Deliberately the same small, closed set as the pre-existing
-    `OrganizationRole` (`types/organization.ts`) — reused directly, not
-    redefined, so a future unification of the two membership models never
-    has to reconcile two different role vocabularies. */
+/** The original, closed five-value vocabulary this field held before
+    Phase 22 (Role-Based Access Control) — kept only as a documented,
+    still-valid subset (see `domain/rbac/legacyRoleAliases.ts`, which maps
+    every one of these onto a Phase 22 default role key), not as the
+    exhaustive type of `Membership.role` any more. */
 export type MembershipRole = 'owner' | 'administrator' | 'caseManager' | 'staff' | 'readOnly';
 
 export type Membership = {
   id: string;
   identityId: string;
   organizationId: string;
-  role: MembershipRole;
+  /**
+   * Phase 22 (Role-Based Access Control): widened from the closed
+   * `MembershipRole` union to a plain role *key* — any of the five legacy
+   * values above, one of `domain/rbac/defaultRoles.ts`'s seven Phase 22
+   * default role keys, or a generated custom-role key
+   * (`services/roleService.ts`'s `createCustomRole`/`cloneRole`). No
+   * existing row's value needs to change: every legacy value keeps
+   * resolving to the exact same permission set it always implied, via
+   * `domain/rbac/legacyRoleAliases.ts`. `services/roleService.ts`
+   * (`assignRole`/`removeRole`) is the only place this field should ever
+   * be written from application logic — never assign it directly.
+   */
+  role: string;
   status: MembershipStatus;
   /** The identityId of whoever sent the invitation — null for a
       membership that was never invited (e.g. created directly by a

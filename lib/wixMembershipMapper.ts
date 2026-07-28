@@ -1,13 +1,26 @@
-import type { Membership, MembershipRole, MembershipStatus } from '../types/membership';
+import type { Membership, MembershipStatus } from '../types/membership';
 
 const VALID_STATUSES: MembershipStatus[] = ['invited', 'active', 'disabled', 'removed'];
-const VALID_ROLES: MembershipRole[] = ['owner', 'administrator', 'caseManager', 'staff', 'readOnly'];
 
 function isValidStatus(value: unknown): value is MembershipStatus {
   return typeof value === 'string' && (VALID_STATUSES as string[]).includes(value);
 }
-function isValidRole(value: unknown): value is MembershipRole {
-  return typeof value === 'string' && (VALID_ROLES as string[]).includes(value);
+
+/**
+ * Phase 22 (Role-Based Access Control): `Membership.role` is no longer a
+ * closed compile-time union — it's a role *key* that can name any of the
+ * five legacy values, one of the seven Phase 22 default roles, or a
+ * generated custom-role key, and the full set of custom keys is
+ * per-organization and dynamic. A mapper is a synchronous, data-free
+ * function and can't query `roles`/`organizationRoles` to check
+ * membership in that dynamic set, so this only validates the field is a
+ * non-empty string — semantic validation ("does this key actually resolve
+ * to a real, org-visible role") happens where it can be done with a real
+ * lookup: `services/permissionService.ts`'s `resolveRoleForKey` (read
+ * paths) and `services/roleService.ts`'s `assignRole` (write paths).
+ */
+function isValidRole(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
 export type WixMembershipItem = {

@@ -6,7 +6,7 @@ import {
   applyMembershipUpdateToWixData,
   type WixMembershipItem,
 } from '../lib/wixMembershipMapper';
-import type { Membership, MembershipRole } from '../types/membership';
+import type { Membership } from '../types/membership';
 import { membershipFixtures } from './__mocks__/identityFixtures';
 
 /**
@@ -73,7 +73,7 @@ export function isActiveMembership(membership: Membership | null): membership is
  * `status: 'invited'`).
  */
 export async function createMembership(
-  params: { identityId: string; organizationId: string; role: MembershipRole; status: 'invited' | 'active'; invitedBy: string | null; idFactory: () => string },
+  params: { identityId: string; organizationId: string; role: string; status: 'invited' | 'active'; invitedBy: string | null; idFactory: () => string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ membership: Membership; isNew: boolean }> {
   const existing = await getMembership(params.identityId, params.organizationId, dataAdapterMode);

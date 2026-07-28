@@ -14,6 +14,15 @@ import { setSessionOrganization } from '@/services/sessionService';
  * route's client-supplied id — resolveMembershipAuthorizationContext
  * independently confirms an active Membership exists before this route
  * ever persists the switch to the session registry row.
+ *
+ * Phase 22 (Role-Based Access Control) security-correction round
+ * (2026-07-27/28): this route used to invalidate a process-local
+ * permission cache for both the organization being left and the one being
+ * switched to. That cache was removed entirely (`services/permissionService.ts`
+ * no longer caches anything cross-request — see its own comment) because
+ * it was only ever correct for a single application instance; nothing
+ * needs invalidating here any more, since every permission resolution
+ * already reads fresh, from every instance, on every request.
  */
 export async function POST(request: Request) {
   const csrfResponse = requireSameOrigin(request);

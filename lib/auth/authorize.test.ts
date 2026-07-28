@@ -98,26 +98,26 @@ describe('resolveAuthorizationContext — no memberships at all', () => {
  * administrator resume its onboarding session.
  */
 describe('hasAdminTierMembership', () => {
-  it('returns true for an administrator-role active membership', () => {
+  it('returns true for an administrator-role active membership', async () => {
     // mockDefaultUser holds an 'administrator' membership in DEFAULT_ORGANIZATION_ID.
-    expect(hasAdminTierMembership(mockDefaultUser.id, DEFAULT_ORGANIZATION_ID)).toBe(true);
+    expect(await hasAdminTierMembership(mockDefaultUser.id, DEFAULT_ORGANIZATION_ID)).toBe(true);
   });
 
-  it('returns false for a staff-role membership — not admin-tier', () => {
+  it('returns false for a staff-role membership — not admin-tier', async () => {
     // mockMultiOrgUser holds a 'staff' membership in DEFAULT_ORGANIZATION_ID.
-    expect(hasAdminTierMembership(mockMultiOrgUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
+    expect(await hasAdminTierMembership(mockMultiOrgUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
   });
 
-  it('returns false for a caseManager-role membership in a different organization — admin-tier but not owner/administrator', () => {
+  it('returns false for a caseManager-role membership in a different organization — admin-tier but not owner/administrator', async () => {
     // mockMultiOrgUser holds a 'caseManager' membership in SECOND_MOCK_ORGANIZATION_ID.
-    expect(hasAdminTierMembership(mockMultiOrgUser.id, SECOND_MOCK_ORGANIZATION_ID)).toBe(false);
+    expect(await hasAdminTierMembership(mockMultiOrgUser.id, SECOND_MOCK_ORGANIZATION_ID)).toBe(false);
   });
 
-  it('returns false for an inactive membership row, regardless of role', () => {
-    expect(hasAdminTierMembership(mockInactiveMembershipUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
+  it('returns false for an inactive membership row, regardless of role', async () => {
+    expect(await hasAdminTierMembership(mockInactiveMembershipUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
   });
 
-  it('returns false for a user with no membership in the organization at all', () => {
-    expect(hasAdminTierMembership('mock-user-nobody', DEFAULT_ORGANIZATION_ID)).toBe(false);
+  it('returns false for a user with no membership in the organization at all', async () => {
+    expect(await hasAdminTierMembership('mock-user-nobody', DEFAULT_ORGANIZATION_ID)).toBe(false);
   });
 });
