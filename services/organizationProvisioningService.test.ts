@@ -572,7 +572,7 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     await assignInitialAdministrator(organization.id, 'new-owner-user', idFactory, 'mock');
 
     const permissions = await resolvePermissionKeysForRole('administrator', organization.id, 'mock');
-    expect(permissions.size).toBe(22);
+    expect(permissions.size).toBe(24); // Phase 24: 22 + audit.read + audit.export
     expect(permissions.has('organization.manage')).toBe(true);
   });
 

@@ -32,6 +32,7 @@ import {
 } from '../domain/pricing/calculateOrder';
 import { diffSelections } from '../domain/pricing/auditDiff';
 import { listPaymentRecordsForCase } from './paymentsService';
+import { recordCaseOrderChanged } from './activityService';
 import {
   serviceCatalogFixtures,
   caseOrderFixtures,
@@ -389,6 +390,24 @@ export async function recalculateOrder(
   const persistedOrder = await persistCaseOrder(newOrder, dataAdapterMode);
   await persistLineItems(newLineItems, dataAdapterMode);
   await persistAuditEntries(auditEntries, dataAdapterMode);
+
+  // Phase 24 (Case Activity Timeline & Audit Center): one activity event
+  // summarizing this whole recalculation, reusing the exact diff data
+  // already computed above — best-effort, never fails the actual order
+  // update. `performedBy` carries no resolved membership/role here (this
+  // service has no auth context of its own — see this file's own
+  // "no new authorization logic" convention), so those two fields are null.
+  try {
+    await recordCaseOrderChanged(
+      { organizationId: params.organizationId, actorIdentityId: params.performedBy, actorMembershipId: null, actorRoleKey: null, correlationId: newOrderId },
+      params.caseId,
+      newOrderId,
+      diffEntries,
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error('Failed to record case.order.changed activity event:', error instanceof Error ? error.message : error);
+  }
 
   return { order: persistedOrder, lineItems: newLineItems, auditEntries };
 }

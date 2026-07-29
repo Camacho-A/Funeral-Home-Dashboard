@@ -14,6 +14,7 @@ import {
 } from '@/services/paymentsService';
 import { getActiveCaseOrder } from '@/services/pricingService';
 import { cloverProvider } from '@/lib/clover/cloverProvider';
+import { recordPaymentCheckoutCreated } from '@/services/activityService';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Creates (or reuses) a
@@ -173,6 +174,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     // Clover yet, or is already terminal) rather than starting a second
     // Clover session for the same logical attempt.
     return NextResponse.json({ paymentId: pendingRecord.id, checkoutUrl: pendingRecord.checkoutUrl });
+  }
+
+  // Phase 24 (Case Activity Timeline & Audit Center): only for a genuinely
+  // new attempt (never an idempotent replay) — best-effort, never fails
+  // the actual checkout.
+  try {
+    await recordPaymentCheckoutCreated(
+      { organizationId, actorIdentityId: authResult.context.userId, actorMembershipId: null, actorRoleKey: authResult.context.role, correlationId: paymentId },
+      caseId,
+      paymentId,
+      amount,
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error('Failed to record payment.checkout.created activity event:', error instanceof Error ? error.message : error);
   }
 
   const origin = new URL(request.url).origin;

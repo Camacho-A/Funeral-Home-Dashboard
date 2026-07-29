@@ -6,6 +6,8 @@ import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
+import { recordCaseUpdated, recordStageChanged, type FieldChange } from '@/services/activityService';
+import { STAGES, toDisplayStage } from '@/domain/cases/stages';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Beacon
@@ -79,9 +81,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
  * updateWixDataItem comment) — the validated patch is merged onto that
  * full object, never sent as a bare partial.
  */
+function stageLabel(rawStage: number): string {
+  return STAGES[toDisplayStage(rawStage)] ?? `Stage ${rawStage}`;
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
   const csrfResponse = requireSameOrigin(request);
   if (csrfResponse) return csrfResponse;
+
+  // Phase 24: one correlationId per request, shared by every activity event
+  // this single PATCH may produce (e.g. a stage change alongside other
+  // field edits in the same call).
+  const correlationId = crypto.randomUUID();
 
   const { caseId } = await params;
 
@@ -118,6 +129,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
+  const context = authResult.context;
 
   if (getDataAdapterMode() !== 'wix') {
     return NextResponse.json(
@@ -137,7 +149,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       paging: { limit: 1 },
     });
     const existingItem = existingResponse.dataItems[0];
-    if (!existingItem || !mapWixCaseItem(existingItem.data)) {
+    const existing = existingItem ? mapWixCaseItem(existingItem.data) : null;
+    if (!existingItem || !existing) {
       return NextResponse.json({ case: null }, { status: 404 });
     }
 
@@ -146,6 +159,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     const result = mapWixCaseItem(updated.data);
     if (!result) {
       return NextResponse.json({ case: null, error: 'Failed to update case.' }, { status: 500 });
+    }
+
+    // Phase 24: best-effort — never fails the actual update. A stage
+    // change gets its own, more specific event; every other changed field
+    // is grouped into one case.updated event carrying only the fields that
+    // actually changed (never a full case snapshot) — both share this
+    // request's single correlationId.
+    try {
+      const activityCtx = { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId };
+      const patchRecord = patch as Record<string, unknown>;
+      const existingRecord = existing as unknown as Record<string, unknown>;
+
+      if (patchRecord.rawStage !== undefined && patchRecord.rawStage !== existing.rawStage) {
+        await recordStageChanged(activityCtx, caseId, stageLabel(existing.rawStage), stageLabel(patchRecord.rawStage as number), 'wix');
+      }
+
+      const changedFields: Record<string, FieldChange> = {};
+      for (const key of Object.keys(patchRecord)) {
+        if (key === 'rawStage') continue;
+        const previous = existingRecord[key];
+        const next = patchRecord[key];
+        if (previous !== next) changedFields[key] = { previous, next };
+      }
+      if (Object.keys(changedFields).length > 0) {
+        await recordCaseUpdated(activityCtx, caseId, changedFields, 'wix');
+      }
+    } catch (error) {
+      console.error('Failed to record case-update activity event(s):', error instanceof Error ? error.message : error);
     }
 
     return NextResponse.json({ case: result });

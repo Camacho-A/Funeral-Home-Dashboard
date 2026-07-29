@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(22);
+    expect(admin.permissions).toHaveLength(24); // Phase 24: 22 + audit.read + audit.export
   });
 
   it('readOnly grants only *.read/*.view permissions', () => {

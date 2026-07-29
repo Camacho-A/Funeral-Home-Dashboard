@@ -138,6 +138,18 @@ Closes three small, genuine gaps Phase 22 left (deliberately, per its own "Defer
 
 Team Management's UI (Settings → Team: active member list, pending invitations, invite/resend/revoke, role change, disable/reactivate/remove, permission-gated visibility) is in progress on top of these three additions.
 
+## Case Activity Timeline & Audit Center (Phase 24)
+
+**Status: in progress.** Full writeup: [ADR-028](./adr/ADR-028-activity-timeline-and-audit-center.md).
+
+Builds the persisted "who did what, when" record Beacon never actually had: four prior phases (Roles' `organizationRoleAuditEntries`, Case Order's `caseOrderAuditEntries`, Onboarding's `onboardingAuditEntries`, Identity's `loginActivityEvents`) each wrote their own audit trail, and none of them was ever rendered anywhere in the app. A single new, generalized, **append-only and immutable** `ActivityEvent` model and `services/activityService.ts` (insert-only — no update or delete API exists for it, by design) is wired into cases, tasks, payments, and case-order pricing — the modules with real, currently-shipped mutations to attach to — behind a controlled, dot-notation event-type registry (`case.created`, `payment.recorded`, ...) so every future module adds a builder helper and a call site, never a data-model change. The four legacy audit collections are left completely untouched; migrating their writers onto the new service is named as deliberate future work, not attempted this phase.
+
+Two real, currently-shipped limitations were discovered (not assumed) during implementation and are documented in ADR-028 rather than silently designed around: case/task activity events only fire when running in `DATA_ADAPTER=wix` mode, since mock-mode case/task mutations are a pre-existing, Phase 0–16-era client-side-only code path that never reaches the server in any mode; and `services/caseLogService.ts` (case notes/contacts) has no server-side or Wix integration at all, in any mode, so `case.note.added`/`case.contact.logged` are reserved in the taxonomy but not wired this phase.
+
+A new Wix collection, `activityEvents` (Collection 31), was created live with its 3 indexes (the platform's own 3-regular-index cap, reconfirmed empirically) and fully verified live — every wired builder helper, keyset (seek) pagination across multiple pages, category/date-range filtering, cross-tenant isolation (including a deliberately-shared `caseId` across two organizations), and CSV export — then every verification row was deleted, leaving the live collection empty. Two new permissions, `audit.read` and `audit.export`, gate an organization-wide Audit Center; the Case Activity tab reuses the same `requireAuthorizedOrganization` gate every existing case route already uses, rather than inventing a new one (case routes were never migrated to per-permission RBAC checks in any prior phase).
+
+**Deferred, unchanged by this phase:** migrating the four legacy audit writers onto the new service; `case.note.added`/`case.contact.logged` (blocked on `caseLogService.ts` getting a real backend); refund and document-related event types (reserved in the taxonomy; no such features exist in Beacon yet); PDF export (CSV ships this phase).
+
 ## Version 2 Candidates (not committed, not scheduled)
 
 These are logical next steps once V1 is in production use at Managed Cremations, in roughly the order they'd likely be needed:

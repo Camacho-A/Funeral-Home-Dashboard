@@ -11,6 +11,7 @@ import { matchesSearch } from '@/services/casesService';
 import type { Case } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { recordCaseCreated } from '@/services/activityService';
 
 /**
  * Phase 15C (Wix Case Read Integration). Lists cases for one organization
@@ -110,6 +111,10 @@ export async function POST(request: Request) {
   const csrfResponse = requireSameOrigin(request);
   if (csrfResponse) return csrfResponse;
 
+  // Phase 24 (Case Activity Timeline & Audit Center): one correlationId per
+  // request — shared by every activity event this request produces.
+  const correlationId = crypto.randomUUID();
+
   let body: unknown;
   try {
     body = await request.json();
@@ -141,6 +146,7 @@ export async function POST(request: Request) {
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
+  const context = authResult.context;
 
   if (getDataAdapterMode() !== 'wix') {
     return NextResponse.json(
@@ -216,6 +222,21 @@ export async function POST(request: Request) {
     const created = mapWixCaseItem(inserted.data);
     if (!created) {
       return NextResponse.json({ case: null, error: 'Failed to create case.' }, { status: 500 });
+    }
+
+    // Phase 24: best-effort — an activity-log failure never fails the
+    // actual case creation, matching this codebase's existing convention
+    // for non-critical side effects (see app/api/auth/invitations/route.ts's
+    // message-send try/catch).
+    try {
+      await recordCaseCreated(
+        { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+        created.id,
+        { caseNumber: created.caseNumber, decedentName: created.decedentName },
+        'wix',
+      );
+    } catch (error) {
+      console.error('Failed to record case.created activity event:', error instanceof Error ? error.message : error);
     }
 
     return NextResponse.json({ case: created }, { status: 201 });

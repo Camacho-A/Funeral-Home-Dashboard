@@ -9,6 +9,7 @@ import {
 } from '@/lib/wixTaskMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { recordTaskCompleted } from '@/services/activityService';
 
 /**
  * Phase 16 (Wix Write Integration). Updates or deletes one task by its
@@ -41,6 +42,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
   const csrfResponse = requireSameOrigin(request);
   if (csrfResponse) return csrfResponse;
 
+  const correlationId = crypto.randomUUID();
   const { taskId } = await params;
 
   let body: unknown;
@@ -61,6 +63,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
+  const context = authResult.context;
 
   if (getDataAdapterMode() !== 'wix') {
     return NextResponse.json({ task: null, error: 'This endpoint requires DATA_ADAPTER=wix.' }, { status: 400 });
@@ -76,12 +79,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
     if (!existingItem) {
       return NextResponse.json({ task: null }, { status: 404 });
     }
+    const existing = mapWixTaskItem(existingItem.data);
 
     const mergedData = applyTaskUpdateToWixData(existingItem.data, patch);
     const updated = await updateWixDataItem<WixTaskItem>('tasks', existingItem.id, mergedData);
     const result = mapWixTaskItem(updated.data);
     if (!result) {
       return NextResponse.json({ task: null, error: 'Failed to update task.' }, { status: 500 });
+    }
+
+    // Phase 24: only a genuine false->true completion transition on a
+    // case-linked task is activity-worthy — best-effort, never fails the
+    // actual update.
+    if (existing && existing.caseId && !existing.isDone && patch.isDone === true) {
+      try {
+        await recordTaskCompleted(
+          { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+          existing.caseId,
+          taskId,
+          existing.text,
+          'wix',
+        );
+      } catch (error) {
+        console.error('Failed to record case.task.completed activity event:', error instanceof Error ? error.message : error);
+      }
     }
 
     return NextResponse.json({ task: result });

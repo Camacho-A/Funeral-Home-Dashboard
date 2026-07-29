@@ -3,6 +3,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsService';
+import { recordPaymentCancelled } from '@/services/activityService';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Marks a still-pending
@@ -55,5 +56,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     { status: 'cancelled', updatedAt: new Date().toISOString() },
     dataAdapterMode,
   );
+
+  // Phase 24: best-effort — never fails the actual cancellation.
+  try {
+    await recordPaymentCancelled(
+      { organizationId, actorIdentityId: authResult.context.userId, actorMembershipId: null, actorRoleKey: authResult.context.role, correlationId: paymentId },
+      caseId,
+      paymentId,
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error('Failed to record payment.cancelled activity event:', error instanceof Error ? error.message : error);
+  }
+
   return NextResponse.json({ payment: updated });
 }

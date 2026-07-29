@@ -755,17 +755,47 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/organizationRoleWriteClaim.ts`'s `OrganizationRoleWriteClaim`.
 
+## Collection 31 — `activityEvents`
+
+**Purpose:** the single, generalized, **append-only and immutable** record of "who did what, when" (Phase 24 — Case Activity Timeline & Audit Center), created because the four audit-shaped collections built in earlier phases (`organizationRoleAuditEntries`, `caseOrderAuditEntries`, `onboardingAuditEntries`, `loginActivityEvents`) each reinvented the same rough envelope independently and none of them was ever rendered anywhere in the app. This reverses the "not created" verdict this document previously recorded for `caseTimelineEvents` (see the table above, kept for history) — that verdict was correct for its own moment (no persisted timeline record existed and nothing required one yet); Phase 24 is the point a real UI (Case Activity tab, Audit Center) needed one. The four legacy audit collections are unaffected — no schema change, no writer migration, this phase. **Ownership:** organization-owned. **Retention:** never deleted — no update or delete API exists for this collection anywhere in the application; a correction to a past event is always a new event, never an edit.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconActivityEventId` | Text | Required | Immutable |
+| `eventVersion` | Number | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `caseId` | Text, nullable | Optional | Immutable |
+| `actorIdentityId` | Text, nullable | Optional | Immutable — null only when `isSystemGenerated` |
+| `actorMembershipId` | Text, nullable | Optional | Immutable |
+| `actorRoleKey` | Text, nullable | Optional | Immutable — the actor's role snapshotted at write time, not looked up live |
+| `category` | Text (application-level enum — see `ActivityEventCategory`) | Required | Immutable |
+| `eventType` | Text (controlled dot-notation identifier — see `ACTIVITY_EVENT_TYPES`) | Required | Immutable |
+| `resourceType` | Text | Required | Immutable |
+| `resourceId` | Text, nullable | Optional | Immutable |
+| `previousValue` | Text (JSON-stringified, changed fields only), nullable | Optional | Immutable |
+| `newValue` | Text (JSON-stringified, changed fields only), nullable | Optional | Immutable |
+| `description` | Text | Required | Immutable |
+| `metadata` | Text (JSON-stringified), nullable | Optional | Immutable |
+| `severity` | Text (application-level enum: `info`\|`warning`\|`critical`) | Required | Immutable |
+| `correlationId` | Text, nullable | Optional | Immutable — shared across every event one logical request produces |
+| `isSystemGenerated` | Boolean | Required | Immutable |
+| `createdAt` | Text (ISO timestamp) | Required | Immutable |
+
+- **Indexes** (3 regular — the platform's own cap, re-confirmed live via this collection's own `capabilities.indexLimits`): `(organizationId, createdAt)` (Audit Center default view + keyset pagination anchor), `(organizationId, caseId)` (Case Activity tab), `(organizationId, category)` (Audit Center's most common filter beyond date range). No unique index. Actor/resource/eventType/severity/free-text filtering happens in application code after an org(+date or +case)-bounded fetch.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/activityEvent.ts`'s `ActivityEvent`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
 |---|---|---|
 | `users` / `userProfiles` | Not created | Real identity already lives in Wix Members (real login) or mock fixtures (mock mode). A parallel Wix Data collection would duplicate identity data Wix already manages. |
-| `caseTimelineEvents` | Not created | `domain/cases/timeline.ts`'s activity log is fully derived at read time from `checklistState`/`fieldValues`/`workflowSnapshot`. No persisted timeline record exists anywhere today; adding one now would be a collection built for a future possibility, not a present need. |
+| `caseTimelineEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | Originally not created because `domain/cases/timeline.ts`'s activity log was fully derived at read time and nothing required a persisted record yet. Phase 24 built the real, general-purpose replacement once a real UI needed one — see Collection 31 above. `domain/cases/timeline.ts` and `ActivityLogCard.tsx` are kept in the codebase regardless (rollback safety), not deleted by Phase 24. |
 | `caseDocuments` metadata | Not created | Already out of Wix's scope by prior architecture — `types/document.ts` documents this belongs to "eventually the Postgres/object-storage service... not Wix Data." Not a new decision here. |
-| `auditEvents` | Not created | No such concept exists in the application today; nothing in the stated Phase 15/16 foundation requires one yet. |
+| `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all thirty collections)
+## Permissions summary (all thirty-one collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 

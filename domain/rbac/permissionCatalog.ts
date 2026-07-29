@@ -31,6 +31,15 @@ export const PERMISSION_KEYS = [
 
   'report.view',
 
+  /** Phase 24 (Case Activity Timeline & Audit Center). Deliberately only
+      two keys, not three: the Case Activity tab is gated by the existing
+      `case.read` (no role can read a case's data but not its history —
+      a separate `audit.case.read` would be a distinction with no real
+      difference). These two gate the org-wide, cross-case Audit Center,
+      which has no existing equivalent permission. */
+  'audit.read',
+  'audit.export',
+
   'organization.manage',
 
   'user.invite',
@@ -76,6 +85,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'document.view': 'View generated documents',
 
   'report.view': 'View reports',
+
+  'audit.read': 'View the organization-wide activity and audit log',
+  'audit.export': 'Export activity and audit log data',
 
   'organization.manage': "Manage the organization's own profile and settings",
 

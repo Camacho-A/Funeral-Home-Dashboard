@@ -20,8 +20,11 @@ import { ChecklistCard } from '@/components/case/ChecklistCard';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
 import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCard';
 import { ActivityLogCard } from '@/components/case/ActivityLogCard';
+import { CaseActivityTab } from '@/components/case/CaseActivityTab';
 import { DocumentsCard, type DocumentRowItem } from '@/components/case/DocumentsCard';
 import styles from './page.module.css';
+
+type CaseDetailTab = 'overview' | 'activity';
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -38,6 +41,7 @@ function capitalize(text: string): string {
 export default function CaseDetailPage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = use(params);
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
 
   const { data: case_, isPending } = useCase(caseId);
   const { data: staffList = [] } = useStaff();
@@ -128,6 +132,30 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         }
       />
 
+      <div className={styles.tabs} role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'overview'}
+          className={activeTab === 'overview' ? styles.tabActive : styles.tabInactive}
+          onClick={() => setActiveTab('overview')}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'activity'}
+          className={activeTab === 'activity' ? styles.tabActive : styles.tabInactive}
+          onClick={() => setActiveTab('activity')}
+        >
+          Activity
+        </button>
+      </div>
+
+      {activeTab === 'activity' && <CaseActivityTab caseId={caseId} />}
+
+      {activeTab === 'overview' && (
       <div className={styles.columns}>
         <div className={styles.column}>
           <CaseInformationCard
@@ -218,6 +246,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           />
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   markWebhookEventFailed,
 } from '@/services/paymentsService';
 import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
+import { recordPaymentRecorded, recordPaymentFailed } from '@/services/activityService';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Public endpoint — no
@@ -168,6 +169,25 @@ export async function POST(request: Request) {
 
     if (updated.status === 'succeeded') {
       await markCasePaidIfVerified(record.organizationId, record.caseId, dataAdapterMode);
+    }
+
+    // Phase 24 (Case Activity Timeline & Audit Center): system-generated —
+    // there is no authenticated actor for a webhook delivery. Shares
+    // `correlationId` (Clover's own echoed correlation value) with the
+    // payment.checkout.created event recorded when this attempt began,
+    // since both use the same PaymentRecord id as that value. Best-effort,
+    // never turns a real webhook success into a 503.
+    if (updated.status === 'succeeded' || updated.status === 'failed') {
+      try {
+        const activityCtx = { organizationId: record.organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true };
+        if (updated.status === 'succeeded') {
+          await recordPaymentRecorded(activityCtx, record.caseId, record.id, updated.amount, dataAdapterMode);
+        } else {
+          await recordPaymentFailed(activityCtx, record.caseId, record.id, updated.failureMessage ?? updated.failureCode ?? 'Unknown failure', dataAdapterMode);
+        }
+      } catch (error) {
+        console.error('Failed to record payment activity event:', error instanceof Error ? error.message : error);
+      }
     }
 
     await markWebhookEventCompleted(eventFingerprint, dataAdapterMode);

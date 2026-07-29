@@ -243,6 +243,17 @@ Three small, additive backend gaps closed before building a staff-management UI 
 - **`PATCH /api/rbac/membership-status`** (new route) — exposes `RoleService.setMembershipStatus` (disable/reactivate/remove), gated by the existing (previously unused) `canRemoveUser` (`user.remove`). Fixed two real gaps: reactivation now writes an audit entry (previously wrote none); `'removed'` is now explicitly terminal (previously nothing prevented reactivating a removed membership). A caller may never target their own membership through this route.
 - `OrganizationRoleAuditAction` gained four values (`invitation_revoked`, `membership_disabled`, `membership_reactivated`, `membership_removed`) — no Wix schema change, confirmed live (`organizationRoleAuditEntries.action` is `TEXT`).
 
+## Phase 24 — Case Activity Timeline & Audit Center
+
+**Status: in progress.** Full writeup: [ADR-028](./adr/ADR-028-activity-timeline-and-audit-center.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
+
+Two new permission keys, `audit.read` and `audit.export` (`domain/rbac/permissionCatalog.ts`), widening the catalog from 22 to **24 permissions across 10 resources** — no new resource category, since both keys belong to the existing `audit` scope alongside every other resource-shaped permission.
+
+- **`audit.read`** — view the organization-wide Audit Center. Granted to Administrator, Manager, Funeral Director, Accounting, Read Only (mirrors `report.view`'s distribution).
+- **`audit.export`** — export audit data as CSV. Granted to Administrator, Manager, Accounting only (narrower — mirrors `payment.refund`'s distribution).
+- **No separate `audit.case.read`.** The Case Activity tab's route (`GET /api/cases/[caseId]/activity`) is gated the same way every other case route already is — `requireAuthorizedOrganization`'s active-membership check — not a new permission. Case routes were never migrated to per-permission RBAC checks in any prior phase (Phase 22 included), so inventing one only for the activity sub-resource would be a new, inconsistent gate rather than reuse of an existing one.
+- `services/authorizationPolicyService.ts` gained `canReadAuditLog`/`canExportAuditLog`, each a one-line `hasPermission` wrapper, matching every other policy function's shape.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

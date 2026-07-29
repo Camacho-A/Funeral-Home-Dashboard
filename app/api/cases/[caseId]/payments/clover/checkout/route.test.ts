@@ -3,6 +3,7 @@ import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { paymentIntegrationFixtures, paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
 import { caseOrderFixtures, caseOrderLineItemFixtures, caseOrderAuditFixtures } from '@/services/__mocks__/pricingFixtures';
+import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 import type { CaseOrder } from '@/types/caseOrder';
 
@@ -89,6 +90,7 @@ beforeEach(() => {
   caseOrderFixtures.length = 0;
   caseOrderLineItemFixtures.length = 0;
   caseOrderAuditFixtures.length = 0;
+  activityEventFixtures.length = 0;
 });
 
 afterEach(() => {
@@ -101,6 +103,7 @@ afterEach(() => {
   caseOrderFixtures.length = 0;
   caseOrderLineItemFixtures.length = 0;
   caseOrderAuditFixtures.length = 0;
+  activityEventFixtures.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -227,6 +230,23 @@ describe('POST .../payments/clover/checkout — success and idempotency (mock mo
     expect(paymentRecordFixtures[0].status).toBe('pending');
     expect(paymentRecordFixtures[0].amount).toBe(BALANCE_DUE);
     expect(paymentRecordFixtures[0].caseOrderId).toBe(order.id);
+  });
+
+  it('Phase 24: records exactly one payment.checkout.created activity event for a genuinely new attempt', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    await postRequest(KNOWN_CASE().id, VALID_BODY);
+    const events = activityEventFixtures.filter((e) => e.eventType === 'payment.checkout.created');
+    expect(events).toHaveLength(1);
+    expect(events[0].category).toBe('payments');
+    expect(events[0].caseId).toBe(KNOWN_CASE().id);
+    expect(JSON.parse(events[0].newValue!)).toEqual({ amountCents: BALANCE_DUE });
+  });
+
+  it('Phase 24: an idempotent duplicate request never records a second checkout-created event', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    await postRequest(KNOWN_CASE().id, VALID_BODY);
+    await postRequest(KNOWN_CASE().id, VALID_BODY);
+    expect(activityEventFixtures.filter((e) => e.eventType === 'payment.checkout.created')).toHaveLength(1);
   });
 
   it('never calls the real Clover API in mock mode', async () => {

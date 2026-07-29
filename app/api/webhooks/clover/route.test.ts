@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { paymentRecordFixtures, webhookEventFixtures } from '@/services/__mocks__/paymentFixtures';
+import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { findPaymentConfirmationChecklistIndex } from '@/domain/cases/paymentChecklist';
 import type { PaymentRecord } from '@/types/payment';
 import type { WebhookEventRecord } from '@/types/webhookEvent';
@@ -97,6 +98,7 @@ beforeEach(() => {
   process.env.CLOVER_MOCK_WEBHOOK_SECRET = WEBHOOK_SECRET;
   paymentRecordFixtures.length = 0;
   webhookEventFixtures.clear();
+  activityEventFixtures.length = 0;
   updateShouldFailOnce.value = false;
 
   // Deliberately a case that starts 'awaiting_payment' — some seed cases
@@ -154,6 +156,28 @@ describe('POST /api/webhooks/clover — signature verification', () => {
     const updated = paymentRecordFixtures.find((p) => p.id === 'payment-1')!;
     expect(updated.status).toBe('succeeded');
     expect(updated.providerPaymentId).toBe('payment-uuid-1');
+  });
+
+  it('Phase 24: records a system-generated payment.recorded activity event on a verified success — no authenticated actor', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await POST(signedRequest(eventBody(), now));
+
+    const events = activityEventFixtures.filter((e) => e.eventType === 'payment.recorded');
+    expect(events).toHaveLength(1);
+    expect(events[0].isSystemGenerated).toBe(true);
+    expect(events[0].actorIdentityId).toBeNull();
+    expect(events[0].caseId).toBe(seededPayment.caseId);
+    expect(events[0].resourceId).toBe('payment-1');
+  });
+
+  it('Phase 24: records a payment.failed activity event (warning severity) on a DECLINED event', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await POST(signedRequest(eventBody({ status: 'DECLINED', message: 'Card declined' }), now));
+
+    const events = activityEventFixtures.filter((e) => e.eventType === 'payment.failed');
+    expect(events).toHaveLength(1);
+    expect(events[0].severity).toBe('warning');
+    expect(events[0].isSystemGenerated).toBe(true);
   });
 
   it('rejects an invalidly-signed request with 401 and never updates the record', async () => {

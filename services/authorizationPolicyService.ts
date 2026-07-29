@@ -59,6 +59,19 @@ export function canViewReports(params: ResolvePermissionsParams, dataAdapterMode
   return hasPermission(params, dataAdapterMode, 'report.view');
 }
 
+/** Phase 24 (Case Activity Timeline & Audit Center). Gates the org-wide,
+    cross-case Audit Center — not an individual case's Activity tab, which
+    reuses `canReadCases` instead (see ADR-028: no role can read a case's
+    data but not its history, so a separate case-scoped audit permission
+    would be a distinction with no real difference). */
+export function canReadAuditLog(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'audit.read');
+}
+
+export function canExportAuditLog(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'audit.export');
+}
+
 export function canManageOrganization(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'organization.manage');
 }

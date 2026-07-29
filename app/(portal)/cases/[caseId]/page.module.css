@@ -5,6 +5,32 @@
   color: var(--color-text-secondary);
 }
 
+.tabs {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-9);
+}
+
+.tabs button {
+  cursor: pointer;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-3) var(--space-7);
+  border-radius: var(--radius-xl);
+  border: none;
+  font-family: inherit;
+}
+
+.tabActive {
+  background: var(--color-brand-tint);
+  color: var(--color-brand-hover);
+}
+
+.tabInactive {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+}
+
 .columns {
   display: grid;
   grid-template-columns: 1fr 1fr;

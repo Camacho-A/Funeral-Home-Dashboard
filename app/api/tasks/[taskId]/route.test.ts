@@ -8,6 +8,7 @@ let originalEnv: Record<string, string | undefined>;
 let mockQueryWixDataItems = vi.fn();
 let mockUpdateWixDataItem = vi.fn();
 let mockDeleteWixDataItem = vi.fn();
+let mockInsertWixDataItem = vi.fn();
 
 vi.mock('@/lib/wixDataApi', async () => {
   const { getWixServerConfig } = await import('@/lib/env');
@@ -23,6 +24,12 @@ vi.mock('@/lib/wixDataApi', async () => {
     deleteWixDataItem: (...args: unknown[]) => {
       getWixServerConfig();
       return mockDeleteWixDataItem(...args);
+    },
+    // Phase 24 (Case Activity Timeline & Audit Center): activityService's
+    // record() calls this for a case.task.completed activity event.
+    insertWixDataItem: (...args: unknown[]) => {
+      getWixServerConfig();
+      return mockInsertWixDataItem(...args);
     },
   };
 });
@@ -78,6 +85,7 @@ beforeEach(() => {
     Promise.resolve({ id: itemId, dataCollectionId: 'tasks', data }),
   );
   mockDeleteWixDataItem = vi.fn().mockResolvedValue(undefined);
+  mockInsertWixDataItem = vi.fn().mockResolvedValue({ id: 'activity-event-mock', dataCollectionId: 'activityEvents', data: {} });
   mockSession = { user: mockDefaultUser };
 });
 
@@ -189,6 +197,35 @@ describe('PATCH /api/tasks/[taskId] — successful mutations', () => {
     const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDone: true } });
     const body = await response.json();
     expect(body.task.isDone).toBe(true);
+  });
+
+  it('Phase 24: completing a case-linked task records a case.task.completed activity event', async () => {
+    mockQueryWixDataItems.mockResolvedValue({
+      dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: { ...EXISTING_WIX_TASK_DATA, caseId: 'case-1' } }],
+    });
+
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDone: true } });
+    expect(response.status).toBe(200);
+
+    expect(mockInsertWixDataItem).toHaveBeenCalledWith(
+      'activityEvents',
+      expect.objectContaining({ eventType: 'case.task.completed', category: 'cases', caseId: 'case-1', resourceId: 'task-100' }),
+      expect.any(String),
+    );
+  });
+
+  it('Phase 24: a general (non-case-linked) task completion records no activity event', async () => {
+    // EXISTING_WIX_TASK_DATA's default caseId is null.
+    await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDone: true } });
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('Phase 24: reopening a task (isDone: false) does not record a completion event', async () => {
+    mockQueryWixDataItems.mockResolvedValue({
+      dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: { ...EXISTING_WIX_TASK_DATA, caseId: 'case-1', isDone: true } }],
+    });
+    await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDone: false } });
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
   });
 
   it('reopens a task (isDone: false)', async () => {

@@ -37,4 +37,9 @@ describe('permissionCatalog', () => {
       expect(permissionCategory('organization.manage')).toBe('organization');
     });
   });
+
+  it('Phase 24: includes exactly two audit permissions, not a third case-scoped one', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('audit.'))).toEqual(['audit.read', 'audit.export']);
+    expect(permissionCategory('audit.read')).toBe('audit');
+  });
 });

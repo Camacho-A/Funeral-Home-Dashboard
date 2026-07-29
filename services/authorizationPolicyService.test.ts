@@ -8,6 +8,8 @@ import {
   canInviteUser,
   canManageOrganization,
   canManageRoles,
+  canReadAuditLog,
+  canExportAuditLog,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -53,6 +55,22 @@ describe('authorizationPolicyService', () => {
     expect(await canCollectPayment(p, 'mock')).toBe(false);
     expect(await canInviteUser(p, 'mock')).toBe(false);
     expect(await canManageOrganization(p, 'mock')).toBe(false);
+  });
+
+  it('Phase 24: audit.read is broadly held (matches report.view\'s tier) but audit.export is narrower (matches payment.refund\'s tier)', async () => {
+    expect(await canReadAuditLog(params('administrator'), 'mock')).toBe(true);
+    expect(await canReadAuditLog(params('manager'), 'mock')).toBe(true);
+    expect(await canReadAuditLog(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canReadAuditLog(params('accounting'), 'mock')).toBe(true);
+    expect(await canReadAuditLog(params('readOnly'), 'mock')).toBe(true);
+    expect(await canReadAuditLog(params('arranger'), 'mock')).toBe(false);
+    expect(await canReadAuditLog(params('officeStaff'), 'mock')).toBe(false);
+
+    expect(await canExportAuditLog(params('administrator'), 'mock')).toBe(true);
+    expect(await canExportAuditLog(params('manager'), 'mock')).toBe(true);
+    expect(await canExportAuditLog(params('accounting'), 'mock')).toBe(true);
+    expect(await canExportAuditLog(params('funeralDirector'), 'mock')).toBe(false);
+    expect(await canExportAuditLog(params('readOnly'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {

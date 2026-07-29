@@ -17,6 +17,13 @@ import { getWixServerConfig } from './env';
 type WixDataQueryRequest = {
   filter?: Record<string, unknown>;
   paging?: { limit?: number; offset?: number };
+  /** Phase 24 (Case Activity Timeline & Audit Center): the first caller in
+      this codebase to need ordering — every prior query either fetched a
+      single row (`paging: { limit: 1 }`) or filtered/sorted an already-small
+      result set in-process. Standard Wix Data query-DSL shape; verified
+      empirically against the live `activityEvents` collection (not merely
+      assumed) as part of this phase's live-verification pass. */
+  sort?: Array<{ fieldName: string; order: 'ASC' | 'DESC' }>;
 };
 
 type WixDataQueryResponse<Item> = {

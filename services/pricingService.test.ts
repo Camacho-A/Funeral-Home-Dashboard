@@ -7,6 +7,7 @@ import {
   caseOrderAuditFixtures,
 } from './__mocks__/pricingFixtures';
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
+import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import type { PaymentRecord } from '../types/payment';
 
 let idCounter = 0;
@@ -23,6 +24,7 @@ beforeEach(() => {
   caseOrderLineItemFixtures.length = 0;
   caseOrderAuditFixtures.length = 0;
   paymentRecordFixtures.length = 0;
+  activityEventFixtures.length = 0;
 });
 
 describe('getServiceCatalog', () => {
@@ -203,6 +205,49 @@ describe('recalculateOrder', () => {
 
     const auditHistory = await listAuditEntriesForCase(DEFAULT_ORGANIZATION_ID, 'case-edit-1', 'mock');
     expect(auditHistory.length).toBeGreaterThanOrEqual(3); // order_created + 2 edit entries
+  });
+
+  it('Phase 24: records exactly one case.order.changed activity event summarizing the whole recalculation', async () => {
+    await seedInitialOrder('case-edit-activity-1');
+    const { recalculateOrder } = await import('./pricingService');
+
+    const result = await recalculateOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-edit-activity-1',
+        selections: { weightTier: '201_250', extraDeathCertificateQuantity: 2, mailCremated: false },
+        performedBy: 'Sam Rivera',
+        idFactory,
+        now: '2026-07-21T00:00:00.000Z',
+      },
+      'mock',
+    );
+
+    const events = activityEventFixtures.filter((e) => e.eventType === 'case.order.changed');
+    expect(events).toHaveLength(1); // one event, not one per diff entry
+    expect(events[0].category).toBe('cases');
+    expect(events[0].caseId).toBe('case-edit-activity-1');
+    expect(events[0].resourceId).toBe(result?.order.id);
+    expect(events[0].actorIdentityId).toBe('Sam Rivera');
+    expect(events[0].description).toContain('Weight');
+  });
+
+  it('Phase 24: a no-op recalculation (nothing actually changed) records no activity event', async () => {
+    await seedInitialOrder('case-edit-noop-1');
+    const { recalculateOrder } = await import('./pricingService');
+
+    await recalculateOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-edit-noop-1',
+        selections: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+        performedBy: 'Sam Rivera',
+        idFactory,
+      },
+      'mock',
+    );
+
+    expect(activityEventFixtures.filter((e) => e.eventType === 'case.order.changed')).toHaveLength(0);
   });
 
   it('never rewrites the superseded version\'s own totals (historical immutability)', async () => {

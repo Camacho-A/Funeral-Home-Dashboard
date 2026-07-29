@@ -8,6 +8,7 @@ let originalEnv: Record<string, string | undefined>;
 
 let mockQueryWixDataItems = vi.fn();
 let mockUpdateWixDataItem = vi.fn();
+let mockInsertWixDataItem = vi.fn();
 
 vi.mock('@/lib/wixDataApi', async () => {
   const { getWixServerConfig } = await import('@/lib/env');
@@ -19,6 +20,12 @@ vi.mock('@/lib/wixDataApi', async () => {
     updateWixDataItem: (...args: unknown[]) => {
       getWixServerConfig();
       return mockUpdateWixDataItem(...args);
+    },
+    // Phase 24 (Case Activity Timeline & Audit Center): activityService's
+    // record() calls this for every case-update activity event.
+    insertWixDataItem: (...args: unknown[]) => {
+      getWixServerConfig();
+      return mockInsertWixDataItem(...args);
     },
   };
 });
@@ -90,6 +97,7 @@ beforeEach(() => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
   mockUpdateWixDataItem = vi.fn();
+  mockInsertWixDataItem = vi.fn().mockResolvedValue({ id: 'activity-event-mock', dataCollectionId: 'activityEvents', data: {} });
   mockSession = { user: mockDefaultUser };
 });
 
@@ -435,6 +443,49 @@ describe('PATCH /api/cases/[caseId]', () => {
       expect(mergedData.isVeteran).toBe(true);
       expect(mergedData.nextOfKinName).toBe(EXISTING_WIX_CASE_DATA.nextOfKinName);
       expect(mergedData.decedentName).toBe(EXISTING_WIX_CASE_DATA.decedentName);
+    });
+
+    it('Phase 24: records a case.updated activity event carrying only the changed field, not the whole case', async () => {
+      await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } });
+
+      expect(mockInsertWixDataItem).toHaveBeenCalledWith(
+        'activityEvents',
+        expect.objectContaining({ eventType: 'case.updated', category: 'cases', resourceId: '1042' }),
+        expect.any(String),
+      );
+      const eventData = mockInsertWixDataItem.mock.calls[0][1];
+      expect(JSON.parse(eventData.newValue)).toEqual({ decedentName: 'Renamed' });
+      expect(JSON.parse(eventData.previousValue)).toEqual({ decedentName: EXISTING_WIX_CASE_DATA.decedentName });
+    });
+
+    it('Phase 24: a rawStage change records case.stage.changed instead of (or alongside) case.updated', async () => {
+      await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { rawStage: 1 } });
+
+      expect(mockInsertWixDataItem).toHaveBeenCalledWith(
+        'activityEvents',
+        expect.objectContaining({ eventType: 'case.stage.changed', category: 'cases' }),
+        expect.any(String),
+      );
+      // A pure stage-only patch must not also emit a redundant case.updated.
+      expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('activityEvents', expect.objectContaining({ eventType: 'case.updated' }), expect.any(String));
+    });
+
+    it('Phase 24: a stage change alongside another field change shares one correlationId across both events', async () => {
+      await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { rawStage: 1, decedentName: 'Renamed' } });
+
+      const calls = mockInsertWixDataItem.mock.calls.filter((call) => call[0] === 'activityEvents');
+      expect(calls).toHaveLength(2);
+      const correlationIds = calls.map((call) => call[1].correlationId);
+      expect(correlationIds[0]).toBe(correlationIds[1]);
+      expect(correlationIds[0]).toBeTruthy();
+    });
+
+    it("Phase 24: an activity-recording failure never fails the actual case update", async () => {
+      mockInsertWixDataItem.mockRejectedValue(new Error('activityEvents collection unavailable'));
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Still Works' } });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.case.decedentName).toBe('Still Works');
     });
   });
 

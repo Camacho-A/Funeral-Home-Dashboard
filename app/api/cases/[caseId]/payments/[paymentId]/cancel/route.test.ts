@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
+import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
 import type { PaymentRecord } from '@/types/payment';
 
@@ -35,10 +36,12 @@ beforeEach(() => {
   mockSession = { user: mockDefaultUser };
   paymentRecordFixtures.length = 0;
   paymentRecordFixtures.push({ ...SEED });
+  activityEventFixtures.length = 0;
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
   paymentRecordFixtures.length = 0;
+  activityEventFixtures.length = 0;
 });
 
 describe('POST .../payments/[paymentId]/cancel', () => {
@@ -60,6 +63,21 @@ describe('POST .../payments/[paymentId]/cancel', () => {
     const response = await postCancel('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID);
     const body = await response.json();
     expect(body.payment.status).toBe('cancelled');
+  });
+
+  it('Phase 24: records a payment.cancelled activity event', async () => {
+    await postCancel('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID);
+    const events = activityEventFixtures.filter((e) => e.eventType === 'payment.cancelled');
+    expect(events).toHaveLength(1);
+    expect(events[0].caseId).toBe('case-1');
+    expect(events[0].resourceId).toBe('payment-1');
+    expect(events[0].isSystemGenerated).toBe(false);
+  });
+
+  it('Phase 24: a no-op cancel (already-succeeded payment) records no activity event', async () => {
+    paymentRecordFixtures[0] = { ...paymentRecordFixtures[0], status: 'succeeded' };
+    await postCancel('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID);
+    expect(activityEventFixtures.filter((e) => e.eventType === 'payment.cancelled')).toHaveLength(0);
   });
 
   it('returns 404 for a mismatched case/payment pair', async () => {

@@ -1,0 +1,59 @@
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.searchForm {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.searchForm input {
+  flex: 1;
+}
+
+.loadMore {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.detail {
+  min-width: 360px;
+  max-width: 480px;
+}
+
+.detailTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.detailFields {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 6px 12px;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.detailFields dt {
+  color: var(--color-text-muted, #6b7280);
+  font-weight: 600;
+}
+
+.detailFields dd {
+  margin: 0;
+  color: var(--color-text-primary, #111827);
+}
+
+.detailActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}

@@ -52,6 +52,8 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'document.generate',
   'document.view',
   'report.view',
+  'audit.read',
+  'audit.export',
   'organization.manage',
   'user.invite',
   'user.remove',
@@ -86,6 +88,8 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.generate',
       'document.view',
       'report.view',
+      'audit.read',
+      'audit.export',
       'user.invite',
     ],
   },
@@ -106,6 +110,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.generate',
       'document.view',
       'report.view',
+      'audit.read',
     ],
   },
   {
@@ -124,13 +129,13 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
     key: 'accounting',
     name: 'Accounting',
     description: 'Financial operations across every case — collecting and refunding payments and viewing reports — without case-editing access.',
-    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'report.view'],
+    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'report.view', 'audit.read', 'audit.export'],
   },
   {
     key: 'readOnly',
     name: 'Read Only',
     description: 'View-only access to cases, workflows, payments, the service catalog, documents, and reports.',
-    permissions: ['case.read', 'caseOrder.read', 'workflow.read', 'payment.read', 'serviceCatalog.read', 'document.view', 'report.view'],
+    permissions: ['case.read', 'caseOrder.read', 'workflow.read', 'payment.read', 'serviceCatalog.read', 'document.view', 'report.view', 'audit.read'],
   },
 ];
 

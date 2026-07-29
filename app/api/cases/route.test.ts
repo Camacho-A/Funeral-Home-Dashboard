@@ -411,6 +411,38 @@ describe('POST /api/cases — creation', () => {
     expect(body.case.isDeleted).toBe(false);
   });
 
+  it('Phase 24: records a case.created activity event with a compact identifying snapshot, never the full case', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+    expect(response.status).toBe(201);
+
+    const activityCall = mockInsertWixDataItem.mock.calls.find((call) => call[0] === 'activityEvents');
+    expect(activityCall).toBeTruthy();
+    const eventData = activityCall![1] as Record<string, unknown>;
+    expect(eventData.eventType).toBe('case.created');
+    expect(eventData.category).toBe('cases');
+    expect(eventData.resourceId).toBe(body.case.id);
+    expect(eventData.previousValue).toBeNull();
+    const snapshot = JSON.parse(eventData.newValue as string);
+    expect(Object.keys(snapshot).sort()).toEqual(['caseNumber', 'decedentName']); // compact, not the full case
+  });
+
+  it("Phase 24: an activity-recording failure never fails the actual case creation", async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((collectionId: string, data: Record<string, unknown>, itemId: string) => {
+      if (collectionId === 'activityEvents') return Promise.reject(new Error('activityEvents collection unavailable'));
+      return Promise.resolve({ id: itemId, dataCollectionId: collectionId, data: { ...data, beaconCaseId: itemId } });
+    });
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+  });
+
   it('sets the Wix item id to the generated beaconCaseId at insert time', async () => {
     mockEnabledTemplate();
     mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>

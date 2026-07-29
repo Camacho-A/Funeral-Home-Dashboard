@@ -70,6 +70,11 @@ export function TopBar({
           Team
         </a>
       )}
+      {authAdapterMode === 'identity' && (
+        <a href="/settings/audit" className={styles.signOutButton}>
+          Audit
+        </a>
+      )}
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
         <button type="submit" className={styles.signOutButton}>
