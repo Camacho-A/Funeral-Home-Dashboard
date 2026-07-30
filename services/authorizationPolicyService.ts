@@ -51,8 +51,36 @@ export function canEditServiceCatalog(params: ResolvePermissionsParams, dataAdap
   return hasPermission(params, dataAdapterMode, 'serviceCatalog.edit');
 }
 
+/** Phase 22 declared `document.generate`; Phase 25 (Document Generation &
+    Template Management) is what finally gives it a real route/call site
+    (this function itself, unchanged, was already dead code until now). */
 export function canGenerateDocument(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'document.generate');
+}
+
+/** Phase 25. Gates viewing/downloading a case's documents — same
+    "finally wired" history as `canGenerateDocument` above. */
+export function canViewDocument(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'document.view');
+}
+
+export function canUploadDocument(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'document.upload');
+}
+
+export function canArchiveDocument(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'document.archive');
+}
+
+/** Gates the org-wide Document Template Library — distinct from the
+    case-scoped document.* policies above, mirroring
+    `canReadAuditLog`/`canExportAuditLog`'s own read/manage split. */
+export function canReadDocumentTemplate(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'document.template.read');
+}
+
+export function canManageDocumentTemplate(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'document.template.manage');
 }
 
 export function canViewReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {

@@ -10,6 +10,12 @@ import {
   canManageRoles,
   canReadAuditLog,
   canExportAuditLog,
+  canGenerateDocument,
+  canViewDocument,
+  canUploadDocument,
+  canArchiveDocument,
+  canReadDocumentTemplate,
+  canManageDocumentTemplate,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -71,6 +77,41 @@ describe('authorizationPolicyService', () => {
     expect(await canExportAuditLog(params('accounting'), 'mock')).toBe(true);
     expect(await canExportAuditLog(params('funeralDirector'), 'mock')).toBe(false);
     expect(await canExportAuditLog(params('readOnly'), 'mock')).toBe(false);
+  });
+
+  it('Phase 25: document.view/document.generate/document.upload exclude accounting but include readOnly for view/generate only, never upload', async () => {
+    expect(await canViewDocument(params('accounting'), 'mock')).toBe(false);
+    expect(await canGenerateDocument(params('accounting'), 'mock')).toBe(false);
+    expect(await canUploadDocument(params('accounting'), 'mock')).toBe(false);
+
+    expect(await canViewDocument(params('readOnly'), 'mock')).toBe(true);
+    expect(await canGenerateDocument(params('readOnly'), 'mock')).toBe(false);
+    expect(await canUploadDocument(params('readOnly'), 'mock')).toBe(false);
+
+    expect(await canUploadDocument(params('arranger'), 'mock')).toBe(true);
+    expect(await canUploadDocument(params('officeStaff'), 'mock')).toBe(true);
+  });
+
+  it('Phase 25: document.archive is narrower — administrator/manager/funeralDirector only', async () => {
+    expect(await canArchiveDocument(params('administrator'), 'mock')).toBe(true);
+    expect(await canArchiveDocument(params('manager'), 'mock')).toBe(true);
+    expect(await canArchiveDocument(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canArchiveDocument(params('arranger'), 'mock')).toBe(false);
+    expect(await canArchiveDocument(params('officeStaff'), 'mock')).toBe(false);
+    expect(await canArchiveDocument(params('accounting'), 'mock')).toBe(false);
+    expect(await canArchiveDocument(params('readOnly'), 'mock')).toBe(false);
+  });
+
+  it('Phase 25: document.template.read is broader than document.template.manage', async () => {
+    expect(await canReadDocumentTemplate(params('administrator'), 'mock')).toBe(true);
+    expect(await canReadDocumentTemplate(params('manager'), 'mock')).toBe(true);
+    expect(await canReadDocumentTemplate(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canReadDocumentTemplate(params('arranger'), 'mock')).toBe(false);
+    expect(await canReadDocumentTemplate(params('accounting'), 'mock')).toBe(false);
+
+    expect(await canManageDocumentTemplate(params('administrator'), 'mock')).toBe(true);
+    expect(await canManageDocumentTemplate(params('manager'), 'mock')).toBe(true);
+    expect(await canManageDocumentTemplate(params('funeralDirector'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {

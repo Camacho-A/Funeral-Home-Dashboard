@@ -245,7 +245,7 @@ Three small, additive backend gaps closed before building a staff-management UI 
 
 ## Phase 24 — Case Activity Timeline & Audit Center
 
-**Status: in progress.** Full writeup: [ADR-028](./adr/ADR-028-activity-timeline-and-audit-center.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
+**Status: closed 2026-07-28.** Full writeup: [ADR-028](./adr/ADR-028-activity-timeline-and-audit-center.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
 
 Two new permission keys, `audit.read` and `audit.export` (`domain/rbac/permissionCatalog.ts`), widening the catalog from 22 to **24 permissions across 10 resources** — no new resource category, since both keys belong to the existing `audit` scope alongside every other resource-shaped permission.
 
@@ -253,6 +253,20 @@ Two new permission keys, `audit.read` and `audit.export` (`domain/rbac/permissio
 - **`audit.export`** — export audit data as CSV. Granted to Administrator, Manager, Accounting only (narrower — mirrors `payment.refund`'s distribution).
 - **No separate `audit.case.read`.** The Case Activity tab's route (`GET /api/cases/[caseId]/activity`) is gated the same way every other case route already is — `requireAuthorizedOrganization`'s active-membership check — not a new permission. Case routes were never migrated to per-permission RBAC checks in any prior phase (Phase 22 included), so inventing one only for the activity sub-resource would be a new, inconsistent gate rather than reuse of an existing one.
 - `services/authorizationPolicyService.ts` gained `canReadAuditLog`/`canExportAuditLog`, each a one-line `hasPermission` wrapper, matching every other policy function's shape.
+
+## Phase 25 — Document Generation & Template Management
+
+**Status: closed 2026-08-05.** Full writeup: [ADR-029](./adr/ADR-029-document-generation-and-template-management.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
+
+Six permission keys total, two already existing but dead until now and four new, widening the catalog from 24 to **28 permissions**:
+
+- **`document.view`** and **`document.generate`** — declared in Phase 22 ahead of any real feature to gate; this phase finally wires both to real case-document routes. Granted to every role except Accounting (unchanged tier from Phase 22).
+- **`document.upload`** — new. Mirrors `document.view`'s tier (every role except Accounting) with one deliberate exception: **Read Only does not get it**, despite otherwise matching that tier — uploading is a write action, and Read Only is the one role whose entire permission list was, until now, exclusively read/view actions; granting it upload would be the first write action that role ever held.
+- **`document.archive`** — new, narrower. Granted to Administrator, Manager, Funeral Director only (mirrors `payment.refund`'s tier).
+- **`document.template.read`** — new. View the organization-wide Document Template Library. Granted to Administrator, Manager, Funeral Director (mirrors `workflow.read`'s tier).
+- **`document.template.manage`** — new, narrower. Create/edit/duplicate/archive templates. Granted to Administrator, Manager only (mirrors `workflow.publish`'s tier).
+- **Case-scoped document routes gate on a real, intentional permission** (`document.view`/`document.generate`/`document.upload`/`document.archive`) — unlike Phase 24's Case Activity tab, which reuses `requireAuthorizedOrganization` alone. This is not an inconsistency: `document.view`/`document.generate` already existed as keys distinct from `case.read` before this phase, so reusing them is wiring up a pre-existing, deliberate gate rather than inventing a new one with no real distinction.
+- `services/authorizationPolicyService.ts` gained `canViewDocument`/`canUploadDocument`/`canArchiveDocument`/`canReadDocumentTemplate`/`canManageDocumentTemplate`, each a one-line `hasPermission` wrapper (`canGenerateDocument` already existed, dead, since Phase 22).
 
 ## Known limitations
 

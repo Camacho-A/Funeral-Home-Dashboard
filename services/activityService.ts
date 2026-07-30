@@ -588,3 +588,195 @@ export function recordInvitationRevoked(ctx: ActivityContext, targetIdentityId: 
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 25 (Document Generation & Template Management). Every write in
+// services/documentService.ts and services/documentTemplatesService.ts
+// records through exactly one of these — never a hand-constructed
+// payload at the call site, matching every helper above.
+// ---------------------------------------------------------------------------
+
+export function recordDocumentUploaded(ctx: ActivityContext, caseId: string, documentId: string, fileName: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_UPLOADED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: JSON.stringify({ fileName }),
+      description: `Document uploaded: ${fileName}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordDocumentGenerated(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  templateId: string,
+  templateVersion: number,
+  templateName: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_GENERATED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: JSON.stringify({ templateId, templateVersion }),
+      description: `Document generated from "${templateName}" (v${templateVersion})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordDocumentDownloaded(ctx: ActivityContext, caseId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_DOWNLOADED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Document downloaded',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** A regeneration's own event, distinct from `recordDocumentGenerated` —
+    `supersedesId` names the document row this new one replaces (that
+    row's own status flips to 'superseded', never edited otherwise — see
+    this phase's Invariants). */
+export function recordDocumentRegenerated(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  supersedesId: string,
+  templateVersion: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_REGENERATED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: JSON.stringify({ supersedesId }),
+      newValue: JSON.stringify({ templateVersion }),
+      description: `Document regenerated (supersedes ${supersedesId})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordDocumentArchived(ctx: ActivityContext, caseId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_ARCHIVED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: JSON.stringify({ status: 'active' }),
+      newValue: JSON.stringify({ status: 'archived' }),
+      description: 'Document archived',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordDocumentTemplateCreated(ctx: ActivityContext, templateId: string, templateName: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_TEMPLATE_CREATED,
+      resourceType: 'documentTemplate',
+      resourceId: templateId,
+      previousValue: null,
+      newValue: JSON.stringify({ name: templateName }),
+      description: `Document template "${templateName}" created`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Fires only when an edit produces a new `DocumentTemplateVersion` —
+    never for a metadata-only change (name/category), which has no
+    dedicated event this phase since no route mutates those independently
+    of a body edit (see services/documentTemplatesService.ts). */
+export function recordDocumentTemplateUpdated(ctx: ActivityContext, templateId: string, newVersion: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_TEMPLATE_UPDATED,
+      resourceType: 'documentTemplate',
+      resourceId: templateId,
+      previousValue: null,
+      newValue: JSON.stringify({ version: newVersion }),
+      description: `Document template updated (v${newVersion})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordDocumentTemplateArchived(ctx: ActivityContext, templateId: string, templateName: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_TEMPLATE_ARCHIVED,
+      resourceType: 'documentTemplate',
+      resourceId: templateId,
+      previousValue: JSON.stringify({ status: 'active' }),
+      newValue: JSON.stringify({ status: 'archived' }),
+      description: `Document template "${templateName}" archived`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordDocumentTemplateRestored(ctx: ActivityContext, templateId: string, templateName: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_TEMPLATE_RESTORED,
+      resourceType: 'documentTemplate',
+      resourceId: templateId,
+      previousValue: JSON.stringify({ status: 'archived' }),
+      newValue: JSON.stringify({ status: 'active' }),
+      description: `Document template "${templateName}" restored`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}

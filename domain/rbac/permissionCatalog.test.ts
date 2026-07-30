@@ -42,4 +42,15 @@ describe('permissionCatalog', () => {
     expect(PERMISSION_KEYS.filter((k) => k.startsWith('audit.'))).toEqual(['audit.read', 'audit.export']);
     expect(permissionCategory('audit.read')).toBe('audit');
   });
+
+  it('Phase 25: includes document.upload/document.archive alongside the previously-dead document.generate/document.view', () => {
+    expect(PERMISSION_KEYS).toEqual(
+      expect.arrayContaining(['document.generate', 'document.view', 'document.upload', 'document.archive']),
+    );
+  });
+
+  it('Phase 25: includes exactly two document-template permissions, distinct from the case-scoped document.* ones', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('document.template.'))).toEqual(['document.template.read', 'document.template.manage']);
+    expect(permissionCategory('document.template.read')).toBe('document');
+  });
 });

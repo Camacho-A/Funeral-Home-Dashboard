@@ -26,8 +26,22 @@ export const PERMISSION_KEYS = [
   'serviceCatalog.read',
   'serviceCatalog.edit',
 
+  /** `document.generate`/`document.view` were added in Phase 22, ahead of
+      any real feature to gate — Phase 25 (Document Generation & Template
+      Management) is what finally wires them to a real route/policy
+      check. `document.upload`/`document.archive` are new this phase. */
   'document.generate',
   'document.view',
+  'document.upload',
+  'document.archive',
+
+  /** Phase 25 (Document Generation & Template Management). Gate the
+      org-wide Document Template Library — distinct from
+      `document.view`/`document.generate` above, which gate a single
+      case's documents, mirroring `audit.read`/`audit.export`'s own
+      narrower-tier-for-the-write-action split. */
+  'document.template.read',
+  'document.template.manage',
 
   'report.view',
 
@@ -81,8 +95,13 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'serviceCatalog.read': 'View the service/merchandise catalog',
   'serviceCatalog.edit': 'Edit the service/merchandise catalog',
 
-  'document.generate': 'Generate documents',
-  'document.view': 'View generated documents',
+  'document.generate': 'Generate (or regenerate) a document from a template',
+  'document.view': "View and download a case's documents",
+  'document.upload': 'Upload a file to a case',
+  'document.archive': 'Archive a case document',
+
+  'document.template.read': 'View the organization-wide document template library',
+  'document.template.manage': 'Create, edit, duplicate, and archive document templates',
 
   'report.view': 'View reports',
 

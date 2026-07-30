@@ -75,6 +75,11 @@ export function TopBar({
           Audit
         </a>
       )}
+      {authAdapterMode === 'identity' && (
+        <a href="/settings/document-templates" className={styles.signOutButton}>
+          Templates
+        </a>
+      )}
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
         <button type="submit" className={styles.signOutButton}>

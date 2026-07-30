@@ -51,6 +51,10 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'serviceCatalog.edit',
   'document.generate',
   'document.view',
+  'document.upload',
+  'document.archive',
+  'document.template.read',
+  'document.template.manage',
   'report.view',
   'audit.read',
   'audit.export',
@@ -87,6 +91,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'serviceCatalog.edit',
       'document.generate',
       'document.view',
+      'document.upload',
+      'document.archive',
+      'document.template.read',
+      'document.template.manage',
       'report.view',
       'audit.read',
       'audit.export',
@@ -109,6 +117,9 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'serviceCatalog.read',
       'document.generate',
       'document.view',
+      'document.upload',
+      'document.archive',
+      'document.template.read',
       'report.view',
       'audit.read',
     ],
@@ -117,13 +128,23 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
     key: 'arranger',
     name: 'Arranger',
     description: 'Front-line case intake and arrangement work, without payment or reporting access.',
-    permissions: ['case.read', 'case.create', 'case.update', 'caseOrder.read', 'caseOrder.update', 'serviceCatalog.read', 'document.generate', 'document.view'],
+    permissions: [
+      'case.read',
+      'case.create',
+      'case.update',
+      'caseOrder.read',
+      'caseOrder.update',
+      'serviceCatalog.read',
+      'document.generate',
+      'document.view',
+      'document.upload',
+    ],
   },
   {
     key: 'officeStaff',
     name: 'Office Staff',
     description: 'Administrative support — can view and update cases, and generate documents, without payment or workflow access.',
-    permissions: ['case.read', 'case.update', 'caseOrder.read', 'serviceCatalog.read', 'document.generate', 'document.view'],
+    permissions: ['case.read', 'case.update', 'caseOrder.read', 'serviceCatalog.read', 'document.generate', 'document.view', 'document.upload'],
   },
   {
     key: 'accounting',
@@ -135,6 +156,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
     key: 'readOnly',
     name: 'Read Only',
     description: 'View-only access to cases, workflows, payments, the service catalog, documents, and reports.',
+    /** Phase 25: deliberately NOT given `document.upload` despite
+        `document.view`'s own tier otherwise including this role —
+        uploading is a write action, and this is the one role in the
+        catalog whose entire permission list is read/view-only today;
+        granting it upload would be the first write action readOnly ever
+        holds, contradicting its own name and description. */
     permissions: ['case.read', 'caseOrder.read', 'workflow.read', 'payment.read', 'serviceCatalog.read', 'document.view', 'report.view', 'audit.read'],
   },
 ];

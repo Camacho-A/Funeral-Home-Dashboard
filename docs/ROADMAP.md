@@ -138,9 +138,9 @@ Closes three small, genuine gaps Phase 22 left (deliberately, per its own "Defer
 
 Team Management's UI (Settings → Team: active member list, pending invitations, invite/resend/revoke, role change, disable/reactivate/remove, permission-gated visibility) is in progress on top of these three additions.
 
-## Case Activity Timeline & Audit Center (Phase 24)
+## Completed: Case Activity Timeline & Audit Center (Phase 24)
 
-**Status: in progress.** Full writeup: [ADR-028](./adr/ADR-028-activity-timeline-and-audit-center.md).
+**Status: closed 2026-07-28.** Full writeup: [ADR-028](./adr/ADR-028-activity-timeline-and-audit-center.md).
 
 Builds the persisted "who did what, when" record Beacon never actually had: four prior phases (Roles' `organizationRoleAuditEntries`, Case Order's `caseOrderAuditEntries`, Onboarding's `onboardingAuditEntries`, Identity's `loginActivityEvents`) each wrote their own audit trail, and none of them was ever rendered anywhere in the app. A single new, generalized, **append-only and immutable** `ActivityEvent` model and `services/activityService.ts` (insert-only — no update or delete API exists for it, by design) is wired into cases, tasks, payments, and case-order pricing — the modules with real, currently-shipped mutations to attach to — behind a controlled, dot-notation event-type registry (`case.created`, `payment.recorded`, ...) so every future module adds a builder helper and a call site, never a data-model change. The four legacy audit collections are left completely untouched; migrating their writers onto the new service is named as deliberate future work, not attempted this phase.
 
@@ -149,6 +149,18 @@ Two real, currently-shipped limitations were discovered (not assumed) during imp
 A new Wix collection, `activityEvents` (Collection 31), was created live with its 3 indexes (the platform's own 3-regular-index cap, reconfirmed empirically) and fully verified live — every wired builder helper, keyset (seek) pagination across multiple pages, category/date-range filtering, cross-tenant isolation (including a deliberately-shared `caseId` across two organizations), and CSV export — then every verification row was deleted, leaving the live collection empty. Two new permissions, `audit.read` and `audit.export`, gate an organization-wide Audit Center; the Case Activity tab reuses the same `requireAuthorizedOrganization` gate every existing case route already uses, rather than inventing a new one (case routes were never migrated to per-permission RBAC checks in any prior phase).
 
 **Deferred, unchanged by this phase:** migrating the four legacy audit writers onto the new service; `case.note.added`/`case.contact.logged` (blocked on `caseLogService.ts` getting a real backend); refund and document-related event types (reserved in the taxonomy; no such features exist in Beacon yet); PDF export (CSV ships this phase).
+
+## Completed: Document Generation & Template Management (Phase 25)
+
+**Status: closed 2026-08-05.** Full writeup: [ADR-029](./adr/ADR-029-document-generation-and-template-management.md).
+
+Builds the document infrastructure Beacon never had: `services/documentsService.ts` (an early phase) was pure in-memory mock fixtures with no server integration and no API route at all, and "Print" (`utils/print.ts`) was never real PDF generation — just the browser's own print dialog. This phase replaces that with a real, versioned template system (`DocumentTemplate`/`DocumentTemplateVersion`, mirroring `WorkflowTemplate`'s exact two-collection, append-only-version split), a strongly-typed merge-field catalog (`domain/documents/mergeEngine.ts`) that rejects unrecognized tokens as a validation error rather than ever silently blanking one, and a single orchestration layer (`services/documentService.ts`, "DocumentService") that renders, stores, checksums, persists, and records every generated or uploaded document — structurally enforced (a dedicated test walks the whole source tree) to be the only file that ever touches the PDF renderer or the storage provider directly.
+
+PDF rendering is headless Chromium (`puppeteer-core` + `@sparticuz/chromium`), chosen over a component-based library (`@react-pdf/renderer`) specifically so the exact HTML a template author previews is the exact HTML that becomes the final PDF. File bytes (rendered PDFs, uploads) live in a new object-storage integration, **Vercel Blob** — the one genuinely new piece of external infrastructure this phase adds, requiring a real `BLOB_READ_WRITE_TOKEN` to be provisioned before generation/upload/download work in production (same deferred-credential pattern as Clover's sandbox merchant account in Phase 19B). Metadata (templates, versions, generated/uploaded document records) stays in Wix Data, deliberately not reviving the original project architecture's Postgres proposal (ADR-001) — ten phases of real precedent, Phase 24's entire audit trail included, already demonstrated Wix Data is sufficient.
+
+Two RBAC permissions declared back in Phase 22 (`document.view`/`document.generate`) were dead code until this phase finally wired them to real routes; four new keys (`document.upload`, `document.archive`, `document.template.read`, `document.template.manage`) were added, bringing the catalog to 28 permissions. Three new Wix collections (`documentTemplates`, `documentTemplateVersions`, `caseDocuments`) were created live and fully verified — including a realistic multi-KB template body round-tripping byte-for-byte, real PDF generation via genuine headless Chromium, regeneration targeting both the same and a newer template version, supersession leaving prior rows' content untouched, and cross-tenant isolation for a case sharing an identical id string across two organizations — then every verification row was deleted.
+
+**Deferred, unchanged by this phase (explicitly out of scope):** e-signatures, email delivery, notifications, family portals, OCR, document AI. A `signatureStatus` field is reserved on `CaseDocument` (always `null`) so Phase 26 can add e-signatures without a storage redesign. Also deferred: a richer WYSIWYG template editor (plain sanitized HTML editing ships this phase); background/queued generation (synchronous request/response this phase).
 
 ## Version 2 Candidates (not committed, not scheduled)
 
@@ -159,7 +171,7 @@ These are logical next steps once V1 is in production use at Managed Cremations,
 - **Public memorial pages & obituaries.** A public-facing surface (likely a separate, SEO-oriented Next.js route group or site) for publishing service details, guest books, and tribute uploads — this is the point at which the "prioritize authenticated experience over public SEO" decision from V1 gets revisited.
 - **Merchandise & payments.** Caskets, urns, flowers, and pre-need/at-need contract payment collection — likely via Wix Stores/Payments given the existing Wix relationship, wired into the `paymentStatus` field that V1 only tracks as a status, not a transaction.
 - **Mobile.** The V1 UI is deliberately fixed-width/desktop-only (see [UI_COMPONENTS.md](./UI_COMPONENTS.md)); a responsive or native mobile pass is a distinct, later effort.
-- **E-signature integration** for the compliance documents already being tracked (permits, authorizations, contracts) — the document service in V1 stores and audits files but does not collect signatures itself.
+- **E-signature integration** for the compliance documents already being tracked (permits, authorizations, contracts) — Phase 25 built and stores every generated/uploaded document, including a reserved `CaseDocument.signatureStatus` field (always `null` today), specifically so this can be added without a storage redesign, but does not collect signatures itself.
 
 ## Explicitly Not Planned
 

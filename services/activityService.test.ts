@@ -23,6 +23,15 @@ import {
   recordTeamMemberRoleChanged,
   recordTeamMemberStatusChanged,
   recordInvitationRevoked,
+  recordDocumentUploaded,
+  recordDocumentGenerated,
+  recordDocumentDownloaded,
+  recordDocumentRegenerated,
+  recordDocumentArchived,
+  recordDocumentTemplateCreated,
+  recordDocumentTemplateUpdated,
+  recordDocumentTemplateArchived,
+  recordDocumentTemplateRestored,
   type ActivityContext,
 } from './activityService';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
@@ -183,6 +192,48 @@ describe('typed builder helpers — each produces the correct category/eventType
 
     const revoked = await recordInvitationRevoked(ctx(), 'identity-3', 'mock');
     expect(revoked.eventType).toBe('team.invitation.revoked');
+  });
+
+  it('Phase 25: document builder helpers produce the correct category/eventType/resourceType/severity', async () => {
+    const uploaded = await recordDocumentUploaded(ctx(), 'case-1', 'doc-1', 'death-certificate.pdf', 'mock');
+    expect(uploaded.eventType).toBe('document.uploaded');
+    expect(uploaded.category).toBe('documents');
+    expect(uploaded.resourceType).toBe('caseDocument');
+    expect(uploaded.resourceId).toBe('doc-1');
+    expect(JSON.parse(uploaded.newValue!)).toEqual({ fileName: 'death-certificate.pdf' });
+
+    const generated = await recordDocumentGenerated(ctx(), 'case-1', 'doc-2', 'template-1', 3, 'Cremation Authorization', 'mock');
+    expect(generated.eventType).toBe('document.generated');
+    expect(JSON.parse(generated.newValue!)).toEqual({ templateId: 'template-1', templateVersion: 3 });
+    expect(generated.description).toContain('Cremation Authorization');
+    expect(generated.description).toContain('v3');
+
+    const downloaded = await recordDocumentDownloaded(ctx(), 'case-1', 'doc-2', 'mock');
+    expect(downloaded.eventType).toBe('document.downloaded');
+
+    const regenerated = await recordDocumentRegenerated(ctx(), 'case-1', 'doc-3', 'doc-2', 4, 'mock');
+    expect(regenerated.eventType).toBe('document.regenerated');
+    expect(JSON.parse(regenerated.previousValue!)).toEqual({ supersedesId: 'doc-2' });
+    expect(JSON.parse(regenerated.newValue!)).toEqual({ templateVersion: 4 });
+
+    const archived = await recordDocumentArchived(ctx(), 'case-1', 'doc-3', 'mock');
+    expect(archived.eventType).toBe('document.archived');
+
+    const templateCreated = await recordDocumentTemplateCreated(ctx(), 'template-1', 'Cremation Authorization', 'mock');
+    expect(templateCreated.eventType).toBe('document.template.created');
+    expect(templateCreated.caseId).toBeNull();
+    expect(templateCreated.resourceType).toBe('documentTemplate');
+
+    const templateUpdated = await recordDocumentTemplateUpdated(ctx(), 'template-1', 2, 'mock');
+    expect(templateUpdated.eventType).toBe('document.template.updated');
+    expect(JSON.parse(templateUpdated.newValue!)).toEqual({ version: 2 });
+
+    const templateArchived = await recordDocumentTemplateArchived(ctx(), 'template-1', 'Cremation Authorization', 'mock');
+    expect(templateArchived.eventType).toBe('document.template.archived');
+    expect(templateArchived.caseId).toBeNull();
+
+    const templateRestored = await recordDocumentTemplateRestored(ctx(), 'template-1', 'Cremation Authorization', 'mock');
+    expect(templateRestored.eventType).toBe('document.template.restored');
   });
 });
 

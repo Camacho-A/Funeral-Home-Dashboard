@@ -785,17 +785,85 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/activityEvent.ts`'s `ActivityEvent`.
 
+## Collection 32 — `documentTemplates` (template identity)
+
+**Purpose:** template identity, kept separate from version identity — mirrors `workflowTemplates`' exact split (Collection 3), same reasoning: an organization's document templates (contracts, authorizations, receipts, letters, ...) are versioned, and version content lives in a second collection (Collection 33) joined at read time by `lib/wixDocumentTemplateMapper.ts`. **Ownership:** organization-owned, unless `isSystemTemplate=true` (no system templates seeded this phase — see "Open design decision" precedent from `workflowTemplates`). **Retention:** archive via `status='archived'`; never hard-deleted (a past generated document must remain resolvable even if its template is later retired).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconTemplateId` | Text | Required | Immutable |
+| `organizationId` | Text, nullable | Required unless `isSystemTemplate=true` (app-enforced) | Immutable |
+| `isSystemTemplate` | Boolean | Required | Immutable (default `false`) |
+| `name` | Text | Required | Mutable |
+| `documentTypeKey` | Text (controlled dot-notation identifier — see `DOCUMENT_TYPES`) | Required | Immutable |
+| `category` | Text (application-level enum — see `DocumentTemplateCategory`) | Required | Immutable |
+| `status` | Text (`active`\|`archived`) | Required | Mutable — the only field ever updated in place |
+
+- **Indexes** (3 regular — the platform's own cap, re-confirmed live via this collection's own `capabilities.indexLimits: {"regular":3,"unique":1,"total":4}`): unique `beaconTemplateId`; `(organizationId, status)` (Template Library's default view); `(organizationId, category)` (Template Library's category filter).
+- **Permissions:** backend/Admin only.
+- **TS type:** matches `DocumentTemplate` minus its assembled `versions` array (moved to Collection 33).
+
+## Collection 33 — `documentTemplateVersions` (version identity, immutable)
+
+**Purpose:** append-only historical versions — the mechanism that guarantees a document already generated from a template never changes meaning after a later edit, exactly like `workflowTemplateVersions` (Collection 4) guarantees for cases. **Ownership:** belongs to one `documentTemplates` row; inherits org scope through its parent. **Retention:** never deleted, never updated after creation — `services/documentTemplatesService.ts` only ever calls `insertWixDataItem` against this collection.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconTemplateId` | Text | Required | Immutable — → `documentTemplates.beaconTemplateId` |
+| `version` | Number | Required | Immutable — starts at 1, increments |
+| `body` | Text | Required | Immutable — an HTML fragment with `{{merge.tokens}}`, sanitized before storage. Live-verified holding a realistic 5.5KB body, round-tripping byte-for-byte — no documented Wix Data Text-field size limit was hit, but no upper bound was empirically probed either. |
+| `mergeFieldsUsed` | Array | Required | Immutable — the subset of `MERGE_FIELD_CATALOG` keys this version's body references, computed at save time |
+| `createdAt` | Date | Required | Immutable |
+| `createdBy` | Text | Required | Immutable |
+
+- **Indexes** (1 regular, well within the 3-regular cap): `(beaconTemplateId)` sorted descending by `version` for latest-version lookups — matches `workflowTemplateVersions`' own index exactly. No unique index needed: `_id` is set to `` `${beaconTemplateId}-v${version}` `` at insert time (the same "system id doubles as the natural key" convention `cases`/`tasks`/`workflowTemplateVersions` already use), so a same-version race collides on Wix's own `_id` uniqueness rather than silently creating two rows claiming the same version.
+- **Permissions:** backend/Admin only.
+- **TS type:** matches `DocumentTemplateVersion` exactly.
+
+## Collection 34 — `caseDocuments`
+
+**Purpose:** one unified collection for both a case's generated and uploaded documents (`origin: 'generated'|'uploaded'`), replacing the original mock-only `documentFixtures` array `services/documentsService.ts` used. **Ownership:** organization-owned (also case-scoped). **Retention:** never hard-deleted — a superseded (regenerated) or archived row is a status flip only; its content fields (`storageKey`, `checksumSha256`, `fileSizeBytes`) never change again once it reaches `active`/`failed`, since past generated documents must remain individually downloadable for legal/audit reasons.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCaseDocumentId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `caseId` | Text | Required | Immutable |
+| `origin` | Text (`generated`\|`uploaded`) | Required | Immutable |
+| `documentTypeKey` | Text, nullable | Optional | Immutable |
+| `category` | Text, nullable | Optional | Immutable |
+| `fileName` | Text | Required | Immutable |
+| `mimeType` | Text | Required | Immutable |
+| `fileSizeBytes` | Number | Required | Mutable only during the `pending -> active/failed` transition (see below) |
+| `checksumSha256` | Text | Required | Mutable only during the `pending -> active/failed` transition |
+| `storageKey` | Text | Required | Mutable only during the `pending -> active/failed` transition — opaque reference into `DocumentStorageProvider`, never a raw URL |
+| `status` | Text (`pending`\|`active`\|`superseded`\|`archived`\|`failed`) | Required | Mutable — the only field touched after a row reaches `active`/`failed` |
+| `templateId` | Text, nullable | Optional | Immutable — null for `origin: 'uploaded'` |
+| `templateVersion` | Number, nullable | Optional | Immutable — the exact version generated from, permanent even after the template is edited further |
+| `version` | Number, nullable | Optional | Immutable — this document's own generation number, scoped to (caseId, templateId) |
+| `supersedesId` | Text, nullable | Optional | Immutable — the row this one replaces via regeneration |
+| `signatureStatus` | Text, nullable | Optional | Reserved for Phase 26 (e-signatures) — always `null` this phase |
+| `generatedBy` | Text, nullable | Optional | Immutable |
+| `uploadedBy` | Text, nullable | Optional | Immutable |
+| `createdAt` | Date | Required | Immutable |
+| `correlationId` | Text | Required | Immutable — shared with the `ActivityEvent`(s) this action produced |
+
+- **Indexes** (3 regular — the platform's own cap, re-confirmed live): `(organizationId, caseId)` (Documents tab); `(organizationId, templateId)` (regeneration/version lookups); `(organizationId, status)` (active/archived filtering). No unique index needed (uniqueness is per-row `beaconCaseDocumentId`).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/caseDocument.ts`'s `CaseDocument`.
+- **Note on the `pending -> active/failed` transition:** a row is inserted as `pending` the instant generation/upload starts (before rendering/storage completes), then `status`/`storageKey`/`checksumSha256`/`fileSizeBytes` are filled in together, exactly once, when the async work finishes or fails — mirrors `paymentRecords`' own `pending -> succeeded/failed` update. This is the one exception to "immutable once created": a `pending` row has no real content yet, so this fill-in is not a retroactive change to a document that was ever actually generated.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
 |---|---|---|
 | `users` / `userProfiles` | Not created | Real identity already lives in Wix Members (real login) or mock fixtures (mock mode). A parallel Wix Data collection would duplicate identity data Wix already manages. |
 | `caseTimelineEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | Originally not created because `domain/cases/timeline.ts`'s activity log was fully derived at read time and nothing required a persisted record yet. Phase 24 built the real, general-purpose replacement once a real UI needed one — see Collection 31 above. `domain/cases/timeline.ts` and `ActivityLogCard.tsx` are kept in the codebase regardless (rollback safety), not deleted by Phase 24. |
-| `caseDocuments` metadata | Not created | Already out of Wix's scope by prior architecture — `types/document.ts` documents this belongs to "eventually the Postgres/object-storage service... not Wix Data." Not a new decision here. |
+| `caseDocuments` metadata | Superseded by Collection 34 (`caseDocuments`), Phase 25 | Originally not created because file bytes were considered entirely out of Wix's scope by the project's original architecture (`types/document.ts`'s "eventually the Postgres/object-storage service... not Wix Data"). Phase 25 reverses this for *metadata only* — see Collection 34 above and ADR-029's "Metadata vs. bytes" section for why: bytes still never live in Wix Data (they go to Vercel Blob), but the metadata row describing them now does, matching every other collection's own pattern. |
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all thirty-one collections)
+## Permissions summary (all thirty-four collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -840,6 +908,16 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Role audit history for one organization | `organizationRoleAuditEntries (organizationId)` |
 | Per-organization role-change mutex (security correction) | `organizationRoleLocks` — system `_id` (= `organizationId`) uniqueness only, no custom index |
 | Per-organization in-flight-write gate (third security-correction round) | `organizationRoleWriteClaims` — system `_id` (= `organizationId`) uniqueness only, no custom index |
+| Audit Center default view + keyset pagination anchor | `activityEvents (organizationId, createdAt)` |
+| Case Activity tab | `activityEvents (organizationId, caseId)` |
+| Audit Center category filter | `activityEvents (organizationId, category)` |
+| Template Library default view | `documentTemplates (organizationId, status)` |
+| Template Library category filter | `documentTemplates (organizationId, category)` |
+| Template identity lookup | `documentTemplates (beaconTemplateId)` unique |
+| Latest template-version lookup | `documentTemplateVersions (beaconTemplateId)` sorted descending by `version` |
+| Documents tab for one case | `caseDocuments (organizationId, caseId)` |
+| Regeneration/version lookups for one template | `caseDocuments (organizationId, templateId)` |
+| Active/archived document filtering | `caseDocuments (organizationId, status)` |
 
 ## Migration notes
 
@@ -857,3 +935,4 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **Compound-unique constraints are not natively supported** — confirmed, not just suspected: Wix's unique-index option accepts exactly one field. `organizationMemberships (userId, organizationId)` and `workflowTemplateVersions (beaconTemplateId, version)` rely on application-enforced uniqueness (check-before-insert).
 - **`caseTypes` contains-match indexing** was not attempted — confirmed out of scope for this index API; the application-layer fallback stands.
 - **All newly created indexes were `BUILDING` at creation time**, not yet `ACTIVE` — normal Wix behavior for new indexes; no query depends on them yet since no application code reads or writes these collections.
+- **Phase 25: the REST endpoint for adding a secondary index to an already-created collection could not be determined this session.** `documentTemplates`/`documentTemplateVersions`/`caseDocuments` were created live (confirming the 3-regular/1-unique/4-total index cap empirically, exactly matching every prior collection) but their secondary indexes listed above are documented design intent, not yet provisioned via this REST path — several plausible URL/verb combinations (`POST .../collections/{id}/indexes`, `POST .../collections/{id}:createIndex`, `PATCH .../collections/{id}` with an `indexes` field) each returned a 404 or a generic "partial update must contain a change" error, unlike collection creation itself, which worked on the first correctly-shaped request. Add these indexes via the Wix dashboard's collection editor, or identify the correct REST shape, before these three collections see meaningful query volume.

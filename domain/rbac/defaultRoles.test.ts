@@ -24,7 +24,31 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(24); // Phase 24: 22 + audit.read + audit.export
+    expect(admin.permissions).toHaveLength(28); // Phase 25: 24 + document.upload + document.archive + document.template.read + document.template.manage
+  });
+
+  it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
+    const readOnly = defaultRoleDefinition('readOnly');
+    expect(readOnly.permissions.includes('document.upload')).toBe(false);
+    expect(readOnly.permissions.includes('document.view')).toBe(true);
+  });
+
+  it('Phase 25: document.archive and document.template.* are narrower than document.view/generate\'s tier', () => {
+    const arranger = defaultRoleDefinition('arranger');
+    expect(arranger.permissions.includes('document.upload')).toBe(true);
+    expect(arranger.permissions.includes('document.archive')).toBe(false);
+    expect(arranger.permissions.includes('document.template.read')).toBe(false);
+
+    const funeralDirector = defaultRoleDefinition('funeralDirector');
+    expect(funeralDirector.permissions.includes('document.archive')).toBe(true);
+    expect(funeralDirector.permissions.includes('document.template.read')).toBe(true);
+    expect(funeralDirector.permissions.includes('document.template.manage')).toBe(false);
+
+    const manager = defaultRoleDefinition('manager');
+    expect(manager.permissions.includes('document.template.manage')).toBe(true);
+
+    const accounting = defaultRoleDefinition('accounting');
+    expect(accounting.permissions.some((p) => p.startsWith('document.'))).toBe(false);
   });
 
   it('readOnly grants only *.read/*.view permissions', () => {

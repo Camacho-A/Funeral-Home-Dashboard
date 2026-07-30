@@ -102,13 +102,30 @@ export const ACTIVITY_EVENT_TYPES = {
   /** Reserved — no refund code path exists in Beacon yet. */
   PAYMENT_REFUNDED: 'payment.refunded',
 
-  /** Reserved — no persisted document backend exists yet
-      (`services/documentsService.ts` is mock-fixtures-only). */
+  /** Phase 25 (Document Generation & Template Management). Wired — a
+      real persisted `services/documentService.ts` replaces the old
+      mock-only `documentsService.ts` this event type was reserved
+      against. */
   DOCUMENT_UPLOADED: 'document.uploaded',
-  /** Reserved — document generation is unimplemented. */
   DOCUMENT_GENERATED: 'document.generated',
-  /** Reserved — document signing is unimplemented. */
+  DOCUMENT_DOWNLOADED: 'document.downloaded',
+  /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
+      the prior document row is superseded, never edited (see this
+      phase's Invariants). */
+  DOCUMENT_REGENERATED: 'document.regenerated',
+  DOCUMENT_ARCHIVED: 'document.archived',
+  /** Reserved — document signing (e-signatures) is explicitly out of
+      scope for Phase 25; a reserved `signatureStatus` field exists on
+      `CaseDocument` for a future Phase 26 to wire this to. */
   DOCUMENT_SIGNED: 'document.signed',
+
+  DOCUMENT_TEMPLATE_CREATED: 'document.template.created',
+  /** Fires on every edit that produces a new DocumentTemplateVersion —
+      never on a metadata-only change (e.g. archiving), which has its own
+      event below. */
+  DOCUMENT_TEMPLATE_UPDATED: 'document.template.updated',
+  DOCUMENT_TEMPLATE_ARCHIVED: 'document.template.archived',
+  DOCUMENT_TEMPLATE_RESTORED: 'document.template.restored',
 
   /** Reserved this phase — `roleService`/`invitationService` keep their
       own `organizationRoleAuditEntries` writer; not migrated (ADR-028). */
