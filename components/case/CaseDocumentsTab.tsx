@@ -15,6 +15,8 @@ import { buildCaseDocumentDownloadUrl } from '@/lib/caseDocumentsClient';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
 import type { CaseDocument } from '@/types/caseDocument';
 import { GenerateDocumentDialog } from './GenerateDocumentDialog';
+import { RequestSignatureDialog } from './RequestSignatureDialog';
+import { SignatureStatusPanel } from './SignatureStatusPanel';
 import styles from './CaseDocumentsTab.module.css';
 
 /**
@@ -36,6 +38,8 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [regeneratingDoc, setRegeneratingDoc] = useState<CaseDocument | null>(null);
   const [archivingDoc, setArchivingDoc] = useState<CaseDocument | null>(null);
+  const [requestingSignatureFor, setRequestingSignatureFor] = useState<CaseDocument | null>(null);
+  const [expandedSignatureId, setExpandedSignatureId] = useState<string | null>(null);
 
   if (documentsQuery.isPending) {
     return <p className={styles.loading}>Loading documents…</p>;
@@ -57,6 +61,9 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
   const canGenerate = permissions === null || permissions.includes('document.generate');
   const canUpload = permissions === null || permissions.includes('document.upload');
   const canArchive = permissions === null || permissions.includes('document.archive');
+  const canRequestSignature = permissions === null || permissions.includes('signature.request');
+  const canReadSignature = permissions === null || permissions.includes('signature.read');
+  const canCancelSignature = permissions === null || permissions.includes('signature.cancel');
 
   const documents = documentsQuery.data ?? [];
 
@@ -103,41 +110,66 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
               const canDownload = doc.status === 'active' || doc.status === 'superseded' || doc.status === 'archived';
               const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active';
               const canArchiveThis = canArchive && doc.status === 'active';
+              const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed';
+              const isSignatureExpanded = expandedSignatureId === doc.id;
 
               return (
-                <div key={doc.id} className={styles.row}>
-                  <div className={styles.identity}>
-                    <span className={styles.fileName}>{doc.fileName}</span>
-                    <span className={styles.meta}>
-                      {typeLabel}
-                      {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.generatedBy ?? doc.uploadedBy ?? 'unknown'} ·{' '}
-                      {formatTimestamp(doc.createdAt)}
-                    </span>
+                <div key={doc.id} className={styles.rowGroup}>
+                  <div className={styles.row}>
+                    <div className={styles.identity}>
+                      <span className={styles.fileName}>{doc.fileName}</span>
+                      <span className={styles.meta}>
+                        {typeLabel}
+                        {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.generatedBy ?? doc.uploadedBy ?? 'unknown'} ·{' '}
+                        {formatTimestamp(doc.createdAt)}
+                      </span>
+                    </div>
+                    <Badge variant={caseDocumentStatusVariant(doc.status)}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</Badge>
+                    <div className={styles.actions}>
+                      {canDownload && (
+                        <a href={buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id)} className={styles.downloadLink}>
+                          Download
+                        </a>
+                      )}
+                      {canRegenerate && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setRegeneratingDoc(doc);
+                            setGenerateOpen(true);
+                          }}
+                        >
+                          Regenerate
+                        </Button>
+                      )}
+                      {canRequestSignatureForThis && (
+                        <Button variant="secondary" onClick={() => setRequestingSignatureFor(doc)}>
+                          Request Signature
+                        </Button>
+                      )}
+                      {canArchiveThis && (
+                        <Button variant="ghost" onClick={() => setArchivingDoc(doc)}>
+                          Archive
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <Badge variant={caseDocumentStatusVariant(doc.status)}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</Badge>
-                  <div className={styles.actions}>
-                    {canDownload && (
-                      <a href={buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id)} className={styles.downloadLink}>
-                        Download
-                      </a>
-                    )}
-                    {canRegenerate && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          setRegeneratingDoc(doc);
-                          setGenerateOpen(true);
-                        }}
-                      >
-                        Regenerate
-                      </Button>
-                    )}
-                    {canArchiveThis && (
-                      <Button variant="ghost" onClick={() => setArchivingDoc(doc)}>
-                        Archive
-                      </Button>
-                    )}
-                  </div>
+                  {canReadSignature && doc.status === 'active' && (
+                    <>
+                      <button type="button" className={styles.signatureToggle} onClick={() => setExpandedSignatureId(isSignatureExpanded ? null : doc.id)}>
+                        {isSignatureExpanded ? 'Hide signature status' : 'Show signature status'}
+                      </button>
+                      {isSignatureExpanded && (
+                        <SignatureStatusPanel
+                          organizationId={organizationId}
+                          caseId={caseId}
+                          documentId={doc.id}
+                          canRequest={canRequestSignature}
+                          canCancel={canCancelSignature}
+                        />
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -146,6 +178,16 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
       )}
 
       <GenerateDocumentDialog open={generateOpen} onClose={() => setGenerateOpen(false)} organizationId={organizationId} caseId={caseId} regenerating={regeneratingDoc} />
+
+      {requestingSignatureFor && (
+        <RequestSignatureDialog
+          open
+          onClose={() => setRequestingSignatureFor(null)}
+          organizationId={organizationId}
+          caseId={caseId}
+          documentId={requestingSignatureFor.id}
+        />
+      )}
 
       {archivingDoc && (
         <ConfirmActionDialog

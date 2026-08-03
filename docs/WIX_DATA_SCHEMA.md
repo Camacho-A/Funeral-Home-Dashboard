@@ -853,6 +853,71 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **TS type:** `types/caseDocument.ts`'s `CaseDocument`.
 - **Note on the `pending -> active/failed` transition:** a row is inserted as `pending` the instant generation/upload starts (before rendering/storage completes), then `status`/`storageKey`/`checksumSha256`/`fileSizeBytes` are filled in together, exactly once, when the async work finishes or fails — mirrors `paymentRecords`' own `pending -> succeeded/failed` update. This is the one exception to "immutable once created": a `pending` row has no real content yet, so this fill-in is not a retroactive change to a document that was ever actually generated.
 
+## Collection 35 — `signatureRequests`
+
+**Purpose:** the mutable workflow half of Phase 26's e-signature feature — one row per "someone has been asked to sign a specific document." **Ownership:** organization-owned (also case- and document-scoped). **Retention:** never hard-deleted; `status` is the only field that changes after creation (a resend also rotates `tokenHash`/`expiresAt`/`reminderCount`/`lastRemindedAt` together). See [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconSignatureRequestId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `caseId` | Text | Required | Immutable |
+| `documentId` | Text | Required | Immutable |
+| `documentVersion` | Number | Required | Immutable |
+| `signerName` | Text | Required | Immutable |
+| `signerEmail` | Text | Required | Immutable |
+| `signerRole` | Text | Required | Immutable |
+| `status` | Text (`draft`\|`pending`\|`viewed`\|`signed`\|`declined`\|`expired`\|`cancelled`) | Required | Mutable |
+| `tokenHash` | Text | Required | Mutable — rotated on resend; the raw token itself is never persisted |
+| `issuedAt` | Date | Required | Immutable |
+| `expiresAt` | Date, nullable | Optional | Mutable — extended on resend |
+| `requestVersion` | Number | Required | Immutable — schema-evolution reserve, starts at 1 |
+| `sequenceOrder` | Number | Required | Immutable — reserved for future multi-signer sequencing, always 1 this phase |
+| `requestedBy` | Text | Required | Immutable |
+| `viewedAt` | Date, nullable | Optional | Mutable — set once, on first view |
+| `signedAt` | Date, nullable | Optional | Mutable — set once, on completion |
+| `declinedAt` | Date, nullable | Optional | Mutable — set once, on decline |
+| `declineReason` | Text, nullable | Optional | Mutable — set once, on decline |
+| `cancelledAt` | Date, nullable | Optional | Mutable — set once, on cancellation |
+| `cancelledBy` | Text, nullable | Optional | Mutable — set once, on cancellation |
+| `lastRemindedAt` | Date, nullable | Optional | Mutable — updated on each resend |
+| `reminderCount` | Number | Required | Mutable — incremented on each resend |
+| `correlationId` | Text | Required | Immutable — shared with every `ActivityEvent` this request's lifecycle produces |
+
+- **Indexes** (1 unique + 3 regular — the platform's own cap, re-confirmed live): unique `tokenHash` (the public signing surface's entire authorization mechanism); `(organizationId, caseId)` (Signature Status panel); `(organizationId, status)` (future org-wide pending-signatures view); `(documentId)` (enforcing "one active request per document," and the public route's own lookup after token resolution).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/signatureRequest.ts`'s `SignatureRequest`.
+
+## Collection 36 — `signatureRecords`
+
+**Purpose:** the immutable half of Phase 26's e-signature feature — a permanent record of a completed signature's legal facts, created exactly once per completed request. **Ownership:** organization-owned (also case- and document-scoped). **Retention:** never updated, never deleted, once created — no `updateWixDataItem`/`deleteWixDataItem` call is ever made against this collection by application code. See ADR-030.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconSignatureRecordId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `caseId` | Text | Required | Immutable |
+| `documentId` | Text | Required | Immutable |
+| `documentVersion` | Number | Required | Immutable — `CaseDocument.version` at the exact moment of signing |
+| `signatureRequestId` | Text | Required | Immutable |
+| `signerName` | Text | Required | Immutable |
+| `signerEmail` | Text | Required | Immutable |
+| `signerRole` | Text | Required | Immutable |
+| `signedName` | Text | Required | Immutable — the typed attestation text entered at signing |
+| `initials` | Text, nullable | Optional | Immutable |
+| `ipAddress` | Text | Required | Immutable |
+| `userAgent` | Text | Required | Immutable |
+| `signatureMethod` | Text (`typed_name`) | Required | Immutable |
+| `verificationStatus` | Text (`verified`\|`unverified`) | Required | Immutable |
+| `documentChecksumSha256` | Text | Required | Immutable — `CaseDocument.checksumSha256` at signing time, permanent |
+| `recordVersion` | Number | Required | Immutable — schema-evolution reserve, starts at 1 |
+| `correlationId` | Text | Required | Immutable |
+| `signedAt` | Date | Required | Immutable |
+
+- **Indexes** (1 unique + 3 regular — the platform's own cap, re-confirmed live): unique `signatureRequestId` (enforces "at most one record per request" this phase, without constraining the table's own shape from ever holding more per *document*); `(organizationId, documentId)` (Documents tab "signed by X" display); `(organizationId, caseId)`; `(organizationId, signerEmail)` (reserved for a future "all documents this person has signed" cross-case view).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/signatureRecord.ts`'s `SignatureRecord`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -863,7 +928,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all thirty-four collections)
+## Permissions summary (all thirty-six collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -918,6 +983,14 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Documents tab for one case | `caseDocuments (organizationId, caseId)` |
 | Regeneration/version lookups for one template | `caseDocuments (organizationId, templateId)` |
 | Active/archived document filtering | `caseDocuments (organizationId, status)` |
+| Public signing surface's entire authorization mechanism | `signatureRequests (tokenHash)` unique |
+| Signature Status panel for one document | `signatureRequests (organizationId, caseId)` |
+| Org-wide pending-signatures view (future) | `signatureRequests (organizationId, status)` |
+| One-active-request-per-document enforcement + public route lookup | `signatureRequests (documentId)` |
+| At-most-one-record-per-request enforcement | `signatureRecords (signatureRequestId)` unique |
+| Documents tab "signed by X" display | `signatureRecords (organizationId, documentId)` |
+| Signature records for one case | `signatureRecords (organizationId, caseId)` |
+| Cross-case "documents this person signed" view (future) | `signatureRecords (organizationId, signerEmail)` |
 
 ## Migration notes
 
@@ -935,4 +1008,5 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **Compound-unique constraints are not natively supported** — confirmed, not just suspected: Wix's unique-index option accepts exactly one field. `organizationMemberships (userId, organizationId)` and `workflowTemplateVersions (beaconTemplateId, version)` rely on application-enforced uniqueness (check-before-insert).
 - **`caseTypes` contains-match indexing** was not attempted — confirmed out of scope for this index API; the application-layer fallback stands.
 - **All newly created indexes were `BUILDING` at creation time**, not yet `ACTIVE` — normal Wix behavior for new indexes; no query depends on them yet since no application code reads or writes these collections.
-- **Phase 25: the REST endpoint for adding a secondary index to an already-created collection could not be determined this session.** `documentTemplates`/`documentTemplateVersions`/`caseDocuments` were created live (confirming the 3-regular/1-unique/4-total index cap empirically, exactly matching every prior collection) but their secondary indexes listed above are documented design intent, not yet provisioned via this REST path — several plausible URL/verb combinations (`POST .../collections/{id}/indexes`, `POST .../collections/{id}:createIndex`, `PATCH .../collections/{id}` with an `indexes` field) each returned a 404 or a generic "partial update must contain a change" error, unlike collection creation itself, which worked on the first correctly-shaped request. Add these indexes via the Wix dashboard's collection editor, or identify the correct REST shape, before these three collections see meaningful query volume.
+- **Phase 25's index-creation gap is resolved as of Phase 26.** The correct REST shape is a top-level resource, not nested under a collection: `POST https://www.wixapis.com/wix-data/v2/indexes` with body `{ dataCollectionId, index: { name, fields: [{ path, order }], unique } }` (the field is `unique`, not `isUnique` — an `isUnique` body is silently accepted but produces a non-unique index); list via `GET .../v2/indexes?dataCollectionId={id}`; delete via the `DELETE .../v2/indexes?dataCollectionId={id}&indexName={name}` shape already known from the Phase 19B correction pass. Passing `indexes` inside the `POST /v2/collections` collection-creation body itself is silently accepted and silently ignored — it does not create any indexes. See [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md) for the full discovery writeup. Using this shape, the seven secondary indexes `documentTemplates`/`documentTemplateVersions`/`caseDocuments` had been missing since Phase 25 were created live during Phase 26 and confirmed `ACTIVE` — these three collections are no longer under-indexed.
+- **Phase 26: `BLOB_READ_WRITE_TOKEN` still not provisioned in this environment** (same gap ADR-029 documented for Phase 25). `signatureRequests`/`signatureRecords` themselves were fully live-verified with no limitation — this only affects the one step that needs real stored document bytes (`completeSignatureRequest`'s checksum re-download/re-verify), which was exercised in every other respect live and is fully covered by the unit suite otherwise. See ADR-030's "Live Wix verification" section for exactly what was scoped around and why.

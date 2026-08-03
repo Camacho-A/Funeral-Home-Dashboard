@@ -43,6 +43,17 @@ export const PERMISSION_KEYS = [
   'document.template.read',
   'document.template.manage',
 
+  /** Phase 26 (Electronic Signatures & Authorization Workflows). A
+      distinct `signature` resource, not folded into `document.*` —
+      requesting a signature mirrors `document.generate`'s tier, but
+      *cancelling* one is deliberately narrower (mirrors `document.archive`
+      instead), so a role that can generate/request (e.g. `arranger`)
+      doesn't automatically gain cancellation authority too. */
+  'signature.request',
+  'signature.read',
+  'signature.cancel',
+  'signature.manage',
+
   'report.view',
 
   /** Phase 24 (Case Activity Timeline & Audit Center). Deliberately only
@@ -102,6 +113,11 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
 
   'document.template.read': 'View the organization-wide document template library',
   'document.template.manage': 'Create, edit, duplicate, and archive document templates',
+
+  'signature.request': 'Request or resend an electronic signature for a case document',
+  'signature.read': "View a case document's signature status and history",
+  'signature.cancel': 'Cancel an active signature request',
+  'signature.manage': 'Manage organization-wide electronic signature settings',
 
   'report.view': 'View reports',
 

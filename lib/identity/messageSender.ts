@@ -21,7 +21,15 @@ export type IdentityMessage =
   | { kind: 'password_reset'; to: string; token: string }
   | { kind: 'email_verification'; to: string; token: string }
   | { kind: 'invitation'; to: string; token: string; organizationId: string; membershipId: string }
-  | { kind: 'mfa_recovery_codes'; to: string; codes: string[] };
+  | { kind: 'mfa_recovery_codes'; to: string; codes: string[] }
+  /** Phase 26 (Electronic Signatures & Authorization Workflows). Reached
+      only through `lib/signatureNotifier.ts`'s `SignatureNotifier`
+      interface — `services/signatureService.ts` never imports this
+      module directly (see that interface's own header comment). */
+  | { kind: 'signature_request'; to: string; signerName: string; caseDisplayName: string; signLink: string; expiresAt: string | null }
+  | { kind: 'signature_completed'; to: string; signerName: string; caseDisplayName: string }
+  | { kind: 'signature_declined'; to: string; signerName: string; caseDisplayName: string; reason: string | null }
+  | { kind: 'signature_cancelled'; to: string; signerName: string; caseDisplayName: string };
 
 export interface IdentityMessageSender {
   send(message: IdentityMessage): Promise<void>;

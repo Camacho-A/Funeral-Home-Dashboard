@@ -268,6 +268,21 @@ Six permission keys total, two already existing but dead until now and four new,
 - **Case-scoped document routes gate on a real, intentional permission** (`document.view`/`document.generate`/`document.upload`/`document.archive`) — unlike Phase 24's Case Activity tab, which reuses `requireAuthorizedOrganization` alone. This is not an inconsistency: `document.view`/`document.generate` already existed as keys distinct from `case.read` before this phase, so reusing them is wiring up a pre-existing, deliberate gate rather than inventing a new one with no real distinction.
 - `services/authorizationPolicyService.ts` gained `canViewDocument`/`canUploadDocument`/`canArchiveDocument`/`canReadDocumentTemplate`/`canManageDocumentTemplate`, each a one-line `hasPermission` wrapper (`canGenerateDocument` already existed, dead, since Phase 22).
 
+## Phase 26 — Electronic Signatures & Authorization Workflows
+
+**Status: closed 2026-08-14.** Full writeup: [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
+
+Four new permission keys, widening the catalog from 28 to **32 permissions**:
+
+- **`signature.request`** — create/resend a signature request on a case document. Mirrors `document.generate`'s tier (every role except Accounting).
+- **`signature.read`** — view signature status/history. Mirrors `document.view`'s tier (every role except Accounting).
+- **`signature.cancel`** — cancel an active signature request. Mirrors `document.archive`'s narrower tier (Administrator, Manager, Funeral Director only).
+- **`signature.manage`** — reserved for a future org-wide signature settings surface; no dedicated UI ships this phase. Mirrors `document.template.manage`'s tier (Administrator, Manager only).
+- `services/authorizationPolicyService.ts` gained `canRequestSignature`/`canReadSignature`/`canCancelSignature`/`canManageSignature`, each a one-line `hasPermission` wrapper.
+- `seedPlatformDefaultRoles` was re-run against live Wix so organizations already provisioned before this phase picked up the four new keys (same live-data corollary Phase 25 documented for its own four new keys).
+
+**A genuinely new authorization pattern: the sessionless public signing surface.** Every prior public/token-gated route in this codebase (`verify-email`, `reset-password`, `accept-invitation`) eventually mints a Beacon session for the person using it. `/sign` and `/api/signing/*` never do, for anyone, ever — a signer has no Beacon account at all. Authorization for these routes reduces entirely to "do you possess a valid, hashed, not-yet-terminal, not-yet-expired token" (the exact same trust model a password-reset link already relies on), with the signer's identity verified out-of-band — the staff member emailed *this specific* signer at *this specific* address — rather than by any Beacon credential. `middleware.ts`'s matcher allowlists `/sign` alongside the four existing public identity pages (`/api/*` was already excluded wholesale). No RBAC permission ever gates a public signing route; RBAC governs only the four staff-facing signature routes above.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

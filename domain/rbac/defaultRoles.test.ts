@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(28); // Phase 25: 24 + document.upload + document.archive + document.template.read + document.template.manage
+    expect(admin.permissions).toHaveLength(32); // Phase 26: 28 + signature.request + signature.read + signature.cancel + signature.manage
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
@@ -49,6 +49,34 @@ describe('defaultRoles', () => {
 
     const accounting = defaultRoleDefinition('accounting');
     expect(accounting.permissions.some((p) => p.startsWith('document.'))).toBe(false);
+  });
+
+  it('Phase 26: signature.request mirrors document.generate\'s tier, signature.cancel is narrower (mirrors document.archive), signature.manage narrower still', () => {
+    const arranger = defaultRoleDefinition('arranger');
+    expect(arranger.permissions.includes('signature.request')).toBe(true);
+    expect(arranger.permissions.includes('signature.read')).toBe(true);
+    expect(arranger.permissions.includes('signature.cancel')).toBe(false);
+
+    const officeStaff = defaultRoleDefinition('officeStaff');
+    expect(officeStaff.permissions.includes('signature.request')).toBe(true);
+    expect(officeStaff.permissions.includes('signature.cancel')).toBe(false);
+
+    const funeralDirector = defaultRoleDefinition('funeralDirector');
+    expect(funeralDirector.permissions.includes('signature.cancel')).toBe(true);
+    expect(funeralDirector.permissions.includes('signature.manage')).toBe(false);
+
+    const manager = defaultRoleDefinition('manager');
+    expect(manager.permissions.includes('signature.manage')).toBe(true);
+
+    const accounting = defaultRoleDefinition('accounting');
+    expect(accounting.permissions.some((p) => p.startsWith('signature.'))).toBe(false);
+  });
+
+  it('Phase 26: readOnly is granted signature.read (a pure view action) but not signature.request/.cancel, mirroring its document.view-but-not-.upload precedent', () => {
+    const readOnly = defaultRoleDefinition('readOnly');
+    expect(readOnly.permissions.includes('signature.read')).toBe(true);
+    expect(readOnly.permissions.includes('signature.request')).toBe(false);
+    expect(readOnly.permissions.includes('signature.cancel')).toBe(false);
   });
 
   it('readOnly grants only *.read/*.view permissions', () => {

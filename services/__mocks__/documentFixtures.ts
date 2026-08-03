@@ -1,5 +1,7 @@
 import type { DocumentTemplate } from '../../types/documentTemplate';
 import type { CaseDocument } from '../../types/caseDocument';
+import type { SignatureRequest } from '../../types/signatureRequest';
+import type { SignatureRecord } from '../../types/signatureRecord';
 
 /**
  * Phase 25 (Document Generation & Template Management). Mock-mode
@@ -14,3 +16,8 @@ import type { CaseDocument } from '../../types/caseDocument';
  */
 export const documentTemplateFixtures: DocumentTemplate[] = [];
 export const caseDocumentFixtures: CaseDocument[] = [];
+
+/** Phase 26 (Electronic Signatures & Authorization Workflows). Same
+    convention — both start empty. */
+export const signatureRequestFixtures: SignatureRequest[] = [];
+export const signatureRecordFixtures: SignatureRecord[] = [];

@@ -83,6 +83,25 @@ export function canManageDocumentTemplate(params: ResolvePermissionsParams, data
   return hasPermission(params, dataAdapterMode, 'document.template.manage');
 }
 
+/** Phase 26 (Electronic Signatures & Authorization Workflows). A distinct
+    `signature` resource, not folded into the document.* policies above —
+    see `domain/rbac/permissionCatalog.ts`'s own comment for why. */
+export function canRequestSignature(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'signature.request');
+}
+
+export function canReadSignature(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'signature.read');
+}
+
+export function canCancelSignature(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'signature.cancel');
+}
+
+export function canManageSignature(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'signature.manage');
+}
+
 export function canViewReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'report.view');
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
-import { middleware } from './middleware';
+import { middleware, config } from './middleware';
 import { createSessionToken, SESSION_COOKIE_NAME } from './lib/auth/sessionToken';
 import type { AuthenticatedUser } from './types/auth';
 
@@ -60,5 +60,30 @@ describe('middleware — invalid or expired session handling', () => {
     const response = await middleware(requestFor('/dashboard', token));
 
     expect(new URL(response.headers.get('location')!).pathname).toBe('/login');
+  });
+});
+
+describe('Phase 26 (Electronic Signatures & Authorization Workflows) — /sign matcher exclusion', () => {
+  // config.matcher is applied by Next.js itself *before* middleware() is ever
+  // invoked for a matching path — middleware() has no way to observe that
+  // exclusion from the inside, so the regex itself is tested directly here,
+  // matching every other public-page path's own exclusion in the same list.
+  const matcherPattern = new RegExp(config.matcher[0]);
+
+  it('excludes /sign — the public signing page never gets a session redirect', () => {
+    expect(matcherPattern.test('/sign')).toBe(false);
+  });
+
+  it('still protects every other portal path exactly as before', () => {
+    expect(matcherPattern.test('/dashboard')).toBe(true);
+    expect(matcherPattern.test('/cases/1042')).toBe(true);
+    expect(matcherPattern.test('/settings')).toBe(true);
+  });
+
+  it('still excludes every pre-existing public path', () => {
+    expect(matcherPattern.test('/login')).toBe(false);
+    expect(matcherPattern.test('/forgot-password')).toBe(false);
+    expect(matcherPattern.test('/verify-email')).toBe(false);
+    expect(matcherPattern.test('/accept-invitation')).toBe(false);
   });
 });

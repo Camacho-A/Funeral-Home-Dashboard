@@ -16,6 +16,10 @@ import {
   canArchiveDocument,
   canReadDocumentTemplate,
   canManageDocumentTemplate,
+  canRequestSignature,
+  canReadSignature,
+  canCancelSignature,
+  canManageSignature,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -112,6 +116,35 @@ describe('authorizationPolicyService', () => {
     expect(await canManageDocumentTemplate(params('administrator'), 'mock')).toBe(true);
     expect(await canManageDocumentTemplate(params('manager'), 'mock')).toBe(true);
     expect(await canManageDocumentTemplate(params('funeralDirector'), 'mock')).toBe(false);
+  });
+
+  it('Phase 26: signature.request mirrors document.generate\'s tier (every role except accounting/readOnly)', async () => {
+    expect(await canRequestSignature(params('administrator'), 'mock')).toBe(true);
+    expect(await canRequestSignature(params('manager'), 'mock')).toBe(true);
+    expect(await canRequestSignature(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canRequestSignature(params('arranger'), 'mock')).toBe(true);
+    expect(await canRequestSignature(params('officeStaff'), 'mock')).toBe(true);
+    expect(await canRequestSignature(params('accounting'), 'mock')).toBe(false);
+    expect(await canRequestSignature(params('readOnly'), 'mock')).toBe(false);
+  });
+
+  it('Phase 26: signature.read mirrors document.view\'s tier (every role except accounting)', async () => {
+    expect(await canReadSignature(params('readOnly'), 'mock')).toBe(true);
+    expect(await canReadSignature(params('accounting'), 'mock')).toBe(false);
+  });
+
+  it('Phase 26: signature.cancel is narrower than signature.request — administrator/manager/funeralDirector only', async () => {
+    expect(await canCancelSignature(params('administrator'), 'mock')).toBe(true);
+    expect(await canCancelSignature(params('manager'), 'mock')).toBe(true);
+    expect(await canCancelSignature(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canCancelSignature(params('arranger'), 'mock')).toBe(false);
+    expect(await canCancelSignature(params('officeStaff'), 'mock')).toBe(false);
+  });
+
+  it('Phase 26: signature.manage is narrower still — administrator/manager only', async () => {
+    expect(await canManageSignature(params('administrator'), 'mock')).toBe(true);
+    expect(await canManageSignature(params('manager'), 'mock')).toBe(true);
+    expect(await canManageSignature(params('funeralDirector'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {

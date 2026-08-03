@@ -162,6 +162,18 @@ Two RBAC permissions declared back in Phase 22 (`document.view`/`document.genera
 
 **Deferred, unchanged by this phase (explicitly out of scope):** e-signatures, email delivery, notifications, family portals, OCR, document AI. A `signatureStatus` field is reserved on `CaseDocument` (always `null`) so Phase 26 can add e-signatures without a storage redesign. Also deferred: a richer WYSIWYG template editor (plain sanitized HTML editing ships this phase); background/queued generation (synchronous request/response this phase).
 
+## Completed: Electronic Signatures & Authorization Workflows (Phase 26)
+
+**Status: closed 2026-08-14.** Full writeup: [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md).
+
+Makes Phase 25's reserved `CaseDocument.signatureStatus` field live: funeral homes can now request, collect, track, and archive legally significant signatures on generated documents. The signing workflow is split into two separate Wix collections — `SignatureRequest` (the mutable workflow: draft/pending/viewed/signed/declined/expired/cancelled) and `SignatureRecord` (an immutable, insert-only row created exactly once a signature completes) — specifically so a future multi-signer or witness workflow is just more rows in both tables, never a schema change. A signed document becomes permanently locked (`documentService.ts`'s `generate()` refuses to regenerate against it); a correction always produces a brand-new, unrelated document plus a new signature request.
+
+Signers hold no Beacon account or session — the first genuinely new class of public route in this codebase (`/sign`, `/api/signing/*`), authorized purely by a 32-byte token modeled directly on password-reset tokens (hash-only persistence, constant-time verify), with one deliberate departure: the token is never burned on first use (so a signer can reload the review page before committing), with replay protection enforced instead by the request's own terminal-state guard. `services/signatureService.ts` is the single orchestration layer — structurally enforced, mirroring `documentService.ts`'s own boundary test — for token validation, document locking, all seven new `document.signature.*` activity events, and notification dispatch via a new provider-neutral `SignatureNotifier` interface (no new email provider). Four new RBAC permissions (`signature.request`/`.read`/`.cancel`/`.manage`) bring the catalog to 32.
+
+Two new Wix collections (`signatureRequests`, `signatureRecords`) were created and fully live-verified end to end — full request lifecycle, tamper-detection checksum re-verification, document-locking rejection, cross-tenant isolation — then every verification row was deleted. This phase also **resolved** ADR-029's own documented gap around adding a secondary index to an existing Wix Data collection (the correct endpoint is a top-level `POST/GET/DELETE https://www.wixapis.com/wix-data/v2/indexes` resource, not nested under `/collections/{id}`), and used the fix to retroactively provision the seven secondary indexes Phase 25's three collections had been missing since their creation.
+
+**Deferred, unchanged by this phase (explicitly out of scope):** SMS verification, identity-verification providers, notarization, DocuSign/Adobe Sign integration, workflow automation, OCR, AI document processing, family portal, an advanced notification platform. Sequential signing, parallel signing, witness signatures, and third-party e-signature adapters are named extension points (the data model already anticipates them) but not implemented.
+
 ## Version 2 Candidates (not committed, not scheduled)
 
 These are logical next steps once V1 is in production use at Managed Cremations, in roughly the order they'd likely be needed:
@@ -171,7 +183,7 @@ These are logical next steps once V1 is in production use at Managed Cremations,
 - **Public memorial pages & obituaries.** A public-facing surface (likely a separate, SEO-oriented Next.js route group or site) for publishing service details, guest books, and tribute uploads — this is the point at which the "prioritize authenticated experience over public SEO" decision from V1 gets revisited.
 - **Merchandise & payments.** Caskets, urns, flowers, and pre-need/at-need contract payment collection — likely via Wix Stores/Payments given the existing Wix relationship, wired into the `paymentStatus` field that V1 only tracks as a status, not a transaction.
 - **Mobile.** The V1 UI is deliberately fixed-width/desktop-only (see [UI_COMPONENTS.md](./UI_COMPONENTS.md)); a responsive or native mobile pass is a distinct, later effort.
-- **E-signature integration** for the compliance documents already being tracked (permits, authorizations, contracts) — Phase 25 built and stores every generated/uploaded document, including a reserved `CaseDocument.signatureStatus` field (always `null` today), specifically so this can be added without a storage redesign, but does not collect signatures itself.
+- ~~**E-signature integration** for the compliance documents already being tracked (permits, authorizations, contracts)~~ — **built in Phase 26.** Remaining next steps in this space: sequential/parallel/witness signing and a third-party (DocuSign/Adobe Sign) adapter — all named extension points in [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md), none implemented yet.
 
 ## Explicitly Not Planned
 

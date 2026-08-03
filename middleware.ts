@@ -39,7 +39,16 @@ export const config = {
   // new public identity pages (forgot/reset password, verify email, accept
   // invitation) alongside /login — every one of them is reached by someone
   // who, by definition, has no valid session yet.
+  //
+  // Phase 26 (Electronic Signatures & Authorization Workflows) adds /sign —
+  // architecturally distinct from every route above: those four all
+  // eventually mint a Beacon session for the person using them; /sign never
+  // does, for anyone, ever (see services/signatureService.ts's own header
+  // comment). The signer is authenticated purely by the token in the URL,
+  // validated entirely by /api/signing/* (already outside this matcher,
+  // since /api/* is excluded wholesale) — this line only needs to let the
+  // *page* itself render without a session redirect.
   matcher: [
-    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|sign|_next/static|_next/image|favicon.ico).*)',
   ],
 };

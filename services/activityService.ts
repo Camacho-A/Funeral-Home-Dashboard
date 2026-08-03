@@ -780,3 +780,185 @@ export function recordDocumentTemplateRestored(ctx: ActivityContext, templateId:
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 26 (Electronic Signatures & Authorization Workflows). Every write in
+// services/signatureService.ts records through exactly one of these — never
+// a hand-constructed payload at the call site, matching every helper above.
+// `resourceType`/`resourceId` always name the CaseDocument being signed
+// (not the SignatureRequest itself), matching Phase 25's own document.*
+// events; `signatureRequestId` travels in `metadata` for staff-facing
+// traceability — never in a public-facing response body (see
+// docs/adr/ADR-030-electronic-signatures-and-authorization-workflows.md).
+// ---------------------------------------------------------------------------
+
+export function recordSignatureRequested(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  signatureRequestId: string,
+  signerName: string,
+  signerEmail: string,
+  signerRole: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_REQUESTED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: JSON.stringify({ signerEmail, signerRole }),
+      description: `Signature requested from ${signerName} (${signerEmail})`,
+      metadata: JSON.stringify({ signatureRequestId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Distinct from `recordSignatureRequested` — fires only once the
+    signer's notification actually dispatches successfully (the
+    request's own draft -> pending transition), never at request-creation
+    time itself, since those two things can fail independently. */
+export function recordSignatureEmailSent(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  signatureRequestId: string,
+  signerEmail: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_EMAIL_SENT,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: `Signature request email sent to ${signerEmail}`,
+      metadata: JSON.stringify({ signatureRequestId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Recorded on every access, not just the first — the request's own
+    `viewedAt` timestamp is set only once, but every view is still worth
+    an audit trail entry. */
+export function recordSignatureViewed(ctx: ActivityContext, caseId: string, documentId: string, signatureRequestId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_VIEWED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Signature request viewed by signer',
+      metadata: JSON.stringify({ signatureRequestId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** The one signature event that corresponds to a real CaseDocument
+    state transition (signatureStatus: 'pending_signature' -> 'signed') —
+    ip/user-agent travel in metadata as a narrative copy of what the
+    corresponding SignatureRecord row already stores structurally (see
+    types/signatureRecord.ts's own header comment for why both exist). */
+export function recordSignatureCompleted(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  signatureRequestId: string,
+  signerName: string,
+  ipAddress: string,
+  userAgent: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_COMPLETED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: JSON.stringify({ signatureStatus: 'pending_signature' }),
+      newValue: JSON.stringify({ signatureStatus: 'signed' }),
+      description: `Signed by ${signerName}`,
+      metadata: JSON.stringify({ signatureRequestId, ipAddress, userAgent }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordSignatureDeclined(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  signatureRequestId: string,
+  signerName: string,
+  reason: string | null,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_DECLINED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: reason ? JSON.stringify({ reason }) : null,
+      description: `Signature declined by ${signerName}`,
+      metadata: JSON.stringify({ signatureRequestId }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordSignatureCancelled(ctx: ActivityContext, caseId: string, documentId: string, signatureRequestId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_CANCELLED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Signature request cancelled',
+      metadata: JSON.stringify({ signatureRequestId }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordSignatureExpired(ctx: ActivityContext, caseId: string, documentId: string, signatureRequestId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.SIGNATURE_EXPIRED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Signature request expired',
+      metadata: JSON.stringify({ signatureRequestId }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}

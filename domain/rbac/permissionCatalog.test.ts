@@ -53,4 +53,14 @@ describe('permissionCatalog', () => {
     expect(PERMISSION_KEYS.filter((k) => k.startsWith('document.template.'))).toEqual(['document.template.read', 'document.template.manage']);
     expect(permissionCategory('document.template.read')).toBe('document');
   });
+
+  it('Phase 26: includes exactly four signature permissions, in their own resource category distinct from document.*', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('signature.'))).toEqual([
+      'signature.request',
+      'signature.read',
+      'signature.cancel',
+      'signature.manage',
+    ]);
+    expect(permissionCategory('signature.request')).toBe('signature');
+  });
 });

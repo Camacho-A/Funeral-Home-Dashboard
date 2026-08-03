@@ -32,6 +32,13 @@ import {
   recordDocumentTemplateUpdated,
   recordDocumentTemplateArchived,
   recordDocumentTemplateRestored,
+  recordSignatureRequested,
+  recordSignatureEmailSent,
+  recordSignatureViewed,
+  recordSignatureCompleted,
+  recordSignatureDeclined,
+  recordSignatureCancelled,
+  recordSignatureExpired,
   type ActivityContext,
 } from './activityService';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
@@ -234,6 +241,48 @@ describe('typed builder helpers — each produces the correct category/eventType
 
     const templateRestored = await recordDocumentTemplateRestored(ctx(), 'template-1', 'Cremation Authorization', 'mock');
     expect(templateRestored.eventType).toBe('document.template.restored');
+  });
+
+  it('Phase 26: signature builder helpers produce the correct category/eventType/resourceType/severity', async () => {
+    const requested = await recordSignatureRequested(ctx(), 'case-1', 'doc-1', 'req-1', 'Jane Doe', 'jane@example.com', 'next_of_kin', 'mock');
+    expect(requested.eventType).toBe('document.signature.requested');
+    expect(requested.category).toBe('documents');
+    expect(requested.resourceType).toBe('caseDocument');
+    expect(requested.resourceId).toBe('doc-1');
+    expect(requested.severity).toBe('info');
+    expect(JSON.parse(requested.newValue!)).toEqual({ signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    expect(JSON.parse(requested.metadata!)).toEqual({ signatureRequestId: 'req-1' });
+    expect(requested.description).toContain('Jane Doe');
+
+    const emailSent = await recordSignatureEmailSent(ctx(), 'case-1', 'doc-1', 'req-1', 'jane@example.com', 'mock');
+    expect(emailSent.eventType).toBe('document.signature.email.sent');
+    expect(emailSent.newValue).toBeNull();
+
+    const viewed = await recordSignatureViewed(ctx(), 'case-1', 'doc-1', 'req-1', 'mock');
+    expect(viewed.eventType).toBe('document.signature.viewed');
+    expect(viewed.severity).toBe('info');
+
+    const completed = await recordSignatureCompleted(ctx(), 'case-1', 'doc-1', 'req-1', 'Jane Doe', '203.0.113.1', 'Mozilla/5.0', 'mock');
+    expect(completed.eventType).toBe('document.signature.completed');
+    expect(JSON.parse(completed.previousValue!)).toEqual({ signatureStatus: 'pending_signature' });
+    expect(JSON.parse(completed.newValue!)).toEqual({ signatureStatus: 'signed' });
+    expect(JSON.parse(completed.metadata!)).toEqual({ signatureRequestId: 'req-1', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0' });
+
+    const declined = await recordSignatureDeclined(ctx(), 'case-1', 'doc-2', 'req-2', 'John Smith', 'Disagrees with terms', 'mock');
+    expect(declined.eventType).toBe('document.signature.declined');
+    expect(declined.severity).toBe('warning');
+    expect(JSON.parse(declined.newValue!)).toEqual({ reason: 'Disagrees with terms' });
+
+    const declinedNoReason = await recordSignatureDeclined(ctx(), 'case-1', 'doc-2', 'req-2', 'John Smith', null, 'mock');
+    expect(declinedNoReason.newValue).toBeNull();
+
+    const cancelled = await recordSignatureCancelled(ctx(), 'case-1', 'doc-3', 'req-3', 'mock');
+    expect(cancelled.eventType).toBe('document.signature.cancelled');
+    expect(cancelled.severity).toBe('warning');
+
+    const expired = await recordSignatureExpired(ctx(), 'case-1', 'doc-4', 'req-4', 'mock');
+    expect(expired.eventType).toBe('document.signature.expired');
+    expect(expired.severity).toBe('warning');
   });
 });
 

@@ -144,3 +144,29 @@ export function getSessionSecret(): string {
 
   return 'beacon-development-only-insecure-session-secret-do-not-use-in-production';
 }
+
+/**
+ * Phase 26 (Electronic Signatures & Authorization Workflows). The
+ * absolute origin `services/signatureService.ts` prefixes onto `/sign`
+ * to build a real signing link for the notification email — the first
+ * place this codebase has needed one (every prior public-link email
+ * — verify-email, reset-password, invitation — was described but never
+ * actually assembled into a real URL, since no email provider has ever
+ * been wired up to send one). Falls back to a fixed local-dev origin
+ * outside production, matching `getSessionSecret()`'s own posture;
+ * throws in production if unset, since a wrong/missing origin here would
+ * silently send a broken signing link to a real family member.
+ */
+export function getAppBaseUrl(): string {
+  const url = process.env.APP_BASE_URL;
+  if (url) return url.replace(/\/$/, '');
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'APP_BASE_URL is not set. A real, absolute origin is required in production to build ' +
+        'signing links — see docs/AUTHENTICATION.md. Refusing to fall back to the development default.',
+    );
+  }
+
+  return 'http://localhost:3000';
+}

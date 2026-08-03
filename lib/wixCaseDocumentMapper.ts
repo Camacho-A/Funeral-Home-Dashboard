@@ -172,3 +172,11 @@ export function applyCaseDocumentGenerationResultToWixData(
 export function applyCaseDocumentStatusToWixData(existing: WixCaseDocumentItem, status: CaseDocumentStatus): WixCaseDocumentItem {
   return { ...existing, status };
 }
+
+/** Phase 26 (Electronic Signatures & Authorization Workflows). The one
+    other field ever changed on an already-`active` row: `signatureStatus`,
+    written only from `services/documentService.ts`'s `markDocumentSigned` —
+    see that function's own header comment. */
+export function applyCaseDocumentSignatureStatusToWixData(existing: WixCaseDocumentItem, signatureStatus: CaseDocumentSignatureStatus): WixCaseDocumentItem {
+  return { ...existing, signatureStatus };
+}

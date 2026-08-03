@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapWixCaseDocumentItem, buildWixCaseDocumentData, applyCaseDocumentStatusToWixData } from './wixCaseDocumentMapper';
+import { mapWixCaseDocumentItem, buildWixCaseDocumentData, applyCaseDocumentStatusToWixData, applyCaseDocumentSignatureStatusToWixData } from './wixCaseDocumentMapper';
 import type { CaseDocument } from '../types/caseDocument';
 
 const GENERATED: CaseDocument = {
@@ -72,5 +72,13 @@ describe('wixCaseDocumentMapper', () => {
     expect(updated.status).toBe('superseded');
     expect(updated.storageKey).toBe(wixItem.storageKey);
     expect(updated.checksumSha256).toBe(wixItem.checksumSha256);
+  });
+
+  it('Phase 26: applyCaseDocumentSignatureStatusToWixData changes only signatureStatus', () => {
+    const wixItem = buildWixCaseDocumentData(GENERATED);
+    const updated = applyCaseDocumentSignatureStatusToWixData(wixItem, 'signed');
+    expect(updated.signatureStatus).toBe('signed');
+    expect(updated.status).toBe(wixItem.status);
+    expect(updated.storageKey).toBe(wixItem.storageKey);
   });
 });

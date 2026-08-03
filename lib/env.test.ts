@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getAuthAdapterMode, getDataAdapterMode, getWixServerConfig } from './env';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getAuthAdapterMode, getDataAdapterMode, getWixServerConfig, getAppBaseUrl } from './env';
 
-const ENV_KEYS = ['DATA_ADAPTER', 'AUTH_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
+const ENV_KEYS = ['DATA_ADAPTER', 'AUTH_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID', 'APP_BASE_URL'] as const;
 let originalEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -86,5 +86,26 @@ describe('getWixServerConfig', () => {
     process.env.WIX_API_KEY = 'test-key';
     expect(() => getWixServerConfig()).toThrow(/WIX_SITE_ID/);
     expect(() => getWixServerConfig()).not.toThrow(/WIX_API_KEY,/);
+  });
+});
+
+describe('getAppBaseUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns the configured origin with a trailing slash stripped', () => {
+    process.env.APP_BASE_URL = 'https://beacon.example.com/';
+    expect(getAppBaseUrl()).toBe('https://beacon.example.com');
+  });
+
+  it('falls back to a local-dev origin outside production when unset', () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    expect(getAppBaseUrl()).toBe('http://localhost:3000');
+  });
+
+  it('throws in production when unset, rather than silently sending a broken signing link', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(() => getAppBaseUrl()).toThrow(/APP_BASE_URL/);
   });
 });

@@ -55,6 +55,10 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'document.archive',
   'document.template.read',
   'document.template.manage',
+  'signature.request',
+  'signature.read',
+  'signature.cancel',
+  'signature.manage',
   'report.view',
   'audit.read',
   'audit.export',
@@ -95,6 +99,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.archive',
       'document.template.read',
       'document.template.manage',
+      'signature.request',
+      'signature.read',
+      'signature.cancel',
+      'signature.manage',
       'report.view',
       'audit.read',
       'audit.export',
@@ -120,6 +128,9 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.upload',
       'document.archive',
       'document.template.read',
+      'signature.request',
+      'signature.read',
+      'signature.cancel',
       'report.view',
       'audit.read',
     ],
@@ -138,13 +149,15 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.generate',
       'document.view',
       'document.upload',
+      'signature.request',
+      'signature.read',
     ],
   },
   {
     key: 'officeStaff',
     name: 'Office Staff',
     description: 'Administrative support — can view and update cases, and generate documents, without payment or workflow access.',
-    permissions: ['case.read', 'case.update', 'caseOrder.read', 'serviceCatalog.read', 'document.generate', 'document.view', 'document.upload'],
+    permissions: ['case.read', 'case.update', 'caseOrder.read', 'serviceCatalog.read', 'document.generate', 'document.view', 'document.upload', 'signature.request', 'signature.read'],
   },
   {
     key: 'accounting',
@@ -161,8 +174,11 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         uploading is a write action, and this is the one role in the
         catalog whose entire permission list is read/view-only today;
         granting it upload would be the first write action readOnly ever
-        holds, contradicting its own name and description. */
-    permissions: ['case.read', 'caseOrder.read', 'workflow.read', 'payment.read', 'serviceCatalog.read', 'document.view', 'report.view', 'audit.read'],
+        holds, contradicting its own name and description. Phase 26:
+        `signature.read` is a pure view action and fits this role's
+        tier exactly; `signature.request`/`.cancel` are withheld for the
+        identical reason `document.upload` is. */
+    permissions: ['case.read', 'caseOrder.read', 'workflow.read', 'payment.read', 'serviceCatalog.read', 'document.view', 'signature.read', 'report.view', 'audit.read'],
   },
 ];
 

@@ -6,6 +6,7 @@ import {
   buildWixCaseDocumentData,
   applyCaseDocumentGenerationResultToWixData,
   applyCaseDocumentStatusToWixData,
+  applyCaseDocumentSignatureStatusToWixData,
   type WixCaseDocumentItem,
 } from '../lib/wixCaseDocumentMapper';
 import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
@@ -205,6 +206,34 @@ async function updateDocumentStatus(organizationId: string, documentId: string, 
   await updateWixDataItem('caseDocuments', existingItem.id, merged);
 }
 
+/** Phase 26 (Electronic Signatures & Authorization Workflows). The only
+    function anywhere that ever writes `CaseDocument.signatureStatus:
+    'signed'` — called exclusively from `services/signatureService.ts`'s
+    `completeSignatureRequest`, once a signature is actually complete.
+    Touches the orthogonal `signatureStatus` field instead of `status` (a
+    document can be `active`/`archived` independently of whether it's
+    been signed). Unlike `updateDocumentStatus`'s lenient no-op-if-missing
+    behavior (that function is called in secondary/best-effort contexts
+    elsewhere), this throws in both modes on a missing document — a
+    signature has just been completed and the caller must know for
+    certain whether the document lock actually took effect. */
+export async function markDocumentSigned(organizationId: string, caseId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<void> {
+  if (dataAdapterMode === 'mock') {
+    const index = caseDocumentFixtures.findIndex((d) => d.id === documentId && d.organizationId === organizationId && d.caseId === caseId);
+    if (index === -1) throw new DocumentServiceError('Document not found while marking it signed.');
+    caseDocumentFixtures[index] = { ...caseDocumentFixtures[index], signatureStatus: 'signed' };
+    return;
+  }
+  const response = await queryWixDataItems<WixCaseDocumentItem>('caseDocuments', {
+    filter: { organizationId, caseId, beaconCaseDocumentId: documentId },
+    paging: { limit: 1 },
+  });
+  const existingItem = response.dataItems[0];
+  if (!existingItem) throw new DocumentServiceError('Document not found while marking it signed.');
+  const merged = applyCaseDocumentSignatureStatusToWixData(existingItem.data, 'signed');
+  await updateWixDataItem('caseDocuments', existingItem.id, merged);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -248,6 +277,20 @@ export async function generate(
   const version = params.templateVersion !== undefined ? template.versions.find((v) => v.version === params.templateVersion) : getActiveVersion(template);
   if (!version) {
     throw new DocumentServiceError(`Template version ${params.templateVersion} not found.`);
+  }
+
+  /** Phase 26 (Electronic Signatures & Authorization Workflows). A signed
+      document is permanently locked — this is the sole mechanism for
+      that invariant. A correction is always a brand-new, unrelated
+      `generate()` call (no `existingDocumentId`) plus a new signature
+      request; the signed original's `status` is never flipped to
+      `superseded`, never modified, never invalidated. */
+  if (params.existingDocumentId) {
+    const existingDocuments = await list(ctx.organizationId, params.caseId, dataAdapterMode);
+    const existingTarget = existingDocuments.find((d) => d.id === params.existingDocumentId);
+    if (existingTarget?.signatureStatus === 'signed') {
+      throw new DocumentServiceError('Cannot regenerate a signed document — it is permanently locked. Generate a new, independent document and create a new signature request instead.');
+    }
   }
 
   const mergeSource = await resolveMergeSourceData(ctx.organizationId, params.caseId, dataAdapterMode);

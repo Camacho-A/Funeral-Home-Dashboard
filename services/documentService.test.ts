@@ -18,7 +18,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   },
 }));
 
-const { list, generate, upload, archive, downloadFile, DocumentServiceError } = await import('./documentService');
+const { list, generate, upload, archive, downloadFile, markDocumentSigned, DocumentServiceError } = await import('./documentService');
 const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { documentTemplateFixtures } = await import('./__mocks__/documentFixtures');
@@ -195,6 +195,51 @@ describe('generate', () => {
 
     const otherOrgList = await list(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
     expect(otherOrgList).toHaveLength(0);
+  });
+
+  it('Phase 26: refuses to regenerate a signed document — completed signatures permanently lock it', async () => {
+    const template = await createSampleTemplate();
+    const first = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+    await markDocumentSigned(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, first.id, 'mock');
+
+    await expect(
+      generate({ caseId: TEST_CASE_ID, templateId: template.id, existingDocumentId: first.id, idFactory }, ctx(), 'mock'),
+    ).rejects.toThrow(/permanently locked/i);
+
+    // The signed original is untouched — never flipped to superseded, never modified.
+    const documents = await list(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    const reloaded = documents.find((d) => d.id === first.id);
+    expect(reloaded?.status).toBe('active');
+    expect(reloaded?.signatureStatus).toBe('signed');
+  });
+
+  it('Phase 26: regenerating an unsigned document is unaffected by the signed-document lock', async () => {
+    const template = await createSampleTemplate();
+    const first = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+
+    const second = await generate({ caseId: TEST_CASE_ID, templateId: template.id, existingDocumentId: first.id, idFactory }, ctx(), 'mock');
+    expect(second.status).toBe('active');
+  });
+});
+
+describe('markDocumentSigned', () => {
+  it('flips signatureStatus to signed without touching any other field', async () => {
+    const template = await createSampleTemplate();
+    const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+    expect(doc.signatureStatus).toBeNull();
+
+    await markDocumentSigned(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
+
+    const documents = await list(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    const reloaded = documents.find((d) => d.id === doc.id);
+    expect(reloaded?.signatureStatus).toBe('signed');
+    expect(reloaded?.status).toBe('active');
+    expect(reloaded?.storageKey).toBe(doc.storageKey);
+    expect(reloaded?.checksumSha256).toBe(doc.checksumSha256);
+  });
+
+  it('throws for a document that does not exist in this case/organization', async () => {
+    await expect(markDocumentSigned(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'no-such-doc', 'mock')).rejects.toThrow(DocumentServiceError);
   });
 });
 

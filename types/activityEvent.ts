@@ -114,10 +114,35 @@ export const ACTIVITY_EVENT_TYPES = {
       phase's Invariants). */
   DOCUMENT_REGENERATED: 'document.regenerated',
   DOCUMENT_ARCHIVED: 'document.archived',
-  /** Reserved — document signing (e-signatures) is explicitly out of
-      scope for Phase 25; a reserved `signatureStatus` field exists on
-      `CaseDocument` for a future Phase 26 to wire this to. */
+  /** Reserved by Phase 25 for e-signatures — **superseded, never wired**.
+      Phase 26 (Electronic Signatures & Authorization Workflows) uses the
+      `document.signature.*` namespace below instead (SIGNATURE_COMPLETED
+      in particular), for a consistent dot-notation family alongside
+      SIGNATURE_REQUESTED/VIEWED/DECLINED/etc. Kept here rather than
+      deleted — this constant already shipped, reviewed, in Phase 25 — but
+      no code path anywhere ever emits it. */
   DOCUMENT_SIGNED: 'document.signed',
+
+  /** Phase 26 (Electronic Signatures & Authorization Workflows). A stable,
+      machine-readable taxonomy for the signature-request lifecycle —
+      human-readable text lives entirely in each event's own
+      `description` field, never derived from or mixed into these
+      identifiers. All seven use the `'documents'` category (a signature
+      is part of a document's own lifecycle, not a separate domain). */
+  SIGNATURE_REQUESTED: 'document.signature.requested',
+  /** Distinct from SIGNATURE_REQUESTED — fires only once the signer's
+      notification actually dispatches successfully (the request's own
+      draft -> pending transition), never at request-creation time
+      itself, since those two things can fail independently. */
+  SIGNATURE_EMAIL_SENT: 'document.signature.email.sent',
+  SIGNATURE_VIEWED: 'document.signature.viewed',
+  /** The signature-completed event — see DOCUMENT_SIGNED's comment above
+      for why this is used instead of that reserved-but-superseded
+      constant. */
+  SIGNATURE_COMPLETED: 'document.signature.completed',
+  SIGNATURE_DECLINED: 'document.signature.declined',
+  SIGNATURE_CANCELLED: 'document.signature.cancelled',
+  SIGNATURE_EXPIRED: 'document.signature.expired',
 
   DOCUMENT_TEMPLATE_CREATED: 'document.template.created',
   /** Fires on every edit that produces a new DocumentTemplateVersion —
