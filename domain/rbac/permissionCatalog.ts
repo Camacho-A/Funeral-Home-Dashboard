@@ -74,6 +74,23 @@ export const PERMISSION_KEYS = [
   'resource.manage',
   'calendar.manage',
 
+  /** Phase 28 (Communications & Notifications). `notification.read` gates
+      the organization-wide notification log (mirrors `audit.read`'s own
+      tier) — never your own personal inbox, which needs no permission at
+      all (every authenticated member reads their own notifications, the
+      same way every member reads their own session). `notification.send`
+      mirrors `document.generate`/`schedule.create`'s tier. `notification.manage`
+      (cancel a pending notification; manage notification-related
+      settings) mirrors `document.template.manage`/`signature.manage`'s
+      narrower tier. `notification.admin` is reserved for a future
+      org-wide notification policy surface (default digest settings,
+      quiet-hours policy) — no dedicated UI ships this phase, mirroring
+      `calendar.manage`'s own "reserved, no UI yet" precedent. */
+  'notification.read',
+  'notification.send',
+  'notification.manage',
+  'notification.admin',
+
   'report.view',
 
   /** Phase 24 (Case Activity Timeline & Audit Center). Deliberately only
@@ -145,6 +162,11 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'schedule.cancel': 'Cancel an appointment',
   'resource.manage': 'Create, edit, and change the lifecycle status of schedulable resources; authorize a conflict override',
   'calendar.manage': 'Manage organization-wide calendar settings',
+
+  'notification.read': 'View the organization-wide notification log',
+  'notification.send': 'Create or broadcast a notification',
+  'notification.manage': 'Cancel a pending notification; manage notification-related settings',
+  'notification.admin': 'Manage organization-wide notification policy settings',
 
   'report.view': 'View reports',
 

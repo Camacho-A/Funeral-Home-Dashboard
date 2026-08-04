@@ -1030,6 +1030,105 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/appointmentResourceAssignment.ts`'s `AppointmentResourceAssignment`.
 
+## Collection 42 — `notifications`
+
+**Purpose:** the central Phase 28 entity — "what happened." Carries zero delivery state; every per-recipient/per-channel outcome flows through Collection 44 (`notificationDeliveries`). **Ownership:** organization-owned. **Retention:** never hard-deleted; `status` reaching `archived`/`cancelled` is a lifecycle transition, not a deletion. See ADR-032.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconNotificationId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `notificationType` | Text (validated against `domain/notifications/notificationTypeRegistry.ts` at the service boundary) | Required | Immutable |
+| `category` | Text (`case`\|`task`\|`payment`\|`scheduling`\|`document`\|`signature`\|`organization`\|`system`) | Required | Immutable |
+| `title`, `body` | Text | Required | Immutable — resolved once from the template registry at creation |
+| `actionUrl` | Text, nullable | Optional | Immutable |
+| `entityType`, `entityId` | Text, nullable | Optional | Immutable — polymorphic reference, no FK |
+| `recipientScope` | Text (`individual`\|`role`\|`organization_wide`\|`case_participants`) | Required | Immutable |
+| `recipientRoleKey` | Text, nullable | Optional | Immutable — set only when `recipientScope === 'role'` |
+| `status` | Text (`draft`\|`queued`\|`active`\|`archived`\|`cancelled`) | Required | Mutable until `archived`/`cancelled` |
+| `actorIdentityId` | Text, nullable | Optional | Immutable |
+| `correlationId` | Text | Required | Immutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (3 regular, at the platform's own cap): `(organizationId, createdAt)` (org-wide feed, keyset anchor); `(organizationId, entityType, entityId)` (entity-scoped notifications); `(organizationId, status)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/notification.ts`'s `Notification`.
+
+## Collection 43 — `notificationRecipients`
+
+**Purpose:** the immutable resolution snapshot — one row per `(notification, identity)`, resolved once at creation and never recomputed. **Ownership:** organization-owned (also notification- and identity-scoped). **Retention:** never deleted; `readAt`/`archivedAt` are the only fields ever changed after insert. See ADR-032.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconNotificationRecipientId` | Text (`"${notificationId}-${identityId}"`, deterministic) | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `notificationId` | Text | Required | Immutable |
+| `identityId` | Text | Required | Immutable |
+| `readAt` | Date, nullable | Optional | Mutable — set once, on mark-read |
+| `archivedAt` | Date, nullable | Optional | Mutable — set once, on archive |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (2 regular): `(organizationId, identityId)` (personal inbox); `(organizationId, notificationId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/notificationRecipient.ts`'s `NotificationRecipient`.
+
+## Collection 44 — `notificationDeliveries`
+
+**Purpose:** "how it was sent" — one row per `(recipient, channel)`, carrying zero notification content. `identityId` is denormalized from Collection 43 so the unread-badge query never needs a join. **Ownership:** organization-owned (also notification-, recipient-, and identity-scoped). **Retention:** never deleted; `status`/`attemptCount`/`lastAttemptAt` are the only fields ever changed after insert. See ADR-032.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconNotificationDeliveryId` | Text (`"${notificationRecipientId}-${channel}"`, deterministic) | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `notificationId` | Text | Required | Immutable |
+| `notificationRecipientId` | Text | Required | Immutable |
+| `identityId` | Text (denormalized from Collection 43) | Required | Immutable |
+| `channel` | Text (`in_app`\|`email`) | Required | Immutable |
+| `status` | Text (`pending`\|`sent`\|`delivered`\|`read`\|`failed`) | Required | Mutable — fully independent of the owning `Notification`'s own `status` |
+| `attemptCount` | Number | Required | Mutable |
+| `lastAttemptAt` | Date, nullable | Optional | Mutable |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (2 regular): `(organizationId, identityId, status)` (the unread-badge hot path — capped at 3 fields by the platform's own compound-index limit, discovered live; `channel` is filtered in application code as a narrowing, not the index boundary); `(organizationId, notificationRecipientId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/notificationDelivery.ts`'s `NotificationDelivery`.
+
+## Collection 45 — `notificationDeliveryAttempts`
+
+**Purpose:** an immutable, insert-only log of every actual delivery try — mirrors Collection 36 (`signatureRecords`)'s own insert-only precedent. **Ownership:** organization-owned (also delivery-scoped). **Retention:** never updated, never deleted, once created. See ADR-032.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconNotificationDeliveryAttemptId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `notificationDeliveryId` | Text | Required | Immutable |
+| `succeeded` | Boolean | Required | Immutable |
+| `errorMessage` | Text, nullable | Optional | Immutable |
+| `attemptedAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(organizationId, notificationDeliveryId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/notificationDeliveryAttempt.ts`'s `NotificationDeliveryAttempt`.
+
+## Collection 46 — `notificationPreferences`
+
+**Purpose:** one row per `(organizationId, identityId)`; a missing row resolves to both channels enabled by default (a synthetic, unpersisted view — never eagerly seeded). **Ownership:** organization-owned (also identity-scoped). **Retention:** never deleted; `emailEnabled`/`inAppEnabled`/`updatedAt` are the only fields this phase's UI/routes ever patch. See ADR-032.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconNotificationPreferenceId` | Text (`"${organizationId}-${identityId}"`, deterministic) | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `identityId` | Text | Required | Immutable |
+| `emailEnabled`, `inAppEnabled` | Boolean | Required | Mutable |
+| `digestFrequency` | Text (`instant`\|`daily`\|`weekly`) | Required | Reserved — no batching engine runs against this yet |
+| `quietHoursStart`, `quietHoursEnd` | Text, nullable | Optional | Reserved — not enforced |
+| `smsEnabled` | Boolean | Required | Reserved, always `false` — no SMS channel exists yet |
+| `updatedAt` | Date | Required | Mutable |
+
+- **Indexes** (1 regular): `(organizationId, identityId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/notificationPreference.ts`'s `NotificationPreference`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -1040,7 +1139,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all forty-one collections)
+## Permissions summary (all forty-six collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -1111,6 +1210,15 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Org-wide status filtering (e.g. Draft attention list) | `appointments (organizationId, status)` |
 | Conflict detection for one resource | `appointmentResourceAssignments (organizationId, resourceId)` |
 | Resource assignments for one appointment | `appointmentResourceAssignments (organizationId, appointmentId)` |
+| Org-wide notification feed + keyset pagination anchor | `notifications (organizationId, createdAt)` |
+| Entity-scoped notifications (e.g. every notification about one case) | `notifications (organizationId, entityType, entityId)` |
+| Org-wide status filtering | `notifications (organizationId, status)` |
+| Personal inbox | `notificationRecipients (organizationId, identityId)` |
+| Recipient rows for one notification | `notificationRecipients (organizationId, notificationId)` |
+| Unread-badge hot path (capped at 3 fields — see Known Limitations) | `notificationDeliveries (organizationId, identityId, status)` |
+| Deliveries for one recipient row | `notificationDeliveries (organizationId, notificationRecipientId)` |
+| Attempts for one delivery | `notificationDeliveryAttempts (organizationId, notificationDeliveryId)` |
+| Preferences for one identity | `notificationPreferences (organizationId, identityId)` |
 
 ## Migration notes
 
@@ -1131,3 +1239,5 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **Phase 25's index-creation gap is resolved as of Phase 26.** The correct REST shape is a top-level resource, not nested under a collection: `POST https://www.wixapis.com/wix-data/v2/indexes` with body `{ dataCollectionId, index: { name, fields: [{ path, order }], unique } }` (the field is `unique`, not `isUnique` — an `isUnique` body is silently accepted but produces a non-unique index); list via `GET .../v2/indexes?dataCollectionId={id}`; delete via the `DELETE .../v2/indexes?dataCollectionId={id}&indexName={name}` shape already known from the Phase 19B correction pass. Passing `indexes` inside the `POST /v2/collections` collection-creation body itself is silently accepted and silently ignored — it does not create any indexes. See [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md) for the full discovery writeup. Using this shape, the seven secondary indexes `documentTemplates`/`documentTemplateVersions`/`caseDocuments` had been missing since Phase 25 were created live during Phase 26 and confirmed `ACTIVE` — these three collections are no longer under-indexed.
 - **Phase 26: `BLOB_READ_WRITE_TOKEN` still not provisioned in this environment** (same gap ADR-029 documented for Phase 25). `signatureRequests`/`signatureRecords` themselves were fully live-verified with no limitation — this only affects the one step that needs real stored document bytes (`completeSignatureRequest`'s checksum re-download/re-verify), which was exercised in every other respect live and is fully covered by the unit suite otherwise. See ADR-030's "Live Wix verification" section for exactly what was scoped around and why.
 - **`appointments` has no dedicated `recurrenceDefinitionId` index** — Wix Data's 3-regular-index cap was already spent on `(organizationId, startAt)`/`(organizationId, caseId)`/`(organizationId, status)`, all higher-traffic access patterns than a series-wide bulk operation. Materialization is capped at 104 occurrences/2 years (see ADR-031), so an "edit this and all following" operation accepts a bounded, non-indexed scan rather than a fourth index. All ten Phase 27 indexes (across the five new collections) were created live and confirmed `ACTIVE`; the index cap was reconfirmed empirically on every one of them.
+- **Phase 28: Wix Data compound indexes cap at 3 fields, discovered live** — a 4-field `(organizationId, identityId, channel, status)` index on `notificationDeliveries` was rejected outright (`WDE0080: fields has size 4, expected 3 or less`). This is a genuinely new, previously-undocumented limit — every prior phase's compound indexes happened to need at most 3 fields. Resolved by dropping to `(organizationId, identityId, status)` and filtering `channel` in application code, the same "index narrows, application code is the correctness boundary" discipline `activityService.ts` already established. All nine Phase 28 indexes (across the five new collections) were created live and confirmed `ACTIVE`.
+- **Phase 28: Wix Data's `COUNT` capability is reachable, but not safe to rely on for correctness.** A dedicated `POST /wix-data/v2/items/count` endpoint (`{ dataCollectionId, query: { filter } }` → `{ totalCount }`) exists and responds successfully — a genuinely different endpoint from `/wix-data/v2/items/query`, not documented anywhere in this codebase before this phase. Empirically, though, it was observed to return a stale/inflated total shortly after a rapid sequence of writes and deletes against the same rows: a controlled test creating exactly two matching, freshly-inserted rows with zero pre-existing ones (independently confirmed via a full state re-query immediately after) returned `totalCount: 4` from the count endpoint. `services/notificationService.ts`'s `getUnreadCount` deliberately keeps its existing bounded fetch-and-count implementation against the regular, observed-consistent query endpoint rather than switching to this faster but inconsistency-prone one. See ADR-032's "Live Wix verification" section for the full test.

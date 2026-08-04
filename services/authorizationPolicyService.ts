@@ -130,6 +130,27 @@ export function canManageCalendar(params: ResolvePermissionsParams, dataAdapterM
   return hasPermission(params, dataAdapterMode, 'calendar.manage');
 }
 
+/** Phase 28 (Communications & Notifications). `notification.read` gates
+    only the organization-wide notification log — a caller's own personal
+    inbox (list/mark-read/archive/preferences) needs no permission check
+    at all, since every authenticated member may always read and manage
+    their own notifications. */
+export function canReadNotifications(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'notification.read');
+}
+
+export function canSendNotification(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'notification.send');
+}
+
+export function canManageNotifications(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'notification.manage');
+}
+
+export function canAdminNotifications(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'notification.admin');
+}
+
 export function canViewReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'report.view');
 }

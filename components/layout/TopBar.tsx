@@ -9,6 +9,7 @@ import { logoutAction } from '@/app/login/actions';
 import { SearchInput } from './SearchInput';
 import { UserAvatar } from './UserAvatar';
 import { OrganizationSwitcher } from './OrganizationSwitcher';
+import { NotificationBell } from './NotificationBell';
 import styles from './TopBar.module.css';
 
 /**
@@ -83,6 +84,7 @@ export function TopBar({
       <a href="/settings/resources" className={styles.signOutButton}>
         Resources
       </a>
+      <NotificationBell />
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
         <button type="submit" className={styles.signOutButton}>

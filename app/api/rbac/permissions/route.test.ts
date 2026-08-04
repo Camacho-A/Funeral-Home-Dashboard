@@ -55,7 +55,7 @@ describe('GET /api/rbac/permissions', () => {
     const response = await GET();
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.permissions).toHaveLength(38); // Phase 27: 32 + schedule.read + schedule.create + schedule.edit + schedule.cancel + resource.manage + calendar.manage
+    expect(body.permissions).toHaveLength(42); // Phase 28: 38 + notification.read + notification.send + notification.manage + notification.admin
     expect(body.permissions.some((p: { key: string }) => p.key === 'organization.manage')).toBe(true);
   });
 });

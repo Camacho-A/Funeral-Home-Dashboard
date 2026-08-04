@@ -1,0 +1,17 @@
+.bellButton {
+  cursor: pointer;
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.countBadge {
+  font-variant-numeric: tabular-nums;
+}

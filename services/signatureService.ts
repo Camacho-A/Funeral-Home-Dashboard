@@ -9,12 +9,15 @@ import {
   type WixSignatureRequestItem,
 } from '../lib/wixSignatureRequestMapper';
 import { mapWixSignatureRecordItem, buildWixSignatureRecordData, type WixSignatureRecordItem } from '../lib/wixSignatureRecordMapper';
+import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 import type { SignatureRequest, SignatureRequestStatus, NewSignatureRequestInput } from '../types/signatureRequest';
 import type { SignatureRecord } from '../types/signatureRecord';
+import type { Case } from '../types/case';
 import { generateToken, hashToken } from '../lib/identity/tokens';
 import { identityMessageSignatureNotifier } from '../lib/identityMessageSignatureNotifier';
 import type { SignatureNotifier } from '../lib/signatureNotifier';
 import { list as listCaseDocuments, downloadFile as downloadCaseDocumentFile, markDocumentSigned, resolveMergeSourceData } from './documentService';
+import { createNotification } from './notificationService';
 import {
   recordSignatureRequested,
   recordSignatureEmailSent,
@@ -26,6 +29,7 @@ import {
   type ActivityContext,
 } from './activityService';
 import { signatureRequestFixtures, signatureRecordFixtures } from './__mocks__/documentFixtures';
+import { caseFixtures } from './__mocks__/fixtures';
 
 /**
  * Phase 26 (Electronic Signatures & Authorization Workflows).
@@ -90,6 +94,60 @@ function buildSigningLink(rawToken: string): string {
     own comment). */
 function signerActivityContext(organizationId: string, correlationId: string): ActivityContext {
   return { organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true };
+}
+
+/** Mirrors `documentService.ts`'s own `getCaseForMerge` exactly — cases
+    are read via a client-fetch service (`services/casesService.ts`)
+    everywhere else, but a server-side orchestration step mid-request
+    needs its own small mock/wix-branching reader, never a `fetch()` call
+    to this app's own API from inside a Route Handler. */
+async function getCaseForNotification(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<Case | null> {
+  if (dataAdapterMode === 'mock') {
+    return caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted) ?? null;
+  }
+  const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { beaconCaseId: caseId, organizationId, isArchived: false }, paging: { limit: 1 } });
+  return mapWixCaseItem(response.dataItems[0]?.data);
+}
+
+/**
+ * Phase 28 (Communications & Notifications). **Additive** to
+ * `signatureNotifier.notifyCompleted`/`.notifyDeclined` above — this never
+ * replaces the existing external-signer email; it's a *second*,
+ * independent notification to the staff member who requested the
+ * signature (`SignatureRequest.requestedBy`, captured at request-creation
+ * time — never `case_participants`, so this integration has no dependency
+ * on that still-unimplemented scope). Routed entirely through
+ * `NotificationService`, the sole orchestration layer; this file never
+ * resolves a recipient, calls a channel, or writes to a notification
+ * collection itself.
+ */
+async function notifyRequesterOfSignatureOutcome(
+  request: SignatureRequest,
+  notificationType: 'signature.completed' | 'signature.declined',
+  documentFileName: string,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<void> {
+  try {
+    const targetCase = await getCaseForNotification(request.organizationId, request.caseId, dataAdapterMode);
+    await createNotification(
+      {
+        notificationType,
+        entityType: 'signatureRequest',
+        entityId: request.id,
+        recipientScope: 'individual',
+        recipientIdentityId: request.requestedBy,
+        caseId: request.caseId,
+        actionUrl: `${getAppBaseUrl()}/cases/${request.caseId}`,
+        tokens: { entityTitle: documentFileName, caseNumber: targetCase?.caseNumber ?? '', decedentName: targetCase?.decedentName ?? '' },
+        idFactory: () => crypto.randomUUID(),
+      },
+      ctx,
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error(`Failed to send internal ${notificationType} notification:`, error instanceof Error ? error.message : error);
+  }
 }
 
 /** Used only by `expireOverdueSignatureRequests` (a reconciliation
@@ -527,6 +585,7 @@ export async function completeSignatureRequest(
   } catch (error) {
     console.error('Failed to send signature.completed notification:', error instanceof Error ? error.message : error);
   }
+  await notifyRequesterOfSignatureOutcome(request, 'signature.completed', targetDocument.fileName, ctx, dataAdapterMode);
 
   return { request: updatedRequest, record };
 }
@@ -550,13 +609,14 @@ export async function declineSignatureRequest(
     console.error('Failed to record document.signature.declined activity event:', error instanceof Error ? error.message : error);
   }
 
+  const documents = await listCaseDocuments(request.organizationId, request.caseId, dataAdapterMode);
+  const targetDocument = documents.find((d) => d.id === request.documentId);
   try {
-    const documents = await listCaseDocuments(request.organizationId, request.caseId, dataAdapterMode);
-    const targetDocument = documents.find((d) => d.id === request.documentId);
     await signatureNotifier.notifyDeclined({ to: request.signerEmail, signerName: request.signerName, caseDisplayName: targetDocument?.fileName ?? 'a document', reason: params.reason ?? null });
   } catch (error) {
     console.error('Failed to send signature.declined notification:', error instanceof Error ? error.message : error);
   }
+  await notifyRequesterOfSignatureOutcome(request, 'signature.declined', targetDocument?.fileName ?? 'a document', ctx, dataAdapterMode);
 
   return updated;
 }

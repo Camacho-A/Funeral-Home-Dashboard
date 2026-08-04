@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(38); // Phase 27: 32 + schedule.read + schedule.create + schedule.edit + schedule.cancel + resource.manage + calendar.manage
+    expect(admin.permissions).toHaveLength(42); // Phase 28: 38 + notification.read + notification.send + notification.manage + notification.admin
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
@@ -110,6 +110,35 @@ describe('defaultRoles', () => {
     expect(readOnly.permissions.includes('schedule.cancel')).toBe(false);
     expect(readOnly.permissions.includes('resource.manage')).toBe(false);
     expect(readOnly.permissions.includes('calendar.manage')).toBe(false);
+  });
+
+  it('Phase 28: notification.read mirrors audit.read\'s tier, notification.send mirrors document.generate/schedule.create\'s tier, notification.manage/.admin are narrower still', () => {
+    const manager = defaultRoleDefinition('manager');
+    expect(manager.permissions.includes('notification.read')).toBe(true);
+    expect(manager.permissions.includes('notification.send')).toBe(true);
+    expect(manager.permissions.includes('notification.manage')).toBe(true);
+    expect(manager.permissions.includes('notification.admin')).toBe(true);
+
+    const funeralDirector = defaultRoleDefinition('funeralDirector');
+    expect(funeralDirector.permissions.includes('notification.read')).toBe(true);
+    expect(funeralDirector.permissions.includes('notification.send')).toBe(true);
+    expect(funeralDirector.permissions.includes('notification.manage')).toBe(false);
+
+    const arranger = defaultRoleDefinition('arranger');
+    expect(arranger.permissions.includes('notification.send')).toBe(true);
+    expect(arranger.permissions.includes('notification.read')).toBe(false);
+
+    const accounting = defaultRoleDefinition('accounting');
+    expect(accounting.permissions.includes('notification.read')).toBe(true);
+    expect(accounting.permissions.includes('notification.send')).toBe(false);
+  });
+
+  it('Phase 28: readOnly is granted notification.read (a pure view action, the org-wide log) but not notification.send/.manage/.admin', () => {
+    const readOnly = defaultRoleDefinition('readOnly');
+    expect(readOnly.permissions.includes('notification.read')).toBe(true);
+    expect(readOnly.permissions.includes('notification.send')).toBe(false);
+    expect(readOnly.permissions.includes('notification.manage')).toBe(false);
+    expect(readOnly.permissions.includes('notification.admin')).toBe(false);
   });
 
   it('readOnly grants only *.read/*.view permissions', () => {

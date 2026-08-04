@@ -65,6 +65,10 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'schedule.cancel',
   'resource.manage',
   'calendar.manage',
+  'notification.read',
+  'notification.send',
+  'notification.manage',
+  'notification.admin',
   'report.view',
   'audit.read',
   'audit.export',
@@ -115,6 +119,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.cancel',
       'resource.manage',
       'calendar.manage',
+      'notification.read',
+      'notification.send',
+      'notification.manage',
+      'notification.admin',
       'report.view',
       'audit.read',
       'audit.export',
@@ -147,6 +155,8 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.create',
       'schedule.edit',
       'schedule.cancel',
+      'notification.read',
+      'notification.send',
       'report.view',
       'audit.read',
     ],
@@ -170,6 +180,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.read',
       'schedule.create',
       'schedule.edit',
+      'notification.send',
     ],
   },
   {
@@ -189,13 +200,14 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.read',
       'schedule.create',
       'schedule.edit',
+      'notification.send',
     ],
   },
   {
     key: 'accounting',
     name: 'Accounting',
     description: 'Financial operations across every case — collecting and refunding payments and viewing reports — without case-editing access.',
-    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'report.view', 'audit.read', 'audit.export'],
+    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'notification.read', 'report.view', 'audit.read', 'audit.export'],
   },
   {
     key: 'readOnly',
@@ -211,7 +223,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         tier exactly; `signature.request`/`.cancel` are withheld for the
         identical reason `document.upload` is. Phase 27: `schedule.read`
         is likewise a pure view action; `schedule.create`/`.edit`/`.cancel`
-        are withheld for the same reason. */
+        are withheld for the same reason. Phase 28: `notification.read`
+        is likewise a pure view action (the organization-wide log, not
+        this role's own personal inbox, which needs no permission at
+        all); `notification.send` is withheld for the identical reason. */
     permissions: [
       'case.read',
       'caseOrder.read',
@@ -221,6 +236,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.view',
       'signature.read',
       'schedule.read',
+      'notification.read',
       'report.view',
       'audit.read',
     ],

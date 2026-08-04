@@ -1178,3 +1178,154 @@ export function recordResourceConflictOverridden(
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 28 (Communications & Notifications). Every write in
+// services/notificationService.ts records through exactly one of these —
+// never a hand-constructed payload at the call site, matching every helper
+// above. `resourceType`/`resourceId` always name the Notification itself
+// (mirroring Phase 27's own `resourceType: 'appointment'` convention for
+// every scheduling event) — the recipient identity and channel a given
+// Delivery-level event concerns travel in `metadata`, never as `resourceId`,
+// since one Notification can have many recipients and this event stream is
+// anchored to one notification.
+// ---------------------------------------------------------------------------
+
+export function recordNotificationCreated(
+  ctx: ActivityContext,
+  caseId: string | null,
+  notificationId: string,
+  notificationType: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'notifications',
+      eventType: ACTIVITY_EVENT_TYPES.NOTIFICATION_CREATED,
+      resourceType: 'notification',
+      resourceId: notificationId,
+      previousValue: null,
+      newValue: JSON.stringify({ notificationType }),
+      description: `Notification created (${notificationType})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Fires once, when the Notification's own production lifecycle reaches
+    `active` — every Delivery has been attempted at least once. Says
+    nothing about whether any individual Delivery actually succeeded; see
+    `recordNotificationDelivered`/`recordNotificationFailed` for that. */
+export function recordNotificationSent(ctx: ActivityContext, caseId: string | null, notificationId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'notifications',
+      eventType: ACTIVITY_EVENT_TYPES.NOTIFICATION_SENT,
+      resourceType: 'notification',
+      resourceId: notificationId,
+      previousValue: null,
+      newValue: null,
+      description: 'Notification sent',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordNotificationDelivered(
+  ctx: ActivityContext,
+  caseId: string | null,
+  notificationId: string,
+  identityId: string,
+  channel: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'notifications',
+      eventType: ACTIVITY_EVENT_TYPES.NOTIFICATION_DELIVERED,
+      resourceType: 'notification',
+      resourceId: notificationId,
+      previousValue: null,
+      newValue: null,
+      description: `Delivered via ${channel}`,
+      metadata: JSON.stringify({ identityId, channel }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordNotificationRead(
+  ctx: ActivityContext,
+  caseId: string | null,
+  notificationId: string,
+  identityId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'notifications',
+      eventType: ACTIVITY_EVENT_TYPES.NOTIFICATION_READ,
+      resourceType: 'notification',
+      resourceId: notificationId,
+      previousValue: null,
+      newValue: null,
+      description: 'Notification read',
+      metadata: JSON.stringify({ identityId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordNotificationFailed(
+  ctx: ActivityContext,
+  caseId: string | null,
+  notificationId: string,
+  identityId: string,
+  channel: string,
+  reason: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'notifications',
+      eventType: ACTIVITY_EVENT_TYPES.NOTIFICATION_FAILED,
+      resourceType: 'notification',
+      resourceId: notificationId,
+      previousValue: null,
+      newValue: JSON.stringify({ reason }),
+      description: `Delivery failed via ${channel}`,
+      metadata: JSON.stringify({ identityId, channel, reason }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordNotificationCancelled(ctx: ActivityContext, caseId: string | null, notificationId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'notifications',
+      eventType: ACTIVITY_EVENT_TYPES.NOTIFICATION_CANCELLED,
+      resourceType: 'notification',
+      resourceId: notificationId,
+      previousValue: null,
+      newValue: null,
+      description: 'Notification cancelled',
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}

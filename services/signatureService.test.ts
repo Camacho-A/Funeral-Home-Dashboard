@@ -50,6 +50,7 @@ const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures, documentTemplateFixtures, signatureRequestFixtures, signatureRecordFixtures } = await import('./__mocks__/documentFixtures');
 const { activityEventFixtures } = await import('./__mocks__/activityEventFixtures');
 const { caseFixtures } = await import('./__mocks__/fixtures');
+const { notificationFixtures, notificationRecipientFixtures, notificationDeliveryFixtures, notificationDeliveryAttemptFixtures } = await import('./__mocks__/notificationFixtures');
 const { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } = await import('./__mocks__/organizationIds');
 
 type ActivityContext = {
@@ -139,6 +140,10 @@ afterEach(() => {
   signatureRecordFixtures.length = lengths.records;
   activityEventFixtures.length = lengths.events;
   caseFixtures.length = lengths.cases;
+  notificationFixtures.length = 0;
+  notificationRecipientFixtures.length = 0;
+  notificationDeliveryFixtures.length = 0;
+  notificationDeliveryAttemptFixtures.length = 0;
 });
 
 async function createSampleDocument() {
@@ -400,6 +405,14 @@ describe('completeSignatureRequest', () => {
 
     expect(mockNotifyCompleted).toHaveBeenCalledTimes(1);
     expect(activityEventFixtures.some((e) => e.eventType === 'document.signature.completed')).toBe(true);
+
+    // Additive internal staff notification — never replacing the external
+    // signer email above (mockNotifyCompleted still fired exactly once).
+    const internalNotification = notificationFixtures.find((n) => n.notificationType === 'signature.completed' && n.entityId === signedRequest.id);
+    expect(internalNotification).toBeDefined();
+    expect(internalNotification?.body).toContain('B2026-998');
+    const internalRecipient = notificationRecipientFixtures.find((r) => r.notificationId === internalNotification!.id);
+    expect(internalRecipient?.identityId).toBe('identity-1'); // SignatureRequest.requestedBy, from ctx().actorIdentityId at creation
   });
 
   it('rejects completing an already-terminal request (replay protection), regardless of the token still hashing correctly', async () => {
@@ -465,6 +478,12 @@ describe('declineSignatureRequest', () => {
     const records = await listRecords(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
     expect(records).toHaveLength(0);
     expect(caseDocumentFixtures.find((d) => d.id === doc.id)?.signatureStatus).toBeNull();
+
+    // Additive internal staff notification, alongside the external signer email above.
+    const internalNotification = notificationFixtures.find((n) => n.notificationType === 'signature.declined' && n.entityId === declined.id);
+    expect(internalNotification).toBeDefined();
+    const internalRecipient = notificationRecipientFixtures.find((r) => r.notificationId === internalNotification!.id);
+    expect(internalRecipient?.identityId).toBe('identity-1');
   });
 
   it('rejects declining an already-terminal request', async () => {

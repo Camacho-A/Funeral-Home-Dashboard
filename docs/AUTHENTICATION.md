@@ -300,6 +300,23 @@ Six new permission keys, widening the catalog from 32 to **38 permissions**:
 
 **Staff are authorized exactly as they already were — scheduling introduces no second identity system.** A `Resource` row with `resourceType: 'staff'`/`'funeral_director'` carries `linkedMembershipId` purely as a display/assignment convenience; every permission check for scheduling actions still resolves through the caller's real `Membership` via `requireAuthorizedOrganization`/`AuthorizationPolicyService`, exactly like every other route in this codebase. No route ever checks a `Resource` row's own fields to decide what its linked staff member is allowed to do.
 
+## Phase 28 — Communications & Notifications
+
+**Status: closed 2026-08-04.** Full writeup: [ADR-032](./adr/ADR-032-communications-and-notifications.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
+
+Four new permission keys, widening the catalog from 38 to **42 permissions**:
+
+- **`notification.read`** — view the organization-wide notification log. Mirrors `audit.read`'s own broader tier (Administrator, Manager, Funeral Director, Accounting, Read Only).
+- **`notification.send`** — create/broadcast a manual notification. Mirrors `document.generate`/`schedule.create`'s tier (every role except Accounting, Read Only).
+- **`notification.manage`** — cancel a pending notification; manage notification settings. Mirrors `document.template.manage`/`signature.manage`'s narrower tier (Administrator, Manager only).
+- **`notification.admin`** — reserved for a future org-wide notification policy surface; no dedicated UI ships this phase. Same tier as `notification.manage`.
+- `services/authorizationPolicyService.ts` gained `canReadNotifications`/`canSendNotification`/`canManageNotifications`/`canAdminNotifications`, each a one-line `hasPermission` wrapper.
+- `seedPlatformDefaultRoles` was re-run against live Wix so organizations already provisioned before this phase picked up the four new keys — hit the same `HTTP 429` rate-limit Phase 27's own closeout found re-running the full seed, resolved via the identical targeted, quota-efficient fix (query existing grants, insert only what's genuinely missing).
+
+**The personal inbox needs no permission at all.** Viewing one's own notifications, unread count, mark-read/archive, and one's own preferences are scoped entirely by the caller's own identity (`requireAuthorizedOrganization`'s resolved `userId`, never a client-supplied identity) — no `canX` check gates any of them, by explicit design (a user always has authority over their own inbox).
+
+**`case_participants` is a real `RecipientScope` value with no working implementation this phase.** `Case.assignedStaffId`/`intakeOwnerId` reference `StaffProfile.id` — the same pre-Identity-model, mock-only concept this document's Phase 21 section above already names as deferred ("unifying `StaffProfile` and `Identity` into one directory") — not a real `Identity.id`/`Membership.id`. `services/notifications/recipientResolver.ts` throws a clear, typed error for this scope rather than inventing a bridge. The identical gap also blocked a real `SchedulingNotifier` implementation and task-assignment notifications this phase; all three are deferred together — see ADR-032.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

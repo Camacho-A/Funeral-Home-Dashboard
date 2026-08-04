@@ -193,6 +193,23 @@ export const ACTIVITY_EVENT_TYPES = {
       conflict, which has nothing to "override." Always `severity:
       'critical'`. */
   RESOURCE_CONFLICT_OVERRIDDEN: 'scheduling.resource.conflict_overridden',
+
+  /** Phase 28 (Communications & Notifications). Uses the already-reserved
+      `'notifications'` category (see `ActivityEventCategory` above) —
+      this is its first real emitter. Every one of these is recorded
+      exclusively from inside `services/notificationService.ts`; see that
+      file's own header comment and its structural test. Narrates the
+      `Notification`'s own production lifecycle (`created`/`sent`/
+      `cancelled`) and, per-recipient, the `Delivery` lifecycle
+      (`delivered`/`read`/`failed`) — never the other way around; see
+      `types/notification.ts`'s own header comment for why the two
+      lifecycles are independent. */
+  NOTIFICATION_CREATED: 'notification.created',
+  NOTIFICATION_SENT: 'notification.sent',
+  NOTIFICATION_DELIVERED: 'notification.delivered',
+  NOTIFICATION_READ: 'notification.read',
+  NOTIFICATION_FAILED: 'notification.failed',
+  NOTIFICATION_CANCELLED: 'notification.cancelled',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

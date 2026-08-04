@@ -77,4 +77,14 @@ describe('permissionCatalog', () => {
     expect(PERMISSION_KEYS).toContain('calendar.manage');
     expect(permissionCategory('calendar.manage')).toBe('calendar');
   });
+
+  it('Phase 28: includes exactly four notification permissions, in their own resource category', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('notification.'))).toEqual([
+      'notification.read',
+      'notification.send',
+      'notification.manage',
+      'notification.admin',
+    ]);
+    expect(permissionCategory('notification.read')).toBe('notification');
+  });
 });

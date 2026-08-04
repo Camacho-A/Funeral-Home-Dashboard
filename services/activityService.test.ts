@@ -47,6 +47,12 @@ import {
   recordResourceAssigned,
   recordResourceReleased,
   recordResourceConflictOverridden,
+  recordNotificationCreated,
+  recordNotificationSent,
+  recordNotificationDelivered,
+  recordNotificationRead,
+  recordNotificationFailed,
+  recordNotificationCancelled,
   type ActivityContext,
 } from './activityService';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
@@ -347,6 +353,38 @@ describe('typed builder helpers — each produces the correct category/eventType
     expect(overridden.eventType).toBe('scheduling.resource.conflict_overridden');
     expect(overridden.severity).toBe('critical');
     expect(JSON.parse(overridden.metadata!)).toEqual({ resourceId: 'resource-1', resourceName: 'Chapel A', reason: 'Family requested this exact time' });
+  });
+
+  it('Phase 28: notification builder helpers produce the correct category/eventType/resourceType/severity', async () => {
+    const created = await recordNotificationCreated(ctx(), 'case-1', 'notif-1', 'task.assigned', 'mock');
+    expect(created.eventType).toBe('notification.created');
+    expect(created.category).toBe('notifications');
+    expect(created.resourceType).toBe('notification');
+    expect(created.resourceId).toBe('notif-1');
+    expect(created.severity).toBe('info');
+    expect(JSON.parse(created.newValue!)).toEqual({ notificationType: 'task.assigned' });
+
+    const sent = await recordNotificationSent(ctx(), 'case-1', 'notif-1', 'mock');
+    expect(sent.eventType).toBe('notification.sent');
+
+    const delivered = await recordNotificationDelivered(ctx(), 'case-1', 'notif-1', 'identity-1', 'in_app', 'mock');
+    expect(delivered.eventType).toBe('notification.delivered');
+    expect(delivered.resourceType).toBe('notification');
+    expect(delivered.resourceId).toBe('notif-1');
+    expect(JSON.parse(delivered.metadata!)).toEqual({ identityId: 'identity-1', channel: 'in_app' });
+
+    const read = await recordNotificationRead(ctx(), 'case-1', 'notif-1', 'identity-1', 'mock');
+    expect(read.eventType).toBe('notification.read');
+    expect(JSON.parse(read.metadata!)).toEqual({ identityId: 'identity-1' });
+
+    const failed = await recordNotificationFailed(ctx(), 'case-1', 'notif-1', 'identity-1', 'email', 'SMTP timeout', 'mock');
+    expect(failed.eventType).toBe('notification.failed');
+    expect(failed.severity).toBe('warning');
+    expect(JSON.parse(failed.metadata!)).toEqual({ identityId: 'identity-1', channel: 'email', reason: 'SMTP timeout' });
+
+    const cancelled = await recordNotificationCancelled(ctx(), 'case-1', 'notif-1', 'mock');
+    expect(cancelled.eventType).toBe('notification.cancelled');
+    expect(cancelled.severity).toBe('warning');
   });
 });
 

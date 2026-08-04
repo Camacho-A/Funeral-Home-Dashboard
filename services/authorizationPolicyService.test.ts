@@ -26,6 +26,10 @@ import {
   canCancelAppointment,
   canManageResources,
   canManageCalendar,
+  canReadNotifications,
+  canSendNotification,
+  canManageNotifications,
+  canAdminNotifications,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -179,6 +183,25 @@ describe('authorizationPolicyService', () => {
     expect(await canManageCalendar(params('administrator'), 'mock')).toBe(true);
     expect(await canManageCalendar(params('manager'), 'mock')).toBe(true);
     expect(await canManageCalendar(params('funeralDirector'), 'mock')).toBe(false);
+  });
+
+  it('Phase 28: notification.read mirrors audit.read\'s tier, notification.send mirrors document.generate/schedule.create\'s tier', async () => {
+    expect(await canReadNotifications(params('administrator'), 'mock')).toBe(true);
+    expect(await canReadNotifications(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canReadNotifications(params('accounting'), 'mock')).toBe(true);
+    expect(await canReadNotifications(params('arranger'), 'mock')).toBe(false);
+    expect(await canSendNotification(params('officeStaff'), 'mock')).toBe(true);
+    expect(await canSendNotification(params('accounting'), 'mock')).toBe(false);
+    expect(await canSendNotification(params('readOnly'), 'mock')).toBe(false);
+  });
+
+  it('Phase 28: notification.manage/.admin are narrower still — administrator/manager only', async () => {
+    expect(await canManageNotifications(params('administrator'), 'mock')).toBe(true);
+    expect(await canManageNotifications(params('manager'), 'mock')).toBe(true);
+    expect(await canManageNotifications(params('funeralDirector'), 'mock')).toBe(false);
+    expect(await canAdminNotifications(params('administrator'), 'mock')).toBe(true);
+    expect(await canAdminNotifications(params('manager'), 'mock')).toBe(true);
+    expect(await canAdminNotifications(params('funeralDirector'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {
