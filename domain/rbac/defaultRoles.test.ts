@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(32); // Phase 26: 28 + signature.request + signature.read + signature.cancel + signature.manage
+    expect(admin.permissions).toHaveLength(38); // Phase 27: 32 + schedule.read + schedule.create + schedule.edit + schedule.cancel + resource.manage + calendar.manage
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
@@ -77,6 +77,39 @@ describe('defaultRoles', () => {
     expect(readOnly.permissions.includes('signature.read')).toBe(true);
     expect(readOnly.permissions.includes('signature.request')).toBe(false);
     expect(readOnly.permissions.includes('signature.cancel')).toBe(false);
+  });
+
+  it('Phase 27: schedule.read/.create/.edit mirror document.generate/.view\'s tier, schedule.cancel is narrower (mirrors document.archive)', () => {
+    const arranger = defaultRoleDefinition('arranger');
+    expect(arranger.permissions.includes('schedule.read')).toBe(true);
+    expect(arranger.permissions.includes('schedule.create')).toBe(true);
+    expect(arranger.permissions.includes('schedule.edit')).toBe(true);
+    expect(arranger.permissions.includes('schedule.cancel')).toBe(false);
+
+    const officeStaff = defaultRoleDefinition('officeStaff');
+    expect(officeStaff.permissions.includes('schedule.create')).toBe(true);
+    expect(officeStaff.permissions.includes('schedule.cancel')).toBe(false);
+
+    const funeralDirector = defaultRoleDefinition('funeralDirector');
+    expect(funeralDirector.permissions.includes('schedule.cancel')).toBe(true);
+    expect(funeralDirector.permissions.includes('resource.manage')).toBe(false);
+
+    const manager = defaultRoleDefinition('manager');
+    expect(manager.permissions.includes('resource.manage')).toBe(true);
+    expect(manager.permissions.includes('calendar.manage')).toBe(true);
+
+    const accounting = defaultRoleDefinition('accounting');
+    expect(accounting.permissions.some((p) => p.startsWith('schedule.') || p === 'resource.manage' || p === 'calendar.manage')).toBe(false);
+  });
+
+  it('Phase 27: readOnly is granted schedule.read (a pure view action) but not schedule.create/.edit/.cancel or resource.manage/calendar.manage', () => {
+    const readOnly = defaultRoleDefinition('readOnly');
+    expect(readOnly.permissions.includes('schedule.read')).toBe(true);
+    expect(readOnly.permissions.includes('schedule.create')).toBe(false);
+    expect(readOnly.permissions.includes('schedule.edit')).toBe(false);
+    expect(readOnly.permissions.includes('schedule.cancel')).toBe(false);
+    expect(readOnly.permissions.includes('resource.manage')).toBe(false);
+    expect(readOnly.permissions.includes('calendar.manage')).toBe(false);
   });
 
   it('readOnly grants only *.read/*.view permissions', () => {

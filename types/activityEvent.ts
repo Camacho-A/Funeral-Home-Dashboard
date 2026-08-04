@@ -175,6 +175,24 @@ export const ACTIVITY_EVENT_TYPES = {
   /** Reserved — no reminder/automation engine exists in Beacon at all yet. */
   SYSTEM_REMINDER_TRIGGERED: 'system.reminder.triggered',
   SYSTEM_WORKFLOW_AUTOMATION_EXECUTED: 'system.workflow_automation.executed',
+
+  /** Phase 27 (Scheduling & Resource Management). All eight use the
+      already-reserved `'scheduling'` category (see `ActivityEventCategory`
+      above) — this is its first real emitter. Every one of these is
+      recorded exclusively from inside `services/schedulingService.ts`;
+      see that file's own header comment and its structural test. */
+  APPOINTMENT_CREATED: 'scheduling.appointment.created',
+  APPOINTMENT_UPDATED: 'scheduling.appointment.updated',
+  APPOINTMENT_RESCHEDULED: 'scheduling.appointment.rescheduled',
+  APPOINTMENT_CANCELLED: 'scheduling.appointment.cancelled',
+  APPOINTMENT_COMPLETED: 'scheduling.appointment.completed',
+  RESOURCE_ASSIGNED: 'scheduling.resource.assigned',
+  RESOURCE_RELEASED: 'scheduling.resource.released',
+  /** Fires only when a hard conflict was detected and an authorized
+      override proceeded anyway — never for a soft (warning-only)
+      conflict, which has nothing to "override." Always `severity:
+      'critical'`. */
+  RESOURCE_CONFLICT_OVERRIDDEN: 'scheduling.resource.conflict_overridden',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

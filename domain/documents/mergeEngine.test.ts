@@ -4,6 +4,7 @@ import type { CaseOrder } from '@/types/caseOrder';
 import type { Organization } from '@/types/organization';
 import type { OrganizationBranding } from '@/types/organizationBranding';
 import type { OrganizationLocation } from '@/types/organizationLocation';
+import type { Appointment } from '@/types/appointment';
 import {
   MERGE_FIELD_CATALOG,
   RESERVED_FIELD_PLACEHOLDER,
@@ -118,6 +119,34 @@ function makeLocation(overrides: Partial<OrganizationLocation> = {}): Organizati
   };
 }
 
+function makeServiceAppointment(overrides: Partial<Appointment> = {}): Appointment {
+  return {
+    id: 'appt-1',
+    organizationId: 'org-1',
+    caseId: 'case-1',
+    appointmentType: 'funeral.service',
+    title: 'Funeral Service',
+    notes: null,
+    locationId: 'loc-1',
+    status: 'scheduled',
+    startAt: '2026-03-15T14:00:00.000Z',
+    endAt: '2026-03-15T15:00:00.000Z',
+    timezone: 'America/Chicago',
+    recurrenceDefinitionId: null,
+    isRecurrenceException: false,
+    createdBy: 'user-1',
+    lastModifiedBy: null,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancelReason: null,
+    appointmentVersion: 1,
+    correlationId: 'corr-1',
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
 function makeSource(overrides: Partial<MergeSourceData> = {}): MergeSourceData {
   return {
     case: makeCase(),
@@ -125,6 +154,8 @@ function makeSource(overrides: Partial<MergeSourceData> = {}): MergeSourceData {
     organization: makeOrganization(),
     branding: makeBranding(),
     location: makeLocation(),
+    serviceAppointment: makeServiceAppointment(),
+    serviceAppointmentLocation: makeLocation({ id: 'loc-1', isPrimary: false, name: 'Chapel of the Pines' }),
     ...overrides,
   };
 }
@@ -136,14 +167,16 @@ describe('MERGE_FIELD_CATALOG', () => {
     }
   });
 
-  it('reserved fields (case.service.date/location) are marked wired: false and always resolve null', () => {
-    expect(MERGE_FIELD_CATALOG['case.service.date'].wired).toBe(false);
-    expect(MERGE_FIELD_CATALOG['case.service.date'].resolve(makeSource())).toBeNull();
-    expect(MERGE_FIELD_CATALOG['case.service.location'].wired).toBe(false);
-    expect(MERGE_FIELD_CATALOG['case.service.location'].resolve(makeSource())).toBeNull();
+  it('case.service.date/location are wired and resolve from the scheduling model, null when no service appointment exists', () => {
+    expect(MERGE_FIELD_CATALOG['case.service.date'].wired).toBe(true);
+    expect(MERGE_FIELD_CATALOG['case.service.date'].resolve(makeSource())).toBe('03/15/2026');
+    expect(MERGE_FIELD_CATALOG['case.service.date'].resolve(makeSource({ serviceAppointment: null }))).toBeNull();
+    expect(MERGE_FIELD_CATALOG['case.service.location'].wired).toBe(true);
+    expect(MERGE_FIELD_CATALOG['case.service.location'].resolve(makeSource())).toBe('123 Main St, Springfield, IL 62701');
+    expect(MERGE_FIELD_CATALOG['case.service.location'].resolve(makeSource({ serviceAppointmentLocation: null }))).toBeNull();
   });
 
-  it('every non-reserved field resolves to a real value against representative source data', () => {
+  it('every field resolves to a real value against representative source data', () => {
     const source = makeSource();
     for (const [key, definition] of Object.entries(MERGE_FIELD_CATALOG)) {
       if (!definition.wired) continue;
@@ -172,21 +205,17 @@ describe('validateMergeTokens', () => {
 });
 
 describe('resolveMergeContext', () => {
-  it('resolves every catalog key, including reserved ones', () => {
+  it('resolves every catalog key', () => {
     const resolved = resolveMergeContext(makeSource());
     expect(Object.keys(resolved).sort()).toEqual(Object.keys(MERGE_FIELD_CATALOG).sort());
   });
 
-  it('reserved fields resolve to the visible placeholder, never an empty string', () => {
-    const resolved = resolveMergeContext(makeSource());
-    expect(resolved['case.service.date']).toBe(RESERVED_FIELD_PLACEHOLDER);
-    expect(resolved['case.service.location']).toBe(RESERVED_FIELD_PLACEHOLDER);
-  });
-
-  it('a wired field with no per-instance data (no CaseOrder) also resolves to the placeholder, never blank', () => {
-    const resolved = resolveMergeContext(makeSource({ caseOrder: null }));
+  it('a wired field with no per-instance data (no CaseOrder, no scheduled service appointment) resolves to the placeholder, never blank', () => {
+    const resolved = resolveMergeContext(makeSource({ caseOrder: null, serviceAppointment: null, serviceAppointmentLocation: null }));
     expect(resolved['financial.total']).toBe(RESERVED_FIELD_PLACEHOLDER);
     expect(resolved['financial.balanceDue']).toBe(RESERVED_FIELD_PLACEHOLDER);
+    expect(resolved['case.service.date']).toBe(RESERVED_FIELD_PLACEHOLDER);
+    expect(resolved['case.service.location']).toBe(RESERVED_FIELD_PLACEHOLDER);
   });
 
   it('formats currency fields using the organization\'s currency', () => {
@@ -202,8 +231,8 @@ describe('mergeTemplate', () => {
     expect(merged).toBe('Dear Margaret Ellison, this concerns Robert Ellison.');
   });
 
-  it('substitutes a reserved token with the visible placeholder, never a blank', () => {
-    const resolved = resolveMergeContext(makeSource());
+  it('substitutes a wired-but-unavailable token with the visible placeholder, never a blank', () => {
+    const resolved = resolveMergeContext(makeSource({ serviceAppointment: null, serviceAppointmentLocation: null }));
     const merged = mergeTemplate('Service date: {{case.service.date}}', resolved);
     expect(merged).toBe(`Service date: ${RESERVED_FIELD_PLACEHOLDER}`);
     expect(merged).not.toContain('Service date: \n');

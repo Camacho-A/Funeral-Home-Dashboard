@@ -39,6 +39,14 @@ import {
   recordSignatureDeclined,
   recordSignatureCancelled,
   recordSignatureExpired,
+  recordAppointmentCreated,
+  recordAppointmentUpdated,
+  recordAppointmentRescheduled,
+  recordAppointmentCancelled,
+  recordAppointmentCompleted,
+  recordResourceAssigned,
+  recordResourceReleased,
+  recordResourceConflictOverridden,
   type ActivityContext,
 } from './activityService';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
@@ -283,6 +291,62 @@ describe('typed builder helpers — each produces the correct category/eventType
     const expired = await recordSignatureExpired(ctx(), 'case-1', 'doc-4', 'req-4', 'mock');
     expect(expired.eventType).toBe('document.signature.expired');
     expect(expired.severity).toBe('warning');
+  });
+
+  it('Phase 27: appointment/resource builder helpers produce the correct category/eventType/resourceType/severity', async () => {
+    const created = await recordAppointmentCreated(ctx(), 'case-1', 'appt-1', 'viewing', '2026-09-01T14:00:00.000Z', 'mock');
+    expect(created.eventType).toBe('scheduling.appointment.created');
+    expect(created.category).toBe('scheduling');
+    expect(created.resourceType).toBe('appointment');
+    expect(created.resourceId).toBe('appt-1');
+    expect(created.severity).toBe('info');
+    expect(JSON.parse(created.newValue!)).toEqual({ appointmentType: 'viewing', startAt: '2026-09-01T14:00:00.000Z' });
+
+    const updated = await recordAppointmentUpdated(ctx(), 'case-1', 'appt-1', { notes: { previous: null, next: 'Family requested extra chairs' } }, 'mock');
+    expect(updated.eventType).toBe('scheduling.appointment.updated');
+    expect(JSON.parse(updated.previousValue!)).toEqual({ notes: null });
+    expect(JSON.parse(updated.newValue!)).toEqual({ notes: 'Family requested extra chairs' });
+
+    const rescheduled = await recordAppointmentRescheduled(
+      ctx(),
+      'case-1',
+      'appt-1',
+      { startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z' },
+      { startAt: '2026-09-02T14:00:00.000Z', endAt: '2026-09-02T15:00:00.000Z' },
+      'mock',
+    );
+    expect(rescheduled.eventType).toBe('scheduling.appointment.rescheduled');
+    expect(JSON.parse(rescheduled.newValue!)).toEqual({ startAt: '2026-09-02T14:00:00.000Z', endAt: '2026-09-02T15:00:00.000Z' });
+
+    const cancelled = await recordAppointmentCancelled(ctx(), 'case-1', 'appt-1', 'Family rescheduled', 'mock');
+    expect(cancelled.eventType).toBe('scheduling.appointment.cancelled');
+    expect(cancelled.severity).toBe('warning');
+    expect(JSON.parse(cancelled.newValue!)).toEqual({ reason: 'Family rescheduled' });
+
+    const cancelledNoReason = await recordAppointmentCancelled(ctx(), 'case-1', 'appt-1', null, 'mock');
+    expect(cancelledNoReason.newValue).toBeNull();
+
+    const completed = await recordAppointmentCompleted(ctx(), 'case-1', 'appt-2', 'completed', 'mock');
+    expect(completed.eventType).toBe('scheduling.appointment.completed');
+    expect(JSON.parse(completed.newValue!)).toEqual({ status: 'completed' });
+
+    const noShow = await recordAppointmentCompleted(ctx(), 'case-1', 'appt-3', 'no_show', 'mock');
+    expect(noShow.eventType).toBe('scheduling.appointment.completed');
+    expect(JSON.parse(noShow.newValue!)).toEqual({ status: 'no_show' });
+
+    const assigned = await recordResourceAssigned(ctx(), 'case-1', 'appt-1', 'resource-1', 'Chapel A', 'mock');
+    expect(assigned.eventType).toBe('scheduling.resource.assigned');
+    expect(assigned.resourceType).toBe('appointment');
+    expect(assigned.resourceId).toBe('appt-1');
+    expect(JSON.parse(assigned.metadata!)).toEqual({ resourceId: 'resource-1', resourceName: 'Chapel A' });
+
+    const released = await recordResourceReleased(ctx(), 'case-1', 'appt-1', 'resource-1', 'Chapel A', 'mock');
+    expect(released.eventType).toBe('scheduling.resource.released');
+
+    const overridden = await recordResourceConflictOverridden(ctx(), 'case-1', 'appt-1', 'resource-1', 'Chapel A', 'Family requested this exact time', 'mock');
+    expect(overridden.eventType).toBe('scheduling.resource.conflict_overridden');
+    expect(overridden.severity).toBe('critical');
+    expect(JSON.parse(overridden.metadata!)).toEqual({ resourceId: 'resource-1', resourceName: 'Chapel A', reason: 'Family requested this exact time' });
   });
 });
 

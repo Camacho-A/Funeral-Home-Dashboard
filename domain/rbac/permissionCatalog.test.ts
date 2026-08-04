@@ -63,4 +63,18 @@ describe('permissionCatalog', () => {
     ]);
     expect(permissionCategory('signature.request')).toBe('signature');
   });
+
+  it('Phase 27: includes exactly four schedule permissions, plus resource.manage and calendar.manage as distinct resource categories', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('schedule.'))).toEqual([
+      'schedule.read',
+      'schedule.create',
+      'schedule.edit',
+      'schedule.cancel',
+    ]);
+    expect(permissionCategory('schedule.read')).toBe('schedule');
+    expect(PERMISSION_KEYS).toContain('resource.manage');
+    expect(permissionCategory('resource.manage')).toBe('resource');
+    expect(PERMISSION_KEYS).toContain('calendar.manage');
+    expect(permissionCategory('calendar.manage')).toBe('calendar');
+  });
 });

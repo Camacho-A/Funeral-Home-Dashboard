@@ -29,6 +29,7 @@ export function Sidebar() {
       <div className={styles.navList}>
         <SidebarNavItem href="/dashboard" label="Dashboard" />
         <SidebarNavItem href="/tasks" label="Tasks" />
+        <SidebarNavItem href="/calendar" label="Calendar" />
         <SidebarNavItem href="/reports" label="Reports" />
         <SidebarNavItem href="/settings" label="Settings" />
       </div>

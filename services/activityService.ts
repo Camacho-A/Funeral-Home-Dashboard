@@ -962,3 +962,219 @@ export function recordSignatureExpired(ctx: ActivityContext, caseId: string, doc
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 27 (Scheduling & Resource Management). Every write in
+// services/schedulingService.ts records through exactly one of these — never
+// a hand-constructed payload at the call site, matching every helper above.
+// `resourceType`/`resourceId` always name the Appointment (mirroring Phase
+// 26's own `resourceType: 'caseDocument'` convention for every signature
+// event) — the actual physical/staff Resource being assigned/released
+// travels in `metadata`, never as `resourceId`, since one appointment can
+// have many resources but this event stream is anchored to one appointment.
+// ---------------------------------------------------------------------------
+
+export function recordAppointmentCreated(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  appointmentType: string,
+  startAt: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_CREATED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: JSON.stringify({ appointmentType, startAt }),
+      description: `Appointment created for ${startAt}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordAppointmentUpdated(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  changedFields: Record<string, FieldChange>,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  const fieldNames = Object.keys(changedFields);
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_UPDATED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: fieldChangesToJson(changedFields, 'previous'),
+      newValue: fieldChangesToJson(changedFields, 'next'),
+      description: `Appointment updated (${fieldNames.join(', ')})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordAppointmentRescheduled(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  from: { startAt: string; endAt: string },
+  to: { startAt: string; endAt: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_RESCHEDULED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: JSON.stringify(from),
+      newValue: JSON.stringify(to),
+      description: `Appointment rescheduled to ${to.startAt}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordAppointmentCancelled(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  reason: string | null,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_CANCELLED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: reason ? JSON.stringify({ reason }) : null,
+      description: 'Appointment cancelled',
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** `outcome` distinguishes a genuine `completed` appointment from a
+    `no_show` terminal outcome — both are covered by this one event type,
+    the `newValue` payload carries which. */
+export function recordAppointmentCompleted(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  outcome: 'completed' | 'no_show',
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_COMPLETED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: JSON.stringify({ status: outcome }),
+      description: outcome === 'no_show' ? 'Appointment marked as no-show' : 'Appointment completed',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordResourceAssigned(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  resourceId: string,
+  resourceName: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.RESOURCE_ASSIGNED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: null,
+      description: `${resourceName} assigned`,
+      metadata: JSON.stringify({ resourceId, resourceName }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordResourceReleased(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  resourceId: string,
+  resourceName: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.RESOURCE_RELEASED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: null,
+      description: `${resourceName} released`,
+      metadata: JSON.stringify({ resourceId, resourceName }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Fires only when a hard conflict was detected and an authorized
+    override proceeded anyway — never for a soft (warning-only) conflict,
+    which has nothing to "override." Always `severity: 'critical'`. */
+export function recordResourceConflictOverridden(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  resourceId: string,
+  resourceName: string,
+  reason: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.RESOURCE_CONFLICT_OVERRIDDEN,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: JSON.stringify({ reason }),
+      description: `Conflict overridden for ${resourceName}`,
+      metadata: JSON.stringify({ resourceId, resourceName, reason }),
+      severity: 'critical',
+    }),
+    dataAdapterMode,
+  );
+}

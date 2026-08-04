@@ -171,6 +171,8 @@ describe('previewTemplate', () => {
       organization: { name: "Manor's Cremation" } as unknown as Organization,
       branding: null,
       location: null,
+      serviceAppointment: null,
+      serviceAppointmentLocation: null,
     };
     const html = previewTemplate('<p>Dear {{case.primaryContact.fullName}}, re: {{case.decedent.fullName}}.</p>', source);
     expect(html).toBe('<p>Dear Margaret Ellison, re: Robert Ellison.</p>');

@@ -59,6 +59,12 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'signature.read',
   'signature.cancel',
   'signature.manage',
+  'schedule.read',
+  'schedule.create',
+  'schedule.edit',
+  'schedule.cancel',
+  'resource.manage',
+  'calendar.manage',
   'report.view',
   'audit.read',
   'audit.export',
@@ -103,6 +109,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'signature.read',
       'signature.cancel',
       'signature.manage',
+      'schedule.read',
+      'schedule.create',
+      'schedule.edit',
+      'schedule.cancel',
+      'resource.manage',
+      'calendar.manage',
       'report.view',
       'audit.read',
       'audit.export',
@@ -131,6 +143,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'signature.request',
       'signature.read',
       'signature.cancel',
+      'schedule.read',
+      'schedule.create',
+      'schedule.edit',
+      'schedule.cancel',
       'report.view',
       'audit.read',
     ],
@@ -151,13 +167,29 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'document.upload',
       'signature.request',
       'signature.read',
+      'schedule.read',
+      'schedule.create',
+      'schedule.edit',
     ],
   },
   {
     key: 'officeStaff',
     name: 'Office Staff',
     description: 'Administrative support — can view and update cases, and generate documents, without payment or workflow access.',
-    permissions: ['case.read', 'case.update', 'caseOrder.read', 'serviceCatalog.read', 'document.generate', 'document.view', 'document.upload', 'signature.request', 'signature.read'],
+    permissions: [
+      'case.read',
+      'case.update',
+      'caseOrder.read',
+      'serviceCatalog.read',
+      'document.generate',
+      'document.view',
+      'document.upload',
+      'signature.request',
+      'signature.read',
+      'schedule.read',
+      'schedule.create',
+      'schedule.edit',
+    ],
   },
   {
     key: 'accounting',
@@ -177,8 +209,21 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         holds, contradicting its own name and description. Phase 26:
         `signature.read` is a pure view action and fits this role's
         tier exactly; `signature.request`/`.cancel` are withheld for the
-        identical reason `document.upload` is. */
-    permissions: ['case.read', 'caseOrder.read', 'workflow.read', 'payment.read', 'serviceCatalog.read', 'document.view', 'signature.read', 'report.view', 'audit.read'],
+        identical reason `document.upload` is. Phase 27: `schedule.read`
+        is likewise a pure view action; `schedule.create`/`.edit`/`.cancel`
+        are withheld for the same reason. */
+    permissions: [
+      'case.read',
+      'caseOrder.read',
+      'workflow.read',
+      'payment.read',
+      'serviceCatalog.read',
+      'document.view',
+      'signature.read',
+      'schedule.read',
+      'report.view',
+      'audit.read',
+    ],
   },
 ];
 

@@ -9,7 +9,11 @@ import { useCreateSignatureRequest } from '@/hooks/useSignatureRequests';
 import type { SignerRole } from '@/types/signatureRequest';
 import styles from './RequestSignatureDialog.module.css';
 
-const SIGNER_ROLE_LABEL: Record<SignerRole, string> = {
+// Phase 27 (Scheduling & Resource Management): 'witness' is deliberately
+// excluded — a witness SignatureRequest is only ever created
+// programmatically by services/schedulingService.ts, tied to a specific
+// Witness Cremation appointment, never picked freely from this dialog.
+const SIGNER_ROLE_LABEL: Record<Exclude<SignerRole, 'witness'>, string> = {
   primary_contact: 'Primary Contact',
   secondary_contact: 'Secondary Contact',
   next_of_kin: 'Next of Kin',

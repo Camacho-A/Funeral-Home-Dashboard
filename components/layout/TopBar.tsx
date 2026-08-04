@@ -80,6 +80,9 @@ export function TopBar({
           Templates
         </a>
       )}
+      <a href="/settings/resources" className={styles.signOutButton}>
+        Resources
+      </a>
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
         <button type="submit" className={styles.signOutButton}>

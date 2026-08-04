@@ -22,6 +22,7 @@ import { organizationBrandingFixtures, organizationLocationFixtures } from './__
 import { caseDocumentFixtures } from './__mocks__/documentFixtures';
 import { get as getTemplate, getActiveVersion } from './documentTemplatesService';
 import { getActiveCaseOrder } from './pricingService';
+import { listAppointmentsForCase } from './scheduling/appointmentReads';
 import { resolveMergeContext, mergeTemplate, type MergeSourceData } from '../domain/documents/mergeEngine';
 import { puppeteerDocumentRenderer } from '../lib/puppeteerDocumentRenderer';
 import { vercelBlobStorageProvider } from '../lib/vercelBlob/vercelBlobStorageProvider';
@@ -129,20 +130,57 @@ async function getPrimaryLocationForMerge(organizationId: string, dataAdapterMod
   return mapWixOrganizationLocationItem(response.dataItems[0]?.data);
 }
 
+/** Phase 27 (Scheduling & Resource Management). Looks up a *specific*
+    `OrganizationLocation` by id — distinct from `getPrimaryLocationForMerge`
+    above, which only ever resolves the organization's primary address.
+    Used to resolve `MergeSourceData.serviceAppointmentLocation` from a
+    scheduled service appointment's `locationId`, which may or may not be
+    the organization's primary location. */
+async function getLocationByIdForMerge(organizationId: string, locationId: string, dataAdapterMode: DataAdapterMode) {
+  if (dataAdapterMode === 'mock') {
+    return organizationLocationFixtures.find((loc) => loc.organizationId === organizationId && loc.id === locationId) ?? null;
+  }
+  const response = await queryWixDataItems<WixOrganizationLocationItem>('organizationLocations', {
+    filter: { organizationId, beaconLocationId: locationId },
+    paging: { limit: 1 },
+  });
+  return mapWixOrganizationLocationItem(response.dataItems[0]?.data);
+}
+
+/** Phase 27 (Scheduling & Resource Management). Resolves the case's nearest
+    non-cancelled funeral/graveside service appointment via the canonical
+    `SchedulingService` appointment model (`services/scheduling/appointmentReads.ts`)
+    — never a document-specific scheduling lookup, per the Phase 27 plan's
+    refinement requiring `case.service.date`/`case.service.location` to be
+    resolved from the real scheduling data. Null when no such appointment
+    exists yet. */
+async function getServiceAppointmentForMerge(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode) {
+  const appointments = await listAppointmentsForCase(organizationId, caseId, dataAdapterMode);
+  const candidates = appointments.filter(
+    (a) => a.status !== 'cancelled' && (a.appointmentType === 'funeral.service' || a.appointmentType === 'graveside.service'),
+  );
+  if (candidates.length === 0) return null;
+  return candidates.reduce((earliest, current) => (current.startAt < earliest.startAt ? current : earliest));
+}
+
 /** Exported for `POST /api/document-templates/[templateId]/preview`,
     which needs the exact same real-case merge resolution `generate()`
     uses — no separate implementation. */
 export async function resolveMergeSourceData(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<MergeSourceData> {
-  const [caseRecord, caseOrder, organization, branding, location] = await Promise.all([
+  const [caseRecord, caseOrder, organization, branding, location, serviceAppointment] = await Promise.all([
     getCaseForMerge(organizationId, caseId, dataAdapterMode),
     getActiveCaseOrder(organizationId, caseId, dataAdapterMode),
     getOrganizationForMerge(organizationId, dataAdapterMode),
     getBrandingForMerge(organizationId, dataAdapterMode),
     getPrimaryLocationForMerge(organizationId, dataAdapterMode),
+    getServiceAppointmentForMerge(organizationId, caseId, dataAdapterMode),
   ]);
   if (!caseRecord) throw new DocumentServiceError('Case not found.');
   if (!organization) throw new DocumentServiceError('Organization not found.');
-  return { case: caseRecord, caseOrder, organization, branding, location };
+  const serviceAppointmentLocation = serviceAppointment?.locationId
+    ? await getLocationByIdForMerge(organizationId, serviceAppointment.locationId, dataAdapterMode)
+    : null;
+  return { case: caseRecord, caseOrder, organization, branding, location, serviceAppointment, serviceAppointmentLocation };
 }
 
 function wrapMergedHtmlDocument(bodyHtml: string): string {

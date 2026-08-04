@@ -6,6 +6,11 @@ import { listRequests, listRecords, createSignatureRequest, SignatureServiceErro
 import { getDataAdapterMode } from '@/lib/env';
 import crypto from 'crypto';
 
+// Phase 27 (Scheduling & Resource Management): 'witness' is deliberately
+// NOT accepted here — a witness SignatureRequest is only ever created
+// programmatically by services/schedulingService.ts's
+// createWitnessSignatureRequest, tied to a specific Witness Cremation
+// appointment, never picked freely from this general-purpose staff dialog.
 const VALID_SIGNER_ROLES = ['primary_contact', 'secondary_contact', 'next_of_kin', 'authorized_representative', 'funeral_director', 'internal_staff'];
 
 /**

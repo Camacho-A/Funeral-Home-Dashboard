@@ -54,6 +54,26 @@ export const PERMISSION_KEYS = [
   'signature.cancel',
   'signature.manage',
 
+  /** Phase 27 (Scheduling & Resource Management). `schedule.*` mirrors
+      `document.*`'s own tier split exactly: `.read`/`.create`/`.edit`
+      cover the everyday calendar workflow, while `.cancel` is
+      deliberately narrower (mirrors `document.archive`/`signature.cancel`)
+      so a role that can create/edit an appointment doesn't automatically
+      gain cancellation authority. `resource.manage` is a distinct
+      resource, not folded into `schedule.*` — creating/editing/disabling
+      a Resource (and authorizing a hard-conflict override) is an
+      org-wide, administrative action, mirroring
+      `document.template.manage`/`signature.manage`'s tier. `calendar.manage`
+      is reserved for future org-wide calendar settings (business hours,
+      holidays) — no dedicated UI ships this phase, mirroring
+      `signature.manage`'s own "reserved, no UI yet" precedent. */
+  'schedule.read',
+  'schedule.create',
+  'schedule.edit',
+  'schedule.cancel',
+  'resource.manage',
+  'calendar.manage',
+
   'report.view',
 
   /** Phase 24 (Case Activity Timeline & Audit Center). Deliberately only
@@ -118,6 +138,13 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'signature.read': "View a case document's signature status and history",
   'signature.cancel': 'Cancel an active signature request',
   'signature.manage': 'Manage organization-wide electronic signature settings',
+
+  'schedule.read': 'View calendars and appointments',
+  'schedule.create': 'Create a new appointment',
+  'schedule.edit': 'Reschedule, update, confirm, or complete an appointment',
+  'schedule.cancel': 'Cancel an appointment',
+  'resource.manage': 'Create, edit, and change the lifecycle status of schedulable resources; authorize a conflict override',
+  'calendar.manage': 'Manage organization-wide calendar settings',
 
   'report.view': 'View reports',
 

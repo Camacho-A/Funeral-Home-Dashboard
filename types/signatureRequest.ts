@@ -26,7 +26,14 @@ export type SignerRole =
   | 'next_of_kin'
   | 'authorized_representative'
   | 'funeral_director'
-  | 'internal_staff';
+  | 'internal_staff'
+  /** Phase 27 (Scheduling & Resource Management). A witness present at a
+      Witness Cremation appointment — reuses this exact entity/service
+      unmodified, per ADR-030's own reserved "Witness signatures — just
+      another SignatureRequest/SignatureRecord pair... with SignerRole
+      widened" extension point. See services/schedulingService.ts's
+      createWitnessSignatureRequest. */
+  | 'witness';
 
 export type SignatureRequestStatus =
   | 'draft'      // created; the signer notification has not yet successfully sent

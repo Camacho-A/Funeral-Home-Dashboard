@@ -283,6 +283,23 @@ Four new permission keys, widening the catalog from 28 to **32 permissions**:
 
 **A genuinely new authorization pattern: the sessionless public signing surface.** Every prior public/token-gated route in this codebase (`verify-email`, `reset-password`, `accept-invitation`) eventually mints a Beacon session for the person using it. `/sign` and `/api/signing/*` never do, for anyone, ever — a signer has no Beacon account at all. Authorization for these routes reduces entirely to "do you possess a valid, hashed, not-yet-terminal, not-yet-expired token" (the exact same trust model a password-reset link already relies on), with the signer's identity verified out-of-band — the staff member emailed *this specific* signer at *this specific* address — rather than by any Beacon credential. `middleware.ts`'s matcher allowlists `/sign` alongside the four existing public identity pages (`/api/*` was already excluded wholesale). No RBAC permission ever gates a public signing route; RBAC governs only the four staff-facing signature routes above.
 
+## Phase 27 — Scheduling & Resource Management
+
+**Status: closed 2026-08-03.** Full writeup: [ADR-031](./adr/ADR-031-scheduling-and-resource-management.md); collection details in [WIX_DATA_SCHEMA.md](./WIX_DATA_SCHEMA.md).
+
+Six new permission keys, widening the catalog from 32 to **38 permissions**:
+
+- **`schedule.read`** — view calendars/appointments. Mirrors `document.view`'s tier (every role except Accounting).
+- **`schedule.create`** — create a new appointment. Mirrors `document.generate`/`signature.request`'s tier (every role except Accounting).
+- **`schedule.edit`** — reschedule/update/confirm/complete an appointment. Same tier as `schedule.create`.
+- **`schedule.cancel`** — cancel an appointment. Mirrors `document.archive`/`signature.cancel`'s narrower tier (Administrator, Manager, Funeral Director only).
+- **`resource.manage`** — create/edit/change-lifecycle-status of resources; authorize a hard-conflict override. Mirrors `document.template.manage`/`signature.manage`'s tier (Administrator, Manager only).
+- **`calendar.manage`** — reserved for a future org-wide calendar settings surface; no dedicated UI ships this phase. Same tier as `resource.manage`.
+- `services/authorizationPolicyService.ts` gained `canReadSchedule`/`canCreateAppointment`/`canEditAppointment`/`canCancelAppointment`/`canManageResources`/`canManageCalendar`, each a one-line `hasPermission` wrapper.
+- `seedPlatformDefaultRoles` was re-run against live Wix so organizations already provisioned before this phase picked up the six new keys (same live-data corollary Phases 25/26 documented for their own new keys).
+
+**Staff are authorized exactly as they already were — scheduling introduces no second identity system.** A `Resource` row with `resourceType: 'staff'`/`'funeral_director'` carries `linkedMembershipId` purely as a display/assignment convenience; every permission check for scheduling actions still resolves through the caller's real `Membership` via `requireAuthorizedOrganization`/`AuthorizationPolicyService`, exactly like every other route in this codebase. No route ever checks a `Resource` row's own fields to decide what its linked staff member is allowed to do.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

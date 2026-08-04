@@ -3,6 +3,7 @@ import type { CaseOrder } from '@/types/caseOrder';
 import type { Organization } from '@/types/organization';
 import type { OrganizationBranding } from '@/types/organizationBranding';
 import type { OrganizationLocation } from '@/types/organizationLocation';
+import type { Appointment } from '@/types/appointment';
 import { formatCentsAsCurrency } from '@/utils/format';
 
 /**
@@ -37,6 +38,18 @@ export type MergeSourceData = {
   organization: Organization;
   branding: OrganizationBranding | null;
   location: OrganizationLocation | null;
+  /** Phase 27 (Scheduling & Resource Management). The case's nearest
+      non-cancelled funeral/graveside service appointment, if any —
+      resolved by `services/documentService.ts`'s `resolveMergeSourceData`
+      via `services/scheduling/appointmentReads.ts` (the canonical
+      SchedulingService appointment model), never a document-specific
+      scheduling lookup. Null when the case has no such appointment yet. */
+  serviceAppointment: Appointment | null;
+  /** The OrganizationLocation `serviceAppointment.locationId` points to,
+      if resolvable — distinct from `location` above, which is always the
+      organization's primary address, not necessarily where a specific
+      service is being held. */
+  serviceAppointmentLocation: OrganizationLocation | null;
 };
 
 export type MergeFieldDefinition = {
@@ -63,6 +76,18 @@ export type MergeFieldDefinition = {
   resolve: (source: MergeSourceData) => string | null;
 };
 
+/** `Appointment.startAt` is a raw ISO datetime (never user-entered, unlike
+    `Case.dateOfBirth`/`dateOfDeath`, which are already-formatted
+    MM/DD/YYYY strings staff typed in) — formatted here as MM/DD/YYYY so
+    `case.service.date` renders consistently alongside those other date
+    fields in the same generated document. */
+function formatDateOnly(isoString: string): string {
+  const date = new Date(isoString);
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${month}/${day}/${date.getUTCFullYear()}`;
+}
+
 function formatOrganizationAddress(location: OrganizationLocation | null): string | null {
   if (!location) return null;
   const line2 = location.addressLine2 ? ` ${location.addressLine2}` : '';
@@ -72,12 +97,11 @@ function formatOrganizationAddress(location: OrganizationLocation | null): strin
 /**
  * The controlled merge-field registry. Every template body's tokens must
  * resolve to one of these keys — nothing in this codebase resolves an ad
- * hoc field path. `case.service.date`/`case.service.location` are
- * deliberately `wired: false`: `types/case.ts` has no service-scheduling
- * fields at all (docs/ROADMAP.md names funeral/service scheduling as an
- * explicit, unbuilt V2 candidate) — reserving the catalog slot now means a
- * future scheduling phase only needs to flip `wired` and supply a real
- * `resolve`, never a template-authoring or merge-engine change.
+ * hoc field path. `case.service.date`/`case.service.location` are now
+ * `wired: true` (Phase 27 — Scheduling & Resource Management), resolved
+ * from `MergeSourceData.serviceAppointment`/`.serviceAppointmentLocation` —
+ * both null (and so resolving to the reserved placeholder) when the case
+ * has no scheduled funeral/graveside service appointment yet.
  */
 export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
   'case.caseNumber': {
@@ -124,21 +148,21 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     identifier: 'case.service.date',
     displayName: 'Service Date',
     dataType: 'date',
-    description: 'Reserved — funeral/service scheduling does not exist in Beacon yet (see docs/ROADMAP.md V2 candidates).',
-    exampleValue: RESERVED_FIELD_PLACEHOLDER,
+    description: "The case's nearest non-cancelled funeral or graveside service appointment date, if one has been scheduled (Phase 27 — Scheduling & Resource Management).",
+    exampleValue: '03/15/2026',
     category: 'service',
-    wired: false,
-    resolve: () => null,
+    wired: true,
+    resolve: (source) => (source.serviceAppointment ? formatDateOnly(source.serviceAppointment.startAt) : null),
   },
   'case.service.location': {
     identifier: 'case.service.location',
     displayName: 'Service Location',
     dataType: 'string',
-    description: 'Reserved — funeral/service scheduling does not exist in Beacon yet (see docs/ROADMAP.md V2 candidates).',
-    exampleValue: RESERVED_FIELD_PLACEHOLDER,
+    description: "The address of the location where the case's nearest scheduled service appointment is being held, if resolvable (Phase 27 — Scheduling & Resource Management).",
+    exampleValue: '123 Main St, Springfield, IL 62704',
     category: 'service',
-    wired: false,
-    resolve: () => null,
+    wired: true,
+    resolve: (source) => formatOrganizationAddress(source.serviceAppointmentLocation),
   },
   'case.primaryContact.fullName': {
     identifier: 'case.primaryContact.fullName',
@@ -334,6 +358,16 @@ export function buildSampleMergeSourceData(): MergeSourceData {
       city: 'Springfield',
       state: 'IL',
       postalCode: '62701',
+    } as unknown as OrganizationLocation,
+    serviceAppointment: {
+      startAt: '2026-03-15T14:00:00.000Z',
+    } as unknown as Appointment,
+    serviceAppointmentLocation: {
+      addressLine1: '123 Main St',
+      addressLine2: null,
+      city: 'Springfield',
+      state: 'IL',
+      postalCode: '62704',
     } as unknown as OrganizationLocation,
   };
 }

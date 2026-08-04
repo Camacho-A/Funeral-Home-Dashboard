@@ -22,10 +22,11 @@ import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCar
 import { ActivityLogCard } from '@/components/case/ActivityLogCard';
 import { CaseActivityTab } from '@/components/case/CaseActivityTab';
 import { CaseDocumentsTab } from '@/components/case/CaseDocumentsTab';
+import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { DocumentsCard, type DocumentRowItem } from '@/components/case/DocumentsCard';
 import styles from './page.module.css';
 
-type CaseDetailTab = 'overview' | 'activity' | 'documents';
+type CaseDetailTab = 'overview' | 'activity' | 'documents' | 'schedule';
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -161,10 +162,20 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         >
           Documents
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'schedule'}
+          className={activeTab === 'schedule' ? styles.tabActive : styles.tabInactive}
+          onClick={() => setActiveTab('schedule')}
+        >
+          Schedule
+        </button>
       </div>
 
       {activeTab === 'activity' && <CaseActivityTab caseId={caseId} />}
       {activeTab === 'documents' && <CaseDocumentsTab caseId={caseId} />}
+      {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
 
       {activeTab === 'overview' && (
       <div className={styles.columns}>

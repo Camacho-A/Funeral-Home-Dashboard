@@ -918,6 +918,118 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/signatureRecord.ts`'s `SignatureRecord`.
 
+## Collection 37 — `resources`
+
+**Purpose:** Phase 27's unified bookable-resource directory — staff, vehicles, chapels, viewing rooms, crematory/cemetery slots, equipment, and external vendors, all one shape. **Ownership:** organization-owned. **Retention:** never hard-deleted; `status` is the only field with a dedicated lifecycle. See [ADR-031](./adr/ADR-031-scheduling-and-resource-management.md).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconResourceId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `locationId` | Text, nullable | Optional | Mutable |
+| `resourceType` | Text (`funeral_director`\|`staff`\|`vehicle`\|`chapel`\|`viewing_room`\|`meeting_room`\|`crematory`\|`cemetery`\|`equipment`\|`external_vendor`) | Required | Immutable |
+| `name` | Text | Required | Mutable |
+| `linkedMembershipId` | Text, nullable | Optional | Immutable — set only for `staff`/`funeral_director` rows; the one and only connection to RBAC/identity, never a copy of role/permission data |
+| `capacity` | Number, nullable | Optional | Mutable |
+| `isExternal` | Boolean | Required | Immutable — vendors Beacon doesn't operate, never conflict-checked |
+| `status` | Text (`active`\|`maintenance`\|`out_of_service`\|`archived`) | Required | Mutable |
+| `notes` | Text, nullable | Optional | Mutable |
+| `resourceVersion` | Number | Required | Immutable — schema-evolution reserve, starts at 1 |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (3 regular, at the platform's own cap): `(organizationId, resourceType)`; `(organizationId, status)`; `(organizationId, locationId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/resource.ts`'s `Resource`.
+
+## Collection 38 — `resourceUnavailability`
+
+**Purpose:** time-bounded exceptions layered on top of a resource's own standing `status` — "this generally-active vehicle is in the shop March 1–5." **Ownership:** organization-owned (also resource-scoped). **Retention:** insert-only — no update or delete API exists for it; a correction is always a new row. See ADR-031.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconResourceUnavailabilityId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `resourceId` | Text | Required | Immutable |
+| `startAt`, `endAt` | Date | Required | Immutable |
+| `reason` | Text (`maintenance`\|`time_off`\|`other`) | Required | Immutable |
+| `notes` | Text, nullable | Optional | Immutable |
+| `createdBy` | Text | Required | Immutable |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(organizationId, resourceId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/resourceUnavailability.ts`'s `ResourceUnavailability`.
+
+## Collection 39 — `recurrenceDefinitions`
+
+**Purpose:** an immutable statement of a recurring pattern (frequency/interval/weekday/count-or-until), created once per series and never edited again — a changed pattern always creates a new row. **Ownership:** organization-owned. **Retention:** insert-only, exactly like `signatureRecords`. See ADR-031.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconRecurrenceDefinitionId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `frequency` | Text (`daily`\|`weekly`\|`monthly`) | Required | Immutable |
+| `interval` | Number | Required | Immutable |
+| `byWeekday` | Object (JSON, number array), nullable | Optional | Immutable — weekly patterns only |
+| `count` | Number, nullable | Optional | Immutable |
+| `until` | Text, nullable | Optional | Immutable |
+| `createdBy` | Text | Required | Immutable |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(organizationId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/recurrenceDefinition.ts`'s `RecurrenceDefinition`.
+
+## Collection 40 — `appointments`
+
+**Purpose:** the central Phase 27 entity — work being scheduled. Carries zero resource state; every resource relationship flows through Collection 41 (`appointmentResourceAssignments`). **Ownership:** organization-owned (also case-scoped, nullably). **Retention:** never hard-deleted; terminal statuses (`completed`/`cancelled`/`no_show`) make a row permanently immutable — a correction is always a new row. See ADR-031.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconAppointmentId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `caseId` | Text, nullable | Optional | Immutable — null for pure internal/staff appointments |
+| `appointmentType` | Text (validated against `domain/scheduling/appointmentTypeRegistry.ts` at the service boundary, not a Wix-enforced enum) | Required | Immutable |
+| `title` | Text | Required | Mutable |
+| `notes` | Text, nullable | Optional | Mutable |
+| `locationId` | Text, nullable | Optional | Mutable |
+| `status` | Text (`draft`\|`scheduled`\|`confirmed`\|`in_progress`\|`completed`\|`cancelled`\|`no_show`) | Required | Mutable until terminal |
+| `startAt`, `endAt` | Date | Required | Mutable until terminal |
+| `timezone` | Text | Required | Mutable |
+| `recurrenceDefinitionId` | Text, nullable | Optional | Immutable — null for a non-recurring appointment |
+| `isRecurrenceException` | Boolean | Required | Mutable — set once, true, on a single-occurrence edit |
+| `createdBy` | Text | Required | Immutable |
+| `lastModifiedBy` | Text, nullable | Optional | Mutable — the first "generic last-editor" field in this codebase |
+| `cancelledAt`, `cancelledBy`, `cancelReason` | Date / Text / Text, all nullable | Optional | Mutable — set once, on cancellation |
+| `appointmentVersion` | Number | Required | Immutable — schema-evolution reserve, starts at 1 |
+| `correlationId` | Text | Required | Immutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (3 regular, at the platform's own cap): `(organizationId, startAt)` (calendar range queries); `(organizationId, caseId)` (Case Schedule tab); `(organizationId, status)`. **No dedicated `recurrenceDefinitionId` index** — see Known Limitations below.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/appointment.ts`'s `Appointment`.
+
+## Collection 41 — `appointmentResourceAssignments`
+
+**Purpose:** the one and only bridge between an `Appointment` and a `Resource` — every assignment, release, and conflict check flows exclusively through this collection. **Ownership:** organization-owned (also appointment- and resource-scoped). **Retention:** never deleted; `releasedAt` marks a no-longer-live assignment rather than removing the row. See ADR-031.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconAssignmentId` | Text (`"${appointmentId}-${resourceId}"`, deterministic — no `idFactory()` call needed per assignment) | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `appointmentId` | Text | Required | Immutable |
+| `resourceId` | Text | Required | Immutable |
+| `startAt`, `endAt` | Date | Required | Mutable — a denormalized copy, refreshed only by `schedulingService.ts`'s reschedule path |
+| `status` | Text (mirrors the owning `Appointment.status` at assignment time) | Required | Mutable |
+| `assignmentRole` | Text, nullable | Optional | Immutable |
+| `assignedAt` | Date | Required | Immutable |
+| `releasedAt` | Date, nullable | Optional | Mutable — set once, on release |
+| `createdBy` | Text | Required | Immutable |
+
+- **Indexes** (2 regular): `(organizationId, resourceId)` (conflict detection); `(organizationId, appointmentId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/appointmentResourceAssignment.ts`'s `AppointmentResourceAssignment`.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -928,7 +1040,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
 
-## Permissions summary (all thirty-six collections)
+## Permissions summary (all forty-one collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -991,6 +1103,14 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Documents tab "signed by X" display | `signatureRecords (organizationId, documentId)` |
 | Signature records for one case | `signatureRecords (organizationId, caseId)` |
 | Cross-case "documents this person signed" view (future) | `signatureRecords (organizationId, signerEmail)` |
+| Resources by type / by lifecycle status / by location | `resources (organizationId, resourceType)` / `resources (organizationId, status)` / `resources (organizationId, locationId)` |
+| Unavailability windows for one resource | `resourceUnavailability (organizationId, resourceId)` |
+| Recurrence definitions for one organization | `recurrenceDefinitions (organizationId)` |
+| Calendar range queries | `appointments (organizationId, startAt)` |
+| Case Schedule tab | `appointments (organizationId, caseId)` |
+| Org-wide status filtering (e.g. Draft attention list) | `appointments (organizationId, status)` |
+| Conflict detection for one resource | `appointmentResourceAssignments (organizationId, resourceId)` |
+| Resource assignments for one appointment | `appointmentResourceAssignments (organizationId, appointmentId)` |
 
 ## Migration notes
 
@@ -1010,3 +1130,4 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **All newly created indexes were `BUILDING` at creation time**, not yet `ACTIVE` — normal Wix behavior for new indexes; no query depends on them yet since no application code reads or writes these collections.
 - **Phase 25's index-creation gap is resolved as of Phase 26.** The correct REST shape is a top-level resource, not nested under a collection: `POST https://www.wixapis.com/wix-data/v2/indexes` with body `{ dataCollectionId, index: { name, fields: [{ path, order }], unique } }` (the field is `unique`, not `isUnique` — an `isUnique` body is silently accepted but produces a non-unique index); list via `GET .../v2/indexes?dataCollectionId={id}`; delete via the `DELETE .../v2/indexes?dataCollectionId={id}&indexName={name}` shape already known from the Phase 19B correction pass. Passing `indexes` inside the `POST /v2/collections` collection-creation body itself is silently accepted and silently ignored — it does not create any indexes. See [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md) for the full discovery writeup. Using this shape, the seven secondary indexes `documentTemplates`/`documentTemplateVersions`/`caseDocuments` had been missing since Phase 25 were created live during Phase 26 and confirmed `ACTIVE` — these three collections are no longer under-indexed.
 - **Phase 26: `BLOB_READ_WRITE_TOKEN` still not provisioned in this environment** (same gap ADR-029 documented for Phase 25). `signatureRequests`/`signatureRecords` themselves were fully live-verified with no limitation — this only affects the one step that needs real stored document bytes (`completeSignatureRequest`'s checksum re-download/re-verify), which was exercised in every other respect live and is fully covered by the unit suite otherwise. See ADR-030's "Live Wix verification" section for exactly what was scoped around and why.
+- **`appointments` has no dedicated `recurrenceDefinitionId` index** — Wix Data's 3-regular-index cap was already spent on `(organizationId, startAt)`/`(organizationId, caseId)`/`(organizationId, status)`, all higher-traffic access patterns than a series-wide bulk operation. Materialization is capped at 104 occurrences/2 years (see ADR-031), so an "edit this and all following" operation accepts a bounded, non-indexed scan rather than a fourth index. All ten Phase 27 indexes (across the five new collections) were created live and confirmed `ACTIVE`; the index cap was reconfirmed empirically on every one of them.

@@ -102,6 +102,34 @@ export function canManageSignature(params: ResolvePermissionsParams, dataAdapter
   return hasPermission(params, dataAdapterMode, 'signature.manage');
 }
 
+/** Phase 27 (Scheduling & Resource Management). `schedule.*` mirrors
+    `document.*`'s own tier split exactly; `resource.manage`/
+    `calendar.manage` are distinct resources, not folded into `schedule.*`
+    — see `domain/rbac/permissionCatalog.ts`'s own comment for why. */
+export function canReadSchedule(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'schedule.read');
+}
+
+export function canCreateAppointment(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'schedule.create');
+}
+
+export function canEditAppointment(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'schedule.edit');
+}
+
+export function canCancelAppointment(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'schedule.cancel');
+}
+
+export function canManageResources(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'resource.manage');
+}
+
+export function canManageCalendar(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'calendar.manage');
+}
+
 export function canViewReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'report.view');
 }

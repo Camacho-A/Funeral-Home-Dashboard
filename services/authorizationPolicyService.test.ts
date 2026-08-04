@@ -20,6 +20,12 @@ import {
   canReadSignature,
   canCancelSignature,
   canManageSignature,
+  canReadSchedule,
+  canCreateAppointment,
+  canEditAppointment,
+  canCancelAppointment,
+  canManageResources,
+  canManageCalendar,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -145,6 +151,34 @@ describe('authorizationPolicyService', () => {
     expect(await canManageSignature(params('administrator'), 'mock')).toBe(true);
     expect(await canManageSignature(params('manager'), 'mock')).toBe(true);
     expect(await canManageSignature(params('funeralDirector'), 'mock')).toBe(false);
+  });
+
+  it('Phase 27: schedule.read/.create/.edit mirror document.generate\'s tier (every role except accounting/readOnly for create/edit)', async () => {
+    expect(await canReadSchedule(params('readOnly'), 'mock')).toBe(true);
+    expect(await canReadSchedule(params('accounting'), 'mock')).toBe(false);
+    expect(await canCreateAppointment(params('administrator'), 'mock')).toBe(true);
+    expect(await canCreateAppointment(params('arranger'), 'mock')).toBe(true);
+    expect(await canCreateAppointment(params('officeStaff'), 'mock')).toBe(true);
+    expect(await canCreateAppointment(params('accounting'), 'mock')).toBe(false);
+    expect(await canCreateAppointment(params('readOnly'), 'mock')).toBe(false);
+    expect(await canEditAppointment(params('funeralDirector'), 'mock')).toBe(true);
+  });
+
+  it('Phase 27: schedule.cancel is narrower — administrator/manager/funeralDirector only', async () => {
+    expect(await canCancelAppointment(params('administrator'), 'mock')).toBe(true);
+    expect(await canCancelAppointment(params('manager'), 'mock')).toBe(true);
+    expect(await canCancelAppointment(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canCancelAppointment(params('arranger'), 'mock')).toBe(false);
+    expect(await canCancelAppointment(params('officeStaff'), 'mock')).toBe(false);
+  });
+
+  it('Phase 27: resource.manage/calendar.manage are narrower still — administrator/manager only', async () => {
+    expect(await canManageResources(params('administrator'), 'mock')).toBe(true);
+    expect(await canManageResources(params('manager'), 'mock')).toBe(true);
+    expect(await canManageResources(params('funeralDirector'), 'mock')).toBe(false);
+    expect(await canManageCalendar(params('administrator'), 'mock')).toBe(true);
+    expect(await canManageCalendar(params('manager'), 'mock')).toBe(true);
+    expect(await canManageCalendar(params('funeralDirector'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {

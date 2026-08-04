@@ -34,7 +34,7 @@ export type WixSignatureRequestItem = {
   correlationId?: unknown;
 };
 
-const VALID_SIGNER_ROLES: readonly string[] = ['primary_contact', 'secondary_contact', 'next_of_kin', 'authorized_representative', 'funeral_director', 'internal_staff'];
+const VALID_SIGNER_ROLES: readonly string[] = ['primary_contact', 'secondary_contact', 'next_of_kin', 'authorized_representative', 'funeral_director', 'internal_staff', 'witness'];
 const VALID_STATUSES: readonly string[] = ['draft', 'pending', 'viewed', 'signed', 'declined', 'expired', 'cancelled'];
 
 function isSignerRole(value: unknown): value is SignerRole {
