@@ -38,6 +38,23 @@ export async function getMembership(
   return mapWixMembershipItem(response.dataItems[0]?.data);
 }
 
+/**
+ * Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+ * Looks up a `Membership` by its own id — the shape `StaffProfile.membershipId`
+ * needs, distinct from `getMembership`'s `(identityId, organizationId)`
+ * lookup above (which is keyed by the *pair*, not a single row id).
+ */
+export async function getMembershipById(membershipId: string, dataAdapterMode: DataAdapterMode): Promise<Membership | null> {
+  if (dataAdapterMode === 'mock') {
+    return membershipFixtures.find((m) => m.id === membershipId) ?? null;
+  }
+  const response = await queryWixDataItems<WixMembershipItem>('organizationMemberships', {
+    filter: { beaconMembershipId: membershipId },
+    paging: { limit: 1 },
+  });
+  return mapWixMembershipItem(response.dataItems[0]?.data);
+}
+
 export async function listMembershipsForIdentity(identityId: string, dataAdapterMode: DataAdapterMode): Promise<Membership[]> {
   if (dataAdapterMode === 'mock') {
     return membershipFixtures.filter((m) => m.identityId === identityId);

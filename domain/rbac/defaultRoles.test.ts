@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(42); // Phase 28: 38 + notification.read + notification.send + notification.manage + notification.admin
+    expect(admin.permissions).toHaveLength(45); // Phase 30: 44 + task.assign
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
@@ -139,6 +139,37 @@ describe('defaultRoles', () => {
     expect(readOnly.permissions.includes('notification.send')).toBe(false);
     expect(readOnly.permissions.includes('notification.manage')).toBe(false);
     expect(readOnly.permissions.includes('notification.admin')).toBe(false);
+  });
+
+  it('Phase 29: portal.manage is administrator/manager only; portal.message reaches every role except accounting/readOnly', () => {
+    const manager = defaultRoleDefinition('manager');
+    expect(manager.permissions.includes('portal.manage')).toBe(true);
+    expect(manager.permissions.includes('portal.message')).toBe(true);
+
+    const funeralDirector = defaultRoleDefinition('funeralDirector');
+    expect(funeralDirector.permissions.includes('portal.manage')).toBe(false);
+    expect(funeralDirector.permissions.includes('portal.message')).toBe(true);
+
+    const arranger = defaultRoleDefinition('arranger');
+    expect(arranger.permissions.includes('portal.message')).toBe(true);
+
+    const officeStaff = defaultRoleDefinition('officeStaff');
+    expect(officeStaff.permissions.includes('portal.message')).toBe(true);
+
+    const accounting = defaultRoleDefinition('accounting');
+    expect(accounting.permissions.includes('portal.manage')).toBe(false);
+    expect(accounting.permissions.includes('portal.message')).toBe(false);
+
+    const readOnly = defaultRoleDefinition('readOnly');
+    expect(readOnly.permissions.includes('portal.manage')).toBe(false);
+    expect(readOnly.permissions.includes('portal.message')).toBe(false);
+  });
+
+  it('Phase 30: task.assign is tiered like schedule.edit — every role except accounting/readOnly', () => {
+    for (const def of DEFAULT_ROLE_DEFINITIONS) {
+      const expected = def.key !== 'accounting' && def.key !== 'readOnly';
+      expect(def.permissions.includes('task.assign')).toBe(expected);
+    }
   });
 
   it('readOnly grants only *.read/*.view permissions', () => {

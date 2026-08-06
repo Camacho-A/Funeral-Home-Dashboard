@@ -32,6 +32,21 @@ describe('getMembership / listMembershipsForIdentity', () => {
   });
 });
 
+describe('Phase 30: getMembershipById', () => {
+  it('finds a membership by its own id, distinct from the (identityId, organizationId) lookup', async () => {
+    const { getMembershipById } = await import('./membershipService');
+    const membership = membershipFixtures.find((m) => m.identityId === MANORS_ADMIN_IDENTITY_ID && m.organizationId === DEFAULT_ORGANIZATION_ID);
+    expect(membership).toBeDefined();
+    const found = await getMembershipById(membership!.id, 'mock');
+    expect(found?.identityId).toBe(MANORS_ADMIN_IDENTITY_ID);
+  });
+
+  it('returns null for an unknown membership id', async () => {
+    const { getMembershipById } = await import('./membershipService');
+    expect(await getMembershipById('membership-does-not-exist', 'mock')).toBeNull();
+  });
+});
+
 describe('createMembership', () => {
   it('creates a new active membership directly (non-invitation path)', async () => {
     const { createMembership } = await import('./membershipService');

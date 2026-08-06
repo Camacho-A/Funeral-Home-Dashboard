@@ -18,3 +18,20 @@ export function assertIntakeOwnerUnchanged(patch: unknown): void {
     throw new Error('intakeOwnerId cannot be changed after a case is created');
   }
 }
+
+/**
+ * Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+ * `createdBy` (the `StaffProfile.id` of whoever opened the case) has always
+ * been immutable in practice — `CaseUpdate`'s own type already omits it,
+ * so no code written against our own types can include it in a patch — but
+ * unlike `intakeOwnerId`, it never had a runtime backstop for the same
+ * `as any`/non-TypeScript-caller escape hatch `assertIntakeOwnerUnchanged`
+ * exists for above. This closes that gap using the identical pattern.
+ * `services/casesService.ts`'s `update()` calls this on every patch
+ * alongside `assertIntakeOwnerUnchanged`/`assertCaseNumberUnchanged`.
+ */
+export function assertCreatedByUnchanged(patch: unknown): void {
+  if (patch !== null && typeof patch === 'object' && 'createdBy' in patch) {
+    throw new Error('createdBy cannot be changed after a case is created');
+  }
+}

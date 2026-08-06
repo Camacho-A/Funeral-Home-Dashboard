@@ -65,10 +65,13 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'schedule.cancel',
   'resource.manage',
   'calendar.manage',
+  'task.assign',
   'notification.read',
   'notification.send',
   'notification.manage',
   'notification.admin',
+  'portal.manage',
+  'portal.message',
   'report.view',
   'audit.read',
   'audit.export',
@@ -119,10 +122,13 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.cancel',
       'resource.manage',
       'calendar.manage',
+      'task.assign',
       'notification.read',
       'notification.send',
       'notification.manage',
       'notification.admin',
+      'portal.manage',
+      'portal.message',
       'report.view',
       'audit.read',
       'audit.export',
@@ -155,8 +161,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.create',
       'schedule.edit',
       'schedule.cancel',
+      'task.assign',
       'notification.read',
       'notification.send',
+      'portal.message',
       'report.view',
       'audit.read',
     ],
@@ -180,7 +188,9 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.read',
       'schedule.create',
       'schedule.edit',
+      'task.assign',
       'notification.send',
+      'portal.message',
     ],
   },
   {
@@ -200,7 +210,9 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.read',
       'schedule.create',
       'schedule.edit',
+      'task.assign',
       'notification.send',
+      'portal.message',
     ],
   },
   {
@@ -226,7 +238,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         are withheld for the same reason. Phase 28: `notification.read`
         is likewise a pure view action (the organization-wide log, not
         this role's own personal inbox, which needs no permission at
-        all); `notification.send` is withheld for the identical reason. */
+        all); `notification.send` is withheld for the identical reason.
+        Phase 29: neither `portal.manage` nor `portal.message` is granted
+        — per the approved plan, `portal.manage` is administrator/manager
+        only, and `portal.message` is withheld from this role for the
+        same reason `notification.send` is (this role holds no write
+        actions of any kind, including sending a message to a family). */
     permissions: [
       'case.read',
       'caseOrder.read',

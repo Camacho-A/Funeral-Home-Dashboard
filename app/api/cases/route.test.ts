@@ -67,10 +67,84 @@ const WORKFLOW_TEMPLATE_VERSION_ITEM = {
   },
 };
 
+// Phase 30 (Identity Model Hardening & Staff Assignment Unification): the
+// POST route resolves the caller's own StaffProfile server-side via
+// resolveStaffProfileForCaller — a mock-user-dana row, matching this
+// file's existing convention of createdBy/intakeOwnerId 'staff-dana'.
+const CALLER_STAFF_PROFILE_ITEM = {
+  id: 'staff-dana',
+  dataCollectionId: 'staffProfiles',
+  data: {
+    beaconStaffProfileId: 'staff-dana',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    identityId: mockDefaultUser.id,
+    membershipId: null,
+    displayName: 'Dana',
+    role: 'funeral_director',
+    isActive: true,
+    createdAt: '2026-07-24T00:00:00.000Z',
+    updatedAt: '2026-07-24T00:00:00.000Z',
+  },
+};
+
+// Phase 30: assertAssignableStaffProfile's permission check resolves
+// mockDefaultUser's real role ('administrator', per authFixtures.ts) —
+// under DATA_ADAPTER=wix this means the 'roles'/'rolePermissions'
+// collections must be mocked too, not just 'staffProfiles'.
+const ADMINISTRATOR_ROLE_ITEM = {
+  id: 'role-administrator',
+  dataCollectionId: 'roles',
+  data: {
+    beaconRoleId: 'role-administrator',
+    key: 'administrator',
+    name: 'Administrator',
+    description: 'Full access.',
+    organizationId: null,
+    isSystemDefault: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
+};
+const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.update', 'task.assign'].map((permissionKey) => ({
+  id: `role-permission-administrator-${permissionKey}`,
+  dataCollectionId: 'rolePermissions',
+  data: {
+    beaconRolePermissionId: `role-permission-administrator-${permissionKey}`,
+    roleId: 'role-administrator',
+    permissionKey,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+}));
+
+/** A filter-aware staffProfiles mock (unlike mockEnabledTemplate's blanket
+    per-collection responses) — needed whenever a test cares about
+    *which* staffProfileId was actually queried, e.g. rejecting a
+    nonexistent one. */
+function mockCasesRoutesWithStaffProfiles(profileItems: typeof CALLER_STAFF_PROFILE_ITEM[]) {
+  mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+    if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
+    if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+    if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+    if (collectionId === 'staffProfiles') {
+      const filter = options?.filter ?? {};
+      const matches = profileItems.filter(
+        (item) =>
+          (filter.identityId === undefined || item.data.identityId === filter.identityId) &&
+          (filter.beaconStaffProfileId === undefined || item.data.beaconStaffProfileId === filter.beaconStaffProfileId) &&
+          (filter.organizationId === undefined || item.data.organizationId === filter.organizationId),
+      );
+      return Promise.resolve({ dataItems: matches });
+    }
+    return Promise.resolve({ dataItems: [] });
+  });
+}
+
 function mockEnabledTemplate() {
   mockQueryWixDataItems.mockImplementation((collectionId: string) => {
     if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
     if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+    if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: [CALLER_STAFF_PROFILE_ITEM] });
     return Promise.resolve({ dataItems: [] });
   });
 }
@@ -525,5 +599,75 @@ describe('POST /api/cases — creation', () => {
 
     expect(response.status).toBe(503);
     expect(body.error).not.toMatch(/test-key/);
+  });
+});
+
+describe('POST /api/cases — Phase 30 (Identity Model Hardening & Staff Assignment Unification)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+  });
+
+  it('resolves createdBy/intakeOwnerId from the caller\'s own StaffProfile, ignoring any client-supplied value', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, createdBy: 'forged-staff-id', intakeOwnerId: 'forged-staff-id' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.createdBy).toBe('staff-dana');
+    expect(body.case.intakeOwnerId).toBe('staff-dana');
+  });
+
+  it('returns 422 when the caller has no linked StaffProfile in this organization', async () => {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
+      if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+      return Promise.resolve({ dataItems: [] }); // no staffProfiles row for this caller
+    });
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    void body;
+  });
+
+  it('accepts an explicit assignedStaffId naming another active, in-organization staff profile', async () => {
+    const OTHER_STAFF_PROFILE_ITEM = {
+      id: 'staff-chris',
+      dataCollectionId: 'staffProfiles',
+      data: {
+        beaconStaffProfileId: 'staff-chris',
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        identityId: 'identity-manors-chris',
+        membershipId: null,
+        displayName: 'Chris',
+        role: 'funeral_director',
+        isActive: true,
+        createdAt: '2026-07-24T00:00:00.000Z',
+        updatedAt: '2026-07-24T00:00:00.000Z',
+      },
+    };
+    mockCasesRoutesWithStaffProfiles([CALLER_STAFF_PROFILE_ITEM, OTHER_STAFF_PROFILE_ITEM]);
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, assignedStaffId: 'staff-chris' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.assignedStaffId).toBe('staff-chris');
+  });
+
+  it('rejects an explicit assignedStaffId naming a nonexistent staff profile, with 422, before any write', async () => {
+    mockCasesRoutesWithStaffProfiles([CALLER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, assignedStaffId: 'staff-does-not-exist' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatch(/staff-does-not-exist/);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
   });
 });

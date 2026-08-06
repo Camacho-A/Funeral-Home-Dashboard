@@ -100,9 +100,21 @@ describe('POST /api/notifications', () => {
     expect(response.status).toBe(422);
   });
 
-  it('returns 422 when case_participants recipient resolution is attempted (reserved, not implemented)', async () => {
-    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, notificationType: 'case.created', recipientScope: 'case_participants', caseId: 'case-1' });
-    expect(response.status).toBe(422);
+  it('Phase 30: case_participants resolves real recipients from an existing case\'s assignedStaffId/intakeOwnerId', async () => {
+    const response = await postRequest({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      notificationType: 'case.created',
+      recipientScope: 'case_participants',
+      caseId: '1042',
+      tokens: { entityTitle: 'Test Decedent' },
+    });
+    expect(response.status).toBe(201);
+  });
+
+  it('case_participants with a nonexistent caseId yields 201 with zero recipients, not an error', async () => {
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, notificationType: 'case.created', recipientScope: 'case_participants', caseId: 'case-does-not-exist' });
+    expect(response.status).toBe(201);
+    expect(notificationRecipientFixtures).toHaveLength(0);
   });
 
   it('officeStaff-tier callers (mockMultiOrgUser) may still send notifications', async () => {

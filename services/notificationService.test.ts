@@ -22,7 +22,10 @@ import {
   notificationPreferenceFixtures,
 } from './__mocks__/notificationFixtures';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
-import { membershipFixtures, identityFixtures, MANORS_ADMIN_IDENTITY_ID } from './__mocks__/identityFixtures';
+import { membershipFixtures, identityFixtures, MANORS_ADMIN_IDENTITY_ID, MANORS_CHRIS_IDENTITY_ID } from './__mocks__/identityFixtures';
+import { portalUserFixtures } from './__mocks__/portalFixtures';
+import { caseFixtures } from './__mocks__/fixtures';
+import type { Case } from '../types/case';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import type { ActivityContext } from './activityService';
 import type { Membership } from '../types/membership';
@@ -76,6 +79,7 @@ beforeEach(() => {
   membershipFixtures.push(...originalMembershipFixtures);
   identityFixtures.length = 0;
   identityFixtures.push(...originalIdentityFixtures);
+  portalUserFixtures.length = 0;
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 
@@ -90,6 +94,7 @@ afterEach(() => {
   membershipFixtures.push(...originalMembershipFixtures);
   identityFixtures.length = 0;
   identityFixtures.push(...originalIdentityFixtures);
+  portalUserFixtures.length = 0;
   logSpy.mockRestore();
 });
 
@@ -168,10 +173,103 @@ describe('createNotification', () => {
     expect(ids).toContain('staff-b');
   });
 
-  it('case_participants scope is rejected — reserved, not implemented (RecipientResolverError is rewrapped as NotificationServiceError, never leaked)', async () => {
-    await expect(
-      createNotification({ notificationType: 'case.created', recipientScope: 'case_participants', caseId: 'case-1', idFactory, tokens: {} }, ctx(), 'mock'),
-    ).rejects.toThrow(NotificationServiceError);
+  it('Phase 30: case_participants scope resolves real recipients from Case.assignedStaffId/intakeOwnerId, via StaffProfile', async () => {
+    const testCase: Case = {
+      id: 'case-notif-participants-test',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-777',
+      decedentName: 'Test Decedent',
+      dateOfBirth: '01/01/1950',
+      dateOfDeath: '01/01/2026',
+      timeOfDeath: '',
+      placeOfDeath: '',
+      weight: '',
+      rawStage: 0,
+      assignedStaffId: 'staff-dana',
+      nextOfKinName: 'Test NOK',
+      nextOfKinPhone: '555-0000',
+      paymentStatus: 'awaiting_payment',
+      isVeteran: false,
+      vaStepsState: {},
+      vaPublishChoice: null,
+      checklistState: {},
+      fieldValues: {},
+      daysWaitingInStage: 0,
+      isStalled: false,
+      stalledReason: null,
+      createdBy: null,
+      intakeOwnerId: 'staff-chris',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      isDeleted: false,
+      workflowTemplateId: 'wf-1',
+      workflowTemplateVersion: 1,
+      caseType: 'cremation',
+      workflowSnapshot: null,
+    };
+    caseFixtures.push(testCase);
+    try {
+      await createNotification(
+        { notificationType: 'case.created', recipientScope: 'case_participants', caseId: testCase.id, idFactory, tokens: { entityTitle: 'Test Decedent' } },
+        ctx(),
+        'mock',
+      );
+      const ids = notificationRecipientFixtures.map((r) => r.identityId).sort();
+      expect(ids).toEqual([MANORS_ADMIN_IDENTITY_ID, MANORS_CHRIS_IDENTITY_ID].sort());
+    } finally {
+      caseFixtures.length = caseFixtures.findIndex((c) => c.id === testCase.id);
+    }
+  });
+
+  it('case_participants scope with an unresolvable case yields zero recipients, not an error', async () => {
+    await createNotification(
+      { notificationType: 'case.created', recipientScope: 'case_participants', caseId: 'case-does-not-exist', idFactory, tokens: {} },
+      ctx(),
+      'mock',
+    );
+    expect(notificationRecipientFixtures).toHaveLength(0);
+  });
+
+  it('Phase 29: portal_user scope resolves email via getPortalUserById once getIdentityById returns null for that id', async () => {
+    portalUserFixtures.push({
+      id: 'portal-user-notif-1',
+      email: 'family@example.com',
+      normalizedEmail: 'family@example.com',
+      displayName: 'Pat Family',
+      passwordHash: 'salt:derived',
+      emailVerified: false,
+      status: 'active',
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    });
+
+    const notification = await createNotification(
+      { notificationType: 'family.document_ready', recipientScope: 'portal_user', recipientPortalUserId: 'portal-user-notif-1', idFactory, tokens: { entityTitle: 'Cremation Authorization' } },
+      ctx(),
+      'mock',
+    );
+
+    expect(notification.status).toBe('active');
+    expect(notificationRecipientFixtures).toHaveLength(1);
+    expect(notificationRecipientFixtures[0].identityId).toBe('portal-user-notif-1');
+
+    const email = notificationDeliveryFixtures.find((d) => d.channel === 'email');
+    expect(email?.status).toBe('sent');
+    const inApp = notificationDeliveryFixtures.find((d) => d.channel === 'in_app');
+    expect(inApp?.status).toBe('delivered');
+  });
+
+  it('Phase 29: portal_user scope with an unresolvable id fails the email delivery without blocking in-app delivery — matches the existing unresolvable-identity behavior exactly', async () => {
+    const notification = await createNotification(
+      { notificationType: 'family.document_ready', recipientScope: 'portal_user', recipientPortalUserId: 'no-such-portal-user', idFactory, tokens: {} },
+      ctx(),
+      'mock',
+    );
+
+    expect(notification.status).toBe('active');
+    const email = notificationDeliveryFixtures.find((d) => d.channel === 'email');
+    expect(email?.status).toBe('failed');
   });
 
   it('a disabled channel in NotificationPreference produces no Delivery row for that channel', async () => {

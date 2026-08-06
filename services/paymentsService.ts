@@ -20,6 +20,8 @@ import {
 import type { PaymentIntegration, PaymentRecord } from '../types/payment';
 import type { WebhookEventRecord } from '../types/webhookEvent';
 import { paymentIntegrationFixtures, paymentRecordFixtures, webhookEventFixtures } from './__mocks__/paymentFixtures';
+import type { PaymentProvider } from '../lib/paymentProvider';
+import { cloverProvider } from '../lib/clover/cloverProvider';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Same organization-scoped,
@@ -288,6 +290,105 @@ export async function createIdempotentPendingPaymentRecord(
     if (!existing) throw error; // conflict but no matching record found — surface the real error rather than mask it
     return { record: existing, isNew: false };
   }
+}
+
+const paymentProvider: PaymentProvider = cloverProvider;
+
+export type InitiateCheckoutResult = { paymentId: string; checkoutUrl: string | null; isNew: boolean };
+
+/**
+ * Phase 29 (Family Portal & External Collaboration). Extracts the Clover
+ * Hosted Checkout orchestration `app/api/cases/[caseId]/payments/clover/checkout/route.ts`
+ * has always performed inline into a reusable, testable function — added
+ * so `services/portal/portalPaymentService.ts` can initiate a family
+ * checkout without ever importing `lib/clover/cloverProvider.ts` itself
+ * (the "no direct payment-provider-calling code" structural boundary; see
+ * `documentService.ts`'s own `documentRenderer`/`documentStorageProvider`
+ * binding for the identical pattern this mirrors).
+ *
+ * Purely additive: the existing staff checkout route is untouched and
+ * keeps its own inline logic exactly as shipped — this is a new function
+ * alongside it, not a refactor of it, so there is zero behavior-change
+ * risk to the already-tested staff flow. A future cleanup could point
+ * that route at this function too, but that's a deliberate choice for
+ * later, not bundled into this phase.
+ *
+ * Mirrors the route's own sequencing exactly: confirm the provider is
+ * enabled, create-or-reuse the idempotent pending record, then (mock mode)
+ * synthesize a local return-page URL or (real mode) request an actual
+ * Clover session and persist its checkoutUrl/providerCheckoutId.
+ */
+export async function initiateCheckout(
+  params: {
+    organizationId: string;
+    caseId: string;
+    caseOrderId: string;
+    provider: string;
+    amount: number;
+    currency: string;
+    purpose: string;
+    idempotencyKey: string;
+    paymentId: string;
+    returnUrl: string;
+    cancelUrl: string;
+    now?: string;
+  },
+  dataAdapterMode: DataAdapterMode,
+): Promise<InitiateCheckoutResult> {
+  const integration = await getEnabledIntegration(params.organizationId, params.provider, dataAdapterMode);
+  if (!integration) {
+    throw new Error(`${params.provider} is not enabled for this organization.`);
+  }
+
+  const createdAt = params.now ?? new Date().toISOString();
+  const { record: pendingRecord, isNew } = await createIdempotentPendingPaymentRecord(
+    {
+      id: params.paymentId,
+      organizationId: params.organizationId,
+      caseId: params.caseId,
+      caseOrderId: params.caseOrderId,
+      provider: params.provider,
+      amount: params.amount,
+      currency: params.currency,
+      purpose: params.purpose,
+      idempotencyKey: params.idempotencyKey,
+      createdAt,
+    },
+    dataAdapterMode,
+  );
+
+  if (!isNew) {
+    return { paymentId: pendingRecord.id, checkoutUrl: pendingRecord.checkoutUrl, isNew: false };
+  }
+
+  if (dataAdapterMode === 'mock') {
+    const mockCheckoutUrl = `${params.returnUrl}&mock=1`;
+    const updated = await updatePaymentRecord(
+      params.organizationId,
+      params.paymentId,
+      { providerCheckoutId: `mock-checkout-${params.paymentId}`, checkoutUrl: mockCheckoutUrl },
+      dataAdapterMode,
+    );
+    return { paymentId: params.paymentId, checkoutUrl: updated?.checkoutUrl ?? mockCheckoutUrl, isNew: true };
+  }
+
+  const session = await paymentProvider.createCheckoutSession({
+    integration,
+    amount: params.amount,
+    currency: params.currency,
+    purpose: params.purpose,
+    beaconPaymentId: params.paymentId,
+    caseId: params.caseId,
+    returnUrl: params.returnUrl,
+    cancelUrl: params.cancelUrl,
+  });
+  const updated = await updatePaymentRecord(
+    params.organizationId,
+    params.paymentId,
+    { providerCheckoutId: session.providerCheckoutId, checkoutUrl: session.checkoutUrl },
+    dataAdapterMode,
+  );
+  return { paymentId: params.paymentId, checkoutUrl: updated?.checkoutUrl ?? session.checkoutUrl, isNew: true };
 }
 
 /**

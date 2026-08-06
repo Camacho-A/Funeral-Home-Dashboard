@@ -312,3 +312,96 @@ describe('DELETE /api/tasks/[taskId] — success and failure', () => {
     expect(body.error).not.toMatch(/test-key/);
   });
 });
+
+describe('PATCH /api/tasks/[taskId] — Phase 30 (Identity Model Hardening & Staff Assignment Unification): assigneeStaffId reassignment', () => {
+  const CHRIS_PROFILE_ITEM = {
+    id: 'staff-chris',
+    dataCollectionId: 'staffProfiles',
+    data: {
+      beaconStaffProfileId: 'staff-chris',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      identityId: 'identity-manors-chris',
+      membershipId: null,
+      displayName: 'Chris',
+      role: 'funeral_director',
+      isActive: true,
+      createdAt: '2026-07-24T00:00:00.000Z',
+      updatedAt: '2026-07-24T00:00:00.000Z',
+    },
+  };
+  const ADMINISTRATOR_ROLE_ITEM = {
+    id: 'role-administrator',
+    dataCollectionId: 'roles',
+    data: {
+      beaconRoleId: 'role-administrator',
+      key: 'administrator',
+      name: 'Administrator',
+      description: 'Full access.',
+      organizationId: null,
+      isSystemDefault: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
+  const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.update', 'task.assign'].map((permissionKey) => ({
+    id: `role-permission-administrator-${permissionKey}`,
+    dataCollectionId: 'rolePermissions',
+    data: { beaconRolePermissionId: `role-permission-administrator-${permissionKey}`, roleId: 'role-administrator', permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+  }));
+
+  function mockTaskAndStaffProfiles(staffProfileItem: typeof CHRIS_PROFILE_ITEM | null) {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: staffProfileItem ? [staffProfileItem] : [] });
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+      return Promise.resolve({ dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: EXISTING_WIX_TASK_DATA }] });
+    });
+  }
+
+  it('accepts reassignment to an active, in-organization staff profile, and sends a task.assigned notification', async () => {
+    mockTaskAndStaffProfiles(CHRIS_PROFILE_ITEM);
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-chris' } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('tasks', 'task-100', expect.objectContaining({ assigneeId: 'staff-chris' }));
+    expect(mockInsertWixDataItem).toHaveBeenCalledWith('notifications', expect.objectContaining({ notificationType: 'task.assigned' }), expect.any(String));
+    void body;
+  });
+
+  it('rejects reassignment to a nonexistent staff profile, with 422, before any write', async () => {
+    mockTaskAndStaffProfiles(null);
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-does-not-exist' } });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatch(/staff-does-not-exist/);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects reassignment to a deactivated staff profile, with 422', async () => {
+    mockTaskAndStaffProfiles({ ...CHRIS_PROFILE_ITEM, data: { ...CHRIS_PROFILE_ITEM.data, isActive: false } });
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-chris' } });
+
+    expect(response.status).toBe(422);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('does not send a notification when the patch names the same staff member already assigned (a no-op reassignment)', async () => {
+    const DANA_PROFILE_ITEM = { ...CHRIS_PROFILE_ITEM, id: 'staff-dana', data: { ...CHRIS_PROFILE_ITEM.data, beaconStaffProfileId: 'staff-dana', displayName: 'Dana' } };
+    mockTaskAndStaffProfiles(DANA_PROFILE_ITEM);
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-dana' } });
+
+    expect(response.status).toBe(200);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('notifications', expect.objectContaining({ notificationType: 'task.assigned' }), expect.any(String));
+  });
+
+  it('allows unassigning (a null patch value) with no staff-profile lookup at all', async () => {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'staffProfiles') throw new Error('must not be queried for a null (unassign) patch');
+      return Promise.resolve({ dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: EXISTING_WIX_TASK_DATA }] });
+    });
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: null } });
+    expect(response.status).toBe(200);
+  });
+});

@@ -42,6 +42,20 @@ export type Resource = {
       Membership; this field is never a substitute for it, and no
       identity/role data is ever copied onto a Resource row. */
   linkedMembershipId: string | null;
+  /** Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+      -> StaffProfile.id. The canonical operational-assignment bridge for
+      "which staff member does this resource represent" — added alongside
+      `linkedMembershipId` rather than replacing it (Wix Data has no
+      field-rename primitive, and `linkedMembershipId` is already live in
+      several files; see ADR-034's migration-strategy section for the
+      full reasoning). `linkedMembershipId` keeps its existing meaning,
+      unused-in-logic exactly as before; new code resolving "which
+      StaffProfile is this resource" reads this field instead, never
+      `linkedMembershipId`, and never `Identity.id` directly (this
+      codebase's hard layering invariant — types/staffProfile.ts's own
+      header comment). Set only for `'staff'`/`'funeral_director'` rows,
+      same as `linkedMembershipId`. */
+  linkedStaffProfileId: string | null;
   capacity: number | null;
   /** True for resources Beacon does not itself operate (a cemetery, an
       outside florist) — trackable on an appointment for contact/notes
@@ -62,6 +76,7 @@ export type NewResourceInput = {
   resourceType: ResourceType;
   name: string;
   linkedMembershipId?: string;
+  linkedStaffProfileId?: string;
   capacity?: number;
   isExternal?: boolean;
   notes?: string;

@@ -45,6 +45,7 @@ function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
     version: 1,
     supersedesId: null,
     signatureStatus: null,
+    familyVisible: false,
     generatedBy: 'Dana',
     uploadedBy: null,
     createdAt: '2026-08-01T00:00:00.000Z',

@@ -3,6 +3,7 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canManageResources } from '@/services/authorizationPolicyService';
 import { update, setStatus, ResourceServiceError } from '@/services/resourceService';
+import { StaffAssignmentError } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
 import type { ResourceStatus } from '@/types/resource';
 
@@ -20,10 +21,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
-  const b = body as { organizationId?: unknown; name?: unknown; locationId?: unknown; capacity?: unknown; notes?: unknown; status?: unknown };
+  const b = body as {
+    organizationId?: unknown;
+    name?: unknown;
+    locationId?: unknown;
+    capacity?: unknown;
+    notes?: unknown;
+    status?: unknown;
+    linkedStaffProfileId?: unknown;
+  };
   if (typeof b.organizationId !== 'string') return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   if (b.status !== undefined && (typeof b.status !== 'string' || !VALID_STATUSES.includes(b.status))) {
     return NextResponse.json({ error: 'status must be a valid ResourceStatus if provided.' }, { status: 400 });
+  }
+  if (b.linkedStaffProfileId !== undefined && b.linkedStaffProfileId !== null && typeof b.linkedStaffProfileId !== 'string') {
+    return NextResponse.json({ error: 'linkedStaffProfileId must be a string or null if provided.' }, { status: 400 });
   }
 
   const authResult = await requireAuthorizedOrganization(b.organizationId);
@@ -48,11 +60,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
         locationId: b.locationId === null ? null : typeof b.locationId === 'string' ? b.locationId : undefined,
         capacity: b.capacity === null ? null : typeof b.capacity === 'number' ? b.capacity : undefined,
         notes: b.notes === null ? null : typeof b.notes === 'string' ? b.notes : undefined,
+        linkedStaffProfileId: b.linkedStaffProfileId === null ? null : typeof b.linkedStaffProfileId === 'string' ? b.linkedStaffProfileId : undefined,
       },
       dataAdapterMode,
     );
     return NextResponse.json({ resource });
   } catch (error) {
+    if (error instanceof StaffAssignmentError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
     if (error instanceof ResourceServiceError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }

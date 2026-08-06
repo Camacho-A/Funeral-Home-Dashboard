@@ -14,6 +14,7 @@ export type WixResourceItem = {
   resourceType?: unknown;
   name?: unknown;
   linkedMembershipId?: unknown;
+  linkedStaffProfileId?: unknown;
   capacity?: unknown;
   isExternal?: unknown;
   status?: unknown;
@@ -81,6 +82,7 @@ export function mapWixResourceItem(item: WixResourceItem | undefined): Resource 
     resourceType: item.resourceType,
     name: item.name,
     linkedMembershipId: item.linkedMembershipId,
+    linkedStaffProfileId: typeof item.linkedStaffProfileId === 'string' ? item.linkedStaffProfileId : null,
     capacity: item.capacity,
     isExternal: item.isExternal,
     status: item.status,
@@ -99,6 +101,7 @@ export function buildWixResourceData(resource: Resource): WixResourceItem {
     resourceType: resource.resourceType,
     name: resource.name,
     linkedMembershipId: resource.linkedMembershipId,
+    linkedStaffProfileId: resource.linkedStaffProfileId,
     capacity: resource.capacity,
     isExternal: resource.isExternal,
     status: resource.status,
@@ -110,10 +113,11 @@ export function buildWixResourceData(resource: Resource): WixResourceItem {
 }
 
 /** The only fields `resourceService.ts`'s `update`/`setStatus` ever
-    change on an existing row. */
+    change on an existing row. `linkedStaffProfileId` added Phase 30
+    (Identity Model Hardening & Staff Assignment Unification). */
 export function applyResourceUpdateToWixData(
   existing: WixResourceItem,
-  patch: Partial<Pick<WixResourceItem, 'name' | 'locationId' | 'capacity' | 'notes' | 'status'>>,
+  patch: Partial<Pick<WixResourceItem, 'name' | 'locationId' | 'capacity' | 'notes' | 'status' | 'linkedStaffProfileId'>>,
 ): WixResourceItem {
   return { ...existing, ...patch };
 }

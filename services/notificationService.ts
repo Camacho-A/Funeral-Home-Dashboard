@@ -28,6 +28,7 @@ import { resolveRecipientIdentityIds, RecipientResolverError } from './notificat
 import { sendEmailNotification } from './notifications/emailChannel';
 import { deliverInApp } from './notifications/inAppChannel';
 import { getIdentityById } from './identityService';
+import { getPortalUserById } from './portal/portalUserService';
 import {
   recordNotificationCreated,
   recordNotificationSent,
@@ -347,9 +348,20 @@ async function dispatchChannel(
     if (channel === 'in_app') {
       await deliverInApp();
     } else {
+      // Phase 29 (Family Portal & External Collaboration): a
+      // 'portal_user'-scope recipient's id is a PortalUser.id, never an
+      // Identity.id (see recipientResolver.ts's own comment) — every
+      // existing staff notification still resolves via getIdentityById
+      // exactly as before, unchanged; this fallback is reached only when
+      // that lookup returns null.
       const identity = await getIdentityById(recipient.identityId, dataAdapterMode);
-      if (!identity) throw new Error(`No identity found for id "${recipient.identityId}".`);
-      await sendEmailNotification(identity.email, content);
+      if (identity) {
+        await sendEmailNotification(identity.email, content);
+      } else {
+        const portalUser = await getPortalUserById(recipient.identityId, dataAdapterMode);
+        if (!portalUser) throw new Error(`No identity or portal user found for id "${recipient.identityId}".`);
+        await sendEmailNotification(portalUser.email, content);
+      }
     }
     succeeded = true;
   } catch (error) {
@@ -440,6 +452,7 @@ export async function createNotification(
         organizationId: ctx.organizationId,
         recipientScope: params.recipientScope,
         recipientIdentityId: params.recipientIdentityId,
+        recipientPortalUserId: params.recipientPortalUserId,
         recipientRoleKey: params.recipientRoleKey,
         caseId: params.caseId,
       },

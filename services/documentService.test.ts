@@ -18,7 +18,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   },
 }));
 
-const { list, generate, upload, archive, downloadFile, markDocumentSigned, DocumentServiceError } = await import('./documentService');
+const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, DocumentServiceError } = await import('./documentService');
 const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { documentTemplateFixtures } = await import('./__mocks__/documentFixtures');
@@ -240,6 +240,42 @@ describe('markDocumentSigned', () => {
 
   it('throws for a document that does not exist in this case/organization', async () => {
     await expect(markDocumentSigned(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'no-such-doc', 'mock')).rejects.toThrow(DocumentServiceError);
+  });
+});
+
+describe('Phase 29: familyVisible', () => {
+  it('every newly generated document defaults to familyVisible: false', async () => {
+    const template = await createSampleTemplate();
+    const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+    expect(doc.familyVisible).toBe(false);
+  });
+
+  it('every newly uploaded document defaults to familyVisible: false', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx(), 'mock');
+    expect(doc.familyVisible).toBe(false);
+  });
+
+  it('setFamilyVisible is the only way the field ever flips to true, without touching any other field', async () => {
+    const template = await createSampleTemplate();
+    const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+
+    const updated = await setFamilyVisible(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, true, 'mock');
+    expect(updated.familyVisible).toBe(true);
+    expect(updated.status).toBe('active');
+    expect(updated.storageKey).toBe(doc.storageKey);
+  });
+
+  it('setFamilyVisible can also flip a document back to family-hidden', async () => {
+    const template = await createSampleTemplate();
+    const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+    await setFamilyVisible(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, true, 'mock');
+
+    const updated = await setFamilyVisible(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, false, 'mock');
+    expect(updated.familyVisible).toBe(false);
+  });
+
+  it('throws for a document that does not exist in this case/organization', async () => {
+    await expect(setFamilyVisible(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'no-such-doc', true, 'mock')).rejects.toThrow(DocumentServiceError);
   });
 });
 

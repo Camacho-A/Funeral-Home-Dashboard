@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { mapWixCaseDocumentItem, buildWixCaseDocumentData, applyCaseDocumentStatusToWixData, applyCaseDocumentSignatureStatusToWixData } from './wixCaseDocumentMapper';
+import {
+  mapWixCaseDocumentItem,
+  buildWixCaseDocumentData,
+  applyCaseDocumentStatusToWixData,
+  applyCaseDocumentSignatureStatusToWixData,
+  applyCaseDocumentFamilyVisibleToWixData,
+} from './wixCaseDocumentMapper';
 import type { CaseDocument } from '../types/caseDocument';
 
 const GENERATED: CaseDocument = {
@@ -20,6 +26,7 @@ const GENERATED: CaseDocument = {
   version: 1,
   supersedesId: null,
   signatureStatus: null,
+  familyVisible: false,
   generatedBy: 'identity-1',
   uploadedBy: null,
   createdAt: '2026-08-01T00:00:00.000Z',
@@ -78,6 +85,19 @@ describe('wixCaseDocumentMapper', () => {
     const wixItem = buildWixCaseDocumentData(GENERATED);
     const updated = applyCaseDocumentSignatureStatusToWixData(wixItem, 'signed');
     expect(updated.signatureStatus).toBe('signed');
+    expect(updated.status).toBe(wixItem.status);
+    expect(updated.storageKey).toBe(wixItem.storageKey);
+  });
+
+  it('Phase 29: familyVisible defaults to false on a row written before the field existed', () => {
+    const { familyVisible, ...withoutFamilyVisible } = buildWixCaseDocumentData(GENERATED);
+    expect(mapWixCaseDocumentItem(withoutFamilyVisible)?.familyVisible).toBe(false);
+  });
+
+  it('Phase 29: applyCaseDocumentFamilyVisibleToWixData changes only familyVisible', () => {
+    const wixItem = buildWixCaseDocumentData(GENERATED);
+    const updated = applyCaseDocumentFamilyVisibleToWixData(wixItem, true);
+    expect(updated.familyVisible).toBe(true);
     expect(updated.status).toBe(wixItem.status);
     expect(updated.storageKey).toBe(wixItem.storageKey);
   });

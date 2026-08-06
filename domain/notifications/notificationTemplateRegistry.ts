@@ -93,6 +93,37 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
     titleTemplate: 'Announcement',
     bodyTemplate: '{{entityTitle}}',
   },
+
+  // Phase 29 (Family Portal & External Collaboration). Delivered via
+  // recipientScope: 'portal_user' only — see types/notification.ts.
+  'family.document_ready': {
+    titleTemplate: 'Document ready',
+    bodyTemplate: '{{entityTitle}} is ready to view for case {{caseNumber}}',
+  },
+  'family.signature_requested': {
+    titleTemplate: 'Signature requested',
+    bodyTemplate: '{{entityTitle}} is ready for your signature for case {{caseNumber}}',
+  },
+  'family.appointment_reminder': {
+    titleTemplate: 'Upcoming appointment',
+    bodyTemplate: 'Reminder: {{entityTitle}} for case {{caseNumber}}',
+  },
+  'family.payment_reminder': {
+    titleTemplate: 'Payment reminder',
+    bodyTemplate: 'A balance is due for case {{caseNumber}}',
+  },
+  'family.message_received': {
+    titleTemplate: 'New message',
+    bodyTemplate: '{{actorDisplayName}} sent a message about case {{caseNumber}}',
+  },
+  'family.general_update': {
+    titleTemplate: 'Case update',
+    bodyTemplate: '{{entityTitle}}',
+  },
+  'portal.staff_message_received': {
+    titleTemplate: 'New Family Portal message',
+    bodyTemplate: '{{actorDisplayName}} sent a message about case {{caseNumber}}',
+  },
 };
 
 function assertOnlyRecognizedTokens(template: string): void {

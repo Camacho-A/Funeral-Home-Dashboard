@@ -29,7 +29,15 @@ export type IdentityMessage =
   | { kind: 'signature_request'; to: string; signerName: string; caseDisplayName: string; signLink: string; expiresAt: string | null }
   | { kind: 'signature_completed'; to: string; signerName: string; caseDisplayName: string }
   | { kind: 'signature_declined'; to: string; signerName: string; caseDisplayName: string; reason: string | null }
-  | { kind: 'signature_cancelled'; to: string; signerName: string; caseDisplayName: string };
+  | { kind: 'signature_cancelled'; to: string; signerName: string; caseDisplayName: string }
+  /** Phase 29 (Family Portal & External Collaboration). Reached only via
+      `getIdentityMessageSender()` directly from the staff-side invitation
+      Route Handler — mirrors `'invitation'`'s own shape exactly, but for a
+      `PortalInvitation`/`PortalAccess` pair rather than a `Membership`.
+      `services/portal/portalInvitationService.ts` returns the raw token
+      internally (never in a JSON response body, same rule as every other
+      token kind here) — the route is responsible for calling `.send()`. */
+  | { kind: 'portal_invitation'; to: string; token: string; organizationId: string; caseId: string; invitationId: string };
 
 export interface IdentityMessageSender {
   send(message: IdentityMessage): Promise<void>;

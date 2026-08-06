@@ -54,4 +54,26 @@ describe('PATCH /api/scheduling/resources/[resourceId]', () => {
     const response = await patchRequest('no-such-resource', { organizationId: DEFAULT_ORGANIZATION_ID, name: 'x' });
     expect(response.status).toBe(404);
   });
+
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): linkedStaffProfileId', () => {
+    it('accepts a real, active, in-organization linkedStaffProfileId', async () => {
+      const resource = await createResource(DEFAULT_ORGANIZATION_ID, { resourceType: 'staff', name: 'Dana', idFactory }, 'mock');
+      const response = await patchRequest(resource.id, { organizationId: DEFAULT_ORGANIZATION_ID, linkedStaffProfileId: 'staff-dana' });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.resource.linkedStaffProfileId).toBe('staff-dana');
+    });
+
+    it('rejects a nonexistent linkedStaffProfileId, with 422, before any write', async () => {
+      const resource = await createResource(DEFAULT_ORGANIZATION_ID, { resourceType: 'staff', name: 'Dana', idFactory }, 'mock');
+      const response = await patchRequest(resource.id, { organizationId: DEFAULT_ORGANIZATION_ID, linkedStaffProfileId: 'staff-does-not-exist' });
+      expect(response.status).toBe(422);
+    });
+
+    it('returns 400 when linkedStaffProfileId is present but neither a string nor null', async () => {
+      const resource = await createResource(DEFAULT_ORGANIZATION_ID, { resourceType: 'staff', name: 'Dana', idFactory }, 'mock');
+      const response = await patchRequest(resource.id, { organizationId: DEFAULT_ORGANIZATION_ID, linkedStaffProfileId: 42 });
+      expect(response.status).toBe(400);
+    });
+  });
 });

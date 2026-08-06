@@ -149,6 +149,8 @@ Before designing the write-claim mechanism, a throwaway script confirmed live (a
 
 This is a deliberate change in direction from what the current codebase actually does: `hooks/useSession.ts` and `services/casesService.ts`'s `create()` still derive `intakeOwnerId`/`assignedStaffId` from a hardcoded `StaffProfile` stub, entirely disconnected from Phase 13's real login. This schema is built for where the domain model is *supposed* to end up (intake ownership tied to who actually authenticated), not where the application code currently is. **Rewiring `useSession()`/`casesService.create()` to derive these from the real session is Phase 15/16 work, not done here** — this phase changes no application code. `StaffProfile` retiring in favor of `organizationMemberships` (one identity directory instead of two) is the recommended direction; it has not been implemented.
 
+**Phase 30 resolution (2026-08-06): the final answer differs from the speculation above — `StaffProfile` was not retired.** Rather than rewriting `Case.assignedStaffId`/`intakeOwnerId`/`createdBy` and `CaseTask.assigneeStaffId` to point directly into the authenticated-identity space, Phase 30 kept them in `StaffProfile.id`-space and instead gave `StaffProfile` itself two new fields — `identityId` (required) and `membershipId` (nullable) — bridging it into the real `identities`/`organizationMemberships`(Phase 21 rows) chain. The canonical model is now `Identity → Membership → StaffProfile → operational assignment`, with a hard invariant that no operational-assignment field is ever allowed to skip `StaffProfile` and reference an identity directly (see [ADR-034](./adr/ADR-034-identity-model-hardening-and-staff-assignment-architecture.md)). This was chosen over the direct-rewrite this section originally recommended because a `StaffProfile` row carries operational data (`displayName`, display-only `role`, `isActive`) with no natural home on `Identity`/`Membership`, and because every `Case`/`CaseTask` row already in existence references `StaffProfile.id` — bridging preserved every historical value with zero FK rewrites, where a direct rewrite would have required migrating live data with no live `staffProfiles` collection to reconcile against in the first place. See Collection 52 below.
+
 ## Collection 1 — `organizations`
 
 **Purpose:** canonical registry of tenant organizations. **Ownership:** not organization-owned itself. **Retention:** never hard-deleted; deactivate via `isActive=false`.
@@ -847,11 +849,13 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `uploadedBy` | Text, nullable | Optional | Immutable |
 | `createdAt` | Date | Required | Immutable |
 | `correlationId` | Text | Required | Immutable — shared with the `ActivityEvent`(s) this action produced |
+| `familyVisible` | Boolean | Required | Mutable — **Phase 29 addition** (see below) |
 
 - **Indexes** (3 regular — the platform's own cap, re-confirmed live): `(organizationId, caseId)` (Documents tab); `(organizationId, templateId)` (regeneration/version lookups); `(organizationId, status)` (active/archived filtering). No unique index needed (uniqueness is per-row `beaconCaseDocumentId`).
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/caseDocument.ts`'s `CaseDocument`.
 - **Note on the `pending -> active/failed` transition:** a row is inserted as `pending` the instant generation/upload starts (before rendering/storage completes), then `status`/`storageKey`/`checksumSha256`/`fileSizeBytes` are filled in together, exactly once, when the async work finishes or fails — mirrors `paymentRecords`' own `pending -> succeeded/failed` update. This is the one exception to "immutable once created": a `pending` row has no real content yet, so this fill-in is not a retroactive change to a document that was ever actually generated.
+- **Phase 29 correction (2026-08-05):** `familyVisible` was added live via the established "resend the full field list" `PUT /wix-data/v2/collections` mechanism (revision 1→2) — **this pass discovered the `PUT` payload must include the collection's current `revision` explicitly** (`"revision must not be empty"` otherwise), a detail every earlier phase's use of this mechanism happened not to document. Every existing row's `familyVisible` is absent (reads as `undefined`/missing, not `false`) until the row is next written — `lib/wixCaseDocumentMapper.ts` defaults a missing value to `false` defensively, and `documentService.ts`'s `generate()`/`upload()` set it explicitly on every new row, so no pre-Phase-29 document is ever accidentally family-visible. See [ADR-033](./adr/ADR-033-family-portal-and-external-collaboration.md).
 
 ## Collection 35 — `signatureRequests`
 
@@ -1129,6 +1133,128 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **Permissions:** backend/Admin only.
 - **TS type:** `types/notificationPreference.ts`'s `NotificationPreference`.
 
+## Collection 47 — `portalUsers`
+
+**Purpose:** the Family Portal's own, physically separate identity population — never the `identities` collection, never a `Membership`. **Ownership:** platform-wide (not organization-scoped — a `PortalUser` may hold grants across more than one organization's cases, though this phase's own tooling only resolves one). **Retention:** never deleted; `status: 'disabled'` is the only lifecycle transition. See [ADR-033](./adr/ADR-033-family-portal-and-external-collaboration.md).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconPortalUserId` | Text | Required | Immutable |
+| `email`, `normalizedEmail` | Text | Required | Immutable |
+| `displayName` | Text | Required | Mutable |
+| `passwordHash` | Text | Required | Mutable — set once at acceptance, changed only via password reset |
+| `emailVerified` | Boolean | Required | Mutable |
+| `status` | Text (`active`\|`disabled`) | Required | Mutable |
+| `passwordResetTokenHash` | Text, nullable | Optional | Mutable — cleared once consumed |
+| `passwordResetExpiresAt` | Date, nullable | Optional | Mutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular): `(normalizedEmail)` (login lookup); `(passwordResetTokenHash)` (reset-token resolution).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/portalUser.ts`'s `PortalUser`.
+
+## Collection 48 — `portalInvitations`
+
+**Purpose:** the offer — a staff-issued invitation for a named person to become (or reconnect as) a `PortalUser` with access to a specific case. **Ownership:** organization-owned (also case-scoped). **Retention:** never deleted; `status` is the only field that changes lifecycle-wise after creation. See ADR-033.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconPortalInvitationId` | Text | Required | Immutable |
+| `organizationId`, `caseId` | Text | Required | Immutable |
+| `email`, `displayName` | Text | Required | Immutable |
+| `relationshipType` | Text (`domain/portal/portalRelationshipRegistry.ts`) | Required | Immutable |
+| `status` | Text (`draft`\|`pending`\|`accepted`\|`expired`\|`revoked`) | Required | Mutable |
+| `tokenHash` | Text | Required | Immutable — the raw token itself is never persisted |
+| `expiresAt` | Date | Required | Immutable |
+| `invitedByStaffIdentityId` | Text | Required | Immutable |
+| `linkedPortalAccessId` | Text | Required | Immutable — the `PortalAccess` row this invitation activates on acceptance, created alongside it |
+| `acceptedAt` | Date, nullable | Optional | Mutable — set once, on acceptance |
+| `revokedAt` | Date, nullable | Optional | Mutable — set once, on revocation |
+| `revokedByStaffIdentityId` | Text, nullable | Optional | Mutable — set once, on revocation |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (3 regular — the platform's own cap): `(organizationId, caseId)` (pending-invitations list); `(tokenHash)` (existence-hiding acceptance lookup); `(organizationId, status)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/portalInvitation.ts`'s `PortalInvitation`.
+
+## Collection 49 — `portalAccess`
+
+**Purpose:** the grant — created at invitation time (not acceptance), so accepting an invitation can only activate a grant already fully specified, never expand it. The one lookup `lib/auth/requireFamilyAccess.ts`'s entire resolution chain depends on. **Ownership:** organization-owned (also case- and portal-user-scoped). **Retention:** never deleted; `status` is the only field that changes after creation. See ADR-033.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconPortalAccessId` | Text | Required | Immutable |
+| `portalUserId` | Text, nullable | Optional | Mutable — `null` until the linked invitation is accepted, set exactly once |
+| `organizationId`, `caseId` | Text | Required | Immutable |
+| `relationshipType` | Text | Required | Immutable — fixed at invite time |
+| `status` | Text (`pending`\|`active`\|`disabled`\|`revoked`\|`expired`) | Required | Mutable |
+| `grantedFromInvitationId` | Text | Required | Immutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular): `(portalUserId)` (a portal user's own case list); `(organizationId, caseId)` (the critical `requireFamilyAccess` lookup — never filtered by a client-supplied `organizationId`).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/portalAccess.ts`'s `PortalAccess`.
+
+## Collection 50 — `portalSessions`
+
+**Purpose:** mirrors `identitySessions`' shape, but references `PortalUser.id`, never `Identity.id` — deliberately narrower (no `organizationId`, `rememberDevice`, or `passwordVersionAtIssue`; a Family Portal session has none of those concepts). **Ownership:** portal-user-scoped, not organization-scoped. **Retention:** never deleted; `revokedAt` is the only lifecycle field. See ADR-033.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconPortalSessionId` | Text | Required | Immutable |
+| `portalUserId` | Text | Required | Immutable |
+| `deviceId` | Text | Required | Immutable |
+| `deviceName`, `ipAddress`, `userAgent` | Text, nullable | Optional | Immutable |
+| `expiresAt` | Date | Required | Mutable — slides forward on each successful use |
+| `lastSeenAt` | Date | Required | Mutable |
+| `revokedAt` | Date, nullable | Optional | Mutable — set once, on logout/revocation |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(portalUserId)` (list/revoke-all-sessions).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/portalSession.ts`'s `PortalSession`.
+
+## Collection 51 — `portalMessages`
+
+**Purpose:** an immutable, insert-only two-way message thread per case — no update or delete function exists anywhere in `services/portal/portalMessagingService.ts`; a correction is always a new message. **Ownership:** organization-owned (also case-scoped). **Retention:** never updated except the two read-receipt fields, never deleted. See ADR-033.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconPortalMessageId` | Text | Required | Immutable |
+| `organizationId`, `caseId` | Text | Required | Immutable |
+| `senderType` | Text (`staff`\|`family`) | Required | Immutable |
+| `senderStaffIdentityId` | Text, nullable | Optional | Immutable — set only when `senderType === 'staff'` |
+| `senderPortalUserId`, `senderPortalAccessId` | Text, nullable | Optional | Immutable — set only when `senderType === 'family'` |
+| `senderRelationshipTypeAtSend` | Text, nullable | Optional | Immutable — a denormalized snapshot at send time, never re-derived later |
+| `body` | Text | Required | Immutable |
+| `attachmentDocumentId` | Text, nullable | Optional | Reserved, always `null` this phase |
+| `readByStaffAt`, `readByFamilyAt` | Date, nullable | Optional | Mutable — each set once, on the respective side's mark-read |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(organizationId, caseId)` (the message thread for one case).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/portalMessage.ts`'s `PortalMessage`.
+
+## Collection 52 — `staffProfiles`
+
+**Purpose:** the operational staff-profile layer of the canonical `Identity → Membership → StaffProfile → operational assignment` chain (Phase 30) — every `Case.assignedStaffId`/`intakeOwnerId`/`createdBy`, `CaseTask.assigneeStaffId`, `Appointment.ownerStaffProfileId`, and `Resource.linkedStaffProfileId` field resolves to a row here, never directly to an `identities`/`organizationMemberships` row. **Ownership:** organization-owned. **Retention:** never hard-deleted — deactivate via `isActive=false`, so a past assignment/attribution remains resolvable for historical display forever. See [ADR-034](./adr/ADR-034-identity-model-hardening-and-staff-assignment-architecture.md).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconStaffProfileId` | Text | Required | Immutable — set as the item's own system `_id` at insert time, the established `cases`/`beaconCaseId` trick (avoids a 4th index slot for a dedicated unique lookup) |
+| `organizationId` | Text | Required | Immutable |
+| `identityId` | Text | Required | Immutable — → the authenticated-identity id space (a real `identities.beaconIdentityId` in identity-mode) |
+| `membershipId` | Text, nullable | Optional | Immutable — → `organizationMemberships.beaconMembershipId` (Phase 21 row), set only when a real `Membership` exists for that identity/org pair |
+| `displayName` | Text | Required | Mutable |
+| `role` | Text | Required | Mutable — **display-only, never authorization-relevant** (see "Open design decision" resolution above); real eligibility is always decided via the linked `Membership`'s RBAC permissions |
+| `isActive` | Boolean | Required | Mutable (default `true`) — the only lifecycle transition, never a hard delete |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular, well under the 3-regular/1-unique/4-total cap): `(organizationId, identityId)` — the core `resolveStaffProfileForCaller` lookup; `(organizationId, isActive)` — "list assignable staff."
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/staffProfile.ts`'s `StaffProfile`.
+- **Migration:** backfilled for Manor's Cremation via `services/staffProfileMigrationService.ts` — a two-phase, dry-run-then-apply script resolving each of the 3 legacy fixture ids (`staff-dana`/`staff-chris`/`staff-priya`) to a real `Identity` by known email correspondence, never inventing one for a row that doesn't resolve. Live result: `staff-dana` resolved (a real identity from Phase 21's own migration); `staff-chris`/`staff-priya` correctly reported unresolved, since they are mock-fixture-only additions this phase with no corresponding real invited identity yet.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -1137,9 +1263,9 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `caseTimelineEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | Originally not created because `domain/cases/timeline.ts`'s activity log was fully derived at read time and nothing required a persisted record yet. Phase 24 built the real, general-purpose replacement once a real UI needed one — see Collection 31 above. `domain/cases/timeline.ts` and `ActivityLogCard.tsx` are kept in the codebase regardless (rollback safety), not deleted by Phase 24. |
 | `caseDocuments` metadata | Superseded by Collection 34 (`caseDocuments`), Phase 25 | Originally not created because file bytes were considered entirely out of Wix's scope by the project's original architecture (`types/document.ts`'s "eventually the Postgres/object-storage service... not Wix Data"). Phase 25 reverses this for *metadata only* — see Collection 34 above and ADR-029's "Metadata vs. bytes" section for why: bytes still never live in Wix Data (they go to Vercel Blob), but the metadata row describing them now does, matching every other collection's own pattern. |
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
-| `staffProfiles` | Not created (recommended retirement) | Rather than a seventh collection duplicating `organizationMemberships`, the recommendation is to unify on one identity directory. Not implemented this phase — see "Open design decision" above. |
+| `staffProfiles` | Superseded by Collection 52 (`staffProfiles`), Phase 30 | Originally recommended for retirement in favor of unifying entirely on `organizationMemberships`. Phase 30 built a real, live `staffProfiles` collection instead, bridged into the identity chain rather than replaced by it — see the "Open design decision" resolution above and Collection 52. |
 
-## Permissions summary (all forty-six collections)
+## Permissions summary (all fifty-two collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -1219,6 +1345,8 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Deliveries for one recipient row | `notificationDeliveries (organizationId, notificationRecipientId)` |
 | Attempts for one delivery | `notificationDeliveryAttempts (organizationId, notificationDeliveryId)` |
 | Preferences for one identity | `notificationPreferences (organizationId, identityId)` |
+| Caller's own StaffProfile resolution (`resolveStaffProfileForCaller`) | `staffProfiles (organizationId, identityId)` |
+| Assignable-staff listing for one organization | `staffProfiles (organizationId, isActive)` |
 
 ## Migration notes
 
@@ -1230,7 +1358,7 @@ No public write access, no unauthenticated read access, no member-self read acce
 
 - **All seven collections now exist in Wix** (see "Creation record" sections above) — this limitation from the original proposal is resolved.
 - **`workflowTemplateVersions`' append-only guarantee is now field-level database-enforced** (`immutable: true` on all 6 custom fields) **but not item-level.** A field's *value* can't be changed once set, but the collection's `remove` permission (`ADMIN`) still allows deleting an entire version item outright. Application code should still never call `.update()` or `.remove()` against this collection in practice; the field-level flag is a real backstop against accidental value mutation, not a complete guarantee against deletion.
-- **The `intakeOwnerId`/`caseHandlerId`/`assigneeId` identity-space decision is not yet reflected in application code.** `hooks/useSession.ts` and `services/casesService.ts` still derive these from a hardcoded `StaffProfile` stub, disconnected from Phase 13's real login. This schema anticipates the eventual fix; the fix itself is not part of this phase.
+- **The `intakeOwnerId`/`caseHandlerId`/`assigneeId` identity-space decision, as originally speculated above, was not what shipped — closed in Phase 30.** `hooks/useSession.ts` and `services/casesService.ts` no longer derive these from a hardcoded stub; `resolveStaffProfileForCaller` (server-side, inside Route Handlers) is the real replacement. But the actual fix bridges `StaffProfile` into the identity chain rather than rewriting these fields to reference an identity directly — see the "Open design decision" Phase 30 resolution note above and Collection 52.
 - **`workflowTemplates.organizationId`'s conditional requirement (required unless `isSystemTemplate=true`) is application-enforced,** not a native Wix Data constraint — implemented as `required: false` at the Wix field level.
 - **`cases` has only 3 of its originally-proposed 4 regular indexes** — Wix Data caps every collection at 3 regular + 1 unique index. Case lookup by `beaconCaseId` was deferred to a Phase 16 implementation choice (set the item's own system `_id` to `beaconCaseId` at insert time) rather than a dedicated index — **applied in Phase 16** (`app/api/cases/route.ts`'s `POST` handler; `lib/wixDataApi.ts`'s `insertWixDataItem`), and for the same reason also applied to `tasks`' `beaconTaskId`. Every update/delete still independently re-verifies tenant ownership via a `{beaconCaseId, organizationId}`/`{beaconTaskId, organizationId}` query rather than assuming the convention holds for a given record.
 - **Compound-unique constraints are not natively supported** — confirmed, not just suspected: Wix's unique-index option accepts exactly one field. `organizationMemberships (userId, organizationId)` and `workflowTemplateVersions (beaconTemplateId, version)` rely on application-enforced uniqueness (check-before-insert).
@@ -1241,3 +1369,4 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **`appointments` has no dedicated `recurrenceDefinitionId` index** — Wix Data's 3-regular-index cap was already spent on `(organizationId, startAt)`/`(organizationId, caseId)`/`(organizationId, status)`, all higher-traffic access patterns than a series-wide bulk operation. Materialization is capped at 104 occurrences/2 years (see ADR-031), so an "edit this and all following" operation accepts a bounded, non-indexed scan rather than a fourth index. All ten Phase 27 indexes (across the five new collections) were created live and confirmed `ACTIVE`; the index cap was reconfirmed empirically on every one of them.
 - **Phase 28: Wix Data compound indexes cap at 3 fields, discovered live** — a 4-field `(organizationId, identityId, channel, status)` index on `notificationDeliveries` was rejected outright (`WDE0080: fields has size 4, expected 3 or less`). This is a genuinely new, previously-undocumented limit — every prior phase's compound indexes happened to need at most 3 fields. Resolved by dropping to `(organizationId, identityId, status)` and filtering `channel` in application code, the same "index narrows, application code is the correctness boundary" discipline `activityService.ts` already established. All nine Phase 28 indexes (across the five new collections) were created live and confirmed `ACTIVE`.
 - **Phase 28: Wix Data's `COUNT` capability is reachable, but not safe to rely on for correctness.** A dedicated `POST /wix-data/v2/items/count` endpoint (`{ dataCollectionId, query: { filter } }` → `{ totalCount }`) exists and responds successfully — a genuinely different endpoint from `/wix-data/v2/items/query`, not documented anywhere in this codebase before this phase. Empirically, though, it was observed to return a stale/inflated total shortly after a rapid sequence of writes and deletes against the same rows: a controlled test creating exactly two matching, freshly-inserted rows with zero pre-existing ones (independently confirmed via a full state re-query immediately after) returned `totalCount: 4` from the count endpoint. `services/notificationService.ts`'s `getUnreadCount` deliberately keeps its existing bounded fetch-and-count implementation against the regular, observed-consistent query endpoint rather than switching to this faster but inconsistency-prone one. See ADR-032's "Live Wix verification" section for the full test.
+- **Phase 29: the "resend the full field list" `PUT /wix-data/v2/collections` mechanism requires the collection's current `revision` in the payload, discovered live.** Every prior phase's documented use of this mechanism (`organizations`, `organizationMemberships`, `paymentRecords`) omitted this detail; a first attempt at extending `caseDocuments` with `familyVisible` failed with `"revision must not be empty"` until the `GET`-fetched current `revision` was included in the `PUT` body. Also confirmed live: the correct update-item endpoint shape is `PUT /wix-data/v2/items/{wixItemId}?dataCollectionId=...` (id in the path and as a query parameter, matching `lib/wixDataApi.ts`'s own `updateWixDataItem` exactly) — a same-session first attempt using `PUT /wix-data/v2/items` with `dataCollectionId` in the body instead returned an uninformative empty-bodied 404. All five new Phase 29 collections (`portalUsers`/`portalInvitations`/`portalAccess`/`portalSessions`/`portalMessages`) and their twelve indexes were created live and confirmed `ACTIVE`; index builds across all five collections took noticeably longer than a single-collection probe (indexes stayed `BUILDING` past an initial ~30-second poll window before completing on a subsequent check) — consistent with the platform queuing several concurrently-requested index builds, not a new limitation. See ADR-033's "Live Wix verification" section for the full disposable-lifecycle exercise.

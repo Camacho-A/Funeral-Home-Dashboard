@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge';
 import { APPOINTMENT_TYPES, APPOINTMENT_TYPE_CATEGORY_LABEL, type AppointmentTypeCategory } from '@/domain/scheduling/appointmentTypeRegistry';
 import { resourceStatusVariant, RESOURCE_STATUS_LABEL } from '@/domain/scheduling/appointmentDisplay';
 import { useResources } from '@/hooks/useResources';
+import { useStaff } from '@/hooks/useStaff';
 import { useCreateAppointment } from '@/hooks/useAppointments';
 import { SchedulingConflictError, type ConflictDetail } from '@/lib/appointmentsClient';
 import { ConflictResolutionDialog } from './ConflictResolutionDialog';
@@ -54,6 +55,7 @@ export function AppointmentDialog({
   defaultStartAt?: string;
 }) {
   const resourcesQuery = useResources(organizationId);
+  const staffQuery = useStaff();
   const createAppointment = useCreateAppointment(organizationId);
 
   const [appointmentType, setAppointmentType] = useState<string>(APPOINTMENT_TYPES.FAMILY_MEETING.key);
@@ -62,6 +64,7 @@ export function AppointmentDialog({
   const [freeCaseId, setFreeCaseId] = useState('');
   const [startAt, setStartAt] = useState('');
   const [endAt, setEndAt] = useState('');
+  const [ownerStaffProfileId, setOwnerStaffProfileId] = useState('');
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [isRecurring, setIsRecurring] = useState(false);
@@ -83,6 +86,7 @@ export function AppointmentDialog({
     setFreeCaseId('');
     setStartAt(toDateTimeLocal(defaultStart));
     setEndAt(toDateTimeLocal(defaultEnd));
+    setOwnerStaffProfileId('');
     setSelectedResourceIds([]);
     setSaveAsDraft(false);
     setIsRecurring(false);
@@ -94,6 +98,7 @@ export function AppointmentDialog({
   }, [open, defaultStartAt]);
 
   const resources = resourcesQuery.data ?? [];
+  const staffOptions = staffQuery.data ?? [];
 
   function toggleResource(resourceId: string) {
     setSelectedResourceIds((current) => (current.includes(resourceId) ? current.filter((id) => id !== resourceId) : [...current, resourceId]));
@@ -112,6 +117,7 @@ export function AppointmentDialog({
         endAt: new Date(endAt).toISOString(),
         timezone,
         resourceIds: selectedResourceIds,
+        ownerStaffProfileId: ownerStaffProfileId || undefined,
         saveAsDraft,
         recurrence: isRecurring ? { frequency, interval, count } : undefined,
         override,
@@ -186,6 +192,20 @@ export function AppointmentDialog({
               Notes
             </label>
             <TextArea id="appointment-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="appointment-owner">
+              Owner (optional)
+            </label>
+            <SelectField id="appointment-owner" value={ownerStaffProfileId} onChange={(e) => setOwnerStaffProfileId(e.target.value)}>
+              <option value="">No owner</option>
+              {staffOptions.map((staff) => (
+                <option key={staff.id} value={staff.id}>
+                  {staff.displayName}
+                </option>
+              ))}
+            </SelectField>
           </div>
 
           <div className={styles.field}>

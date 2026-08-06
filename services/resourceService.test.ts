@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { list, get, create, update, setStatus, listUnavailability, createUnavailability, getAvailability, ResourceServiceError } from './resourceService';
+import { StaffAssignmentError } from './staffProfileService';
 import { resourceFixtures, resourceUnavailabilityFixtures, appointmentResourceAssignmentFixtures } from './__mocks__/schedulingFixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import type { AppointmentResourceAssignment } from '../types/appointmentResourceAssignment';
@@ -42,6 +43,38 @@ describe('create/get/list', () => {
   it('creates an external resource never subject to conflict checks', async () => {
     const resource = await create(DEFAULT_ORGANIZATION_ID, { resourceType: 'cemetery', name: 'Green Hills Cemetery', isExternal: true, idFactory }, 'mock');
     expect(resource.isExternal).toBe(true);
+  });
+
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): linkedStaffProfileId', () => {
+    it('accepts a real, active, in-organization linkedStaffProfileId, coexisting with linkedMembershipId', async () => {
+      const resource = await create(
+        DEFAULT_ORGANIZATION_ID,
+        { resourceType: 'staff', name: 'Dana', linkedMembershipId: 'membership-manors-admin', linkedStaffProfileId: 'staff-dana', idFactory },
+        'mock',
+      );
+      expect(resource.linkedStaffProfileId).toBe('staff-dana');
+      expect(resource.linkedMembershipId).toBe('membership-manors-admin');
+    });
+
+    it('rejects a nonexistent linkedStaffProfileId — existence + org match, not full assignment-eligibility (no permission check)', async () => {
+      await expect(
+        create(DEFAULT_ORGANIZATION_ID, { resourceType: 'staff', name: 'Ghost', linkedStaffProfileId: 'staff-does-not-exist', idFactory }, 'mock'),
+      ).rejects.toThrow(StaffAssignmentError);
+    });
+
+    it('rejects a linkedStaffProfileId from a different organization', async () => {
+      await expect(
+        create(SECOND_MOCK_ORGANIZATION_ID, { resourceType: 'staff', name: 'Cross-org', linkedStaffProfileId: 'staff-dana', idFactory }, 'mock'),
+      ).rejects.toThrow(StaffAssignmentError);
+    });
+
+    it('update() validates a newly-linked linkedStaffProfileId the same way create() does', async () => {
+      const resource = await create(DEFAULT_ORGANIZATION_ID, { resourceType: 'staff', name: 'Priya', idFactory }, 'mock');
+      const updated = await update(DEFAULT_ORGANIZATION_ID, resource.id, { linkedStaffProfileId: 'staff-priya' }, 'mock');
+      expect(updated.linkedStaffProfileId).toBe('staff-priya');
+
+      await expect(update(DEFAULT_ORGANIZATION_ID, resource.id, { linkedStaffProfileId: 'staff-does-not-exist' }, 'mock')).rejects.toThrow(StaffAssignmentError);
+    });
   });
 
   it('lists only resources scoped to the requesting organization', async () => {

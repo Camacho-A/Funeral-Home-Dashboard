@@ -14,3 +14,18 @@ export function sanitizeRedirectPath(path: string | null | undefined): string {
   }
   return path;
 }
+
+/** Phase 29 (Family Portal & External Collaboration). The identical
+    same-origin-only validation as `sanitizeRedirectPath` above, with a
+    `/family/dashboard` fallback instead of the staff app's `/dashboard` —
+    used by `/family/login`'s own post-login redirect (see
+    `middleware.ts`'s `/family/*` branch, which sets the same `next` query
+    param convention). */
+export function sanitizeFamilyRedirectPath(path: string | null | undefined): string {
+  const fallback = '/family/dashboard';
+  if (!path) return fallback;
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('://')) {
+    return fallback;
+  }
+  return path;
+}

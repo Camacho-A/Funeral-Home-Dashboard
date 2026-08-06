@@ -16,6 +16,7 @@ const APPOINTMENT: Appointment = {
   timezone: 'America/New_York',
   recurrenceDefinitionId: null,
   isRecurrenceException: false,
+  ownerStaffProfileId: null,
   createdBy: 'identity-1',
   lastModifiedBy: null,
   cancelledAt: null,

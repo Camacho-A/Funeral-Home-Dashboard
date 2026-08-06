@@ -74,6 +74,15 @@ export const PERMISSION_KEYS = [
   'resource.manage',
   'calendar.manage',
 
+  /** Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+      A distinct `task` resource — gates reassigning a `CaseTask.assigneeStaffId`
+      (via `assertAssignableStaffProfile`), mirroring `schedule.edit`'s own
+      tier exactly (every role except `accounting`/`readOnly`). Case-level
+      and appointment-owner assignment reuse the existing `case.update`/
+      `schedule.edit` keys respectively — this key exists only because task
+      assignment has no other permission of its own to piggyback on. */
+  'task.assign',
+
   /** Phase 28 (Communications & Notifications). `notification.read` gates
       the organization-wide notification log (mirrors `audit.read`'s own
       tier) — never your own personal inbox, which needs no permission at
@@ -90,6 +99,19 @@ export const PERMISSION_KEYS = [
   'notification.send',
   'notification.manage',
   'notification.admin',
+
+  /** Phase 29 (Family Portal & External Collaboration). Both are staff-side
+      only — they govern whether a staff member can invite/manage family
+      Portal Users and revoke their access (`portal.manage`, mirrors
+      `document.template.manage`/`signature.manage`'s administrative tier)
+      or send/read case-scoped messages to family Portal Users
+      (`portal.message`, mirrors `notification.send`'s everyday tier).
+      Neither key is ever checked by any family-side route — the Family
+      Portal has its own, fully separate `PortalCapabilityKey` policy
+      (`domain/portal/portalCapabilityPolicy.ts`); these two exist purely
+      to gate the staff-facing `CaseFamilyPortalTab`. */
+  'portal.manage',
+  'portal.message',
 
   'report.view',
 
@@ -163,10 +185,15 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'resource.manage': 'Create, edit, and change the lifecycle status of schedulable resources; authorize a conflict override',
   'calendar.manage': 'Manage organization-wide calendar settings',
 
+  'task.assign': 'Assign or reassign a task to a staff member',
+
   'notification.read': 'View the organization-wide notification log',
   'notification.send': 'Create or broadcast a notification',
   'notification.manage': 'Cancel a pending notification; manage notification-related settings',
   'notification.admin': 'Manage organization-wide notification policy settings',
+
+  'portal.manage': "Invite, manage, and revoke a case's Family Portal access",
+  'portal.message': 'Send and read Family Portal messages for a case',
 
   'report.view': 'View reports',
 

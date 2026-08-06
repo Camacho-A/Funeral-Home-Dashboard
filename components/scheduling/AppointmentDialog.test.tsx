@@ -39,6 +39,7 @@ function makeAppointment(overrides: Partial<Appointment> = {}): Appointment {
     timezone: 'America/Chicago',
     recurrenceDefinitionId: null,
     isRecurrenceException: false,
+    ownerStaffProfileId: null,
     createdBy: 'identity-1',
     lastModifiedBy: null,
     cancelledAt: null,
@@ -136,6 +137,25 @@ describe('AppointmentDialog', () => {
     expect(await screen.findByRole('dialog', { name: 'Scheduling Conflict' })).toBeInTheDocument();
     expect(screen.getByText('Main Chapel', { exact: false })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('Phase 30 (Identity Model Hardening & Staff Assignment Unification): offers an optional owner picker, defaulting to "No owner"', async () => {
+    renderDialog();
+    expect(await screen.findByLabelText('Owner (optional)')).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'No owner' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Dana' })).toBeInTheDocument();
+  });
+
+  it('passes the selected ownerStaffProfileId through to createAppointment', async () => {
+    vi.mocked(appointmentsClient.createAppointment).mockResolvedValue(makeAppointment());
+    renderDialog({ caseId: 'case-1' });
+
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Family Meeting' } });
+    await screen.findByRole('option', { name: 'Dana' });
+    fireEvent.change(screen.getByLabelText('Owner (optional)'), { target: { value: 'staff-dana' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(appointmentsClient.createAppointment).toHaveBeenCalledWith(expect.objectContaining({ ownerStaffProfileId: 'staff-dana' })));
   });
 
   it('resets its fields each time it is reopened', () => {

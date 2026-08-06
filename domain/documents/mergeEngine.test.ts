@@ -134,6 +134,7 @@ function makeServiceAppointment(overrides: Partial<Appointment> = {}): Appointme
     timezone: 'America/Chicago',
     recurrenceDefinitionId: null,
     isRecurrenceException: false,
+    ownerStaffProfileId: null,
     createdBy: 'user-1',
     lastModifiedBy: null,
     cancelledAt: null,

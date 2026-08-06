@@ -33,6 +33,7 @@ import { appointmentFixtures, appointmentResourceAssignmentFixtures, resourceFix
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { caseDocumentFixtures, documentTemplateFixtures, signatureRequestFixtures, signatureRecordFixtures } from './__mocks__/documentFixtures';
 import { caseFixtures } from './__mocks__/fixtures';
+import { notificationFixtures, notificationRecipientFixtures } from './__mocks__/notificationFixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import type { ActivityContext } from './activityService';
 
@@ -64,6 +65,8 @@ beforeEach(() => {
   documentTemplateFixtures.length = 0;
   signatureRequestFixtures.length = 0;
   signatureRecordFixtures.length = 0;
+  notificationFixtures.length = 0;
+  notificationRecipientFixtures.length = 0;
 });
 
 afterEach(() => {
@@ -76,6 +79,8 @@ afterEach(() => {
   documentTemplateFixtures.length = 0;
   signatureRequestFixtures.length = 0;
   signatureRecordFixtures.length = 0;
+  notificationFixtures.length = 0;
+  notificationRecipientFixtures.length = 0;
 });
 
 async function makeChapel() {
@@ -179,6 +184,67 @@ describe('createAppointment', () => {
     expect(all).toHaveLength(4);
     expect(all.every((a) => a.isRecurrenceException === false)).toBe(true);
   });
+
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): ownerStaffProfileId', () => {
+    it('accepts a real, active, in-organization ownerStaffProfileId, and notifies the owner', async () => {
+      const appointment = await createAppointment(
+        { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', ownerStaffProfileId: 'staff-dana', idFactory },
+        ctx(),
+        'mock',
+      );
+      expect(appointment.ownerStaffProfileId).toBe('staff-dana');
+      expect(notificationFixtures.some((n) => n.notificationType === 'scheduling.appointment_created')).toBe(true);
+      expect(notificationRecipientFixtures.some((r) => r.identityId === 'identity-manors-admin')).toBe(true);
+    });
+
+    it('rejects a nonexistent ownerStaffProfileId', async () => {
+      await expect(
+        createAppointment(
+          { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', ownerStaffProfileId: 'staff-does-not-exist', idFactory },
+          ctx(),
+          'mock',
+        ),
+      ).rejects.toThrow(SchedulingServiceError);
+    });
+
+    it('rejects a deactivated ownerStaffProfileId', async () => {
+      const { staffFixtures } = await import('./__mocks__/fixtures');
+      const index = staffFixtures.findIndex((s) => s.id === 'staff-priya');
+      const original = staffFixtures[index];
+      staffFixtures[index] = { ...original, isActive: false };
+      try {
+        await expect(
+          createAppointment(
+            { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', ownerStaffProfileId: 'staff-priya', idFactory },
+            ctx(),
+            'mock',
+          ),
+        ).rejects.toThrow(SchedulingServiceError);
+      } finally {
+        staffFixtures[index] = original;
+      }
+    });
+
+    it("rejects when the caller lacks schedule.edit — never a StaffProfile.role check", async () => {
+      await expect(
+        createAppointment(
+          { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', ownerStaffProfileId: 'staff-dana', idFactory },
+          ctx({ actorRoleKey: 'accounting' }),
+          'mock',
+        ),
+      ).rejects.toThrow(SchedulingServiceError);
+    });
+
+    it('leaves ownerStaffProfileId null when not provided — an accepted, named gap (no owner is valid)', async () => {
+      const appointment = await createAppointment(
+        { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', idFactory },
+        ctx(),
+        'mock',
+      );
+      expect(appointment.ownerStaffProfileId).toBeNull();
+      expect(notificationFixtures).toHaveLength(0);
+    });
+  });
 });
 
 describe('rescheduleAppointment', () => {
@@ -231,6 +297,18 @@ describe('rescheduleAppointment', () => {
     await expect(rescheduleAppointment(DEFAULT_ORGANIZATION_ID, appointment.id, { startAt: '2026-09-02T14:00:00.000Z', endAt: '2026-09-02T15:00:00.000Z' }, ctx(), 'mock')).rejects.toThrow(
       SchedulingServiceError,
     );
+  });
+
+  it("Phase 30: notifies the appointment's owner (if set) on reschedule", async () => {
+    const appointment = await createAppointment(
+      { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', ownerStaffProfileId: 'staff-dana', idFactory },
+      ctx(),
+      'mock',
+    );
+    notificationFixtures.length = 0;
+    notificationRecipientFixtures.length = 0;
+    await rescheduleAppointment(DEFAULT_ORGANIZATION_ID, appointment.id, { startAt: '2026-09-02T14:00:00.000Z', endAt: '2026-09-02T15:00:00.000Z' }, ctx(), 'mock');
+    expect(notificationFixtures.some((n) => n.notificationType === 'scheduling.appointment_rescheduled')).toBe(true);
   });
 });
 
@@ -306,6 +384,18 @@ describe('confirmAppointment / startAppointment / completeAppointment / cancelAp
     await cancelAppointment(DEFAULT_ORGANIZATION_ID, appointment.id, 'No longer needed', ctx(), 'mock');
     await expect(confirmAppointment(DEFAULT_ORGANIZATION_ID, appointment.id, ctx(), 'mock')).rejects.toThrow(SchedulingServiceError);
     await expect(cancelAppointment(DEFAULT_ORGANIZATION_ID, appointment.id, null, ctx(), 'mock')).rejects.toThrow(SchedulingServiceError);
+  });
+
+  it("Phase 30: notifies the appointment's owner (if set) on cancellation", async () => {
+    const appointment = await createAppointment(
+      { appointmentType: 'viewing', title: 'Viewing', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', ownerStaffProfileId: 'staff-dana', idFactory },
+      ctx(),
+      'mock',
+    );
+    notificationFixtures.length = 0;
+    notificationRecipientFixtures.length = 0;
+    await cancelAppointment(DEFAULT_ORGANIZATION_ID, appointment.id, 'No longer needed', ctx(), 'mock');
+    expect(notificationFixtures.some((n) => n.notificationType === 'scheduling.appointment_cancelled')).toBe(true);
   });
 });
 

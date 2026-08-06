@@ -56,6 +56,11 @@ export type NewAppointmentParams = {
   saveAsDraft?: boolean;
   recurrence?: { frequency: 'daily' | 'weekly' | 'monthly'; interval: number; byWeekday?: number[]; count?: number; until?: string };
   override?: { reason: string };
+  /** Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+      -> StaffProfile.id. "Who is primarily responsible for this
+      appointment" — distinct from resourceIds (a staff member can be a
+      checked Resource without being the owner, and vice versa). */
+  ownerStaffProfileId?: string;
 };
 
 export async function fetchAppointments(

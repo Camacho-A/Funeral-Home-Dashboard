@@ -3,6 +3,7 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canReadSchedule, canManageResources } from '@/services/authorizationPolicyService';
 import { list, create } from '@/services/resourceService';
+import { StaffAssignmentError } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
 import crypto from 'crypto';
 import type { ResourceType } from '@/types/resource';
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
     name?: unknown;
     locationId?: unknown;
     linkedMembershipId?: unknown;
+    linkedStaffProfileId?: unknown;
     capacity?: unknown;
     isExternal?: unknown;
     notes?: unknown;
@@ -69,6 +71,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'A valid resourceType is required.' }, { status: 400 });
   }
   if (typeof b.name !== 'string' || !b.name.trim()) return NextResponse.json({ error: 'name is required.' }, { status: 400 });
+  if (b.linkedStaffProfileId !== undefined && typeof b.linkedStaffProfileId !== 'string') {
+    return NextResponse.json({ error: 'linkedStaffProfileId must be a string if provided.' }, { status: 400 });
+  }
 
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
@@ -79,19 +84,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not authorized to create resources for this organization.' }, { status: 403 });
   }
 
-  const resource = await create(
-    organizationId,
-    {
-      resourceType: b.resourceType as ResourceType,
-      name: b.name,
-      locationId: typeof b.locationId === 'string' ? b.locationId : undefined,
-      linkedMembershipId: typeof b.linkedMembershipId === 'string' ? b.linkedMembershipId : undefined,
-      capacity: typeof b.capacity === 'number' ? b.capacity : undefined,
-      isExternal: b.isExternal === true,
-      notes: typeof b.notes === 'string' ? b.notes : undefined,
-      idFactory: () => crypto.randomUUID(),
-    },
-    dataAdapterMode,
-  );
-  return NextResponse.json({ resource }, { status: 201 });
+  try {
+    const resource = await create(
+      organizationId,
+      {
+        resourceType: b.resourceType as ResourceType,
+        name: b.name,
+        locationId: typeof b.locationId === 'string' ? b.locationId : undefined,
+        linkedMembershipId: typeof b.linkedMembershipId === 'string' ? b.linkedMembershipId : undefined,
+        linkedStaffProfileId: typeof b.linkedStaffProfileId === 'string' ? b.linkedStaffProfileId : undefined,
+        capacity: typeof b.capacity === 'number' ? b.capacity : undefined,
+        isExternal: b.isExternal === true,
+        notes: typeof b.notes === 'string' ? b.notes : undefined,
+        idFactory: () => crypto.randomUUID(),
+      },
+      dataAdapterMode,
+    );
+    return NextResponse.json({ resource }, { status: 201 });
+  } catch (error) {
+    if (error instanceof StaffAssignmentError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+    throw error;
+  }
 }

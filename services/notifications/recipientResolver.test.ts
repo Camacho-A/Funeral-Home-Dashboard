@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveRecipientIdentityIds, RecipientResolverError } from './recipientResolver';
 import { membershipFixtures } from '../__mocks__/identityFixtures';
+import { caseFixtures, staffFixtures } from '../__mocks__/fixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '../__mocks__/organizationIds';
 import type { Membership } from '../../types/membership';
+import type { Case } from '../../types/case';
 
 function makeMembership(overrides: Partial<Membership> = {}): Membership {
   return {
@@ -19,7 +21,45 @@ function makeMembership(overrides: Partial<Membership> = {}): Membership {
   };
 }
 
+function makeCase(overrides: Partial<Case> = {}): Case {
+  return {
+    id: 'case-recipient-resolver-test',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    caseNumber: 'B2026-999',
+    decedentName: 'Test Decedent',
+    dateOfBirth: '01/01/1950',
+    dateOfDeath: '01/01/2026',
+    timeOfDeath: '',
+    placeOfDeath: '',
+    weight: '',
+    rawStage: 0,
+    assignedStaffId: null,
+    nextOfKinName: 'Test NOK',
+    nextOfKinPhone: '555-0000',
+    paymentStatus: 'awaiting_payment',
+    isVeteran: false,
+    vaStepsState: {},
+    vaPublishChoice: null,
+    checklistState: {},
+    fieldValues: {},
+    daysWaitingInStage: 0,
+    isStalled: false,
+    stalledReason: null,
+    createdBy: null,
+    intakeOwnerId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    isDeleted: false,
+    workflowTemplateId: 'wf-1',
+    workflowTemplateVersion: 1,
+    caseType: 'cremation',
+    workflowSnapshot: null,
+    ...overrides,
+  };
+}
+
 const originalFixtures = [...membershipFixtures];
+const originalCaseFixtures = [...caseFixtures];
+const originalStaffFixtures = [...staffFixtures];
 
 beforeEach(() => {
   membershipFixtures.length = 0;
@@ -28,6 +68,10 @@ beforeEach(() => {
 afterEach(() => {
   membershipFixtures.length = 0;
   membershipFixtures.push(...originalFixtures);
+  caseFixtures.length = 0;
+  caseFixtures.push(...originalCaseFixtures);
+  staffFixtures.length = 0;
+  staffFixtures.push(...originalStaffFixtures);
 });
 
 describe('resolveRecipientIdentityIds', () => {
@@ -75,9 +119,61 @@ describe('resolveRecipientIdentityIds', () => {
     expect(ids).toEqual(['org-a-member']);
   });
 
-  it('case_participants is reserved but throws — no StaffProfile-to-Identity mapping exists yet', async () => {
-    await expect(resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-1' }, 'mock')).rejects.toThrow(
-      RecipientResolverError,
-    );
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): case_participants', () => {
+    it('throws when caseId is missing', async () => {
+      await expect(resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants' }, 'mock')).rejects.toThrow(RecipientResolverError);
+    });
+
+    it('resolves both assignedStaffId and intakeOwnerId to their real identityIds, deduplicated', async () => {
+      caseFixtures.push(makeCase({ assignedStaffId: 'staff-dana', intakeOwnerId: 'staff-chris' }));
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-recipient-resolver-test' }, 'mock');
+      expect(ids.sort()).toEqual(['identity-manors-admin', 'identity-manors-chris'].sort());
+    });
+
+    it('deduplicates when assignedStaffId and intakeOwnerId are the same staff member', async () => {
+      caseFixtures.push(makeCase({ assignedStaffId: 'staff-dana', intakeOwnerId: 'staff-dana' }));
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-recipient-resolver-test' }, 'mock');
+      expect(ids).toEqual(['identity-manors-admin']);
+    });
+
+    it('silently drops a deactivated StaffProfile — never throws (read-side policy)', async () => {
+      const index = staffFixtures.findIndex((s) => s.id === 'staff-priya');
+      staffFixtures[index] = { ...staffFixtures[index], isActive: false };
+      caseFixtures.push(makeCase({ assignedStaffId: 'staff-priya', intakeOwnerId: 'staff-dana' }));
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-recipient-resolver-test' }, 'mock');
+      expect(ids).toEqual(['identity-manors-admin']);
+    });
+
+    it('silently drops a nonexistent StaffProfile.id — never throws (read-side policy)', async () => {
+      caseFixtures.push(makeCase({ assignedStaffId: 'staff-does-not-exist', intakeOwnerId: null }));
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-recipient-resolver-test' }, 'mock');
+      expect(ids).toEqual([]);
+    });
+
+    it('returns an empty, non-error result when neither field is set', async () => {
+      caseFixtures.push(makeCase({ assignedStaffId: null, intakeOwnerId: null }));
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-recipient-resolver-test' }, 'mock');
+      expect(ids).toEqual([]);
+    });
+
+    it('returns an empty, non-error result when the case does not exist', async () => {
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-does-not-exist' }, 'mock');
+      expect(ids).toEqual([]);
+    });
+
+    it('never crosses tenant boundaries — a case from another organization resolves to nothing', async () => {
+      caseFixtures.push(makeCase({ organizationId: SECOND_MOCK_ORGANIZATION_ID, assignedStaffId: 'staff-dana' }));
+      const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: 'case-recipient-resolver-test' }, 'mock');
+      expect(ids).toEqual([]);
+    });
+  });
+
+  it('Phase 29: portal_user scope resolves to exactly the one given portal user id, with no membership lookup at all', async () => {
+    const ids = await resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'portal_user', recipientPortalUserId: 'portal-user-42' }, 'mock');
+    expect(ids).toEqual(['portal-user-42']);
+  });
+
+  it('Phase 29: portal_user scope throws when recipientPortalUserId is missing', async () => {
+    await expect(resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'portal_user' }, 'mock')).rejects.toThrow(RecipientResolverError);
   });
 });

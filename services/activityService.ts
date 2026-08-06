@@ -1329,3 +1329,185 @@ export function recordNotificationCancelled(ctx: ActivityContext, caseId: string
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 29 (Family Portal & External Collaboration). `recordPortalInvited`/
+// `recordPortalAccessRevoked` are staff-initiated — called with the
+// caller's own real `ActivityContext`, exactly like every helper above.
+// `recordPortalAccepted`/`recordPortalLogin` are the Portal User's own
+// actions — called with `services/portal/portalActivityContext.ts`'s
+// anonymous-actor context (`actorIdentityId: null, isSystemGenerated:
+// true`), mirroring `signatureService.ts`'s `signerActivityContext()`
+// precedent exactly. Real, queryable attribution (which PortalUser, which
+// relationshipType) is carried in `metadata` for those two, never in
+// `actorIdentityId` — see `types/portalUser.ts`'s own header comment on
+// why a PortalUser can never be identity-space.
+// ---------------------------------------------------------------------------
+
+export function recordPortalInvited(
+  ctx: ActivityContext,
+  caseId: string,
+  invitationId: string,
+  email: string,
+  relationshipType: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_INVITED,
+      resourceType: 'portalInvitation',
+      resourceId: invitationId,
+      previousValue: null,
+      newValue: JSON.stringify({ email, relationshipType }),
+      description: `Family Portal invitation sent to ${email} (${relationshipType})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordPortalAccepted(
+  ctx: ActivityContext,
+  caseId: string,
+  invitationId: string,
+  portalUserId: string,
+  relationshipType: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_ACCEPTED,
+      resourceType: 'portalInvitation',
+      resourceId: invitationId,
+      previousValue: null,
+      newValue: null,
+      description: 'Family Portal invitation accepted',
+      metadata: JSON.stringify({ portalUserId, relationshipType }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordPortalAccessRevoked(
+  ctx: ActivityContext,
+  caseId: string,
+  portalAccessId: string,
+  relationshipType: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_ACCESS_REVOKED,
+      resourceType: 'portalAccess',
+      resourceId: portalAccessId,
+      previousValue: null,
+      newValue: null,
+      description: `Family Portal access revoked (${relationshipType})`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordPortalDocumentViewed(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  portalUserId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_DOCUMENT_VIEWED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Document viewed via Family Portal',
+      metadata: JSON.stringify({ portalUserId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Recorded alongside `services/signatureService.ts`'s own (anonymously-
+    attributed) `document.signature.completed` event whenever a family
+    member — not an external one-shot signer — completes a signature via
+    the Family Portal. Carries the real `portalUserId` in `metadata`,
+    mirroring every other `recordPortal*` helper's own convention. */
+export function recordPortalSignatureCompleted(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  signatureRequestId: string,
+  portalUserId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_SIGNATURE_COMPLETED,
+      resourceType: 'signatureRequest',
+      resourceId: signatureRequestId,
+      previousValue: null,
+      newValue: null,
+      description: 'Signature completed via Family Portal',
+      metadata: JSON.stringify({ portalUserId, documentId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Recorded only for a family-sent message — `services/portal/portalMessagingService.ts`'s
+    `sendFamilyMessage`. A staff-sent message has no equivalent
+    `recordPortal*` call (it's a real, non-anonymous staff action, no
+    different from any other staff activity event). */
+export function recordPortalMessageSent(ctx: ActivityContext, caseId: string, messageId: string, portalUserId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_MESSAGE_SENT,
+      resourceType: 'portalMessage',
+      resourceId: messageId,
+      previousValue: null,
+      newValue: null,
+      description: 'Message sent via Family Portal',
+      metadata: JSON.stringify({ portalUserId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordPortalLogin(ctx: ActivityContext, portalUserId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'family_portal',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_LOGIN,
+      resourceType: 'portalUser',
+      resourceId: portalUserId,
+      previousValue: null,
+      newValue: null,
+      description: 'Family Portal login',
+      metadata: JSON.stringify({ portalUserId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}

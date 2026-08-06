@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDataAdapterMode } from '@/lib/env';
+import { getDataAdapterMode, getAppBaseUrl } from '@/lib/env';
 import { queryWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
 import { mapWixTaskItem, buildWixTaskData, type WixTaskItem } from '@/lib/wixTaskMapper';
 import type { WixCaseItem } from '@/lib/wixCaseMapper';
@@ -7,6 +7,8 @@ import { taskFixtures } from '@/services/__mocks__/fixtures';
 import type { CaseTask } from '@/types/task';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
+import { createNotification } from '@/services/notificationService';
 
 /**
  * Phase 15D (Wix Task Read Integration). Lists tasks for one organization,
@@ -106,6 +108,7 @@ export async function POST(request: Request) {
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
+  const context = authResult.context;
 
   if (getDataAdapterMode() !== 'wix') {
     return NextResponse.json({ task: null, error: 'This endpoint requires DATA_ADAPTER=wix.' }, { status: 400 });
@@ -122,6 +125,22 @@ export async function POST(request: Request) {
   }
   const caseId = typeof b.caseId === 'string' ? b.caseId : null;
   const assigneeStaffId = typeof b.assigneeStaffId === 'string' ? b.assigneeStaffId : null;
+
+  // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
+  // real, active, in-organization StaffProfile, gated by task.assign —
+  // never a phantom/inactive/cross-org id, never a StaffProfile.role check.
+  let assigneeProfile: Awaited<ReturnType<typeof assertAssignableStaffProfile>> | null = null;
+  if (assigneeStaffId !== null) {
+    try {
+      assigneeProfile = await assertAssignableStaffProfile(
+        { organizationId, staffProfileId: assigneeStaffId, permission: 'task.assign', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
+        'wix',
+      );
+    } catch (error) {
+      const message = error instanceof StaffAssignmentError ? error.message : 'Failed to validate assigneeStaffId.';
+      return NextResponse.json({ task: null, error: message }, { status: 422 });
+    }
+  }
 
   try {
     if (caseId !== null) {
@@ -151,6 +170,31 @@ export async function POST(request: Request) {
     const created = mapWixTaskItem(inserted.data);
     if (!created) {
       return NextResponse.json({ task: null, error: 'Failed to create task.' }, { status: 500 });
+    }
+
+    // Phase 30: completes one of the three notification integrations
+    // Phase 28 deferred — best-effort, never fails the actual task
+    // creation, matching every other notification call site's convention.
+    if (assigneeProfile) {
+      try {
+        await createNotification(
+          {
+            notificationType: 'task.assigned',
+            entityType: 'task',
+            entityId: created.id,
+            recipientScope: 'individual',
+            recipientIdentityId: assigneeProfile.identityId,
+            caseId: created.caseId ?? undefined,
+            actionUrl: `${getAppBaseUrl()}/tasks`,
+            tokens: { entityTitle: created.text },
+            idFactory: () => crypto.randomUUID(),
+          },
+          { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId: crypto.randomUUID() },
+          'wix',
+        );
+      } catch (error) {
+        console.error('Failed to send task.assigned notification:', error instanceof Error ? error.message : error);
+      }
     }
 
     return NextResponse.json({ task: created }, { status: 201 });

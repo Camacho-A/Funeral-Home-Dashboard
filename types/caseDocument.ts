@@ -88,6 +88,17 @@ export type CaseDocument = {
 
   signatureStatus: CaseDocumentSignatureStatus | null;
 
+  /** Phase 29 (Family Portal & External Collaboration). Fails closed
+      unconditionally — `false` on every new row, regardless of document
+      type, generation path, or signature completion. No code path other
+      than a staff-gated `PATCH .../documents/[documentId]/family-visibility`
+      route (`services/documentService.ts`'s `setFamilyVisible`) may ever
+      flip it to `true`. `services/portal/portalDocumentService.ts` reads
+      this field directly (never re-derives it) and additionally requires
+      `status === 'active'` before a family member can see or download the
+      document. */
+  familyVisible: boolean;
+
   generatedBy: string | null;
   uploadedBy: string | null;
   createdAt: string;

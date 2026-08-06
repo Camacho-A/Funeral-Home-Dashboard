@@ -7,6 +7,7 @@ import {
   applyCaseDocumentGenerationResultToWixData,
   applyCaseDocumentStatusToWixData,
   applyCaseDocumentSignatureStatusToWixData,
+  applyCaseDocumentFamilyVisibleToWixData,
   type WixCaseDocumentItem,
 } from '../lib/wixCaseDocumentMapper';
 import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
@@ -272,6 +273,35 @@ export async function markDocumentSigned(organizationId: string, caseId: string,
   await updateWixDataItem('caseDocuments', existingItem.id, merged);
 }
 
+/** Phase 29 (Family Portal & External Collaboration). The **only** path by
+    which `CaseDocument.familyVisible` ever changes — called exclusively
+    from the staff-gated `PATCH .../documents/[documentId]/family-visibility`
+    route (`portal.manage` permission). No generation path, upload path,
+    or signature completion ever sets this field itself; it fails closed
+    to `false` unconditionally otherwise (refinement #9). Throws on a
+    missing document — mirrors `markDocumentSigned`'s "the caller just
+    performed a real state change and must know for certain it took
+    effect" posture, not `updateDocumentStatus`'s lenient no-op. */
+export async function setFamilyVisible(organizationId: string, caseId: string, documentId: string, familyVisible: boolean, dataAdapterMode: DataAdapterMode): Promise<CaseDocument> {
+  if (dataAdapterMode === 'mock') {
+    const index = caseDocumentFixtures.findIndex((d) => d.id === documentId && d.organizationId === organizationId && d.caseId === caseId);
+    if (index === -1) throw new DocumentServiceError('Document not found.');
+    caseDocumentFixtures[index] = { ...caseDocumentFixtures[index], familyVisible };
+    return caseDocumentFixtures[index];
+  }
+  const response = await queryWixDataItems<WixCaseDocumentItem>('caseDocuments', {
+    filter: { organizationId, caseId, beaconCaseDocumentId: documentId },
+    paging: { limit: 1 },
+  });
+  const existingItem = response.dataItems[0];
+  if (!existingItem) throw new DocumentServiceError('Document not found.');
+  const merged = applyCaseDocumentFamilyVisibleToWixData(existingItem.data, familyVisible);
+  const updated = await updateWixDataItem<WixCaseDocumentItem>('caseDocuments', existingItem.id, merged);
+  const mapped = mapWixCaseDocumentItem(updated.data);
+  if (!mapped) throw new DocumentServiceError('Failed to update document.');
+  return mapped;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -357,6 +387,7 @@ export async function generate(
     version: docVersion,
     supersedesId: params.existingDocumentId ?? null,
     signatureStatus: null,
+    familyVisible: false,
     generatedBy: ctx.actorIdentityId,
     uploadedBy: null,
     createdAt: nowIsoValue,
@@ -428,6 +459,7 @@ export async function upload(
     version: null,
     supersedesId: null,
     signatureStatus: null,
+    familyVisible: false,
     generatedBy: null,
     uploadedBy: ctx.actorIdentityId,
     createdAt: nowIsoValue,

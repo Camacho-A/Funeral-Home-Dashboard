@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDataAdapterMode } from '@/lib/env';
+import { getDataAdapterMode, getAppBaseUrl } from '@/lib/env';
 import { queryWixDataItems, updateWixDataItem, deleteWixDataItem } from '@/lib/wixDataApi';
 import {
   mapWixTaskItem,
@@ -10,6 +10,8 @@ import {
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { recordTaskCompleted } from '@/services/activityService';
+import { assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
+import { createNotification } from '@/services/notificationService';
 
 /**
  * Phase 16 (Wix Write Integration). Updates or deletes one task by its
@@ -74,6 +76,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
     return NextResponse.json({ task: null, error: `Invalid field(s): ${errors.join(', ')}` }, { status: 400 });
   }
 
+  // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
+  // reassignment (a non-null string, not an unassign-to-null patch) is
+  // validated — a real, active, in-organization StaffProfile, gated by
+  // task.assign — before it ever reaches Wix.
+  let assigneeProfile: Awaited<ReturnType<typeof assertAssignableStaffProfile>> | null = null;
+  if (typeof patch.assigneeStaffId === 'string') {
+    try {
+      assigneeProfile = await assertAssignableStaffProfile(
+        { organizationId, staffProfileId: patch.assigneeStaffId, permission: 'task.assign', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
+        'wix',
+      );
+    } catch (error) {
+      const message = error instanceof StaffAssignmentError ? error.message : 'Failed to validate assigneeStaffId.';
+      return NextResponse.json({ task: null, error: message }, { status: 422 });
+    }
+  }
+
   try {
     const existingItem = await findAuthorizedTask(taskId, organizationId);
     if (!existingItem) {
@@ -102,6 +121,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
         );
       } catch (error) {
         console.error('Failed to record case.task.completed activity event:', error instanceof Error ? error.message : error);
+      }
+    }
+
+    // Phase 30: completes one of the three notification integrations
+    // Phase 28 deferred — only fires for a genuine assignee change (a
+    // reassignment to someone new, or an initial assignment), never a
+    // no-op patch naming the same staff member already assigned;
+    // best-effort, never fails the actual update.
+    if (assigneeProfile && (!existing || existing.assigneeStaffId !== assigneeProfile.id)) {
+      try {
+        await createNotification(
+          {
+            notificationType: 'task.assigned',
+            entityType: 'task',
+            entityId: taskId,
+            recipientScope: 'individual',
+            recipientIdentityId: assigneeProfile.identityId,
+            caseId: result.caseId ?? undefined,
+            actionUrl: `${getAppBaseUrl()}/tasks`,
+            tokens: { entityTitle: result.text },
+            idFactory: () => crypto.randomUUID(),
+          },
+          { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+          'wix',
+        );
+      } catch (error) {
+        console.error('Failed to send task.assigned notification:', error instanceof Error ? error.message : error);
       }
     }
 

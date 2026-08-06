@@ -87,4 +87,14 @@ describe('permissionCatalog', () => {
     ]);
     expect(permissionCategory('notification.read')).toBe('notification');
   });
+
+  it('Phase 29: includes exactly two portal permissions, in their own resource category, never checked by any family-side route', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('portal.'))).toEqual(['portal.manage', 'portal.message']);
+    expect(permissionCategory('portal.manage')).toBe('portal');
+  });
+
+  it('Phase 30: includes exactly one task permission, in its own resource category', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('task.'))).toEqual(['task.assign']);
+    expect(permissionCategory('task.assign')).toBe('task');
+  });
 });

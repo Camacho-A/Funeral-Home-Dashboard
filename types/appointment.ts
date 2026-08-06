@@ -56,6 +56,16 @@ export type Appointment = {
       its series — the RecurrenceDefinition and every sibling occurrence
       remain untouched regardless. */
   isRecurrenceException: boolean;
+  /** Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+      -> StaffProfile.id. "Who is primarily responsible for this
+      appointment" — an operational-assignment field, deliberately
+      distinct from generic resource-checking (a staff member can be a
+      checked `Resource` on this appointment without being its owner, and
+      vice versa; see ADR-034). Additive, nullable — every pre-Phase-30
+      row simply has no owner. Never `Identity.id` directly — see this
+      codebase's hard layering invariant (types/staffProfile.ts's own
+      header comment). */
+  ownerStaffProfileId: string | null;
   createdBy: string;
   /** The first "generic last-editor" field in this codebase — justified
       specifically because an Appointment, unlike CaseDocument/
@@ -89,6 +99,10 @@ export type NewAppointmentInput = {
       by services/schedulingService.ts, never embedded on the Appointment
       row itself. */
   resourceIds?: string[];
+  /** -> StaffProfile.id. Optional — validated via
+      `services/staffProfileService.ts#assertAssignableStaffProfile`
+      (`schedule.edit` permission) before being accepted. */
+  ownerStaffProfileId?: string;
   saveAsDraft?: boolean;
   recurrence?: { frequency: 'daily' | 'weekly' | 'monthly'; interval: number; byWeekday?: number[]; count?: number; until?: string };
   override?: { reason: string };

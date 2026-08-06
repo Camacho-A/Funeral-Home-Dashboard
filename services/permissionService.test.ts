@@ -41,7 +41,7 @@ describe('permissionService', () => {
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       expect(permissions.has('organization.manage')).toBe(true);
       expect(permissions.has('case.delete')).toBe(true);
-      expect(permissions.size).toBe(42); // Phase 28: 38 + notification.read + notification.send + notification.manage + notification.admin
+      expect(permissions.size).toBe(45); // Phase 30: 44 + task.assign
     });
 
     it('resolves readOnly to only read/view permissions', async () => {

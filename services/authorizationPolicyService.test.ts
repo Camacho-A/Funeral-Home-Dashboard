@@ -30,6 +30,8 @@ import {
   canSendNotification,
   canManageNotifications,
   canAdminNotifications,
+  canManagePortal,
+  canSendPortalMessage,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -202,6 +204,20 @@ describe('authorizationPolicyService', () => {
     expect(await canAdminNotifications(params('administrator'), 'mock')).toBe(true);
     expect(await canAdminNotifications(params('manager'), 'mock')).toBe(true);
     expect(await canAdminNotifications(params('funeralDirector'), 'mock')).toBe(false);
+  });
+
+  it('Phase 29: portal.manage is administrator/manager only; portal.message reaches every role except accounting/readOnly', async () => {
+    expect(await canManagePortal(params('administrator'), 'mock')).toBe(true);
+    expect(await canManagePortal(params('manager'), 'mock')).toBe(true);
+    expect(await canManagePortal(params('funeralDirector'), 'mock')).toBe(false);
+    expect(await canManagePortal(params('accounting'), 'mock')).toBe(false);
+    expect(await canSendPortalMessage(params('administrator'), 'mock')).toBe(true);
+    expect(await canSendPortalMessage(params('manager'), 'mock')).toBe(true);
+    expect(await canSendPortalMessage(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canSendPortalMessage(params('arranger'), 'mock')).toBe(true);
+    expect(await canSendPortalMessage(params('officeStaff'), 'mock')).toBe(true);
+    expect(await canSendPortalMessage(params('accounting'), 'mock')).toBe(false);
+    expect(await canSendPortalMessage(params('readOnly'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {

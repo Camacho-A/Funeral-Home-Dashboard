@@ -23,10 +23,11 @@ import { ActivityLogCard } from '@/components/case/ActivityLogCard';
 import { CaseActivityTab } from '@/components/case/CaseActivityTab';
 import { CaseDocumentsTab } from '@/components/case/CaseDocumentsTab';
 import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
+import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import { DocumentsCard, type DocumentRowItem } from '@/components/case/DocumentsCard';
 import styles from './page.module.css';
 
-type CaseDetailTab = 'overview' | 'activity' | 'documents' | 'schedule';
+type CaseDetailTab = 'overview' | 'activity' | 'documents' | 'schedule' | 'portal';
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -171,11 +172,21 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         >
           Schedule
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'portal'}
+          className={activeTab === 'portal' ? styles.tabActive : styles.tabInactive}
+          onClick={() => setActiveTab('portal')}
+        >
+          Family Portal
+        </button>
       </div>
 
       {activeTab === 'activity' && <CaseActivityTab caseId={caseId} />}
       {activeTab === 'documents' && <CaseDocumentsTab caseId={caseId} />}
       {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
+      {activeTab === 'portal' && <CaseFamilyPortalTab caseId={caseId} />}
 
       {activeTab === 'overview' && (
       <div className={styles.columns}>

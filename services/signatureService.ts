@@ -524,10 +524,20 @@ export async function markSignatureViewed(request: SignatureRequest, dataAdapter
   return patchSignatureRequest(request.organizationId, request.id, { status: 'viewed', viewedAt: nowIso() }, dataAdapterMode);
 }
 
+/** Phase 29 (Family Portal & External Collaboration). `ctx` is optional
+    and defaults to `signerActivityContext(...)` — the exact expression
+    this parameter replaces — so the existing `/sign` flow (every current
+    call site) is entirely unaffected. `services/portal/portalDocumentService.ts`-
+    adjacent family-side signature completion (a future call site) passes
+    `portalActivityContext(...)` instead, so a family member's completion
+    is attributed the same anonymous-actor way but carries `PortalUser`
+    metadata via its own `recordPortalSignatureCompleted` call, never by
+    changing this function's own signature-completion logic. */
 export async function completeSignatureRequest(
   request: SignatureRequest,
   params: { signedName: string; initials?: string; ipAddress: string; userAgent: string; idFactory: () => string; now?: string },
   dataAdapterMode: DataAdapterMode,
+  ctx: ActivityContext = signerActivityContext(request.organizationId, request.correlationId),
 ): Promise<{ request: SignatureRequest; record: SignatureRecord }> {
   if (request.status !== 'pending' && request.status !== 'viewed') {
     throw new SignatureServiceError('This signature request can no longer be completed.');
@@ -539,7 +549,6 @@ export async function completeSignatureRequest(
     throw new SignatureServiceError('Document not found.');
   }
 
-  const ctx = signerActivityContext(request.organizationId, request.correlationId);
   const { buffer } = await downloadCaseDocumentFile(request.organizationId, request.caseId, request.documentId, ctx, dataAdapterMode);
   const actualChecksum = crypto.createHash('sha256').update(buffer).digest('hex');
   if (actualChecksum !== targetDocument.checksumSha256) {
@@ -590,10 +599,14 @@ export async function completeSignatureRequest(
   return { request: updatedRequest, record };
 }
 
+/** Phase 29: `ctx` is optional and defaults to `signerActivityContext(...)`
+    — see `completeSignatureRequest`'s own comment on why this is a purely
+    additive, backward-compatible change. */
 export async function declineSignatureRequest(
   request: SignatureRequest,
   params: { reason?: string; ipAddress: string; userAgent: string },
   dataAdapterMode: DataAdapterMode,
+  ctx: ActivityContext = signerActivityContext(request.organizationId, request.correlationId),
 ): Promise<SignatureRequest> {
   if (request.status !== 'pending' && request.status !== 'viewed') {
     throw new SignatureServiceError('This signature request can no longer be declined.');
@@ -602,7 +615,6 @@ export async function declineSignatureRequest(
   const now = nowIso();
   const updated = await patchSignatureRequest(request.organizationId, request.id, { status: 'declined', declinedAt: now, declineReason: params.reason ?? null }, dataAdapterMode);
 
-  const ctx = signerActivityContext(request.organizationId, request.correlationId);
   try {
     await recordSignatureDeclined(ctx, request.caseId, request.documentId, request.id, request.signerName, params.reason ?? null, dataAdapterMode);
   } catch (error) {

@@ -26,6 +26,7 @@ export type WixAppointmentItem = {
   timezone?: unknown;
   recurrenceDefinitionId?: unknown;
   isRecurrenceException?: unknown;
+  ownerStaffProfileId?: unknown;
   createdBy?: unknown;
   lastModifiedBy?: unknown;
   cancelledAt?: unknown;
@@ -90,6 +91,7 @@ export function mapWixAppointmentItem(item: WixAppointmentItem | undefined): App
     timezone: item.timezone,
     recurrenceDefinitionId: item.recurrenceDefinitionId,
     isRecurrenceException: item.isRecurrenceException,
+    ownerStaffProfileId: typeof item.ownerStaffProfileId === 'string' ? item.ownerStaffProfileId : null,
     createdBy: item.createdBy,
     lastModifiedBy: item.lastModifiedBy,
     cancelledAt: item.cancelledAt,
@@ -117,6 +119,7 @@ export function buildWixAppointmentData(appointment: Appointment): WixAppointmen
     timezone: appointment.timezone,
     recurrenceDefinitionId: appointment.recurrenceDefinitionId,
     isRecurrenceException: appointment.isRecurrenceException,
+    ownerStaffProfileId: appointment.ownerStaffProfileId,
     createdBy: appointment.createdBy,
     lastModifiedBy: appointment.lastModifiedBy,
     cancelledAt: appointment.cancelledAt,

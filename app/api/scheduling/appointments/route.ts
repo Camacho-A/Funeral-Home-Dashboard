@@ -69,6 +69,7 @@ export async function POST(request: Request) {
     saveAsDraft?: unknown;
     recurrence?: unknown;
     override?: unknown;
+    ownerStaffProfileId?: unknown;
   };
 
   if (typeof b.organizationId !== 'string') return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
@@ -79,6 +80,9 @@ export async function POST(request: Request) {
   if (typeof b.startAt !== 'string' || typeof b.endAt !== 'string') return NextResponse.json({ error: 'startAt and endAt are required.' }, { status: 400 });
   if (typeof b.timezone !== 'string' || !b.timezone.trim()) return NextResponse.json({ error: 'timezone is required.' }, { status: 400 });
   if (b.resourceIds !== undefined && !Array.isArray(b.resourceIds)) return NextResponse.json({ error: 'resourceIds must be an array if provided.' }, { status: 400 });
+  if (b.ownerStaffProfileId !== undefined && typeof b.ownerStaffProfileId !== 'string') {
+    return NextResponse.json({ error: 'ownerStaffProfileId must be a string if provided.' }, { status: 400 });
+  }
 
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
         saveAsDraft: b.saveAsDraft === true,
         recurrence: b.recurrence as never,
         override,
+        ownerStaffProfileId: typeof b.ownerStaffProfileId === 'string' ? b.ownerStaffProfileId : undefined,
         idFactory: () => crypto.randomUUID(),
       },
       { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },

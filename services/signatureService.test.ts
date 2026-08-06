@@ -460,6 +460,27 @@ describe('completeSignatureRequest', () => {
       generate({ caseId: TEST_CASE_ID, templateId: template.id, existingDocumentId: doc.id, idFactory }, ctx(), 'mock'),
     ).rejects.toThrow(/permanently locked/i);
   });
+
+  it('Phase 29: omitting ctx defaults to the exact anonymous-signer attribution the /sign flow has always used', async () => {
+    const doc = await createSampleDocument();
+    const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
+    await completeSignatureRequest(request, { signedName: 'Jane Doe', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory }, 'mock');
+
+    const completedEvent = activityEventFixtures.find((e) => e.eventType === 'document.signature.completed');
+    expect(completedEvent?.actorIdentityId).toBeNull();
+    expect(completedEvent?.isSystemGenerated).toBe(true);
+  });
+
+  it('Phase 29: an explicit ctx (e.g. portalActivityContext for a family-side completion) overrides the default attribution', async () => {
+    const doc = await createSampleDocument();
+    const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
+    const portalCtx = { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'portal-corr-1', isSystemGenerated: true };
+
+    await completeSignatureRequest(request, { signedName: 'Jane Doe', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory }, 'mock', portalCtx);
+
+    const completedEvent = activityEventFixtures.find((e) => e.eventType === 'document.signature.completed');
+    expect(completedEvent?.correlationId).toBe('portal-corr-1');
+  });
 });
 
 describe('declineSignatureRequest', () => {

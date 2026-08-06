@@ -17,27 +17,55 @@ import { formatCaseNumber } from '../../domain/cases/caseNumber';
  */
 export { DEFAULT_ORGANIZATION_ID };
 
+const STAFF_FIXTURES_NOW = '2026-07-24T00:00:00.000Z';
+
+/**
+ * Phase 30 (Identity Model Hardening & Staff Assignment Unification).
+ * `identityId`/`membershipId` values below are literal string duplicates
+ * of `services/__mocks__/identityFixtures.ts`'s own
+ * `MANORS_ADMIN_IDENTITY_ID`/`MANORS_CHRIS_IDENTITY_ID`/
+ * `MANORS_PRIYA_IDENTITY_ID` (and their `_MEMBERSHIP_ID` counterparts),
+ * not an import of those constants — `identityFixtures.ts` imports
+ * `mockDefaultUser` from `authFixtures.ts`, which itself imports
+ * `staffFixtures` from this file, so importing identityFixtures.ts's
+ * constants here would be circular. Kept in sync by convention (both
+ * files' own comments cross-reference each other); a future refactor
+ * that eliminates the `authFixtures.ts` → `fixtures.ts` edge could
+ * collapse this duplication.
+ */
 export const staffFixtures: StaffProfile[] = [
   {
     id: 'staff-dana',
     organizationId: DEFAULT_ORGANIZATION_ID,
+    identityId: 'identity-manors-admin',
+    membershipId: 'membership-manors-admin',
     displayName: 'Dana',
     role: 'funeral_director',
     isActive: true,
+    createdAt: STAFF_FIXTURES_NOW,
+    updatedAt: STAFF_FIXTURES_NOW,
   },
   {
     id: 'staff-chris',
     organizationId: DEFAULT_ORGANIZATION_ID,
+    identityId: 'identity-manors-chris',
+    membershipId: 'membership-manors-chris',
     displayName: 'Chris',
     role: 'funeral_director',
     isActive: true,
+    createdAt: STAFF_FIXTURES_NOW,
+    updatedAt: STAFF_FIXTURES_NOW,
   },
   {
     id: 'staff-priya',
     organizationId: DEFAULT_ORGANIZATION_ID,
+    identityId: 'identity-manors-priya',
+    membershipId: 'membership-manors-priya',
     displayName: 'Priya',
     role: 'staff',
     isActive: true,
+    createdAt: STAFF_FIXTURES_NOW,
+    updatedAt: STAFF_FIXTURES_NOW,
   },
 ];
 

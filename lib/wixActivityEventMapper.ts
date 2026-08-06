@@ -12,6 +12,7 @@ const VALID_CATEGORIES: ActivityEventCategory[] = [
   'notifications',
   'administration',
   'system',
+  'family_portal',
 ];
 
 const VALID_SEVERITIES: ActivitySeverity[] = ['info', 'warning', 'critical'];

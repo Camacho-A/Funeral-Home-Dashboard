@@ -3,6 +3,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems, updateWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, validateAndPickCaseUpdate, applyCaseUpdateToWixData, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
+import { assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
@@ -141,6 +142,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   const { patch, errors } = validateAndPickCaseUpdate(b.patch);
   if (errors.length > 0) {
     return NextResponse.json({ case: null, error: `Invalid field(s): ${errors.join(', ')}` }, { status: 400 });
+  }
+
+  // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
+  // reassignment (a non-null string, not an unassign-to-null patch) is
+  // validated before it ever reaches Wix — never a phantom/inactive/
+  // cross-org StaffProfile.id.
+  if (typeof patch.assignedStaffId === 'string') {
+    try {
+      await assertAssignableStaffProfile(
+        { organizationId, staffProfileId: patch.assignedStaffId, permission: 'case.update', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
+        'wix',
+      );
+    } catch (error) {
+      const message = error instanceof StaffAssignmentError ? error.message : 'Failed to validate assignedStaffId.';
+      return NextResponse.json({ case: null, error: message }, { status: 422 });
+    }
   }
 
   try {

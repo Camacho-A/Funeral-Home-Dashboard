@@ -12,6 +12,7 @@ import {
   claimWebhookEvent,
   markWebhookEventCompleted,
   markWebhookEventFailed,
+  initiateCheckout,
 } from './paymentsService';
 import {
   paymentRecordFixtures,
@@ -168,6 +169,53 @@ describe('createIdempotentPendingPaymentRecord — conflict handling (the server
     const found = await findPaymentRecordByIdempotencyKey(DEFAULT_ORGANIZATION_ID, 'lookup-key', 'mock');
     expect(found?.id).toBe('p1');
     expect(await findPaymentRecordByIdempotencyKey('some-other-org', 'lookup-key', 'mock')).toBeNull();
+  });
+});
+
+describe('Phase 29: initiateCheckout — mock mode', () => {
+  function checkoutParams(overrides: Partial<Parameters<typeof initiateCheckout>[0]> = {}) {
+    return {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: 'case-1',
+      caseOrderId: 'case-order-1',
+      provider: 'clover',
+      amount: 1000,
+      currency: 'usd',
+      purpose: 'Case order balance due',
+      idempotencyKey: 'checkout-key-1',
+      paymentId: 'checkout-p1',
+      returnUrl: 'http://localhost:3000/cases/case-1/payments/return?paymentId=checkout-p1&outcome=success',
+      cancelUrl: 'http://localhost:3000/cases/case-1/payments/return?paymentId=checkout-p1&outcome=cancel',
+      ...overrides,
+    };
+  }
+
+  it('creates a new pending record and returns a synthesized mock checkoutUrl', async () => {
+    const result = await initiateCheckout(checkoutParams(), 'mock');
+    expect(result.isNew).toBe(true);
+    expect(result.paymentId).toBe('checkout-p1');
+    expect(result.checkoutUrl).toContain('mock=1');
+
+    const record = await getPaymentRecordById(DEFAULT_ORGANIZATION_ID, 'checkout-p1', 'mock');
+    expect(record?.status).toBe('pending');
+    expect(record?.amount).toBe(1000);
+    expect(record?.providerCheckoutId).toBe('mock-checkout-checkout-p1');
+  });
+
+  it('a repeated idempotencyKey reuses the existing record and checkoutUrl rather than creating a second one', async () => {
+    const first = await initiateCheckout(checkoutParams(), 'mock');
+    const second = await initiateCheckout(checkoutParams({ paymentId: 'checkout-p2-unused' }), 'mock');
+
+    expect(second.isNew).toBe(false);
+    expect(second.paymentId).toBe(first.paymentId);
+    expect(second.checkoutUrl).toBe(first.checkoutUrl);
+
+    const records = await listPaymentRecordsForCase(DEFAULT_ORGANIZATION_ID, 'case-1', 'mock');
+    expect(records).toHaveLength(1);
+  });
+
+  it('throws when the requested provider is not enabled for this organization', async () => {
+    await expect(initiateCheckout(checkoutParams({ provider: 'stripe' }), 'mock')).rejects.toThrow(/not enabled/i);
   });
 });
 

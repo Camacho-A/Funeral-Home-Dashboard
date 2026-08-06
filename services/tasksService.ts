@@ -1,11 +1,30 @@
 import type { OrganizationContext } from '../types/organization';
 import type { CaseTask, NewTaskInput, TaskUpdate } from '../types/task';
 import type { DataAdapterMode } from '../lib/env';
+import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { taskFixtures } from './__mocks__/fixtures';
 
 export type TaskFilters = {
   caseId?: string;
 };
+
+/**
+ * Phase 30 (Identity Model Hardening & Staff Assignment Unification):
+ * create()/update()'s mock branches now validate a non-null
+ * `assigneeStaffId` exists, is active, and belongs to this organization
+ * (via `staffProfileService.assertStaffProfileIsActiveAndInOrganization`)
+ * before accepting it — closing this file's own previously-named gap
+ * (`assigneeStaffId` had zero existence/active/tenant validation of any
+ * kind). No RBAC permission check happens here, mirroring
+ * `services/casesService.ts`'s identical mock-branch scope boundary: this
+ * file's mock branch executes directly in the browser (via
+ * `hooks/useTasks.ts`/`useTaskMutations.ts`), with no real
+ * `AuthorizationContext` to check a permission against — the
+ * `task.assign`-gated, notification-emitting version of this validation
+ * (`staffProfileService.assertAssignableStaffProfile`) lives in
+ * `app/api/tasks/route.ts`/`app/api/tasks/[taskId]/route.ts`, the wix-mode
+ * path this file's `dataAdapterMode === 'wix'` branches below call.
+ */
 
 /**
  * Phase 15D (Wix Task Read Integration): list() gained a `dataAdapterMode`
@@ -73,6 +92,10 @@ export async function create(
     return body.task;
   }
 
+  if (input.assigneeStaffId) {
+    await assertStaffProfileIsActiveAndInOrganization(context.organizationId, input.assigneeStaffId, 'mock');
+  }
+
   const newTask: CaseTask = {
     id: `task-${taskFixtures.length + 1}`,
     organizationId: context.organizationId,
@@ -103,6 +126,10 @@ export async function update(
     }
     const body = (await response.json()) as { task: CaseTask };
     return body.task;
+  }
+
+  if (patch.assigneeStaffId) {
+    await assertStaffProfileIsActiveAndInOrganization(context.organizationId, patch.assigneeStaffId, 'mock');
   }
 
   const index = taskFixtures.findIndex(

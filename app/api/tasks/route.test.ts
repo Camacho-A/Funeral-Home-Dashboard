@@ -49,7 +49,60 @@ function postRequest(body: unknown, headers: Record<string, string> = {}) {
   });
 }
 
-const VALID_CREATE_BODY = { organizationId: DEFAULT_ORGANIZATION_ID, text: 'New task', assigneeStaffId: 'staff-dana' };
+const VALID_CREATE_BODY = { organizationId: DEFAULT_ORGANIZATION_ID, text: 'New task' };
+
+// Phase 30 (Identity Model Hardening & Staff Assignment Unification): the
+// POST route now validates a non-null assigneeStaffId via
+// assertAssignableStaffProfile (task.assign, mockDefaultUser's real
+// 'administrator' role) — needs 'staffProfiles'/'roles'/'rolePermissions'
+// mocked, not just 'cases'/'tasks'.
+const STAFF_DANA_PROFILE_ITEM = {
+  id: 'staff-dana',
+  dataCollectionId: 'staffProfiles',
+  data: {
+    beaconStaffProfileId: 'staff-dana',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    identityId: 'identity-manors-dana',
+    membershipId: null,
+    displayName: 'Dana',
+    role: 'funeral_director',
+    isActive: true,
+    createdAt: '2026-07-24T00:00:00.000Z',
+    updatedAt: '2026-07-24T00:00:00.000Z',
+  },
+};
+const ADMINISTRATOR_ROLE_ITEM = {
+  id: 'role-administrator',
+  dataCollectionId: 'roles',
+  data: {
+    beaconRoleId: 'role-administrator',
+    key: 'administrator',
+    name: 'Administrator',
+    description: 'Full access.',
+    organizationId: null,
+    isSystemDefault: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
+};
+const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.update', 'task.assign'].map((permissionKey) => ({
+  id: `role-permission-administrator-${permissionKey}`,
+  dataCollectionId: 'rolePermissions',
+  data: { beaconRolePermissionId: `role-permission-administrator-${permissionKey}`, roleId: 'role-administrator', permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+}));
+
+/** Mocks 'staffProfiles'/'roles'/'rolePermissions' so assigneeStaffId
+    'staff-dana' validates, while `casesFallback` controls what any
+    'cases' query returns (each caller's own tenant-consistency scenario). */
+function mockAssignableStaffDana(casesFallback: { dataItems: unknown[] } = { dataItems: [] }) {
+  mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+    if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: [STAFF_DANA_PROFILE_ITEM] });
+    if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+    if (collectionId === 'cases') return Promise.resolve(casesFallback);
+    return Promise.resolve({ dataItems: [] });
+  });
+}
 
 beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -331,10 +384,11 @@ describe('POST /api/tasks', () => {
 
   describe('creation', () => {
     it('creates the task and returns the mapped result', async () => {
+      mockAssignableStaffDana();
       mockInsertWixDataItem.mockImplementation((_c: string, data: Record<string, unknown>, itemId: string) =>
         Promise.resolve({ id: itemId, dataCollectionId: 'tasks', data: { ...data, beaconTaskId: itemId } }),
       );
-      const response = await POST(postRequest(VALID_CREATE_BODY));
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, assigneeStaffId: 'staff-dana' }));
       const body = await response.json();
 
       expect(response.status).toBe(201);
@@ -365,6 +419,48 @@ describe('POST /api/tasks', () => {
 
       expect(response.status).toBe(503);
       expect(body.error).not.toMatch(/test-key/);
+    });
+  });
+
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): assigneeStaffId', () => {
+    beforeEach(() => {
+      mockInsertWixDataItem.mockImplementation((_c: string, data: Record<string, unknown>, itemId: string) =>
+        Promise.resolve({ id: itemId, dataCollectionId: 'tasks', data: { ...data, beaconTaskId: itemId } }),
+      );
+    });
+
+    it('rejects a nonexistent assigneeStaffId, with 422, before any write', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string) => Promise.resolve({ dataItems: collectionId === 'staffProfiles' ? [] : [] }));
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, assigneeStaffId: 'staff-does-not-exist' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(422);
+      expect(body.error).toMatch(/staff-does-not-exist/);
+      expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('rejects a deactivated assigneeStaffId, with 422', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string) =>
+        Promise.resolve({ dataItems: collectionId === 'staffProfiles' ? [{ ...STAFF_DANA_PROFILE_ITEM, data: { ...STAFF_DANA_PROFILE_ITEM.data, isActive: false } }] : [] }),
+      );
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, assigneeStaffId: 'staff-dana' }));
+
+      expect(response.status).toBe(422);
+      expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('sends a task.assigned notification to the assignee after a successful creation', async () => {
+      mockAssignableStaffDana();
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, assigneeStaffId: 'staff-dana' }));
+      expect(response.status).toBe(201);
+      // notificationService.createNotification itself persists via
+      // insertWixDataItem('notifications', ...) — confirm the notification
+      // row was written, not just that creation succeeded.
+      expect(mockInsertWixDataItem).toHaveBeenCalledWith(
+        'notifications',
+        expect.objectContaining({ notificationType: 'task.assigned' }),
+        expect.any(String),
+      );
     });
   });
 });

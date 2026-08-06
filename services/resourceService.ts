@@ -6,6 +6,7 @@ import { mapWixAppointmentResourceAssignmentItem, type WixAppointmentResourceAss
 import type { Resource, ResourceType, ResourceStatus, NewResourceInput } from '../types/resource';
 import type { ResourceUnavailability, NewResourceUnavailabilityInput } from '../types/resourceUnavailability';
 import type { AppointmentResourceAssignment } from '../types/appointmentResourceAssignment';
+import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { resourceFixtures, resourceUnavailabilityFixtures, appointmentResourceAssignmentFixtures } from './__mocks__/schedulingFixtures';
 
 /**
@@ -35,7 +36,7 @@ async function persistResource(resource: Resource, dataAdapterMode: DataAdapterM
 async function patchResource(
   organizationId: string,
   resourceId: string,
-  patch: Partial<Pick<Resource, 'name' | 'locationId' | 'capacity' | 'notes' | 'status'>>,
+  patch: Partial<Pick<Resource, 'name' | 'locationId' | 'capacity' | 'notes' | 'status' | 'linkedStaffProfileId'>>,
   dataAdapterMode: DataAdapterMode,
 ): Promise<Resource> {
   if (dataAdapterMode === 'mock') {
@@ -89,6 +90,16 @@ export async function create(
   params: NewResourceInput & { idFactory: () => string; now?: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<Resource> {
+  // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
+  // real, active, in-organization StaffProfile — existence + org match
+  // only, never a full RBAC-gated assertAssignableStaffProfile check (a
+  // Resource isn't a person being "assigned work" the way a Case/Task/
+  // Appointment assignment is; resource.manage, already checked by the
+  // caller route, is the only authorization this bridge needs).
+  if (params.linkedStaffProfileId) {
+    await assertStaffProfileIsActiveAndInOrganization(organizationId, params.linkedStaffProfileId, dataAdapterMode);
+  }
+
   const now = params.now ?? nowIso();
   const resource: Resource = {
     id: params.idFactory(),
@@ -97,6 +108,7 @@ export async function create(
     resourceType: params.resourceType,
     name: params.name,
     linkedMembershipId: params.linkedMembershipId ?? null,
+    linkedStaffProfileId: params.linkedStaffProfileId ?? null,
     capacity: params.capacity ?? null,
     isExternal: params.isExternal ?? false,
     status: 'active',
@@ -112,9 +124,12 @@ export async function create(
 export async function update(
   organizationId: string,
   resourceId: string,
-  patch: { name?: string; locationId?: string | null; capacity?: number | null; notes?: string | null },
+  patch: { name?: string; locationId?: string | null; capacity?: number | null; notes?: string | null; linkedStaffProfileId?: string | null },
   dataAdapterMode: DataAdapterMode,
 ): Promise<Resource> {
+  if (patch.linkedStaffProfileId) {
+    await assertStaffProfileIsActiveAndInOrganization(organizationId, patch.linkedStaffProfileId, dataAdapterMode);
+  }
   return patchResource(organizationId, resourceId, patch, dataAdapterMode);
 }
 

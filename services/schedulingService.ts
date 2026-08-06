@@ -27,6 +27,9 @@ import {
   type ActivityContext,
 } from './activityService';
 import { createSignatureRequest } from './signatureService';
+import { assertAssignableStaffProfile, getById as getStaffProfileById, StaffAssignmentError } from './staffProfileService';
+import { createNotification } from './notificationService';
+import { getAppBaseUrl } from '../lib/env';
 import { appointmentFixtures, appointmentResourceAssignmentFixtures } from './__mocks__/schedulingFixtures';
 
 /**
@@ -185,6 +188,49 @@ async function recordOverrides(ctx: ActivityContext, caseId: string | null, appo
   }
 }
 
+/**
+ * Phase 30 (Identity Model Hardening & Staff Assignment Unification):
+ * completes one of the three notification integrations Phase 28 deferred
+ * — additive, best-effort, never fails the actual appointment mutation,
+ * mirroring every other `record*` call's try/catch convention above.
+ * Notifies whoever is `Appointment.ownerStaffProfileId` (if set) that
+ * "their" appointment was created/rescheduled/cancelled. A dangling or
+ * unresolvable `ownerStaffProfileId` is silently skipped — never thrown —
+ * per this phase's read-side policy for pre-existing dangling references
+ * (the same rule `recipientResolver.ts`'s `case_participants` scope
+ * follows): no owner is a valid, non-error outcome, not every appointment
+ * has one.
+ */
+async function notifyAppointmentOwner(
+  notificationType: 'scheduling.appointment_created' | 'scheduling.appointment_rescheduled' | 'scheduling.appointment_cancelled',
+  appointment: Appointment,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<void> {
+  if (!appointment.ownerStaffProfileId) return;
+  try {
+    const owner = await getStaffProfileById(ctx.organizationId, appointment.ownerStaffProfileId, dataAdapterMode);
+    if (!owner) return;
+    await createNotification(
+      {
+        notificationType,
+        entityType: 'appointment',
+        entityId: appointment.id,
+        recipientScope: 'individual',
+        recipientIdentityId: owner.identityId,
+        caseId: appointment.caseId ?? undefined,
+        actionUrl: `${getAppBaseUrl()}/dashboard`,
+        tokens: { entityTitle: appointment.title },
+        idFactory: () => crypto.randomUUID(),
+      },
+      ctx,
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error(`Failed to send ${notificationType} notification:`, error instanceof Error ? error.message : error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Reads — re-exported from services/scheduling/appointmentReads.ts (see that
 // file's own header comment for why the reads live in a separate module:
@@ -218,6 +264,25 @@ export async function createAppointment(params: NewAppointmentInput & { idFactor
     }
   }
 
+  // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
+  // real, active, in-organization StaffProfile, gated by schedule.edit —
+  // never a phantom/inactive/cross-org id, never a StaffProfile.role check.
+  if (params.ownerStaffProfileId) {
+    try {
+      await assertAssignableStaffProfile(
+        {
+          organizationId: ctx.organizationId,
+          staffProfileId: params.ownerStaffProfileId,
+          permission: 'schedule.edit',
+          actor: { identityId: ctx.actorIdentityId ?? '', organizationId: ctx.organizationId, roleKey: ctx.actorRoleKey ?? '' },
+        },
+        dataAdapterMode,
+      );
+    } catch (error) {
+      throw error instanceof StaffAssignmentError ? new SchedulingServiceError(error.message) : error;
+    }
+  }
+
   const appointmentId = params.idFactory();
   const appointment: Appointment = {
     id: appointmentId,
@@ -233,6 +298,7 @@ export async function createAppointment(params: NewAppointmentInput & { idFactor
     timezone: params.timezone,
     recurrenceDefinitionId: null,
     isRecurrenceException: false,
+    ownerStaffProfileId: params.ownerStaffProfileId ?? null,
     createdBy: ctx.actorIdentityId ?? 'unknown',
     lastModifiedBy: null,
     cancelledAt: null,
@@ -255,6 +321,7 @@ export async function createAppointment(params: NewAppointmentInput & { idFactor
   } catch (error) {
     console.error('Failed to record scheduling.appointment.created activity event:', error instanceof Error ? error.message : error);
   }
+  await notifyAppointmentOwner('scheduling.appointment_created', appointment, ctx, dataAdapterMode);
 
   if (!willBeDraft) {
     for (const resourceId of resourceIds) {
@@ -377,6 +444,7 @@ export async function rescheduleAppointment(
   } catch (error) {
     console.error('Failed to record scheduling.appointment.rescheduled activity event:', error instanceof Error ? error.message : error);
   }
+  await notifyAppointmentOwner('scheduling.appointment_rescheduled', updated, ctx, dataAdapterMode);
 
   return updated;
 }
@@ -483,6 +551,7 @@ export async function cancelAppointment(organizationId: string, appointmentId: s
   } catch (error) {
     console.error('Failed to record scheduling.appointment.cancelled activity event:', error instanceof Error ? error.message : error);
   }
+  await notifyAppointmentOwner('scheduling.appointment_cancelled', updated, ctx, dataAdapterMode);
   return updated;
 }
 

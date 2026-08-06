@@ -1,0 +1,36 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.heading {
+  font-size: var(--font-size-20);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.loading,
+.errorText {
+  color: var(--color-text-secondary);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-size-13);
+}

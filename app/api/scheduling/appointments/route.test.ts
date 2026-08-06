@@ -112,6 +112,50 @@ describe('POST /api/scheduling/appointments', () => {
     expect(body.conflicts).toBeDefined();
   });
 
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): ownerStaffProfileId', () => {
+    it('accepts a valid ownerStaffProfileId, in the DEFAULT_ORGANIZATION_ID staffFixtures set', async () => {
+      const response = await postRequest({
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        appointmentType: 'viewing',
+        title: 'Viewing',
+        startAt: '2026-09-01T14:00:00.000Z',
+        endAt: '2026-09-01T15:00:00.000Z',
+        timezone: 'America/New_York',
+        ownerStaffProfileId: 'staff-dana',
+      });
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.appointment.ownerStaffProfileId).toBe('staff-dana');
+    });
+
+    it('rejects a nonexistent ownerStaffProfileId with 422, before any write', async () => {
+      const response = await postRequest({
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        appointmentType: 'viewing',
+        title: 'Viewing',
+        startAt: '2026-09-01T14:00:00.000Z',
+        endAt: '2026-09-01T15:00:00.000Z',
+        timezone: 'America/New_York',
+        ownerStaffProfileId: 'staff-does-not-exist',
+      });
+      expect(response.status).toBe(422);
+      expect(appointmentFixtures).toHaveLength(0);
+    });
+
+    it('returns 400 when ownerStaffProfileId is present but not a string', async () => {
+      const response = await postRequest({
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        appointmentType: 'viewing',
+        title: 'Viewing',
+        startAt: '2026-09-01T14:00:00.000Z',
+        endAt: '2026-09-01T15:00:00.000Z',
+        timezone: 'America/New_York',
+        ownerStaffProfileId: 12345,
+      });
+      expect(response.status).toBe(400);
+    });
+  });
+
   it('requires resource.manage-tier authority to submit an override, even when the caller can create appointments', async () => {
     mockSession = { user: mockMultiOrgUser };
     const chapel = await createResource(DEFAULT_ORGANIZATION_ID, { resourceType: 'chapel', name: 'Main Chapel', idFactory }, 'mock');

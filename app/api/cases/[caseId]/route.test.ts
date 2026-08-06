@@ -499,4 +499,96 @@ describe('PATCH /api/cases/[caseId]', () => {
       expect(body.error).not.toMatch(/test-key/);
     });
   });
+
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): assignedStaffId reassignment', () => {
+    const ACTIVE_STAFF_PROFILE_ITEM = {
+      id: 'staff-chris',
+      dataCollectionId: 'staffProfiles',
+      data: {
+        beaconStaffProfileId: 'staff-chris',
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        identityId: 'identity-manors-chris',
+        membershipId: null,
+        displayName: 'Chris',
+        role: 'funeral_director',
+        isActive: true,
+        createdAt: '2026-07-24T00:00:00.000Z',
+        updatedAt: '2026-07-24T00:00:00.000Z',
+      },
+    };
+    const INACTIVE_STAFF_PROFILE_ITEM = {
+      ...ACTIVE_STAFF_PROFILE_ITEM,
+      id: 'staff-inactive',
+      data: { ...ACTIVE_STAFF_PROFILE_ITEM.data, beaconStaffProfileId: 'staff-inactive', isActive: false },
+    };
+
+    // mockDefaultUser's real role ('administrator') must resolve
+    // case.update under DATA_ADAPTER=wix — the 'roles'/'rolePermissions'
+    // collections need mocking too, not just 'staffProfiles'/'cases'.
+    const ADMINISTRATOR_ROLE_ITEM = {
+      id: 'role-administrator',
+      dataCollectionId: 'roles',
+      data: {
+        beaconRoleId: 'role-administrator',
+        key: 'administrator',
+        name: 'Administrator',
+        description: 'Full access.',
+        organizationId: null,
+        isSystemDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.update', 'task.assign'].map((permissionKey) => ({
+      id: `role-permission-administrator-${permissionKey}`,
+      dataCollectionId: 'rolePermissions',
+      data: { beaconRolePermissionId: `role-permission-administrator-${permissionKey}`, roleId: 'role-administrator', permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+    }));
+
+    function mockCaseAndStaffProfiles(staffProfileItem: typeof ACTIVE_STAFF_PROFILE_ITEM | null) {
+      mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+        if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: staffProfileItem ? [staffProfileItem] : [] });
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        return Promise.resolve({ dataItems: [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }] });
+      });
+    }
+
+    it('accepts reassignment to an active, in-organization staff profile', async () => {
+      mockCaseAndStaffProfiles(ACTIVE_STAFF_PROFILE_ITEM);
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assignedStaffId: 'staff-chris' } });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ caseHandlerId: 'staff-chris' }));
+      void body;
+    });
+
+    it('rejects reassignment to a nonexistent staff profile, with 422, before any write', async () => {
+      mockCaseAndStaffProfiles(null);
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assignedStaffId: 'staff-does-not-exist' } });
+      const body = await response.json();
+
+      expect(response.status).toBe(422);
+      expect(body.error).toMatch(/staff-does-not-exist/);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('rejects reassignment to a deactivated staff profile, with 422', async () => {
+      mockCaseAndStaffProfiles(INACTIVE_STAFF_PROFILE_ITEM);
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assignedStaffId: 'staff-inactive' } });
+
+      expect(response.status).toBe(422);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('allows unassigning (a null patch value) with no staff-profile lookup at all', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+        if (collectionId === 'staffProfiles') throw new Error('must not be queried for a null (unassign) patch');
+        return Promise.resolve({ dataItems: [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }] });
+      });
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assignedStaffId: null } });
+      expect(response.status).toBe(200);
+    });
+  });
 });

@@ -65,6 +65,25 @@ export async function archiveCaseDocument(params: { organizationId: string; case
   await parseJsonOrThrow(response);
 }
 
+/** Phase 29 (Family Portal & External Collaboration). The only client-side
+    caller of the one route that can ever flip `CaseDocument.familyVisible`
+    — see `app/api/cases/[caseId]/documents/[documentId]/family-visibility/route.ts`'s
+    own header comment. */
+export async function setCaseDocumentFamilyVisibility(params: {
+  organizationId: string;
+  caseId: string;
+  documentId: string;
+  familyVisible: boolean;
+}): Promise<CaseDocument> {
+  const response = await fetch(`/api/cases/${encodeURIComponent(params.caseId)}/documents/${encodeURIComponent(params.documentId)}/family-visibility`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId: params.organizationId, familyVisible: params.familyVisible }),
+  });
+  const body = await parseJsonOrThrow(response);
+  return body.document as CaseDocument;
+}
+
 /** Not a fetch wrapper — the download route streams a real file
     (`Content-Disposition: attachment`), so the simplest correct trigger is
     navigating the browser there directly, matching

@@ -26,6 +26,7 @@ export type WixCaseDocumentItem = {
   version?: unknown;
   supersedesId?: unknown;
   signatureStatus?: unknown;
+  familyVisible?: unknown;
   generatedBy?: unknown;
   uploadedBy?: unknown;
   createdAt?: unknown;
@@ -89,6 +90,7 @@ export function mapWixCaseDocumentItem(item: WixCaseDocumentItem | undefined): C
     !isNumberOrNull(item.version) ||
     !isStringOrNull(item.supersedesId) ||
     !isSignatureStatusOrNull(item.signatureStatus) ||
+    (item.familyVisible !== undefined && typeof item.familyVisible !== 'boolean') ||
     !isStringOrNull(item.generatedBy) ||
     !isStringOrNull(item.uploadedBy) ||
     typeof item.createdAt !== 'string' ||
@@ -115,6 +117,9 @@ export function mapWixCaseDocumentItem(item: WixCaseDocumentItem | undefined): C
     version: item.version,
     supersedesId: item.supersedesId,
     signatureStatus: item.signatureStatus,
+    // Phase 29: absent on any row written before this field existed —
+    // fails closed to `false`, never assumed `true` for a pre-existing row.
+    familyVisible: typeof item.familyVisible === 'boolean' ? item.familyVisible : false,
     generatedBy: item.generatedBy,
     uploadedBy: item.uploadedBy,
     createdAt: item.createdAt,
@@ -141,6 +146,7 @@ export function buildWixCaseDocumentData(document: CaseDocument): WixCaseDocumen
     version: document.version,
     supersedesId: document.supersedesId,
     signatureStatus: document.signatureStatus,
+    familyVisible: document.familyVisible,
     generatedBy: document.generatedBy,
     uploadedBy: document.uploadedBy,
     createdAt: document.createdAt,
@@ -179,4 +185,12 @@ export function applyCaseDocumentStatusToWixData(existing: WixCaseDocumentItem, 
     see that function's own header comment. */
 export function applyCaseDocumentSignatureStatusToWixData(existing: WixCaseDocumentItem, signatureStatus: CaseDocumentSignatureStatus): WixCaseDocumentItem {
   return { ...existing, signatureStatus };
+}
+
+/** Phase 29 (Family Portal & External Collaboration). The only field ever
+    changed by `services/documentService.ts`'s `setFamilyVisible` — the
+    sole path by which `familyVisible` can ever flip away from its
+    fail-closed `false` default. */
+export function applyCaseDocumentFamilyVisibleToWixData(existing: WixCaseDocumentItem, familyVisible: boolean): WixCaseDocumentItem {
+  return { ...existing, familyVisible };
 }

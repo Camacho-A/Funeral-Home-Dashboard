@@ -53,6 +53,13 @@ import {
   recordNotificationRead,
   recordNotificationFailed,
   recordNotificationCancelled,
+  recordPortalInvited,
+  recordPortalAccepted,
+  recordPortalAccessRevoked,
+  recordPortalDocumentViewed,
+  recordPortalSignatureCompleted,
+  recordPortalMessageSent,
+  recordPortalLogin,
   type ActivityContext,
 } from './activityService';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
@@ -385,6 +392,54 @@ describe('typed builder helpers — each produces the correct category/eventType
     const cancelled = await recordNotificationCancelled(ctx(), 'case-1', 'notif-1', 'mock');
     expect(cancelled.eventType).toBe('notification.cancelled');
     expect(cancelled.severity).toBe('warning');
+  });
+
+  it('Phase 29: portal builder helpers produce the correct category/eventType/resourceType, with real attribution kept only in metadata (never actorIdentityId)', async () => {
+    const invited = await recordPortalInvited(ctx(), 'case-1', 'invitation-1', 'family@example.com', 'primary_next_of_kin', 'mock');
+    expect(invited.eventType).toBe('portal.invited');
+    expect(invited.category).toBe('family_portal');
+    expect(invited.resourceType).toBe('portalInvitation');
+    expect(invited.actorIdentityId).toBe('identity-1'); // staff-initiated — real actor
+    expect(JSON.parse(invited.newValue!)).toEqual({ email: 'family@example.com', relationshipType: 'primary_next_of_kin' });
+
+    const anonymousCtx: ActivityContext = { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'corr-portal', isSystemGenerated: true };
+
+    const accepted = await recordPortalAccepted(anonymousCtx, 'case-1', 'invitation-1', 'portal-user-1', 'primary_next_of_kin', 'mock');
+    expect(accepted.eventType).toBe('portal.accepted');
+    expect(accepted.category).toBe('family_portal');
+    expect(accepted.actorIdentityId).toBeNull();
+    expect(accepted.isSystemGenerated).toBe(true);
+    expect(JSON.parse(accepted.metadata!)).toEqual({ portalUserId: 'portal-user-1', relationshipType: 'primary_next_of_kin' });
+
+    const revoked = await recordPortalAccessRevoked(ctx(), 'case-1', 'access-1', 'primary_next_of_kin', 'mock');
+    expect(revoked.eventType).toBe('portal.access_revoked');
+    expect(revoked.resourceType).toBe('portalAccess');
+    expect(revoked.severity).toBe('warning');
+    expect(revoked.actorIdentityId).toBe('identity-1'); // staff-initiated — real actor
+
+    const login = await recordPortalLogin(anonymousCtx, 'portal-user-1', 'mock');
+    expect(login.eventType).toBe('portal.login');
+    expect(login.caseId).toBeNull();
+    expect(login.actorIdentityId).toBeNull();
+    expect(JSON.parse(login.metadata!)).toEqual({ portalUserId: 'portal-user-1' });
+
+    const viewed = await recordPortalDocumentViewed(anonymousCtx, 'case-1', 'doc-1', 'portal-user-1', 'mock');
+    expect(viewed.eventType).toBe('portal.document.viewed');
+    expect(viewed.resourceType).toBe('caseDocument');
+    expect(viewed.actorIdentityId).toBeNull();
+    expect(JSON.parse(viewed.metadata!)).toEqual({ portalUserId: 'portal-user-1' });
+
+    const signed = await recordPortalSignatureCompleted(anonymousCtx, 'case-1', 'doc-1', 'sig-req-1', 'portal-user-1', 'mock');
+    expect(signed.eventType).toBe('portal.signature.completed');
+    expect(signed.resourceType).toBe('signatureRequest');
+    expect(signed.actorIdentityId).toBeNull();
+    expect(JSON.parse(signed.metadata!)).toEqual({ portalUserId: 'portal-user-1', documentId: 'doc-1' });
+
+    const sent = await recordPortalMessageSent(anonymousCtx, 'case-1', 'message-1', 'portal-user-1', 'mock');
+    expect(sent.eventType).toBe('portal.message.sent');
+    expect(sent.resourceType).toBe('portalMessage');
+    expect(sent.actorIdentityId).toBeNull();
+    expect(JSON.parse(sent.metadata!)).toEqual({ portalUserId: 'portal-user-1' });
   });
 });
 

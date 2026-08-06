@@ -3,9 +3,10 @@ import type { Case, CaseUpdate, NewCaseInput } from '../types/case';
 import type { Session } from '../types/session';
 import type { WorkflowTemplate } from '../types/workflowTemplate';
 import type { DataAdapterMode } from '../lib/env';
-import { assertIntakeOwnerUnchanged } from '../domain/cases/intakeOwnership';
+import { assertIntakeOwnerUnchanged, assertCreatedByUnchanged } from '../domain/cases/intakeOwnership';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
 import { formatCaseNumber, parseCaseNumber, assertCaseNumberUnchanged } from '../domain/cases/caseNumber';
+import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { caseFixtures } from './__mocks__/fixtures';
 
 export type CaseFilters = {
@@ -171,6 +172,10 @@ export async function create(
     return body.case;
   }
 
+  if (input.assignedStaffId) {
+    await assertStaffProfileIsActiveAndInOrganization(context.organizationId, input.assignedStaffId, 'mock');
+  }
+
   const version = latestTemplateVersion(template);
   const creationYear = new Date().getFullYear();
   const newCase: Case = {
@@ -216,6 +221,7 @@ export async function update(
   dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<Case> {
   assertIntakeOwnerUnchanged(patch);
+  assertCreatedByUnchanged(patch);
   assertCaseNumberUnchanged(patch);
 
   if (dataAdapterMode === 'wix') {
@@ -229,6 +235,10 @@ export async function update(
     }
     const body = (await response.json()) as { case: Case };
     return body.case;
+  }
+
+  if (patch.assignedStaffId) {
+    await assertStaffProfileIsActiveAndInOrganization(context.organizationId, patch.assignedStaffId, 'mock');
   }
 
   const index = caseFixtures.findIndex(

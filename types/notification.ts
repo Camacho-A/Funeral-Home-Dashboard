@@ -26,8 +26,15 @@ export function isTerminalNotificationStatus(status: NotificationStatus): boolea
 /** How the set of recipients was determined — resolved exactly once, at
     creation time, into an immutable `NotificationRecipient` snapshot
     (types/notificationRecipient.ts). A future role change never rewrites
-    a historical notification's recipient list. */
-export type RecipientScope = 'individual' | 'role' | 'organization_wide' | 'case_participants';
+    a historical notification's recipient list.
+
+    `'portal_user'` (Phase 29 — Family Portal & External Collaboration) is
+    the one scope whose recipient is a `PortalUser.id`, never an
+    `Identity.id` — see `services/notificationService.ts`'s
+    `dispatchChannel` for the resulting email-resolution fallback this
+    requires. Never conflated with `'individual'`, which is always
+    Identity-space. */
+export type RecipientScope = 'individual' | 'role' | 'organization_wide' | 'case_participants' | 'portal_user';
 
 export type Notification = {
   id: string;
@@ -66,6 +73,9 @@ export type NewNotificationInput = {
   recipientRoleKey?: string;
   /** Only meaningful when recipientScope === 'individual'. */
   recipientIdentityId?: string;
+  /** Only meaningful when recipientScope === 'portal_user'. A `PortalUser.id`,
+      never an `Identity.id` — see `RecipientScope`'s own comment. */
+  recipientPortalUserId?: string;
   /** Only meaningful when recipientScope === 'case_participants'. */
   caseId?: string;
   actionUrl?: string;

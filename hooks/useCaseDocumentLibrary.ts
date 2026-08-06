@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchCaseDocuments, generateCaseDocument, uploadCaseDocument, archiveCaseDocument } from '@/lib/caseDocumentsClient';
+import { fetchCaseDocuments, generateCaseDocument, uploadCaseDocument, archiveCaseDocument, setCaseDocumentFamilyVisibility } from '@/lib/caseDocumentsClient';
 
 /**
  * Phase 25 (Document Generation & Template Management). Query/mutation
@@ -40,6 +40,18 @@ export function useArchiveCaseDocument(organizationId: string, caseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (documentId: string) => archiveCaseDocument({ organizationId, caseId, documentId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+  });
+}
+
+/** Phase 29 (Family Portal & External Collaboration). Backs the Family
+    Portal tab's document-visibility toggle — invalidates the same cache
+    entry as every other document mutation above, so the Documents tab
+    reflects a `familyVisible` change made from the Family Portal tab. */
+export function useSetCaseDocumentFamilyVisibility(organizationId: string, caseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { documentId: string; familyVisible: boolean }) => setCaseDocumentFamilyVisibility({ organizationId, caseId, ...params }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
   });
 }

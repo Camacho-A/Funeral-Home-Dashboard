@@ -151,6 +151,19 @@ export function canAdminNotifications(params: ResolvePermissionsParams, dataAdap
   return hasPermission(params, dataAdapterMode, 'notification.admin');
 }
 
+/** Phase 29 (Family Portal & External Collaboration). Staff-side only —
+    gates inviting/revoking a case's Family Portal access
+    (`CaseFamilyPortalTab`'s management controls). Never checked by any
+    family-side route; those are gated exclusively by
+    `hasPortalCapability` (`domain/portal/portalCapabilityPolicy.ts`). */
+export function canManagePortal(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'portal.manage');
+}
+
+export function canSendPortalMessage(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'portal.message');
+}
+
 export function canViewReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'report.view');
 }

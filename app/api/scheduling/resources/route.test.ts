@@ -67,4 +67,24 @@ describe('POST /api/scheduling/resources', () => {
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, resourceType: 'chapel', name: 'Main Chapel' });
     expect(response.status).toBe(403);
   });
+
+  describe('Phase 30 (Identity Model Hardening & Staff Assignment Unification): linkedStaffProfileId', () => {
+    it('accepts a real, active, in-organization linkedStaffProfileId', async () => {
+      const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, resourceType: 'staff', name: 'Dana', linkedStaffProfileId: 'staff-dana' });
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.resource.linkedStaffProfileId).toBe('staff-dana');
+    });
+
+    it('rejects a nonexistent linkedStaffProfileId, with 422, before any write', async () => {
+      const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, resourceType: 'staff', name: 'Ghost', linkedStaffProfileId: 'staff-does-not-exist' });
+      expect(response.status).toBe(422);
+      expect(resourceFixtures).toHaveLength(0);
+    });
+
+    it('returns 400 when linkedStaffProfileId is present but not a string', async () => {
+      const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, resourceType: 'staff', name: 'Dana', linkedStaffProfileId: 42 });
+      expect(response.status).toBe(400);
+    });
+  });
 });

@@ -23,7 +23,8 @@ export type ActivityEventCategory =
   | 'inventory'
   | 'notifications'
   | 'administration'
-  | 'system';
+  | 'system'
+  | 'family_portal';
 
 export type ActivitySeverity = 'info' | 'warning' | 'critical';
 
@@ -210,6 +211,28 @@ export const ACTIVITY_EVENT_TYPES = {
   NOTIFICATION_READ: 'notification.read',
   NOTIFICATION_FAILED: 'notification.failed',
   NOTIFICATION_CANCELLED: 'notification.cancelled',
+
+  /** Phase 29 (Family Portal & External Collaboration). Uses the new
+      `'family_portal'` category (see `ActivityEventCategory` above) — a
+      deliberately separate category from `'documents'`/`'payments'`/
+      `'scheduling'`, since these events are about a `PortalUser`/
+      `PortalAccess`/`PortalInvitation` acting, not a staff `Membership`
+      acting on the same underlying resources. Every one of these is
+      recorded exclusively from inside the `services/portal/*` modules.
+      Attribution never uses `actorIdentityId` for the real actor (a
+      `PortalUser` is not an `Identity` — see `services/portal/portalActivityContext.ts`'s
+      own comment) — `actorIdentityId: null, isSystemGenerated: true`,
+      exactly like `signerActivityContext()`'s own precedent, with the
+      real `portalUserId`/`caseId`/`relationshipType` carried in
+      `metadata` instead. */
+  PORTAL_INVITED: 'portal.invited',
+  PORTAL_ACCEPTED: 'portal.accepted',
+  PORTAL_ACCESS_REVOKED: 'portal.access_revoked',
+  PORTAL_LOGIN: 'portal.login',
+  PORTAL_DOCUMENT_VIEWED: 'portal.document.viewed',
+  PORTAL_SIGNATURE_COMPLETED: 'portal.signature.completed',
+  PORTAL_PAYMENT_COMPLETED: 'portal.payment.completed',
+  PORTAL_MESSAGE_SENT: 'portal.message.sent',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

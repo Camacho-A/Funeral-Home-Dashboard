@@ -9,6 +9,7 @@ const STAFF_RESOURCE: Resource = {
   resourceType: 'staff',
   name: 'Jane Director',
   linkedMembershipId: 'membership-1',
+  linkedStaffProfileId: null,
   capacity: null,
   isExternal: false,
   status: 'active',

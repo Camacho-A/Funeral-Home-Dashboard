@@ -8,6 +8,7 @@ import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
+import { resolveStaffProfileForCaller, assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
 import type { Case } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -79,15 +80,21 @@ export async function GET(request: Request) {
  *
  * organizationId arrives in the body only as a *requested* value;
  * requireAuthorizedOrganization re-derives the trusted one from the
- * caller's own session/membership, exactly like every read route. Every
- * other identity-shaped field this project doesn't yet have a real
- * server-side mapping for (createdBy, intakeOwnerId, and the
- * assignedStaffId default) is still sourced from the client's
- * useSession() — a deliberate, documented continuation of the existing
- * trust model (see the ADR's "Known limitation, not resolved here"), never
- * a new one. It is not a tenant/authorization boundary: organizationId is
- * the only value this handler treats as security-relevant, and that one
- * is never taken from the body.
+ * caller's own session/membership, exactly like every read route.
+ *
+ * Phase 30 (Identity Model Hardening & Staff Assignment Unification):
+ * `createdBy`/`intakeOwnerId` are no longer trusted from the client body at
+ * all — this closed the "Known limitation, not resolved here" gap this
+ * comment used to describe. Both are now resolved server-side via
+ * `resolveStaffProfileForCaller`, the caller's own `StaffProfile` for this
+ * organization (a 422 if none is linked, never a fabricated identity).
+ * `assignedStaffId` remains client-suppliable (it may target someone other
+ * than the caller — reassigning a case to a different handler at creation
+ * time), but is validated via `assertAssignableStaffProfile` (`case.update`)
+ * whenever it names someone other than the caller; defaulting to the
+ * caller's own profile needs no separate check. This is not a
+ * tenant/authorization boundary of its own: organizationId is still the
+ * only value re-derived rather than trusted from the body.
  *
  * The workflow template is resolved entirely server-side — this
  * organization's first enabled template, exactly matching
@@ -155,7 +162,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const requiredStringFields = ['decedentName', 'nextOfKinName', 'nextOfKinPhone', 'createdBy', 'intakeOwnerId'];
+  const requiredStringFields = ['decedentName', 'nextOfKinName', 'nextOfKinPhone'];
   const missingOrInvalid = requiredStringFields.filter(
     (key) => typeof b[key] !== 'string' || (b[key] as string).trim() === '',
   );
@@ -177,6 +184,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ case: null, error: 'Invalid field(s): fieldValues' }, { status: 400 });
   }
 
+  const callerProfile = await resolveStaffProfileForCaller(context, 'wix');
+  if (!callerProfile) {
+    return NextResponse.json(
+      { case: null, error: 'No StaffProfile is linked to your account in this organization.' },
+      { status: 422 },
+    );
+  }
+
+  if (typeof b.assignedStaffId === 'string' && b.assignedStaffId !== callerProfile.id) {
+    try {
+      await assertAssignableStaffProfile(
+        { organizationId, staffProfileId: b.assignedStaffId, permission: 'case.update', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
+        'wix',
+      );
+    } catch (error) {
+      const message = error instanceof StaffAssignmentError ? error.message : 'Failed to validate assignedStaffId.';
+      return NextResponse.json({ case: null, error: message }, { status: 422 });
+    }
+  }
+
   try {
     const templates = await fetchWixWorkflowTemplates(organizationId);
     const template = templates.find((t) => t.isEnabled);
@@ -190,8 +217,8 @@ export async function POST(request: Request) {
 
     const beaconCaseId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
-    const createdBy = b.createdBy as string;
-    const intakeOwnerId = b.intakeOwnerId as string;
+    const createdBy = callerProfile.id;
+    const intakeOwnerId = callerProfile.id;
     const assignedStaffId = typeof b.assignedStaffId === 'string' ? b.assignedStaffId : createdBy;
     const caseNumber = await reserveNextCaseNumber(organizationId, new Date().getFullYear());
 
