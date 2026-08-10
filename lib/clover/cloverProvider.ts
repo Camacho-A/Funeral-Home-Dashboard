@@ -4,9 +4,11 @@ import type {
   CheckoutSessionResult,
   PaymentProvider,
   ProviderPaymentUpdate,
+  RefundRequest,
+  RefundResult,
   WebhookVerificationResult,
 } from '../paymentProvider';
-import { createCloverCheckoutSession, getCloverPayment } from './cloverClient';
+import { createCloverCheckoutSession, getCloverPayment, refundCloverPayment } from './cloverClient';
 import { getCloverWebhookSecret } from './cloverConfig';
 import { verifyCloverSignature } from './cloverWebhook';
 
@@ -129,5 +131,10 @@ export const cloverProvider: PaymentProvider = {
       failureCode: succeeded ? null : 'declined',
       failureMessage: succeeded ? null : 'Payment declined.',
     };
+  },
+
+  async refundPayment(request: RefundRequest): Promise<RefundResult> {
+    const refund = await refundCloverPayment(request.integration, request.providerPaymentId, request.amount);
+    return { providerRefundId: refund.id };
   },
 };

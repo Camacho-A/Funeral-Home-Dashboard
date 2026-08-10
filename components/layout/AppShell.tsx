@@ -28,7 +28,7 @@ export function AppShell({
 
   return (
     <div className={styles.shell}>
-      <Sidebar />
+      <Sidebar authAdapterMode={authAdapterMode} />
       <div className={styles.mainColumn}>
         <TopBar onNewCaseClick={() => setNewCaseModalOpen(true)} authAdapterMode={authAdapterMode} />
         <main id="main-content" className={styles.content}>

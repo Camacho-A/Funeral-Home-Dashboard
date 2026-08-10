@@ -80,6 +80,11 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'user.remove',
   'user.manageRoles',
   'settings.manage',
+  'accounting.view',
+  'accounting.manage',
+  'accounting.post',
+  'accounting.reconcile',
+  'accounting.report',
 ];
 
 export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
@@ -218,8 +223,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
   {
     key: 'accounting',
     name: 'Accounting',
-    description: 'Financial operations across every case — collecting and refunding payments and viewing reports — without case-editing access.',
-    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'notification.read', 'report.view', 'audit.read', 'audit.export'],
+    description: 'Financial operations across every case — collecting and refunding payments, the general ledger, banking, and reports — without case-editing access.',
+    /** Phase 31: this is literally the role the whole `accounting.*`
+        category exists for — gets all five keys. */
+    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'notification.read', 'report.view', 'audit.read', 'audit.export', 'accounting.view', 'accounting.manage', 'accounting.post', 'accounting.reconcile', 'accounting.report'],
   },
   {
     key: 'readOnly',

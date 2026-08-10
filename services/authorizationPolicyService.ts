@@ -205,6 +205,41 @@ export function canManageSettings(params: ResolvePermissionsParams, dataAdapterM
   return hasPermission(params, dataAdapterMode, 'settings.manage');
 }
 
+/** Phase 31 (Financial Management & General Ledger). Read-only access
+    across chart of accounts, general ledger, banking, and accounts
+    receivable. */
+export function canReadFinancials(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'accounting.view');
+}
+
+/** Chart-of-accounts CRUD and write-offs/adjustments/non-posting
+    configuration — deliberately separate from `canPostJournalEntry`, so a
+    role that can prepare a manual entry doesn't automatically gain
+    authority to post it (mirrors `canEditAppointment`/`canCancelAppointment`'s
+    own tier split). */
+export function canManageFinancials(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'accounting.manage');
+}
+
+/** Posting or voiding a journal entry or financial transaction — the
+    irreversible action. */
+export function canPostJournalEntry(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'accounting.post');
+}
+
+export function canReconcileBank(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'accounting.reconcile');
+}
+
+/** The six financial reports (Trial Balance, General Ledger, Balance
+    Sheet, Profit & Loss, AR Aging, Transaction Register) — deliberately a
+    distinct key from the pre-existing `report.view` (which gates the
+    operational Reports page), so an organization can grant financial
+    report access independently of operational reporting access. */
+export function canViewFinancialReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'accounting.report');
+}
+
 /**
  * "Admin-tier" in the pre-Phase-22 sense (owner/administrator): full
  * organization management authority. Preserved as a named policy — not a

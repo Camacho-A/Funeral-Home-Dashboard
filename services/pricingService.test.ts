@@ -8,7 +8,9 @@ import {
 } from './__mocks__/pricingFixtures';
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
+import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
 import type { PaymentRecord } from '../types/payment';
+import type { CaseWriteOff } from '../types/caseWriteOff';
 
 let idCounter = 0;
 function idFactory(): string {
@@ -25,6 +27,7 @@ beforeEach(() => {
   caseOrderAuditFixtures.length = 0;
   paymentRecordFixtures.length = 0;
   activityEventFixtures.length = 0;
+  caseWriteOffFixtures.length = 0;
 });
 
 describe('getServiceCatalog', () => {
@@ -310,6 +313,7 @@ describe('recalculateOrder', () => {
       createdAt: NOW,
       paidAt: NOW,
       updatedAt: NOW,
+      initiatedByStaffProfileId: null, depositedInBankDepositId: null,
     };
     paymentRecordFixtures.push(succeededPayment);
 
@@ -338,22 +342,68 @@ describe('getPaidAmountForCase', () => {
         providerCheckoutId: 'c1', providerPaymentId: null, idempotencyKey: 'k1', checkoutUrl: null,
         status: 'succeeded', amount: 1000, currency: 'usd', purpose: 'A', cardBrand: null, cardLast4: null,
         receiptReference: null, failureCode: null, failureMessage: null, createdAt: NOW, paidAt: NOW, updatedAt: NOW,
+        initiatedByStaffProfileId: null, depositedInBankDepositId: null,
       },
       {
         id: 'p2', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-x', caseOrderId: null, provider: 'clover',
         providerCheckoutId: 'c2', providerPaymentId: null, idempotencyKey: 'k2', checkoutUrl: null,
         status: 'failed', amount: 500, currency: 'usd', purpose: 'B', cardBrand: null, cardLast4: null,
         receiptReference: null, failureCode: null, failureMessage: null, createdAt: NOW, paidAt: null, updatedAt: NOW,
+        initiatedByStaffProfileId: null, depositedInBankDepositId: null,
       },
       {
         id: 'p3', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-x', caseOrderId: null, provider: 'clover',
         providerCheckoutId: 'c3', providerPaymentId: null, idempotencyKey: 'k3', checkoutUrl: null,
         status: 'succeeded', amount: 2000, currency: 'usd', purpose: 'C', cardBrand: null, cardLast4: null,
         receiptReference: null, failureCode: null, failureMessage: null, createdAt: NOW, paidAt: NOW, updatedAt: NOW,
+        initiatedByStaffProfileId: null, depositedInBankDepositId: null,
       },
     );
     const { getPaidAmountForCase } = await import('./pricingService');
     expect(await getPaidAmountForCase(DEFAULT_ORGANIZATION_ID, 'case-x', 'mock')).toBe(3000);
+  });
+});
+
+describe('getSatisfiedAmountForCase', () => {
+  it('sums succeeded payments plus every write-off posted for the case', async () => {
+    paymentRecordFixtures.push({
+      id: 'p1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-y', caseOrderId: null, provider: 'clover',
+      providerCheckoutId: 'c1', providerPaymentId: null, idempotencyKey: 'k1', checkoutUrl: null,
+      status: 'succeeded', amount: 1000, currency: 'usd', purpose: 'A', cardBrand: null, cardLast4: null,
+      receiptReference: null, failureCode: null, failureMessage: null, createdAt: NOW, paidAt: NOW, updatedAt: NOW,
+      initiatedByStaffProfileId: null, depositedInBankDepositId: null,
+    });
+    const writeOffs: CaseWriteOff[] = [
+      { id: 'wo1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-y', amount: 300, journalEntryId: 'je-1', reason: 'Uncollectible', performedByStaffProfileId: null, createdAt: NOW },
+      { id: 'wo2', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-other', amount: 999, journalEntryId: 'je-2', reason: 'Different case', performedByStaffProfileId: null, createdAt: NOW },
+    ];
+    caseWriteOffFixtures.push(...writeOffs);
+
+    const { getSatisfiedAmountForCase } = await import('./pricingService');
+    expect(await getSatisfiedAmountForCase(DEFAULT_ORGANIZATION_ID, 'case-y', 'mock')).toBe(1300);
+  });
+
+  it('returns just the paid amount when the case has no write-offs', async () => {
+    const { getSatisfiedAmountForCase } = await import('./pricingService');
+    expect(await getSatisfiedAmountForCase(DEFAULT_ORGANIZATION_ID, 'case-z', 'mock')).toBe(0);
+  });
+});
+
+describe('refreshBalanceForCase', () => {
+  it('reduces balanceDue by a write-off, not just by succeeded payments', async () => {
+    caseOrderFixtures.push({
+      id: 'order-wo-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-wo-1', status: 'active',
+      subtotal: 10_000, discountTotal: 0, taxTotal: 0, total: 10_000, balanceDue: 10_000, version: 1,
+      createdAt: NOW, updatedAt: NOW,
+    });
+    caseWriteOffFixtures.push({
+      id: 'wo-refresh-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-wo-1', amount: 4_000,
+      journalEntryId: 'je-refresh-1', reason: 'Hardship write-off', performedByStaffProfileId: null, createdAt: NOW,
+    });
+
+    const { refreshBalanceForCase } = await import('./pricingService');
+    const updated = await refreshBalanceForCase(DEFAULT_ORGANIZATION_ID, 'case-wo-1', 'mock');
+    expect(updated?.balanceDue).toBe(6_000);
   });
 });
 

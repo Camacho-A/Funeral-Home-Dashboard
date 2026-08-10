@@ -1,0 +1,25 @@
+.nav {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.link {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted, #6b7280);
+  border-bottom: 2px solid transparent;
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--color-text-primary, #111827);
+}
+
+.linkActive {
+  color: var(--color-brand, #2563eb);
+  border-bottom-color: var(--color-brand, #2563eb);
+}

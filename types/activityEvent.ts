@@ -24,7 +24,13 @@ export type ActivityEventCategory =
   | 'notifications'
   | 'administration'
   | 'system'
-  | 'family_portal';
+  | 'family_portal'
+  /** Phase 31 (Financial Management & General Ledger). Kept separate from
+      the pre-existing `'payments'` category (checkout/webhook lifecycle)
+      rather than folded into it — conflating the two would make
+      "filter the activity feed to financial/accounting activity" (useful
+      for an Accounting-role compliance review) impossible to do cleanly. */
+  | 'financial';
 
 export type ActivitySeverity = 'info' | 'warning' | 'critical';
 
@@ -100,7 +106,11 @@ export const ACTIVITY_EVENT_TYPES = {
   PAYMENT_RECORDED: 'payment.recorded',
   PAYMENT_FAILED: 'payment.failed',
   PAYMENT_CANCELLED: 'payment.cancelled',
-  /** Reserved — no refund code path exists in Beacon yet. */
+  /** Was reserved ("no refund code path exists in Beacon yet") until
+      Phase 31 (Financial Management & General Ledger), which gives it its
+      first real emitter — `services/financialTransactionService.ts`'s
+      `postRefundTransaction`. Deliberately reused, not replaced by a
+      competing `financial.payment.refunded` type. */
   PAYMENT_REFUNDED: 'payment.refunded',
 
   /** Phase 25 (Document Generation & Template Management). Wired — a
@@ -233,6 +243,26 @@ export const ACTIVITY_EVENT_TYPES = {
   PORTAL_SIGNATURE_COMPLETED: 'portal.signature.completed',
   PORTAL_PAYMENT_COMPLETED: 'portal.payment.completed',
   PORTAL_MESSAGE_SENT: 'portal.message.sent',
+
+  /** Phase 31 (Financial Management & General Ledger). Category
+      `'financial'` — see this file's own `ActivityEventCategory` comment
+      on why this is separate from `'payments'`. Every emitter lives in
+      `services/chartOfAccountsService.ts`/`generalLedgerService.ts`/
+      `financialTransactionService.ts`/`bankingService.ts` exclusively —
+      enforced by a structural test mirroring every other domain's own
+      "only this service calls these record* builders" boundary. */
+  JOURNAL_ENTRY_POSTED: 'journal.entry.posted',
+  JOURNAL_ENTRY_REVERSED: 'journal.entry.reversed',
+  JOURNAL_ENTRY_VOIDED: 'journal.entry.voided',
+  LEDGER_ACCOUNT_CREATED: 'financial.account.created',
+  LEDGER_ACCOUNT_DEACTIVATED: 'financial.account.deactivated',
+  CASE_WRITE_OFF_POSTED: 'financial.writeoff.posted',
+  FINANCIAL_ADJUSTMENT_POSTED: 'financial.adjustment.posted',
+  BANK_DEPOSIT_POSTED: 'financial.deposit.posted',
+  FUNDS_TRANSFER_POSTED: 'financial.transfer.posted',
+  BANK_STATEMENT_IMPORTED: 'financial.statement.imported',
+  BANK_RECONCILIATION_STARTED: 'financial.reconciliation.started',
+  BANK_RECONCILIATION_COMPLETED: 'financial.reconciliation.completed',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

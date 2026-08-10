@@ -38,6 +38,8 @@ const RECORD: PaymentRecord = {
   createdAt: '2026-01-01T00:00:00.000Z',
   paidAt: null,
   updatedAt: '2026-01-01T00:00:00.000Z',
+  initiatedByStaffProfileId: null,
+  depositedInBankDepositId: null,
 };
 
 beforeEach(() => {
@@ -232,5 +234,35 @@ describe('cloverProvider.getPaymentStatus', () => {
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result).toMatchObject({ status: 'succeeded', cardBrand: 'visa', cardLast4: '4242' });
+  });
+});
+
+describe('cloverProvider.refundPayment', () => {
+  it('posts to the standard Clover refunds endpoint with the exact amount', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'refund-1', amount: 120000 }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await cloverProvider.refundPayment({ integration: INTEGRATION, providerPaymentId: 'pay-1', amount: 120000 });
+
+    expect(result).toEqual({ providerRefundId: 'refund-1' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://apisandbox.dev.clover.com/v3/merchants/merchant-abc/payments/pay-1/refunds',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer fake-private-key' }),
+      }),
+    );
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(sentBody).toEqual({ amount: 120000 });
+  });
+
+  it('propagates a Clover refund failure as a thrown error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    await expect(
+      cloverProvider.refundPayment({ integration: INTEGRATION, providerPaymentId: 'pay-1', amount: 500 }),
+    ).rejects.toThrow();
   });
 });

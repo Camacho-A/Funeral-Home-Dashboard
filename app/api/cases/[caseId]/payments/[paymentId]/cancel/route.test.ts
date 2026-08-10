@@ -29,6 +29,7 @@ const SEED: PaymentRecord = {
   status: 'pending', amount: 1000, currency: 'usd', purpose: 'Fee',
   cardBrand: null, cardLast4: null, receiptReference: null, failureCode: null, failureMessage: null,
   createdAt: '2026-01-01T00:00:00.000Z', paidAt: null, updatedAt: '2026-01-01T00:00:00.000Z',
+  initiatedByStaffProfileId: null, depositedInBankDepositId: null,
 };
 
 beforeEach(() => {

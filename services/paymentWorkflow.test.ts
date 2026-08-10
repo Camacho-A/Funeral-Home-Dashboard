@@ -5,6 +5,9 @@ import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentCh
 import { createCaseOrder } from './pricingService';
 import { caseOrderFixtures, caseOrderLineItemFixtures, caseOrderAuditFixtures } from './__mocks__/pricingFixtures';
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
+import { seedChartOfAccounts } from './chartOfAccountsService';
+import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from './__mocks__/ledgerFixtures';
+import type { ActivityContext } from './activityService';
 import type { PaymentRecord } from '../types/payment';
 
 /**
@@ -160,6 +163,7 @@ describe('markCasePaidIfVerified — with an active CaseOrder (Phase 19C)', () =
       createdAt: '2026-01-01T00:00:00.000Z',
       paidAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      initiatedByStaffProfileId: null, depositedInBankDepositId: null,
     };
   }
 
@@ -206,5 +210,62 @@ describe('markCasePaidIfVerified — with an active CaseOrder (Phase 19C)', () =
     await markCasePaidIfVerified(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
     expect(caseFixtures.find((c) => c.id === case_.id)?.paymentStatus).toBe('paid_in_full');
     expect(caseOrderFixtures.find((o) => o.id === order.id)?.balanceDue).toBe(0);
+  });
+});
+
+describe('markCasePaidIfVerified — financial posting (Phase 31)', () => {
+  let idCounter = 0;
+  function idFactory(): string {
+    idCounter += 1;
+    return `wf-fin-id-${idCounter}`;
+  }
+
+  function ctx(): ActivityContext {
+    return { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'corr-1', isSystemGenerated: true };
+  }
+
+  let restoreIndex = -1;
+  let restoreValue: (typeof caseFixtures)[number] | null = null;
+
+  beforeEach(async () => {
+    await seedChartOfAccounts(DEFAULT_ORGANIZATION_ID, idFactory, 'mock');
+  });
+
+  afterEach(() => {
+    if (restoreIndex !== -1 && restoreValue) caseFixtures[restoreIndex] = restoreValue;
+    restoreIndex = -1;
+    restoreValue = null;
+    ledgerAccountFixtures.length = 0;
+    journalEntryFixtures.length = 0;
+    journalEntryLineFixtures.length = 0;
+  });
+
+  function withKnownCase() {
+    const index = caseFixtures.findIndex((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted);
+    restoreIndex = index;
+    restoreValue = caseFixtures[index];
+    return caseFixtures[index];
+  }
+
+  it('posts a journal entry for the payment when financialPosting is provided', async () => {
+    const case_ = withKnownCase();
+    await markCasePaidIfVerified(DEFAULT_ORGANIZATION_ID, case_.id, 'mock', {
+      paymentId: 'payment-fin-1',
+      amountCents: 5_000,
+      ctx: ctx(),
+      idFactory,
+    });
+
+    const entry = journalEntryFixtures.find((e) => e.sourceReferenceId === 'payment-fin-1');
+    expect(entry).toBeDefined();
+    expect(entry?.sourceType).toBe('payment');
+    const lines = journalEntryLineFixtures.filter((l) => l.journalEntryId === entry!.id);
+    expect(lines).toHaveLength(2);
+  });
+
+  it('never posts a journal entry when financialPosting is omitted (backward compatible)', async () => {
+    const case_ = withKnownCase();
+    await markCasePaidIfVerified(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+    expect(journalEntryFixtures).toHaveLength(0);
   });
 });

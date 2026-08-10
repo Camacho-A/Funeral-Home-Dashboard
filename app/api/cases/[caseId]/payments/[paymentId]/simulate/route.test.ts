@@ -2,8 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
+import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
+import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
+import { seedChartOfAccounts } from '@/services/chartOfAccountsService';
 import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
 import type { PaymentRecord } from '@/types/payment';
+
+let idCounter = 0;
+function idFactory(): string {
+  idCounter += 1;
+  return `simulate-route-test-${idCounter}`;
+}
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({
@@ -27,10 +36,11 @@ let knownCaseId: string;
 let caseFixtureIndex = -1;
 let originalCaseFixture: (typeof caseFixtures)[number];
 
-beforeEach(() => {
+beforeEach(async () => {
   process.env.DATA_ADAPTER = 'mock';
   mockSession = { user: mockDefaultUser };
   paymentRecordFixtures.length = 0;
+  await seedChartOfAccounts(DEFAULT_ORGANIZATION_ID, idFactory, 'mock');
 
   caseFixtureIndex = caseFixtures.findIndex((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted);
   originalCaseFixture = caseFixtures[caseFixtureIndex];
@@ -42,12 +52,17 @@ beforeEach(() => {
     status: 'pending', amount: 1000, currency: 'usd', purpose: 'Fee',
     cardBrand: null, cardLast4: null, receiptReference: null, failureCode: null, failureMessage: null,
     createdAt: '2026-01-01T00:00:00.000Z', paidAt: null, updatedAt: '2026-01-01T00:00:00.000Z',
+    initiatedByStaffProfileId: null, depositedInBankDepositId: null,
   };
   paymentRecordFixtures.push(seed);
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
   paymentRecordFixtures.length = 0;
+  ledgerAccountFixtures.length = 0;
+  journalEntryFixtures.length = 0;
+  journalEntryLineFixtures.length = 0;
+  activityEventFixtures.length = 0;
   if (caseFixtureIndex !== -1) caseFixtures[caseFixtureIndex] = originalCaseFixture;
 });
 

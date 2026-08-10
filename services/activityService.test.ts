@@ -18,6 +18,19 @@ import {
   recordPaymentRecorded,
   recordPaymentFailed,
   recordPaymentCancelled,
+  recordPaymentRefunded,
+  recordJournalEntryPosted,
+  recordJournalEntryReversed,
+  recordJournalEntryVoided,
+  recordLedgerAccountCreated,
+  recordLedgerAccountDeactivated,
+  recordCaseWriteOffPosted,
+  recordFinancialAdjustmentPosted,
+  recordBankDepositPosted,
+  recordFundsTransferPosted,
+  recordBankStatementImported,
+  recordBankReconciliationStarted,
+  recordBankReconciliationCompleted,
   recordCaseOrderChanged,
   recordTeamMemberInvited,
   recordTeamMemberRoleChanged,
@@ -192,6 +205,55 @@ describe('typed builder helpers — each produces the correct category/eventType
     const cancelled = await recordPaymentCancelled(ctx(), 'case-1', 'payment-3', 'mock');
     expect(cancelled.eventType).toBe('payment.cancelled');
     expect(cancelled.severity).toBe('info');
+
+    const refunded = await recordPaymentRefunded(ctx(), 'case-1', 'payment-4', 25000, 'mock');
+    expect(refunded.eventType).toBe('payment.refunded');
+    expect(refunded.category).toBe('payments');
+    expect(refunded.severity).toBe('warning');
+  });
+
+  it('Phase 31: financial-category helpers', async () => {
+    const posted = await recordJournalEntryPosted(ctx(), 'case-1', 'entry-1', 'JE-000001', 'mock');
+    expect(posted.eventType).toBe('journal.entry.posted');
+    expect(posted.category).toBe('financial');
+
+    const reversed = await recordJournalEntryReversed(ctx(), 'case-1', 'entry-2', 'JE-000001', 'mock');
+    expect(reversed.eventType).toBe('journal.entry.reversed');
+    expect(reversed.severity).toBe('warning');
+
+    const voided = await recordJournalEntryVoided(ctx(), null, 'entry-3', 'JE-000003', 'mock');
+    expect(voided.eventType).toBe('journal.entry.voided');
+    expect(voided.caseId).toBeNull();
+
+    const accountCreated = await recordLedgerAccountCreated(ctx(), 'account-1', '1300', 'Prepaid Expenses', 'mock');
+    expect(accountCreated.eventType).toBe('financial.account.created');
+
+    const accountDeactivated = await recordLedgerAccountDeactivated(ctx(), 'account-1', '1300', 'mock');
+    expect(accountDeactivated.eventType).toBe('financial.account.deactivated');
+
+    const writeOff = await recordCaseWriteOffPosted(ctx(), 'case-1', 'write-off-1', 15000, 'mock');
+    expect(writeOff.eventType).toBe('financial.writeoff.posted');
+    expect(writeOff.severity).toBe('warning');
+
+    const adjustment = await recordFinancialAdjustmentPosted(ctx(), 'case-1', 'entry-4', 500, 'mock');
+    expect(adjustment.eventType).toBe('financial.adjustment.posted');
+
+    const deposit = await recordBankDepositPosted(ctx(), 'deposit-1', 100000, 'mock');
+    expect(deposit.eventType).toBe('financial.deposit.posted');
+    expect(deposit.caseId).toBeNull();
+
+    const transfer = await recordFundsTransferPosted(ctx(), 'entry-5', 20000, 'mock');
+    expect(transfer.eventType).toBe('financial.transfer.posted');
+
+    const imported = await recordBankStatementImported(ctx(), 'import-1', 25, 'mock');
+    expect(imported.eventType).toBe('financial.statement.imported');
+    expect(JSON.parse(imported.newValue!)).toEqual({ lineCount: 25 });
+
+    const reconciliationStarted = await recordBankReconciliationStarted(ctx(), 'reconciliation-1', 'mock');
+    expect(reconciliationStarted.eventType).toBe('financial.reconciliation.started');
+
+    const reconciliationCompleted = await recordBankReconciliationCompleted(ctx(), 'reconciliation-1', 'mock');
+    expect(reconciliationCompleted.eventType).toBe('financial.reconciliation.completed');
   });
 
   it('recordCaseOrderChanged reuses auditDiff.ts-shaped entries directly', async () => {

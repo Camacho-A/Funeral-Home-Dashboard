@@ -24,7 +24,7 @@
  * call site emitting them yet (see ADR-032's "Bounded integration
  * surface" section for why).
  */
-export type NotificationCategory = 'case' | 'task' | 'payment' | 'scheduling' | 'document' | 'signature' | 'organization' | 'system' | 'family_portal';
+export type NotificationCategory = 'case' | 'task' | 'payment' | 'scheduling' | 'document' | 'signature' | 'organization' | 'system' | 'family_portal' | 'financial';
 
 export const NOTIFICATION_TYPES = {
   APPOINTMENT_CREATED: { key: 'scheduling.appointment_created', category: 'scheduling' as NotificationCategory, displayName: 'Appointment Scheduled' },
@@ -60,6 +60,20 @@ export const NOTIFICATION_TYPES = {
       generic body doesn't convey a new-message context), so this is a
       small, additive registry entry rather than an awkward reuse. */
   PORTAL_STAFF_MESSAGE_RECEIVED: { key: 'portal.staff_message_received', category: 'family_portal' as NotificationCategory, displayName: 'Family Portal Message' },
+
+  // Phase 31 (Financial Management & General Ledger). All delivered via
+  // recipientScope: 'role' / roleKey: 'accounting' — never an individual
+  // staff member, since financial review is a role-level responsibility.
+  // Reserved this phase — real registry entries, no wired emitter yet
+  // (same "Bounded integration surface" pattern as the CASE_CREATED/
+  // DOCUMENT_GENERATED/etc. entries above). INVOICE_OVERDUE in particular
+  // can only ever be evaluated on-demand (e.g. when the AR Aging report is
+  // viewed) — Beacon has no background/scheduled-job infrastructure
+  // anywhere to fire it on a true nightly schedule; a disclosed, deferred
+  // gap (see ADR-035's own Deferred section), not glossed over.
+  JOURNAL_ENTRY_NEEDS_REVIEW: { key: 'financial.journal_entry_needs_review', category: 'financial' as NotificationCategory, displayName: 'Journal Entry Needs Review' },
+  RECONCILIATION_COMPLETED: { key: 'financial.reconciliation_completed', category: 'financial' as NotificationCategory, displayName: 'Reconciliation Completed' },
+  INVOICE_OVERDUE: { key: 'financial.invoice_overdue', category: 'financial' as NotificationCategory, displayName: 'Invoice Overdue' },
 } as const;
 
 export type NotificationTypeDefinition = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
@@ -91,4 +105,5 @@ export const NOTIFICATION_CATEGORY_LABEL: Record<NotificationCategory, string> =
   organization: 'Organization',
   system: 'System',
   family_portal: 'Family Portal',
+  financial: 'Financial',
 };

@@ -110,3 +110,40 @@ export async function getCloverPayment(
 
   return response.json();
 }
+
+export type CloverRefund = {
+  id: string;
+  amount: number;
+};
+
+/**
+ * Refunds an already-completed payment — Clover's standard
+ * `POST /v3/merchants/{mId}/payments/{paymentId}/refunds` resource
+ * (docs.clover.com/dev/docs/refunding-a-charge), distinct from the
+ * Hosted-Checkout-specific endpoints above. Always the full original
+ * amount in this phase (see lib/paymentProvider.ts's RefundRequest
+ * comment on why) — an omitted `amount` in Clover's own API means "refund
+ * everything," but Beacon always passes the amount explicitly so a
+ * silent Clover-side API change can never refund more than intended.
+ */
+export async function refundCloverPayment(
+  integration: PaymentIntegration,
+  paymentId: string,
+  amount: number,
+): Promise<CloverRefund> {
+  const privateKey = getCloverPrivateKey(integration);
+  const merchantId = getCloverMerchantId(integration);
+  const baseUrl = getCloverApiBaseUrl(integration.environment);
+
+  const response = await fetch(`${baseUrl}/v3/merchants/${merchantId}/payments/${paymentId}/refunds`, {
+    method: 'POST',
+    headers: cloverHeaders(privateKey),
+    body: JSON.stringify({ amount }),
+  });
+
+  if (!response.ok) {
+    throw new CloverApiError(`Clover refund failed (HTTP ${response.status}).`, response.status);
+  }
+
+  return response.json();
+}

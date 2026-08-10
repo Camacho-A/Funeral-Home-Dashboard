@@ -4,9 +4,17 @@ import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { paymentRecordFixtures, webhookEventFixtures } from '@/services/__mocks__/paymentFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
+import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
+import { seedChartOfAccounts } from '@/services/chartOfAccountsService';
 import { findPaymentConfirmationChecklistIndex } from '@/domain/cases/paymentChecklist';
 import type { PaymentRecord } from '@/types/payment';
 import type { WebhookEventRecord } from '@/types/webhookEvent';
+
+let ledgerIdCounter = 0;
+function ledgerIdFactory(): string {
+  ledgerIdCounter += 1;
+  return `webhook-route-test-${ledgerIdCounter}`;
+}
 
 /**
  * Correction pass (durable event-processing lifecycle): a few tests below
@@ -92,7 +100,7 @@ let seededPayment: PaymentRecord;
 let caseFixtureIndex = -1;
 let originalCaseFixture: (typeof caseFixtures)[number];
 
-beforeEach(() => {
+beforeEach(async () => {
   process.env.DATA_ADAPTER = 'mock';
   process.env.CLOVER_MOCK_MERCHANT_ID = MERCHANT_ID;
   process.env.CLOVER_MOCK_WEBHOOK_SECRET = WEBHOOK_SECRET;
@@ -100,6 +108,7 @@ beforeEach(() => {
   webhookEventFixtures.clear();
   activityEventFixtures.length = 0;
   updateShouldFailOnce.value = false;
+  await seedChartOfAccounts(DEFAULT_ORGANIZATION_ID, ledgerIdFactory, 'mock');
 
   // Deliberately a case that starts 'awaiting_payment' — some seed cases
   // are already 'paid_in_full', which would make the "never marks paid on
@@ -131,6 +140,7 @@ beforeEach(() => {
     createdAt: '2026-01-01T00:00:00.000Z',
     paidAt: null,
     updatedAt: '2026-01-01T00:00:00.000Z',
+    initiatedByStaffProfileId: null, depositedInBankDepositId: null,
   };
   paymentRecordFixtures.push(seededPayment);
 });
@@ -141,6 +151,9 @@ afterEach(() => {
   delete process.env.CLOVER_MOCK_WEBHOOK_SECRET;
   paymentRecordFixtures.length = 0;
   webhookEventFixtures.clear();
+  ledgerAccountFixtures.length = 0;
+  journalEntryFixtures.length = 0;
+  journalEntryLineFixtures.length = 0;
   // markCasePaidIfVerified's mock branch replaces caseFixtures[index] with
   // a new object — restore it so no test's webhook-triggered case update
   // leaks into the next test.
@@ -422,6 +435,7 @@ describe('POST /api/webhooks/clover — a database failure during claim never ac
                 purpose: 'Fee',
                 createdAt: '2026-01-01T00:00:00.000Z',
                 updatedAt: '2026-01-01T00:00:00.000Z',
+                initiatedByStaffProfileId: null, depositedInBankDepositId: null,
               },
             },
           ],

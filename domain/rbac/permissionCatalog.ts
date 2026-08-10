@@ -131,6 +131,28 @@ export const PERMISSION_KEYS = [
   'user.manageRoles',
 
   'settings.manage',
+
+  /** Phase 31 (Financial Management & General Ledger). One coarse-grained
+      `accounting` resource covering the whole financial domain (chart of
+      accounts, general ledger, banking, reconciliation, reports) —
+      deliberately not split into fine-grained `<entity>.<verb>` keys the
+      way every other resource in this catalog is (`schedule.*`,
+      `document.*`, etc.). See docs/adr/ADR-035-financial-management-and-general-ledger.md's
+      "Permissions" section for why this one domain is consolidated rather
+      than following that convention. `.view` covers read-only access
+      across chart of accounts/ledger/banking/AR; `.manage` covers
+      chart-of-accounts CRUD and write-offs/adjustments/non-posting
+      configuration; `.post` covers posting or voiding a journal entry or
+      financial transaction — deliberately separate from `.manage`,
+      mirroring `schedule.edit`/`schedule.cancel`'s own tier split, so a
+      role that can prepare a manual entry doesn't automatically gain
+      authority to post it; `.reconcile` covers the bank reconciliation
+      workflow specifically; `.report` covers the six financial reports. */
+  'accounting.view',
+  'accounting.manage',
+  'accounting.post',
+  'accounting.reconcile',
+  'accounting.report',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -207,4 +229,10 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'user.manageRoles': 'Create, edit, and assign roles',
 
   'settings.manage': "Manage the organization's configuration settings",
+
+  'accounting.view': 'View the chart of accounts, general ledger, banking, and accounts receivable',
+  'accounting.manage': 'Manage the chart of accounts and post write-offs/adjustments',
+  'accounting.post': 'Post or void a journal entry or financial transaction',
+  'accounting.reconcile': 'Perform bank statement reconciliation',
+  'accounting.report': 'View financial reports (Trial Balance, Balance Sheet, Profit & Loss, AR Aging, Transaction Register)',
 };

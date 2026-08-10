@@ -64,7 +64,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
           if (updated) {
             record = updated;
             if (updated.status === 'succeeded') {
-              await markCasePaidIfVerified(organizationId, caseId, dataAdapterMode);
+              await markCasePaidIfVerified(organizationId, caseId, dataAdapterMode, {
+                paymentId,
+                amountCents: updated.amount,
+                ctx: { organizationId, actorIdentityId: authResult.context.userId, actorMembershipId: null, actorRoleKey: authResult.context.role, correlationId: paymentId, isSystemGenerated: true },
+                idFactory: () => crypto.randomUUID(),
+              });
             }
           }
         }

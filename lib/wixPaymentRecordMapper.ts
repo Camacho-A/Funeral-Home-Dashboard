@@ -39,6 +39,8 @@ export type WixPaymentRecordItem = {
   createdAt?: unknown;
   paidAt?: unknown;
   updatedAt?: unknown;
+  initiatedByStaffProfileId?: unknown;
+  depositedInBankDepositId?: unknown;
 };
 
 function isValidStatus(value: unknown): value is PaymentRecordStatus {
@@ -86,6 +88,8 @@ export function mapWixPaymentRecordItem(item: WixPaymentRecordItem | undefined):
     createdAt: item.createdAt,
     paidAt: typeof item.paidAt === 'string' ? item.paidAt : null,
     updatedAt: item.updatedAt,
+    initiatedByStaffProfileId: typeof item.initiatedByStaffProfileId === 'string' ? item.initiatedByStaffProfileId : null,
+    depositedInBankDepositId: typeof item.depositedInBankDepositId === 'string' ? item.depositedInBankDepositId : null,
   };
 }
 
@@ -112,6 +116,8 @@ export function buildWixPaymentRecordData(record: PaymentRecord): WixPaymentReco
     createdAt: record.createdAt,
     paidAt: record.paidAt,
     updatedAt: record.updatedAt,
+    initiatedByStaffProfileId: record.initiatedByStaffProfileId,
+    depositedInBankDepositId: record.depositedInBankDepositId,
   };
 }
 
@@ -139,6 +145,8 @@ export function applyPaymentRecordUpdateToWixData(
   if (patch.failureMessage !== undefined) next.failureMessage = patch.failureMessage;
   if (patch.paidAt !== undefined) next.paidAt = patch.paidAt;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
+  if (patch.initiatedByStaffProfileId !== undefined) next.initiatedByStaffProfileId = patch.initiatedByStaffProfileId;
+  if (patch.depositedInBankDepositId !== undefined) next.depositedInBankDepositId = patch.depositedInBankDepositId;
 
   return next;
 }

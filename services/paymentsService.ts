@@ -20,7 +20,7 @@ import {
 import type { PaymentIntegration, PaymentRecord } from '../types/payment';
 import type { WebhookEventRecord } from '../types/webhookEvent';
 import { paymentIntegrationFixtures, paymentRecordFixtures, webhookEventFixtures } from './__mocks__/paymentFixtures';
-import type { PaymentProvider } from '../lib/paymentProvider';
+import type { PaymentProvider, RefundResult } from '../lib/paymentProvider';
 import { cloverProvider } from '../lib/clover/cloverProvider';
 
 /**
@@ -239,6 +239,11 @@ export async function createIdempotentPendingPaymentRecord(
     purpose: string;
     idempotencyKey: string;
     createdAt: string;
+    /** Phase 31 (Financial Management & General Ledger). StaffProfile-space
+        — set only when a real staff-initiated checkout resolved a caller
+        (never a family/Portal-initiated payment). Optional so every
+        pre-existing call site keeps compiling unchanged. */
+    initiatedByStaffProfileId?: string | null;
   },
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ record: PaymentRecord; isNew: boolean }> {
@@ -266,6 +271,8 @@ export async function createIdempotentPendingPaymentRecord(
     createdAt: params.createdAt,
     paidAt: null,
     updatedAt: params.createdAt,
+    initiatedByStaffProfileId: params.initiatedByStaffProfileId ?? null,
+    depositedInBankDepositId: null,
   };
 
   if (dataAdapterMode === 'mock') {
@@ -293,6 +300,41 @@ export async function createIdempotentPendingPaymentRecord(
 }
 
 const paymentProvider: PaymentProvider = cloverProvider;
+
+/**
+ * Phase 31 (Financial Management & General Ledger). Refunds an already-
+ * succeeded payment at its provider — the one place any file needs to
+ * touch `PaymentProvider.refundPayment`, mirroring `initiateCheckout`'s
+ * own "no direct payment-provider-calling code outside this module"
+ * boundary. Called from
+ * services/financialTransactionService.ts#postRefundTransaction, which
+ * has already loaded the `PaymentRecord` and never imports
+ * `lib/clover/cloverProvider.ts` itself.
+ *
+ * Mock mode never reaches the real provider — mirrors `initiateCheckout`'s
+ * own mock-mode branch (a synthesized result, not a real Clover call).
+ */
+export async function refundPaymentAtProvider(
+  organizationId: string,
+  payment: PaymentRecord,
+  dataAdapterMode: DataAdapterMode,
+): Promise<RefundResult> {
+  if (!payment.providerPaymentId) {
+    throw new Error(`Payment "${payment.id}" has no providerPaymentId — cannot be refunded at the provider.`);
+  }
+  if (dataAdapterMode === 'mock') {
+    return { providerRefundId: `mock-refund-${payment.id}` };
+  }
+  const integration = await getEnabledIntegration(organizationId, payment.provider, dataAdapterMode);
+  if (!integration) {
+    throw new Error(`No enabled "${payment.provider}" payment integration for this organization.`);
+  }
+  return paymentProvider.refundPayment({
+    integration,
+    providerPaymentId: payment.providerPaymentId,
+    amount: payment.amount,
+  });
+}
 
 export type InitiateCheckoutResult = { paymentId: string; checkoutUrl: string | null; isNew: boolean };
 

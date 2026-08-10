@@ -48,12 +48,14 @@ describe('GET /api/cases/[caseId]/payments', () => {
         providerPaymentId: null, idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-1`, checkoutUrl: null, status: 'succeeded', amount: 1000, currency: 'usd', purpose: 'A',
         cardBrand: null, cardLast4: null, receiptReference: null, failureCode: null, failureMessage: null,
         createdAt: '2026-01-01T00:00:00.000Z', paidAt: null, updatedAt: '2026-01-01T00:00:00.000Z',
+        initiatedByStaffProfileId: null, depositedInBankDepositId: null,
       },
       {
         id: 'p2', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', caseOrderId: null, provider: 'clover', providerCheckoutId: 'c2',
         providerPaymentId: null, idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-2`, checkoutUrl: null, status: 'pending', amount: 2000, currency: 'usd', purpose: 'B',
         cardBrand: null, cardLast4: null, receiptReference: null, failureCode: null, failureMessage: null,
         createdAt: '2026-01-02T00:00:00.000Z', paidAt: null, updatedAt: '2026-01-02T00:00:00.000Z',
+        initiatedByStaffProfileId: null, depositedInBankDepositId: null,
       },
     );
 

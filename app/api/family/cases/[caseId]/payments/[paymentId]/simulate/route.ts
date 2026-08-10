@@ -4,6 +4,7 @@ import { requireFamilyAccess } from '@/lib/auth/requireFamilyAccess';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsService';
 import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
+import { portalActivityContext } from '@/services/portal/portalActivityContext';
 import { buildPortalPaymentView } from '@/domain/portal/portalPaymentView';
 
 /**
@@ -54,7 +55,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   );
 
   if (updated) {
-    await markCasePaidIfVerified(accessResult.organizationId, accessResult.caseId, dataAdapterMode);
+    await markCasePaidIfVerified(accessResult.organizationId, accessResult.caseId, dataAdapterMode, {
+      paymentId,
+      amountCents: updated.amount,
+      ctx: portalActivityContext(accessResult.organizationId, paymentId),
+      idFactory: () => crypto.randomUUID(),
+    });
   }
 
   return NextResponse.json({ payment: updated ? buildPortalPaymentView(updated) : null });

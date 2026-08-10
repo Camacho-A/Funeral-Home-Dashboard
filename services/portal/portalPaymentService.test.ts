@@ -56,6 +56,8 @@ describe('portalPaymentService', () => {
         createdAt: '2026-08-01T00:00:00.000Z',
         paidAt: '2026-08-01T00:05:00.000Z',
         updatedAt: '2026-08-01T00:05:00.000Z',
+        initiatedByStaffProfileId: null,
+        depositedInBankDepositId: null,
       });
 
       const { listFamilyPaymentHistory } = await import('./portalPaymentService');

@@ -346,11 +346,14 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | `cardBrand`, `cardLast4`, `receiptReference`, `failureCode`, `failureMessage` | Text | Optional | Mutable — set from a verified webhook only |
 | `createdAt` | Date | Required | Immutable |
 | `paidAt`, `updatedAt` | Date | Optional/Required | Mutable |
+| `initiatedByStaffProfileId` | Text, nullable | Optional | **(added Phase 31)** Immutable — StaffProfile-space (never Identity-space directly, per ADR-034's hard layering invariant), resolved via `resolveStaffProfileForCaller`. Null for a family-initiated (Portal) payment and for every payment predating this phase. Closes a gap ADR-034 named twice as a reserved, unbuilt extension point. |
+| `depositedInBankDepositId` | Text, nullable | Optional | **(added Phase 31)** → `bankDeposits.beaconBankDepositId`, set exactly once (never un-set) the moment this payment's cash is swept into a bank deposit. Lets `services/financialTransactionService.ts#postRefundTransaction` credit the correct account on refund — Undeposited Funds if `null`, the linked bank Cash account if set. |
 
 - **`_id` is set to `beaconPaymentId`** at insert time — the same convention as `cases`/`tasks`, making a single-payment lookup free via Wix's system `_id` index.
 - **`unique_idempotencyKey`** (correction pass — replaces the original `unique_providerCheckoutId`) guarantees an organization can never have two `PaymentRecord`s for the same client-supplied idempotency key, enforced atomically by Wix, not by an application-level check-then-insert. Wix caps a collection at exactly one unique index total, which is why `providerCheckoutId` gave up its own unique constraint here — see ADR-022 for the full reasoning and the empirical confirmation that this cap is real (`WDE0141: Index quota exceeded`).
 - **`organizationId_caseId`** serves the payment-history list query (`PaymentCard`'s "payment history").
 - **`organizationId_providerCheckoutId`** (regular, not unique) serves the org-scoped update-by-checkout-id path (`updatePaymentRecordByCheckoutId`) — correctness there comes from the `idempotencyKey` guard upstream (only one record is ever created per attempt), not from this index enforcing uniqueness itself.
+- **(modified Phase 31)** Extended live with the 2 new nullable fields above via the established "resend the full field list" `PUT /wix-data/v2/collections` mechanism (revision 2 → 3) — no new index needed, this collection's index budget (2 regular + 1 unique) was already fully spent, unchanged from before this phase.
 - **TS type:** `types/payment.ts`'s `PaymentRecord`.
 
 ## Collection 10 — `webhookEvents`
@@ -411,7 +414,7 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 
 - **`_id` is set to a fresh generated id** at insert time.
 - **Historical immutability is structural, not just a convention:** `subtotal`/`discountTotal`/`taxTotal`/`total`/`version` never change after insert — verified by `services/pricingService.test.ts`'s "never rewrites the superseded version's own totals" test. Only `status` (active→superseded) and `balanceDue` (as payments arrive) are ever updated on an existing row.
-- **Indexes:** `organizationId_caseId` (regular) — serves both "get this case's active order" (filtered further by `status: 'active'` in the query) and "list every version" (Collection Detail's future audit/reporting needs).
+- **Indexes:** `organizationId_caseId` (regular) — serves both "get this case's active order" (filtered further by `status: 'active'` in the query) and "list every version" (Collection Detail's future audit/reporting needs). **(modified Phase 31)** — gained a second regular index, `(organizationId, status)`, serving the AR Aging report's "every open order org-wide" access pattern (`services/pricingService.ts#listActiveCaseOrdersForOrganization`), which no caller before Phase 31 ever needed (every prior caller looked up by a known `caseId`). No new field was required, since `status` already existed — only the index itself was added live.
 - **TS type:** `types/caseOrder.ts`'s `CaseOrder`.
 
 ## Collection 13 — `caseOrderLineItems`
@@ -1255,6 +1258,206 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **TS type:** `types/staffProfile.ts`'s `StaffProfile`.
 - **Migration:** backfilled for Manor's Cremation via `services/staffProfileMigrationService.ts` — a two-phase, dry-run-then-apply script resolving each of the 3 legacy fixture ids (`staff-dana`/`staff-chris`/`staff-priya`) to a real `Identity` by known email correspondence, never inventing one for a row that doesn't resolve. Live result: `staff-dana` resolved (a real identity from Phase 21's own migration); `staff-chris`/`staff-priya` correctly reported unresolved, since they are mock-fixture-only additions this phase with no corresponding real invited identity yet.
 
+## Collection 53 — `chartOfAccounts`
+
+**Purpose:** the per-organization chart of accounts (Phase 31) — every `LedgerAccount` a journal entry line can post against. Seeded from a platform-owned, in-code starter list (`domain/ledger/starterChartOfAccounts.ts`), materialized as fresh, independent rows per organization — never a shared cross-org template row. **Ownership:** organization-scoped. **Retention:** never hard-deleted; `isActive=false` is the only lifecycle transition, and `isSystemAccount` accounts can never be deactivated at all. See [ADR-035](./adr/ADR-035-financial-management-and-general-ledger.md).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconLedgerAccountId` | Text | Required | Immutable — set as the item's own system `_id` at insert time, the established `cases`/`beaconCaseId` trick |
+| `organizationId` | Text | Required | Immutable |
+| `accountNumber` | Text | Required | Immutable |
+| `accountNumberKey` | Text | Required | Immutable — composed `{organizationId}:{accountNumber}`, the real unique-index target (same technique `paymentRecords.idempotencyKey` uses) |
+| `name` | Text | Required | Mutable |
+| `accountType` | Text (`asset`/`liability`/`equity`/`revenue`/`expense`) | Required | Immutable once created |
+| `normalBalance` | Text (`debit`/`credit`) | Required | Immutable — derived from `accountType` at creation |
+| `parentAccountId` | Text, nullable | Optional | Mutable |
+| `isSystemAccount` | Boolean | Required | Immutable — seeded starter accounts only, never deactivatable |
+| `isActive` | Boolean | Required | Mutable — the only lifecycle transition |
+| `description` | Text, nullable | Optional | Mutable |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular, 1 unique): unique `accountNumberKey`; `(organizationId, accountType)`; `(organizationId, isActive)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/ledgerAccount.ts`'s `LedgerAccount`.
+- **Starter chart:** `1000` Cash-Operating, `1100` Undeposited Funds, `1200` Accounts Receivable, `3000` Retained Earnings, `3010` Legacy Opening Balance (added mid-implementation as the backfill migration's disclosed fallback account, not part of the original plan), `4000` Service Revenue, `5000` Bad Debt Expense, `5010` Bank Fees Expense (reserved). `1010`+ (one Cash-Bank account per `BankAccount`) is deliberately not seeded — an operator creates it explicitly via `chartOfAccountsService.createAccount`, then links a `BankAccount` to it.
+- **Sole writer:** `services/chartOfAccountsService.ts`.
+
+## Collection 54 — `journalEntries`
+
+**Purpose:** one header row per double-entry posting (Phase 31) — the general ledger's transaction record. Every system-generated entry (`payment`/`refund`/`write_off`/`adjustment`/`deposit`/`transfer`/`reversal`/`opening_balance`) is created already `posted`; only `sourceType: 'manual'` entries go `draft` → `posted`. Once `posted`, an entry is permanently immutable — corrections are always a new reversing entry. **Ownership:** organization-scoped. **Retention:** never deleted; `void` (draft only) and `posted` are terminal-ish states, `reversesEntryId` on a *new* entry is the only way "this was corrected" is ever recorded. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconJournalEntryId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `entryNumber` | Text | Required | Immutable |
+| `entryNumberKey` | Text | Required | Immutable — composed `{organizationId}:{entryNumber}`, the unique-index target |
+| `entryDate` | Date | Required | Immutable |
+| `status` | Text (`draft`/`posted`/`void`) | Required | Mutable — only while `draft`; permanently frozen once `posted` |
+| `sourceType` | Text | Required | Immutable |
+| `sourceReferenceId` | Text, nullable | Optional | Immutable — → `PaymentRecord.id`/`BankDeposit.id`/etc., depending on `sourceType` |
+| `caseId` | Text, nullable | Optional | Immutable |
+| `memo` | Text | Required | Mutable — only while `draft` |
+| `reversesEntryId` | Text, nullable | Optional | Immutable — set only on the *reversing* entry, forward-reference only; never written back onto the original |
+| `postedAt` | Date, nullable | Optional | Immutable once set |
+| `postedByStaffProfileId` | Text, nullable | Optional | Immutable once set — StaffProfile-space, per ADR-034 |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable while `draft` |
+
+- **Indexes** (3 regular, 1 unique): unique `entryNumberKey`; `(organizationId, entryDate)`; `(organizationId, caseId)`; `(organizationId, sourceReferenceId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/journalEntry.ts`'s `JournalEntry`.
+- **Sole writer:** `services/generalLedgerService.ts`.
+
+## Collection 55 — `journalEntryLines`
+
+**Purpose:** the individual debit/credit lines of one `JournalEntry` (Phase 31). Always ≥2 per entry, always balanced (`sum(debits) === sum(credits)`, enforced by `domain/ledger/balancing.ts` before any write). Fully write-once — never updated or deleted once inserted. **Ownership:** organization-scoped, belongs to one `journalEntries` row. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconJournalEntryLineId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `journalEntryId` | Text | Required | Immutable — → `journalEntries.beaconJournalEntryId` |
+| `lineNumber` | Number | Required | Immutable |
+| `accountId` | Text | Required | Immutable — → `chartOfAccounts.beaconLedgerAccountId` |
+| `direction` | Text (`debit`/`credit`) | Required | Immutable — explicit, never a signed amount |
+| `amount` | Number | Required | Immutable — always a positive integer (cents) |
+| `caseId` | Text, nullable | Optional | Immutable |
+| `description` | Text, nullable | Optional | Immutable |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (3 regular, no unique): `(organizationId, journalEntryId)`; `(organizationId, accountId)` — the single most important index in this phase, since every derived report depends on it; `(organizationId, caseId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/journalEntry.ts`'s `JournalEntryLine`.
+- **Sole writer:** `services/generalLedgerService.ts`.
+
+## Collection 56 — `bankAccounts`
+
+**Purpose:** one organization's own real bank account (Phase 31), distinct from the `LedgerAccount` it represents — every `BankAccount` links 1:1 to a Cash-type `LedgerAccount` via `ledgerAccountId`, so its real, derived balance is always `generalLedgerService.getAccountBalance`, never a second, separately-tracked figure. **Ownership:** organization-scoped. **Retention:** never hard-deleted; `isActive=false` is the only lifecycle transition. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconBankAccountId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `name` | Text | Required | Mutable |
+| `ledgerAccountId` | Text | Required | Immutable — → `chartOfAccounts.beaconLedgerAccountId`, must be asset-type |
+| `accountNumberLast4` | Text, nullable | Optional | Mutable — display only, mirrors `PaymentRecord.cardLast4`'s existing PCI-safe precedent; never a full account/routing number |
+| `bankName` | Text, nullable | Optional | Mutable |
+| `isActive` | Boolean | Required | Mutable — the only lifecycle transition |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (1 regular): `(organizationId, isActive)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/bankAccount.ts`'s `BankAccount`.
+- **Sole writer:** `services/bankingService.ts`.
+
+## Collection 57 — `bankDeposits`
+
+**Purpose:** recording that one or more `PaymentRecord`s (previously sitting in Undeposited Funds) were swept into a real bank account (Phase 31). **Ownership:** organization-scoped. **Retention:** never deleted, fully immutable after creation. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconBankDepositId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `bankAccountId` | Text | Required | Immutable — → the linked ledger account id (see `services/financialTransactionService.ts#postDepositTransaction` — this field actually stores a `LedgerAccount.id`, not a `BankAccount.id`, despite its name; a naming quirk of the shipped implementation, not a documentation error) |
+| `depositDate` | Date | Required | Immutable |
+| `totalAmount` | Number | Required | Immutable |
+| `includedPaymentRecordIds` | Text (serialized array) | Required | Immutable — provenance only, fetched by known id, never indexed/queried (Wix Data's index API doesn't support "contains" filtering) |
+| `journalEntryId` | Text | Required | Immutable — → `journalEntries.beaconJournalEntryId`, the Dr Cash-Bank / Cr Undeposited Funds entry this deposit posted |
+| `memo` | Text, nullable | Optional | Immutable |
+| `createdAt` | Date | Required | Immutable |
+| `createdByStaffProfileId` | Text, nullable | Optional | Immutable — StaffProfile-space |
+
+- **Indexes** (2 regular): `(organizationId, bankAccountId)`; `(organizationId, depositDate)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/bankDeposit.ts`'s `BankDeposit`.
+- **Sole writer:** `services/financialTransactionService.ts` (not `bankingService.ts` — see ADR-035's "Service architecture" section for why).
+
+## Collection 58 — `bankStatementImports`
+
+**Purpose:** the header record for one imported bank statement file (Phase 31) — the least-precedented part of this phase, since no prior Beacon feature imports external data. **Ownership:** organization-scoped. **Retention:** never deleted. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconBankStatementImportId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `bankAccountId` | Text | Required | Immutable |
+| `importedAt` | Date | Required | Immutable |
+| `fileName` | Text, nullable | Optional | Immutable — this phase's UI has no CSV/file-upload parser yet; `importBankStatement` accepts already-parsed lines, a named, disclosed gap |
+| `statementPeriodStart`, `statementPeriodEnd` | Date, nullable | Optional | Immutable |
+| `lineCount` | Number | Required | Immutable |
+| `createdByStaffProfileId` | Text, nullable | Optional | Immutable |
+
+- **Indexes** (1 regular): `(organizationId, bankAccountId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/bankStatement.ts`'s `BankStatementImport`.
+- **Sole writer:** `services/bankingService.ts`.
+
+## Collection 59 — `bankStatementLines`
+
+**Purpose:** one raw transaction line from an imported statement (Phase 31), matched against posted `JournalEntryLine`s via `runAutoMatch`'s ±3-day/exact-amount algorithm. **Ownership:** organization-scoped, belongs to one `bankStatementImports` row. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconBankStatementLineId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `bankStatementImportId` | Text | Required | Immutable |
+| `bankAccountId` | Text | Required | Immutable |
+| `transactionDate` | Date | Required | Immutable |
+| `description` | Text | Required | Immutable |
+| `amount` | Number | Required | Immutable — signed cents (positive = deposit, negative = withdrawal); the one deliberate exception to every other financial amount in this phase being "always positive + an explicit direction field," since this is raw external data |
+| `matchedJournalEntryId` | Text, nullable | Optional | Mutable — set once auto/manually matched |
+| `matchStatus` | Text (`unmatched`/`auto_matched`/`manually_matched`/`excluded`) | Required | Mutable |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (2 regular): `(organizationId, bankStatementImportId)`; `(organizationId, bankAccountId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/bankStatement.ts`'s `BankStatementLine`.
+- **Sole writer:** `services/bankingService.ts`.
+
+## Collection 60 — `bankReconciliations`
+
+**Purpose:** one reconciliation pass for one `BankAccount` against one imported statement (Phase 31). "Reconciled" is an audit marker only — a `BankAccount`'s real, current balance is always `generalLedgerService.getAccountBalance`, never replaced by this record's own `statementEndingBalance`. **Ownership:** organization-scoped. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconBankReconciliationId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `bankAccountId` | Text | Required | Immutable |
+| `statementEndingDate` | Date | Required | Immutable |
+| `statementEndingBalance` | Number | Required | Immutable |
+| `bookBalanceAtStart` | Number | Required | Immutable — the last **completed** reconciliation's own `statementEndingBalance` (0 for a first-ever reconciliation), never the account's current live balance (a real bug caught and fixed during implementation — see ADR-035) |
+| `status` | Text (`in_progress`/`completed`) | Required | Mutable |
+| `bankStatementImportId` | Text, nullable | Optional | Immutable |
+| `completedAt` | Date, nullable | Optional | Mutable — set once |
+| `completedByStaffProfileId` | Text, nullable | Optional | Mutable — set once |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(organizationId, bankAccountId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/bankReconciliation.ts`'s `BankReconciliation`.
+- **Sole writer:** `services/bankingService.ts`.
+
+## Collection 61 — `caseWriteOffs`
+
+**Purpose:** recording that part of a case's balance was written off as uncollectible (Phase 31) — the fix for the write-off/`CaseOrder.balanceDue` reconciliation gap named in ADR-035's conflict #3. `pricingService.ts#getSatisfiedAmountForCase` sums these alongside succeeded payments. **Ownership:** organization-scoped. **Retention:** never deleted, fully immutable after creation. See ADR-035.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCaseWriteOffId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `caseId` | Text | Required | Immutable |
+| `amount` | Number | Required | Immutable |
+| `journalEntryId` | Text | Required | Immutable — → `journalEntries.beaconJournalEntryId`, the Dr Bad Debt Expense / Cr Accounts Receivable entry |
+| `reason` | Text | Required | Immutable |
+| `performedByStaffProfileId` | Text, nullable | Optional | Immutable — StaffProfile-space |
+| `createdAt` | Date | Required | Immutable |
+
+- **Indexes** (1 regular): `(organizationId, caseId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/caseWriteOff.ts`'s `CaseWriteOff`.
+- **Sole writer:** `services/financialTransactionService.ts` (not `chartOfAccountsService.ts`).
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -1265,7 +1468,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Superseded by Collection 52 (`staffProfiles`), Phase 30 | Originally recommended for retirement in favor of unifying entirely on `organizationMemberships`. Phase 30 built a real, live `staffProfiles` collection instead, bridged into the identity chain rather than replaced by it — see the "Open design decision" resolution above and Collection 52. |
 
-## Permissions summary (all fifty-two collections)
+## Permissions summary (all sixty-one collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -1347,6 +1550,22 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Preferences for one identity | `notificationPreferences (organizationId, identityId)` |
 | Caller's own StaffProfile resolution (`resolveStaffProfileForCaller`) | `staffProfiles (organizationId, identityId)` |
 | Assignable-staff listing for one organization | `staffProfiles (organizationId, isActive)` |
+| Chart of accounts lookup by number (uniqueness + lookup) | `chartOfAccounts (accountNumberKey)` unique |
+| Chart of accounts by type / by active status | `chartOfAccounts (organizationId, accountType)` / `chartOfAccounts (organizationId, isActive)` |
+| Journal entry lookup by number (uniqueness + lookup) | `journalEntries (entryNumberKey)` unique |
+| General Ledger / Case Schedule-style date-range queries | `journalEntries (organizationId, entryDate)` |
+| Journal entries for one case | `journalEntries (organizationId, caseId)` |
+| Idempotency check by originating record (backfill migration, Transaction Register enrichment) | `journalEntries (organizationId, sourceReferenceId)` |
+| Lines for one journal entry | `journalEntryLines (organizationId, journalEntryId)` |
+| Every derived report's core primitive (`getAccountBalance`) | `journalEntryLines (organizationId, accountId)` |
+| Lines for one case (drill-down) | `journalEntryLines (organizationId, caseId)` |
+| Active/all bank accounts for one organization | `bankAccounts (organizationId, isActive)` |
+| Deposit history for one bank account / by date | `bankDeposits (organizationId, bankAccountId)` / `bankDeposits (organizationId, depositDate)` |
+| Statement imports for one bank account | `bankStatementImports (organizationId, bankAccountId)` |
+| Lines for one statement import / for one bank account (auto-match) | `bankStatementLines (organizationId, bankStatementImportId)` / `bankStatementLines (organizationId, bankAccountId)` |
+| Reconciliation history for one bank account | `bankReconciliations (organizationId, bankAccountId)` |
+| Write-offs for one case | `caseWriteOffs (organizationId, caseId)` |
+| AR Aging's "every open order org-wide" (Phase 31 addition to an existing collection) | `caseOrders (organizationId, status)` |
 
 ## Migration notes
 
@@ -1370,3 +1589,5 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **Phase 28: Wix Data compound indexes cap at 3 fields, discovered live** — a 4-field `(organizationId, identityId, channel, status)` index on `notificationDeliveries` was rejected outright (`WDE0080: fields has size 4, expected 3 or less`). This is a genuinely new, previously-undocumented limit — every prior phase's compound indexes happened to need at most 3 fields. Resolved by dropping to `(organizationId, identityId, status)` and filtering `channel` in application code, the same "index narrows, application code is the correctness boundary" discipline `activityService.ts` already established. All nine Phase 28 indexes (across the five new collections) were created live and confirmed `ACTIVE`.
 - **Phase 28: Wix Data's `COUNT` capability is reachable, but not safe to rely on for correctness.** A dedicated `POST /wix-data/v2/items/count` endpoint (`{ dataCollectionId, query: { filter } }` → `{ totalCount }`) exists and responds successfully — a genuinely different endpoint from `/wix-data/v2/items/query`, not documented anywhere in this codebase before this phase. Empirically, though, it was observed to return a stale/inflated total shortly after a rapid sequence of writes and deletes against the same rows: a controlled test creating exactly two matching, freshly-inserted rows with zero pre-existing ones (independently confirmed via a full state re-query immediately after) returned `totalCount: 4` from the count endpoint. `services/notificationService.ts`'s `getUnreadCount` deliberately keeps its existing bounded fetch-and-count implementation against the regular, observed-consistent query endpoint rather than switching to this faster but inconsistency-prone one. See ADR-032's "Live Wix verification" section for the full test.
 - **Phase 29: the "resend the full field list" `PUT /wix-data/v2/collections` mechanism requires the collection's current `revision` in the payload, discovered live.** Every prior phase's documented use of this mechanism (`organizations`, `organizationMemberships`, `paymentRecords`) omitted this detail; a first attempt at extending `caseDocuments` with `familyVisible` failed with `"revision must not be empty"` until the `GET`-fetched current `revision` was included in the `PUT` body. Also confirmed live: the correct update-item endpoint shape is `PUT /wix-data/v2/items/{wixItemId}?dataCollectionId=...` (id in the path and as a query parameter, matching `lib/wixDataApi.ts`'s own `updateWixDataItem` exactly) — a same-session first attempt using `PUT /wix-data/v2/items` with `dataCollectionId` in the body instead returned an uninformative empty-bodied 404. All five new Phase 29 collections (`portalUsers`/`portalInvitations`/`portalAccess`/`portalSessions`/`portalMessages`) and their twelve indexes were created live and confirmed `ACTIVE`; index builds across all five collections took noticeably longer than a single-collection probe (indexes stayed `BUILDING` past an initial ~30-second poll window before completing on a subsequent check) — consistent with the platform queuing several concurrently-requested index builds, not a new limitation. See ADR-033's "Live Wix verification" section for the full disposable-lifecycle exercise.
+- **Phase 31: `caseOrders`' new `(organizationId, status)` index needed no accompanying `PUT` schema change** — `status` already existed as a field, so extending an existing collection's *indexes* (as opposed to its *fields*) is sometimes just a `POST /wix-data/v2/indexes` call with nothing else required; the two are independent operations, not always bundled together. `paymentRecords`, by contrast, needed the full "resend the full field list" `PUT` mechanism (revision 2 → 3) since its 2 new fields (`initiatedByStaffProfileId`, `depositedInBankDepositId`) didn't exist yet — no new index was added for `paymentRecords`, since its 2-regular/1-unique budget was already fully spent.
+- **Phase 31: live verification was staged across two user checkpoints, not run in one pass** — a dry run of the historical-backfill migration only needed 2 of the 9 new collections (`chartOfAccounts`, `journalEntries`) to resolve real ledger accounts and check idempotency; the remaining 7 collections plus the `caseOrders`/`paymentRecords` modifications were created only after the dry run's (empty, since Manor's Cremation currently has 0 real payment records) result was reviewed. All 9 new collections and their 15 indexes were created live and confirmed `ACTIVE`; disposable-row exercises (a payment posting, a reversal, and a full deposit→statement-import→auto-match→reconciliation round trip) were run against real Wix data and fully cleaned up afterward, with a final residual-check query confirming zero leftover rows. See ADR-035's "Live Wix verification" section for the full account.

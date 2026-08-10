@@ -34,4 +34,5 @@ export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {
   administration: 'Administration',
   family_portal: 'Family Portal',
   system: 'System',
+  financial: 'Financial',
 };

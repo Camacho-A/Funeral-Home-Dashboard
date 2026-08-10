@@ -67,7 +67,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   );
 
   if (updated) {
-    await markCasePaidIfVerified(organizationId, caseId, dataAdapterMode);
+    await markCasePaidIfVerified(organizationId, caseId, dataAdapterMode, {
+      paymentId,
+      amountCents: updated.amount,
+      ctx: { organizationId, actorIdentityId: authResult.context.userId, actorMembershipId: null, actorRoleKey: authResult.context.role, correlationId: paymentId },
+      idFactory: () => crypto.randomUUID(),
+    });
   }
 
   return NextResponse.json({ payment: updated });

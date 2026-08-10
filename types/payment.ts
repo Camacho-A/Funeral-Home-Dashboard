@@ -106,6 +106,22 @@ export type PaymentRecord = {
       pending/failed/cancelled records. */
   paidAt: string | null;
   updatedAt: string;
+  /** Phase 31 (Financial Management & General Ledger). StaffProfile-space
+      (never Identity-space directly, per ADR-034's hard layering
+      invariant) — the staff member who initiated this payment attempt,
+      resolved via services/staffProfileService.ts#resolveStaffProfileForCaller.
+      Null for a family-initiated (Portal) payment, and for every payment
+      record that predates this phase. Closes a gap named twice in
+      ADR-034 as a reserved, unbuilt extension point. */
+  initiatedByStaffProfileId: string | null;
+  /** Phase 31. -> BankDeposit.id, set exactly once (never un-set) the
+      moment this payment's cash is swept into a bank deposit — lets
+      services/financialTransactionService.ts#postRefundTransaction credit
+      the correct account (Undeposited Funds if null, the linked bank Cash
+      account if set) without ever needing "contains" filtering over
+      BankDeposit.includedPaymentRecordIds, which Wix Data's index API
+      doesn't support anyway. Null until a deposit sweeps this payment. */
+  depositedInBankDepositId: string | null;
 };
 
 /**

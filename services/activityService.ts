@@ -477,6 +477,28 @@ export function recordPaymentCancelled(ctx: ActivityContext, caseId: string, pay
   );
 }
 
+/** Phase 31 (Financial Management & General Ledger). `PAYMENT_REFUNDED`
+    existed since Phase 19C as a reserved type with no emitter — this is
+    its first real one, called from
+    `services/financialTransactionService.ts#postRefundTransaction`. */
+export function recordPaymentRefunded(ctx: ActivityContext, caseId: string, paymentId: string, amountCents: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'payments',
+      eventType: ACTIVITY_EVENT_TYPES.PAYMENT_REFUNDED,
+      resourceType: 'payment',
+      resourceId: paymentId,
+      previousValue: JSON.stringify({ status: 'succeeded' }),
+      newValue: JSON.stringify({ status: 'refunded', amountCents }),
+      description: `Payment refunded for $${(amountCents / 100).toFixed(2)}`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCaseOrderChanged(
   ctx: ActivityContext,
   caseId: string,
@@ -1506,6 +1528,295 @@ export function recordPortalLogin(ctx: ActivityContext, portalUserId: string, da
       newValue: null,
       description: 'Family Portal login',
       metadata: JSON.stringify({ portalUserId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 31 (Financial Management & General Ledger). Category 'financial' —
+// every one of these is called exclusively from
+// services/chartOfAccountsService.ts / services/generalLedgerService.ts /
+// services/financialTransactionService.ts / services/bankingService.ts —
+// enforced by a structural test mirroring every other domain's own
+// "only this service calls these record* builders" boundary.
+// ---------------------------------------------------------------------------
+
+export function recordJournalEntryPosted(
+  ctx: ActivityContext,
+  caseId: string | null,
+  journalEntryId: string,
+  entryNumber: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.JOURNAL_ENTRY_POSTED,
+      resourceType: 'journalEntry',
+      resourceId: journalEntryId,
+      previousValue: null,
+      newValue: null,
+      description: `Journal entry ${entryNumber} posted`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordJournalEntryReversed(
+  ctx: ActivityContext,
+  caseId: string | null,
+  journalEntryId: string,
+  originalEntryNumber: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.JOURNAL_ENTRY_REVERSED,
+      resourceType: 'journalEntry',
+      resourceId: journalEntryId,
+      previousValue: null,
+      newValue: null,
+      description: `Journal entry ${originalEntryNumber} reversed`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordJournalEntryVoided(
+  ctx: ActivityContext,
+  caseId: string | null,
+  journalEntryId: string,
+  entryNumber: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.JOURNAL_ENTRY_VOIDED,
+      resourceType: 'journalEntry',
+      resourceId: journalEntryId,
+      previousValue: JSON.stringify({ status: 'draft' }),
+      newValue: JSON.stringify({ status: 'void' }),
+      description: `Journal entry ${entryNumber} voided`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordLedgerAccountCreated(
+  ctx: ActivityContext,
+  accountId: string,
+  accountNumber: string,
+  name: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.LEDGER_ACCOUNT_CREATED,
+      resourceType: 'ledgerAccount',
+      resourceId: accountId,
+      previousValue: null,
+      newValue: JSON.stringify({ accountNumber, name }),
+      description: `Ledger account ${accountNumber} (${name}) created`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordLedgerAccountDeactivated(
+  ctx: ActivityContext,
+  accountId: string,
+  accountNumber: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.LEDGER_ACCOUNT_DEACTIVATED,
+      resourceType: 'ledgerAccount',
+      resourceId: accountId,
+      previousValue: JSON.stringify({ isActive: true }),
+      newValue: JSON.stringify({ isActive: false }),
+      description: `Ledger account ${accountNumber} deactivated`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordCaseWriteOffPosted(
+  ctx: ActivityContext,
+  caseId: string,
+  writeOffId: string,
+  amountCents: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_WRITE_OFF_POSTED,
+      resourceType: 'caseWriteOff',
+      resourceId: writeOffId,
+      previousValue: null,
+      newValue: JSON.stringify({ amountCents }),
+      description: `$${(amountCents / 100).toFixed(2)} written off`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordFinancialAdjustmentPosted(
+  ctx: ActivityContext,
+  caseId: string | null,
+  journalEntryId: string,
+  amountCents: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.FINANCIAL_ADJUSTMENT_POSTED,
+      resourceType: 'journalEntry',
+      resourceId: journalEntryId,
+      previousValue: null,
+      newValue: JSON.stringify({ amountCents }),
+      description: `Adjustment posted for $${(amountCents / 100).toFixed(2)}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordBankDepositPosted(
+  ctx: ActivityContext,
+  bankDepositId: string,
+  totalAmountCents: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.BANK_DEPOSIT_POSTED,
+      resourceType: 'bankDeposit',
+      resourceId: bankDepositId,
+      previousValue: null,
+      newValue: JSON.stringify({ totalAmountCents }),
+      description: `Deposit posted for $${(totalAmountCents / 100).toFixed(2)}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordFundsTransferPosted(
+  ctx: ActivityContext,
+  journalEntryId: string,
+  amountCents: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.FUNDS_TRANSFER_POSTED,
+      resourceType: 'journalEntry',
+      resourceId: journalEntryId,
+      previousValue: null,
+      newValue: JSON.stringify({ amountCents }),
+      description: `Transfer posted for $${(amountCents / 100).toFixed(2)}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordBankStatementImported(
+  ctx: ActivityContext,
+  bankStatementImportId: string,
+  lineCount: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.BANK_STATEMENT_IMPORTED,
+      resourceType: 'bankStatementImport',
+      resourceId: bankStatementImportId,
+      previousValue: null,
+      newValue: JSON.stringify({ lineCount }),
+      description: `Bank statement imported (${lineCount} lines)`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordBankReconciliationStarted(
+  ctx: ActivityContext,
+  reconciliationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.BANK_RECONCILIATION_STARTED,
+      resourceType: 'bankReconciliation',
+      resourceId: reconciliationId,
+      previousValue: null,
+      newValue: null,
+      description: 'Bank reconciliation started',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordBankReconciliationCompleted(
+  ctx: ActivityContext,
+  reconciliationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'financial',
+      eventType: ACTIVITY_EVENT_TYPES.BANK_RECONCILIATION_COMPLETED,
+      resourceType: 'bankReconciliation',
+      resourceId: reconciliationId,
+      previousValue: JSON.stringify({ status: 'in_progress' }),
+      newValue: JSON.stringify({ status: 'completed' }),
+      description: 'Bank reconciliation completed',
+      metadata: null,
       severity: 'info',
     }),
     dataAdapterMode,

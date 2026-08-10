@@ -85,6 +85,7 @@ describe('GET /api/family/cases/[caseId]/payments', () => {
       createdAt: '2026-08-01T00:00:00.000Z',
       paidAt: '2026-08-01T00:05:00.000Z',
       updatedAt: '2026-08-01T00:05:00.000Z',
+      initiatedByStaffProfileId: null, depositedInBankDepositId: null,
     });
 
     const response = await getRequest();

@@ -39,9 +39,15 @@ export type NotificationTokens = {
   caseNumber?: string;
   decedentName?: string;
   entityTitle?: string; // e.g. an appointment's title, a task's text, a document's file name
+  /** Phase 31 (Financial Management & General Ledger). A pre-formatted
+      dollar figure (e.g. "$1,234.56") — callers format the raw integer-
+      cents amount themselves; this registry never does currency math, the
+      same "structured content in, formatted string out" boundary every
+      other token here already follows. */
+  amountDisplay?: string;
 };
 
-const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = ['recipientDisplayName', 'actorDisplayName', 'caseNumber', 'decedentName', 'entityTitle'];
+const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = ['recipientDisplayName', 'actorDisplayName', 'caseNumber', 'decedentName', 'entityTitle', 'amountDisplay'];
 
 type TemplateDefinition = {
   titleTemplate: string;
@@ -123,6 +129,22 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
   'portal.staff_message_received': {
     titleTemplate: 'New Family Portal message',
     bodyTemplate: '{{actorDisplayName}} sent a message about case {{caseNumber}}',
+  },
+
+  // Phase 31 (Financial Management & General Ledger). Delivered via
+  // recipientScope: 'role' / roleKey: 'accounting' — see
+  // notificationTypeRegistry.ts's own comment on why.
+  'financial.journal_entry_needs_review': {
+    titleTemplate: 'Journal entry needs review',
+    bodyTemplate: 'Journal entry {{entityTitle}} is ready for review',
+  },
+  'financial.reconciliation_completed': {
+    titleTemplate: 'Reconciliation completed',
+    bodyTemplate: 'Bank reconciliation completed for {{entityTitle}}',
+  },
+  'financial.invoice_overdue': {
+    titleTemplate: 'Invoice overdue',
+    bodyTemplate: 'Case {{caseNumber}} has an overdue balance of {{amountDisplay}}',
   },
 };
 

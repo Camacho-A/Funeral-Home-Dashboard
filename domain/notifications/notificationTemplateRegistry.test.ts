@@ -37,4 +37,9 @@ describe('resolveNotificationContent', () => {
   it('throws for an unrecognized notification type', () => {
     expect(() => resolveNotificationContent('not.a.real.type', {})).toThrow(/Unrecognized notification type/);
   });
+
+  it('interpolates the amountDisplay token for financial.invoice_overdue', () => {
+    const content = resolveNotificationContent(NOTIFICATION_TYPES.INVOICE_OVERDUE.key, { caseNumber: 'B2026-014', amountDisplay: '$1,234.56' });
+    expect(content.body).toBe('Case B2026-014 has an overdue balance of $1,234.56');
+  });
 });

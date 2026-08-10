@@ -1,5 +1,6 @@
 'use client';
 
+import type { AuthAdapterMode } from '@/lib/env';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { SidebarNavItem } from './SidebarNavItem';
@@ -13,8 +14,15 @@ import styles from './Sidebar.module.css';
  * couldn't be found — the same "always show something" behavior the prior
  * mock-only lookup already had. Staff-online count remains a static
  * placeholder, unchanged, until useStaff()-backed aggregation exists.
+ *
+ * Phase 31 (Financial Management & General Ledger): `/accounting` gets its
+ * own top-level entry, matching how Calendar/Tasks/Reports already got
+ * theirs (not buried in Settings — this is a full subsystem). Gated on
+ * `authAdapterMode === 'identity'`, the same pattern TopBar's own RBAC-only
+ * links already use, since access is governed by the new `accounting.*`
+ * permissions which only exist under that auth mode.
  */
-export function Sidebar() {
+export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode }) {
   const { organizationId } = useOrganization();
   const { data: organization } = useOrganizationRecord();
   const organizationName = organization?.name ?? organizationId;
@@ -31,6 +39,7 @@ export function Sidebar() {
         <SidebarNavItem href="/tasks" label="Tasks" />
         <SidebarNavItem href="/calendar" label="Calendar" />
         <SidebarNavItem href="/reports" label="Reports" />
+        {authAdapterMode === 'identity' && <SidebarNavItem href="/accounting" label="Accounting" />}
         <SidebarNavItem href="/settings" label="Settings" />
       </div>
 

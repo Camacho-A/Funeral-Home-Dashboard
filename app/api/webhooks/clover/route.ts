@@ -167,19 +167,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to update payment record.' }, { status: 503 });
     }
 
-    if (updated.status === 'succeeded') {
-      await markCasePaidIfVerified(record.organizationId, record.caseId, dataAdapterMode);
-    }
-
     // Phase 24 (Case Activity Timeline & Audit Center): system-generated —
     // there is no authenticated actor for a webhook delivery. Shares
     // `correlationId` (Clover's own echoed correlation value) with the
     // payment.checkout.created event recorded when this attempt began,
-    // since both use the same PaymentRecord id as that value. Best-effort,
-    // never turns a real webhook success into a 503.
+    // since both use the same PaymentRecord id as that value.
+    const activityCtx = { organizationId: record.organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true };
+
+    if (updated.status === 'succeeded') {
+      // Phase 31 (Financial Management & General Ledger): posts the
+      // journal entry before the best-effort activity-event recording
+      // below — a failure here must surface as a real 503 (never silently
+      // dropped) since an unjournaled payment violates "every financial
+      // event must be journaled."
+      await markCasePaidIfVerified(record.organizationId, record.caseId, dataAdapterMode, {
+        paymentId: record.id,
+        amountCents: updated.amount,
+        ctx: activityCtx,
+        idFactory: () => crypto.randomUUID(),
+      });
+    }
+
+    // Best-effort, never turns a real webhook success into a 503.
     if (updated.status === 'succeeded' || updated.status === 'failed') {
       try {
-        const activityCtx = { organizationId: record.organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true };
         if (updated.status === 'succeeded') {
           await recordPaymentRecorded(activityCtx, record.caseId, record.id, updated.amount, dataAdapterMode);
         } else {

@@ -4,6 +4,8 @@ import { mapWixCaseItem, applyCaseUpdateToWixData, type WixCaseItem } from '../l
 import { caseFixtures } from './__mocks__/fixtures';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
 import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
+import { postPaymentTransaction } from './financialTransactionService';
+import type { ActivityContext } from './activityService';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). The one place a
@@ -36,12 +38,46 @@ import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
  * keeps the original unconditional behavior — one verified payment means
  * paid, exactly as Phase 19B specified for a case with a single freeform
  * amount.
+ *
+ * Phase 31 (Financial Management & General Ledger) correction: `financialPosting`
+ * is optional and additive — every real caller (the webhook route, both
+ * mock-mode simulate routes, and the staff status-poll route's wix-mode
+ * reconciliation fallback) only ever invokes this function once per
+ * genuine pending→succeeded `PaymentRecord` transition (each already
+ * gates on `status !== 'pending'`/"status actually changed" before
+ * calling), so passing it here can never double-post the same payment's
+ * journal entry across retried/duplicate webhook deliveries. When
+ * provided, posts the Dr Undeposited Funds / Cr Accounts Receivable entry
+ * (`services/financialTransactionService.ts#postPaymentTransaction`)
+ * before the existing balance-refresh logic below — the accounting
+ * record for a payment is unconditional, independent of whether this
+ * particular payment happens to bring the case's own balance to zero.
  */
 export async function markCasePaidIfVerified(
   organizationId: string,
   caseId: string,
   dataAdapterMode: DataAdapterMode,
+  financialPosting?: {
+    paymentId: string;
+    amountCents: number;
+    ctx: ActivityContext;
+    idFactory: () => string;
+  },
 ): Promise<void> {
+  if (financialPosting) {
+    await postPaymentTransaction(
+      organizationId,
+      {
+        caseId,
+        paymentId: financialPosting.paymentId,
+        amountCents: financialPosting.amountCents,
+        idFactory: financialPosting.idFactory,
+      },
+      financialPosting.ctx,
+      dataAdapterMode,
+    );
+  }
+
   const activeOrder = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
   if (activeOrder) {
     const refreshed = await refreshBalanceForCase(organizationId, caseId, dataAdapterMode);

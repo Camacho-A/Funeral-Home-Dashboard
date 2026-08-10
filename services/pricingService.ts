@@ -32,6 +32,8 @@ import {
 } from '../domain/pricing/calculateOrder';
 import { diffSelections } from '../domain/pricing/auditDiff';
 import { listPaymentRecordsForCase } from './paymentsService';
+import { mapWixCaseWriteOffItem, type WixCaseWriteOffItem } from '../lib/wixCaseWriteOffMapper';
+import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
 import { recordCaseOrderChanged } from './activityService';
 import {
   serviceCatalogFixtures,
@@ -104,6 +106,27 @@ export async function getActiveCaseOrder(
   return mapWixCaseOrderItem(response.dataItems[0]?.data);
 }
 
+/**
+ * Phase 31 (Financial Management & General Ledger). Every active
+ * `CaseOrder` org-wide, regardless of which case it belongs to — the
+ * access pattern `services/financialReportsService.ts#getArAgingReport`
+ * needs (every current caller looks up by a known `caseId`; this is the
+ * one org-wide query). Relies on the `(organizationId, status)` index
+ * added to `caseOrders` for this phase (see
+ * docs/adr/ADR-035-financial-management-and-general-ledger.md's
+ * conflict #5).
+ */
+export async function listActiveCaseOrdersForOrganization(
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<CaseOrder[]> {
+  if (dataAdapterMode === 'mock') {
+    return caseOrderFixtures.filter((o) => o.organizationId === organizationId && o.status === 'active');
+  }
+  const response = await queryWixDataItems<WixCaseOrderItem>('caseOrders', { filter: { organizationId, status: 'active' } });
+  return response.dataItems.map((item) => mapWixCaseOrderItem(item.data)).filter((o): o is CaseOrder => o !== null);
+}
+
 export async function listCaseOrderVersions(
   organizationId: string,
   caseId: string,
@@ -173,6 +196,52 @@ export async function getPaidAmountForCase(
 ): Promise<number> {
   const payments = await listPaymentRecordsForCase(organizationId, caseId, dataAdapterMode);
   return payments.filter((p) => p.status === 'succeeded').reduce((sum, p) => sum + p.amount, 0);
+}
+
+/**
+ * Reads directly rather than importing from services/financialTransactionService.ts
+ * (which owns caseWriteOffs' one write path) — that service in turn calls
+ * `refreshBalanceForCase` below for `postRefundTransaction`, so this file
+ * doing its own read here (mirroring how it already reads caseOrders/
+ * caseOrderLineItems directly) keeps the dependency one-directional
+ * instead of a cycle.
+ */
+async function getWriteOffTotalForCase(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<number> {
+  if (dataAdapterMode === 'mock') {
+    return caseWriteOffFixtures
+      .filter((w) => w.organizationId === organizationId && w.caseId === caseId)
+      .reduce((sum, w) => sum + w.amount, 0);
+  }
+  const response = await queryWixDataItems<WixCaseWriteOffItem>('caseWriteOffs', { filter: { organizationId, caseId } });
+  return response.dataItems
+    .map((item) => mapWixCaseWriteOffItem(item.data))
+    .filter((w): w is NonNullable<typeof w> => w !== null)
+    .reduce((sum, w) => sum + w.amount, 0);
+}
+
+/**
+ * Phase 31 (Financial Management & General Ledger). `getPaidAmountForCase`
+ * plus every write-off ever posted for this case — without this, a
+ * written-off case would keep showing a nonzero `balanceDue` forever,
+ * since `getPaidAmountForCase` only ever counts `succeeded` payments and
+ * has no concept of "forgiven." Used exclusively by
+ * `refreshBalanceForCase` (see its own comment on why
+ * `recalculateOrder` intentionally keeps using `getPaidAmountForCase`
+ * directly instead) — see
+ * docs/adr/ADR-035-financial-management-and-general-ledger.md.
+ */
+export async function getSatisfiedAmountForCase(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<number> {
+  const paidAmount = await getPaidAmountForCase(organizationId, caseId, dataAdapterMode);
+  const writeOffTotal = await getWriteOffTotalForCase(organizationId, caseId, dataAdapterMode);
+  return paidAmount + writeOffTotal;
 }
 
 async function persistCaseOrder(order: CaseOrder, dataAdapterMode: DataAdapterMode): Promise<CaseOrder> {
@@ -417,6 +486,14 @@ export async function recalculateOrder(
  * after a payment succeeds (paymentWorkflow.ts), never touches subtotal/
  * total/version/status. Never creates a new version — a payment is not an
  * edit to what was ordered.
+ *
+ * Phase 31: uses `getSatisfiedAmountForCase` (paid + written-off), not
+ * plain `getPaidAmountForCase` — otherwise a written-off case would keep
+ * showing a nonzero balance forever. `recalculateOrder` above
+ * deliberately keeps using `getPaidAmountForCase` directly: a brand-new
+ * order version has no write-offs against it yet by definition (a
+ * write-off always targets an already-settled balance), so pulling in
+ * the extra query there would be a no-op that only adds a Wix round trip.
  */
 export async function refreshBalanceForCase(
   organizationId: string,
@@ -425,7 +502,7 @@ export async function refreshBalanceForCase(
 ): Promise<CaseOrder | null> {
   const order = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
   if (!order) return null;
-  const paidAmount = await getPaidAmountForCase(organizationId, caseId, dataAdapterMode);
+  const paidAmount = await getSatisfiedAmountForCase(organizationId, caseId, dataAdapterMode);
   const balanceDue = calculateBalance(order.total, paidAmount);
   if (balanceDue === order.balanceDue) return order;
 

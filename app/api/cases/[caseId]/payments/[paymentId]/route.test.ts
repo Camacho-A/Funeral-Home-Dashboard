@@ -63,6 +63,7 @@ const SEED: PaymentRecord = {
   createdAt: '2026-01-01T00:00:00.000Z',
   paidAt: null,
   updatedAt: '2026-01-01T00:00:00.000Z',
+  initiatedByStaffProfileId: null, depositedInBankDepositId: null,
 };
 
 beforeEach(() => {
@@ -161,6 +162,7 @@ describe('GET .../payments/[paymentId] — wix-mode reconciliation fallback', ()
                 purpose: 'Fee',
                 createdAt: '2026-01-01T00:00:00.000Z',
                 updatedAt: '2026-01-01T00:00:00.000Z',
+                initiatedByStaffProfileId: null, depositedInBankDepositId: null,
               },
             },
           ],
@@ -228,6 +230,7 @@ describe('GET .../payments/[paymentId] — wix-mode reconciliation fallback', ()
                 purpose: 'Fee',
                 createdAt: '2026-01-01T00:00:00.000Z',
                 updatedAt: '2026-01-01T00:00:00.000Z',
+                initiatedByStaffProfileId: null, depositedInBankDepositId: null,
               },
             },
           ],

@@ -45,6 +45,31 @@ export type WebhookVerificationResult =
   | { valid: true; payload: unknown }
   | { valid: false; reason: string };
 
+/** Phase 31 (Financial Management & General Ledger). A full or partial
+    refund of an already-succeeded payment — the `payment.refund`
+    permission and `PaymentRecord`'s eventual 'refunded' status both
+    existed since earlier phases as a named, reserved gap with no real
+    code path; this is what finally implements it. */
+export type RefundRequest = {
+  integration: PaymentIntegration;
+  /** The provider's own payment identifier (PaymentRecord.providerPaymentId)
+      — a refund always targets an already-completed payment, never a
+      checkout session. */
+  providerPaymentId: string;
+  /** Smallest currency unit (cents for USD). Always the full original
+      amount in this phase — partial refunds are a named, deferred
+      extension (see ADR-035's Deferred section). */
+  amount: number;
+};
+
+export type RefundResult = {
+  /** The provider's own identifier for this refund — stored as
+      PaymentRecord.receiptReference is left untouched (it already holds
+      the original charge's reference); this is provenance for support
+      purposes only, not persisted on PaymentRecord in this phase. */
+  providerRefundId: string;
+};
+
 /** What a verified webhook (or a status poll) tells Beacon about one
     payment — always mapped through `mapProviderPayment`, never used to
     construct a `PaymentRecord` update directly, so a provider-specific
@@ -86,4 +111,10 @@ export interface PaymentProvider {
       lib/clover/cloverProvider.ts's own comment on this documented gap.
       Returns null when there is nothing new to report. */
   getPaymentStatus(integration: PaymentIntegration, record: PaymentRecord): Promise<ProviderPaymentUpdate | null>;
+
+  /** Phase 31. Refunds an already-succeeded payment at the provider —
+      called from services/financialTransactionService.ts#postRefundTransaction
+      before any journal entry is posted, so a provider-side failure never
+      leaves a ledger entry for a refund that didn't actually happen. */
+  refundPayment(request: RefundRequest): Promise<RefundResult>;
 }
