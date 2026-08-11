@@ -97,4 +97,12 @@ describe('permissionCatalog', () => {
     expect(PERMISSION_KEYS.filter((k) => k.startsWith('task.'))).toEqual(['task.assign']);
     expect(permissionCategory('task.assign')).toBe('task');
   });
+
+  it('Phase 32: includes report.operational/report.staff/report.export alongside the pre-existing report.view, plus a distinct dashboard.manage; no duplicate financial-reporting key is created', () => {
+    expect(PERMISSION_KEYS.filter((k) => k.startsWith('report.'))).toEqual(['report.view', 'report.operational', 'report.staff', 'report.export']);
+    expect(permissionCategory('report.operational')).toBe('report');
+    expect(PERMISSION_KEYS).toContain('dashboard.manage');
+    expect(permissionCategory('dashboard.manage')).toBe('dashboard');
+    expect(PERMISSION_KEYS.filter((k) => k === 'accounting.report').length).toBe(1);
+  });
 });

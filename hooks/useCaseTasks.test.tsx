@@ -29,6 +29,7 @@ const TASK: CaseTask = {
   assigneeStaffId: 'staff-dana',
   isDone: false,
   caseId: CASE_ID,
+  dueDate: null,
   createdAt: '2026-07-23T00:00:00.000Z',
 };
 

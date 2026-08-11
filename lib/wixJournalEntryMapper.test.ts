@@ -35,6 +35,18 @@ describe('wixJournalEntryMapper', () => {
     expect(mapWixJournalEntryItem(buildWixJournalEntryData(draft))).toEqual(draft);
   });
 
+  /** Phase 32 (Reporting, Analytics & Executive Dashboard), Finding 1: this
+      source type was added to types/journalEntry.ts's JournalEntrySourceType
+      union but missed here in VALID_SOURCE_TYPES — invisible in mock mode
+      (fixtures never round-trip through this mapper), only surfaced by live
+      Wix verification, where a real inserted row came back rejected as
+      `null`. Every JournalEntrySourceType member should have a test proving
+      it round-trips, so a future addition can't silently repeat this gap. */
+  it('round-trips a revenue-recognition entry', () => {
+    const revenueRecognition: JournalEntry = { ...ENTRY, id: 'entry-4', sourceType: 'revenue_recognition', sourceReferenceId: null };
+    expect(mapWixJournalEntryItem(buildWixJournalEntryData(revenueRecognition))).toEqual(revenueRecognition);
+  });
+
   it('returns null for undefined', () => {
     expect(mapWixJournalEntryItem(undefined)).toBeNull();
   });

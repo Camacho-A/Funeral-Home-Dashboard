@@ -8,13 +8,16 @@ import { useAdvanceCaseStage } from '@/hooks/useAdvanceCaseStage';
 import { STAGES } from '@/domain/cases/stages';
 import { computeKpis, groupCasesByDisplayStage } from '@/domain/reports/calculations';
 import { compareCasesByUrgency } from '@/domain/cases/viewModel';
-import { activityFeedFixtures } from '@/services/__mocks__/fixtures';
+import { useOrganization } from '@/hooks/useOrganization';
+import { useDashboardData } from '@/hooks/useDashboard';
 import { PageGreetingHeader } from '@/components/dashboard/PageGreetingHeader';
 import { NeedsAttentionPanel } from '@/components/dashboard/NeedsAttentionPanel';
 import { CasesByStagePanel } from '@/components/dashboard/CasesByStagePanel';
 import { AllCasesList } from '@/components/dashboard/AllCasesList';
 import { StageFilteredPanel } from '@/components/dashboard/StageFilteredPanel';
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel';
+import { FinancialSummaryPanel } from '@/components/dashboard/FinancialSummaryPanel';
+import { AttentionPanel } from '@/components/dashboard/AttentionPanel';
 import styles from './page.module.css';
 
 /**
@@ -28,6 +31,8 @@ import styles from './page.module.css';
  * stage filter and bulk-selection are local to this page).
  */
 export default function DashboardPage() {
+  const { organizationId } = useOrganization();
+  const { data: dashboardData } = useDashboardData(organizationId);
   const { query: searchQuery } = useCaseSearch();
   const [stageFilter, setStageFilter] = useState<number | null>(null);
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
@@ -125,7 +130,14 @@ export default function DashboardPage() {
         />
       )}
 
-      <RecentActivityPanel entries={activityFeedFixtures} />
+      {(dashboardData?.financial || dashboardData?.attention) && (
+        <div className={styles.stageOverviewGrid}>
+          {dashboardData.financial && <FinancialSummaryPanel data={dashboardData.financial} />}
+          {dashboardData.attention && <AttentionPanel data={dashboardData.attention} />}
+        </div>
+      )}
+
+      <RecentActivityPanel />
     </div>
   );
 }

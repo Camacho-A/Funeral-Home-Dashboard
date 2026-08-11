@@ -34,7 +34,10 @@ import { diffSelections } from '../domain/pricing/auditDiff';
 import { listPaymentRecordsForCase } from './paymentsService';
 import { mapWixCaseWriteOffItem, type WixCaseWriteOffItem } from '../lib/wixCaseWriteOffMapper';
 import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
-import { recordCaseOrderChanged } from './activityService';
+import { recordCaseOrderChanged, recordJournalEntryPosted } from './activityService';
+import { createAndPostJournalEntry } from './generalLedgerService';
+import { getAccountByNumber, seedChartOfAccounts } from './chartOfAccountsService';
+import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
 import {
   serviceCatalogFixtures,
   caseOrderFixtures,
@@ -244,6 +247,97 @@ export async function getSatisfiedAmountForCase(
   return paidAmount + writeOffTotal;
 }
 
+/**
+ * Phase 32 (Reporting, Analytics & Executive Dashboard). Closes a real
+ * Phase 31 gap: no transaction ever credited Service Revenue (4000) —
+ * `grep -rn "SERVICE_REVENUE" services/ domain/` returns exactly one hit,
+ * the constant's own definition. Payment posting only ever credits
+ * Accounts Receivable (never independently debits it first), so AR ran
+ * permanently negative and Revenue/P&L were structurally always $0 the
+ * moment any tenant had real payment history. This is the one place
+ * Phase 32 touches Phase 31's core ledger — everything else in this
+ * phase is additive-only reporting.
+ *
+ * Dr Accounts Receivable / Cr Service Revenue for the full `total` on
+ * initial creation; for a recalculation, only the **net delta** posts
+ * (direction flips if the new total is lower), so re-pricing never
+ * double-counts revenue already recognized. A zero delta posts nothing —
+ * `assertJournalEntryBalances` rejects zero-amount lines regardless, so
+ * this is a natural early-return, not a special case.
+ *
+ * Auto-seeds the chart of accounts if it doesn't exist yet for this
+ * organization (idempotent — `seedChartOfAccounts` no-ops once seeded)
+ * rather than throwing: revenue recognition must never be silently
+ * skipped, but every one of this file's existing callers/tests predates
+ * this phase and doesn't know to seed the chart of accounts first, and a
+ * hard failure here would block case-order creation for any of them.
+ *
+ * Deliberately calls `generalLedgerService.createAndPostJournalEntry` and
+ * `chartOfAccountsService.getAccountByNumber` directly rather than
+ * routing through `services/financialTransactionService.ts` — Phase 31
+ * established `financialTransactionService.ts -> pricingService.ts` as
+ * one-directional (the former calls `refreshBalanceForCase`); routing a
+ * new pricingService->financialTransactionService call would create a
+ * cycle. Calling the same low-level ledger primitives
+ * `financialTransactionService.ts` itself depends on keeps this file a
+ * peer consumer of the ledger, not a new link in an existing cycle.
+ */
+async function postRevenueRecognition(
+  organizationId: string,
+  caseId: string,
+  deltaAmount: number,
+  direction: 'increase' | 'decrease',
+  actorIdentityId: string | null,
+  idFactory: () => string,
+  now: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<void> {
+  if (deltaAmount === 0) return;
+
+  let accountsReceivable = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, dataAdapterMode);
+  let serviceRevenue = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, dataAdapterMode);
+  if (!accountsReceivable || !serviceRevenue) {
+    await seedChartOfAccounts(organizationId, idFactory, dataAdapterMode);
+    accountsReceivable = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, dataAdapterMode);
+    serviceRevenue = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, dataAdapterMode);
+  }
+  if (!accountsReceivable || !serviceRevenue) {
+    throw new Error(`Failed to resolve required ledger accounts for organization "${organizationId}" even after seeding.`);
+  }
+
+  const accountsReceivableDirection = direction === 'increase' ? 'debit' : 'credit';
+  const serviceRevenueDirection = direction === 'increase' ? 'credit' : 'debit';
+
+  const { entry } = await createAndPostJournalEntry(
+    organizationId,
+    {
+      entryDate: now,
+      sourceType: 'revenue_recognition',
+      caseId,
+      memo: `Revenue recognition (${direction}) for case ${caseId}`,
+      lines: [
+        { accountId: accountsReceivable.id, direction: accountsReceivableDirection, amount: deltaAmount, caseId },
+        { accountId: serviceRevenue.id, direction: serviceRevenueDirection, amount: deltaAmount, caseId },
+      ],
+      idFactory,
+      now,
+    },
+    dataAdapterMode,
+  );
+
+  try {
+    await recordJournalEntryPosted(
+      { organizationId, actorIdentityId, actorMembershipId: null, actorRoleKey: null, correlationId: entry.id },
+      caseId,
+      entry.id,
+      entry.entryNumber,
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error('Failed to record journal.entry.posted activity event for revenue recognition:', error instanceof Error ? error.message : error);
+  }
+}
+
 async function persistCaseOrder(order: CaseOrder, dataAdapterMode: DataAdapterMode): Promise<CaseOrder> {
   if (dataAdapterMode === 'mock') {
     caseOrderFixtures.push(order);
@@ -381,6 +475,10 @@ export async function createCaseOrder(
   await persistLineItems(lineItems, dataAdapterMode);
   await persistAuditEntries([auditEntry], dataAdapterMode);
 
+  if (calculated.total > 0) {
+    await postRevenueRecognition(params.organizationId, params.caseId, calculated.total, 'increase', params.performedBy, params.idFactory, nowIso, dataAdapterMode);
+  }
+
   return { order: persistedOrder, lineItems, auditEntry };
 }
 
@@ -459,6 +557,20 @@ export async function recalculateOrder(
   const persistedOrder = await persistCaseOrder(newOrder, dataAdapterMode);
   await persistLineItems(newLineItems, dataAdapterMode);
   await persistAuditEntries(auditEntries, dataAdapterMode);
+
+  const revenueDelta = calculated.total - current.total;
+  if (revenueDelta !== 0) {
+    await postRevenueRecognition(
+      params.organizationId,
+      params.caseId,
+      Math.abs(revenueDelta),
+      revenueDelta > 0 ? 'increase' : 'decrease',
+      params.performedBy,
+      params.idFactory,
+      nowIso,
+      dataAdapterMode,
+    );
+  }
 
   // Phase 24 (Case Activity Timeline & Audit Center): one activity event
   // summarizing this whole recalculation, reusing the exact diff data

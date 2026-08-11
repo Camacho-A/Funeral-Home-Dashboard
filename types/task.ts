@@ -9,6 +9,12 @@ export type CaseTask = {
   assigneeStaffId: string | null;
   isDone: boolean;
   caseId: string | null; // null = not linked to a case
+  /** Phase 32 (Reporting, Analytics & Executive Dashboard). Optional —
+      most tasks predate this field and have none. Nullable, mutable; the
+      only field this phase adds so "tasks.overdue" is a real, computable
+      metric instead of a proxy. See
+      docs/adr/ADR-036-reporting-analytics-executive-dashboard-architecture.md. */
+  dueDate: string | null;
   createdAt: string;
 };
 
@@ -16,6 +22,7 @@ export type NewTaskInput = {
   text: string;
   assigneeStaffId: string | null;
   caseId?: string | null;
+  dueDate?: string | null;
 };
 
 /**
@@ -27,4 +34,4 @@ export type NewTaskInput = {
  * others are the same tenant/identity/immutability boundary every other
  * write in this project protects.
  */
-export type TaskUpdate = Partial<Pick<CaseTask, 'isDone' | 'text' | 'assigneeStaffId'>>;
+export type TaskUpdate = Partial<Pick<CaseTask, 'isDone' | 'text' | 'assigneeStaffId' | 'dueDate'>>;

@@ -8,6 +8,8 @@ import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/work
 import { formatCaseNumber, parseCaseNumber, assertCaseNumberUnchanged } from '../domain/cases/caseNumber';
 import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { caseFixtures } from './__mocks__/fixtures';
+import { queryWixDataItems } from '../lib/wixDataApi';
+import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 
 export type CaseFilters = {
   searchQuery?: string;
@@ -96,6 +98,33 @@ export async function list(
   }
   const body = (await response.json()) as { cases: Case[] };
   return body.cases;
+}
+
+/**
+ * Phase 32 (Reporting, Analytics & Executive Dashboard). A server-safe
+ * counterpart to `list()` above — discovered necessary during this
+ * phase's live Wix verification. `list()`'s own `wix`-mode branch is a
+ * client-only HTTP wrapper (a relative-path `fetch('/api/cases?...')`,
+ * meant for `hooks/useCases.ts` running in a browser, where the real
+ * Wix-querying logic actually lives inside `app/api/cases/route.ts`'s own
+ * `GET` handler) — calling it from server-side code throws
+ * `TypeError: Failed to parse URL`, since a relative URL has no origin to
+ * resolve against outside a browser. `services/reportingService.ts`
+ * (which runs inside Route Handlers, never a browser) calls this function
+ * instead, mirroring `services/scheduling/appointmentReads.ts`'s own
+ * precedent for exactly this "a server-side consumer needs a direct read,
+ * not the client's own HTTP wrapper" reason. Never duplicates
+ * `app/api/cases/route.ts`'s own Wix query — that route should be
+ * refactored to call this same function in a later pass, but is left
+ * unchanged here since it works correctly today and this phase's own
+ * scope is reporting, not cases-route internals.
+ */
+export async function listForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<Case[]> {
+  if (dataAdapterMode === 'mock') {
+    return caseFixtures.filter((c) => c.organizationId === organizationId && !c.isDeleted);
+  }
+  const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { organizationId, isArchived: false } });
+  return response.dataItems.map((item) => mapWixCaseItem(item.data)).filter((c): c is Case => c !== null);
 }
 
 export async function get(

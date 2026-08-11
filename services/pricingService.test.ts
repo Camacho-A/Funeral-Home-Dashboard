@@ -8,7 +8,11 @@ import {
 } from './__mocks__/pricingFixtures';
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
-import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
+import { caseWriteOffFixtures, ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from './__mocks__/ledgerFixtures';
+import { getAccountByNumber } from './chartOfAccountsService';
+import { getAccountBalance } from './generalLedgerService';
+import { getTrialBalance, getBalanceSheet } from './financialReportsService';
+import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
 import type { PaymentRecord } from '../types/payment';
 import type { CaseWriteOff } from '../types/caseWriteOff';
 
@@ -28,6 +32,9 @@ beforeEach(() => {
   paymentRecordFixtures.length = 0;
   activityEventFixtures.length = 0;
   caseWriteOffFixtures.length = 0;
+  ledgerAccountFixtures.length = 0;
+  journalEntryFixtures.length = 0;
+  journalEntryLineFixtures.length = 0;
 });
 
 describe('getServiceCatalog', () => {
@@ -483,5 +490,126 @@ describe('cross-organization isolation', () => {
     const stillOrgAOrder = await getActiveCaseOrder(DEFAULT_ORGANIZATION_ID, sharedCaseId, 'mock');
     expect(stillOrgAOrder?.id).toBe(orgAOrder.id);
     expect(stillOrgAOrder?.version).toBe(1); // never touched by the other org's attempt
+  });
+});
+
+describe('Phase 32 (Reporting, Analytics & Executive Dashboard): revenue recognition', () => {
+  it('createCaseOrder posts Dr Accounts Receivable / Cr Service Revenue for the full total, auto-seeding the chart of accounts', async () => {
+    const { createCaseOrder } = await import('./pricingService');
+    expect(await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, 'mock')).toBeNull();
+
+    const { order } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-revenue-1',
+        selections: { weightTier: '201_250', extraDeathCertificateQuantity: 2, mailCremated: true },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+
+    const accountsReceivable = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, 'mock');
+    const serviceRevenue = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, 'mock');
+    expect(accountsReceivable).not.toBeNull();
+    expect(serviceRevenue).not.toBeNull();
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, accountsReceivable!.id, 'mock')).toBe(order.total);
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, serviceRevenue!.id, 'mock')).toBe(-order.total); // credit-normal, raw balance is negative-of-debit-positive convention
+
+    const entry = journalEntryFixtures.find((e) => e.sourceType === 'revenue_recognition' && e.caseId === 'case-revenue-1');
+    expect(entry).toBeDefined();
+    expect(entry?.status).toBe('posted');
+  });
+
+  it('recalculateOrder posts only the net delta, correctly flipping direction on a decrease', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    const { order: v1 } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-revenue-2',
+        selections: { weightTier: '251_300', extraDeathCertificateQuantity: 2, mailCremated: true },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+
+    const result = await recalculateOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-revenue-2',
+        selections: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+        performedBy: 'Sam Rivera',
+        idFactory,
+        now: '2026-07-21T00:00:00.000Z',
+      },
+      'mock',
+    );
+    expect(result?.order.total).toBeLessThan(v1.total);
+
+    const accountsReceivable = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, 'mock');
+    const serviceRevenue = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, 'mock');
+    // Net AR/Revenue balance reflects only the FINAL total, never the sum of both postings.
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, accountsReceivable!.id, 'mock')).toBe(result!.order.total);
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, serviceRevenue!.id, 'mock')).toBe(-result!.order.total);
+
+    const revenueEntries = journalEntryFixtures.filter((e) => e.sourceType === 'revenue_recognition' && e.caseId === 'case-revenue-2');
+    expect(revenueEntries).toHaveLength(2); // initial creation + recalculation delta
+  });
+
+  it('a no-op recalculation (identical selections) posts no revenue-recognition entry at all', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    const selections = { weightTier: '201_250', extraDeathCertificateQuantity: 1, mailCremated: false };
+    await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-revenue-3', selections, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    const before = journalEntryFixtures.filter((e) => e.sourceType === 'revenue_recognition').length;
+
+    const result = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-revenue-3', selections, performedBy: 'Sam Rivera', idFactory },
+      'mock',
+    );
+    expect(result?.auditEntries).toEqual([]); // no-op edit, per existing behavior
+
+    const after = journalEntryFixtures.filter((e) => e.sourceType === 'revenue_recognition').length;
+    expect(after).toBe(before);
+  });
+
+  it('Trial Balance and Balance Sheet still balance after revenue recognition plus a real payment (proving the Finding 1 fix)', async () => {
+    const { createCaseOrder } = await import('./pricingService');
+    const { order } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-revenue-4',
+        selections: { weightTier: '201_250', extraDeathCertificateQuantity: 0, mailCremated: false },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+
+    // Simulate the payment side of the cycle directly via the ledger
+    // primitive financialTransactionService.ts itself uses, proving AR
+    // nets back toward zero instead of running permanently negative.
+    const { postPaymentTransaction } = await import('./financialTransactionService');
+    await postPaymentTransaction(
+      DEFAULT_ORGANIZATION_ID,
+      { caseId: 'case-revenue-4', paymentId: 'payment-revenue-4', amountCents: order.total, idFactory },
+      { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: 'identity-1', actorMembershipId: 'membership-1', actorRoleKey: 'accounting', correlationId: 'corr-1' },
+      'mock',
+    );
+
+    const accountsReceivable = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, 'mock');
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, accountsReceivable!.id, 'mock')).toBe(0); // AR nets to zero, never negative
+
+    const trialBalance = await getTrialBalance(DEFAULT_ORGANIZATION_ID, 'mock');
+    expect(trialBalance.totalDebits).toBe(trialBalance.totalCredits);
+
+    const balanceSheet = await getBalanceSheet(DEFAULT_ORGANIZATION_ID, 'mock');
+    expect(balanceSheet.totalAssets).toBe(balanceSheet.totalLiabilitiesAndEquity);
   });
 });

@@ -1,0 +1,126 @@
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 8px);
+}
+
+/* The visual SVG is aria-hidden; this table is the one screen readers see.
+   Standard "clip" visually-hidden technique — not display:none, which
+   assistive tech (and Tab order) would also skip. First instance of this
+   pattern in the codebase; no shared utility class existed to reuse. */
+.srOnlyTable {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.barSvg {
+  width: 100%;
+  height: auto;
+  min-height: 120px;
+}
+
+.bar {
+  fill: var(--color-brand);
+  rx: 2;
+}
+
+.barLabels {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.barLabelRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-12, 12px);
+}
+
+.barLabel {
+  color: var(--color-text, #111827);
+}
+
+.barValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted, #6b7280);
+  font-weight: var(--font-weight-bold, 700);
+}
+
+.donutSvg {
+  width: 160px;
+  height: 160px;
+  transform: rotate(-90deg);
+}
+
+.donutTrack {
+  fill: none;
+  stroke: var(--color-border, #e5e7eb);
+  stroke-width: 14;
+}
+
+.donutSlice {
+  fill: none;
+  stroke-width: 14;
+}
+
+.sliceBrand {
+  stroke: var(--color-brand);
+}
+.sliceSuccess {
+  stroke: var(--color-success, #16a34a);
+}
+.sliceDanger {
+  stroke: var(--color-danger-text, #b91c1c);
+}
+.sliceNeutral {
+  stroke: var(--color-text-muted, #6b7280);
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-12, 12px);
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-brand);
+}
+.legendSwatch.sliceSuccess {
+  background: var(--color-success, #16a34a);
+}
+.legendSwatch.sliceDanger {
+  background: var(--color-danger-text, #b91c1c);
+}
+.legendSwatch.sliceNeutral {
+  background: var(--color-text-muted, #6b7280);
+}
+
+.legendLabel {
+  flex: 1;
+}
+
+.legendValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold, 700);
+}

@@ -32,6 +32,10 @@ import {
   canAdminNotifications,
   canManagePortal,
   canSendPortalMessage,
+  canViewOperationalReports,
+  canViewStaffReports,
+  canExportReports,
+  canManageDashboard,
   isAdminTier,
 } from './authorizationPolicyService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
@@ -218,6 +222,33 @@ describe('authorizationPolicyService', () => {
     expect(await canSendPortalMessage(params('officeStaff'), 'mock')).toBe(true);
     expect(await canSendPortalMessage(params('accounting'), 'mock')).toBe(false);
     expect(await canSendPortalMessage(params('readOnly'), 'mock')).toBe(false);
+  });
+
+  it('Phase 32: report.operational/report.staff reach the same tier as report.view (administrator/manager/funeralDirector/readOnly), never accounting/arranger/officeStaff', async () => {
+    expect(await canViewOperationalReports(params('administrator'), 'mock')).toBe(true);
+    expect(await canViewOperationalReports(params('manager'), 'mock')).toBe(true);
+    expect(await canViewOperationalReports(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canViewOperationalReports(params('readOnly'), 'mock')).toBe(true);
+    expect(await canViewOperationalReports(params('accounting'), 'mock')).toBe(false);
+    expect(await canViewOperationalReports(params('arranger'), 'mock')).toBe(false);
+    expect(await canViewOperationalReports(params('officeStaff'), 'mock')).toBe(false);
+
+    expect(await canViewStaffReports(params('administrator'), 'mock')).toBe(true);
+    expect(await canViewStaffReports(params('funeralDirector'), 'mock')).toBe(true);
+    expect(await canViewStaffReports(params('readOnly'), 'mock')).toBe(true);
+    expect(await canViewStaffReports(params('accounting'), 'mock')).toBe(false);
+  });
+
+  it('Phase 32: report.export/dashboard.manage are administrator/manager only', async () => {
+    expect(await canExportReports(params('administrator'), 'mock')).toBe(true);
+    expect(await canExportReports(params('manager'), 'mock')).toBe(true);
+    expect(await canExportReports(params('funeralDirector'), 'mock')).toBe(false);
+    expect(await canExportReports(params('readOnly'), 'mock')).toBe(false);
+
+    expect(await canManageDashboard(params('administrator'), 'mock')).toBe(true);
+    expect(await canManageDashboard(params('manager'), 'mock')).toBe(true);
+    expect(await canManageDashboard(params('funeralDirector'), 'mock')).toBe(false);
+    expect(await canManageDashboard(params('readOnly'), 'mock')).toBe(false);
   });
 
   it('legacy owner/administrator role strings resolve identically to the administrator default role', async () => {

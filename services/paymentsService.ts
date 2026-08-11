@@ -17,7 +17,7 @@ import {
   applyWebhookEventUpdateToWixData,
   type WixWebhookEventItem,
 } from '../lib/wixWebhookEventMapper';
-import type { PaymentIntegration, PaymentRecord } from '../types/payment';
+import type { PaymentIntegration, PaymentRecord, PaymentRecordStatus } from '../types/payment';
 import type { WebhookEventRecord } from '../types/webhookEvent';
 import { paymentIntegrationFixtures, paymentRecordFixtures, webhookEventFixtures } from './__mocks__/paymentFixtures';
 import type { PaymentProvider, RefundResult } from '../lib/paymentProvider';
@@ -136,6 +136,38 @@ export async function listPaymentRecordsForCase(
   return response.dataItems
     .map((item) => mapWixPaymentRecordItem(item.data))
     .filter((p): p is PaymentRecord => p !== null)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+/**
+ * Phase 32 (Reporting, Analytics & Executive Dashboard). Every
+ * `PaymentRecord` org-wide, regardless of which case it belongs to — every
+ * prior caller looked up by a known `caseId`; this is the one org-wide
+ * query, needed for `payments.pending`/`payments.failed`. Relies on the
+ * `(organizationId, status)` index added to `paymentRecords` for this
+ * phase (its 3rd — 2 of 3 regular slots were used before this), mirroring
+ * exactly how `caseOrders` gained its own Phase 31 `(organizationId,
+ * status)` index for the identical "list org-wide by status" need. See
+ * docs/adr/ADR-036-reporting-analytics-executive-dashboard-architecture.md.
+ */
+export async function listPaymentRecordsForOrganization(
+  organizationId: string,
+  filters: { status?: PaymentRecordStatus; fromDate?: string; toDate?: string } = {},
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<PaymentRecord[]> {
+  let payments: PaymentRecord[];
+  if (dataAdapterMode === 'mock') {
+    payments = paymentRecordFixtures.filter((p) => p.organizationId === organizationId);
+  } else {
+    const filter: Record<string, unknown> = { organizationId };
+    if (filters.status) filter.status = filters.status;
+    const response = await queryWixDataItems<WixPaymentRecordItem>('paymentRecords', { filter });
+    payments = response.dataItems.map((item) => mapWixPaymentRecordItem(item.data)).filter((p): p is PaymentRecord => p !== null);
+  }
+  return payments
+    .filter((p) => (filters.status ? p.status === filters.status : true))
+    .filter((p) => (filters.fromDate ? p.createdAt >= filters.fromDate : true))
+    .filter((p) => (filters.toDate ? p.createdAt <= filters.toDate : true))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 

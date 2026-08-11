@@ -4,6 +4,7 @@ import { queryWixDataItems, insertWixDataItem } from '../lib/wixDataApi';
 import { mapWixActivityEventItem, buildWixActivityEventData, type WixActivityEventItem } from '../lib/wixActivityEventMapper';
 import { ACTIVITY_EVENT_TYPES, type ActivityEvent, type ActivityEventCategory, type ActivitySeverity, type NewActivityEventInput } from '../types/activityEvent';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
+import { buildCsv, EXPORT_ROW_CAP } from '../domain/reporting/csvExport';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The single service
@@ -31,11 +32,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function escapeCsvField(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-const EXPORT_ROW_CAP = 10_000;
 const DEFAULT_PAGE_LIMIT = 25;
 const MAX_PAGE_LIMIT = 100;
 /** How many rows to pull from Wix per fetch when narrowing by cursor —
@@ -237,11 +233,7 @@ export async function exportCsv(organizationId: string, filters: ActivityListFil
   } while (cursor && rows.length < EXPORT_ROW_CAP);
 
   const capped = rows.slice(0, EXPORT_ROW_CAP);
-  const lines = [CSV_COLUMNS.map((c) => c.header).join(',')];
-  for (const event of capped) {
-    lines.push(CSV_COLUMNS.map((c) => escapeCsvField(c.value(event))).join(','));
-  }
-  return lines.join('\n');
+  return buildCsv(capped, CSV_COLUMNS);
 }
 
 // ---------------------------------------------------------------------------

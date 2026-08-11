@@ -21,9 +21,10 @@ import type { CaseTask, TaskUpdate } from '../types/task';
  *   mapping").
  * - `text`, `isDone`, `createdAt` → unchanged names.
  *
- * `CaseTask` has no due date, priority, status enum beyond `isDone`, or
- * ordering field — none exist in the domain model, so none are mapped or
- * invented here.
+ * `CaseTask` has no priority, status enum beyond `isDone`, or ordering
+ * field — none exist in the domain model, so none are mapped or invented
+ * here. `dueDate` (Phase 32 addition) is the one optional/nullable
+ * exception, mapped like `caseId`/`assigneeId`.
  */
 
 export type WixTaskItem = {
@@ -34,6 +35,8 @@ export type WixTaskItem = {
   isDone?: unknown;
   caseId?: unknown;
   createdAt?: unknown;
+  /** Phase 32 (Reporting, Analytics & Executive Dashboard) addition. */
+  dueDate?: unknown;
 };
 
 /**
@@ -60,6 +63,9 @@ export function mapWixTaskItem(item: WixTaskItem | undefined): CaseTask | null {
   if (item.caseId !== undefined && item.caseId !== null && typeof item.caseId !== 'string') {
     return null;
   }
+  if (item.dueDate !== undefined && item.dueDate !== null && typeof item.dueDate !== 'string') {
+    return null;
+  }
 
   return {
     id: item.beaconTaskId,
@@ -68,6 +74,7 @@ export function mapWixTaskItem(item: WixTaskItem | undefined): CaseTask | null {
     assigneeStaffId: typeof item.assigneeId === 'string' ? item.assigneeId : null,
     isDone: item.isDone,
     caseId: typeof item.caseId === 'string' ? item.caseId : null,
+    dueDate: typeof item.dueDate === 'string' ? item.dueDate : null,
     createdAt: item.createdAt,
   };
 }
@@ -86,6 +93,7 @@ export function buildWixTaskData(params: {
   text: string;
   assigneeStaffId: string | null;
   caseId: string | null;
+  dueDate?: string | null;
   createdAt: string;
 }): WixTaskItem {
   return {
@@ -95,6 +103,7 @@ export function buildWixTaskData(params: {
     assigneeId: params.assigneeStaffId,
     isDone: false,
     caseId: params.caseId,
+    dueDate: params.dueDate ?? null,
     createdAt: params.createdAt,
   };
 }
@@ -131,6 +140,13 @@ export function validateAndPickTaskUpdate(body: unknown): { patch: TaskUpdate; e
       errors.push('assigneeStaffId');
     }
   }
+  if ('dueDate' in b) {
+    if (b.dueDate === null || typeof b.dueDate === 'string') {
+      patch.dueDate = b.dueDate;
+    } else {
+      errors.push('dueDate');
+    }
+  }
 
   return { patch, errors };
 }
@@ -143,5 +159,6 @@ export function applyTaskUpdateToWixData(existing: WixTaskItem, patch: TaskUpdat
   if (patch.text !== undefined) next.text = patch.text;
   if (patch.isDone !== undefined) next.isDone = patch.isDone;
   if (patch.assigneeStaffId !== undefined) next.assigneeId = patch.assigneeStaffId;
+  if (patch.dueDate !== undefined) next.dueDate = patch.dueDate;
   return next;
 }

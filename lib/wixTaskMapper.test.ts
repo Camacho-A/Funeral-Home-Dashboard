@@ -73,12 +73,19 @@ describe('mapWixTaskItem', () => {
     expect(mapWixTaskItem({ ...validItem, caseId: 42 })).toBeNull();
   });
 
-  it('does not invent or map any status/priority/due-date field — none exist on CaseTask', () => {
+  it('maps a present dueDate, and defaults to null when absent — Phase 32 addition, no priority/status/completedAt field exists', () => {
     const result = mapWixTaskItem(validItem);
-    expect(result).not.toHaveProperty('dueDate');
+    expect(result?.dueDate).toBeNull();
     expect(result).not.toHaveProperty('priority');
     expect(result).not.toHaveProperty('status');
     expect(result).not.toHaveProperty('completedAt');
+
+    const withDueDate = mapWixTaskItem({ ...validItem, dueDate: '2026-08-01T00:00:00.000Z' });
+    expect(withDueDate?.dueDate).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('returns null when dueDate is present but the wrong type', () => {
+    expect(mapWixTaskItem({ ...validItem, dueDate: 42 })).toBeNull();
   });
 });
 

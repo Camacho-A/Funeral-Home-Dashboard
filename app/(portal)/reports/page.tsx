@@ -1,71 +1,81 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo } from 'react';
-import { useCases } from '@/hooks/useCases';
-import { useCaseViewModels } from '@/hooks/useCaseViewModels';
-import { useStaff } from '@/hooks/useStaff';
 import { useOrganization } from '@/hooks/useOrganization';
-import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
-import {
-  computeKpis,
-  computeStageBreakdown,
-  computeStaffWorkload,
-  computeVeteranCaseStatuses,
-} from '@/domain/reports/calculations';
-import { SelectField } from '@/components/ui/SelectField';
-import { KpiTile } from '@/components/reports/KpiTile';
-import { TimeInStagePanel } from '@/components/reports/TimeInStagePanel';
-import { StaffWorkloadPanel } from '@/components/reports/StaffWorkloadPanel';
-import { VeteranCasesPanel } from '@/components/reports/VeteranCasesPanel';
+import { useMyPermissions } from '@/hooks/useRbac';
+import { useReportDefinitions } from '@/hooks/useReports';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import type { ReportCategory, ReportDefinition } from '@/domain/reporting/reportRegistry';
 import styles from './page.module.css';
 
+const CATEGORY_LABELS: Record<ReportCategory, string> = {
+  operational: 'Operational',
+  financial: 'Financial',
+  staff: 'Staff',
+  documents: 'Documents & Signatures',
+};
+
+const CATEGORY_ORDER: ReportCategory[] = ['operational', 'financial', 'staff', 'documents'];
+
 /**
- * Reports page (Frontend Engineering Plan, Phase 8) — the orchestration
- * layer. Calls domain/reports/calculations.ts directly via useMemo, the
- * same pattern the Dashboard (Phase 5) already established, rather than
- * through an intermediate useReports() hook — that hook was never actually
- * built in Phase 5, so this follows the pattern that's actually in the
- * codebase rather than the plan's original, superseded mention of it.
+ * Phase 32 (Reporting, Analytics & Executive Dashboard). Reports Library —
+ * replaces the Phase 8 client-computed Reports page. Every report shown
+ * here is already permission-filtered server-side (`GET /api/reports`);
+ * this page only groups and renders what it received, it never decides
+ * what's visible itself.
  */
 export default function ReportsPage() {
   const { organizationId } = useOrganization();
-  const { data: organization } = useOrganizationRecord();
-  const organizationName = organization?.name ?? organizationId;
-  const { data: cases } = useCases();
-  const { data: staffList = [] } = useStaff();
-  const viewModels = useCaseViewModels(cases);
+  const permissionsQuery = useMyPermissions(organizationId);
+  const reportsQuery = useReportDefinitions(organizationId);
 
-  const kpis = useMemo(() => computeKpis(viewModels), [viewModels]);
-  const stageBreakdown = useMemo(() => computeStageBreakdown(viewModels), [viewModels]);
-  const staffWorkload = useMemo(
-    () => computeStaffWorkload(viewModels, staffList),
-    [viewModels, staffList],
-  );
-  const veteranCases = useMemo(() => computeVeteranCaseStatuses(viewModels), [viewModels]);
+  const grouped = useMemo(() => {
+    const reports = reportsQuery.data ?? [];
+    const byCategory = new Map<ReportCategory, ReportDefinition[]>();
+    for (const report of reports) {
+      const list = byCategory.get(report.category) ?? [];
+      list.push(report);
+      byCategory.set(report.category, list);
+    }
+    return byCategory;
+  }, [reportsQuery.data]);
+
+  if (permissionsQuery.isPending || reportsQuery.isPending) {
+    return <p>Loading reports…</p>;
+  }
+
+  const permissions = permissionsQuery.data?.permissions ?? [];
+  if (!permissions.includes('report.view')) {
+    return <EmptyState message="You don't have access to reports for this organization." />;
+  }
+
+  if ((reportsQuery.data ?? []).length === 0) {
+    return <EmptyState message="No reports are available to you." />;
+  }
 
   return (
     <div>
       <div className={styles.header}>
         <h1 className={styles.title}>Reports</h1>
-        <SelectField className={styles.orgSelect} disabled defaultValue={organizationName}>
-          <option>{organizationName}</option>
-          <option disabled>Second Organization — coming soon</option>
-        </SelectField>
       </div>
 
-      <div className={styles.kpiGrid}>
-        <KpiTile value={kpis.activeCases} label="Active cases" />
-        <KpiTile value={kpis.completedCases} label="Completed" />
-        <KpiTile value={kpis.overdueCases} label="Overdue on SLA" variant="danger" />
-        <KpiTile value={kpis.totalCases} label="Total cases on file" />
-      </div>
-
-      <div className={styles.middleGrid}>
-        <TimeInStagePanel rows={stageBreakdown} />
-        <StaffWorkloadPanel rows={staffWorkload} />
-      </div>
-
-      <VeteranCasesPanel rows={veteranCases} />
+      {CATEGORY_ORDER.filter((category) => grouped.has(category)).map((category) => (
+        <section key={category} className={styles.section}>
+          <h2 className={styles.sectionTitle}>{CATEGORY_LABELS[category]}</h2>
+          <div className={styles.grid}>
+            {grouped.get(category)!.map((report) => (
+              <Link key={report.key} href={`/reports/${report.key}`} className={styles.cardLink}>
+                <Card variant="bordered" className={styles.reportCard}>
+                  <span className={styles.reportName}>{report.displayName}</span>
+                  <span className={styles.reportDescription}>{report.description}</span>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

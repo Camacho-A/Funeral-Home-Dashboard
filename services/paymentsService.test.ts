@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   getEnabledIntegration,
   listPaymentRecordsForCase,
+  listPaymentRecordsForOrganization,
   getPaymentRecordById,
   findPaymentRecordByCheckoutId,
   findPaymentRecordByIdempotencyKey,
@@ -129,6 +130,37 @@ describe('createIdempotentPendingPaymentRecord / listPaymentRecordsForCase / get
     await createIdempotentPendingPaymentRecord(idempotentParams(), 'mock');
     expect((await getPaymentRecordById(DEFAULT_ORGANIZATION_ID, 'p1', 'mock'))?.id).toBe('p1');
     expect(await getPaymentRecordById('some-other-org', 'p1', 'mock')).toBeNull();
+  });
+});
+
+describe('Phase 32 (Reporting, Analytics & Executive Dashboard): listPaymentRecordsForOrganization', () => {
+  it('lists every payment for the organization across cases, most-recent first', async () => {
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'p1', idempotencyKey: 'key-1', caseId: 'case-1', createdAt: '2026-01-01T00:00:00.000Z' }), 'mock');
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'p2', idempotencyKey: 'key-2', caseId: 'case-2', createdAt: '2026-01-02T00:00:00.000Z' }), 'mock');
+
+    const records = await listPaymentRecordsForOrganization(DEFAULT_ORGANIZATION_ID, {}, 'mock');
+    expect(records.map((r) => r.id)).toEqual(['p2', 'p1']);
+  });
+
+  it('filters by status', async () => {
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'p1', idempotencyKey: 'key-1' }), 'mock');
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'p2', idempotencyKey: 'key-2' }), 'mock');
+    await updatePaymentRecord(DEFAULT_ORGANIZATION_ID, 'p2', { status: 'failed', failureMessage: 'Card declined' }, 'mock');
+
+    const failed = await listPaymentRecordsForOrganization(DEFAULT_ORGANIZATION_ID, { status: 'failed' }, 'mock');
+    expect(failed.map((r) => r.id)).toEqual(['p2']);
+
+    const pending = await listPaymentRecordsForOrganization(DEFAULT_ORGANIZATION_ID, { status: 'pending' }, 'mock');
+    expect(pending.map((r) => r.id)).toEqual(['p1']);
+  });
+
+  it('filters by date range and never leaks another organization\'s payments', async () => {
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'p1', idempotencyKey: 'key-1', createdAt: '2026-01-01T00:00:00.000Z' }), 'mock');
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'p2', idempotencyKey: 'key-2', createdAt: '2026-02-01T00:00:00.000Z' }), 'mock');
+    await createIdempotentPendingPaymentRecord(idempotentParams({ id: 'other-org', idempotencyKey: 'key-3', organizationId: 'some-other-org' }), 'mock');
+
+    const inRange = await listPaymentRecordsForOrganization(DEFAULT_ORGANIZATION_ID, { fromDate: '2026-01-15T00:00:00.000Z' }, 'mock');
+    expect(inRange.map((r) => r.id)).toEqual(['p2']);
   });
 });
 

@@ -3,6 +3,8 @@ import type { CaseTask, NewTaskInput, TaskUpdate } from '../types/task';
 import type { DataAdapterMode } from '../lib/env';
 import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { taskFixtures } from './__mocks__/fixtures';
+import { queryWixDataItems } from '../lib/wixDataApi';
+import { mapWixTaskItem, type WixTaskItem } from '../lib/wixTaskMapper';
 
 export type TaskFilters = {
   caseId?: string;
@@ -62,6 +64,22 @@ export async function list(
 }
 
 /**
+ * Phase 32 (Reporting, Analytics & Executive Dashboard). A server-safe
+ * counterpart to `list()` above — see `services/casesService.ts#listForOrganization`'s
+ * identical comment for why this exists: `list()`'s own `wix`-mode branch
+ * is a client-only HTTP wrapper (a relative-path `fetch`, meant for
+ * `hooks/useTasks.ts` running in a browser); `services/reportingService.ts`
+ * runs inside Route Handlers and needs a direct read instead.
+ */
+export async function listForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<CaseTask[]> {
+  if (dataAdapterMode === 'mock') {
+    return taskFixtures.filter((t) => t.organizationId === organizationId);
+  }
+  const response = await queryWixDataItems<WixTaskItem>('tasks', { filter: { organizationId } });
+  return response.dataItems.map((item) => mapWixTaskItem(item.data)).filter((t): t is CaseTask => t !== null);
+}
+
+/**
  * Phase 16 (Wix Write Integration): create()/update()/remove() gained the
  * same `dataAdapterMode` parameter list()/get() already had (see
  * docs/adr/ADR-014, ADR-016) — "mock" (the default) runs the exact
@@ -83,6 +101,7 @@ export async function create(
         text: input.text,
         assigneeStaffId: input.assigneeStaffId,
         caseId: input.caseId,
+        dueDate: input.dueDate,
       }),
     });
     if (!response.ok) {
@@ -103,6 +122,7 @@ export async function create(
     assigneeStaffId: input.assigneeStaffId,
     isDone: false,
     caseId: input.caseId ?? null,
+    dueDate: input.dueDate ?? null,
     createdAt: new Date().toISOString(),
   };
   taskFixtures.push(newTask);

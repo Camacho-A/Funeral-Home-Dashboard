@@ -26,10 +26,6 @@
   font-size: var(--font-size-12-5);
 }
 
-.who {
-  font-weight: var(--font-weight-semibold);
-}
-
 .what {
   color: var(--color-text-muted);
 }

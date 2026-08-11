@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(50); // Phase 31: 45 + 5 accounting.* keys
+    expect(admin.permissions).toHaveLength(54); // Phase 32: 50 + report.operational/report.staff/report.export/dashboard.manage
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
@@ -172,10 +172,11 @@ describe('defaultRoles', () => {
     }
   });
 
-  it('readOnly grants only *.read/*.view permissions', () => {
+  it('readOnly grants only *.read/*.view permissions (plus Phase 32\'s report.operational/report.staff, which are pure view actions despite not following the .read/.view suffix convention)', () => {
     const readOnly = defaultRoleDefinition('readOnly');
+    const viewOnlyExceptions = ['report.operational', 'report.staff'];
     for (const permission of readOnly.permissions) {
-      expect(permission.endsWith('.read') || permission.endsWith('.view')).toBe(true);
+      expect(permission.endsWith('.read') || permission.endsWith('.view') || viewOnlyExceptions.includes(permission)).toBe(true);
     }
   });
 

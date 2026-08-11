@@ -37,6 +37,7 @@ const VALID_SOURCE_TYPES: readonly string[] = [
   'manual',
   'opening_balance',
   'reversal',
+  'revenue_recognition',
 ];
 
 function isStatus(value: unknown): value is JournalEntryStatus {

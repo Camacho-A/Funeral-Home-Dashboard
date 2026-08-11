@@ -153,6 +153,24 @@ export const PERMISSION_KEYS = [
   'accounting.post',
   'accounting.reconcile',
   'accounting.report',
+
+  /** Phase 32 (Reporting, Analytics & Executive Dashboard). `report.view`
+      (existing, Phase 20) remains the base "can see Reports/Dashboard at
+      all" gate. `report.operational` covers the new operational metric
+      catalog (cases/tasks/appointments/resources/documents/signatures) —
+      financial report access is deliberately unchanged, still gated by
+      the existing `accounting.report`, not a new duplicate key.
+      `report.staff` is narrower still, mirroring `document.template.manage`'s
+      "administrative tier" pattern for anything that surfaces per-staff-
+      member workload data. `report.export` mirrors `audit.export`'s own
+      narrower-than-read precedent: exporting a report requires this key
+      *in addition to* the report's own view permission, never instead of
+      it. `dashboard.manage` gates managing organization-wide shared
+      report presets — it does not gate viewing the dashboard itself. */
+  'report.operational',
+  'report.staff',
+  'report.export',
+  'dashboard.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -235,4 +253,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'accounting.post': 'Post or void a journal entry or financial transaction',
   'accounting.reconcile': 'Perform bank statement reconciliation',
   'accounting.report': 'View financial reports (Trial Balance, Balance Sheet, Profit & Loss, AR Aging, Transaction Register)',
+
+  'report.operational': 'View operational reports (cases, tasks, appointments, resources, documents, signatures)',
+  'report.staff': 'View staff workload and ownership reports',
+  'report.export': 'Export a report to CSV',
+  'dashboard.manage': 'Manage organization-wide shared report presets',
 };

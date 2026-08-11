@@ -240,6 +240,37 @@ export function canViewFinancialReports(params: ResolvePermissionsParams, dataAd
   return hasPermission(params, dataAdapterMode, 'accounting.report');
 }
 
+/** Phase 32 (Reporting, Analytics & Executive Dashboard). Operational
+    reports (cases, tasks, appointments, resources, documents,
+    signatures) — a distinct key from both `report.view` (the base
+    "can see Reports/Dashboard at all" gate) and `accounting.report`
+    (financial reports, deliberately not broadened by this phase). */
+export function canViewOperationalReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'report.operational');
+}
+
+/** Staff workload/ownership reports — narrower than operational
+    reporting in general, mirroring `document.template.manage`'s own
+    administrative tier. */
+export function canViewStaffReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'report.staff');
+}
+
+/** Exporting a report to CSV — required *in addition to* the report's own
+    view permission, never instead of it (mirrors `audit.export`'s own
+    narrower-than-read precedent). Callers must still separately check the
+    report's own view policy before calling this. */
+export function canExportReports(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'report.export');
+}
+
+/** Managing organization-wide shared report presets — does not gate
+    viewing the dashboard itself, only saving/removing a preset with
+    `isShared: true`. */
+export function canManageDashboard(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'dashboard.manage');
+}
+
 /**
  * "Admin-tier" in the pre-Phase-22 sense (owner/administrator): full
  * organization management authority. Preserved as a named policy — not a

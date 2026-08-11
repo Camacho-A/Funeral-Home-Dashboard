@@ -123,8 +123,12 @@ export async function POST(request: Request) {
   if ('caseId' in b && b.caseId !== null && b.caseId !== undefined && typeof b.caseId !== 'string') {
     return NextResponse.json({ task: null, error: 'Invalid field: caseId' }, { status: 400 });
   }
+  if ('dueDate' in b && b.dueDate !== null && b.dueDate !== undefined && typeof b.dueDate !== 'string') {
+    return NextResponse.json({ task: null, error: 'Invalid field: dueDate' }, { status: 400 });
+  }
   const caseId = typeof b.caseId === 'string' ? b.caseId : null;
   const assigneeStaffId = typeof b.assigneeStaffId === 'string' ? b.assigneeStaffId : null;
+  const dueDate = typeof b.dueDate === 'string' ? b.dueDate : null;
 
   // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
   // real, active, in-organization StaffProfile, gated by task.assign —
@@ -163,6 +167,7 @@ export async function POST(request: Request) {
       text: b.text,
       assigneeStaffId,
       caseId,
+      dueDate,
       createdAt: new Date().toISOString(),
     });
 

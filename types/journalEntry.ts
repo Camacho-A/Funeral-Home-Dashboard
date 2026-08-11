@@ -49,7 +49,14 @@ export type JournalEntrySourceType =
   | 'transfer'
   | 'manual'
   | 'opening_balance'
-  | 'reversal';
+  | 'reversal'
+  /** Phase 32 (Reporting, Analytics & Executive Dashboard). Dr Accounts
+      Receivable / Cr Service Revenue, posted by `pricingService.ts` at
+      `createCaseOrder` (full `total`) and `recalculateOrder` (net delta
+      only, direction flips if the new total is lower) — closes a Phase 31
+      gap where no transaction ever credited Service Revenue at all. See
+      docs/adr/ADR-036-reporting-analytics-executive-dashboard-architecture.md. */
+  | 'revenue_recognition';
 
 export type JournalEntryStatus = 'draft' | 'posted' | 'void';
 

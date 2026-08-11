@@ -85,6 +85,10 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'accounting.post',
   'accounting.reconcile',
   'accounting.report',
+  'report.operational',
+  'report.staff',
+  'report.export',
+  'dashboard.manage',
 ];
 
 export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
@@ -135,6 +139,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'portal.manage',
       'portal.message',
       'report.view',
+      'report.operational',
+      'report.staff',
+      'report.export',
+      'dashboard.manage',
       'audit.read',
       'audit.export',
       'user.invite',
@@ -171,6 +179,8 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'notification.send',
       'portal.message',
       'report.view',
+      'report.operational',
+      'report.staff',
       'audit.read',
     ],
   },
@@ -250,7 +260,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         — per the approved plan, `portal.manage` is administrator/manager
         only, and `portal.message` is withheld from this role for the
         same reason `notification.send` is (this role holds no write
-        actions of any kind, including sending a message to a family). */
+        actions of any kind, including sending a message to a family).
+        Phase 32: `report.operational`/`report.staff` are likewise pure
+        view actions and fit this role's tier exactly; `report.export`
+        (a write-adjacent action, generating a file) and `dashboard.manage`
+        are withheld, mirroring the same administrator/manager-only split
+        as `portal.manage`. */
     permissions: [
       'case.read',
       'caseOrder.read',
@@ -262,6 +277,8 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'schedule.read',
       'notification.read',
       'report.view',
+      'report.operational',
+      'report.staff',
       'audit.read',
     ],
   },

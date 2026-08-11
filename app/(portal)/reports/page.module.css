@@ -11,22 +11,46 @@
   letter-spacing: var(--tracking-tight);
 }
 
-.orgSelect {
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
+.section {
+  margin-bottom: 32px;
 }
 
-.kpiGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-7);
-  margin-bottom: var(--space-12);
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 12px;
 }
 
-.middleGrid {
+.grid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: var(--space-8);
-  align-items: start;
-  margin-bottom: var(--space-8);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.cardLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+.reportCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  height: 100%;
+  transition: border-color 0.15s ease;
+}
+
+.reportCard:hover {
+  border-color: var(--color-brand);
+}
+
+.reportName {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.reportDescription {
+  font-size: 12.5px;
+  color: var(--color-text-muted, #6b7280);
 }

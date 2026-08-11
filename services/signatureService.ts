@@ -224,6 +224,25 @@ export async function listRequests(organizationId: string, caseId: string, docum
     .sort((a, b) => (a.issuedAt < b.issuedAt ? 1 : -1));
 }
 
+/** Phase 32 (Reporting, Analytics & Executive Dashboard). The org-wide
+    counterpart to `listRequests()` above — every prior caller only ever
+    needed one document's requests. Backs `signatures.pending` and
+    `signatures.completion_time_avg_hours`; read-only, same collection,
+    no new writer. Exposes `ACTIVE_STATUSES` implicitly by filtering with
+    it below rather than exporting the constant, so "what counts as
+    active" stays defined in exactly one place. */
+export async function listRequestsForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<SignatureRequest[]> {
+  if (dataAdapterMode === 'mock') {
+    return signatureRequestFixtures.filter((r) => r.organizationId === organizationId);
+  }
+  const response = await queryWixDataItems<WixSignatureRequestItem>('signatureRequests', { filter: { organizationId } });
+  return response.dataItems.map((item) => mapWixSignatureRequestItem(item.data)).filter((r): r is SignatureRequest => r !== null);
+}
+
+export function isActiveSignatureRequestStatus(status: SignatureRequestStatus): boolean {
+  return ACTIVE_STATUSES.includes(status);
+}
+
 export async function listRecords(organizationId: string, caseId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<SignatureRecord[]> {
   if (dataAdapterMode === 'mock') {
     return signatureRecordFixtures

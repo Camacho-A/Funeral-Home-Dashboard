@@ -286,9 +286,10 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | `assigneeId` | Text (nullable) | Optional | Mutable — same identity-space note as `caseHandlerId`; maps to today's `assigneeStaffId` |
 | `isDone` | Boolean | Required | Mutable (default `false`) |
 | `caseId` | Text (nullable) | Optional | Immutable — → `cases.beaconCaseId`; null = general office task |
+| `dueDate` | Date, nullable | Optional | **(added Phase 32)** Mutable. Most rows predate this field and have none. The only field Phase 32 adds so `tasks.overdue` is a real, computable metric instead of a proxy — see ADR-036. |
 | `createdAt` | Date | Required | Immutable |
 
-- **Indexes:** composite `(organizationId, isDone)`; `(caseId)`.
+- **Indexes:** composite `(organizationId, isDone)`; `(caseId)`. No dedicated `dueDate` index — org-wide task volume is small enough that overdue filtering happens in application code after the existing `(organizationId, isDone)` query, the same "index narrows, application code is the correctness boundary" discipline used throughout this document.
 - **Permissions:** backend/Admin only.
 - **TS type:** matches `types/task.ts`'s `CaseTask` (`assigneeId` renamed from `assigneeStaffId`, per the identity-space direction above — not yet applied to the TS type or any service).
 
@@ -353,7 +354,8 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 - **`unique_idempotencyKey`** (correction pass — replaces the original `unique_providerCheckoutId`) guarantees an organization can never have two `PaymentRecord`s for the same client-supplied idempotency key, enforced atomically by Wix, not by an application-level check-then-insert. Wix caps a collection at exactly one unique index total, which is why `providerCheckoutId` gave up its own unique constraint here — see ADR-022 for the full reasoning and the empirical confirmation that this cap is real (`WDE0141: Index quota exceeded`).
 - **`organizationId_caseId`** serves the payment-history list query (`PaymentCard`'s "payment history").
 - **`organizationId_providerCheckoutId`** (regular, not unique) serves the org-scoped update-by-checkout-id path (`updatePaymentRecordByCheckoutId`) — correctness there comes from the `idempotencyKey` guard upstream (only one record is ever created per attempt), not from this index enforcing uniqueness itself.
-- **(modified Phase 31)** Extended live with the 2 new nullable fields above via the established "resend the full field list" `PUT /wix-data/v2/collections` mechanism (revision 2 → 3) — no new index needed, this collection's index budget (2 regular + 1 unique) was already fully spent, unchanged from before this phase.
+- **(modified Phase 31)** Extended live with the 2 new nullable fields above via the established "resend the full field list" `PUT /wix-data/v2/collections` mechanism (revision 2 → 3) — no new index needed, this collection had 2 of its 3 regular index slots used at that point.
+- **(modified Phase 32)** `organizationId_status` — the 3rd and final regular index — backs `paymentsService.listPaymentRecordsForOrganization` (a new org-wide, status-filterable read added for the `payments.pending`/`payments.failed` reporting metrics), mirroring `caseOrders`' identical Phase 31 precedent of adding an `(organizationId, status)` index for the same "list org-wide by status" access pattern. This collection's index budget (3 regular + 1 unique) is now fully spent.
 - **TS type:** `types/payment.ts`'s `PaymentRecord`.
 
 ## Collection 10 — `webhookEvents`
@@ -1295,7 +1297,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `entryNumberKey` | Text | Required | Immutable — composed `{organizationId}:{entryNumber}`, the unique-index target |
 | `entryDate` | Date | Required | Immutable |
 | `status` | Text (`draft`/`posted`/`void`) | Required | Mutable — only while `draft`; permanently frozen once `posted` |
-| `sourceType` | Text | Required | Immutable |
+| `sourceType` | Text | Required | Immutable — **(Phase 32 addition)** a plain, unconstrained Text field at the Wix level, so widening the TS-side `JournalEntrySourceType` union with `'revenue_recognition'` needed no schema change at all, only an application-level type addition. Posted directly by `pricingService.ts` (Dr Accounts Receivable / Cr Service Revenue on `createCaseOrder`, net-delta on `recalculateOrder`) — see ADR-036, closing a latent Phase 31 gap where revenue was never actually recognized in the ledger. |
 | `sourceReferenceId` | Text, nullable | Optional | Immutable — → `PaymentRecord.id`/`BankDeposit.id`/etc., depending on `sourceType` |
 | `caseId` | Text, nullable | Optional | Immutable |
 | `memo` | Text | Required | Mutable — only while `draft` |
@@ -1458,6 +1460,28 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 - **TS type:** `types/caseWriteOff.ts`'s `CaseWriteOff`.
 - **Sole writer:** `services/financialTransactionService.ts` (not `chartOfAccountsService.ts`).
 
+## Collection 62 — `reportPresets`
+
+**Purpose:** a saved filter preset for one report (Phase 32) — name, owner, organization scope, a serialized filter blob. Deliberately small: no scheduled email delivery, no arbitrary end-user query builder (see this phase's own Saved Reports scope boundary). **Ownership:** organization-scoped, owner-scoped within that. See ADR-036.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconReportPresetId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `reportKey` | Text | Required | Immutable — a `domain/reporting/reportRegistry.ts` key, validated at the service boundary, never a hardcoded union here |
+| `name` | Text | Required | Mutable |
+| `ownerIdentityId` | Text | Required | Immutable — Identity-space, deliberately: "who saved this for their own convenience" is actor-attribution, not an operational assignment, so this is never `ownerStaffProfileId` (ADR-034's layering invariant governs operational-assignment fields, not this one) |
+| `filters` | Text | Required | Mutable — JSON-serialized `ReportFilters` |
+| `isShared` | Boolean | Required | Mutable — org-wide visible to any caller with the report's own view permission, not just the owner; settable only with `dashboard.manage`, enforced at the service layer |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular): `(organizationId, reportKey)`; `(organizationId, ownerIdentityId)`.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/reportPreset.ts`'s `ReportPreset`.
+- **Sole writer:** `services/reportPresetService.ts`.
+
+**Creation record (Phase 32, 2026-08-11):** created live via `POST /wix-data/v2/collections`, using the same gitignored API key as every prior phase. Both indexes were created via `POST /wix-data/v2/indexes` and confirmed `ACTIVE`. Exercised against real data via a disposable saved preset (created via `reportPresetService.create`, confirmed retrievable via `reportPresetService.list`, then deleted) — a final residual-check query confirmed zero rows remain in this collection; it is real, live, and empty, awaiting genuine use.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -1468,7 +1492,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Superseded by Collection 52 (`staffProfiles`), Phase 30 | Originally recommended for retirement in favor of unifying entirely on `organizationMemberships`. Phase 30 built a real, live `staffProfiles` collection instead, bridged into the identity chain rather than replaced by it — see the "Open design decision" resolution above and Collection 52. |
 
-## Permissions summary (all sixty-one collections)
+## Permissions summary (all sixty-two collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -1566,6 +1590,9 @@ No public write access, no unauthenticated read access, no member-self read acce
 | Reconciliation history for one bank account | `bankReconciliations (organizationId, bankAccountId)` |
 | Write-offs for one case | `caseWriteOffs (organizationId, caseId)` |
 | AR Aging's "every open order org-wide" (Phase 31 addition to an existing collection) | `caseOrders (organizationId, status)` |
+| `payments.pending`/`payments.failed` reporting metrics (Phase 32 addition to an existing collection) | `paymentRecords (organizationId, status)` |
+| Saved presets for one report | `reportPresets (organizationId, reportKey)` |
+| A caller's own saved presets | `reportPresets (organizationId, ownerIdentityId)` |
 
 ## Migration notes
 
@@ -1591,3 +1618,5 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **Phase 29: the "resend the full field list" `PUT /wix-data/v2/collections` mechanism requires the collection's current `revision` in the payload, discovered live.** Every prior phase's documented use of this mechanism (`organizations`, `organizationMemberships`, `paymentRecords`) omitted this detail; a first attempt at extending `caseDocuments` with `familyVisible` failed with `"revision must not be empty"` until the `GET`-fetched current `revision` was included in the `PUT` body. Also confirmed live: the correct update-item endpoint shape is `PUT /wix-data/v2/items/{wixItemId}?dataCollectionId=...` (id in the path and as a query parameter, matching `lib/wixDataApi.ts`'s own `updateWixDataItem` exactly) — a same-session first attempt using `PUT /wix-data/v2/items` with `dataCollectionId` in the body instead returned an uninformative empty-bodied 404. All five new Phase 29 collections (`portalUsers`/`portalInvitations`/`portalAccess`/`portalSessions`/`portalMessages`) and their twelve indexes were created live and confirmed `ACTIVE`; index builds across all five collections took noticeably longer than a single-collection probe (indexes stayed `BUILDING` past an initial ~30-second poll window before completing on a subsequent check) — consistent with the platform queuing several concurrently-requested index builds, not a new limitation. See ADR-033's "Live Wix verification" section for the full disposable-lifecycle exercise.
 - **Phase 31: `caseOrders`' new `(organizationId, status)` index needed no accompanying `PUT` schema change** — `status` already existed as a field, so extending an existing collection's *indexes* (as opposed to its *fields*) is sometimes just a `POST /wix-data/v2/indexes` call with nothing else required; the two are independent operations, not always bundled together. `paymentRecords`, by contrast, needed the full "resend the full field list" `PUT` mechanism (revision 2 → 3) since its 2 new fields (`initiatedByStaffProfileId`, `depositedInBankDepositId`) didn't exist yet — no new index was added for `paymentRecords`, since its 2-regular/1-unique budget was already fully spent.
 - **Phase 31: live verification was staged across two user checkpoints, not run in one pass** — a dry run of the historical-backfill migration only needed 2 of the 9 new collections (`chartOfAccounts`, `journalEntries`) to resolve real ledger accounts and check idempotency; the remaining 7 collections plus the `caseOrders`/`paymentRecords` modifications were created only after the dry run's (empty, since Manor's Cremation currently has 0 real payment records) result was reviewed. All 9 new collections and their 15 indexes were created live and confirmed `ACTIVE`; disposable-row exercises (a payment posting, a reversal, and a full deposit→statement-import→auto-match→reconciliation round trip) were run against real Wix data and fully cleaned up afterward, with a final residual-check query confirming zero leftover rows. See ADR-035's "Live Wix verification" section for the full account.
+- **Phase 32: `casesService.ts`/`tasksService.ts`'s `wix`-mode `list()` functions are client-only HTTP wrappers, unusable from server-side code — discovered live, not by inspection.** A first live read-only verification pass against `reportingService.ts` (which runs inside Route Handlers) threw `TypeError: Failed to parse URL from /api/cases?...` calling `casesService.list`/`tasksService.list` in `wix` mode — a relative-path `fetch()` with no browser origin to resolve against. Resolved by adding `casesService.ts#listForOrganization`/`tasksService.ts#listForOrganization`, direct-to-Wix server-safe reads mirroring `services/scheduling/appointmentReads.ts`'s existing precedent; the pre-existing `app/api/cases/route.ts`/`app/api/tasks/route.ts` routes' own working query logic was left untouched (consolidating them onto the same functions is a named future cleanup, not attempted here). See ADR-036's "Live Wix verification" section.
+- **Phase 32: `lib/wixJournalEntryMapper.ts`'s `VALID_SOURCE_TYPES` array was missing `'revenue_recognition'`, discovered live.** The value had been added to `types/journalEntry.ts`'s `JournalEntrySourceType` union but never to this mapper's own runtime validation list — invisible in mock mode and in every pre-existing unit test (none round-trip a real Wix insert through this mapper), only surfaced when a live `journalEntries` insert came back rejected as `null`, manifesting as `GeneralLedgerServiceError: Failed to create journal entry.` Fixed; `lib/wixJournalEntryMapper.test.ts` gained an explicit round-trip test for this source type. `reportPresets` (Collection 62) and its 2 indexes were created live and confirmed `ACTIVE`; a disposable CaseOrder (under a synthetic caseId, deliberately not Manor's Cremation's one real case) proved the revenue-recognition entry posts correctly and Trial Balance balances against real Wix data, and a disposable ReportPreset proved the new collection's full CRUD path — both fully cleaned up, with a final residual-check query confirming zero leftover rows and the tenant's real data unchanged. See ADR-036's "Live Wix verification" section for the full account.

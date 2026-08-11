@@ -321,6 +321,19 @@ export async function list(organizationId: string, caseId: string, dataAdapterMo
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
+/** Phase 32 (Reporting, Analytics & Executive Dashboard). The org-wide
+    counterpart to `list()` above — this file's first, since every prior
+    caller only ever needed one case's documents. Backs the
+    `documents.generated` metric; read-only, same collection, no new
+    writer. */
+export async function listForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<CaseDocument[]> {
+  if (dataAdapterMode === 'mock') {
+    return caseDocumentFixtures.filter((d) => d.organizationId === organizationId);
+  }
+  const response = await queryWixDataItems<WixCaseDocumentItem>('caseDocuments', { filter: { organizationId } });
+  return response.dataItems.map((item) => mapWixCaseDocumentItem(item.data)).filter((d): d is CaseDocument => d !== null);
+}
+
 async function nextDocumentVersion(organizationId: string, caseId: string, templateId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
   const existing = await list(organizationId, caseId, dataAdapterMode);
   const forTemplate = existing.filter((d) => d.templateId === templateId);

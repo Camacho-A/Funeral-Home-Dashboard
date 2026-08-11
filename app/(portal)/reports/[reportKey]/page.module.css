@@ -1,0 +1,43 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.backLink {
+  font-size: 12.5px;
+  color: var(--color-text-muted, #6b7280);
+  text-decoration: none;
+}
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 4px 0 4px;
+}
+
+.description {
+  font-size: 13px;
+  color: var(--color-text-muted, #6b7280);
+  margin: 0;
+}
+
+.body {
+  margin-top: 12px;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.metricSlot {
+  min-width: 0;
+}
