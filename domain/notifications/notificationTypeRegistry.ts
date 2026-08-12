@@ -16,13 +16,17 @@
  * agree on vocabulary instead of introducing a second, slightly-different
  * taxonomy.
  *
- * Six entries have a real, wired emitter (scheduling's three + signature's
- * two, wired in Phase 28; `task.assigned`, wired in Phase 30 — see
- * ADR-034 — Phase 28 deferred it pending the `StaffProfile`-identity gap
- * ADR-034 closes); the remaining five are fully real registry entries —
- * covered by tests, the UI, and live verification — with no production
- * call site emitting them yet (see ADR-032's "Bounded integration
- * surface" section for why).
+ * Six entries had a real, wired emitter as of Phase 30 (scheduling's
+ * three + signature's two, wired in Phase 28; `task.assigned`, wired in
+ * Phase 30 — see ADR-034 — Phase 28 deferred it pending the
+ * `StaffProfile`-identity gap ADR-034 closes). Phase 34 (Scheduling
+ * Integrations, Calendar Sync & Automated Reminders) wires two more:
+ * the new `scheduling.appointment_reminder`, and — for the first time —
+ * a real emitter for `family.appointment_reminder` below, which had sat
+ * as a real, registered-but-unwired entry since Phase 28. The remaining
+ * entries are fully real registry entries — covered by tests, the UI,
+ * and live verification — with no production call site emitting them
+ * yet (see ADR-032's "Bounded integration surface" section for why).
  */
 export type NotificationCategory = 'case' | 'task' | 'payment' | 'scheduling' | 'document' | 'signature' | 'organization' | 'system' | 'family_portal' | 'financial';
 
@@ -30,6 +34,13 @@ export const NOTIFICATION_TYPES = {
   APPOINTMENT_CREATED: { key: 'scheduling.appointment_created', category: 'scheduling' as NotificationCategory, displayName: 'Appointment Scheduled' },
   APPOINTMENT_RESCHEDULED: { key: 'scheduling.appointment_rescheduled', category: 'scheduling' as NotificationCategory, displayName: 'Appointment Rescheduled' },
   APPOINTMENT_CANCELLED: { key: 'scheduling.appointment_cancelled', category: 'scheduling' as NotificationCategory, displayName: 'Appointment Cancelled' },
+  /** Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+      Reminders). The staff-owner sibling of FAMILY_APPOINTMENT_REMINDER
+      below — delivered via recipientScope: 'individual' to
+      Appointment.ownerStaffProfileId's resolved Identity, emitted by
+      services/appointmentReminderService.ts's cron sweep, never at
+      appointment-creation time. */
+  APPOINTMENT_REMINDER: { key: 'scheduling.appointment_reminder', category: 'scheduling' as NotificationCategory, displayName: 'Appointment Reminder' },
 
   TASK_ASSIGNED: { key: 'task.assigned', category: 'task' as NotificationCategory, displayName: 'Task Assigned' },
 
@@ -42,6 +53,13 @@ export const NOTIFICATION_TYPES = {
   PAYMENT_RECEIVED: { key: 'payment.received', category: 'payment' as NotificationCategory, displayName: 'Payment Received' },
   ORGANIZATION_MEMBER_JOINED: { key: 'organization.member_joined', category: 'organization' as NotificationCategory, displayName: 'Team Member Joined' },
   SYSTEM_ANNOUNCEMENT: { key: 'system.announcement', category: 'system' as NotificationCategory, displayName: 'System Announcement' },
+  /** Phase 34. Delivered via recipientScope: 'individual' to the owning
+      staff member's Identity, emitted only on the terminal
+      retry_pending -> failed transition (services/calendar/
+      calendarSyncService.ts) — never per transient retry, matching
+      this codebase's own "no notification noise for routine/transient
+      events" discipline. */
+  CALENDAR_SYNC_FAILED: { key: 'system.calendar_sync_failed', category: 'system' as NotificationCategory, displayName: 'Calendar Sync Failed' },
 
   // Phase 29 (Family Portal & External Collaboration). Delivered exclusively
   // via the new `recipientScope: 'portal_user'` (see types/notification.ts) —

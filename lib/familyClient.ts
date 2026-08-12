@@ -105,6 +105,15 @@ export function buildFamilyDocumentDownloadUrl(caseId: string, documentId: strin
   return `/api/family/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(documentId)}/download`;
 }
 
+/** Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+    Reminders). Same "not a fetch wrapper" reasoning as
+    `buildFamilyDocumentDownloadUrl` above — an `<a href>` navigation to
+    this URL streams a real .ics file, authenticated by the browser's
+    existing family session cookie. */
+export function buildFamilyAppointmentIcsUrl(caseId: string, appointmentId: string): string {
+  return `/api/family/cases/${encodeURIComponent(caseId)}/appointments/${encodeURIComponent(appointmentId)}/ics`;
+}
+
 // --- Signatures ---------------------------------------------------------
 
 export async function fetchFamilySignatureRequests(caseId: string): Promise<PortalSignatureRequestView[]> {

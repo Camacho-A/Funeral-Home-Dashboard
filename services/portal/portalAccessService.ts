@@ -8,6 +8,7 @@ import {
 } from '../../lib/wixPortalAccessMapper';
 import type { PortalAccess } from '../../types/portalAccess';
 import type { PortalRelationshipType } from '../../domain/portal/portalRelationshipRegistry';
+import { hasPortalCapability, type PortalCapabilityKey } from '../../domain/portal/portalCapabilityPolicy';
 import { portalAccessFixtures } from '../__mocks__/portalFixtures';
 
 /**
@@ -100,6 +101,29 @@ export async function listPortalAccessForCase(organizationId: string, caseId: st
   }
   const response = await queryWixDataItems<WixPortalAccessItem>('portalAccess', { filter: { organizationId, caseId } });
   return response.dataItems.map((item) => mapWixPortalAccessItem(item.data)).filter((a): a is PortalAccess => a !== null);
+}
+
+/**
+ * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+ * Reminders). Every currently-`active` `PortalAccess` grant for a case
+ * that also carries a given capability — the resolution
+ * `services/appointmentReminderService.ts` uses to fan family
+ * appointment reminders out to every family member entitled to see
+ * them (`capability: 'appointment.read'`), never inferred from a
+ * display name/email and never assuming a single "primary" family
+ * contact. A thin composition of the two existing primitives above —
+ * `listPortalAccessForCase` (every grant, any status) filtered through
+ * `hasPortalCapability` (fails closed for anything but `'active'`) —
+ * deliberately not a new query shape.
+ */
+export async function listActiveAccessForCase(
+  organizationId: string,
+  caseId: string,
+  capability: PortalCapabilityKey,
+  dataAdapterMode: DataAdapterMode,
+): Promise<PortalAccess[]> {
+  const grants = await listPortalAccessForCase(organizationId, caseId, dataAdapterMode);
+  return grants.filter((grant) => hasPortalCapability(grant, capability));
 }
 
 /** Every case a given Portal User currently has *any* grant for (active or

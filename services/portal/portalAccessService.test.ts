@@ -112,6 +112,41 @@ describe('portalAccessService', () => {
     expect(forUser.map((x) => x.id)).toContain(a.id);
   });
 
+  it('Phase 34: listActiveAccessForCase returns only active grants that carry the given capability', async () => {
+    const { createPendingPortalAccess, activatePortalAccess, disablePortalAccess, listActiveAccessForCase } = await import('./portalAccessService');
+
+    // active, primary_next_of_kin -> has appointment.read
+    const a = await createPendingPortalAccess(
+      { organizationId: 'org-1', caseId: 'case-reminder', relationshipType: 'primary_next_of_kin', grantedFromInvitationId: 'invitation-r1', idFactory },
+      'mock',
+    );
+    await activatePortalAccess(a.id, 'portal-user-r1', 'mock');
+
+    // active, but attorney -> NONE capabilities, must be excluded
+    const b = await createPendingPortalAccess(
+      { organizationId: 'org-1', caseId: 'case-reminder', relationshipType: 'attorney', grantedFromInvitationId: 'invitation-r2', idFactory },
+      'mock',
+    );
+    await activatePortalAccess(b.id, 'portal-user-r2', 'mock');
+
+    // disabled after activation -> fails closed, must be excluded
+    const c = await createPendingPortalAccess(
+      { organizationId: 'org-1', caseId: 'case-reminder', relationshipType: 'primary_next_of_kin', grantedFromInvitationId: 'invitation-r3', idFactory },
+      'mock',
+    );
+    await activatePortalAccess(c.id, 'portal-user-r3', 'mock');
+    await disablePortalAccess(c.id, 'mock');
+
+    // still pending -> never activated, must be excluded
+    await createPendingPortalAccess(
+      { organizationId: 'org-1', caseId: 'case-reminder', relationshipType: 'primary_next_of_kin', grantedFromInvitationId: 'invitation-r4', idFactory },
+      'mock',
+    );
+
+    const eligible = await listActiveAccessForCase('org-1', 'case-reminder', 'appointment.read', 'mock');
+    expect(eligible.map((x) => x.id)).toEqual([a.id]);
+  });
+
   it('getPrimaryOrganizationIdForPortalUser returns the first active grant\'s organization, or null with none', async () => {
     const { createPendingPortalAccess, activatePortalAccess, getPrimaryOrganizationIdForPortalUser } = await import('./portalAccessService');
 

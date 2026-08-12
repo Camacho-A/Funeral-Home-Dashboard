@@ -84,6 +84,9 @@ export function TopBar({
       <a href="/settings/resources" className={styles.signOutButton}>
         Resources
       </a>
+      <a href="/settings/calendar-integrations" className={styles.signOutButton}>
+        Calendar
+      </a>
       <NotificationBell />
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>

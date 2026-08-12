@@ -42,4 +42,21 @@ describe('resolveNotificationContent', () => {
     const content = resolveNotificationContent(NOTIFICATION_TYPES.INVOICE_OVERDUE.key, { caseNumber: 'B2026-014', amountDisplay: '$1,234.56' });
     expect(content.body).toBe('Case B2026-014 has an overdue balance of $1,234.56');
   });
+
+  it('Phase 34: interpolates the appointmentStartAt token for scheduling.appointment_reminder', () => {
+    const content = resolveNotificationContent(NOTIFICATION_TYPES.APPOINTMENT_REMINDER.key, { entityTitle: 'Viewing', appointmentStartAt: 'Tomorrow, 2:00 PM' });
+    expect(content.title).toBe('Upcoming appointment');
+    expect(content.body).toBe('Reminder: "Viewing" at Tomorrow, 2:00 PM');
+  });
+
+  it('Phase 34: interpolates appointmentStartAt for the now-wired family.appointment_reminder', () => {
+    const content = resolveNotificationContent('family.appointment_reminder', { entityTitle: 'Viewing', appointmentStartAt: 'Tomorrow, 2:00 PM', caseNumber: 'B2026-014' });
+    expect(content.body).toBe('Reminder: Viewing at Tomorrow, 2:00 PM for case B2026-014');
+  });
+
+  it('Phase 34: resolves system.calendar_sync_failed', () => {
+    const content = resolveNotificationContent(NOTIFICATION_TYPES.CALENDAR_SYNC_FAILED.key, { entityTitle: 'Viewing' });
+    expect(content.title).toBe('Calendar sync failed');
+    expect(content.body).toContain('Viewing');
+  });
 });

@@ -1193,6 +1193,130 @@ export function recordResourceConflictOverridden(
   );
 }
 
+/** Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+    Reminders). Recorded exclusively from
+    `services/calendarConnectionService.ts#completeAuthorization`, with
+    `ctx.actorIdentityId` resolved from the connecting StaffProfile's own
+    `identityId` (the OAuth callback route has no ordinary session-derived
+    actor to pass in — see that function's own comment). */
+export function recordCalendarConnected(
+  ctx: ActivityContext,
+  connectionId: string,
+  provider: 'google' | 'microsoft',
+  externalAccountEmail: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.CALENDAR_CONNECTED,
+      resourceType: 'calendarConnection',
+      resourceId: connectionId,
+      previousValue: null,
+      newValue: JSON.stringify({ provider, externalAccountEmail }),
+      description: `${provider === 'google' ? 'Google' : 'Microsoft'} calendar connected (${externalAccountEmail})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Recorded exclusively from `services/calendarConnectionService.ts` —
+    the DELETE route builds `ctx` from its own resolved caller (the
+    owning staff member, or an administrator acting via `calendar.manage`),
+    exactly like every other route-triggered activity event in this
+    codebase. */
+export function recordCalendarDisconnected(ctx: ActivityContext, connectionId: string, provider: 'google' | 'microsoft', dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.CALENDAR_DISCONNECTED,
+      resourceType: 'calendarConnection',
+      resourceId: connectionId,
+      previousValue: null,
+      newValue: null,
+      description: `${provider === 'google' ? 'Google' : 'Microsoft'} calendar disconnected`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Recorded exclusively from `services/appointmentReminderService.ts`'s
+    cron-triggered sweep — always system-generated (`ctx.actorIdentityId:
+    null`), matching `recordNotificationSent`'s own posture for
+    cron-originated writes. */
+export function recordAppointmentReminderSent(ctx: ActivityContext, caseId: string | null, appointmentId: string, reminderId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_REMINDER_SENT,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Appointment reminder sent',
+      metadata: JSON.stringify({ reminderId }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordAppointmentReminderFailed(
+  ctx: ActivityContext,
+  caseId: string | null,
+  appointmentId: string,
+  reminderId: string,
+  failureReason: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'scheduling',
+      eventType: ACTIVITY_EVENT_TYPES.APPOINTMENT_REMINDER_FAILED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: JSON.stringify({ failureReason }),
+      description: 'Appointment reminder failed',
+      metadata: JSON.stringify({ reminderId }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Recorded exclusively from `services/calendarSyncService.ts`, only on
+    the `retry_pending -> failed` terminal transition — never per
+    transient retry (matches this event registry's own "no event for
+    routine successful syncs" discipline, applied symmetrically to
+    failures: only the terminal one is noise-worthy). Always
+    system-generated — the cron sweep has no human actor. */
+export function recordCalendarSyncFailed(ctx: ActivityContext, appointmentId: string, calendarConnectionId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'system',
+      eventType: ACTIVITY_EVENT_TYPES.CALENDAR_SYNC_FAILED,
+      resourceType: 'appointment',
+      resourceId: appointmentId,
+      previousValue: null,
+      newValue: null,
+      description: 'Calendar sync failed permanently for this appointment',
+      metadata: JSON.stringify({ calendarConnectionId }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Phase 28 (Communications & Notifications). Every write in
 // services/notificationService.ts records through exactly one of these —

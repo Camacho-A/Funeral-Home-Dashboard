@@ -34,6 +34,13 @@ describe('NOTIFICATION_TYPES', () => {
     expect(NOTIFICATION_TYPES.APPOINTMENT_CREATED.category).toBe('scheduling');
     expect(NOTIFICATION_TYPES.APPOINTMENT_RESCHEDULED.category).toBe('scheduling');
     expect(NOTIFICATION_TYPES.APPOINTMENT_CANCELLED.category).toBe('scheduling');
+    expect(NOTIFICATION_TYPES.APPOINTMENT_REMINDER.category).toBe('scheduling');
+  });
+
+  it('Phase 34: registers scheduling.appointment_reminder (staff) and system.calendar_sync_failed', () => {
+    expect(NOTIFICATION_TYPES.APPOINTMENT_REMINDER.key).toBe('scheduling.appointment_reminder');
+    expect(NOTIFICATION_TYPES.CALENDAR_SYNC_FAILED.key).toBe('system.calendar_sync_failed');
+    expect(NOTIFICATION_TYPES.CALENDAR_SYNC_FAILED.category).toBe('system');
   });
 
   it('includes every notification type named in the approved plan', () => {

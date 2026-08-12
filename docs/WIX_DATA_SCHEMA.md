@@ -940,6 +940,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `resourceType` | Text (`funeral_director`\|`staff`\|`vehicle`\|`chapel`\|`viewing_room`\|`meeting_room`\|`crematory`\|`cemetery`\|`equipment`\|`external_vendor`) | Required | Immutable |
 | `name` | Text | Required | Mutable |
 | `linkedMembershipId` | Text, nullable | Optional | Immutable — set only for `staff`/`funeral_director` rows; the one and only connection to RBAC/identity, never a copy of role/permission data |
+| `linkedStaffProfileId` | Text, nullable | Optional | Immutable — **(Phase 30 addition, missing from this table until Phase 34's doc pass)** → `staffProfiles.beaconStaffProfileId`; the ADR-034 layering-invariant-compliant identity hop (`linkedMembershipId` above predates ADR-034 and is left as-is for existing rows, never removed) |
 | `capacity` | Number, nullable | Optional | Mutable |
 | `isExternal` | Boolean | Required | Immutable — vendors Beacon doesn't operate, never conflict-checked |
 | `status` | Text (`active`\|`maintenance`\|`out_of_service`\|`archived`) | Required | Mutable |
@@ -1008,6 +1009,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `timezone` | Text | Required | Mutable |
 | `recurrenceDefinitionId` | Text, nullable | Optional | Immutable — null for a non-recurring appointment |
 | `isRecurrenceException` | Boolean | Required | Mutable — set once, true, on a single-occurrence edit |
+| `ownerStaffProfileId` | Text, nullable | Optional | Mutable — **(Phase 30 addition, missing from this table until Phase 34's doc pass)** → `staffProfiles.beaconStaffProfileId`; the sole recipient-resolution anchor for both owner in-app notifications (Phase 30) and Phase 34's staff-owner appointment reminders (§6 of ADR-038) — null/unresolved-StaffProfile means the reminder is written `skipped`, never guessed |
 | `createdBy` | Text | Required | Immutable |
 | `lastModifiedBy` | Text, nullable | Optional | Mutable — the first "generic last-editor" field in this codebase |
 | `cancelledAt`, `cancelledBy`, `cancelReason` | Date / Text / Text, all nullable | Optional | Mutable — set once, on cancellation |
@@ -1485,6 +1487,127 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 
 **Creation record (Phase 32, 2026-08-11):** created live via `POST /wix-data/v2/collections`, using the same gitignored API key as every prior phase. Both indexes were created via `POST /wix-data/v2/indexes` and confirmed `ACTIVE`. Exercised against real data via a disposable saved preset (created via `reportPresetService.create`, confirmed retrievable via `reportPresetService.list`, then deleted) — a final residual-check query confirmed zero rows remain in this collection; it is real, live, and empty, awaiting genuine use.
 
+## Collection 63 — `appointmentReminders`
+
+**Purpose:** one row per (appointment, lead time, recipient) — the pre-computed schedule of reminder sends (Phase 34). Written eagerly at 4 `schedulingService.ts` lifecycle points (create, reschedule, cancel, complete/no-show), never derived by scanning `appointments` (impossible anyway — that collection has zero free index slots). **Ownership:** organization-scoped. **Retention:** never hard-deleted; a superseded row transitions to `cancelled`, it is never removed. See [ADR-038](./adr/ADR-038-scheduling-integrations-calendar-sync-and-reminders.md).
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconAppointmentReminderId` | Text | Required | Immutable — deterministic: `` `${appointmentId}-${leadTimeMinutes}-${recipientType}-${recipientRef}` ``, the mechanism that makes re-scheduling an unchanged appointment a no-op upsert rather than a duplicate row |
+| `organizationId` | Text | Required | Immutable |
+| `appointmentId` | Text | Required | Immutable — → `appointments.beaconAppointmentId` |
+| `leadTimeMinutes` | Number | Required | Immutable |
+| `recipientType` | Text (`staff_owner`\|`family_portal_user`) | Required | Immutable |
+| `recipientIdentityId` | Text, nullable | Optional | Immutable — set only when `recipientType === 'staff_owner'`, resolved through `Appointment.ownerStaffProfileId → StaffProfile.identityId` (never stored/looked-up any other way) |
+| `recipientPortalUserId` | Text, nullable | Optional | Immutable — set only when `recipientType === 'family_portal_user'`, one row per active `PortalAccess` grant with `appointment.read` |
+| `scheduledFor` | Date | Required | Immutable — absolute ISO instant (`appointment.startAt − leadTimeMinutes`), no timezone math needed at sweep time |
+| `status` | Text (`scheduled`\|`sent`\|`skipped`\|`cancelled`\|`failed`) | Required | Mutable — no `'processing'`/claim state; see Known limitations |
+| `notificationId` | Text, nullable | Optional | Mutable — set once `notificationService.createNotification()` succeeds; the delivery-time idempotency anchor (a row already flipped off `'scheduled'` is never re-matched by the sweep) |
+| `sentAt` | Date, nullable | Optional | Mutable — set once |
+| `cancelledAt` | Date, nullable | Optional | Mutable — set once |
+| `failureReason` | Text, nullable | Optional | Mutable — bounded, human-readable only |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular): `(organizationId, appointmentId)` [cancel-on-reschedule/cancel/complete lookup]; `(status, scheduledFor)` — **org-agnostic, the sweep's one deliberate exception**, mirroring `notificationDeliveries`' Phase 33 digest-sweep precedent exactly (a cron job has no per-request organization to scope to). Structurally contained to `appointmentReminderService.ts`'s own private, unexported sweep query — module privacy alone enforces this, no separate structural test needed (see ADR-038).
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/appointmentReminder.ts`'s `AppointmentReminder`.
+- **Sole writer:** `services/appointmentReminderService.ts`.
+
+## Collection 64 — `calendarConnections`
+
+**Purpose:** one row per (staff member, external provider) — a connected Google/Microsoft calendar (Phase 34). Keyed by `staffProfileId`, never `identityId` (ADR-034's layering invariant). **Ownership:** organization-scoped, staff-owned within that. **Retention:** never hard-deleted; `status → 'disconnected'` on disconnect, preserved as historical record. See ADR-038.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCalendarConnectionId` | Text | Required | Immutable — deterministic: `` `${organizationId}-${staffProfileId}-${provider}` ``, enforcing at most one connection per (staff, provider) by construction (Wix Data has no compound-unique support) |
+| `organizationId` | Text | Required | Immutable |
+| `staffProfileId` | Text | Required | Immutable — → `staffProfiles.beaconStaffProfileId`, never `identityId` directly |
+| `provider` | Text (`google`\|`microsoft`) | Required | Immutable |
+| `externalAccountEmail` | Text | Required | Mutable — display-only ("connected as jane@gmail.com"), never a secret |
+| `externalCalendarId` | Text | Required | Mutable |
+| `status` | Text (`connected`\|`disconnected`\|`reauth_required`\|`error`) | Required | Mutable |
+| `scopesGranted` | Text | Required | Mutable — space-separated, audit/debug visibility only |
+| `accessTokenCiphertext` | Text | Required | Mutable — AES-256-GCM, `lib/identity/calendarTokenEncryption.ts` (`mfaSecretEncryption.ts`'s exact construction, its own dedicated `CALENDAR_TOKEN_ENCRYPTION_KEY`); secret, never logged, never returned in any API response — same convention as `identities.passwordHash` |
+| `refreshTokenCiphertext` | Text | Required | Mutable — same encryption; overwritten on every refresh (Microsoft rotates on every use — see ADR-038) |
+| `tokenExpiresAt` | Date | Required | Mutable |
+| `connectedAt` | Date | Required | Immutable |
+| `disconnectedAt` | Date, nullable | Optional | Mutable — set once |
+| `lastSyncAt` | Date, nullable | Optional | Mutable |
+| `lastErrorAt` | Date, nullable | Optional | Mutable |
+| `lastErrorCode` | Text, nullable | Optional | Mutable |
+| `lastErrorMessage` | Text, nullable | Optional | Mutable — bounded, human-readable; never token material or a raw provider stack trace |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (1 regular): `(organizationId, staffProfileId)`. No unique index needed — the deterministic `id` already enforces at-most-one-per-staff-per-provider.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/calendarConnection.ts`'s `CalendarConnection`.
+- **Sole writer:** `services/calendarConnectionService.ts`.
+
+## Collection 65 — `calendarEventLinks`
+
+**Purpose:** one row per (appointment, calendar connection) — the external-event mapping backing Beacon's one-way sync sweep (Phase 34). The deterministic `id` is the idempotency mechanism: a repeated "sync this appointment" trigger upserts the existing row rather than creating a duplicate external event. **Ownership:** organization-scoped. **Retention:** deleted outright once the underlying appointment is cancelled and its external event successfully deleted (§16 of ADR-038) — the one collection in this document whose rows are meant to disappear on the happy path, not soft-deleted. See ADR-038.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCalendarEventLinkId` | Text | Required | Immutable — deterministic: `` `${appointmentId}-${calendarConnectionId}` `` |
+| `organizationId` | Text | Required | Immutable |
+| `appointmentId` | Text | Required | Immutable — → `appointments.beaconAppointmentId` |
+| `calendarConnectionId` | Text | Required | Immutable — → `calendarConnections.beaconCalendarConnectionId` |
+| `provider` | Text (`google`\|`microsoft`) | Required | Immutable — denormalized from the connection, for convenience |
+| `externalCalendarId` | Text | Required | Immutable |
+| `externalEventId` | Text, nullable | Optional | Mutable — null until the first successful `createEvent` |
+| `syncStatus` | Text (`pending`\|`synced`\|`retry_pending`\|`failed`\|`disconnected`) | Required | Mutable |
+| `beaconAppointmentVersion` | Number | Required | Mutable — `Appointment.appointmentVersion` at last successful sync, detects drift |
+| `lastSyncedAt` | Date, nullable | Optional | Mutable |
+| `lastError` | Text, nullable | Optional | Mutable — bounded, human-readable only |
+| `retryCount` | Number | Required | Mutable — reset to 0 on every fresh `'pending'` trigger (a new desired state supersedes stale backoff history) |
+| `createdAt`, `updatedAt` | Date | Required | `createdAt` immutable, `updatedAt` mutable |
+
+- **Indexes** (2 regular): `(organizationId, appointmentId)`; `(syncStatus)` — **org-agnostic, the sync sweep's one deliberate exception**, same class as Collection 63's `(status, scheduledFor)` above. Structurally contained to `calendarSyncService.ts`'s own private, unexported sweep query.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/calendarEventLink.ts`'s `CalendarEventLink`.
+- **Sole writer:** `services/calendarSyncService.ts`.
+
+## Collection 66 — `schedulingReminderPolicies`
+
+**Purpose:** one row per organization — the bounded, admin-editable reminder policy (lead times, notify-owner/notify-family toggles). Deliberately not a rules engine and deliberately not per-appointment-type (Phase 34). A missing row resolves to a synthetic default, mirroring `notificationPreferences`' own "missing row = default view, never eagerly seeded" pattern. **Ownership:** organization-scoped, one row exactly. **Retention:** never deleted. See ADR-038.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `organizationId` | Text | Required | Immutable |
+| `leadTimesMinutes` | Text | Required | Mutable — JSON-serialized `number[]`, sorted ascending, mirroring `notificationPreferences.categoryOverrides`' Phase 33 JSON-in-Text precedent |
+| `notifyOwner` | Boolean | Required | Mutable — default `true` |
+| `notifyFamily` | Boolean | Required | Mutable — default `false`, an explicit opt-in |
+| `updatedAt` | Date | Required | Mutable |
+
+- **`_id` is set to `{organizationId}`** at insert time — the same natural-key convention as `caseSequences`/`paymentIntegrations`. No `beaconSchedulingReminderPolicyId` field exists; the system `_id` alone is the lookup key, and every access is `_id`-scoped, never a query.
+- **Indexes:** none needed — see the `_id`-scoped note above.
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/schedulingReminderPolicy.ts`'s `SchedulingReminderPolicy`.
+- **Sole writer:** `services/appointmentReminderService.ts` (reads/writes the policy alongside its own reminder-scheduling logic — no separate policy service was introduced for a single-row-per-organization collection this small).
+
+## Collection 67 — `calendarFeedTokens`
+
+**Purpose:** hash-at-rest bearer tokens backing a staff member's personal ICS subscription feed (Phase 34). The raw token is high-entropy random (32 bytes, base64url), shown exactly once at generation time; only its SHA-256 hash is ever persisted — reuses `lib/identity/tokens.ts`'s existing `generateToken()`/`hashToken()`/`verifyTokenHash()` (built for Phase 21's email-verification/password-reset tokens) rather than reimplementing. **Ownership:** organization-scoped, staff-owned within that. **Retention:** never hard-deleted; revocation sets `revokedAt`, a revoked token resolves identically to a nonexistent one. See ADR-038.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCalendarFeedTokenId` | Text | Required | Immutable |
+| `organizationId` | Text | Required | Immutable |
+| `tokenHash` | Text | Required | Immutable — SHA-256 of the raw token; the raw value itself is never persisted anywhere |
+| `scope` | Text | Required | Immutable — reserved for a future non-personal feed scope (§9 of ADR-038's Deferred section); always `'personal'` this phase |
+| `ownerStaffProfileId` | Text | Required | Immutable — → `staffProfiles.beaconStaffProfileId` |
+| `createdAt` | Date | Required | Immutable |
+| `revokedAt` | Date, nullable | Optional | Mutable — set once; regenerating revokes the old row and mints a new one, never reuses a row |
+| `lastAccessedAt` | Date, nullable | Optional | Mutable — updated on every successful feed pull |
+
+- **Indexes** (2 regular): `(tokenHash)` [the public feed route's entire lookup mechanism — never a plaintext-token query]; `(organizationId, ownerStaffProfileId)` [Settings UI listing].
+- **Permissions:** backend/Admin only.
+- **TS type:** `types/calendarFeedToken.ts`'s `CalendarFeedToken`.
+- **Sole writer:** `services/calendarFeedTokenService.ts`.
+
+**Creation record (Phase 34, 2026-08-12):** all five collections created live via `POST /wix-data/v2/collections`, using the same gitignored API key as every prior phase. All 7 indexes across the five collections (`appointmentReminders` ×2, `calendarConnections` ×1, `calendarEventLinks` ×2, `calendarFeedTokens` ×2; `schedulingReminderPolicies` needs none) were created via `POST /wix-data/v2/indexes` and confirmed `ACTIVE`. Exercised against real data (Manor's Cremation, `organizationId: "managed-cremations"`) via a two-pass disposable-write verification: Pass 1 confirmed `getReminderPolicy`/`updateReminderPolicy` round-trip correctly; Pass 2 exercised a disposable `appointmentReminders` row with a deliberately fake `appointmentId` through `runAppointmentReminderSweep` (proving the org-agnostic `(status, scheduledFor)` query and the safe "not found → skip" branch, without ever calling `createNotification`), and a disposable `appointments` + `calendarConnections` row through a real `markPendingForAppointment()` + `runCalendarSyncSweep()` with `global.fetch` stubbed *only* for `googleapis.com` (every other fetch call, including Beacon's own internal Wix Data HTTP calls, passed through to the real network) — proving the full happy-path sync write against real production data with zero real Google/Microsoft credentials ever used or contacted. `calendarFeedTokens` was given its own supplementary live round trip (`generateFeedToken`/`resolveFeedToken`/`listTokensForStaffProfile`/`revokeFeedToken`, including confirming a revoked token no longer resolves). Every disposable row was deleted afterward; a final residual-check query confirmed zero leftover rows across all five new collections plus `appointments`. No real notification was ever delivered to a real inbox/phone, and no real external Google/Microsoft calendar was ever connected — both remain gated on a separate, explicit go-ahead beyond this phase's own approval, per this phase's own governing instruction. See ADR-038's "Live Wix verification" section for the full account.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |
@@ -1495,7 +1618,7 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Superseded by Collection 52 (`staffProfiles`), Phase 30 | Originally recommended for retirement in favor of unifying entirely on `organizationMemberships`. Phase 30 built a real, live `staffProfiles` collection instead, bridged into the identity chain rather than replaced by it — see the "Open design decision" resolution above and Collection 52. |
 
-## Permissions summary (all sixty-two collections)
+## Permissions summary (all sixty-seven collections)
 
 No public write access, no unauthenticated read access, no member-self read access. Backend (API-Key-authenticated) access only. Nothing here needs to be broader: Beacon's browser code never talks to Wix Data directly — every read/write, once wired in a later phase, goes through Beacon's own Next.js server code, which resolves and enforces `organizationId` first. This matches `lib/wixClient.ts`'s existing `ApiKeyStrategy` pattern from Phase 12; no new authorization strategy is needed for these collections.
 
@@ -1596,6 +1719,13 @@ No public write access, no unauthenticated read access, no member-self read acce
 | `payments.pending`/`payments.failed` reporting metrics (Phase 32 addition to an existing collection) | `paymentRecords (organizationId, status)` |
 | Saved presets for one report | `reportPresets (organizationId, reportKey)` |
 | A caller's own saved presets | `reportPresets (organizationId, ownerIdentityId)` |
+| Cancel-on-reschedule/cancel/complete reminder lookup | `appointmentReminders (organizationId, appointmentId)` |
+| Reminder sweep eligibility (org-agnostic — see Collection 63) | `appointmentReminders (status, scheduledFor)` |
+| Connections for one staff member | `calendarConnections (organizationId, staffProfileId)` |
+| Sync-status lookup for one appointment (Calendar page indicator) | `calendarEventLinks (organizationId, appointmentId)` |
+| Sync sweep eligibility (org-agnostic — see Collection 65) | `calendarEventLinks (syncStatus)` |
+| Personal feed's entire lookup mechanism | `calendarFeedTokens (tokenHash)` |
+| Feed tokens for one staff member (Settings UI) | `calendarFeedTokens (organizationId, ownerStaffProfileId)` |
 
 ## Migration notes
 
@@ -1626,3 +1756,6 @@ No public write access, no unauthenticated read access, no member-self read acce
 - **Phase 33: the "resend the full field list" `PUT /wix-data/v2/collections` mechanism, documented by every prior phase above, is wrong — corrected live, not merely extended.** Attempting it against `identities`/`notificationPreferences` returned a bare, infra-level 404 (empty body, no `x-wix-responded-by` header) — that verb is not routed at that path at all. A `PATCH` to the same URL routes correctly but rejects a `fields` field-mask path outright (`WDE0075: Unsupported field mask path(s): fields`) — `PatchDataCollection` only ever supported `displayName`/`displayField`/`permissions`, never `fields`, per Wix's own current REST reference (fetched live during this phase to resolve the discrepancy). The correct, dedicated endpoint for adding a field is `POST https://www.wixapis.com/wix-data/v2/collections/create-field` with body `{dataCollectionId, field: {key, displayName, type, required, description}}` — one field per call, not a full-array replace. It is unknown whether the field-list-resend approach ever actually worked as documented in earlier phases or whether those write-ups described intent rather than a verified success; either way, `create-field` is now the empirically confirmed-correct primitive going forward. Used to add `identities.phone`, `notificationPreferences.lastDigestSentAt`, and `notificationPreferences.categoryOverrides`, each confirmed present via a follow-up `GET`.
 - **Phase 33: Vercel Cron's schedule cannot be exercised end-to-end outside a live Vercel deployment — disclosed, not silently assumed working.** `vercel.json`'s 15-minute `POST /api/cron/notification-digest` trigger only fires against a real deployment; this dev environment has no way to observe Vercel actually calling the URL on schedule. The route handler and the sweep function it calls are both fully covered by unit tests and were directly invoked during live verification (see below) — only "does the scheduler itself fire" is unverifiable here, the same class of gap already disclosed for Clover's own sandbox verification.
 - **Phase 33: `lib/wixNotificationDeliveryMapper.ts`'s `VALID_CHANNELS`/`VALID_STATUSES` allowlists were never updated for the widened `NotificationChannel`/`DeliveryStatus` unions, discovered live.** `'sms'` and `'queued_for_digest'` were added to `types/notificationDelivery.ts` but not to this mapper's own runtime validation arrays — `mapWixNotificationDeliveryItem` silently returned `null` for any such row read back from Wix, invisible in mock mode (fixtures never round-trip through this mapper) and in every pre-existing unit test. First surfaced when a live digest-sweep dry run reported `groupsConsidered: 0` against a delivery row a direct id-scoped query had just confirmed existed with `status: 'queued_for_digest'`. Fixed by widening both arrays; `lib/wixNotificationDeliveryMapper.test.ts` gained explicit round-trip tests for both new values, plus a structural test containing the org-agnostic digest query to its one intended call site. Re-verified end to end afterward: a disposable digest-eligible delivery correctly flushed by `runNotificationDigestSweep`, and the cron route's `CRON_SECRET` auth gate was confirmed live (401 on missing/wrong secret, 200 on the correct one). Every disposable row was deleted afterward; a final residual-check query confirmed zero leftover rows and the tenant's real `identities`/`notificationPreferences` counts unchanged. See ADR-037's "Live Wix verification" section for the full account.
+- **Phase 34: `resources.linkedStaffProfileId` and `appointments.ownerStaffProfileId` were live fields since Phase 30 but missing from this document's own Collection 37/40 field tables — a pre-existing documentation gap, unrelated to Phase 34, corrected opportunistically while already touching this file.** Both fields have existed and been read/written correctly by application code since Phase 30 (ADR-034); only this document's own field tables were stale. See Collections 37 and 40 above.
+- **Phase 34: `schedulingReminderPolicies` is the first collection since `caseSequences`/`paymentIntegrations` to use a bare `{organizationId}` system `_id` with no `beacon<Thing>Id` field at all** — a deliberate continuation of that established natural-key convention (Collection 7's own precedent), not a new pattern. `appointmentReminders`/`calendarEventLinks` both continue this document's usual `beacon<Thing>Id`-plus-deterministic-composite-`_id` shape instead, since both need to disambiguate multiple rows per organization.
+- **Phase 34: two collections (`appointmentReminders`, `calendarEventLinks`) each carry one org-agnostic index** (`(status, scheduledFor)` and `(syncStatus)` respectively) — the 3rd and 4th instances of the org-agnostic-cron-sweep exception this document first disclosed for Phase 33's `notificationDeliveries` digest query. Both are structurally contained to their own service's private, unexported sweep function — TypeScript module privacy alone enforces the one-call-site invariant here, so (unlike Phase 33's `notificationService.test.ts` structural test, which had to contain an *exported* function) no dedicated structural test was needed for either; see `services/calendarStructuralBoundaries.test.ts`'s own header comment for the full reasoning. All 7 new indexes across the five Phase 34 collections were created live and confirmed `ACTIVE`. See ADR-038's "Live Wix verification" section for the full account.

@@ -2,9 +2,11 @@
 
 import { use } from 'react';
 import { useFamilyAppointments } from '@/hooks/useFamilyPortal';
+import { buildFamilyAppointmentIcsUrl } from '@/lib/familyClient';
 import { FamilyCaseNav } from '@/components/family/FamilyCaseNav';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatAppointmentDate, formatAppointmentTime } from '@/utils/scheduling';
 import styles from '@/components/family/FamilyCaseSection.module.css';
@@ -42,9 +44,14 @@ export default function FamilyAppointmentsPage({ params }: { params: Promise<{ c
                 </span>
                 {appointment.cancelledAt && appointment.cancelReason && <span className={styles.meta}>Cancelled: {appointment.cancelReason}</span>}
               </div>
-              <Badge variant={appointment.status === 'completed' || appointment.status === 'confirmed' ? 'success' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'brand'}>
-                {appointment.status}
-              </Badge>
+              <div className={styles.actions}>
+                <Badge variant={appointment.status === 'completed' || appointment.status === 'confirmed' ? 'success' : appointment.status === 'cancelled' || appointment.status === 'no_show' ? 'danger' : 'brand'}>
+                  {appointment.status}
+                </Badge>
+                <a href={buildFamilyAppointmentIcsUrl(caseId, appointment.id)}>
+                  <Button variant="secondary">Add to calendar</Button>
+                </a>
+              </div>
             </div>
           ))}
         </Card>

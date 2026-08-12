@@ -205,6 +205,28 @@ export const ACTIVITY_EVENT_TYPES = {
       'critical'`. */
   RESOURCE_CONFLICT_OVERRIDDEN: 'scheduling.resource.conflict_overridden',
 
+  /** Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+      Reminders). `CALENDAR_CONNECTED`/`CALENDAR_DISCONNECTED` use the
+      same already-real `'scheduling'` category — a new external-
+      integration link (or its removal) is a genuinely auditable fact,
+      recorded exclusively from `services/calendarConnectionService.ts`.
+      `APPOINTMENT_REMINDER_SENT`/`APPOINTMENT_REMINDER_FAILED` are
+      recorded exclusively from `services/appointmentReminderService.ts`
+      — routine reminder scheduling/cancellation on an ordinary
+      reschedule is deliberately NOT its own event (high-frequency,
+      low-information, mirrors this codebase's existing "no event for
+      routine successful syncs" discipline). `CALENDAR_SYNC_FAILED` uses
+      the already-real `'system'` category (matching
+      `system.calendar_sync_failed`'s own notification-type category) —
+      recorded exclusively from `services/calendarSyncService.ts`, only
+      on the `retry_pending -> failed` terminal transition, never per
+      transient retry. */
+  CALENDAR_CONNECTED: 'scheduling.calendar.connected',
+  CALENDAR_DISCONNECTED: 'scheduling.calendar.disconnected',
+  APPOINTMENT_REMINDER_SENT: 'scheduling.appointment.reminder_sent',
+  APPOINTMENT_REMINDER_FAILED: 'scheduling.appointment.reminder_failed',
+  CALENDAR_SYNC_FAILED: 'system.calendar.sync_failed',
+
   /** Phase 28 (Communications & Notifications). Uses the already-reserved
       `'notifications'` category (see `ActivityEventCategory` above) —
       this is its first real emitter. Every one of these is recorded

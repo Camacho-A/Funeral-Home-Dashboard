@@ -64,9 +64,15 @@ export const PERMISSION_KEYS = [
       a Resource (and authorizing a hard-conflict override) is an
       org-wide, administrative action, mirroring
       `document.template.manage`/`signature.manage`'s tier. `calendar.manage`
-      is reserved for future org-wide calendar settings (business hours,
-      holidays) — no dedicated UI ships this phase, mirroring
-      `signature.manage`'s own "reserved, no UI yet" precedent. */
+      — reserved since Phase 27 — gets its first real use in Phase 34
+      (Scheduling Integrations, Calendar Sync & Automated Reminders):
+      org-wide oversight of every staff member's calendar connection
+      (view/force-disconnect) and configuring the organization's
+      `SchedulingReminderPolicy`. A staff member connecting/disconnecting
+      their OWN calendar needs no permission beyond authentication —
+      only the org-wide oversight surface is gated by this key. Business
+      hours/holiday settings remain a plausible future use of this same
+      key, not a separate one, if ever built. */
   'schedule.read',
   'schedule.create',
   'schedule.edit',
@@ -223,7 +229,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'schedule.edit': 'Reschedule, update, confirm, or complete an appointment',
   'schedule.cancel': 'Cancel an appointment',
   'resource.manage': 'Create, edit, and change the lifecycle status of schedulable resources; authorize a conflict override',
-  'calendar.manage': 'Manage organization-wide calendar settings',
+  'calendar.manage': 'Oversee staff calendar connections and configure the organization’s appointment reminder policy',
 
   'task.assign': 'Assign or reassign a task to a staff member',
 

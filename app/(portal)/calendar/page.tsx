@@ -5,6 +5,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useAppointments } from '@/hooks/useAppointments';
 import { useResources } from '@/hooks/useResources';
+import { useCalendarSyncLinks } from '@/hooks/useCalendarIntegrations';
 import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
 import { Badge } from '@/components/ui/Badge';
@@ -14,10 +15,30 @@ import { APPOINTMENT_STATUS_LABEL, appointmentStatusVariant } from '@/domain/sch
 import { getAppointmentTypeDefinition } from '@/domain/scheduling/appointmentTypeRegistry';
 import { formatAppointmentTime, getCalendarRange, getMonthGridDays, getWeekDays, isSameDay, addDays, WEEKDAY_LABELS, type CalendarView } from '@/utils/scheduling';
 import type { Appointment } from '@/types/appointment';
+import type { CalendarSyncStatus } from '@/types/calendarEventLink';
 import styles from './page.module.css';
 
 const VIEWS: CalendarView[] = ['day', 'week', 'month', 'agenda'];
 const VIEW_LABEL: Record<CalendarView, string> = { day: 'Day', week: 'Week', month: 'Month', agenda: 'Agenda' };
+
+/** Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+    Reminders). An appointment with no link row at all is never
+    connected — no badge renders for it (unobtrusive by omission, not
+    a "not connected" label cluttering every appointment). */
+const SYNC_STATUS_LABEL: Record<CalendarSyncStatus, string> = {
+  pending: 'Sync pending',
+  synced: 'Synced',
+  retry_pending: 'Sync retrying',
+  failed: 'Sync failed',
+  disconnected: 'Calendar disconnected',
+};
+const SYNC_STATUS_VARIANT: Record<CalendarSyncStatus, 'neutral' | 'success' | 'danger'> = {
+  pending: 'neutral',
+  synced: 'success',
+  retry_pending: 'neutral',
+  failed: 'danger',
+  disconnected: 'danger',
+};
 
 /**
  * Phase 27 (Scheduling & Resource Management). The org-wide Calendar page.
@@ -39,6 +60,12 @@ export default function CalendarPage() {
 
   const range = useMemo(() => getCalendarRange(view, anchor), [view, anchor]);
   const appointmentsQuery = useAppointments(organizationId, { from: range.from, to: range.to, resourceId: resourceFilter || undefined });
+  const syncLinksQuery = useCalendarSyncLinks(organizationId);
+  const syncStatusByAppointmentId = useMemo(() => {
+    const map = new Map<string, CalendarSyncStatus>();
+    for (const link of syncLinksQuery.data ?? []) map.set(link.appointmentId, link.syncStatus);
+    return map;
+  }, [syncLinksQuery.data]);
 
   const permissions = myPermissionsQuery.isSuccess ? myPermissionsQuery.data.permissions : null;
   const canCreate = permissions === null || permissions.includes('schedule.create');
@@ -53,12 +80,14 @@ export default function CalendarPage() {
 
   function renderAppointmentChip(appointment: Appointment) {
     const typeLabel = getAppointmentTypeDefinition(appointment.appointmentType)?.displayName ?? appointment.appointmentType;
+    const syncStatus = syncStatusByAppointmentId.get(appointment.id);
     return (
       <div key={appointment.id} className={styles.chip}>
         <span className={styles.chipTime}>{formatAppointmentTime(appointment.startAt, appointment.timezone)}</span>
         <span className={styles.chipTitle}>{appointment.title}</span>
         <span className={styles.chipType}>{typeLabel}</span>
         <Badge variant={appointmentStatusVariant(appointment.status)}>{APPOINTMENT_STATUS_LABEL[appointment.status]}</Badge>
+        {syncStatus && <Badge variant={SYNC_STATUS_VARIANT[syncStatus]}>{SYNC_STATUS_LABEL[syncStatus]}</Badge>}
       </div>
     );
   }

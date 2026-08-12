@@ -25,7 +25,21 @@ import { describe, expect, it } from 'vitest';
  */
 const ALLOWED_IDENTITY_ID_FIELDS: readonly string[] = [];
 
-const FILES_TO_CHECK: readonly string[] = ['case.ts', 'task.ts', 'appointment.ts', 'resource.ts'];
+/**
+ * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+ * Reminders) adds `calendarConnection.ts` — a genuinely new, stored,
+ * *operational* entity ("this staff member's calendar is connected"),
+ * so it belongs in this same guarded list; it correctly keys off
+ * `staffProfileId`, never `identityId`. `appointmentReminder.ts` is
+ * deliberately NOT added here — `AppointmentReminder.recipientIdentityId`
+ * is a notification-delivery-layer resolution (resolved once from
+ * `Appointment.ownerStaffProfileId` at scheduling time, purely to hand
+ * off to `notificationService.createNotification`), the exact same
+ * carve-out ADR-034 already describes for `NotificationRecipient.identityId`
+ * — never stored back onto the originating entity, never itself an
+ * operational-assignment field.
+ */
+const FILES_TO_CHECK: readonly string[] = ['case.ts', 'task.ts', 'appointment.ts', 'resource.ts', 'calendarConnection.ts'];
 
 describe('Phase 30: hard layering invariant — no *IdentityId operational-assignment field', () => {
   for (const fileName of FILES_TO_CHECK) {

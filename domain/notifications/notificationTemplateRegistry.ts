@@ -45,9 +45,23 @@ export type NotificationTokens = {
       same "structured content in, formatted string out" boundary every
       other token here already follows. */
   amountDisplay?: string;
+  /** Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+      Reminders). A pre-formatted, org-timezone-aware date/time string
+      (e.g. "Tomorrow, 2:00 PM") — callers format the raw ISO instant
+      themselves via utils/scheduling.ts's existing formatters, this
+      registry never does date math, same boundary as amountDisplay. */
+  appointmentStartAt?: string;
 };
 
-const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = ['recipientDisplayName', 'actorDisplayName', 'caseNumber', 'decedentName', 'entityTitle', 'amountDisplay'];
+const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
+  'recipientDisplayName',
+  'actorDisplayName',
+  'caseNumber',
+  'decedentName',
+  'entityTitle',
+  'amountDisplay',
+  'appointmentStartAt',
+];
 
 type TemplateDefinition = {
   titleTemplate: string;
@@ -66,6 +80,10 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
   'scheduling.appointment_cancelled': {
     titleTemplate: 'Appointment cancelled',
     bodyTemplate: '{{actorDisplayName}} cancelled "{{entityTitle}}"',
+  },
+  'scheduling.appointment_reminder': {
+    titleTemplate: 'Upcoming appointment',
+    bodyTemplate: 'Reminder: "{{entityTitle}}" at {{appointmentStartAt}}',
   },
   'task.assigned': {
     titleTemplate: 'Task assigned',
@@ -99,6 +117,10 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
     titleTemplate: 'Announcement',
     bodyTemplate: '{{entityTitle}}',
   },
+  'system.calendar_sync_failed': {
+    titleTemplate: 'Calendar sync failed',
+    bodyTemplate: 'Syncing "{{entityTitle}}" to your connected calendar has stopped working — reconnect from Settings.',
+  },
 
   // Phase 29 (Family Portal & External Collaboration). Delivered via
   // recipientScope: 'portal_user' only — see types/notification.ts.
@@ -112,7 +134,7 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
   },
   'family.appointment_reminder': {
     titleTemplate: 'Upcoming appointment',
-    bodyTemplate: 'Reminder: {{entityTitle}} for case {{caseNumber}}',
+    bodyTemplate: 'Reminder: {{entityTitle}} at {{appointmentStartAt}} for case {{caseNumber}}',
   },
   'family.payment_reminder': {
     titleTemplate: 'Payment reminder',

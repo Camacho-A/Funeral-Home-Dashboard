@@ -29,6 +29,8 @@ import {
 import { createSignatureRequest } from './signatureService';
 import { assertAssignableStaffProfile, getById as getStaffProfileById, StaffAssignmentError } from './staffProfileService';
 import { createNotification } from './notificationService';
+import { scheduleRemindersForAppointment, cancelRemindersForAppointment, rescheduleRemindersForAppointment } from './appointmentReminderService';
+import { markPendingForAppointment, markPendingForCancellation } from './calendarSyncService';
 import { getAppBaseUrl } from '../lib/env';
 import { appointmentFixtures, appointmentResourceAssignmentFixtures } from './__mocks__/schedulingFixtures';
 
@@ -231,6 +233,45 @@ async function notifyAppointmentOwner(
   }
 }
 
+/**
+ * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+ * Reminders). Best-effort, additive — mirrors `notifyAppointmentOwner`'s
+ * own try/catch convention exactly: a reminder-scheduling failure must
+ * never abort the appointment mutation that triggered it. Only ever
+ * writes to `appointmentReminders` (via `appointmentReminderService.ts`,
+ * the sole writer of that collection) — never touches `Appointment`/
+ * `Resource`/`RecurrenceDefinition` data, keeping this file the sole
+ * scheduling orchestration layer.
+ */
+async function syncReminders(action: 'schedule' | 'cancel' | 'reschedule', appointment: Appointment, dataAdapterMode: DataAdapterMode): Promise<void> {
+  try {
+    if (action === 'schedule') await scheduleRemindersForAppointment(appointment, dataAdapterMode);
+    else if (action === 'cancel') await cancelRemindersForAppointment(appointment.organizationId, appointment.id, dataAdapterMode);
+    else await rescheduleRemindersForAppointment(appointment, dataAdapterMode);
+  } catch (error) {
+    console.error(`Failed to ${action} appointment reminders:`, error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
+ * Reminders). Best-effort, additive — mirrors `syncReminders`'s own
+ * try/catch convention exactly. Only ever writes a `calendarEventLinks`
+ * row (via `calendarSyncService.ts`, the sole writer of that
+ * collection) marked `pending` — never calls Google/Microsoft
+ * synchronously; the actual external push happens later, inside the
+ * cron-triggered sweep, in a separate request entirely (see
+ * `calendarSyncService.ts`'s own header comment).
+ */
+async function syncCalendar(action: 'push' | 'cancel', appointment: Appointment, dataAdapterMode: DataAdapterMode): Promise<void> {
+  try {
+    if (action === 'push') await markPendingForAppointment(appointment, dataAdapterMode);
+    else await markPendingForCancellation(appointment.organizationId, appointment.id, dataAdapterMode);
+  } catch (error) {
+    console.error(`Failed to ${action} calendar sync for appointment:`, error instanceof Error ? error.message : error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Reads — re-exported from services/scheduling/appointmentReads.ts (see that
 // file's own header comment for why the reads live in a separate module:
@@ -322,6 +363,10 @@ export async function createAppointment(params: NewAppointmentInput & { idFactor
     console.error('Failed to record scheduling.appointment.created activity event:', error instanceof Error ? error.message : error);
   }
   await notifyAppointmentOwner('scheduling.appointment_created', appointment, ctx, dataAdapterMode);
+  if (!willBeDraft) {
+    await syncReminders('schedule', appointment, dataAdapterMode);
+    await syncCalendar('push', appointment, dataAdapterMode);
+  }
 
   if (!willBeDraft) {
     for (const resourceId of resourceIds) {
@@ -392,6 +437,10 @@ async function createRecurringOccurrence(
   } catch (error) {
     console.error('Failed to record scheduling.appointment.created activity event:', error instanceof Error ? error.message : error);
   }
+  if (!occurrenceIsDraft) {
+    await syncReminders('schedule', occAppointment, dataAdapterMode);
+    await syncCalendar('push', occAppointment, dataAdapterMode);
+  }
 
   if (!occurrenceIsDraft) {
     if (occurrenceHardConflicts.length > 0 && params.override) {
@@ -445,6 +494,8 @@ export async function rescheduleAppointment(
     console.error('Failed to record scheduling.appointment.rescheduled activity event:', error instanceof Error ? error.message : error);
   }
   await notifyAppointmentOwner('scheduling.appointment_rescheduled', updated, ctx, dataAdapterMode);
+  await syncReminders('reschedule', updated, dataAdapterMode);
+  await syncCalendar('push', updated, dataAdapterMode);
 
   return updated;
 }
@@ -484,7 +535,17 @@ export async function updateAppointmentResources(
   }
 
   if (existing.status === 'draft' && addResourceIds.length > 0) {
-    await patchAppointment(organizationId, appointmentId, { status: 'scheduled', updatedAt: nowIso() }, dataAdapterMode);
+    const promoted = await patchAppointment(organizationId, appointmentId, { status: 'scheduled', updatedAt: nowIso() }, dataAdapterMode);
+    // No reminders/calendar link exist yet for a row created as draft —
+    // create them now, at the exact moment it first becomes eligible.
+    await syncReminders('schedule', promoted, dataAdapterMode);
+    await syncCalendar('push', promoted, dataAdapterMode);
+  } else if (existing.status !== 'draft' && (addResourceIds.length > 0 || removeResourceIds.length > 0)) {
+    // Already scheduled — a resource change re-marks any existing
+    // calendar link 'pending' so the sweep re-pushes the current state
+    // (§16 of the plan: "Resources changed -> Existing link -> 'pending'
+    // again"), mirroring rescheduleAppointment's own re-push above.
+    await syncCalendar('push', existing, dataAdapterMode);
   }
 }
 
@@ -523,6 +584,10 @@ export async function completeAppointment(organizationId: string, appointmentId:
 
   const updated = await patchAppointment(organizationId, appointmentId, { status: outcome, lastModifiedBy: ctx.actorIdentityId ?? null, updatedAt: nowIso() }, dataAdapterMode);
   await releaseAllLiveAssignments(organizationId, appointmentId, existing.caseId, ctx, dataAdapterMode);
+  // A reminder for an appointment that already happened is meaningless
+  // — cancel every remaining future 'scheduled' row, same terminal
+  // treatment as cancelAppointment below.
+  await syncReminders('cancel', updated, dataAdapterMode);
 
   try {
     await recordAppointmentCompleted(ctx, existing.caseId, appointmentId, outcome, dataAdapterMode);
@@ -545,6 +610,8 @@ export async function cancelAppointment(organizationId: string, appointmentId: s
     dataAdapterMode,
   );
   await releaseAllLiveAssignments(organizationId, appointmentId, existing.caseId, ctx, dataAdapterMode);
+  await syncReminders('cancel', updated, dataAdapterMode);
+  await syncCalendar('cancel', updated, dataAdapterMode);
 
   try {
     await recordAppointmentCancelled(ctx, existing.caseId, appointmentId, reason, dataAdapterMode);

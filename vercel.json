@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/notification-digest",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/appointment-reminders",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/calendar-sync",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
