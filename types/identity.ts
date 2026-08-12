@@ -27,6 +27,15 @@ export type Identity = {
       `email` itself preserves the user's original casing for display. */
   normalizedEmail: string;
   displayName: string;
+  /** Phase 33 (Real Notification Delivery). Optional — most identities
+      predate this field and have none. Nullable, mutable via the same
+      `updateIdentity` patch path every other editable field already
+      uses. The one gate for the `sms` notification channel: a recipient
+      with `smsEnabled` but no phone here is silently skipped, never an
+      error (mirrors `recipientResolver.ts`'s established
+      unresolvable-target pattern). See
+      docs/adr/ADR-037-real-notification-delivery.md. */
+  phone: string | null;
   status: IdentityStatus;
   emailVerified: boolean;
   /** Incremented every time the password changes — the mechanism behind

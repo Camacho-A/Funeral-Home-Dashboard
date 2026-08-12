@@ -14,6 +14,8 @@ export type WixIdentityItem = {
   email?: unknown;
   normalizedEmail?: unknown;
   displayName?: unknown;
+  /** Phase 33 (Real Notification Delivery) addition. */
+  phone?: unknown;
   status?: unknown;
   emailVerified?: unknown;
   passwordVersion?: unknown;
@@ -55,6 +57,7 @@ export function mapWixIdentityItem(item: WixIdentityItem | undefined): Identity 
     email: item.email,
     normalizedEmail: item.normalizedEmail,
     displayName: item.displayName,
+    phone: typeof item.phone === 'string' ? item.phone : null,
     status: item.status,
     emailVerified: item.emailVerified,
     passwordVersion: item.passwordVersion,
@@ -85,6 +88,7 @@ export function buildWixIdentityData(identity: Identity, secrets: IdentitySecret
     email: identity.email,
     normalizedEmail: identity.normalizedEmail,
     displayName: identity.displayName,
+    phone: identity.phone,
     status: identity.status,
     emailVerified: identity.emailVerified,
     passwordVersion: identity.passwordVersion,
@@ -111,6 +115,7 @@ export function applyIdentityUpdateToWixData(
   if (patch.email !== undefined) next.email = patch.email;
   if (patch.normalizedEmail !== undefined) next.normalizedEmail = patch.normalizedEmail;
   if (patch.displayName !== undefined) next.displayName = patch.displayName;
+  if (patch.phone !== undefined) next.phone = patch.phone;
   if (patch.status !== undefined) next.status = patch.status;
   if (patch.emailVerified !== undefined) next.emailVerified = patch.emailVerified;
   if (patch.passwordVersion !== undefined) next.passwordVersion = patch.passwordVersion;

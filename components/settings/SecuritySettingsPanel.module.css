@@ -48,6 +48,12 @@
   padding: var(--space-4) var(--space-5);
 }
 
+.hint {
+  font-size: var(--font-size-11-5);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
 .sessionRow {
   display: flex;
   align-items: center;

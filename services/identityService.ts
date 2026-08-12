@@ -83,6 +83,7 @@ export async function findOrCreateIdentity(
     email: params.email,
     normalizedEmail: normalizeEmail(params.email),
     displayName: params.displayName,
+    phone: null,
     status: 'pending',
     emailVerified: false,
     passwordVersion: 0,

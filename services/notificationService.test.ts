@@ -62,6 +62,16 @@ function makeMembership(overrides: Partial<Membership> = {}): Membership {
   };
 }
 
+/** Phase 33 (Real Notification Delivery) test helper: replaces the
+    fixture array *slot* with a new object rather than mutating the
+    existing one in place — `originalIdentityFixtures` (below) is only a
+    shallow copy of the array, so mutating a fixture object directly
+    would permanently corrupt every subsequent test's "reset" state. */
+function setIdentityPhone(identityId: string, phone: string | null) {
+  const index = identityFixtures.findIndex((i) => i.id === identityId);
+  identityFixtures[index] = { ...identityFixtures[index], phone };
+}
+
 const originalMembershipFixtures = [...membershipFixtures];
 const originalIdentityFixtures = [...identityFixtures];
 
@@ -300,6 +310,122 @@ describe('createNotification', () => {
   });
 });
 
+describe('Phase 33 (Real Notification Delivery): SMS channel', () => {
+  it('sends SMS when smsEnabled and the identity has a phone number on file', async () => {
+    await updatePreferences(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { smsEnabled: true }, 'mock');
+    setIdentityPhone(MANORS_ADMIN_IDENTITY_ID, '+15555550100');
+
+    await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} }, ctx(), 'mock');
+
+    const sms = notificationDeliveryFixtures.find((d) => d.channel === 'sms');
+    expect(sms?.status).toBe('sent');
+  });
+
+  it('fails the SMS delivery (without blocking in_app/email) when smsEnabled but no phone number is on file — a real, expected empty state, never a thrown error', async () => {
+    await updatePreferences(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { smsEnabled: true }, 'mock');
+    // identityFixtures default to phone: null — deliberately not set here.
+
+    const notification = await createNotification(
+      { notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} },
+      ctx(),
+      'mock',
+    );
+
+    expect(notification.status).toBe('active');
+    const sms = notificationDeliveryFixtures.find((d) => d.channel === 'sms');
+    const inApp = notificationDeliveryFixtures.find((d) => d.channel === 'in_app');
+    expect(sms?.status).toBe('failed');
+    expect(inApp?.status).toBe('delivered');
+    expect(activityEventFixtures.some((e) => e.eventType === 'notification.failed')).toBe(true);
+  });
+
+  it('produces no sms Delivery row at all when smsEnabled is false (the default)', async () => {
+    await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} }, ctx(), 'mock');
+    expect(notificationDeliveryFixtures.some((d) => d.channel === 'sms')).toBe(false);
+  });
+});
+
+describe('Phase 33 (Real Notification Delivery): per-category overrides', () => {
+  it('a category override replaces the global toggles wholesale for that category', async () => {
+    // Global: email on, sms off. Override for 'task': email off, sms on.
+    await updatePreferences(
+      DEFAULT_ORGANIZATION_ID,
+      MANORS_ADMIN_IDENTITY_ID,
+      { categoryOverrides: { task: { emailEnabled: false, inAppEnabled: true, smsEnabled: true } } },
+      'mock',
+    );
+    setIdentityPhone(MANORS_ADMIN_IDENTITY_ID, '+15555550100');
+
+    // 'task.assigned' is category 'task' — should use the override.
+    await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} }, ctx(), 'mock');
+    expect(notificationDeliveryFixtures.some((d) => d.channel === 'email')).toBe(false);
+    expect(notificationDeliveryFixtures.some((d) => d.channel === 'sms')).toBe(true);
+  });
+
+  it('a category with no override falls back to the global toggles', async () => {
+    await updatePreferences(
+      DEFAULT_ORGANIZATION_ID,
+      MANORS_ADMIN_IDENTITY_ID,
+      { emailEnabled: false, categoryOverrides: { task: { emailEnabled: true, inAppEnabled: true, smsEnabled: false } } },
+      'mock',
+    );
+    // 'system.announcement' is category 'system' — no override set for it, falls back to the global emailEnabled: false.
+    await createNotification({ notificationType: 'system.announcement', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: { entityTitle: 'x' } }, ctx(), 'mock');
+    expect(notificationDeliveryFixtures.some((d) => d.channel === 'email')).toBe(false);
+  });
+});
+
+describe('Phase 33 (Real Notification Delivery): digest batching & quiet hours', () => {
+  it('a non-instant digestFrequency defers the email to queued_for_digest instead of sending it', async () => {
+    await updatePreferences(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { digestFrequency: 'daily' }, 'mock');
+    await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} }, ctx(), 'mock');
+
+    const email = notificationDeliveryFixtures.find((d) => d.channel === 'email');
+    expect(email?.status).toBe('queued_for_digest');
+    expect(email?.attemptCount).toBe(0);
+    // Deliberately no attempt, no activity event — nothing has happened yet.
+    expect(notificationDeliveryAttemptFixtures.some((a) => a.notificationDeliveryId === email?.id)).toBe(false);
+    // in_app is never deferred by digestFrequency.
+    const inApp = notificationDeliveryFixtures.find((d) => d.channel === 'in_app');
+    expect(inApp?.status).toBe('delivered');
+  });
+
+  it('an instant preference inside quiet hours defers the email; outside quiet hours it sends immediately', async () => {
+    await updatePreferences(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { quietHoursStart: '22:00', quietHoursEnd: '07:00' }, 'mock');
+
+    await createNotification(
+      { notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {}, now: '2026-08-01T23:30:00.000Z' },
+      ctx(),
+      'mock',
+    );
+    const deferred = notificationDeliveryFixtures.find((d) => d.channel === 'email');
+    expect(deferred?.status).toBe('queued_for_digest');
+
+    notificationDeliveryFixtures.length = 0;
+    notificationRecipientFixtures.length = 0;
+
+    await createNotification(
+      { notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {}, now: '2026-08-01T12:00:00.000Z' },
+      ctx(),
+      'mock',
+    );
+    const sent = notificationDeliveryFixtures.find((d) => d.channel === 'email');
+    expect(sent?.status).toBe('sent');
+  });
+
+  it('sms is never deferred by digestFrequency or quiet hours, even when email is', async () => {
+    await updatePreferences(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { digestFrequency: 'daily', smsEnabled: true }, 'mock');
+    setIdentityPhone(MANORS_ADMIN_IDENTITY_ID, '+15555550100');
+
+    await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} }, ctx(), 'mock');
+
+    const sms = notificationDeliveryFixtures.find((d) => d.channel === 'sms');
+    const email = notificationDeliveryFixtures.find((d) => d.channel === 'email');
+    expect(sms?.status).toBe('sent');
+    expect(email?.status).toBe('queued_for_digest');
+  });
+});
+
 describe('cancelNotification', () => {
   it('cancels a draft notification', async () => {
     const notification = await createNotification(
@@ -503,6 +629,16 @@ describe('NotificationService orchestration boundary (structural)', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('Phase 33: only notificationService.ts imports the sms channel', () => {
+    const target = join(__dirname, 'notifications', 'smsChannel.ts');
+    const importPattern = /^import .*from ['"][^'"]*notifications\/smsChannel['"]/m;
+    const offenders = allFiles.filter((filePath) => {
+      if (filePath === notificationServicePath || filePath === target) return false;
+      return importPattern.test(readFileSync(filePath, 'utf8'));
+    });
+    expect(offenders).toEqual([]);
+  });
+
   it('only notificationService.ts imports the in-app channel', () => {
     const target = join(__dirname, 'notifications', 'inAppChannel.ts');
     const importPattern = /^import .*from ['"][^'"]*notifications\/inAppChannel['"]/m;
@@ -521,6 +657,16 @@ describe('NotificationService orchestration boundary (structural)', () => {
       return importPattern.test(readFileSync(filePath, 'utf8'));
     });
     expect(offenders).toEqual([]);
+  });
+
+  it('Phase 33: only notificationDigestService.ts calls the org-agnostic listAllQueuedForDigestDeliveries query', () => {
+    const target = join(root, 'services', 'notificationDigestService.ts');
+    const importPattern = /\blistAllQueuedForDigestDeliveries\b/;
+    const offenders = allFiles.filter((filePath) => {
+      if (filePath === notificationServicePath || filePath === target) return false;
+      return importPattern.test(readFileSync(filePath, 'utf8'));
+    });
+    expect(offenders, `unexpected caller(s) of the org-agnostic digest query: ${offenders.join(', ')}`).toEqual([]);
   });
 
   it('no file other than notificationService.ts writes to the 5 notification collections directly', () => {

@@ -17,6 +17,9 @@
  * happens based on environment; no Route Handler ever makes that decision
  * itself.
  */
+import { getAppBaseUrl } from '../env';
+import { sendResendEmail, isResendConfigured } from '../email/resendClient';
+
 export type IdentityMessage =
   | { kind: 'password_reset'; to: string; token: string }
   | { kind: 'email_verification'; to: string; token: string }
@@ -89,13 +92,116 @@ export const productionUnconfiguredIdentityMessageSender: IdentityMessageSender 
   },
 };
 
+/** Renders one `IdentityMessage` variant into a subject/html/text triple.
+    Every link built here uses `getAppBaseUrl()` + the exact path each
+    target page already expects (confirmed against
+    `app/reset-password/actions.ts`, `app/verify-email/actions.ts`,
+    `app/accept-invitation/actions.ts`, `app/family/accept-invitation/page.tsx`
+    — never invented). `signature_*` kinds already carry a pre-built
+    `signLink` (from `services/signatureService.ts#buildSigningLink`), so
+    this function never constructs a signing URL itself. */
+function formatIdentityMessage(message: IdentityMessage): { subject: string; html: string; text: string } {
+  const base = getAppBaseUrl();
+  switch (message.kind) {
+    case 'password_reset': {
+      const link = `${base}/reset-password?token=${encodeURIComponent(message.token)}`;
+      return {
+        subject: 'Reset your Beacon password',
+        html: `<p>Click the link below to reset your password.</p><p><a href="${link}">${link}</a></p>`,
+        text: `Reset your password: ${link}`,
+      };
+    }
+    case 'email_verification': {
+      const link = `${base}/verify-email?token=${encodeURIComponent(message.token)}`;
+      return {
+        subject: 'Verify your Beacon email address',
+        html: `<p>Click the link below to verify your email address.</p><p><a href="${link}">${link}</a></p>`,
+        text: `Verify your email: ${link}`,
+      };
+    }
+    case 'invitation': {
+      const link = `${base}/accept-invitation?token=${encodeURIComponent(message.token)}&membershipId=${encodeURIComponent(message.membershipId)}`;
+      return {
+        subject: "You've been invited to join a Beacon organization",
+        html: `<p>Click the link below to accept your invitation.</p><p><a href="${link}">${link}</a></p>`,
+        text: `Accept your invitation: ${link}`,
+      };
+    }
+    case 'mfa_recovery_codes': {
+      return {
+        subject: 'Your Beacon MFA recovery codes',
+        html: `<p>Store these recovery codes somewhere safe — each can be used once if you lose access to your authenticator.</p><ul>${message.codes.map((c) => `<li>${c}</li>`).join('')}</ul>`,
+        text: `Your MFA recovery codes:\n${message.codes.join('\n')}`,
+      };
+    }
+    case 'signature_request': {
+      const expiryLine = message.expiresAt ? ` This link expires ${message.expiresAt}.` : '';
+      return {
+        subject: `Signature requested — ${message.caseDisplayName}`,
+        html: `<p>Hi ${message.signerName}, please review and sign the document for ${message.caseDisplayName}.${expiryLine}</p><p><a href="${message.signLink}">${message.signLink}</a></p>`,
+        text: `Please sign: ${message.signLink}${expiryLine}`,
+      };
+    }
+    case 'signature_completed':
+      return {
+        subject: `Document signed — ${message.caseDisplayName}`,
+        html: `<p>${message.signerName} has signed the document for ${message.caseDisplayName}.</p>`,
+        text: `${message.signerName} has signed the document for ${message.caseDisplayName}.`,
+      };
+    case 'signature_declined':
+      return {
+        subject: `Signature declined — ${message.caseDisplayName}`,
+        html: `<p>${message.signerName} declined to sign the document for ${message.caseDisplayName}.${message.reason ? ` Reason: ${message.reason}` : ''}</p>`,
+        text: `${message.signerName} declined to sign for ${message.caseDisplayName}.${message.reason ? ` Reason: ${message.reason}` : ''}`,
+      };
+    case 'signature_cancelled':
+      return {
+        subject: `Signature request cancelled — ${message.caseDisplayName}`,
+        html: `<p>The signature request for ${message.caseDisplayName} sent to ${message.signerName} was cancelled.</p>`,
+        text: `The signature request for ${message.caseDisplayName} sent to ${message.signerName} was cancelled.`,
+      };
+    case 'portal_invitation': {
+      const link = `${base}/family/accept-invitation?token=${encodeURIComponent(message.token)}`;
+      return {
+        subject: "You've been invited to the Beacon family portal",
+        html: `<p>Click the link below to accept your invitation and view case updates.</p><p><a href="${link}">${link}</a></p>`,
+        text: `Accept your invitation: ${link}`,
+      };
+    }
+  }
+}
+
+/**
+ * The real, production-capable adapter — sends via `lib/email/resendClient.ts`,
+ * the same underlying Resend client `services/notifications/emailChannel.ts`'s
+ * `resendEmailProvider` also uses (one provider integration, two thin
+ * adapters — see that file's own comment).
+ */
+export const resendIdentityMessageSender: IdentityMessageSender = {
+  async send(message) {
+    const { subject, html, text } = formatIdentityMessage(message);
+    await sendResendEmail({ to: message.to, subject, html, text });
+  },
+};
+
 /**
  * The one place environment decides which adapter is used. Test files
  * mock this entire module (`vi.mock('@/lib/identity/messageSender', ...)`)
  * to inject a capturing adapter instead — see
  * `services/__mocks__/identityMessageSender.ts`.
+ *
+ * Phase 33 (Real Notification Delivery): `resendIdentityMessageSender` is
+ * selected whenever `RESEND_API_KEY` is set, regardless of `NODE_ENV` —
+ * a developer can opt into real sending locally too (matching Clover's
+ * own sandbox-flag posture: an env var, not a hardcoded environment
+ * check, decides). Falls back to the original console/throw pair when
+ * it's unset — production with no key configured still fails loudly
+ * rather than silently pretending to send.
  */
 export function getIdentityMessageSender(): IdentityMessageSender {
+  if (isResendConfigured()) {
+    return resendIdentityMessageSender;
+  }
   if (process.env.NODE_ENV === 'production') {
     return productionUnconfiguredIdentityMessageSender;
   }

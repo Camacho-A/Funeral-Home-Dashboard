@@ -26,9 +26,12 @@ import { isValidNotificationTypeKey, getNotificationTypeDefinition } from '../do
 import { resolveNotificationContent } from '../domain/notifications/notificationTemplateRegistry';
 import { resolveRecipientIdentityIds, RecipientResolverError } from './notifications/recipientResolver';
 import { sendEmailNotification } from './notifications/emailChannel';
+import { sendSmsNotification } from './notifications/smsChannel';
 import { deliverInApp } from './notifications/inAppChannel';
 import { getIdentityById } from './identityService';
 import { getPortalUserById } from './portal/portalUserService';
+import { getForOrganization as getOrganizationForNotification } from './organizationsService';
+import { shouldDeferEmailForDigest } from '../domain/notifications/digestTiming';
 import {
   recordNotificationCreated,
   recordNotificationSent,
@@ -258,7 +261,12 @@ async function insertPreference(preference: NotificationPreference, dataAdapterM
 async function patchPreference(
   organizationId: string,
   identityId: string,
-  patch: Partial<Pick<NotificationPreference, 'emailEnabled' | 'inAppEnabled' | 'updatedAt'>>,
+  patch: Partial<
+    Pick<
+      NotificationPreference,
+      'emailEnabled' | 'inAppEnabled' | 'smsEnabled' | 'digestFrequency' | 'quietHoursStart' | 'quietHoursEnd' | 'categoryOverrides' | 'lastDigestSentAt' | 'updatedAt'
+    >
+  >,
   dataAdapterMode: DataAdapterMode,
 ): Promise<NotificationPreference> {
   const preferenceId = `${organizationId}-${identityId}`;
@@ -318,6 +326,23 @@ export async function updatePreferences(
 // Channel dispatch — one recipient x one channel
 // ---------------------------------------------------------------------------
 
+/**
+ * Phase 29 (Family Portal & External Collaboration), extracted as its own
+ * function in Phase 33 so `flushDigestGroup` (below) can reuse it exactly
+ * rather than re-deriving the same identity/portal-user fallback. A
+ * 'portal_user'-scope recipient's id is a PortalUser.id, never an
+ * Identity.id (see recipientResolver.ts's own comment) — every staff
+ * notification resolves via getIdentityById; this fallback is reached
+ * only when that lookup returns null.
+ */
+async function resolveEmailAddress(identityId: string, dataAdapterMode: DataAdapterMode): Promise<string> {
+  const identity = await getIdentityById(identityId, dataAdapterMode);
+  if (identity) return identity.email;
+  const portalUser = await getPortalUserById(identityId, dataAdapterMode);
+  if (!portalUser) throw new Error(`No identity or portal user found for id "${identityId}".`);
+  return portalUser.email;
+}
+
 async function dispatchChannel(
   notification: Notification,
   recipient: NotificationRecipient,
@@ -325,9 +350,50 @@ async function dispatchChannel(
   content: { title: string; body: string; actionUrl: string | null },
   ctx: ActivityContext,
   caseIdForActivity: string | null,
+  preference: NotificationPreference,
+  organizationTimezone: string | undefined,
+  now: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<void> {
-  const now = nowIso();
+  // Phase 33 (Real Notification Delivery): `now` is the caller's own
+  // notification-creation timestamp (`params.now ?? nowIso()` in
+  // createNotification), never a fresh `nowIso()` call made here — the
+  // digest/quiet-hours check below must compare against the same moment
+  // the rest of this notification's fields were stamped with, not
+  // whatever the real clock reads by the time this function happens to
+  // run. Tests inject `now` explicitly for exactly this reason.
+
+  // An 'email' send whose
+  // recipient batches (digestFrequency !== 'instant') or is currently
+  // inside their org-local quiet hours is held here — no provider call,
+  // no delivery-attempt row, no activity event, since nothing has
+  // actually happened yet. Only services/notificationDigestService.ts's
+  // sweep ever moves a row out of 'queued_for_digest'. 'in_app' and
+  // 'sms' are never deferred — see that file's own header comment for
+  // why.
+  if (channel === 'email' && shouldDeferEmailForDigest({
+    digestFrequency: preference.digestFrequency,
+    quietHoursStart: preference.quietHoursStart,
+    quietHoursEnd: preference.quietHoursEnd,
+    timezone: organizationTimezone,
+    nowIso: now,
+  })) {
+    const queuedDelivery: NotificationDelivery = {
+      id: `${recipient.id}-${channel}`,
+      organizationId: notification.organizationId,
+      notificationId: notification.id,
+      notificationRecipientId: recipient.id,
+      identityId: recipient.identityId,
+      channel,
+      status: 'queued_for_digest',
+      attemptCount: 0,
+      lastAttemptAt: null,
+      createdAt: now,
+    };
+    await persistDelivery(queuedDelivery, dataAdapterMode);
+    return;
+  }
+
   const delivery: NotificationDelivery = {
     id: `${recipient.id}-${channel}`,
     organizationId: notification.organizationId,
@@ -347,21 +413,22 @@ async function dispatchChannel(
   try {
     if (channel === 'in_app') {
       await deliverInApp();
-    } else {
-      // Phase 29 (Family Portal & External Collaboration): a
-      // 'portal_user'-scope recipient's id is a PortalUser.id, never an
-      // Identity.id (see recipientResolver.ts's own comment) — every
-      // existing staff notification still resolves via getIdentityById
-      // exactly as before, unchanged; this fallback is reached only when
-      // that lookup returns null.
+    } else if (channel === 'sms') {
+      // Phase 33 (Real Notification Delivery): SMS is staff-only —
+      // never resolved for a 'portal_user' recipient (PortalUser has no
+      // phone field, no consent-capture flow exists — see ADR-037's
+      // Scope boundaries). A staff identity with smsEnabled but no
+      // Identity.phone set is treated exactly like any other channel
+      // failure: caught below, recorded, never blocking the rest of the
+      // recipient loop.
       const identity = await getIdentityById(recipient.identityId, dataAdapterMode);
-      if (identity) {
-        await sendEmailNotification(identity.email, content);
-      } else {
-        const portalUser = await getPortalUserById(recipient.identityId, dataAdapterMode);
-        if (!portalUser) throw new Error(`No identity or portal user found for id "${recipient.identityId}".`);
-        await sendEmailNotification(portalUser.email, content);
+      if (!identity || !identity.phone) {
+        throw new Error(`No phone number on file for identity "${recipient.identityId}" — cannot send SMS.`);
       }
+      await sendSmsNotification(identity.phone, content);
+    } else {
+      const email = await resolveEmailAddress(recipient.identityId, dataAdapterMode);
+      await sendEmailNotification(email, content);
     }
     succeeded = true;
   } catch (error) {
@@ -387,6 +454,22 @@ async function dispatchChannel(
   } catch (error) {
     console.error('Failed to record notification delivery activity event:', error instanceof Error ? error.message : error);
   }
+}
+
+/** Phase 33 (Real Notification Delivery): a recipient's per-category
+    override (`preference.categoryOverrides[category]`), when set,
+    replaces the three global toggles wholesale for that one
+    notification — never merged field-by-field, since a partial merge
+    would make "the category override" ambiguous about which fields it
+    actually covers. Falls back to the global toggles when no override
+    exists for this category, which is every recipient's default state. */
+function resolveEffectiveChannelToggles(
+  preference: NotificationPreference,
+  category: NotificationCategory,
+): { inAppEnabled: boolean; emailEnabled: boolean; smsEnabled: boolean } {
+  const override = preference.categoryOverrides[category];
+  if (override) return override;
+  return { inAppEnabled: preference.inAppEnabled, emailEnabled: preference.emailEnabled, smsEnabled: preference.smsEnabled };
 }
 
 // ---------------------------------------------------------------------------
@@ -463,6 +546,14 @@ export async function createNotification(
     throw error;
   }
 
+  // Phase 33 (Real Notification Delivery): fetched once per notification,
+  // not once per recipient — every recipient in this loop belongs to the
+  // same organization, so its timezone (used only for the quiet-hours
+  // check below) never varies within a single call. Absent for an
+  // organization predating Phase 20's optional `timezone` field;
+  // shouldDeferEmailForDigest falls back to UTC in that case.
+  const organization = await getOrganizationForNotification(ctx.organizationId, dataAdapterMode);
+
   for (const identityId of recipientIdentityIds) {
     const recipient: NotificationRecipient = {
       id: `${notificationId}-${identityId}`,
@@ -476,12 +567,14 @@ export async function createNotification(
     await persistRecipient(recipient, dataAdapterMode);
 
     const preference = await getPreferences(ctx.organizationId, identityId, dataAdapterMode);
+    const toggles = resolveEffectiveChannelToggles(preference, notification.category as NotificationCategory);
     const channels: NotificationChannel[] = [];
-    if (preference.inAppEnabled) channels.push('in_app');
-    if (preference.emailEnabled) channels.push('email');
+    if (toggles.inAppEnabled) channels.push('in_app');
+    if (toggles.emailEnabled) channels.push('email');
+    if (toggles.smsEnabled) channels.push('sms');
 
     for (const channel of channels) {
-      await dispatchChannel(notification, recipient, channel, content, ctx, caseIdForActivity, dataAdapterMode);
+      await dispatchChannel(notification, recipient, channel, content, ctx, caseIdForActivity, preference, organization?.timezone, now, dataAdapterMode);
     }
   }
 
@@ -715,4 +808,98 @@ export async function getUnreadCount(organizationId: string, identityId: string,
   return response.dataItems
     .map((item) => mapWixNotificationDeliveryItem(item.data))
     .filter((d): d is NotificationDelivery => d !== null && d.status !== 'read').length;
+}
+
+// ---------------------------------------------------------------------------
+// Digest support (Phase 33) — the sole, deliberate exception to "every
+// query in this codebase is organization-scoped": a cron-triggered sweep
+// has no per-request organizationId to scope to; there is no caller to
+// scope it to. Both functions below are called only from
+// services/notificationDigestService.ts (structurally enforced, see this
+// file's own test) — no route, no other service, ever calls either one
+// directly.
+// ---------------------------------------------------------------------------
+
+/** Every NotificationDelivery currently holding a digest/quiet-hours
+    deferral, across every organization — the one input
+    services/notificationDigestService.ts's sweep needs. */
+export async function listAllQueuedForDigestDeliveries(dataAdapterMode: DataAdapterMode): Promise<NotificationDelivery[]> {
+  if (dataAdapterMode === 'mock') {
+    return notificationDeliveryFixtures.filter((d) => d.status === 'queued_for_digest');
+  }
+  const response = await queryWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', {
+    filter: { status: 'queued_for_digest' },
+    paging: { limit: WIX_FETCH_WINDOW },
+  });
+  return response.dataItems.map((item) => mapWixNotificationDeliveryItem(item.data)).filter((d): d is NotificationDelivery => d !== null);
+}
+
+/**
+ * Sends one combined digest email for every delivery in the group
+ * (the caller has already confirmed they share one (organizationId,
+ * identityId) pair and are currently eligible to flush — this function
+ * never re-checks eligibility itself), marks each included delivery
+ * `'sent'`/`'failed'`, and — only on success — advances the identity's
+ * `lastDigestSentAt`. Mirrors `dispatchChannel`'s own
+ * persist-attempt-then-record shape, adapted for "N notifications
+ * flushed at once" instead of one. `caseId: null` on every activity
+ * event: a digest can span multiple cases, so no single case owns it.
+ */
+export async function flushDigestGroup(
+  organizationId: string,
+  identityId: string,
+  deliveries: NotificationDelivery[],
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ succeeded: boolean }> {
+  const now = nowIso();
+  const notifications = (await Promise.all(deliveries.map((d) => getNotification(organizationId, d.notificationId, dataAdapterMode)))).filter(
+    (n): n is Notification => n !== null,
+  );
+
+  let succeeded: boolean;
+  let errorMessage: string | null = null;
+  try {
+    const email = await resolveEmailAddress(identityId, dataAdapterMode);
+    const digestContent = {
+      title: `${notifications.length} notification${notifications.length === 1 ? '' : 's'}`,
+      body: notifications.map((n) => (n.actionUrl ? `${n.title}: ${n.body} (${n.actionUrl})` : `${n.title}: ${n.body}`)).join('\n'),
+      actionUrl: null,
+    };
+    await sendEmailNotification(email, digestContent);
+    succeeded = true;
+  } catch (error) {
+    succeeded = false;
+    errorMessage = error instanceof Error ? error.message : String(error);
+  }
+
+  const attemptedAt = nowIso();
+  for (const delivery of deliveries) {
+    await persistDeliveryAttempt(
+      { id: `${delivery.id}-digest-${attemptedAt}`, organizationId, notificationDeliveryId: delivery.id, succeeded, errorMessage, attemptedAt },
+      dataAdapterMode,
+    );
+    await patchDelivery(
+      organizationId,
+      delivery.id,
+      { status: succeeded ? 'sent' : 'failed', attemptCount: delivery.attemptCount + 1, lastAttemptAt: attemptedAt },
+      dataAdapterMode,
+    );
+
+    const digestCtx: ActivityContext = { organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: delivery.id };
+    try {
+      if (succeeded) {
+        await recordNotificationDelivered(digestCtx, null, delivery.notificationId, identityId, 'email', dataAdapterMode);
+      } else {
+        await recordNotificationFailed(digestCtx, null, delivery.notificationId, identityId, 'email', errorMessage ?? 'Unknown error', dataAdapterMode);
+      }
+    } catch (error) {
+      console.error('Failed to record digest delivery activity event:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  if (succeeded) {
+    await patchPreference(organizationId, identityId, { lastDigestSentAt: now }, dataAdapterMode);
+  }
+
+  return { succeeded };
 }

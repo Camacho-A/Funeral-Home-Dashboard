@@ -1,4 +1,8 @@
 import type { Organization, OrganizationContext } from '../types/organization';
+import type { DataAdapterMode } from '../lib/env';
+import { queryWixDataItems } from '../lib/wixDataApi';
+import { mapWixOrganizationItem, type WixOrganizationItem } from '../lib/wixOrganizationMapper';
+import { mockOrganizationFixtures } from './__mocks__/authFixtures';
 
 /**
  * Phase 15A (Wix Organization Read Integration). Unlike every other
@@ -30,4 +34,27 @@ export async function get(context: OrganizationContext): Promise<Organization | 
   return body.organization;
 }
 
-export const organizationsService = { get };
+/**
+ * Phase 33 (Real Notification Delivery). A server-safe counterpart to
+ * `get()` above — discovered necessary for the same reason
+ * `casesService.ts#listForOrganization` was in Phase 32:
+ * `get()`'s own body is a client-only HTTP wrapper (`fetch('/api/organizations/...')`,
+ * meant for `hooks/useOrganizationRecord.ts` running in a browser).
+ * `services/notificationService.ts`/`services/notificationDigestService.ts`
+ * (which run inside Route Handlers/a cron-triggered job, never a
+ * browser) call this function instead — mirrors
+ * `services/documentService.ts`'s own private `getOrganizationForMerge`
+ * helper exactly, exported here since more than one caller now needs it.
+ */
+export async function getForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<Organization | null> {
+  if (dataAdapterMode === 'mock') {
+    return mockOrganizationFixtures.find((org) => org.id === organizationId) ?? null;
+  }
+  const response = await queryWixDataItems<WixOrganizationItem>('organizations', {
+    filter: { beaconOrganizationId: organizationId },
+    paging: { limit: 1 },
+  });
+  return mapWixOrganizationItem(response.dataItems[0]?.data);
+}
+
+export const organizationsService = { get, getForOrganization };

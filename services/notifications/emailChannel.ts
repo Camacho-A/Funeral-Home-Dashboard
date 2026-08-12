@@ -1,4 +1,5 @@
 import type { NotificationContent } from '../../domain/notifications/notificationTemplateRegistry';
+import { sendResendEmail, isResendConfigured } from '../../lib/email/resendClient';
 
 /**
  * Phase 28 (Communications & Notifications). A provider-neutral
@@ -66,10 +67,30 @@ export const productionUnconfiguredEmailProvider: EmailProvider = {
   },
 };
 
+/**
+ * The real, production-capable adapter — Phase 33 (Real Notification
+ * Delivery). Sends via `lib/email/resendClient.ts`, the same underlying
+ * Resend client `lib/identity/messageSender.ts`'s
+ * `resendIdentityMessageSender` also uses (one provider integration, two
+ * thin adapters, this file's own header comment's own boundary
+ * preserved — this adapter is never called for a mandatory identity
+ * flow, and that one is never called for a preference-respecting staff
+ * notification).
+ */
+export const resendEmailProvider: EmailProvider = {
+  async send(message) {
+    await sendResendEmail({ to: message.to, subject: message.subject, html: message.bodyHtml, text: message.bodyText });
+  },
+};
+
 /** The one place environment decides which adapter is used — mirrors
-    `getIdentityMessageSender()` exactly. Test files mock this module to
-    inject a capturing provider instead. */
+    `getIdentityMessageSender()` exactly, including Phase 33's "a
+    configured RESEND_API_KEY wins regardless of NODE_ENV" priority.
+    Test files mock this module to inject a capturing provider instead. */
 export function getEmailProvider(): EmailProvider {
+  if (isResendConfigured()) {
+    return resendEmailProvider;
+  }
   if (process.env.NODE_ENV === 'production') {
     return productionUnconfiguredEmailProvider;
   }

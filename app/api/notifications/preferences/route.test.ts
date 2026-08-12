@@ -64,4 +64,51 @@ describe('PATCH /api/notifications/preferences', () => {
     const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, emailEnabled: 'nope' });
     expect(response.status).toBe(400);
   });
+
+  it('Phase 33: updates smsEnabled/digestFrequency/quietHours/categoryOverrides', async () => {
+    const response = await patchRequest({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      smsEnabled: true,
+      digestFrequency: 'daily',
+      quietHoursStart: '22:00',
+      quietHoursEnd: '07:00',
+      categoryOverrides: { task: { emailEnabled: false, inAppEnabled: true, smsEnabled: true } },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.preferences.smsEnabled).toBe(true);
+    expect(body.preferences.digestFrequency).toBe('daily');
+    expect(body.preferences.quietHoursStart).toBe('22:00');
+    expect(body.preferences.quietHoursEnd).toBe('07:00');
+    expect(body.preferences.categoryOverrides).toEqual({ task: { emailEnabled: false, inAppEnabled: true, smsEnabled: true } });
+  });
+
+  it('Phase 33: rejects an invalid digestFrequency', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, digestFrequency: 'hourly' });
+    expect(response.status).toBe(400);
+  });
+
+  it('Phase 33: rejects a malformed quietHoursStart (not HH:mm)', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, quietHoursStart: '10pm' });
+    expect(response.status).toBe(400);
+  });
+
+  it('Phase 33: allows explicitly clearing quiet hours back to null', async () => {
+    await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, quietHoursStart: '22:00', quietHoursEnd: '07:00' });
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, quietHoursStart: null, quietHoursEnd: null });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.preferences.quietHoursStart).toBeNull();
+    expect(body.preferences.quietHoursEnd).toBeNull();
+  });
+
+  it('Phase 33: rejects a categoryOverrides entry with an unrecognized category key', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, categoryOverrides: { bogus_category: { emailEnabled: true, inAppEnabled: true, smsEnabled: true } } });
+    expect(response.status).toBe(400);
+  });
+
+  it('Phase 33: rejects a categoryOverrides entry missing one of the three required booleans', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, categoryOverrides: { task: { emailEnabled: true, inAppEnabled: true } } });
+    expect(response.status).toBe(400);
+  });
 });

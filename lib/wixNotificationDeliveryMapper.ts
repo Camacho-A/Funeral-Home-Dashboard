@@ -20,8 +20,8 @@ export type WixNotificationDeliveryItem = {
   createdAt?: unknown;
 };
 
-const VALID_CHANNELS: readonly string[] = ['in_app', 'email'];
-const VALID_STATUSES: readonly string[] = ['pending', 'sent', 'delivered', 'read', 'failed'];
+const VALID_CHANNELS: readonly string[] = ['in_app', 'email', 'sms'];
+const VALID_STATUSES: readonly string[] = ['pending', 'sent', 'delivered', 'read', 'failed', 'queued_for_digest'];
 
 function isChannel(value: unknown): value is NotificationChannel {
   return typeof value === 'string' && VALID_CHANNELS.includes(value);

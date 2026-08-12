@@ -23,6 +23,21 @@ const EMAIL_DELIVERY: NotificationDelivery = {
   attemptCount: 2,
 };
 
+const SMS_DELIVERY: NotificationDelivery = {
+  ...IN_APP_DELIVERY,
+  id: 'notif-1-identity-1-sms',
+  channel: 'sms',
+  status: 'sent',
+  attemptCount: 1,
+};
+
+const QUEUED_FOR_DIGEST_DELIVERY: NotificationDelivery = {
+  ...EMAIL_DELIVERY,
+  status: 'queued_for_digest',
+  attemptCount: 0,
+  lastAttemptAt: null,
+};
+
 describe('wixNotificationDeliveryMapper', () => {
   it('round-trips an in-app delivery', () => {
     expect(mapWixNotificationDeliveryItem(buildWixNotificationDeliveryData(IN_APP_DELIVERY))).toEqual(IN_APP_DELIVERY);
@@ -32,12 +47,20 @@ describe('wixNotificationDeliveryMapper', () => {
     expect(mapWixNotificationDeliveryItem(buildWixNotificationDeliveryData(EMAIL_DELIVERY))).toEqual(EMAIL_DELIVERY);
   });
 
+  it('Phase 33: round-trips an sms delivery', () => {
+    expect(mapWixNotificationDeliveryItem(buildWixNotificationDeliveryData(SMS_DELIVERY))).toEqual(SMS_DELIVERY);
+  });
+
+  it('Phase 33: round-trips a queued_for_digest delivery', () => {
+    expect(mapWixNotificationDeliveryItem(buildWixNotificationDeliveryData(QUEUED_FOR_DIGEST_DELIVERY))).toEqual(QUEUED_FOR_DIGEST_DELIVERY);
+  });
+
   it('returns null for undefined', () => {
     expect(mapWixNotificationDeliveryItem(undefined)).toBeNull();
   });
 
   it('returns null for an invalid channel/status', () => {
-    expect(mapWixNotificationDeliveryItem({ ...buildWixNotificationDeliveryData(IN_APP_DELIVERY), channel: 'sms' })).toBeNull();
+    expect(mapWixNotificationDeliveryItem({ ...buildWixNotificationDeliveryData(IN_APP_DELIVERY), channel: 'carrier_pigeon' })).toBeNull();
     expect(mapWixNotificationDeliveryItem({ ...buildWixNotificationDeliveryData(IN_APP_DELIVERY), status: 'bogus' })).toBeNull();
   });
 

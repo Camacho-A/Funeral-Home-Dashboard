@@ -23,6 +23,7 @@ function seedIdentity(id: string, email: string) {
     email,
     normalizedEmail: email.toLowerCase(),
     displayName: 'Migration Test User',
+    phone: null,
     status: 'active',
     emailVerified: true,
     passwordVersion: 1,

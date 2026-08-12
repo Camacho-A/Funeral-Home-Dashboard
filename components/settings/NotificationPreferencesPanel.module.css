@@ -1,8 +1,20 @@
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-width: 640px;
+}
+
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--space-12);
-  max-width: 400px;
+}
+
+.sectionTitle {
+  font-size: var(--font-size-14);
+  font-weight: 600;
+  margin: 0;
 }
 
 .checkboxLabel {
@@ -10,6 +22,49 @@
   align-items: center;
   gap: var(--space-8);
   font-size: var(--font-size-14);
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--font-size-14);
+}
+
+.quietHoursRow {
+  display: flex;
+  gap: var(--space-16);
+}
+
+.timeInput {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-14);
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  margin: 0;
+}
+
+.overrideTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-13);
+}
+
+.overrideTable th,
+.overrideTable td {
+  text-align: left;
+  padding: var(--space-4) var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.overrideTable th {
+  color: var(--color-text-secondary);
+  font-weight: 500;
 }
 
 .loading,

@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { consoleEmailProvider, productionUnconfiguredEmailProvider, getEmailProvider, sendEmailNotification } from './emailChannel';
+import { consoleEmailProvider, productionUnconfiguredEmailProvider, resendEmailProvider, getEmailProvider, sendEmailNotification } from './emailChannel';
 import type { NotificationContent } from '../../domain/notifications/notificationTemplateRegistry';
 
 function setNodeEnv(value: string) {
   vi.stubEnv('NODE_ENV', value);
 }
 
+beforeEach(() => {
+  delete process.env.RESEND_API_KEY;
+});
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  delete process.env.RESEND_API_KEY;
+  vi.unstubAllGlobals();
 });
 
 const CONTENT: NotificationContent = { title: 'Task assigned', body: 'Dana assigned you: "Call the cemetery"', actionUrl: '/tasks/123' };
@@ -29,6 +35,31 @@ describe('getEmailProvider', () => {
   it('never throws just by being called, in any environment', () => {
     setNodeEnv('production');
     expect(() => getEmailProvider()).not.toThrow();
+  });
+
+  it('Phase 33: returns resendEmailProvider when RESEND_API_KEY is set, and it wins over NODE_ENV=production', () => {
+    process.env.RESEND_API_KEY = 'fake-key';
+    setNodeEnv('development');
+    expect(getEmailProvider()).toBe(resendEmailProvider);
+    setNodeEnv('production');
+    expect(getEmailProvider()).toBe(resendEmailProvider);
+  });
+});
+
+describe('resendEmailProvider (Phase 33)', () => {
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = 'fake-resend-key';
+  });
+
+  it('sends the EmailMessage verbatim (bodyHtml/bodyText mapped to html/text) via Resend', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await resendEmailProvider.send({ to: 'staff@example.com', subject: 'Task assigned', bodyHtml: '<p>x</p>', bodyText: 'x' });
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.resend.com/emails', expect.anything());
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({ to: 'staff@example.com', subject: 'Task assigned', html: '<p>x</p>', text: 'x' });
   });
 });
 
