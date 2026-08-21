@@ -15,9 +15,10 @@ const CATEGORY_LABELS: Record<ReportCategory, string> = {
   financial: 'Financial',
   staff: 'Staff',
   documents: 'Documents & Signatures',
+  commerce: 'Merchandise & Inventory',
 };
 
-const CATEGORY_ORDER: ReportCategory[] = ['operational', 'financial', 'staff', 'documents'];
+const CATEGORY_ORDER: ReportCategory[] = ['operational', 'financial', 'staff', 'documents', 'commerce'];
 
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). Reports Library —

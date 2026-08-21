@@ -21,7 +21,7 @@ import type { MetricFilterKey, MetricKey } from './metricRegistry';
  * of a generic metric-card/table layout.
  */
 
-export type ReportCategory = 'operational' | 'financial' | 'staff' | 'documents';
+export type ReportCategory = 'operational' | 'financial' | 'staff' | 'documents' | 'commerce';
 
 export type ReportDefinition = {
   key: string;
@@ -306,6 +306,28 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'report.operational',
+  },
+
+  // Phase 35 (Merchandise, Inventory & Commerce).
+  {
+    key: 'merchandise-performance',
+    displayName: 'Merchandise Performance',
+    category: 'commerce',
+    description: 'Merchandise revenue, cost of goods sold, and gross margin — all ledger-derived.',
+    metrics: ['merchandise.revenue', 'merchandise.cogs', 'merchandise.gross_margin'],
+    financialReportKey: undefined,
+    defaultFilters: [],
+    permission: 'accounting.report',
+  },
+  {
+    key: 'inventory-position',
+    displayName: 'Inventory Position',
+    category: 'commerce',
+    description: 'Inventory asset value, total units on hand, and low-stock product count.',
+    metrics: ['inventory.asset_value', 'inventory.on_hand_units', 'inventory.low_stock_count'],
+    financialReportKey: undefined,
+    defaultFilters: [],
+    permission: 'inventory.read',
   },
 ] as const satisfies readonly ReportDefinition[];
 

@@ -38,6 +38,12 @@ const VALID_SOURCE_TYPES: readonly string[] = [
   'opening_balance',
   'reversal',
   'revenue_recognition',
+  // Phase 35 (Merchandise, Inventory & Commerce) — must stay in lockstep with
+  // the JournalEntrySourceType union, or a posted merchandise entry silently
+  // maps to null and vanishes from every ledger read.
+  'inventory_receipt',
+  'cogs',
+  'inventory_adjustment',
 ];
 
 function isStatus(value: unknown): value is JournalEntryStatus {

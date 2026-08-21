@@ -290,3 +290,21 @@ export function isAdminTier(params: ResolvePermissionsParams, dataAdapterMode: D
 export function hasAnyOfPolicies(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode, permissions: Parameters<typeof hasAnyPermission>[2]): Promise<boolean> {
   return hasAnyPermission(params, dataAdapterMode, permissions);
 }
+
+// Phase 35 (Merchandise, Inventory & Commerce). One-line policy wrappers,
+// following the exact existing pattern — never a role-name comparison.
+export function canReadMerchandise(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'merchandise.read');
+}
+export function canManageMerchandise(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'merchandise.manage');
+}
+export function canReadInventory(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'inventory.read');
+}
+export function canManageInventory(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'inventory.manage');
+}
+export function canAdjustInventory(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'inventory.adjust');
+}

@@ -1938,3 +1938,144 @@ export function recordBankReconciliationCompleted(
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 35 (Merchandise, Inventory & Commerce). `merchandise.product.*`
+// recorded exclusively from services/merchandiseService.ts; `inventory.*`
+// exclusively from services/inventoryService.ts (structural-test enforced).
+// ---------------------------------------------------------------------------
+
+export function recordMerchandiseProductCreated(
+  ctx: ActivityContext,
+  productId: string,
+  snapshot: { sku: string; name: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'inventory',
+      eventType: ACTIVITY_EVENT_TYPES.MERCHANDISE_PRODUCT_CREATED,
+      resourceType: 'merchandiseProduct',
+      resourceId: productId,
+      previousValue: null,
+      newValue: JSON.stringify(snapshot),
+      description: `Merchandise product created — ${snapshot.name} (${snapshot.sku})`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordMerchandiseProductUpdated(
+  ctx: ActivityContext,
+  productId: string,
+  changedFields: Record<string, FieldChange>,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  const fieldNames = Object.keys(changedFields);
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'inventory',
+      eventType: ACTIVITY_EVENT_TYPES.MERCHANDISE_PRODUCT_UPDATED,
+      resourceType: 'merchandiseProduct',
+      resourceId: productId,
+      previousValue: fieldChangesToJson(changedFields, 'previous'),
+      newValue: fieldChangesToJson(changedFields, 'next'),
+      description: `Merchandise product updated — ${fieldNames.join(', ')}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordMerchandiseProductArchived(ctx: ActivityContext, productId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'inventory',
+      eventType: ACTIVITY_EVENT_TYPES.MERCHANDISE_PRODUCT_ARCHIVED,
+      resourceType: 'merchandiseProduct',
+      resourceId: productId,
+      previousValue: JSON.stringify({ isActive: true }),
+      newValue: JSON.stringify({ isActive: false }),
+      description: 'Merchandise product archived',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Shared builder for the six stock-movement activity events — every
+    inventory movement records who/what/where/how-many through one shape. */
+function recordInventoryMovementEvent(
+  ctx: ActivityContext,
+  eventType: string,
+  caseId: string | null,
+  productId: string,
+  description: string,
+  metadata: Record<string, unknown>,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'inventory',
+      eventType,
+      resourceType: 'merchandiseProduct',
+      resourceId: productId,
+      previousValue: null,
+      newValue: JSON.stringify(metadata),
+      description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordInventoryReceived(ctx: ActivityContext, productId: string, locationId: string, quantity: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordInventoryMovementEvent(ctx, ACTIVITY_EVENT_TYPES.INVENTORY_RECEIVED, null, productId, `Received ${quantity} unit${quantity === 1 ? '' : 's'} into stock`, { locationId, quantity }, dataAdapterMode);
+}
+
+export function recordInventoryReserved(ctx: ActivityContext, caseId: string, productId: string, locationId: string, quantity: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordInventoryMovementEvent(ctx, ACTIVITY_EVENT_TYPES.INVENTORY_RESERVED, caseId, productId, `Reserved ${quantity} unit${quantity === 1 ? '' : 's'} for a case`, { caseId, locationId, quantity }, dataAdapterMode);
+}
+
+export function recordInventoryReleased(ctx: ActivityContext, caseId: string, productId: string, locationId: string, quantity: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordInventoryMovementEvent(ctx, ACTIVITY_EVENT_TYPES.INVENTORY_RELEASED, caseId, productId, `Released ${quantity} reserved unit${quantity === 1 ? '' : 's'}`, { caseId, locationId, quantity }, dataAdapterMode);
+}
+
+export function recordInventoryFulfilled(ctx: ActivityContext, caseId: string, productId: string, locationId: string, quantity: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordInventoryMovementEvent(ctx, ACTIVITY_EVENT_TYPES.INVENTORY_FULFILLED, caseId, productId, `Fulfilled ${quantity} unit${quantity === 1 ? '' : 's'} from stock`, { caseId, locationId, quantity }, dataAdapterMode);
+}
+
+export function recordInventoryReturned(ctx: ActivityContext, caseId: string, productId: string, locationId: string, quantity: number, restocked: boolean, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordInventoryMovementEvent(ctx, ACTIVITY_EVENT_TYPES.INVENTORY_RETURNED, caseId, productId, `Returned ${quantity} unit${quantity === 1 ? '' : 's'} (${restocked ? 'restocked' : 'not restocked'})`, { caseId, locationId, quantity, restocked }, dataAdapterMode);
+}
+
+export function recordInventoryTransferred(ctx: ActivityContext, productId: string, fromLocationId: string, toLocationId: string, quantity: number, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordInventoryMovementEvent(ctx, ACTIVITY_EVENT_TYPES.INVENTORY_TRANSFERRED, null, productId, `Transferred ${quantity} unit${quantity === 1 ? '' : 's'} between locations`, { fromLocationId, toLocationId, quantity }, dataAdapterMode);
+}
+
+export function recordInventoryAdjusted(ctx: ActivityContext, productId: string, locationId: string, quantityDelta: number, reason: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'inventory',
+      eventType: ACTIVITY_EVENT_TYPES.INVENTORY_ADJUSTED,
+      resourceType: 'merchandiseProduct',
+      resourceId: productId,
+      previousValue: null,
+      newValue: JSON.stringify({ locationId, quantityDelta, reason }),
+      description: `Inventory adjusted by ${quantityDelta > 0 ? '+' : ''}${quantityDelta} — ${reason}`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}

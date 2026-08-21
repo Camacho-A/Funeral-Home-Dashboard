@@ -56,7 +56,19 @@ export type JournalEntrySourceType =
       only, direction flips if the new total is lower) — closes a Phase 31
       gap where no transaction ever credited Service Revenue at all. See
       docs/adr/ADR-036-reporting-analytics-executive-dashboard-architecture.md. */
-  | 'revenue_recognition';
+  | 'revenue_recognition'
+  /** Phase 35 (Merchandise, Inventory & Commerce). Dr Inventory Asset (1300)
+      / Cr Inventory Clearing (2100) — posted by `inventoryService.ts` when
+      stock is received, establishing inventory-asset value without an AP
+      workflow. See docs/adr/ADR-039-merchandise-inventory-and-commerce.md. */
+  | 'inventory_receipt'
+  /** Phase 35. Dr Cost of Goods Sold (5100) / Cr Inventory Asset (1300) —
+      posted at fulfillment of a case merchandise line, matching cost to the
+      merchandise revenue recognized on the order. */
+  | 'cogs'
+  /** Phase 35. Dr Inventory Shrinkage Expense (5110) / Cr Inventory Asset
+      (1300) — posted for damage, shrinkage, or a write-off adjustment. */
+  | 'inventory_adjustment';
 
 export type JournalEntryStatus = 'draft' | 'posted' | 'void';
 

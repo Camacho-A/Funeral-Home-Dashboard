@@ -1,4 +1,10 @@
-import type { CaseOrderLineItem } from '../types/caseOrder';
+import type { CaseOrderLineItem, CaseOrderLineKind } from '../types/caseOrder';
+
+const VALID_LINE_KINDS: readonly CaseOrderLineKind[] = ['service', 'merchandise', 'surcharge', 'adjustment', 'tax', 'discount'];
+
+function isLineKind(value: unknown): value is CaseOrderLineKind {
+  return typeof value === 'string' && (VALID_LINE_KINDS as readonly string[]).includes(value);
+}
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). The one place a
@@ -12,6 +18,7 @@ export type WixCaseOrderLineItemItem = {
   beaconLineItemId?: unknown;
   organizationId?: unknown;
   caseOrderId?: unknown;
+  lineKind?: unknown;
   serviceCode?: unknown;
   description?: unknown;
   quantity?: unknown;
@@ -48,6 +55,11 @@ export function mapWixCaseOrderLineItemItem(item: WixCaseOrderLineItemItem | und
     id: item.beaconLineItemId,
     organizationId: item.organizationId,
     caseOrderId: item.caseOrderId,
+    // Phase 35: every historical (pre-Phase-35) row has no lineKind — it
+    // defaults to 'service', keeping every existing service-only order
+    // byte-for-byte compatible. A merchandise line always writes an explicit
+    // 'merchandise' value.
+    lineKind: isLineKind(item.lineKind) ? item.lineKind : 'service',
     serviceCode: item.serviceCode,
     description: item.description,
     quantity: item.quantity,
@@ -64,6 +76,7 @@ export function buildWixCaseOrderLineItemData(lineItem: CaseOrderLineItem): WixC
     beaconLineItemId: lineItem.id,
     organizationId: lineItem.organizationId,
     caseOrderId: lineItem.caseOrderId,
+    lineKind: lineItem.lineKind,
     serviceCode: lineItem.serviceCode,
     description: lineItem.description,
     quantity: lineItem.quantity,

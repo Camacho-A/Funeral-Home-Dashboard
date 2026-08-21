@@ -1608,6 +1608,88 @@ Like `organizationRoleLocks`, this is the one other collection without its own `
 
 **Creation record (Phase 34, 2026-08-12):** all five collections created live via `POST /wix-data/v2/collections`, using the same gitignored API key as every prior phase. All 7 indexes across the five collections (`appointmentReminders` ×2, `calendarConnections` ×1, `calendarEventLinks` ×2, `calendarFeedTokens` ×2; `schedulingReminderPolicies` needs none) were created via `POST /wix-data/v2/indexes` and confirmed `ACTIVE`. Exercised against real data (Manor's Cremation, `organizationId: "managed-cremations"`) via a two-pass disposable-write verification: Pass 1 confirmed `getReminderPolicy`/`updateReminderPolicy` round-trip correctly; Pass 2 exercised a disposable `appointmentReminders` row with a deliberately fake `appointmentId` through `runAppointmentReminderSweep` (proving the org-agnostic `(status, scheduledFor)` query and the safe "not found → skip" branch, without ever calling `createNotification`), and a disposable `appointments` + `calendarConnections` row through a real `markPendingForAppointment()` + `runCalendarSyncSweep()` with `global.fetch` stubbed *only* for `googleapis.com` (every other fetch call, including Beacon's own internal Wix Data HTTP calls, passed through to the real network) — proving the full happy-path sync write against real production data with zero real Google/Microsoft credentials ever used or contacted. `calendarFeedTokens` was given its own supplementary live round trip (`generateFeedToken`/`resolveFeedToken`/`listTokensForStaffProfile`/`revokeFeedToken`, including confirming a revoked token no longer resolves). Every disposable row was deleted afterward; a final residual-check query confirmed zero leftover rows across all five new collections plus `appointments`. No real notification was ever delivered to a real inbox/phone, and no real external Google/Microsoft calendar was ever connected — both remain gated on a separate, explicit go-ahead beyond this phase's own approval, per this phase's own governing instruction. See ADR-038's "Live Wix verification" section for the full account.
 
+## Collections 68–73 — Merchandise, Inventory & Commerce (Phase 35)
+
+Six new collections plus two existing-collection extensions. See [ADR-039](./adr/ADR-039-merchandise-inventory-and-commerce.md). Created via the standard `POST /wix-data/v2/collections` + `POST /wix-data/v2/indexes` mechanics; all respect the 3-regular/1-unique index cap.
+
+**Existing-collection extensions (Phase 35):**
+- `chartOfAccounts` — five new rows seeded (and add-only-backfilled for the existing tenant): `1300` Inventory Asset (asset), `2100` Inventory Clearing (liability — first use of the reserved 2000s block; a "Goods Received Not Invoiced" holding account, NOT an AP subsystem), `4100` Merchandise Revenue (revenue), `5100` Cost of Goods Sold (expense), `5110` Inventory Shrinkage Expense (expense).
+- `caseOrderLineItems` — new `lineKind` field (Text; `service`/`merchandise`/`surcharge`/`adjustment`/`tax`/`discount`), added via `create-field`; the mapper defaults a missing value to `'service'`, so every historical row stays valid. Merchandise lines additionally carry `{ productId, sku, locationId }` in the existing `metadata` map.
+
+### Collection 68 — `merchandiseProducts`
+
+**Purpose:** the org's physical-goods catalog. Sole writer `services/merchandiseService.ts`. Archive via `isActive: false`, never hard-deleted. **Ownership:** organization-owned.
+
+| Field | Type | Notes |
+|---|---|---|
+| `beaconMerchandiseProductId` | Text | Immutable |
+| `organizationId` | Text | |
+| `sku` | Text | unique per org (application-enforced) |
+| `name`, `description` (nullable) | Text | |
+| `category` | Text | closed `MerchandiseCategoryKey` union |
+| `cost` | Number | integer cents — INTERNAL, never in family DTOs |
+| `retailPrice` | Number | integer cents |
+| `taxable`, `isActive`, `trackInventory`, `familyVisible` | Boolean | |
+| `reorderPoint` (nullable) | Number | low-stock threshold |
+| `defaultLocationId`, `imageStorageKey`, `supplierName`, `parentProductId` (all nullable) | Text | `parentProductId` reserved for future variants |
+| `createdAt`, `updatedAt` | Date | |
+
+- **Indexes** (3 regular): `(organizationId, category)`, `(organizationId, isActive)`, `(organizationId, sku)`.
+- **TS type:** `types/merchandiseProduct.ts`.
+
+### Collection 69 — `inventoryMovements`
+
+**Purpose:** the AUTHORITATIVE, append-only stock ledger — on-hand is Σ(quantity). Insert-only (no update/delete), like `journalEntryLines`. Sole writer `services/inventoryService.ts`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `beaconInventoryMovementId`, `organizationId`, `productId`, `locationId` | Text | |
+| `quantity` | Number | signed integer units |
+| `movementType` | Text | receiving/sale/return_restock/return_damage/damage/shrinkage/transfer_out/transfer_in/adjustment/correction |
+| `caseId`, `caseOrderId`, `reservationId`, `fulfillmentReference`, `receiptReference`, `supplierName` (all nullable) | Text | |
+| `unitCost` (nullable) | Number | cents |
+| `actorStaffProfileId` (nullable) | Text | StaffProfile-space (ADR-034), never Identity |
+| `reason` (nullable) | Text | required for damage/shrinkage/adjustment/correction |
+| `correlationId` | Text | |
+| `createdAt` | Date | |
+
+- **Indexes** (3 regular): `(organizationId, productId, locationId)`, `(organizationId, caseId)`, `(organizationId, movementType)`.
+- **TS type:** `types/inventoryMovement.ts`.
+
+### Collection 70 — `inventoryBalances`
+
+**Purpose:** a DERIVED, rebuildable per-(product, location) snapshot recomputed from movements + active reservations inside the lease. `_id = {org}-{loc}-{product}`. Sole writer `services/inventoryService.ts`.
+
+| Field | Type |
+|---|---|
+| `beaconInventoryBalanceId`, `organizationId`, `productId`, `locationId` | Text |
+| `onHand`, `reserved` | Number |
+| `updatedAt` | Date |
+
+- **Indexes** (2 regular): `(organizationId, locationId)`, `(organizationId, productId)`.
+- **TS type:** `types/inventoryBalance.ts`.
+
+### Collection 71 — `inventoryReservations`
+
+**Purpose:** case-linked soft holds (mutable status). Deterministic id `{org}-{case}-{product}-{location}` → re-selecting is an idempotent quantity re-sync. Sole writer `services/inventoryService.ts`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `beaconInventoryReservationId`, `organizationId`, `caseId`, `caseOrderId`, `productId`, `locationId` | Text | |
+| `quantity` | Number | |
+| `status` | Text | active/released/fulfilled/expired |
+| `fulfillmentReference` (nullable) | Text | |
+| `createdAt`, `updatedAt` | Date | |
+
+- **Indexes** (3 regular): `(organizationId, caseId)`, `(organizationId, status)`, `(organizationId, productId, locationId)`.
+- **TS type:** `types/inventoryReservation.ts`.
+
+### Collection 72 — `inventoryLocks` · Collection 73 — `inventoryWriteClaims`
+
+**Purpose:** the per-stock-line lease + write-claim (the Phase 22 `organizationRoleLocks`/`organizationRoleWriteClaims` construction generalized to a stock-line key `{org}-{loc}-{product}`). `_id = lockKey` on both. Sole writer `services/inventoryLockService.ts`. Ephemeral rows (lease token, fence token, expiry); no `beacon<Thing>Id` domain type. No custom indexes needed (all access is `_id`-scoped).
+
+**Creation record (Phase 35):** planned — the six collections + their indexes, the five `chartOfAccounts` rows, and the `caseOrderLineItems.lineKind` field are created during Phase 35's live Wix verification (two-pass, accounting-safe; posted journal entries reversed never deleted on cleanup). Pending explicit approval before the first live mutation.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |

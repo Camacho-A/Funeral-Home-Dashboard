@@ -84,6 +84,12 @@ export function TopBar({
       <a href="/settings/resources" className={styles.signOutButton}>
         Resources
       </a>
+      <a href="/settings/merchandise" className={styles.signOutButton}>
+        Merchandise
+      </a>
+      <a href="/settings/inventory" className={styles.signOutButton}>
+        Inventory
+      </a>
       <a href="/settings/calendar-integrations" className={styles.signOutButton}>
         Calendar
       </a>

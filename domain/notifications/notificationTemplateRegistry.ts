@@ -168,6 +168,20 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
     titleTemplate: 'Invoice overdue',
     bodyTemplate: 'Case {{caseNumber}} has an overdue balance of {{amountDisplay}}',
   },
+
+  // Phase 35 (Merchandise, Inventory & Commerce).
+  'commerce.inventory_low_stock': {
+    titleTemplate: 'Low stock',
+    bodyTemplate: '"{{entityTitle}}" has dropped to or below its reorder point — time to reorder.',
+  },
+  'commerce.inventory_out_of_stock': {
+    titleTemplate: 'Out of stock',
+    bodyTemplate: '"{{entityTitle}}" is out of stock.',
+  },
+  'commerce.inventory_received': {
+    titleTemplate: 'Inventory received',
+    bodyTemplate: 'New stock of "{{entityTitle}}" was received.',
+  },
 };
 
 function assertOnlyRecognizedTokens(template: string): void {

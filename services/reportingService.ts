@@ -35,6 +35,14 @@ import { getAccountByNumber } from './chartOfAccountsService';
 import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
 import { listActiveCaseOrdersForOrganization } from './pricingService';
 import { getUnreadCount } from './notificationService';
+import {
+  merchandiseRevenue,
+  merchandiseCogs,
+  merchandiseGrossMargin,
+  inventoryAssetValue,
+  inventoryOnHandUnits,
+  lowStockProductCount,
+} from './merchandiseReportingService';
 import { getReportDefinition, type ReportKey } from '../domain/reporting/reportRegistry';
 import { getMetricDefinition, type MetricKey } from '../domain/reporting/metricRegistry';
 
@@ -548,6 +556,15 @@ const METRIC_RUNNERS: Partial<Record<MetricKey, MetricRunner>> = {
   'staff.active_case_count': (org, f, mode) => staffWorkload(org, { staffProfileId: f.staffProfileId }, mode),
   'staff.open_task_count': (org, f, mode) => staffWorkload(org, { staffProfileId: f.staffProfileId }, mode),
   'staff.appointment_load': (org, f, mode) => staffAppointmentLoad(org, { staffProfileId: f.staffProfileId, fromDate: f.fromDate, toDate: f.toDate }, mode),
+
+  // Phase 35 (Merchandise, Inventory & Commerce). Financial metrics derive
+  // from the ledger; inventory metrics from the authoritative balances.
+  'merchandise.revenue': (org, _f, mode) => merchandiseRevenue(org, mode),
+  'merchandise.cogs': (org, _f, mode) => merchandiseCogs(org, mode),
+  'merchandise.gross_margin': (org, _f, mode) => merchandiseGrossMargin(org, mode),
+  'inventory.asset_value': (org, _f, mode) => inventoryAssetValue(org, mode),
+  'inventory.on_hand_units': (org, _f, mode) => inventoryOnHandUnits(org, mode),
+  'inventory.low_stock_count': (org, _f, mode) => lowStockProductCount(org, mode),
 };
 
 export class ReportRunnerError extends Error {}

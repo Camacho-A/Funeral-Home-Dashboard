@@ -31,6 +31,7 @@ const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   system: 'System',
   family_portal: 'Family portal',
   financial: 'Financial',
+  commerce: 'Commerce',
 };
 
 const CATEGORY_ORDER: NotificationCategory[] = ['case', 'task', 'scheduling', 'document', 'signature', 'payment', 'financial', 'family_portal', 'organization', 'system'];

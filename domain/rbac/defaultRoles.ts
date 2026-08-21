@@ -89,6 +89,11 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'report.staff',
   'report.export',
   'dashboard.manage',
+  'merchandise.read',
+  'merchandise.manage',
+  'inventory.read',
+  'inventory.manage',
+  'inventory.adjust',
 ];
 
 export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
@@ -146,6 +151,11 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'audit.read',
       'audit.export',
       'user.invite',
+      'merchandise.read',
+      'merchandise.manage',
+      'inventory.read',
+      'inventory.manage',
+      'inventory.adjust',
     ],
   },
   {
@@ -182,6 +192,9 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'report.operational',
       'report.staff',
       'audit.read',
+      'merchandise.read',
+      'inventory.read',
+      'inventory.manage',
     ],
   },
   {
@@ -228,6 +241,9 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'task.assign',
       'notification.send',
       'portal.message',
+      'merchandise.read',
+      'inventory.read',
+      'inventory.manage',
     ],
   },
   {
@@ -236,7 +252,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
     description: 'Financial operations across every case — collecting and refunding payments, the general ledger, banking, and reports — without case-editing access.',
     /** Phase 31: this is literally the role the whole `accounting.*`
         category exists for — gets all five keys. */
-    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'notification.read', 'report.view', 'audit.read', 'audit.export', 'accounting.view', 'accounting.manage', 'accounting.post', 'accounting.reconcile', 'accounting.report'],
+    permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'notification.read', 'report.view', 'audit.read', 'audit.export', 'accounting.view', 'accounting.manage', 'accounting.post', 'accounting.reconcile', 'accounting.report', 'merchandise.read', 'inventory.read'],
   },
   {
     key: 'readOnly',
@@ -280,6 +296,8 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'report.operational',
       'report.staff',
       'audit.read',
+      'merchandise.read',
+      'inventory.read',
     ],
   },
 ];

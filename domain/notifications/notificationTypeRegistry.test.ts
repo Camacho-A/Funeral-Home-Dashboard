@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NotificationCategory } from './notificationTypeRegistry';
 import { NOTIFICATION_TYPES, getNotificationTypeDefinition, isValidNotificationTypeKey } from './notificationTypeRegistry';
 
-const CATEGORIES: NotificationCategory[] = ['case', 'task', 'payment', 'scheduling', 'document', 'signature', 'organization', 'system', 'family_portal', 'financial'];
+const CATEGORIES: NotificationCategory[] = ['case', 'task', 'payment', 'scheduling', 'document', 'signature', 'organization', 'system', 'family_portal', 'financial', 'commerce'];
 
 describe('NOTIFICATION_TYPES', () => {
   it('every entry has a distinct key', () => {
@@ -17,7 +17,7 @@ describe('NOTIFICATION_TYPES', () => {
     }
   });
 
-  it("every entry's category is one of the ten defined categories", () => {
+  it("every entry's category is one of the eleven defined categories", () => {
     for (const entry of Object.values(NOTIFICATION_TYPES)) {
       expect(CATEGORIES).toContain(entry.category);
     }

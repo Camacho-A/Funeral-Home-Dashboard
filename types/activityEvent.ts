@@ -285,6 +285,26 @@ export const ACTIVITY_EVENT_TYPES = {
   BANK_STATEMENT_IMPORTED: 'financial.statement.imported',
   BANK_RECONCILIATION_STARTED: 'financial.reconciliation.started',
   BANK_RECONCILIATION_COMPLETED: 'financial.reconciliation.completed',
+
+  /** Phase 35 (Merchandise, Inventory & Commerce). Activates the reserved
+      `'inventory'` category (see `ActivityEventCategory` above) for the
+      first time. `merchandise.product.*` events come exclusively from
+      `services/merchandiseService.ts`; `inventory.*` events exclusively
+      from `services/inventoryService.ts` — enforced by a structural test,
+      mirroring every other domain's own emitter boundary. Routine
+      snapshot recomputes are deliberately NOT events (high-frequency,
+      low-information), matching this registry's existing discipline. See
+      docs/adr/ADR-039-merchandise-inventory-and-commerce.md. */
+  MERCHANDISE_PRODUCT_CREATED: 'merchandise.product.created',
+  MERCHANDISE_PRODUCT_UPDATED: 'merchandise.product.updated',
+  MERCHANDISE_PRODUCT_ARCHIVED: 'merchandise.product.archived',
+  INVENTORY_RECEIVED: 'inventory.received',
+  INVENTORY_RESERVED: 'inventory.reserved',
+  INVENTORY_RELEASED: 'inventory.released',
+  INVENTORY_FULFILLED: 'inventory.fulfilled',
+  INVENTORY_RETURNED: 'inventory.returned',
+  INVENTORY_TRANSFERRED: 'inventory.transferred',
+  INVENTORY_ADJUSTED: 'inventory.adjusted',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

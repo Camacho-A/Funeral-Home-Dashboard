@@ -242,3 +242,52 @@ export async function seedChartOfAccounts(
   }
   return { accounts, isNew: true };
 }
+
+/**
+ * Phase 35 (Merchandise, Inventory & Commerce). Add-only backfill of any
+ * starter accounts an ALREADY-SEEDED organization is missing — because
+ * `seedChartOfAccounts` above returns early (adds nothing) once a chart
+ * exists, a tenant onboarded before Phase 35 would never receive the five
+ * new merchandise accounts (1300/2100/4100/5100/5110). This inserts only the
+ * missing numbers, never touching or duplicating an existing account, so it
+ * is safe to re-run. Used to backfill Manor's Cremation (the one live tenant)
+ * during Phase 35 live verification, exactly the targeted-add pattern Phase
+ * 31/32 used for new rolePermissions grants. See
+ * docs/adr/ADR-039-merchandise-inventory-and-commerce.md.
+ */
+export async function backfillMissingStarterAccounts(
+  organizationId: string,
+  idFactory: () => string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ added: LedgerAccount[] }> {
+  const existing = await listAccounts(organizationId, dataAdapterMode);
+  const existingNumbers = new Set(existing.map((a) => a.accountNumber));
+  const missingEntries = STARTER_CHART_OF_ACCOUNTS.filter((entry) => !existingNumbers.has(entry.accountNumber));
+  if (missingEntries.length === 0) return { added: [] };
+
+  const now = nowIso();
+  const added: LedgerAccount[] = missingEntries.map((entry) => ({
+    id: idFactory(),
+    organizationId,
+    accountNumber: entry.accountNumber,
+    accountNumberKey: accountNumberKey(organizationId, entry.accountNumber),
+    name: entry.name,
+    accountType: entry.accountType,
+    normalBalance: entry.normalBalance,
+    parentAccountId: null,
+    isSystemAccount: true,
+    isActive: true,
+    description: entry.description,
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  if (dataAdapterMode === 'mock') {
+    ledgerAccountFixtures.push(...added);
+    return { added };
+  }
+  for (const account of added) {
+    await insertWixDataItem<WixLedgerAccountItem>('chartOfAccounts', buildWixLedgerAccountData(account), account.id);
+  }
+  return { added };
+}

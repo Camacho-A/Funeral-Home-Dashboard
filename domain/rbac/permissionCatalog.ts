@@ -177,6 +177,24 @@ export const PERMISSION_KEYS = [
   'report.staff',
   'report.export',
   'dashboard.manage',
+
+  /** Phase 35 (Merchandise, Inventory & Commerce). Five keys, following the
+      accounting-block precedent of a small, coarse resource set rather than
+      a fine-grained verb-per-operation cluster. `merchandise.read`/`.manage`
+      gate the product catalog (view vs create/edit/archive/image).
+      `inventory.read` gates stock views/reports; `inventory.manage` gates
+      the everyday stock operations (receive, reserve, release, fulfill,
+      transfer, restock-return); `inventory.adjust` is the higher-privilege,
+      always-audited gate for damage/shrinkage/write-off/correction — the
+      one operation that can reduce recorded stock without a corresponding
+      sale. Selecting merchandise onto a case reuses the existing
+      `caseOrder.update` (it is a CaseOrder mutation), not a new key. See
+      docs/adr/ADR-039-merchandise-inventory-and-commerce.md. */
+  'merchandise.read',
+  'merchandise.manage',
+  'inventory.read',
+  'inventory.manage',
+  'inventory.adjust',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -264,4 +282,10 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'report.staff': 'View staff workload and ownership reports',
   'report.export': 'Export a report to CSV',
   'dashboard.manage': 'Manage organization-wide shared report presets',
+
+  'merchandise.read': 'View the merchandise product catalog',
+  'merchandise.manage': 'Create, edit, archive, and set images for merchandise products',
+  'inventory.read': 'View inventory stock levels, movements, and inventory reports',
+  'inventory.manage': 'Receive, reserve, fulfill, transfer, and restock-return merchandise inventory',
+  'inventory.adjust': 'Record audited inventory adjustments — damage, shrinkage, write-off, and count corrections',
 };

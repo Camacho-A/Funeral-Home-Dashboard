@@ -28,7 +28,7 @@
  * and live verification — with no production call site emitting them
  * yet (see ADR-032's "Bounded integration surface" section for why).
  */
-export type NotificationCategory = 'case' | 'task' | 'payment' | 'scheduling' | 'document' | 'signature' | 'organization' | 'system' | 'family_portal' | 'financial';
+export type NotificationCategory = 'case' | 'task' | 'payment' | 'scheduling' | 'document' | 'signature' | 'organization' | 'system' | 'family_portal' | 'financial' | 'commerce';
 
 export const NOTIFICATION_TYPES = {
   APPOINTMENT_CREATED: { key: 'scheduling.appointment_created', category: 'scheduling' as NotificationCategory, displayName: 'Appointment Scheduled' },
@@ -92,6 +92,20 @@ export const NOTIFICATION_TYPES = {
   JOURNAL_ENTRY_NEEDS_REVIEW: { key: 'financial.journal_entry_needs_review', category: 'financial' as NotificationCategory, displayName: 'Journal Entry Needs Review' },
   RECONCILIATION_COMPLETED: { key: 'financial.reconciliation_completed', category: 'financial' as NotificationCategory, displayName: 'Reconciliation Completed' },
   INVOICE_OVERDUE: { key: 'financial.invoice_overdue', category: 'financial' as NotificationCategory, displayName: 'Invoice Overdue' },
+
+  /** Phase 35 (Merchandise, Inventory & Commerce). Delivered via
+      recipientScope: 'role' (never an individual) to the org's inventory
+      managers. `COMMERCE_INVENTORY_LOW_STOCK` fires exactly once on the
+      downward threshold crossing (services/inventoryService.ts reports the
+      crossing; the wiring in services/inventoryNotifications.ts sends it) —
+      never per decrement, matching this registry's own anti-noise
+      discipline. The other two are real registry entries with no auto-
+      emitter yet (out-of-stock is a special case of low-stock;
+      received is available for a future purchasing surface). See
+      docs/adr/ADR-039-merchandise-inventory-and-commerce.md. */
+  COMMERCE_INVENTORY_LOW_STOCK: { key: 'commerce.inventory_low_stock', category: 'commerce' as NotificationCategory, displayName: 'Low Stock' },
+  COMMERCE_INVENTORY_OUT_OF_STOCK: { key: 'commerce.inventory_out_of_stock', category: 'commerce' as NotificationCategory, displayName: 'Out of Stock' },
+  COMMERCE_INVENTORY_RECEIVED: { key: 'commerce.inventory_received', category: 'commerce' as NotificationCategory, displayName: 'Inventory Received' },
 } as const;
 
 export type NotificationTypeDefinition = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
@@ -124,4 +138,5 @@ export const NOTIFICATION_CATEGORY_LABEL: Record<NotificationCategory, string> =
   system: 'System',
   family_portal: 'Family Portal',
   financial: 'Financial',
+  commerce: 'Commerce',
 };

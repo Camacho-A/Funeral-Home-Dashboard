@@ -374,6 +374,21 @@ A genuinely new authorization surface, distinct from every mechanism above: OAut
 - **Rate limiting reuses, not reinvents.** The `start`/`callback` routes call the same `lib/rateLimiter.ts#checkRateLimit` the Family Portal (Phase 29) already established — still explicitly process-local, the same disclosed gap named there, not newly solved for this phase.
 - **Connection ownership**, not RBAC, gates most of this surface: connecting/disconnecting one's *own* calendar needs no permission beyond authentication (`resolveStaffProfileForCaller`, mirroring `NotificationPreference`'s own self-scoped posture). Viewing or force-disconnecting *any* staff member's connection, and editing the organization's `SchedulingReminderPolicy`, both require `calendar.manage` — a Phase 27 permission key reserved and never wired until this phase; no new RBAC key was added.
 
+## Phase 35 — Merchandise, Inventory & Commerce
+
+**Status: implementation complete 2026-08-19; live `rolePermissions` re-seed pending approval.** Full writeup: [ADR-039](./adr/ADR-039-merchandise-inventory-and-commerce.md).
+
+Five new RBAC keys widen the catalog from 54 to **59**, following the Phase 31 `accounting.*` coarse-key precedent rather than a fine-grained verb-per-operation cluster:
+
+- **`merchandise.read`** / **`merchandise.manage`** — view the product catalog / create, edit, archive, and set images. Merchandise archives, never deletes.
+- **`inventory.read`** — stock levels, movements, and inventory reports.
+- **`inventory.manage`** — the everyday stock operations: receive, reserve, fulfill, transfer, and restock-return.
+- **`inventory.adjust`** — the higher-privilege, always-audited gate for damage / shrinkage / write-off / count-correction — the one operation that reduces recorded stock without a corresponding sale.
+
+Selecting merchandise onto a case reuses the **existing `caseOrder.update`** (it is a CaseOrder mutation), not a new key. Tiers: administrator/manager all five; funeralDirector/officeStaff `merchandise.read` + `inventory.read` + `inventory.manage`; arranger/accounting/readOnly read-only; `inventory.adjust` administrator/manager only. `services/authorizationPolicyService.ts` gained `canReadMerchandise`/`canManageMerchandise`/`canReadInventory`/`canManageInventory`/`canAdjustInventory`, each a one-line `hasPermission` wrapper — never a role-name comparison. As with every prior phase adding a key, activating these on the live tenant requires a **targeted `rolePermissions` re-seed** (a full `seedPlatformDefaultRoles` re-run hits the documented HTTP 429), inserting only the specific missing grant rows.
+
+Per-stock-line concurrency (`services/inventoryLockService.ts`) reuses the Phase 22 lease + write-claim construction generalized to a `{org}-{loc}-{product}` key — the same proven mechanism, the same honestly-disclosed residual gap (no Wix conditional write), now mitigated additionally by the append-only movement ledger + reconcile.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

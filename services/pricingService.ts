@@ -21,21 +21,28 @@ import {
   type WixCaseOrderAuditItem,
 } from '../lib/wixCaseOrderAuditMapper';
 import type { ServiceCatalogItem } from '../types/serviceCatalog';
-import type { CaseOrder, CaseOrderLineItem } from '../types/caseOrder';
+import type { CaseOrder, CaseOrderLineItem, ServiceSelections, MerchandiseSelection } from '../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../types/caseOrderAudit';
+import type { MerchandiseProduct } from '../types/merchandiseProduct';
 import {
   calculateAdjustment,
   calculateBalance,
   calculateOrderTotals,
+  calculateOrderTotalsWithMerchandise,
   normalizeSelections,
+  normalizeMerchandiseSelections,
   selectionsFromLineItems,
+  merchandiseSelectionsFromLineItems,
+  sumLineTotalsByKind,
+  type CalculatedLineItem,
 } from '../domain/pricing/calculateOrder';
-import { diffSelections } from '../domain/pricing/auditDiff';
+import { diffSelections, diffMerchandiseSelections } from '../domain/pricing/auditDiff';
+import { listActiveProductsForOrganization } from './merchandiseService';
 import { listPaymentRecordsForCase } from './paymentsService';
 import { mapWixCaseWriteOffItem, type WixCaseWriteOffItem } from '../lib/wixCaseWriteOffMapper';
 import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
 import { recordCaseOrderChanged, recordJournalEntryPosted } from './activityService';
-import { createAndPostJournalEntry } from './generalLedgerService';
+import { createAndPostJournalEntry, type NewJournalEntryLineInput } from './generalLedgerService';
 import { getAccountByNumber, seedChartOfAccounts } from './chartOfAccountsService';
 import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
 import {
@@ -168,6 +175,24 @@ export async function listLineItemsForOrder(
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+/**
+ * Phase 35 (Merchandise, Inventory & Commerce). The merchandise selections a
+ * case's active order currently represents — read by the case-merchandise
+ * route to merge in an add/remove before recalculating. Reconstructed from
+ * the persisted line items (never a parallel stored blob), so it can never
+ * diverge from the authoritative order.
+ */
+export async function listMerchandiseSelectionsForCase(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<MerchandiseSelection[]> {
+  const order = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  if (!order) return [];
+  const lineItems = await listLineItemsForOrder(organizationId, order.id, dataAdapterMode);
+  return merchandiseSelectionsFromLineItems(lineItems);
+}
+
 export async function listAuditEntriesForCase(
   organizationId: string,
   caseId: string,
@@ -285,28 +310,55 @@ export async function getSatisfiedAmountForCase(
 async function postRevenueRecognition(
   organizationId: string,
   caseId: string,
-  deltaAmount: number,
-  direction: 'increase' | 'decrease',
+  serviceDelta: number,
+  merchandiseDelta: number,
   actorIdentityId: string | null,
   idFactory: () => string,
   now: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<void> {
-  if (deltaAmount === 0) return;
+  if (serviceDelta === 0 && merchandiseDelta === 0) return;
 
-  let accountsReceivable = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, dataAdapterMode);
-  let serviceRevenue = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, dataAdapterMode);
-  if (!accountsReceivable || !serviceRevenue) {
+  // Resolve the three accounts this split touches — Accounts Receivable
+  // (1200), Service Revenue (4000), Merchandise Revenue (4100). Only look up
+  // the merchandise account when there's a merchandise delta, so a pure
+  // service org still works identically even before its chart gains 4100.
+  const resolve = () =>
+    Promise.all([
+      getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, dataAdapterMode),
+      getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, dataAdapterMode),
+      merchandiseDelta !== 0
+        ? getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.MERCHANDISE_REVENUE, dataAdapterMode)
+        : Promise.resolve(null),
+    ]);
+  let [accountsReceivable, serviceRevenue, merchandiseRevenue] = await resolve();
+  if (!accountsReceivable || !serviceRevenue || (merchandiseDelta !== 0 && !merchandiseRevenue)) {
     await seedChartOfAccounts(organizationId, idFactory, dataAdapterMode);
-    accountsReceivable = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, dataAdapterMode);
-    serviceRevenue = await getAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, dataAdapterMode);
+    [accountsReceivable, serviceRevenue, merchandiseRevenue] = await resolve();
   }
-  if (!accountsReceivable || !serviceRevenue) {
+  if (!accountsReceivable || !serviceRevenue || (merchandiseDelta !== 0 && !merchandiseRevenue)) {
     throw new Error(`Failed to resolve required ledger accounts for organization "${organizationId}" even after seeding.`);
   }
 
-  const accountsReceivableDirection = direction === 'increase' ? 'debit' : 'credit';
-  const serviceRevenueDirection = direction === 'increase' ? 'credit' : 'debit';
+  // One balanced entry: Dr/Cr Accounts Receivable for the NET delta, plus a
+  // separate Cr/Dr line per revenue account for its own signed delta. A
+  // positive delta credits revenue (asset up → Dr AR); a negative delta
+  // debits it. A zero delta contributes no line. Because
+  // net = serviceDelta + merchandiseDelta, the AR line always balances the
+  // revenue lines regardless of sign combination (assertJournalEntryBalances
+  // is the backstop). Merchandise revenue is credited to 4100, kept fully
+  // separate from Service Revenue (4000) — ADR-039 decision 2.
+  const net = serviceDelta + merchandiseDelta;
+  const lines: NewJournalEntryLineInput[] = [];
+  if (net !== 0) {
+    lines.push({ accountId: accountsReceivable.id, direction: net > 0 ? 'debit' : 'credit', amount: Math.abs(net), caseId });
+  }
+  if (serviceDelta !== 0) {
+    lines.push({ accountId: serviceRevenue.id, direction: serviceDelta > 0 ? 'credit' : 'debit', amount: Math.abs(serviceDelta), caseId });
+  }
+  if (merchandiseDelta !== 0 && merchandiseRevenue) {
+    lines.push({ accountId: merchandiseRevenue.id, direction: merchandiseDelta > 0 ? 'credit' : 'debit', amount: Math.abs(merchandiseDelta), caseId });
+  }
 
   const { entry } = await createAndPostJournalEntry(
     organizationId,
@@ -314,11 +366,8 @@ async function postRevenueRecognition(
       entryDate: now,
       sourceType: 'revenue_recognition',
       caseId,
-      memo: `Revenue recognition (${direction}) for case ${caseId}`,
-      lines: [
-        { accountId: accountsReceivable.id, direction: accountsReceivableDirection, amount: deltaAmount, caseId },
-        { accountId: serviceRevenue.id, direction: serviceRevenueDirection, amount: deltaAmount, caseId },
-      ],
+      memo: `Revenue recognition for case ${caseId} (service ${serviceDelta}, merchandise ${merchandiseDelta})`,
+      lines,
       idFactory,
       now,
     },
@@ -397,23 +446,56 @@ async function markCaseOrderSuperseded(
 function buildLineItems(
   organizationId: string,
   caseOrderId: string,
-  calculated: ReturnType<typeof calculateOrderTotals>,
+  calculatedLineItems: CalculatedLineItem[],
   nowIso: string,
   idFactory: () => string,
 ): CaseOrderLineItem[] {
-  return calculated.lineItems.map((item) => ({
+  return calculatedLineItems.map((item) => ({
     id: idFactory(),
     organizationId,
     caseOrderId,
+    lineKind: item.lineKind,
     serviceCode: item.serviceCode,
     description: item.description,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
     lineTotal: item.lineTotal,
     sortOrder: item.sortOrder,
-    metadata: null,
+    metadata: item.metadata,
     createdAt: nowIso,
   }));
+}
+
+/** The merchandise catalog used for pricing — active products only, exactly
+    as `getServiceCatalog` fetches active service rows. Reuses
+    merchandiseService's read (never a parallel query). */
+function getMerchandiseCatalogForPricing(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<MerchandiseProduct[]> {
+  return listActiveProductsForOrganization(organizationId, dataAdapterMode);
+}
+
+/**
+ * Resolves the service half of an order's selections from a raw request
+ * body, carrying the current selection forward when the caller doesn't
+ * provide one (so a merchandise-only edit never wipes services, and vice
+ * versa). Supports both a nested `{ services: {...} }` and the legacy flat
+ * `{ weightTier, ... }` shape every pre-Phase-35 caller uses.
+ */
+function extractServiceSelections(raw: unknown, currentLineItems: CaseOrderLineItem[] | null): ServiceSelections {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  if (obj.services && typeof obj.services === 'object') return normalizeSelections(obj.services as Record<string, unknown>);
+  const hasFlatServiceFields = 'weightTier' in obj || 'extraDeathCertificateQuantity' in obj || 'mailCremated' in obj;
+  if (hasFlatServiceFields) return normalizeSelections(obj);
+  if (currentLineItems) return selectionsFromLineItems(currentLineItems);
+  return normalizeSelections({});
+}
+
+/** The merchandise half — carries current merchandise forward when the
+    caller doesn't provide a `merchandise` array. */
+function extractMerchandiseSelections(raw: unknown, currentLineItems: CaseOrderLineItem[] | null): MerchandiseSelection[] {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  if ('merchandise' in obj) return normalizeMerchandiseSelections(obj.merchandise);
+  if (currentLineItems) return merchandiseSelectionsFromLineItems(currentLineItems);
+  return [];
 }
 
 /**
@@ -436,8 +518,12 @@ export async function createCaseOrder(
 ): Promise<{ order: CaseOrder; lineItems: CaseOrderLineItem[]; auditEntry: CaseOrderAuditEntry }> {
   const nowIso = params.now ?? new Date().toISOString();
   const catalog = await getServiceCatalog(params.organizationId, dataAdapterMode);
-  const selections = normalizeSelections((params.selections ?? {}) as Record<string, unknown>);
-  const calculated = calculateOrderTotals(catalog, selections);
+  const products = await getMerchandiseCatalogForPricing(params.organizationId, dataAdapterMode);
+  const orderSelections = {
+    services: extractServiceSelections(params.selections, null),
+    merchandise: extractMerchandiseSelections(params.selections, null),
+  };
+  const calculated = calculateOrderTotalsWithMerchandise(catalog, products, orderSelections);
 
   const orderId = params.idFactory();
   const order: CaseOrder = {
@@ -455,7 +541,10 @@ export async function createCaseOrder(
     updatedAt: nowIso,
   };
 
-  const lineItems = buildLineItems(params.organizationId, orderId, calculated, nowIso, params.idFactory);
+  const lineItems = buildLineItems(params.organizationId, orderId, calculated.lineItems, nowIso, params.idFactory);
+  const split = sumLineTotalsByKind(calculated.lineItems);
+  const serviceCount = calculated.lineItems.filter((li) => li.lineKind === 'service').length;
+  const merchandiseCount = calculated.lineItems.filter((li) => li.lineKind === 'merchandise').length;
 
   const auditEntry: CaseOrderAuditEntry = {
     id: params.idFactory(),
@@ -466,7 +555,7 @@ export async function createCaseOrder(
     previousValue: null,
     newValue: null,
     amountDeltaCents: calculated.total,
-    description: `Case order created — ${calculated.lineItems.length} service${calculated.lineItems.length === 1 ? '' : 's'}`,
+    description: `Case order created — ${serviceCount} service${serviceCount === 1 ? '' : 's'}${merchandiseCount > 0 ? `, ${merchandiseCount} merchandise item${merchandiseCount === 1 ? '' : 's'}` : ''}`,
     performedBy: params.performedBy,
     createdAt: nowIso,
   };
@@ -475,9 +564,8 @@ export async function createCaseOrder(
   await persistLineItems(lineItems, dataAdapterMode);
   await persistAuditEntries([auditEntry], dataAdapterMode);
 
-  if (calculated.total > 0) {
-    await postRevenueRecognition(params.organizationId, params.caseId, calculated.total, 'increase', params.performedBy, params.idFactory, nowIso, dataAdapterMode);
-  }
+  // Recognize revenue split by kind (service → 4000, merchandise → 4100).
+  await postRevenueRecognition(params.organizationId, params.caseId, split.service, split.merchandise, params.performedBy, params.idFactory, nowIso, dataAdapterMode);
 
   return { order: persistedOrder, lineItems, auditEntry };
 }
@@ -509,16 +597,25 @@ export async function recalculateOrder(
 
   const nowIso = params.now ?? new Date().toISOString();
   const catalog = await getServiceCatalog(params.organizationId, dataAdapterMode);
+  const products = await getMerchandiseCatalogForPricing(params.organizationId, dataAdapterMode);
   const currentLineItems = await listLineItemsForOrder(params.organizationId, current.id, dataAdapterMode);
-  const previousSelections = selectionsFromLineItems(currentLineItems);
-  const nextSelections = normalizeSelections((params.selections ?? {}) as Record<string, unknown>);
 
-  const diffEntries = diffSelections(catalog, previousSelections, nextSelections);
+  // Reconstruct BOTH dimensions from the current order, then apply only what
+  // the caller changed — a service-only edit carries merchandise forward
+  // unchanged, and a merchandise-only edit carries services forward.
+  const previousServices = selectionsFromLineItems(currentLineItems);
+  const previousMerchandise = merchandiseSelectionsFromLineItems(currentLineItems);
+  const nextServices = extractServiceSelections(params.selections, currentLineItems);
+  const nextMerchandise = extractMerchandiseSelections(params.selections, currentLineItems);
+
+  const serviceDiff = diffSelections(catalog, previousServices, nextServices);
+  const merchandiseDiff = diffMerchandiseSelections(products, previousMerchandise, nextMerchandise);
+  const diffEntries = [...serviceDiff, ...merchandiseDiff];
   if (diffEntries.length === 0) {
     return { order: current, lineItems: currentLineItems, auditEntries: [] };
   }
 
-  const calculated = calculateOrderTotals(catalog, nextSelections);
+  const calculated = calculateOrderTotalsWithMerchandise(catalog, products, { services: nextServices, merchandise: nextMerchandise });
   const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
 
   const newOrderId = params.idFactory();
@@ -537,7 +634,7 @@ export async function recalculateOrder(
     updatedAt: nowIso,
   };
 
-  const newLineItems = buildLineItems(params.organizationId, newOrderId, calculated, nowIso, params.idFactory);
+  const newLineItems = buildLineItems(params.organizationId, newOrderId, calculated.lineItems, nowIso, params.idFactory);
 
   const auditEntries: CaseOrderAuditEntry[] = diffEntries.map((entry) => ({
     id: params.idFactory(),
@@ -558,19 +655,14 @@ export async function recalculateOrder(
   await persistLineItems(newLineItems, dataAdapterMode);
   await persistAuditEntries(auditEntries, dataAdapterMode);
 
-  const revenueDelta = calculated.total - current.total;
-  if (revenueDelta !== 0) {
-    await postRevenueRecognition(
-      params.organizationId,
-      params.caseId,
-      Math.abs(revenueDelta),
-      revenueDelta > 0 ? 'increase' : 'decrease',
-      params.performedBy,
-      params.idFactory,
-      nowIso,
-      dataAdapterMode,
-    );
-  }
+  // Post only the NET change per revenue kind — service delta to 4000,
+  // merchandise delta to 4100 — so repricing never re-recognizes revenue
+  // already booked, and merchandise revenue never leaks into service revenue.
+  const newSplit = sumLineTotalsByKind(calculated.lineItems);
+  const oldSplit = sumLineTotalsByKind(currentLineItems);
+  const serviceDelta = newSplit.service - oldSplit.service;
+  const merchandiseDelta = newSplit.merchandise - oldSplit.merchandise;
+  await postRevenueRecognition(params.organizationId, params.caseId, serviceDelta, merchandiseDelta, params.performedBy, params.idFactory, nowIso, dataAdapterMode);
 
   // Phase 24 (Case Activity Timeline & Audit Center): one activity event
   // summarizing this whole recalculation, reusing the exact diff data

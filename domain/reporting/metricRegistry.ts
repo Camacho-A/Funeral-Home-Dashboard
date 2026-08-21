@@ -358,6 +358,70 @@ export const METRIC_REGISTRY = [
     allowedFilters: ['staff', 'dateRange'],
     permission: 'report.staff',
   },
+
+  // Phase 35 (Merchandise, Inventory & Commerce). Financial figures derive
+  // from the ledger (accounting.report gate); inventory figures from the
+  // authoritative balances (inventory.read gate).
+  {
+    key: 'merchandise.revenue',
+    displayName: 'Merchandise Revenue',
+    description: 'Revenue recognized on merchandise sales (ledger account 4100).',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'merchandiseReportingService.merchandiseRevenue',
+    allowedFilters: [],
+    permission: 'accounting.report',
+  },
+  {
+    key: 'merchandise.cogs',
+    displayName: 'Merchandise COGS',
+    description: 'Cost of goods sold for fulfilled merchandise (ledger account 5100).',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'merchandiseReportingService.merchandiseCogs',
+    allowedFilters: [],
+    permission: 'accounting.report',
+  },
+  {
+    key: 'merchandise.gross_margin',
+    displayName: 'Merchandise Gross Margin',
+    description: 'Merchandise revenue minus COGS (ledger-derived).',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'merchandiseReportingService.merchandiseGrossMargin',
+    allowedFilters: [],
+    permission: 'accounting.report',
+  },
+  {
+    key: 'inventory.asset_value',
+    displayName: 'Inventory Asset Value',
+    description: 'On-hand units × product cost, across every stock line.',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'merchandiseReportingService.inventoryAssetValue',
+    allowedFilters: [],
+    permission: 'inventory.read',
+  },
+  {
+    key: 'inventory.on_hand_units',
+    displayName: 'Units On Hand',
+    description: 'Total merchandise units currently in stock organization-wide.',
+    dataType: 'count',
+    unit: 'units',
+    source: 'merchandiseReportingService.inventoryOnHandUnits',
+    allowedFilters: [],
+    permission: 'inventory.read',
+  },
+  {
+    key: 'inventory.low_stock_count',
+    displayName: 'Low-Stock Products',
+    description: 'Distinct products at or below their reorder point.',
+    dataType: 'count',
+    unit: 'products',
+    source: 'merchandiseReportingService.lowStockProductCount',
+    allowedFilters: [],
+    permission: 'inventory.read',
+  },
 ] as const satisfies readonly MetricDefinition[];
 
 export type MetricKey = (typeof METRIC_REGISTRY)[number]['key'];

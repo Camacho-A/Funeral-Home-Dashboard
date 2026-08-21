@@ -1,5 +1,7 @@
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
-import type { ServiceSelections, WeightTier } from '../../types/caseOrder';
+import type { ServiceSelections, WeightTier, MerchandiseSelection, CaseOrderLineKind } from '../../types/caseOrder';
+import type { MerchandiseProduct } from '../../types/merchandiseProduct';
+import { getMerchandiseCategoryDefinition } from '../merchandise/merchandiseCategoryRegistry';
 import { SERVICE_CODES } from './serviceCodes';
 
 /**
@@ -65,12 +67,21 @@ export function normalizeSelections(raw: {
 }
 
 export type CalculatedLineItem = {
+  /** Phase 35: the commercial kind. Service lines are `'service'`;
+      merchandise lines are `'merchandise'`. */
+  lineKind: CaseOrderLineKind;
+  /** ServiceCatalogItem.serviceCode for a service line; MerchandiseProduct.sku
+      for a merchandise line. */
   serviceCode: string;
   description: string;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
   sortOrder: number;
+  /** Phase 35: null for a service line; `{ productId, sku, locationId }` for
+      a merchandise line (the product-identity snapshot carried onto the
+      persisted CaseOrderLineItem.metadata). */
+  metadata: Record<string, string> | null;
 };
 
 export type CalculatedOrderTotals = {
@@ -102,12 +113,14 @@ export function calculateOrderTotals(
     const item = catalogByCode.get(serviceCode);
     if (!item) return;
     lineItems.push({
+      lineKind: 'service',
       serviceCode: item.serviceCode,
       description: item.displayName,
       quantity,
       unitPrice: item.defaultPrice,
       lineTotal: item.defaultPrice * quantity,
       sortOrder: item.sortOrder,
+      metadata: null,
     });
   }
 
@@ -181,7 +194,11 @@ export function weightTierLabel(tier: WeightTier): string {
  * itself (which isn't part of this phase's own caseOrders field list).
  */
 export function selectionsFromLineItems(lineItems: CalculatedLineItem[]): ServiceSelections {
-  const byCode = new Map(lineItems.map((item) => [item.serviceCode, item]));
+  // Merchandise lines carry a product SKU as their serviceCode and never
+  // collide with a known service code, so the lookups below simply ignore
+  // them — but filter explicitly for clarity and future-proofing.
+  const serviceLines = lineItems.filter((item) => item.lineKind === 'service');
+  const byCode = new Map(serviceLines.map((item) => [item.serviceCode, item]));
   const weightTier: WeightTier = byCode.has(SERVICE_CODES.WEIGHT_SURCHARGE_251_300)
     ? '251_300'
     : byCode.has(SERVICE_CODES.WEIGHT_SURCHARGE_201_250)
@@ -192,4 +209,156 @@ export function selectionsFromLineItems(lineItems: CalculatedLineItem[]): Servic
     extraDeathCertificateQuantity: byCode.get(SERVICE_CODES.EXTRA_DEATH_CERTIFICATE)?.quantity ?? 0,
     mailCremated: byCode.has(SERVICE_CODES.MAIL_CREMATED_REMAINS),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 35 (Merchandise, Inventory & Commerce). Merchandise pricing — the
+// second line-item kind that flows into the one authoritative CaseOrder. Pure
+// and shareable exactly like the service path above: the server always
+// re-fetches its own product catalog and re-runs these functions over the
+// staff's submitted selections (never a submitted price/total).
+// ---------------------------------------------------------------------------
+
+/** Merchandise lines sort AFTER every service line (service sortOrders are
+    small, catalog-driven). Grouped by category, then name, for a stable,
+    legible order that never changes under repricing. */
+export const MERCHANDISE_SORT_BASE = 100000;
+
+const MAX_MERCHANDISE_LINE_QUANTITY = 1000;
+
+/**
+ * Clamps/normalizes raw (possibly attacker-controlled) merchandise selection
+ * input — called server-side before pricing. Aggregates duplicate
+ * (productId, locationId) rows by summing quantity, drops any row with a
+ * non-positive quantity or a missing id, so one product at one location is
+ * always exactly one line and one reservation.
+ */
+export function normalizeMerchandiseSelections(raw: unknown): MerchandiseSelection[] {
+  if (!Array.isArray(raw)) return [];
+  const aggregated = new Map<string, MerchandiseSelection>();
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const row = entry as Record<string, unknown>;
+    if (typeof row.productId !== 'string' || row.productId.length === 0) continue;
+    if (typeof row.locationId !== 'string' || row.locationId.length === 0) continue;
+    const rawQty = typeof row.quantity === 'number' ? row.quantity : 0;
+    const quantity = Math.min(Math.max(Math.trunc(rawQty), 0), MAX_MERCHANDISE_LINE_QUANTITY);
+    if (quantity <= 0) continue;
+    const key = `${row.productId}::${row.locationId}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.quantity = Math.min(existing.quantity + quantity, MAX_MERCHANDISE_LINE_QUANTITY);
+    } else {
+      aggregated.set(key, { productId: row.productId, locationId: row.locationId, quantity });
+    }
+  }
+  return Array.from(aggregated.values());
+}
+
+/**
+ * Builds merchandise line items from the org's product catalog + selections.
+ * Snapshots the current `retailPrice` and `name` onto each line (historical
+ * stability, same reasoning as a service line's copied `description`). Silently
+ * omits a selection whose product is missing/inactive in the catalog — "this
+ * org doesn't currently sell that" — never throws. Each line carries
+ * `{ productId, sku, locationId }` in `metadata` so the persisted line stays
+ * attributable after any later catalog change.
+ */
+export function calculateMerchandiseLineItems(
+  products: MerchandiseProduct[],
+  selections: MerchandiseSelection[],
+): CalculatedLineItem[] {
+  const productsById = new Map(products.filter((p) => p.isActive).map((p) => [p.id, p]));
+  const lines: CalculatedLineItem[] = [];
+  for (const selection of selections) {
+    const product = productsById.get(selection.productId);
+    if (!product) continue;
+    lines.push({
+      lineKind: 'merchandise',
+      serviceCode: product.sku,
+      description: product.name,
+      quantity: selection.quantity,
+      unitPrice: product.retailPrice,
+      lineTotal: product.retailPrice * selection.quantity,
+      sortOrder: 0, // assigned below after the stable sort
+      metadata: { productId: product.id, sku: product.sku, locationId: selection.locationId },
+    });
+  }
+  // Stable ordering: category sortOrder, then name, then sku.
+  lines.sort((a, b) => {
+    const catA = getMerchandiseCategoryDefinition(productsById.get(a.metadata!.productId)!.category)?.sortOrder ?? 999;
+    const catB = getMerchandiseCategoryDefinition(productsById.get(b.metadata!.productId)!.category)?.sortOrder ?? 999;
+    if (catA !== catB) return catA - catB;
+    if (a.description !== b.description) return a.description < b.description ? -1 : 1;
+    return a.serviceCode < b.serviceCode ? -1 : a.serviceCode > b.serviceCode ? 1 : 0;
+  });
+  lines.forEach((line, index) => {
+    line.sortOrder = MERCHANDISE_SORT_BASE + index * 10;
+  });
+  return lines;
+}
+
+/**
+ * The generalized full-order calculation: service lines (unchanged) plus
+ * merchandise lines, into one itemized set of totals. `calculateOrderTotals`
+ * above stays the service-only entry point (still used by the browser's live
+ * preview and every pre-Phase-35 caller); this is what
+ * services/pricingService.ts uses once merchandise exists.
+ */
+export function calculateOrderTotalsWithMerchandise(
+  catalog: ServiceCatalogItem[],
+  products: MerchandiseProduct[],
+  orderSelections: OrderSelectionsInput,
+): CalculatedOrderTotals {
+  const serviceTotals = calculateOrderTotals(catalog, orderSelections.services);
+  const merchandiseLines = calculateMerchandiseLineItems(products, orderSelections.merchandise);
+  const lineItems = [...serviceTotals.lineItems, ...merchandiseLines];
+  const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  const discountTotal = 0;
+  const taxTotal = 0;
+  const total = subtotal - discountTotal + taxTotal;
+  return { lineItems, subtotal, discountTotal, taxTotal, total };
+}
+
+/** The structured full-order calculation input — mirrors types/caseOrder.ts's
+    OrderSelections, redeclared as a minimal shape here to keep this pure
+    module free of any dependency it doesn't strictly need. */
+type OrderSelectionsInput = { services: ServiceSelections; merchandise: MerchandiseSelection[] };
+
+/**
+ * Reconstructs the merchandise selections a persisted CaseOrder's line items
+ * represent — the merchandise counterpart to `selectionsFromLineItems`, so a
+ * service-only edit carries existing merchandise forward unchanged (and vice
+ * versa). Reads `{ productId, locationId }` from each merchandise line's
+ * `metadata`.
+ */
+export function merchandiseSelectionsFromLineItems(lineItems: CalculatedLineItem[]): MerchandiseSelection[] {
+  const selections: MerchandiseSelection[] = [];
+  for (const line of lineItems) {
+    if (line.lineKind !== 'merchandise' || !line.metadata) continue;
+    const productId = line.metadata.productId;
+    const locationId = line.metadata.locationId;
+    if (typeof productId !== 'string' || typeof locationId !== 'string') continue;
+    selections.push({ productId, locationId, quantity: line.quantity });
+  }
+  return selections;
+}
+
+/**
+ * The service vs merchandise split of a set of line items' totals — used by
+ * revenue recognition to credit Service Revenue (4000) and Merchandise
+ * Revenue (4100) separately (ADR-039 decision 2). Works over both freshly
+ * `CalculatedLineItem[]` and persisted `CaseOrderLineItem[]` (both carry
+ * `lineKind` + `lineTotal`).
+ */
+export function sumLineTotalsByKind(
+  lineItems: ReadonlyArray<{ lineKind: CaseOrderLineKind; lineTotal: number }>,
+): { service: number; merchandise: number } {
+  let service = 0;
+  let merchandise = 0;
+  for (const item of lineItems) {
+    if (item.lineKind === 'merchandise') merchandise += item.lineTotal;
+    else service += item.lineTotal;
+  }
+  return { service, merchandise };
 }

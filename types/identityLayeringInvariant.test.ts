@@ -39,7 +39,25 @@ const ALLOWED_IDENTITY_ID_FIELDS: readonly string[] = [];
  * — never stored back onto the originating entity, never itself an
  * operational-assignment field.
  */
-const FILES_TO_CHECK: readonly string[] = ['case.ts', 'task.ts', 'appointment.ts', 'resource.ts', 'calendarConnection.ts'];
+/**
+ * Phase 35 (Merchandise, Inventory & Commerce) adds three genuinely new,
+ * stored, *operational* entities whose staff references must terminate at
+ * `StaffProfile.id`, never `Identity.id`: `merchandiseProduct.ts` (no staff
+ * field today, guarded forward), `inventoryMovement.ts` (`actorStaffProfileId`
+ * — the staff member who performed a movement), and `inventoryReservation.ts`
+ * (no staff field). They belong in this same guarded list so the invariant
+ * keeps covering new entities as the domain grows.
+ */
+const FILES_TO_CHECK: readonly string[] = [
+  'case.ts',
+  'task.ts',
+  'appointment.ts',
+  'resource.ts',
+  'calendarConnection.ts',
+  'merchandiseProduct.ts',
+  'inventoryMovement.ts',
+  'inventoryReservation.ts',
+];
 
 describe('Phase 30: hard layering invariant — no *IdentityId operational-assignment field', () => {
   for (const fileName of FILES_TO_CHECK) {

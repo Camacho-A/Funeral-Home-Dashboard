@@ -48,12 +48,36 @@ export type CaseOrder = {
   updatedAt: string;
 };
 
+/**
+ * Phase 35 (Merchandise, Inventory & Commerce). The stable, machine-readable
+ * commercial kind of a CaseOrder line — the discriminator that lets a
+ * persisted historical line declare its role without joining back to the
+ * catalog. Added so merchandise and service lines can coexist in the one
+ * authoritative CaseOrder (ADR-039 decision 1).
+ *
+ * `'service'` is the default and is written for every pre-Phase-35 row (the
+ * mapper defaults a missing value to it), so existing service-only orders
+ * remain byte-for-byte compatible. `'merchandise'` is actively populated
+ * this phase. `'surcharge' | 'adjustment' | 'tax' | 'discount'` are stable
+ * RESERVED kinds — not emitted this phase (tax/discount calculation is
+ * deferred; weight-surcharge lines stay `'service'` to preserve historical
+ * immutability), reserved so a future feature never has to re-classify
+ * history.
+ */
+export type CaseOrderLineKind = 'service' | 'merchandise' | 'surcharge' | 'adjustment' | 'tax' | 'discount';
+
 export type CaseOrderLineItem = {
   id: string;
   organizationId: string;
   caseOrderId: string;
-  /** References ServiceCatalogItem.serviceCode — never a hardcoded string
-      in a component; always sourced from the catalog. */
+  /** Phase 35: the commercial kind of this line. Historical rows and every
+      service line resolve to `'service'`; merchandise lines are
+      `'merchandise'`. The coarse commercial discriminator — a merchandise
+      line additionally carries `productId`/`sku`/`locationId` in `metadata`. */
+  lineKind: CaseOrderLineKind;
+  /** References ServiceCatalogItem.serviceCode for a service line, or the
+      MerchandiseProduct.sku for a merchandise line — never a hardcoded
+      string in a component; always sourced from the catalog/product. */
   serviceCode: string;
   /** Copied from the catalog's displayName at calculation time — a
       historical CaseOrder version keeps reading correctly even if a
@@ -66,8 +90,11 @@ export type CaseOrderLineItem = {
   /** quantity * unitPrice, integer cents. */
   lineTotal: number;
   sortOrder: number;
-  /** Reserved for future line-item-specific data (e.g. which weight tier a
-      surcharge line represents) — null in this phase's own writes. */
+  /** Line-item-specific data. Null for a service line. For a `'merchandise'`
+      line this carries the product-identity snapshot — `productId`, `sku`,
+      and `locationId` (Phase 35) — so historical merchandise lines remain
+      attributable and reportable even after a catalog rename/reprice/archive,
+      without a schema change to add three dedicated columns. */
   metadata: Record<string, string> | null;
   createdAt: string;
 };
@@ -90,4 +117,32 @@ export type ServiceSelections = {
   weightTier: WeightTier;
   extraDeathCertificateQuantity: number;
   mailCremated: boolean;
+};
+
+/**
+ * Phase 35 (Merchandise, Inventory & Commerce). One merchandise line the
+ * staff selects for a case — a structured CALCULATION INPUT only, never a
+ * dollar amount and never a second source of truth. The server resolves each
+ * `productId` against the org's live catalog, snapshots the current
+ * `retailPrice`, and produces a `CaseOrderLineItem` with
+ * `lineKind: 'merchandise'`; the browser submits only product/location/qty,
+ * never a price or total (ADR-039 decision 1). `locationId` names which
+ * stock line the reservation draws from.
+ */
+export type MerchandiseSelection = {
+  productId: string;
+  locationId: string;
+  quantity: number;
+};
+
+/**
+ * The complete structured input to `domain/pricing/calculateOrder.ts` — the
+ * existing service selections (unchanged) plus the new merchandise list.
+ * OrderSelections are reconstructed from persisted line items on every
+ * recalculation (`selectionsFromLineItems`) so they never diverge from the
+ * authoritative CaseOrder; they are inputs, not stored state.
+ */
+export type OrderSelections = {
+  services: ServiceSelections;
+  merchandise: MerchandiseSelection[];
 };

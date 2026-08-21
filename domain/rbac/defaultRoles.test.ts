@@ -24,7 +24,7 @@ describe('defaultRoles', () => {
 
   it('administrator grants every permission', () => {
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(54); // Phase 32: 50 + report.operational/report.staff/report.export/dashboard.manage
+    expect(admin.permissions).toHaveLength(59); // Phase 35: 54 + merchandise.read/.manage + inventory.read/.manage/.adjust
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {
