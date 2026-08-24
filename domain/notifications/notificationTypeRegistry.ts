@@ -106,6 +106,10 @@ export const NOTIFICATION_TYPES = {
   COMMERCE_INVENTORY_LOW_STOCK: { key: 'commerce.inventory_low_stock', category: 'commerce' as NotificationCategory, displayName: 'Low Stock' },
   COMMERCE_INVENTORY_OUT_OF_STOCK: { key: 'commerce.inventory_out_of_stock', category: 'commerce' as NotificationCategory, displayName: 'Out of Stock' },
   COMMERCE_INVENTORY_RECEIVED: { key: 'commerce.inventory_received', category: 'commerce' as NotificationCategory, displayName: 'Inventory Received' },
+  // Phase 36 (Procurement & Accounts Payable) — vendor-bill due reminders,
+  // financial category (delivered to the accounting role).
+  BILL_DUE_SOON: { key: 'financial.bill_due_soon', category: 'financial' as NotificationCategory, displayName: 'Vendor Bill Due Soon' },
+  BILL_OVERDUE: { key: 'financial.bill_overdue', category: 'financial' as NotificationCategory, displayName: 'Vendor Bill Overdue' },
 } as const;
 
 export type NotificationTypeDefinition = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];

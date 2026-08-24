@@ -44,6 +44,11 @@ const VALID_SOURCE_TYPES: readonly string[] = [
   'inventory_receipt',
   'cogs',
   'inventory_adjustment',
+  // Phase 36 (Procurement & Accounts Payable) — same lockstep rule: a posted
+  // vendor bill / payment entry silently maps to null and vanishes from every
+  // ledger read if these are missing from the union above.
+  'bill',
+  'bill_payment',
 ];
 
 function isStatus(value: unknown): value is JournalEntryStatus {

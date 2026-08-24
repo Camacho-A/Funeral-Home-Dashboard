@@ -51,6 +51,12 @@ export type NotificationTokens = {
       themselves via utils/scheduling.ts's existing formatters, this
       registry never does date math, same boundary as amountDisplay. */
   appointmentStartAt?: string;
+  /** Phase 36 (Procurement & Accounts Payable). A supplier's display name
+      and the supplier's own invoice number, plus a pre-formatted due date —
+      same "structured content in, formatted string out" boundary. */
+  supplierName?: string;
+  billNumber?: string;
+  dueDateDisplay?: string;
 };
 
 const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
@@ -61,6 +67,9 @@ const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
   'entityTitle',
   'amountDisplay',
   'appointmentStartAt',
+  'supplierName',
+  'billNumber',
+  'dueDateDisplay',
 ];
 
 type TemplateDefinition = {
@@ -181,6 +190,14 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
   'commerce.inventory_received': {
     titleTemplate: 'Inventory received',
     bodyTemplate: 'New stock of "{{entityTitle}}" was received.',
+  },
+  'financial.bill_due_soon': {
+    titleTemplate: 'Vendor bill due soon',
+    bodyTemplate: 'Bill {{billNumber}} from {{supplierName}} ({{amountDisplay}}) is due {{dueDateDisplay}}.',
+  },
+  'financial.bill_overdue': {
+    titleTemplate: 'Vendor bill overdue',
+    bodyTemplate: 'Bill {{billNumber}} from {{supplierName}} ({{amountDisplay}}) was due {{dueDateDisplay}} and is now overdue.',
   },
 };
 

@@ -43,6 +43,12 @@ import {
   inventoryOnHandUnits,
   lowStockProductCount,
 } from './merchandiseReportingService';
+import {
+  accountsPayableBalance,
+  accountsPayableOverdue,
+  goodsReceivedNotInvoiced,
+  openPurchaseOrderValue,
+} from './accountsPayableReportingService';
 import { getReportDefinition, type ReportKey } from '../domain/reporting/reportRegistry';
 import { getMetricDefinition, type MetricKey } from '../domain/reporting/metricRegistry';
 
@@ -565,6 +571,12 @@ const METRIC_RUNNERS: Partial<Record<MetricKey, MetricRunner>> = {
   'inventory.asset_value': (org, _f, mode) => inventoryAssetValue(org, mode),
   'inventory.on_hand_units': (org, _f, mode) => inventoryOnHandUnits(org, mode),
   'inventory.low_stock_count': (org, _f, mode) => lowStockProductCount(org, mode),
+  // Phase 36 (Procurement & Accounts Payable) — AP metrics from the ledger,
+  // procurement from PO commitment records.
+  'accounts_payable.balance': (org, _f, mode) => accountsPayableBalance(org, mode),
+  'accounts_payable.overdue': (org, _f, mode) => accountsPayableOverdue(org, mode),
+  'accounts_payable.grni': (org, _f, mode) => goodsReceivedNotInvoiced(org, mode),
+  'procurement.open_po_value': (org, _f, mode) => openPurchaseOrderValue(org, mode),
 };
 
 export class ReportRunnerError extends Error {}

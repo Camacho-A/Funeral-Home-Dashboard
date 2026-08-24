@@ -60,9 +60,14 @@ export type MerchandiseProduct = {
   /** Whether this product may appear in the family portal's order summary
       (name/price/image only — never cost). Defaults false. */
   familyVisible: boolean;
-  /** Free-text supplier name for provenance — no structured Supplier
-      directory this phase (deferred). Null ⇒ unspecified. */
+  /** Free-text supplier name — the Phase 35 provenance field. From Phase 36
+      it is a historical snapshot / display fallback only; the authoritative
+      supplier relationship is `supplierId`. Null ⇒ unspecified. */
   supplierName: string | null;
+  /** Phase 36: the authoritative link to a structured `Supplier`. Additive
+      and nullable — pre-Phase-36 rows and never-linked products keep null
+      and fall back to `supplierName` for display. → suppliers.beaconSupplierId. */
+  supplierId: string | null;
   /** RESERVED for future structured variants — always null this phase. */
   parentProductId: string | null;
   createdAt: string;

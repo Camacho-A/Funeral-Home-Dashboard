@@ -25,6 +25,7 @@ function product(overrides: Partial<MerchandiseProduct> & Pick<MerchandiseProduc
     imageStorageKey: null,
     familyVisible: false,
     supplierName: null,
+    supplierId: null,
     parentProductId: null,
     createdAt: 't',
     updatedAt: 't',

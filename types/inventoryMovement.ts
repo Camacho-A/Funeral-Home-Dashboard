@@ -57,6 +57,12 @@ export type InventoryMovement = {
   receiptReference: string | null;
   /** Free-text supplier for a receiving movement. Null otherwise. */
   supplierName: string | null;
+  /** Phase 36 (Procurement & Accounts Payable): the purchase-order line this
+      receiving movement fulfilled, linking a receipt to its PO for
+      three-way matching and vendor billing. Additive/nullable — a receipt
+      with no PO (ad-hoc stock) or any pre-Phase-36 movement keeps null. →
+      purchaseOrderLineItems.beaconPurchaseOrderLineItemId. */
+  purchaseOrderLineItemId: string | null;
   /** Integer cents — unit acquisition cost captured at receiving (inventory
       valuation) or the COGS basis snapshot at fulfillment. Null when not
       cost-bearing. */

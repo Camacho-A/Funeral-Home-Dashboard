@@ -21,7 +21,7 @@ import type { MetricFilterKey, MetricKey } from './metricRegistry';
  * of a generic metric-card/table layout.
  */
 
-export type ReportCategory = 'operational' | 'financial' | 'staff' | 'documents' | 'commerce';
+export type ReportCategory = 'operational' | 'financial' | 'staff' | 'documents' | 'commerce' | 'procurement';
 
 export type ReportDefinition = {
   key: string;
@@ -328,6 +328,18 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'inventory.read',
+  },
+
+  // Phase 36 (Procurement & Accounts Payable).
+  {
+    key: 'accounts-payable',
+    displayName: 'Accounts Payable',
+    category: 'procurement',
+    description: 'Total payables, overdue payables, and received-not-invoiced value — all ledger-derived — plus open purchase-order commitment.',
+    metrics: ['accounts_payable.balance', 'accounts_payable.overdue', 'accounts_payable.grni', 'procurement.open_po_value'],
+    financialReportKey: undefined,
+    defaultFilters: [],
+    permission: 'ap.read',
   },
 ] as const satisfies readonly ReportDefinition[];
 

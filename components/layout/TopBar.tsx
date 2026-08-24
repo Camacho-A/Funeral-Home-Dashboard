@@ -90,6 +90,15 @@ export function TopBar({
       <a href="/settings/inventory" className={styles.signOutButton}>
         Inventory
       </a>
+      <a href="/settings/suppliers" className={styles.signOutButton}>
+        Suppliers
+      </a>
+      <a href="/settings/purchase-orders" className={styles.signOutButton}>
+        Purchase Orders
+      </a>
+      <a href="/settings/accounts-payable" className={styles.signOutButton}>
+        Accounts Payable
+      </a>
       <a href="/settings/calendar-integrations" className={styles.signOutButton}>
         Calendar
       </a>

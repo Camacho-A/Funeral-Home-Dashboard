@@ -2079,3 +2079,87 @@ export function recordInventoryAdjusted(ctx: ActivityContext, productId: string,
     dataAdapterMode,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Phase 36 (Procurement & Accounts Payable). `procurement.*` recorded
+// exclusively from supplierService.ts (supplier.*), purchaseOrderService.ts
+// (purchase_order.*), and accountsPayableService.ts (bill.* / bill_payment.*)
+// — structural-test enforced.
+// ---------------------------------------------------------------------------
+
+function recordProcurementEvent(
+  ctx: ActivityContext,
+  eventType: string,
+  resourceType: string,
+  resourceId: string,
+  description: string,
+  newValue: unknown,
+  severity: ActivitySeverity,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'procurement',
+      eventType,
+      resourceType,
+      resourceId,
+      previousValue: null,
+      newValue: newValue === null ? null : JSON.stringify(newValue),
+      description,
+      metadata: null,
+      severity,
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordSupplierCreated(ctx: ActivityContext, supplierId: string, name: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.SUPPLIER_CREATED, 'supplier', supplierId, `Supplier created — ${name}`, { name }, 'info', dataAdapterMode);
+}
+export function recordSupplierUpdated(ctx: ActivityContext, supplierId: string, changedFields: Record<string, FieldChange>, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'procurement',
+      eventType: ACTIVITY_EVENT_TYPES.SUPPLIER_UPDATED,
+      resourceType: 'supplier',
+      resourceId: supplierId,
+      previousValue: fieldChangesToJson(changedFields, 'previous'),
+      newValue: fieldChangesToJson(changedFields, 'next'),
+      description: `Supplier updated — ${Object.keys(changedFields).join(', ')}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+export function recordSupplierArchived(ctx: ActivityContext, supplierId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.SUPPLIER_ARCHIVED, 'supplier', supplierId, 'Supplier archived', { isActive: false }, 'info', dataAdapterMode);
+}
+
+export function recordPurchaseOrderCreated(ctx: ActivityContext, purchaseOrderId: string, poNumber: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.PURCHASE_ORDER_CREATED, 'purchaseOrder', purchaseOrderId, `Purchase order ${poNumber} created`, { poNumber }, 'info', dataAdapterMode);
+}
+export function recordPurchaseOrderSubmitted(ctx: ActivityContext, purchaseOrderId: string, poNumber: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.PURCHASE_ORDER_SUBMITTED, 'purchaseOrder', purchaseOrderId, `Purchase order ${poNumber} submitted`, { poNumber }, 'info', dataAdapterMode);
+}
+export function recordPurchaseOrderReceived(ctx: ActivityContext, purchaseOrderId: string, poNumber: string, fullyReceived: boolean, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.PURCHASE_ORDER_RECEIVED, 'purchaseOrder', purchaseOrderId, `Purchase order ${poNumber} ${fullyReceived ? 'fully' : 'partially'} received`, { poNumber, fullyReceived }, 'info', dataAdapterMode);
+}
+export function recordPurchaseOrderClosed(ctx: ActivityContext, purchaseOrderId: string, poNumber: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.PURCHASE_ORDER_CLOSED, 'purchaseOrder', purchaseOrderId, `Purchase order ${poNumber} closed`, { poNumber }, 'info', dataAdapterMode);
+}
+export function recordPurchaseOrderCancelled(ctx: ActivityContext, purchaseOrderId: string, poNumber: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.PURCHASE_ORDER_CANCELLED, 'purchaseOrder', purchaseOrderId, `Purchase order ${poNumber} cancelled`, { poNumber }, 'warning', dataAdapterMode);
+}
+
+export function recordVendorBillCreated(ctx: ActivityContext, vendorBillId: string, snapshot: { billNumber: string; supplierId: string; totalAmountCents: number }, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.VENDOR_BILL_CREATED, 'vendorBill', vendorBillId, `Vendor bill ${snapshot.billNumber} entered`, snapshot, 'info', dataAdapterMode);
+}
+export function recordVendorBillVoided(ctx: ActivityContext, vendorBillId: string, billNumber: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.VENDOR_BILL_VOIDED, 'vendorBill', vendorBillId, `Vendor bill ${billNumber} voided (journal entry reversed)`, { billNumber }, 'warning', dataAdapterMode);
+}
+export function recordBillPaymentRecorded(ctx: ActivityContext, billPaymentId: string, snapshot: { vendorBillId: string; amountCents: number; method: string }, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.BILL_PAYMENT_RECORDED, 'billPayment', billPaymentId, `Vendor payment recorded (${snapshot.method})`, snapshot, 'info', dataAdapterMode);
+}

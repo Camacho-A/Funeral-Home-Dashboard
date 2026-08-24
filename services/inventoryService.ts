@@ -109,6 +109,25 @@ function reservationId(organizationId: string, caseId: string, productId: string
   return `${organizationId}-${caseId}-${productId}-${locationId}`;
 }
 
+/**
+ * Deterministic, idempotent, length-bounded `_id` for a receiving movement.
+ *
+ * The natural key of a receipt is (organizationId, receiptReference, productId,
+ * locationId): re-receiving the same reference for the same stock line must
+ * resolve to the SAME movement row (idempotency anchor). The obvious
+ * concatenation of those components blows past Wix Data's hard 128-char `_id`
+ * cap (WDE0075) once the reference itself carries a UUID — as it does on the
+ * PO-driven path, where `receiveAgainstPurchaseOrder` appends the PO line's
+ * UUID so two lines of one physical receipt get distinct movements. Hashing the
+ * full natural key to a fixed 48-char id keeps determinism + idempotency +
+ * per-line disambiguation while always fitting the cap, on both the PO and the
+ * ad-hoc receiving paths uniformly.
+ */
+function receivingMovementId(organizationId: string, receiptReference: string, productId: string, locationId: string): string {
+  const digest = crypto.createHash('sha256').update(`${organizationId}|${receiptReference}|${productId}|${locationId}`).digest('hex').slice(0, 40);
+  return `receive-${digest}`;
+}
+
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
@@ -282,6 +301,14 @@ export async function listMovementsByType(organizationId: string, movementType: 
   return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
 }
 
+/** Phase 36: a scoped read of one movement by id — accountsPayableService
+    uses it to read a receipt's cost basis when a vendor bill clears its GRNI.
+    Reads only; inventoryService remains the sole WRITER of movements. */
+export async function getMovementById(organizationId: string, movementId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryMovement | null> {
+  const movement = await findMovementById(movementId, dataAdapterMode);
+  return movement && movement.organizationId === organizationId ? movement : null;
+}
+
 export async function listReservationsForCase(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryReservation[]> {
   if (dataAdapterMode === 'mock') return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.caseId === caseId);
   const response = await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, caseId } });
@@ -299,6 +326,11 @@ export type ReceiveStockInput = {
   quantity: number;
   unitCost: number; // cents
   supplierName?: string | null;
+  /** Phase 36: the PO line this receipt fulfills — links the receiving
+      movement to its purchase order for three-way matching. Null for ad-hoc
+      (non-PO) receiving. Receiving remains owned by this inventory service;
+      the PO link is pure traceability metadata. */
+  purchaseOrderLineItemId?: string | null;
   receiptReference: string; // idempotency anchor
   actorStaffProfileId?: string | null;
   idFactory: () => string;
@@ -312,7 +344,7 @@ export async function receiveStock(input: ReceiveStockInput, ctx: ActivityContex
   const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId);
 
   return withInventoryLock(lockKey, dataAdapterMode, async (handle) => {
-    const movementId = `receive-${input.receiptReference}-${input.productId}-${input.locationId}`;
+    const movementId = receivingMovementId(input.organizationId, input.receiptReference, input.productId, input.locationId);
     return commitProtectedWrite(handle, dataAdapterMode, async () => {
       let movement: InventoryMovement | null = await findMovementById(movementId, dataAdapterMode);
       if (!movement) {
@@ -329,6 +361,7 @@ export async function receiveStock(input: ReceiveStockInput, ctx: ActivityContex
           fulfillmentReference: null,
           receiptReference: input.receiptReference,
           supplierName: input.supplierName ?? null,
+          purchaseOrderLineItemId: input.purchaseOrderLineItemId ?? null,
           unitCost: input.unitCost,
           actorStaffProfileId: input.actorStaffProfileId ?? null,
           reason: null,
@@ -435,7 +468,7 @@ export async function fulfillReservation(input: FulfillReservationInput, ctx: Ac
       if (!existingSale) {
         await insertMovement({
           id: saleMovementId, organizationId: input.organizationId, productId: input.productId, locationId: input.locationId, quantity: -reservation.quantity, movementType: 'sale',
-          caseId: input.caseId, caseOrderId: reservation.caseOrderId, reservationId: id, fulfillmentReference, receiptReference: null, supplierName: null,
+          caseId: input.caseId, caseOrderId: reservation.caseOrderId, reservationId: id, fulfillmentReference, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null,
           unitCost: product?.cost ?? null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId: ctx.correlationId, createdAt: now,
         }, dataAdapterMode);
       }
@@ -484,7 +517,7 @@ export async function returnFulfilled(input: ReturnFulfilledInput, ctx: Activity
         await insertMovement({
           id: returnMovementId, organizationId: input.organizationId, productId: input.productId, locationId: input.locationId,
           quantity: input.restock ? reservation.quantity : 0, movementType: input.restock ? 'return_restock' : 'return_damage',
-          caseId: input.caseId, caseOrderId: reservation.caseOrderId, reservationId: id, fulfillmentReference: reservation.fulfillmentReference, receiptReference: null, supplierName: null,
+          caseId: input.caseId, caseOrderId: reservation.caseOrderId, reservationId: id, fulfillmentReference: reservation.fulfillmentReference, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null,
           unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: input.restock ? 'Returned and restocked' : 'Returned, not restockable', correlationId: ctx.correlationId, createdAt: now,
         }, dataAdapterMode);
         if (input.restock) {
@@ -525,7 +558,7 @@ export async function adjustStock(input: AdjustStockInput, ctx: ActivityContext,
       const movementId = input.idFactory();
       await insertMovement({
         id: movementId, organizationId: input.organizationId, productId: input.productId, locationId: input.locationId, quantity: input.quantityDelta, movementType: input.movementType,
-        caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null,
+        caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null,
         unitCost: product?.cost ?? null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: input.reason.trim(), correlationId: ctx.correlationId, createdAt: now,
       }, dataAdapterMode);
       // Value the change at the product's cost; a loss debits shrinkage.
@@ -564,8 +597,8 @@ export async function transferStock(input: TransferStockInput, ctx: ActivityCont
       const fromLevel = await getStockLevel(input.organizationId, input.productId, input.fromLocationId, dataAdapterMode);
       if (input.quantity > fromLevel.available) throw new InventoryServiceError(`Only ${fromLevel.available} available at the source location.`, 'insufficient_stock');
       const correlationId = ctx.correlationId;
-      await insertMovement({ id: `transfer-${correlationId}-out`, organizationId: input.organizationId, productId: input.productId, locationId: input.fromLocationId, quantity: -input.quantity, movementType: 'transfer_out', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
-      await insertMovement({ id: `transfer-${correlationId}-in`, organizationId: input.organizationId, productId: input.productId, locationId: input.toLocationId, quantity: input.quantity, movementType: 'transfer_in', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
+      await insertMovement({ id: `transfer-${correlationId}-out`, organizationId: input.organizationId, productId: input.productId, locationId: input.fromLocationId, quantity: -input.quantity, movementType: 'transfer_out', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
+      await insertMovement({ id: `transfer-${correlationId}-in`, organizationId: input.organizationId, productId: input.productId, locationId: input.toLocationId, quantity: input.quantity, movementType: 'transfer_in', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
       const from = await recomputeBalance(input.organizationId, input.productId, input.fromLocationId, now, dataAdapterMode);
       const to = await recomputeBalance(input.organizationId, input.productId, input.toLocationId, now, dataAdapterMode);
       await bestEffort(() => recordInventoryTransferred(ctx, input.productId, input.fromLocationId, input.toLocationId, input.quantity, dataAdapterMode));

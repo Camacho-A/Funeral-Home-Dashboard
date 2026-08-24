@@ -422,6 +422,48 @@ export const METRIC_REGISTRY = [
     allowedFilters: [],
     permission: 'inventory.read',
   },
+  // Phase 36 (Procurement & Accounts Payable). AP figures derive from the
+  // ledger (2000/2100); procurement from PO commitment records.
+  {
+    key: 'accounts_payable.balance',
+    displayName: 'Accounts Payable',
+    description: 'Total amount currently owed to suppliers (ledger account 2000).',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'accountsPayableReportingService.accountsPayableBalance',
+    allowedFilters: [],
+    permission: 'ap.read',
+  },
+  {
+    key: 'accounts_payable.overdue',
+    displayName: 'Overdue Payables',
+    description: 'Outstanding balance on open vendor bills past their due date.',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'accountsPayableReportingService.accountsPayableOverdue',
+    allowedFilters: [],
+    permission: 'ap.read',
+  },
+  {
+    key: 'accounts_payable.grni',
+    displayName: 'Received Not Invoiced',
+    description: 'Value of stock received but not yet billed by a supplier (ledger account 2100).',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'accountsPayableReportingService.goodsReceivedNotInvoiced',
+    allowedFilters: [],
+    permission: 'ap.read',
+  },
+  {
+    key: 'procurement.open_po_value',
+    displayName: 'Open Purchase Orders',
+    description: 'Committed value of purchase orders not yet closed or cancelled.',
+    dataType: 'currency',
+    unit: 'USD cents',
+    source: 'accountsPayableReportingService.openPurchaseOrderValue',
+    allowedFilters: [],
+    permission: 'procurement.read',
+  },
 ] as const satisfies readonly MetricDefinition[];
 
 export type MetricKey = (typeof METRIC_REGISTRY)[number]['key'];

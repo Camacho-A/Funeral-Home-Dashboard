@@ -30,7 +30,12 @@ export type ActivityEventCategory =
       rather than folded into it — conflating the two would make
       "filter the activity feed to financial/accounting activity" (useful
       for an Accounting-role compliance review) impossible to do cleanly. */
-  | 'financial';
+  | 'financial'
+  /** Phase 36 (Procurement & Accounts Payable). Supplier, purchase-order,
+      vendor-bill, and vendor-payment lifecycle — kept as its own category so
+      a procurement/AP review can filter cleanly, distinct from `'financial'`
+      (ledger/banking) and `'inventory'` (physical stock). */
+  | 'procurement';
 
 export type ActivitySeverity = 'info' | 'warning' | 'critical';
 
@@ -305,6 +310,26 @@ export const ACTIVITY_EVENT_TYPES = {
   INVENTORY_RETURNED: 'inventory.returned',
   INVENTORY_TRANSFERRED: 'inventory.transferred',
   INVENTORY_ADJUSTED: 'inventory.adjusted',
+
+  /** Phase 36 (Procurement & Accounts Payable). `procurement.*` events come
+      exclusively from `supplierService.ts` (supplier.*),
+      `purchaseOrderService.ts` (purchase_order.*), and
+      `accountsPayableService.ts` (bill.* / bill_payment.*) — enforced by a
+      structural test. Routine PO-line rollup updates and routine successful
+      match/receipt are not events (high-frequency, low-information),
+      matching this registry's discipline. See
+      docs/adr/ADR-040-procurement-and-accounts-payable.md. */
+  SUPPLIER_CREATED: 'procurement.supplier.created',
+  SUPPLIER_UPDATED: 'procurement.supplier.updated',
+  SUPPLIER_ARCHIVED: 'procurement.supplier.archived',
+  PURCHASE_ORDER_CREATED: 'procurement.purchase_order.created',
+  PURCHASE_ORDER_SUBMITTED: 'procurement.purchase_order.submitted',
+  PURCHASE_ORDER_RECEIVED: 'procurement.purchase_order.received',
+  PURCHASE_ORDER_CLOSED: 'procurement.purchase_order.closed',
+  PURCHASE_ORDER_CANCELLED: 'procurement.purchase_order.cancelled',
+  VENDOR_BILL_CREATED: 'procurement.bill.created',
+  VENDOR_BILL_VOIDED: 'procurement.bill.voided',
+  BILL_PAYMENT_RECORDED: 'procurement.bill_payment.recorded',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

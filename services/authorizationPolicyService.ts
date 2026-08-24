@@ -308,3 +308,21 @@ export function canManageInventory(params: ResolvePermissionsParams, dataAdapter
 export function canAdjustInventory(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'inventory.adjust');
 }
+
+// Phase 36 (Procurement & Accounts Payable). `ap.pay` is deliberately a
+// separate policy from `ap.manage` (segregation of duties: enter vs disburse).
+export function canReadProcurement(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'procurement.read');
+}
+export function canManageProcurement(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'procurement.manage');
+}
+export function canReadAccountsPayable(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'ap.read');
+}
+export function canManageAccountsPayable(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'ap.manage');
+}
+export function canPayAccountsPayable(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'ap.pay');
+}

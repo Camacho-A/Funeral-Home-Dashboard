@@ -1690,6 +1690,37 @@ Six new collections plus two existing-collection extensions. See [ADR-039](./adr
 
 **Creation record (Phase 35):** planned — the six collections + their indexes, the five `chartOfAccounts` rows, and the `caseOrderLineItems.lineKind` field are created during Phase 35's live Wix verification (two-pass, accounting-safe; posted journal entries reversed never deleted on cleanup). Pending explicit approval before the first live mutation.
 
+## Phase 36 — Procurement & Accounts Payable (Collections 74–79)
+
+See docs/adr/ADR-040-procurement-and-accounts-payable.md. All new collections are backend/API-key access only, tenant-isolated in server code, follow the deterministic-`_id`-as-natural-key convention, and respect the 3-regular + 1-unique index cap.
+
+### Collection 74 — `suppliers`
+The structured vendor directory (`beaconSupplierId` = id). Fields: `organizationId`, `name` (app-enforced unique per org), `contactName?`, `email?`, `phone?`, `addressText?`, `paymentTermsDays?` (number), `defaultExpenseAccountNumber?`, `notes?`, `isActive` (archive, never delete), `createdAt`, `updatedAt`. Indexes: `(organizationId, isActive)`, `(organizationId, name)`. Sole writer `services/supplierService.ts`. Mutable.
+
+### Collection 75 — `purchaseOrders`
+PO headers (`beaconPurchaseOrderId` = id). Fields: `organizationId`, `poNumber` (`PO-000001`, sequential per org), `supplierId`, `locationId`, `status` (draft/submitted/partially_received/received/closed/cancelled), `orderDate`, `expectedDate?`, `subtotalCents` (commitment total — **never** posted to GL), `notes?`, `createdByStaffProfileId?`, timestamps. Indexes: `(organizationId, status)`, `(organizationId, supplierId)`, **unique** `poNumberKey` = `{org}:{poNumber}`. Sole writer `purchaseOrderService.ts`. Mutable (status + line-rollups only).
+
+### Collection 76 — `purchaseOrderLineItems`
+(`beaconPurchaseOrderLineItemId` = id). Fields: `organizationId`, `purchaseOrderId`, `lineNumber`, `productId`, `locationId`, `descriptionSnapshot`, `quantityOrdered`, `unitCostCents` (snapshot), `quantityReceived`, `quantityBilled` (both reconcilable rollups), timestamps. Indexes: `(organizationId, purchaseOrderId)`, `(organizationId, productId)`. Sole writer `purchaseOrderService.ts`.
+
+### Collection 77 — `vendorBills`
+(`beaconVendorBillId` = id). Fields: `organizationId`, `billNumber` (supplier's; app-enforced unique per supplier), `supplierId`, `purchaseOrderId?` (null = expense-only bill), `billDate`, `dueDate`, `status` (open/partially_paid/paid/void), `goodsAmountCents`, `additionalChargesCents`, `totalAmountCents`, `amountPaidCents`, `netVarianceCents`, `journalEntryId?`, `notes?`, `createdByStaffProfileId?`, timestamps. Indexes: `(organizationId, status)`, `(organizationId, supplierId)`, `(organizationId, dueDate)`. Sole writer `accountsPayableService.ts`. Immutable once posted (corrected by reversal/void).
+
+### Collection 78 — `vendorBillLineItems` (dedicated AP bill-line collection)
+First-class bill lines (`beaconVendorBillLineItemId` = id) — **not embedded JSON**. Fields: `organizationId`, `vendorBillId`, `lineNumber`, `lineKind` (goods/expense), `receiptMovementId?` (authoritative receipt for goods), `purchaseOrderLineItemId?`, `productId?`, `productDescriptionSnapshot?`, `quantityBilled?`, `grniValueCents?`, `billedUnitCostCents?`, `varianceCents?`, `expenseAccountNumber?`, `expenseDescription?`, `lineAmountCents`, `createdAt`. Indexes: `(organizationId, vendorBillId)`, `(organizationId, purchaseOrderLineItemId)`. Insert-only. Sole writer `accountsPayableService.ts`.
+
+### Collection 79 — `billPayments`
+Record-only vendor payments (`beaconBillPaymentId` = id). Fields: `organizationId`, `vendorBillId`, `supplierId`, `amountCents`, `paymentDate`, `method` (check/ach/card/cash/other), `referenceNumber?`, `cashAccountNumber`, `journalEntryId?`, `notes?`, `createdByStaffProfileId?`, `createdAt`. Indexes: `(organizationId, vendorBillId)`, `(organizationId, paymentDate)`. Insert-only. Sole writer `accountsPayableService.ts`.
+
+### Existing-collection extensions (Phase 36)
+- `merchandiseProducts.supplierId` (Text, additive, nullable) — authoritative supplier link; `supplierName` retained as snapshot.
+- `inventoryMovements.purchaseOrderLineItemId` (Text, additive, nullable) — links a receipt to its PO line for three-way matching.
+- `chartOfAccounts` gains two rows: `2000 Accounts Payable`, `5120 Purchase Price Variance` (add-only backfill).
+- `journalEntries.sourceType` union gains `bill`, `bill_payment` (mapper `VALID_SOURCE_TYPES` updated in lockstep).
+- No new lock collection — `inventoryLocks`/`inventoryWriteClaims` are reused as the org's general per-key lease substrate (AP keys `po-…`/`bill-…`).
+
+**Creation record (Phase 36):** planned — the six collections + indexes, the two `chartOfAccounts` rows, the two additive fields, and the targeted `rolePermissions` re-seed are created during Phase 36's live Wix verification (two-pass, accounting-safe; posted journal entries reversed never deleted). Pending explicit approval before the first live mutation.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |

@@ -55,7 +55,7 @@ describe('GET /api/rbac/permissions', () => {
     const response = await GET();
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.permissions).toHaveLength(59); // Phase 35: 54 + merchandise.read/.manage + inventory.read/.manage/.adjust
+    expect(body.permissions).toHaveLength(64); // Phase 36: 59 + procurement.read/.manage + ap.read/.manage/.pay
     expect(body.permissions.some((p: { key: string }) => p.key === 'organization.manage')).toBe(true);
   });
 });

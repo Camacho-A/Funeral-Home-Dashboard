@@ -389,6 +389,19 @@ Selecting merchandise onto a case reuses the **existing `caseOrder.update`** (it
 
 Per-stock-line concurrency (`services/inventoryLockService.ts`) reuses the Phase 22 lease + write-claim construction generalized to a `{org}-{loc}-{product}` key — the same proven mechanism, the same honestly-disclosed residual gap (no Wix conditional write), now mitigated additionally by the append-only movement ledger + reconcile.
 
+### Phase 36 — Procurement & Accounts Payable permissions
+
+Five new permission keys, widening the catalog from 59 to **64 permissions** (see docs/adr/ADR-040-procurement-and-accounts-payable.md):
+
+- **`procurement.read`** / **`procurement.manage`** — view suppliers & purchase orders / create and manage them (order and receive against them).
+- **`ap.read`** — view vendor bills and AP aging.
+- **`ap.manage`** — enter and void vendor bills.
+- **`ap.pay`** — record vendor payments against bills; **deliberately separate from `ap.manage`** so a role can enter bills without being authorized to disburse against them (segregation of duties).
+
+Physical receiving remains governed by the existing **`inventory.manage`** (it is an inventory operation). Tiers: administrator/manager all five; **accounting** `ap.read`/`ap.manage`/`ap.pay` + `procurement.read` (owns AP, does not create POs); funeralDirector/officeStaff `procurement.read`/`procurement.manage` + `ap.read` (can order without paying); arranger none; readOnly `procurement.read` + `ap.read`. `services/authorizationPolicyService.ts` gained `canReadProcurement`/`canManageProcurement`/`canReadAccountsPayable`/`canManageAccountsPayable`/`canPayAccountsPayable`, each a one-line `hasPermission` wrapper. Activating on the live tenant uses the same **targeted `rolePermissions` re-seed** (never a full re-run — HTTP 429), inserting only the missing grant rows. Exact expected grant counts: `procurement.read` 6, `procurement.manage` 4, `ap.read` 6, `ap.manage` 3, `ap.pay` 3.
+
+Procurement/AP posting-sensitive transitions run under **narrow per-aggregate leases** (`po-{org}-{poId}`, `bill-{org}-{billId}`) reusing the existing lease substrate — no org-wide AP lock — with the same disclosed residual final-fence-to-write race (no Wix OCC/CAS). Vendor payments are **record-only**: Beacon posts Dr 2000 AP / Cr Cash but never initiates a bank/ACH/card transfer, and never uses the customer-facing `PaymentRecord`.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

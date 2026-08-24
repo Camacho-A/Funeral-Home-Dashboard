@@ -68,7 +68,19 @@ export type JournalEntrySourceType =
   | 'cogs'
   /** Phase 35. Dr Inventory Shrinkage Expense (5110) / Cr Inventory Asset
       (1300) — posted for damage, shrinkage, or a write-off adjustment. */
-  | 'inventory_adjustment';
+  | 'inventory_adjustment'
+  /** Phase 36 (Procurement & Accounts Payable). A vendor bill: Dr Inventory
+      Clearing (2100) for the receipt-valued goods amount, Dr/Cr Purchase
+      Price Variance (5120) for any justified goods price difference, Dr an
+      explicit expense/asset account for non-goods charges, and Cr Accounts
+      Payable (2000) for the supplier liability — posted by
+      `accountsPayableService.ts`, clearing the receiving GRNI accrual. See
+      docs/adr/ADR-040-procurement-and-accounts-payable.md. */
+  | 'bill'
+  /** Phase 36. Dr Accounts Payable (2000) / Cr Cash (a bank/operating cash
+      account) — a record of an externally-executed vendor payment (check /
+      ACH / card / manual); Beacon never initiates the actual bank transfer. */
+  | 'bill_payment';
 
 export type JournalEntryStatus = 'draft' | 'posted' | 'void';
 

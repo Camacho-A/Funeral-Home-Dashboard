@@ -26,6 +26,7 @@ export type WixMerchandiseProductItem = {
   imageStorageKey?: unknown;
   familyVisible?: unknown;
   supplierName?: unknown;
+  supplierId?: unknown;
   parentProductId?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -77,6 +78,7 @@ export function mapWixMerchandiseProductItem(item: WixMerchandiseProductItem | u
     imageStorageKey: nullableString(item.imageStorageKey),
     familyVisible: item.familyVisible,
     supplierName: nullableString(item.supplierName),
+    supplierId: nullableString(item.supplierId),
     parentProductId: nullableString(item.parentProductId),
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
@@ -101,6 +103,7 @@ export function buildWixMerchandiseProductData(product: MerchandiseProduct): Wix
     imageStorageKey: product.imageStorageKey,
     familyVisible: product.familyVisible,
     supplierName: product.supplierName,
+    supplierId: product.supplierId,
     parentProductId: product.parentProductId,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
@@ -111,7 +114,7 @@ export function buildWixMerchandiseProductData(product: MerchandiseProduct): Wix
     merged object is produced for `updateWixDataItem`'s full-replace. */
 export function applyMerchandiseProductUpdateToWixData(
   existing: WixMerchandiseProductItem,
-  patch: Partial<Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'isActive' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'imageStorageKey' | 'familyVisible' | 'supplierName' | 'updatedAt'>>,
+  patch: Partial<Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'isActive' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'imageStorageKey' | 'familyVisible' | 'supplierName' | 'supplierId' | 'updatedAt'>>,
 ): WixMerchandiseProductItem {
   const next: WixMerchandiseProductItem = { ...existing };
   if (patch.name !== undefined) next.name = patch.name;
@@ -127,6 +130,7 @@ export function applyMerchandiseProductUpdateToWixData(
   if (patch.imageStorageKey !== undefined) next.imageStorageKey = patch.imageStorageKey;
   if (patch.familyVisible !== undefined) next.familyVisible = patch.familyVisible;
   if (patch.supplierName !== undefined) next.supplierName = patch.supplierName;
+  if (patch.supplierId !== undefined) next.supplierId = patch.supplierId;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

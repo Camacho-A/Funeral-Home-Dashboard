@@ -48,6 +48,13 @@ const ALLOWED_IDENTITY_ID_FIELDS: readonly string[] = [];
  * (no staff field). They belong in this same guarded list so the invariant
  * keeps covering new entities as the domain grows.
  */
+/**
+ * Phase 36 (Procurement & Accounts Payable) adds six genuinely new, stored,
+ * *operational* entities. Every staff reference on them terminates at
+ * `StaffProfile.id` via a `createdByStaffProfileId` field, never
+ * `Identity.id` — so they join this guarded list, keeping the invariant
+ * covering new entities as the domain grows.
+ */
 const FILES_TO_CHECK: readonly string[] = [
   'case.ts',
   'task.ts',
@@ -57,6 +64,12 @@ const FILES_TO_CHECK: readonly string[] = [
   'merchandiseProduct.ts',
   'inventoryMovement.ts',
   'inventoryReservation.ts',
+  'supplier.ts',
+  'purchaseOrder.ts',
+  'purchaseOrderLineItem.ts',
+  'vendorBill.ts',
+  'vendorBillLineItem.ts',
+  'billPayment.ts',
 ];
 
 describe('Phase 30: hard layering invariant — no *IdentityId operational-assignment field', () => {

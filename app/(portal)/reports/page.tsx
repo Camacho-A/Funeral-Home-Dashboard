@@ -16,6 +16,7 @@ const CATEGORY_LABELS: Record<ReportCategory, string> = {
   staff: 'Staff',
   documents: 'Documents & Signatures',
   commerce: 'Merchandise & Inventory',
+  procurement: 'Procurement & Accounts Payable',
 };
 
 const CATEGORY_ORDER: ReportCategory[] = ['operational', 'financial', 'staff', 'documents', 'commerce'];

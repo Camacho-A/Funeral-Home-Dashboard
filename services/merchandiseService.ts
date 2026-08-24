@@ -110,6 +110,7 @@ export type CreateMerchandiseProductInput = {
   defaultLocationId?: string | null;
   familyVisible?: boolean;
   supplierName?: string | null;
+  supplierId?: string | null;
   idFactory: () => string;
   now?: string;
 };
@@ -153,6 +154,7 @@ export async function createProduct(
     imageStorageKey: null,
     familyVisible: input.familyVisible ?? false,
     supplierName: input.supplierName ?? null,
+    supplierId: input.supplierId ?? null,
     parentProductId: null,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -164,7 +166,7 @@ export async function createProduct(
 }
 
 export type UpdateMerchandiseProductInput = Partial<
-  Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'familyVisible' | 'supplierName'>
+  Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'familyVisible' | 'supplierName' | 'supplierId'>
 > & { now?: string };
 
 export async function updateProduct(
@@ -188,7 +190,7 @@ export async function updateProduct(
 
   const nowIso = patch.now ?? new Date().toISOString();
   const changedFields: Record<string, FieldChange> = {};
-  const updateFields: (keyof UpdateMerchandiseProductInput)[] = ['name', 'description', 'category', 'cost', 'retailPrice', 'taxable', 'trackInventory', 'reorderPoint', 'defaultLocationId', 'familyVisible', 'supplierName'];
+  const updateFields: (keyof UpdateMerchandiseProductInput)[] = ['name', 'description', 'category', 'cost', 'retailPrice', 'taxable', 'trackInventory', 'reorderPoint', 'defaultLocationId', 'familyVisible', 'supplierName', 'supplierId'];
   for (const field of updateFields) {
     if (patch[field] !== undefined && patch[field] !== (existing as Record<string, unknown>)[field]) {
       changedFields[field] = { previous: (existing as Record<string, unknown>)[field], next: patch[field] };
@@ -208,6 +210,7 @@ export async function updateProduct(
     defaultLocationId: patch.defaultLocationId !== undefined ? patch.defaultLocationId : existing.defaultLocationId,
     familyVisible: patch.familyVisible ?? existing.familyVisible,
     supplierName: patch.supplierName !== undefined ? patch.supplierName : existing.supplierName,
+    supplierId: patch.supplierId !== undefined ? patch.supplierId : existing.supplierId,
     updatedAt: nowIso,
   };
 
@@ -223,6 +226,7 @@ export async function updateProduct(
     defaultLocationId: patch.defaultLocationId,
     familyVisible: patch.familyVisible,
     supplierName: patch.supplierName,
+    supplierId: patch.supplierId,
     updatedAt: nowIso,
   }, dataAdapterMode);
 

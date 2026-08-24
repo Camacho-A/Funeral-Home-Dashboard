@@ -26,6 +26,16 @@ import type { LedgerAccountType, LedgerAccountNormalBalance } from '../../types/
  * accounts-payable subsystem — no vendor bills, no PO matching, no payment
  * terms exist. A future procurement/AP phase is what would clear `2100`
  * against Cash/AP. See docs/adr/ADR-039-merchandise-inventory-and-commerce.md.
+ *
+ * Phase 36 (Procurement & Accounts Payable) is that phase: it adds `2000`
+ * Accounts Payable (the real supplier liability that receiving's `2100`
+ * Inventory Clearing accrual is cleared into when a vendor bill is entered —
+ * Dr 2100 / Cr 2000) and `5120` Purchase Price Variance (the balancing
+ * debit/credit that absorbs a justified difference between a receipt's
+ * captured cost and the supplier's actually-billed cost, so a bill never
+ * silently misstates inventory nor gets blocked over a few cents). A vendor
+ * payment then clears `2000` (Dr 2000 / Cr Cash). See
+ * docs/adr/ADR-040-procurement-and-accounts-payable.md.
  */
 /** Named constants for the starter accounts `financialTransactionService.ts`
     posts against directly — avoids magic string literals scattered across
@@ -40,8 +50,12 @@ export const STARTER_ACCOUNT_NUMBERS = {
   INVENTORY_ASSET: '1300',
   /** Phase 35: "Goods Received Not Invoiced" holding liability — the
       balancing credit for receiving. NOT an accounts-payable subsystem;
-      cleared by a future procurement/AP phase. */
+      cleared by Phase 36's vendor-bill posting (Dr 2100 / Cr 2000). */
   INVENTORY_CLEARING: '2100',
+  /** Phase 36: the real supplier liability. A vendor bill clears the
+      receipt's `2100` GRNI accrual into this account (Dr 2100 / Cr 2000);
+      a vendor payment clears it (Dr 2000 / Cr Cash). */
+  ACCOUNTS_PAYABLE: '2000',
   RETAINED_EARNINGS: '3000',
   LEGACY_OPENING_BALANCE: '3010',
   SERVICE_REVENUE: '4000',
@@ -54,6 +68,11 @@ export const STARTER_ACCOUNT_NUMBERS = {
   COST_OF_GOODS_SOLD: '5100',
   /** Phase 35: inventory lost to damage/shrinkage/write-off. */
   INVENTORY_SHRINKAGE_EXPENSE: '5110',
+  /** Phase 36: absorbs a justified difference between a receipt's captured
+      cost (the `2100` GRNI credit) and the supplier's actually-billed cost.
+      Unfavorable (billed > received) debits it; favorable (billed <
+      received) credits it — either way the vendor-bill entry stays balanced. */
+  PURCHASE_PRICE_VARIANCE: '5120',
 } as const;
 
 export type StarterLedgerAccountEntry = {
@@ -69,7 +88,8 @@ export const STARTER_CHART_OF_ACCOUNTS: StarterLedgerAccountEntry[] = [
   { accountNumber: '1100', name: 'Undeposited Funds', accountType: 'asset', normalBalance: 'debit', description: 'Payments collected but not yet swept into a bank deposit.' },
   { accountNumber: '1200', name: 'Accounts Receivable', accountType: 'asset', normalBalance: 'debit', description: "Amounts owed by families for services rendered — this account's derived balance reconciles with the sum of open CaseOrder.balanceDue values." },
   { accountNumber: '1300', name: 'Inventory Asset', accountType: 'asset', normalBalance: 'debit', description: 'Value of merchandise held in stock — debited on receiving, credited on fulfillment (to COGS) and on shrinkage/damage/write-off. Phase 35.' },
-  { accountNumber: '2100', name: 'Inventory Clearing', accountType: 'liability', normalBalance: 'credit', description: 'Goods Received Not Invoiced — the balancing credit for receiving stock, held until a future accounts-payable feature clears it against Cash/AP. Not an AP subsystem; no vendor bills or terms exist. Phase 35.' },
+  { accountNumber: '2000', name: 'Accounts Payable', accountType: 'liability', normalBalance: 'credit', description: 'Amounts owed to suppliers for received/billed goods and services. A vendor bill credits this account (Dr 2100 Inventory Clearing / Cr 2000) and clears the receiving GRNI accrual; a vendor payment debits it (Dr 2000 / Cr Cash). Phase 36.' },
+  { accountNumber: '2100', name: 'Inventory Clearing', accountType: 'liability', normalBalance: 'credit', description: 'Goods Received Not Invoiced — the balancing credit for receiving stock, held until a vendor bill clears it into Accounts Payable (Dr 2100 / Cr 2000). Its derived balance equals received-but-unbilled inventory value. Phase 35 (cleared by Phase 36).' },
   { accountNumber: '3000', name: 'Retained Earnings', accountType: 'equity', normalBalance: 'credit', description: 'Accumulated net income carried forward.' },
   { accountNumber: '3010', name: 'Legacy Opening Balance', accountType: 'equity', normalBalance: 'credit', description: "Fallback counter-account for services/financialBackfillMigrationService.ts's one-time historical backfill, used only for a payment whose original case can no longer be resolved — named and disclosed rather than silently skipped or booked against Accounts Receivable with no real receivable behind it." },
   { accountNumber: '4000', name: 'Service Revenue', accountType: 'revenue', normalBalance: 'credit', description: 'Revenue earned from cremation and related services.' },
@@ -78,4 +98,5 @@ export const STARTER_CHART_OF_ACCOUNTS: StarterLedgerAccountEntry[] = [
   { accountNumber: '5010', name: 'Bank Fees Expense', accountType: 'expense', normalBalance: 'debit', description: 'Bank service charges — reserved for reconciliation-fee handling, no automatic posting exists yet.' },
   { accountNumber: '5100', name: 'Cost of Goods Sold', accountType: 'expense', normalBalance: 'debit', description: 'Acquisition cost of merchandise sold, recognized at fulfillment (Dr COGS / Cr Inventory Asset). Phase 35.' },
   { accountNumber: '5110', name: 'Inventory Shrinkage Expense', accountType: 'expense', normalBalance: 'debit', description: 'Inventory lost to damage, shrinkage, or write-off (Dr Shrinkage / Cr Inventory Asset). Phase 35.' },
+  { accountNumber: '5120', name: 'Purchase Price Variance', accountType: 'expense', normalBalance: 'debit', description: 'The difference between a receipt\'s captured cost and the supplier\'s billed cost. Debited when the bill exceeds the receipt (unfavorable), credited when the bill is lower (favorable) — keeping the vendor-bill entry balanced without retroactively restating inventory. Phase 36.' },
 ];

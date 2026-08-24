@@ -195,6 +195,22 @@ export const PERMISSION_KEYS = [
   'inventory.read',
   'inventory.manage',
   'inventory.adjust',
+
+  /** Phase 36 (Procurement & Accounts Payable). Five keys, same coarse
+      resource model. `procurement.read`/`.manage` gate the supplier
+      directory and purchase orders (view vs create/edit/submit/receive-
+      against/close/cancel). `ap.read` gates vendor-bill and AP-aging views;
+      `ap.manage` gates entering and voiding vendor bills; `ap.pay` gates
+      recording vendor payments — deliberately SEPARATE from `ap.manage`, so a
+      role may enter bills without being authorized to disburse against them
+      (segregation of duties). Physical receiving stays governed by the
+      existing `inventory.manage` (it is an inventory operation). See
+      docs/adr/ADR-040-procurement-and-accounts-payable.md. */
+  'procurement.read',
+  'procurement.manage',
+  'ap.read',
+  'ap.manage',
+  'ap.pay',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -288,4 +304,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'inventory.read': 'View inventory stock levels, movements, and inventory reports',
   'inventory.manage': 'Receive, reserve, fulfill, transfer, and restock-return merchandise inventory',
   'inventory.adjust': 'Record audited inventory adjustments — damage, shrinkage, write-off, and count corrections',
+  'procurement.read': 'View suppliers and purchase orders',
+  'procurement.manage': 'Create and manage suppliers and purchase orders (order and receive against them)',
+  'ap.read': 'View vendor bills and accounts-payable aging',
+  'ap.manage': 'Enter and void vendor bills',
+  'ap.pay': 'Record vendor payments against bills (separately enforceable from entering bills)',
 };
