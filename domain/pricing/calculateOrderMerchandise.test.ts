@@ -27,6 +27,7 @@ function product(overrides: Partial<MerchandiseProduct> & Pick<MerchandiseProduc
     supplierName: null,
     supplierId: null,
     parentProductId: null,
+    hasVariants: false,
     createdAt: 't',
     updatedAt: 't',
     ...overrides,
@@ -52,8 +53,8 @@ describe('normalizeMerchandiseSelections', () => {
       { productId: 'p-casket', locationId: 'loc-1', quantity: -3 }, // negative → dropped
     ]);
     expect(result).toEqual([
-      { productId: 'p-urn', locationId: 'loc-1', quantity: 3 },
-      { productId: 'p-urn', locationId: 'loc-2', quantity: 1 },
+      { productId: 'p-urn', variantId: null, locationId: 'loc-1', quantity: 3 },
+      { productId: 'p-urn', variantId: null, locationId: 'loc-2', quantity: 1 },
     ]);
   });
 
@@ -123,7 +124,7 @@ describe('merchandiseSelectionsFromLineItems', () => {
       { lineKind: 'service', serviceCode: 'DIRECT_CREMATION', description: 'Direct Cremation', quantity: 1, unitPrice: 89000, lineTotal: 89000, sortOrder: 1, metadata: null },
       { lineKind: 'merchandise', serviceCode: 'URN-OAK', description: 'Oak Urn', quantity: 2, unitPrice: 39000, lineTotal: 78000, sortOrder: 100000, metadata: { productId: 'p-urn', sku: 'URN-OAK', locationId: 'loc-1' } },
     ];
-    expect(merchandiseSelectionsFromLineItems(lineItems)).toEqual([{ productId: 'p-urn', locationId: 'loc-1', quantity: 2 }]);
+    expect(merchandiseSelectionsFromLineItems(lineItems)).toEqual([{ productId: 'p-urn', variantId: null, locationId: 'loc-1', quantity: 2 }]);
   });
 });
 

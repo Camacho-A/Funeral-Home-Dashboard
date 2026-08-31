@@ -1721,6 +1721,25 @@ Record-only vendor payments (`beaconBillPaymentId` = id). Fields: `organizationI
 
 **Creation record (Phase 36):** planned — the six collections + indexes, the two `chartOfAccounts` rows, the two additive fields, and the targeted `rolePermissions` re-seed are created during Phase 36's live Wix verification (two-pass, accounting-safe; posted journal entries reversed never deleted). Pending explicit approval before the first live mutation.
 
+## Phase 37 — Product Variants (Collection 80)
+
+See docs/adr/ADR-041-product-variants.md. The collection is backend/API-key access only, tenant-isolated in server code, follows the deterministic-`_id`-as-natural-key convention, and respects the 3-regular + 1-unique index cap.
+
+### Collection 80 — `merchandiseProductVariants`
+An optional sellable variation of a product (`beaconMerchandiseProductVariantId` = id). Fields: `organizationId`, `productId` (parent), `sku` (app-enforced unique per org across products **and** variants), `name`, `optionValues?` (JSON-encoded map), `retailPriceOverride?`/`costOverride?` (nullable int cents — inherit parent when null), `taxableOverride?` (nullable bool — a dormant catalog attribute mirroring the retained-but-dormant `MerchandiseProduct.taxable`; drives no tax), `supplierIdOverride?`, `isActive`, timestamps. Indexes: `(organizationId, productId)`, `(organizationId, sku)`, `(organizationId, isActive)`. Sole writer `services/merchandiseVariantService.ts`. Archives via `isActive:false`, never hard-deleted.
+
+### Existing-collection extensions (Phase 37)
+- `merchandiseProducts`: `hasVariants` (Boolean, additive, default false — server-maintained mode flag).
+- `inventoryMovements`, `inventoryBalances`, `inventoryReservations`, `purchaseOrderLineItems`: `variantId` (Text, additive, nullable). A null variant keeps the exact original stock key; variant-scoped balance/reservation/lock ids are a hashed 44-char id to stay under Wix's 128-char `_id` cap.
+- `caseOrders`: `taxLocationId`, `taxJurisdictionName`, `taxRateMicros` remain as columns on the live collection but are **Reserved / inactive — sales tax is not currently implemented.** No code writes or reads them, no UI surfaces them, and they never participate in pricing, CaseOrder totals, accounting, reporting, payments, or revenue recognition. (`taxTotal` is a separate, older Phase-35 reserved field — always 0 — likewise inactive.) Their presence in the schema does **not** mean Beacon supports sales tax.
+
+**Creation record (Phase 37):** created & live-verified — collection 80 `merchandiseProductVariants` + indexes (`org_product`, `org_sku`, `org_active`, all ACTIVE), the `merchandiseProducts.hasVariants` flag, and the four `variantId` fields are all live in the `managed-cremations` site (created HTTP 200; verified through the real service layer). All changes are additive/backward-compatible — no data rewrite, no synthetic variants.
+
+**Sales tax — not currently implemented / out of scope.** An initial Phase 37 draft explored configurable sales tax; it was removed before commit per a business-requirements correction. Beacon does not calculate, collect, accrue, report, or remit sales tax. The draft had created some live artifacts; the following cleanup was performed (live, `managed-cremations`):
+- **`salesTaxConfigurations` collection (was Collection 81) — REMOVED.** It held zero rows (no permanent or disposable config ever persisted), so it was deleted cleanly (HTTP 200; its `org_active` + `org_location` indexes went with it; getCollection now returns 404). No immutable history depended on it.
+- **`2200 Sales Tax Payable` chart-of-accounts row — DEACTIVATED, not deleted.** Set `isActive:false` and renamed "Sales Tax Payable (deprecated — unused)". It is referenced by 6 immutable, posted Phase-37 disposable-verification journal lines (across `revenue_recognition` deltas + their `reversal` entries) whose **net effect on the account is $0** (debit 31,500 / credit 31,500). Ledger immutability is preserved: no journal entry was deleted or rewritten, and every historical account reference (by account id) remains intact. No code path posts to 2200 (the `SALES_TAX_PAYABLE` constant and starter-COA row were removed), so no new operational posting can occur.
+- **`caseOrders` tax columns — retained dormant** (see the extensions list above), by explicit decision, to avoid field-removal risk on a live append-only versioned collection.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |

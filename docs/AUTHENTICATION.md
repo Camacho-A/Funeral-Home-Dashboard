@@ -389,6 +389,10 @@ Selecting merchandise onto a case reuses the **existing `caseOrder.update`** (it
 
 Per-stock-line concurrency (`services/inventoryLockService.ts`) reuses the Phase 22 lease + write-claim construction generalized to a `{org}-{loc}-{product}` key — the same proven mechanism, the same honestly-disclosed residual gap (no Wix conditional write), now mitigated additionally by the append-only movement ledger + reconcile.
 
+### Phase 37 — Product Variants permissions
+
+**No new permission keys** (catalog stays at 64). Product variants reuse **`merchandise.read`** (view) / **`merchandise.manage`** (create/edit/archive) — a variant is part of the merchandise catalog. Variant inventory reuses the existing **`inventory.*`** keys. (Sales tax is out of scope — see docs/adr/ADR-041-product-variants.md; no tax-configuration permission exists.) See docs/adr/ADR-041-product-variants.md.
+
 ### Phase 36 — Procurement & Accounts Payable permissions
 
 Five new permission keys, widening the catalog from 59 to **64 permissions** (see docs/adr/ADR-040-procurement-and-accounts-payable.md):

@@ -48,7 +48,7 @@ import {
   accountsPayableOverdue,
   goodsReceivedNotInvoiced,
   openPurchaseOrderValue,
-} from './accountsPayableReportingService';
+  } from './accountsPayableReportingService';
 import { getReportDefinition, type ReportKey } from '../domain/reporting/reportRegistry';
 import { getMetricDefinition, type MetricKey } from '../domain/reporting/metricRegistry';
 

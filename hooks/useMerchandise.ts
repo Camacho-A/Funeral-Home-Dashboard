@@ -82,3 +82,55 @@ export function useTransferInventory(organizationId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inventoryBalances', organizationId] }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Phase 37 (Product Variants, Sales Tax & Merchandise Pricing — ADR-041).
+// ---------------------------------------------------------------------------
+import {
+  fetchVariants,
+  createVariant,
+  updateVariant,
+  archiveVariant,
+  type CreateVariantInput,
+} from '@/lib/merchandiseClient';
+
+const variantsKey = (organizationId: string, productId: string) => ['merchandiseVariants', organizationId, productId];
+
+export function useProductVariants(organizationId: string, productId: string, includeInactive = false) {
+  return useQuery({
+    queryKey: [...variantsKey(organizationId, productId), includeInactive],
+    queryFn: () => fetchVariants(organizationId, productId, includeInactive),
+    enabled: Boolean(organizationId && productId),
+  });
+}
+
+export function useCreateVariant(organizationId: string, productId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateVariantInput) => createVariant(productId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['merchandiseVariants', organizationId, productId] });
+      qc.invalidateQueries({ queryKey: ['merchandiseProducts', organizationId] });
+    },
+  });
+}
+
+export function useUpdateVariant(organizationId: string, productId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ variantId, patch }: { variantId: string; patch: Partial<Omit<CreateVariantInput, 'organizationId'>> }) => updateVariant(organizationId, productId, variantId, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['merchandiseVariants', organizationId, productId] }),
+  });
+}
+
+export function useArchiveVariant(organizationId: string, productId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (variantId: string) => archiveVariant(organizationId, productId, variantId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['merchandiseVariants', organizationId, productId] });
+      qc.invalidateQueries({ queryKey: ['merchandiseProducts', organizationId] });
+    },
+  });
+}
+

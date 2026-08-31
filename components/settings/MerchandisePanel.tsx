@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { VariantsPanel } from '@/components/settings/VariantsPanel';
 
 /**
  * Phase 35 (Merchandise, Inventory & Commerce). Settings → Merchandise: the
@@ -29,6 +30,7 @@ export function MerchandisePanel() {
   const categories = listMerchandiseCategories();
   const [form, setForm] = useState({ sku: '', name: '', category: categories[0].key, cost: '', retailPrice: '', reorderPoint: '', familyVisible: false });
   const [error, setError] = useState<string | null>(null);
+  const [variantsFor, setVariantsFor] = useState<{ id: string; name: string } | null>(null);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -99,17 +101,24 @@ export function MerchandisePanel() {
               {products.map((p) => (
                 <tr key={p.id} style={{ opacity: p.isActive ? 1 : 0.5 }}>
                   <td>{p.sku}</td>
-                  <td>{p.name}</td>
+                  <td>{p.name}{p.hasVariants ? ' (variant parent)' : ''}</td>
                   <td>{p.category}</td>
-                  <td>${(p.retailPrice / 100).toFixed(2)}</td>
+                  <td>{p.hasVariants ? '—' : `$${(p.retailPrice / 100).toFixed(2)}`}</td>
                   <td>{p.isActive ? 'Active' : 'Archived'}</td>
-                  <td>{p.isActive && <Button variant="secondary" onClick={() => archiveMutation.mutate(p.id)}>Archive</Button>}</td>
+                  <td>
+                    <Button variant="secondary" onClick={() => setVariantsFor(variantsFor?.id === p.id ? null : { id: p.id, name: p.name })}>
+                      {variantsFor?.id === p.id ? 'Hide variants' : 'Variants'}
+                    </Button>
+                    {p.isActive && <Button variant="secondary" onClick={() => archiveMutation.mutate(p.id)}>Archive</Button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </Card>
+
+      {variantsFor && <VariantsPanel productId={variantsFor.id} productName={variantsFor.name} />}
     </div>
   );
 }

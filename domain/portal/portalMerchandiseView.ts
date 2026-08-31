@@ -31,7 +31,9 @@ export function buildPortalMerchandiseView(lineItem: CaseOrderLineItem): PortalM
 
 /** Only merchandise lines from a case's active order, mapped to the family
     view. Service lines are excluded (they surface in the payment/order
-    summary already), and a non-merchandise line never leaks. */
+    summary already), and a non-merchandise line never leaks. A variant's
+    family-visible identity travels entirely inside `description` (e.g. "Bronze
+    Urn — Companion"); the variant id/sku, cost, and supplier stay off this DTO. */
 export function buildPortalMerchandiseViews(lineItems: CaseOrderLineItem[]): PortalMerchandiseView[] {
   return lineItems.filter((li) => li.lineKind === 'merchandise').map(buildPortalMerchandiseView);
 }

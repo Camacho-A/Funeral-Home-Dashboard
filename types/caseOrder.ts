@@ -31,8 +31,10 @@ export type CaseOrder = {
       non-zero value, and "No client-controlled discounts" means it can
       only ever be set server-side once such a feature exists. */
   discountTotal: number;
-  /** Reserved for a future tax feature — always 0 today, same reasoning as
-      discountTotal. */
+  /** Reserved for a future tax feature — always 0 today. Sales tax is not part
+      of Beacon's business requirements (Phase 37 removed the sales-tax feature;
+      see docs/adr/ADR-041-product-variants.md). Kept as a reserved field so a
+      future feature is additive, mirroring `discountTotal`. */
   taxTotal: number;
   /** subtotal - discountTotal + taxTotal. */
   total: number;
@@ -131,6 +133,12 @@ export type ServiceSelections = {
  */
 export type MerchandiseSelection = {
   productId: string;
+  /** Phase 37 (ADR-041): REQUIRED when the product is a variant parent
+      (`hasVariants: true`) — names the exact sellable variant; the server
+      rejects a variant-parent selection with no `variantId` and a non-variant
+      selection that carries one. Null/absent for a non-variant product
+      (Phase 35 behavior). → merchandiseProductVariants. */
+  variantId?: string | null;
   locationId: string;
   quantity: number;
 };

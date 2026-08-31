@@ -15,6 +15,7 @@ export type WixInventoryReservationItem = {
   caseId?: unknown;
   caseOrderId?: unknown;
   productId?: unknown;
+  variantId?: unknown;
   locationId?: unknown;
   quantity?: unknown;
   status?: unknown;
@@ -45,6 +46,7 @@ export function mapWixInventoryReservationItem(item: WixInventoryReservationItem
     caseId: item.caseId,
     caseOrderId: item.caseOrderId,
     productId: item.productId,
+    variantId: typeof item.variantId === 'string' ? item.variantId : null,
     locationId: item.locationId,
     quantity: item.quantity,
     status: item.status,
@@ -61,6 +63,7 @@ export function buildWixInventoryReservationData(reservation: InventoryReservati
     caseId: reservation.caseId,
     caseOrderId: reservation.caseOrderId,
     productId: reservation.productId,
+    variantId: reservation.variantId,
     locationId: reservation.locationId,
     quantity: reservation.quantity,
     status: reservation.status,

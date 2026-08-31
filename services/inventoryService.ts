@@ -22,7 +22,9 @@ import type { InventoryMovement, InventoryMovementType } from '../types/inventor
 import type { InventoryReservation } from '../types/inventoryReservation';
 import type { InventoryBalance } from '../types/inventoryBalance';
 import { availableUnits, crossedLowStockThreshold } from '../domain/merchandise/inventoryMath';
-import { getProductById } from './merchandiseService';
+import { getProductById, getVariantById } from './merchandiseService';
+import { resolveVariantEconomics } from '../domain/merchandise/variantEconomics';
+import type { MerchandiseProduct } from '../types/merchandiseProduct';
 import { withInventoryLock, commitProtectedWrite, stockLineLockKey } from './inventoryLockService';
 import { createAndPostJournalEntry, reverseJournalEntry, listJournalEntriesForOrganization } from './generalLedgerService';
 import { getAccountByNumber } from './chartOfAccountsService';
@@ -77,12 +79,19 @@ export class InventoryServiceError extends Error {
 // Low-level reads (source of truth)
 // ---------------------------------------------------------------------------
 
-async function listMovementsForStockLine(organizationId: string, productId: string, locationId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryMovement[]> {
+/** Phase 37: `variantId` isolates one variant's stock line. A null variant is
+    a product-level (non-variant) stock line — a variant-parent product's
+    movements each carry a distinct variantId, so the read MUST filter by it.
+    Variant filtering is done in JS (mapper defaults an absent field to null) so
+    the exact-null match is reliable regardless of Wix's absent-field query
+    semantics; the Wix query itself keeps the original (org, product, location)
+    filter for backward compatibility. */
+async function listMovementsForStockLine(organizationId: string, productId: string, locationId: string, dataAdapterMode: DataAdapterMode, variantId: string | null = null): Promise<InventoryMovement[]> {
   if (dataAdapterMode === 'mock') {
-    return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId && m.locationId === locationId);
+    return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId && m.locationId === locationId && (m.variantId ?? null) === variantId);
   }
   const response = await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, productId, locationId } });
-  return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
+  return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null && (m.variantId ?? null) === variantId);
 }
 
 async function findMovementById(id: string, dataAdapterMode: DataAdapterMode): Promise<InventoryMovement | null> {
@@ -91,12 +100,12 @@ async function findMovementById(id: string, dataAdapterMode: DataAdapterMode): P
   return mapWixInventoryMovementItem(response.dataItems[0]?.data);
 }
 
-async function listActiveReservationsForStockLine(organizationId: string, productId: string, locationId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryReservation[]> {
+async function listActiveReservationsForStockLine(organizationId: string, productId: string, locationId: string, dataAdapterMode: DataAdapterMode, variantId: string | null = null): Promise<InventoryReservation[]> {
   if (dataAdapterMode === 'mock') {
-    return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.locationId === locationId && r.status === 'active');
+    return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.locationId === locationId && r.status === 'active' && (r.variantId ?? null) === variantId);
   }
   const response = await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, productId, locationId, status: 'active' } });
-  return response.dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null);
+  return response.dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null && (r.variantId ?? null) === variantId);
 }
 
 async function findReservationById(id: string, dataAdapterMode: DataAdapterMode): Promise<InventoryReservation | null> {
@@ -105,8 +114,26 @@ async function findReservationById(id: string, dataAdapterMode: DataAdapterMode)
   return mapWixInventoryReservationItem(response.dataItems[0]?.data);
 }
 
-function reservationId(organizationId: string, caseId: string, productId: string, locationId: string): string {
-  return `${organizationId}-${caseId}-${productId}-${locationId}`;
+/** Phase 37: the stock-line/balance natural key (`inventoryBalances._id`).
+    Backward-compatible — a null variant yields the exact original
+    `${org}-${loc}-${product}` id, so every pre-Phase-37 balance id is unchanged.
+    With a variant the naive `-${variantId}` suffix would exceed Wix's 128-char
+    `_id` cap (org + three UUIDs = 129), so the variant case hashes the full
+    natural key to a fixed 44-char id (variant balances are all new in P37). */
+function stockBalanceId(organizationId: string, locationId: string, productId: string, variantId: string | null): string {
+  if (!variantId) return `${organizationId}-${locationId}-${productId}`;
+  const digest = crypto.createHash('sha256').update(`bal|${organizationId}|${locationId}|${productId}|${variantId}`).digest('hex').slice(0, 40);
+  return `bal-${digest}`;
+}
+
+/** Phase 37: the reservation natural key. A null variant keeps the exact
+    Phase 35 id; with a variant the composed key (org + caseId + two UUIDs +
+    variant UUID) would exceed the 128-char cap, so it hashes to a fixed 44-char
+    id. Derived ids (`sale-`/`return-`/`fulfill-`/`merch-cogs-`) stay bounded. */
+function reservationId(organizationId: string, caseId: string, productId: string, locationId: string, variantId: string | null = null): string {
+  if (!variantId) return `${organizationId}-${caseId}-${productId}-${locationId}`;
+  const digest = crypto.createHash('sha256').update(`res|${organizationId}|${caseId}|${productId}|${locationId}|${variantId}`).digest('hex').slice(0, 40);
+  return `res-${digest}`;
 }
 
 /**
@@ -123,8 +150,15 @@ function reservationId(organizationId: string, caseId: string, productId: string
  * per-line disambiguation while always fitting the cap, on both the PO and the
  * ad-hoc receiving paths uniformly.
  */
-function receivingMovementId(organizationId: string, receiptReference: string, productId: string, locationId: string): string {
-  const digest = crypto.createHash('sha256').update(`${organizationId}|${receiptReference}|${productId}|${locationId}`).digest('hex').slice(0, 40);
+function receivingMovementId(organizationId: string, receiptReference: string, productId: string, locationId: string, variantId: string | null = null): string {
+  // Phase 37: a variant is appended to the hashed natural key so two variants
+  // of one receipt get distinct movements. Backward-compatible — a null variant
+  // reproduces the exact Phase 36 pre-image, so existing receipts stay
+  // idempotent; still a fixed 48 chars, safely under Wix's 128-char _id cap.
+  const preimage = variantId
+    ? `${organizationId}|${receiptReference}|${productId}|${locationId}|${variantId}`
+    : `${organizationId}|${receiptReference}|${productId}|${locationId}`;
+  const digest = crypto.createHash('sha256').update(preimage).digest('hex').slice(0, 40);
   return `receive-${digest}`;
 }
 
@@ -172,13 +206,13 @@ async function upsertReservation(reservation: InventoryReservation, dataAdapterM
  * always exactly rebuildable — the reconcile routine is literally this same
  * call. Returns the fresh balance.
  */
-async function recomputeBalance(organizationId: string, productId: string, locationId: string, now: string, dataAdapterMode: DataAdapterMode): Promise<InventoryBalance> {
-  const movements = await listMovementsForStockLine(organizationId, productId, locationId, dataAdapterMode);
-  const reservations = await listActiveReservationsForStockLine(organizationId, productId, locationId, dataAdapterMode);
+async function recomputeBalance(organizationId: string, productId: string, locationId: string, now: string, dataAdapterMode: DataAdapterMode, variantId: string | null = null): Promise<InventoryBalance> {
+  const movements = await listMovementsForStockLine(organizationId, productId, locationId, dataAdapterMode, variantId);
+  const reservations = await listActiveReservationsForStockLine(organizationId, productId, locationId, dataAdapterMode, variantId);
   const onHand = movements.reduce((sum, m) => sum + m.quantity, 0);
   const reserved = reservations.reduce((sum, r) => sum + r.quantity, 0);
-  const id = `${organizationId}-${locationId}-${productId}`;
-  const balance: InventoryBalance = { id, organizationId, productId, locationId, onHand, reserved, updatedAt: now };
+  const id = stockBalanceId(organizationId, locationId, productId, variantId);
+  const balance: InventoryBalance = { id, organizationId, productId, variantId, locationId, onHand, reserved, updatedAt: now };
 
   if (dataAdapterMode === 'mock') {
     const idx = inventoryBalanceFixtures.findIndex((b) => b.id === id);
@@ -211,6 +245,18 @@ async function resolveAccount(organizationId: string, accountNumber: string, idF
   }
   if (!account) throw new InventoryServiceError(`Ledger account ${accountNumber} could not be resolved for organization ${organizationId}.`, 'invalid_input');
   return account;
+}
+
+/** Phase 37: the effective COGS/valuation cost basis for a sellable unit —
+    a variant's `costOverride` resolves to the parent product's `cost` (B2),
+    matching the retail-price resolution in pricing. Returns null cost only when
+    the product itself is missing (mirrors the pre-Phase-37 `product?.cost`
+    behavior). */
+async function resolveSellableCost(organizationId: string, productId: string, variantId: string | null, dataAdapterMode: DataAdapterMode): Promise<{ product: MerchandiseProduct | null; cost: number | null }> {
+  const product = await getProductById(organizationId, productId, dataAdapterMode);
+  if (!product) return { product: null, cost: null };
+  const variant = variantId ? await getVariantById(organizationId, variantId, dataAdapterMode) : null;
+  return { product, cost: resolveVariantEconomics(product, variant).cost };
 }
 
 async function alreadyPosted(organizationId: string, sourceType: string, sourceReferenceId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
@@ -273,14 +319,56 @@ async function postInventoryAdjustment(organizationId: string, sourceReferenceId
 // Public reads
 // ---------------------------------------------------------------------------
 
-export type StockLevel = { productId: string; locationId: string; onHand: number; reserved: number; available: number };
+export type StockLevel = { productId: string; variantId: string | null; locationId: string; onHand: number; reserved: number; available: number };
 
-export async function getStockLevel(organizationId: string, productId: string, locationId: string, dataAdapterMode: DataAdapterMode): Promise<StockLevel> {
-  const movements = await listMovementsForStockLine(organizationId, productId, locationId, dataAdapterMode);
-  const reservations = await listActiveReservationsForStockLine(organizationId, productId, locationId, dataAdapterMode);
+export async function getStockLevel(organizationId: string, productId: string, locationId: string, dataAdapterMode: DataAdapterMode, variantId: string | null = null): Promise<StockLevel> {
+  const movements = await listMovementsForStockLine(organizationId, productId, locationId, dataAdapterMode, variantId);
+  const reservations = await listActiveReservationsForStockLine(organizationId, productId, locationId, dataAdapterMode, variantId);
   const onHand = movements.reduce((sum, m) => sum + m.quantity, 0);
   const reserved = reservations.reduce((sum, r) => sum + r.quantity, 0);
-  return { productId, locationId, onHand, reserved, available: availableUnits(onHand, reserved) };
+  return { productId, variantId, locationId, onHand, reserved, available: availableUnits(onHand, reserved) };
+}
+
+/** Phase 37 bifurcation guard support: does this product have any PRODUCT-LEVEL
+    (variantId = null) stock in use — non-zero on-hand at any location, or an
+    active reservation? Used to fail-closed before converting a non-variant
+    product into a variant parent (never silently redistribute product-level
+    stock among variants — decision R6). */
+export async function productLevelStockInUse(organizationId: string, productId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const movements = (await (async () => {
+    if (dataAdapterMode === 'mock') return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId);
+    const response = await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, productId } });
+    return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
+  })()).filter((m) => (m.variantId ?? null) === null);
+  const byLocation = new Map<string, number>();
+  for (const m of movements) byLocation.set(m.locationId, (byLocation.get(m.locationId) ?? 0) + m.quantity);
+  if ([...byLocation.values()].some((onHand) => onHand !== 0)) return true;
+
+  const reservations = (await (async () => {
+    if (dataAdapterMode === 'mock') return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.status === 'active');
+    const response = await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, productId, status: 'active' } });
+    return response.dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null);
+  })()).filter((r) => (r.variantId ?? null) === null && r.quantity > 0);
+  return reservations.length > 0;
+}
+
+/** Phase 37: does a specific VARIANT have any stock in use (non-zero on-hand at
+    any location, or an active reservation)? Fail-closed guard before archiving a
+    variant. */
+export async function variantStockInUse(organizationId: string, productId: string, variantId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  // Aggregate across every location for this variant.
+  const all = (dataAdapterMode === 'mock'
+    ? inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId)
+    : (await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, productId } })).dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null)
+  ).filter((m) => (m.variantId ?? null) === variantId);
+  const byLocation = new Map<string, number>();
+  for (const m of all) byLocation.set(m.locationId, (byLocation.get(m.locationId) ?? 0) + m.quantity);
+  if ([...byLocation.values()].some((onHand) => onHand !== 0)) return true;
+  const reservations = (dataAdapterMode === 'mock'
+    ? inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.status === 'active')
+    : (await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, productId, status: 'active' } })).dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null)
+  ).filter((r) => (r.variantId ?? null) === variantId && r.quantity > 0);
+  return reservations.length > 0;
 }
 
 export async function listBalancesForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryBalance[]> {
@@ -322,6 +410,9 @@ export async function listReservationsForCase(organizationId: string, caseId: st
 export type ReceiveStockInput = {
   organizationId: string;
   productId: string;
+  /** Phase 37: the variant being received, for a variant-parent product; null
+      for a non-variant product. Isolates this variant's stock line. */
+  variantId?: string | null;
   locationId: string;
   quantity: number;
   unitCost: number; // cents
@@ -341,10 +432,11 @@ export async function receiveStock(input: ReceiveStockInput, ctx: ActivityContex
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new InventoryServiceError('Receiving quantity must be a positive integer.', 'invalid_input');
   if (!Number.isInteger(input.unitCost) || input.unitCost < 0) throw new InventoryServiceError('unitCost must be a non-negative integer number of cents.', 'invalid_input');
   const now = input.now ?? new Date().toISOString();
-  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId);
+  const variantId = input.variantId ?? null;
+  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId, variantId);
 
   return withInventoryLock(lockKey, dataAdapterMode, async (handle) => {
-    const movementId = receivingMovementId(input.organizationId, input.receiptReference, input.productId, input.locationId);
+    const movementId = receivingMovementId(input.organizationId, input.receiptReference, input.productId, input.locationId, variantId);
     return commitProtectedWrite(handle, dataAdapterMode, async () => {
       let movement: InventoryMovement | null = await findMovementById(movementId, dataAdapterMode);
       if (!movement) {
@@ -352,6 +444,7 @@ export async function receiveStock(input: ReceiveStockInput, ctx: ActivityContex
           id: movementId,
           organizationId: input.organizationId,
           productId: input.productId,
+          variantId,
           locationId: input.locationId,
           quantity: input.quantity,
           movementType: 'receiving',
@@ -371,7 +464,7 @@ export async function receiveStock(input: ReceiveStockInput, ctx: ActivityContex
         await postInventoryReceipt(input.organizationId, `merch-recv-${movementId}`, input.unitCost * input.quantity, input.actorStaffProfileId ?? null, input.idFactory, now, dataAdapterMode);
         await bestEffort(() => recordInventoryReceived(ctx, input.productId, input.locationId, input.quantity, dataAdapterMode));
       }
-      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode);
+      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode, variantId);
       return { movement, balance };
     });
   });
@@ -382,6 +475,9 @@ export type SyncReservationInput = {
   caseId: string;
   caseOrderId: string;
   productId: string;
+  /** Phase 37: the variant being reserved, for a variant-parent product; null
+      for a non-variant product. */
+  variantId?: string | null;
   locationId: string;
   quantity: number; // desired reserved quantity (0 releases)
   idFactory: () => string;
@@ -399,12 +495,13 @@ export type SyncReservationInput = {
 export async function syncReservation(input: SyncReservationInput, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<{ reservation: InventoryReservation; balance: InventoryBalance }> {
   if (!Number.isInteger(input.quantity) || input.quantity < 0) throw new InventoryServiceError('Reservation quantity must be a non-negative integer.', 'invalid_input');
   const now = input.now ?? new Date().toISOString();
-  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId);
-  const id = reservationId(input.organizationId, input.caseId, input.productId, input.locationId);
+  const variantId = input.variantId ?? null;
+  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId, variantId);
+  const id = reservationId(input.organizationId, input.caseId, input.productId, input.locationId, variantId);
 
   return withInventoryLock(lockKey, dataAdapterMode, async (handle) => {
     return commitProtectedWrite(handle, dataAdapterMode, async () => {
-      const level = await getStockLevel(input.organizationId, input.productId, input.locationId, dataAdapterMode);
+      const level = await getStockLevel(input.organizationId, input.productId, input.locationId, dataAdapterMode, variantId);
       const existing = await findReservationById(id, dataAdapterMode);
       const currentHold = existing && existing.status === 'active' ? existing.quantity : 0;
       // Availability excluding THIS reservation's own current hold.
@@ -416,9 +513,9 @@ export async function syncReservation(input: SyncReservationInput, ctx: Activity
       const status = input.quantity === 0 ? 'released' : 'active';
       const reservation: InventoryReservation = existing
         ? { ...existing, caseOrderId: input.caseOrderId, quantity: input.quantity, status, updatedAt: now }
-        : { id, organizationId: input.organizationId, caseId: input.caseId, caseOrderId: input.caseOrderId, productId: input.productId, locationId: input.locationId, quantity: input.quantity, status, fulfillmentReference: null, createdAt: now, updatedAt: now };
+        : { id, organizationId: input.organizationId, caseId: input.caseId, caseOrderId: input.caseOrderId, productId: input.productId, variantId, locationId: input.locationId, quantity: input.quantity, status, fulfillmentReference: null, createdAt: now, updatedAt: now };
       await upsertReservation(reservation, dataAdapterMode);
-      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode);
+      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode, variantId);
 
       const delta = input.quantity - currentHold;
       if (delta > 0) await bestEffort(() => recordInventoryReserved(ctx, input.caseId, input.productId, input.locationId, delta, dataAdapterMode));
@@ -428,8 +525,8 @@ export async function syncReservation(input: SyncReservationInput, ctx: Activity
   });
 }
 
-export async function releaseReservation(organizationId: string, caseId: string, productId: string, locationId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode, now?: string): Promise<InventoryBalance> {
-  const result = await syncReservation({ organizationId, caseId, caseOrderId: '', productId, locationId, quantity: 0, idFactory: () => crypto.randomUUID(), now }, ctx, dataAdapterMode);
+export async function releaseReservation(organizationId: string, caseId: string, productId: string, locationId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode, now?: string, variantId: string | null = null): Promise<InventoryBalance> {
+  const result = await syncReservation({ organizationId, caseId, caseOrderId: '', productId, variantId, locationId, quantity: 0, idFactory: () => crypto.randomUUID(), now }, ctx, dataAdapterMode);
   return result.balance;
 }
 
@@ -437,6 +534,7 @@ export type FulfillReservationInput = {
   organizationId: string;
   caseId: string;
   productId: string;
+  variantId?: string | null;
   locationId: string;
   actorStaffProfileId?: string | null;
   idFactory: () => string;
@@ -452,31 +550,32 @@ export type FulfillReservationInput = {
  */
 export async function fulfillReservation(input: FulfillReservationInput, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<{ balance: InventoryBalance; lowStockCrossed: boolean }> {
   const now = input.now ?? new Date().toISOString();
-  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId);
-  const id = reservationId(input.organizationId, input.caseId, input.productId, input.locationId);
+  const variantId = input.variantId ?? null;
+  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId, variantId);
+  const id = reservationId(input.organizationId, input.caseId, input.productId, input.locationId, variantId);
 
   return withInventoryLock(lockKey, dataAdapterMode, async (handle) => {
     return commitProtectedWrite(handle, dataAdapterMode, async () => {
       const reservation = await findReservationById(id, dataAdapterMode);
       if (!reservation || reservation.status !== 'active') throw new InventoryServiceError('No active reservation to fulfill.', 'not_found');
-      const product = await getProductById(input.organizationId, input.productId, dataAdapterMode);
+      const { product, cost } = await resolveSellableCost(input.organizationId, input.productId, variantId, dataAdapterMode);
 
-      const before = await getStockLevel(input.organizationId, input.productId, input.locationId, dataAdapterMode);
+      const before = await getStockLevel(input.organizationId, input.productId, input.locationId, dataAdapterMode, variantId);
       const fulfillmentReference = `fulfill-${id}`;
       const saleMovementId = `sale-${id}`;
       const existingSale = await findMovementById(saleMovementId, dataAdapterMode);
       if (!existingSale) {
         await insertMovement({
-          id: saleMovementId, organizationId: input.organizationId, productId: input.productId, locationId: input.locationId, quantity: -reservation.quantity, movementType: 'sale',
+          id: saleMovementId, organizationId: input.organizationId, productId: input.productId, variantId, locationId: input.locationId, quantity: -reservation.quantity, movementType: 'sale',
           caseId: input.caseId, caseOrderId: reservation.caseOrderId, reservationId: id, fulfillmentReference, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null,
-          unitCost: product?.cost ?? null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId: ctx.correlationId, createdAt: now,
+          unitCost: cost, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId: ctx.correlationId, createdAt: now,
         }, dataAdapterMode);
       }
       await upsertReservation({ ...reservation, status: 'fulfilled', fulfillmentReference, updatedAt: now }, dataAdapterMode);
-      await postCogs(input.organizationId, input.caseId, `merch-cogs-${id}`, (product?.cost ?? 0) * reservation.quantity, input.actorStaffProfileId ?? null, input.idFactory, now, dataAdapterMode);
+      await postCogs(input.organizationId, input.caseId, `merch-cogs-${id}`, (cost ?? 0) * reservation.quantity, input.actorStaffProfileId ?? null, input.idFactory, now, dataAdapterMode);
       await bestEffort(() => recordInventoryFulfilled(ctx, input.caseId, input.productId, input.locationId, reservation.quantity, dataAdapterMode));
 
-      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode);
+      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode, variantId);
       const lowStockCrossed = crossedLowStockThreshold(before.onHand, balance.onHand, product?.reorderPoint ?? null);
       return { balance, lowStockCrossed };
     });
@@ -487,6 +586,7 @@ export type ReturnFulfilledInput = {
   organizationId: string;
   caseId: string;
   productId: string;
+  variantId?: string | null;
   locationId: string;
   restock: boolean; // true → back into sellable stock; false → damaged/non-restockable
   actorStaffProfileId?: string | null;
@@ -504,8 +604,9 @@ export type ReturnFulfilledInput = {
  */
 export async function returnFulfilled(input: ReturnFulfilledInput, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<InventoryBalance> {
   const now = input.now ?? new Date().toISOString();
-  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId);
-  const id = reservationId(input.organizationId, input.caseId, input.productId, input.locationId);
+  const variantId = input.variantId ?? null;
+  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId, variantId);
+  const id = reservationId(input.organizationId, input.caseId, input.productId, input.locationId, variantId);
 
   return withInventoryLock(lockKey, dataAdapterMode, async (handle) => {
     return commitProtectedWrite(handle, dataAdapterMode, async () => {
@@ -515,7 +616,7 @@ export async function returnFulfilled(input: ReturnFulfilledInput, ctx: Activity
       const existing = await findMovementById(returnMovementId, dataAdapterMode);
       if (!existing) {
         await insertMovement({
-          id: returnMovementId, organizationId: input.organizationId, productId: input.productId, locationId: input.locationId,
+          id: returnMovementId, organizationId: input.organizationId, productId: input.productId, variantId, locationId: input.locationId,
           quantity: input.restock ? reservation.quantity : 0, movementType: input.restock ? 'return_restock' : 'return_damage',
           caseId: input.caseId, caseOrderId: reservation.caseOrderId, reservationId: id, fulfillmentReference: reservation.fulfillmentReference, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null,
           unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: input.restock ? 'Returned and restocked' : 'Returned, not restockable', correlationId: ctx.correlationId, createdAt: now,
@@ -528,7 +629,7 @@ export async function returnFulfilled(input: ReturnFulfilledInput, ctx: Activity
         }
         await bestEffort(() => recordInventoryReturned(ctx, input.caseId, input.productId, input.locationId, reservation.quantity, input.restock, dataAdapterMode));
       }
-      return recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode);
+      return recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode, variantId);
     });
   });
 }
@@ -536,6 +637,7 @@ export async function returnFulfilled(input: ReturnFulfilledInput, ctx: Activity
 export type AdjustStockInput = {
   organizationId: string;
   productId: string;
+  variantId?: string | null;
   locationId: string;
   quantityDelta: number; // signed
   movementType: Extract<InventoryMovementType, 'adjustment' | 'damage' | 'shrinkage' | 'correction'>;
@@ -549,22 +651,23 @@ export async function adjustStock(input: AdjustStockInput, ctx: ActivityContext,
   if (!Number.isInteger(input.quantityDelta) || input.quantityDelta === 0) throw new InventoryServiceError('Adjustment quantityDelta must be a non-zero integer.', 'invalid_input');
   if (input.reason.trim().length === 0) throw new InventoryServiceError('An adjustment requires a reason.', 'invalid_input');
   const now = input.now ?? new Date().toISOString();
-  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId);
+  const variantId = input.variantId ?? null;
+  const lockKey = stockLineLockKey(input.organizationId, input.locationId, input.productId, variantId);
 
   return withInventoryLock(lockKey, dataAdapterMode, async (handle) => {
     return commitProtectedWrite(handle, dataAdapterMode, async () => {
-      const product = await getProductById(input.organizationId, input.productId, dataAdapterMode);
-      const before = await getStockLevel(input.organizationId, input.productId, input.locationId, dataAdapterMode);
+      const { product, cost } = await resolveSellableCost(input.organizationId, input.productId, variantId, dataAdapterMode);
+      const before = await getStockLevel(input.organizationId, input.productId, input.locationId, dataAdapterMode, variantId);
       const movementId = input.idFactory();
       await insertMovement({
-        id: movementId, organizationId: input.organizationId, productId: input.productId, locationId: input.locationId, quantity: input.quantityDelta, movementType: input.movementType,
+        id: movementId, organizationId: input.organizationId, productId: input.productId, variantId, locationId: input.locationId, quantity: input.quantityDelta, movementType: input.movementType,
         caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null,
-        unitCost: product?.cost ?? null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: input.reason.trim(), correlationId: ctx.correlationId, createdAt: now,
+        unitCost: cost, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: input.reason.trim(), correlationId: ctx.correlationId, createdAt: now,
       }, dataAdapterMode);
-      // Value the change at the product's cost; a loss debits shrinkage.
-      await postInventoryAdjustment(input.organizationId, `merch-adj-${movementId}`, input.quantityDelta * (product?.cost ?? 0), input.actorStaffProfileId ?? null, input.idFactory, now, dataAdapterMode);
+      // Value the change at the effective cost; a loss debits shrinkage.
+      await postInventoryAdjustment(input.organizationId, `merch-adj-${movementId}`, input.quantityDelta * (cost ?? 0), input.actorStaffProfileId ?? null, input.idFactory, now, dataAdapterMode);
       await bestEffort(() => recordInventoryAdjusted(ctx, input.productId, input.locationId, input.quantityDelta, input.reason.trim(), dataAdapterMode));
-      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode);
+      const balance = await recomputeBalance(input.organizationId, input.productId, input.locationId, now, dataAdapterMode, variantId);
       const lowStockCrossed = crossedLowStockThreshold(before.onHand, balance.onHand, product?.reorderPoint ?? null);
       return { balance, lowStockCrossed };
     });
@@ -574,6 +677,7 @@ export async function adjustStock(input: AdjustStockInput, ctx: ActivityContext,
 export type TransferStockInput = {
   organizationId: string;
   productId: string;
+  variantId?: string | null;
   fromLocationId: string;
   toLocationId: string;
   quantity: number;
@@ -586,21 +690,23 @@ export async function transferStock(input: TransferStockInput, ctx: ActivityCont
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new InventoryServiceError('Transfer quantity must be a positive integer.', 'invalid_input');
   if (input.fromLocationId === input.toLocationId) throw new InventoryServiceError('Transfer source and destination must differ.', 'invalid_input');
   const now = input.now ?? new Date().toISOString();
+  const variantId = input.variantId ?? null;
   // Acquire both stock-line locks in canonical (sorted) order to avoid a
   // deadlock between two opposing transfers.
-  const keyFrom = stockLineLockKey(input.organizationId, input.fromLocationId, input.productId);
-  const keyTo = stockLineLockKey(input.organizationId, input.toLocationId, input.productId);
+  const keyFrom = stockLineLockKey(input.organizationId, input.fromLocationId, input.productId, variantId);
+  const keyTo = stockLineLockKey(input.organizationId, input.toLocationId, input.productId, variantId);
   const [first, second] = [keyFrom, keyTo].sort();
 
   return withInventoryLock(first, dataAdapterMode, async () =>
     withInventoryLock(second, dataAdapterMode, async () => {
-      const fromLevel = await getStockLevel(input.organizationId, input.productId, input.fromLocationId, dataAdapterMode);
+      const fromLevel = await getStockLevel(input.organizationId, input.productId, input.fromLocationId, dataAdapterMode, variantId);
       if (input.quantity > fromLevel.available) throw new InventoryServiceError(`Only ${fromLevel.available} available at the source location.`, 'insufficient_stock');
       const correlationId = ctx.correlationId;
-      await insertMovement({ id: `transfer-${correlationId}-out`, organizationId: input.organizationId, productId: input.productId, locationId: input.fromLocationId, quantity: -input.quantity, movementType: 'transfer_out', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
-      await insertMovement({ id: `transfer-${correlationId}-in`, organizationId: input.organizationId, productId: input.productId, locationId: input.toLocationId, quantity: input.quantity, movementType: 'transfer_in', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
-      const from = await recomputeBalance(input.organizationId, input.productId, input.fromLocationId, now, dataAdapterMode);
-      const to = await recomputeBalance(input.organizationId, input.productId, input.toLocationId, now, dataAdapterMode);
+      const idSuffix = variantId ? `-${variantId}` : '';
+      await insertMovement({ id: `transfer-${correlationId}-out${idSuffix}`, organizationId: input.organizationId, productId: input.productId, variantId, locationId: input.fromLocationId, quantity: -input.quantity, movementType: 'transfer_out', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
+      await insertMovement({ id: `transfer-${correlationId}-in${idSuffix}`, organizationId: input.organizationId, productId: input.productId, variantId, locationId: input.toLocationId, quantity: input.quantity, movementType: 'transfer_in', caseId: null, caseOrderId: null, reservationId: null, fulfillmentReference: null, receiptReference: null, supplierName: null, purchaseOrderLineItemId: null, unitCost: null, actorStaffProfileId: input.actorStaffProfileId ?? null, reason: null, correlationId, createdAt: now }, dataAdapterMode);
+      const from = await recomputeBalance(input.organizationId, input.productId, input.fromLocationId, now, dataAdapterMode, variantId);
+      const to = await recomputeBalance(input.organizationId, input.productId, input.toLocationId, now, dataAdapterMode, variantId);
       await bestEffort(() => recordInventoryTransferred(ctx, input.productId, input.fromLocationId, input.toLocationId, input.quantity, dataAdapterMode));
       return { from, to };
     }),
@@ -614,16 +720,16 @@ export async function transferStock(input: TransferStockInput, ctx: ActivityCont
  * the lease, drift can only arise from the documented residual race — this is
  * how it is caught and corrected.
  */
-export async function reconcileStockLine(organizationId: string, productId: string, locationId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode, now?: string): Promise<{ before: { onHand: number; reserved: number } | null; after: InventoryBalance; drifted: boolean }> {
+export async function reconcileStockLine(organizationId: string, productId: string, locationId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode, now?: string, variantId: string | null = null): Promise<{ before: { onHand: number; reserved: number } | null; after: InventoryBalance; drifted: boolean }> {
   const nowIso = now ?? new Date().toISOString();
-  const lockKey = stockLineLockKey(organizationId, locationId, productId);
+  const lockKey = stockLineLockKey(organizationId, locationId, productId, variantId);
   return withInventoryLock(lockKey, dataAdapterMode, async () => {
-    const id = `${organizationId}-${locationId}-${productId}`;
+    const id = stockBalanceId(organizationId, locationId, productId, variantId);
     const existing = dataAdapterMode === 'mock'
       ? inventoryBalanceFixtures.find((b) => b.id === id) ?? null
       : mapWixInventoryBalanceItem((await queryWixDataItems<WixInventoryBalanceItem>('inventoryBalances', { filter: { beaconInventoryBalanceId: id }, paging: { limit: 1 } })).dataItems[0]?.data);
     const before = existing ? { onHand: existing.onHand, reserved: existing.reserved } : null;
-    const after = await recomputeBalance(organizationId, productId, locationId, nowIso, dataAdapterMode);
+    const after = await recomputeBalance(organizationId, productId, locationId, nowIso, dataAdapterMode, variantId);
     const drifted = before === null || before.onHand !== after.onHand || before.reserved !== after.reserved;
     return { before, after, drifted };
   });

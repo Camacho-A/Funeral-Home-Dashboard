@@ -28,16 +28,19 @@ import {
   calculateAdjustment,
   calculateBalance,
   calculateOrderTotals,
-  calculateOrderTotalsWithMerchandise,
   normalizeSelections,
   normalizeMerchandiseSelections,
   selectionsFromLineItems,
   merchandiseSelectionsFromLineItems,
   sumLineTotalsByKind,
+  MERCHANDISE_SORT_BASE,
   type CalculatedLineItem,
+  type CalculatedOrderTotals,
 } from '../domain/pricing/calculateOrder';
+import { getMerchandiseCategoryDefinition } from '../domain/merchandise/merchandiseCategoryRegistry';
+import { resolveVariantEconomics } from '../domain/merchandise/variantEconomics';
 import { diffSelections, diffMerchandiseSelections } from '../domain/pricing/auditDiff';
-import { listActiveProductsForOrganization } from './merchandiseService';
+import { listActiveProductsForOrganization, getVariantById } from './merchandiseService';
 import { listPaymentRecordsForCase } from './paymentsService';
 import { mapWixCaseWriteOffItem, type WixCaseWriteOffItem } from '../lib/wixCaseWriteOffMapper';
 import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
@@ -341,13 +344,10 @@ async function postRevenueRecognition(
   }
 
   // One balanced entry: Dr/Cr Accounts Receivable for the NET delta, plus a
-  // separate Cr/Dr line per revenue account for its own signed delta. A
-  // positive delta credits revenue (asset up → Dr AR); a negative delta
-  // debits it. A zero delta contributes no line. Because
+  // separate Cr/Dr line per revenue account for its own signed delta. Because
   // net = serviceDelta + merchandiseDelta, the AR line always balances the
-  // revenue lines regardless of sign combination (assertJournalEntryBalances
-  // is the backstop). Merchandise revenue is credited to 4100, kept fully
-  // separate from Service Revenue (4000) — ADR-039 decision 2.
+  // revenue lines regardless of sign combination. Merchandise revenue is
+  // credited to 4100, kept fully separate from Service Revenue (4000).
   const net = serviceDelta + merchandiseDelta;
   const lines: NewJournalEntryLineInput[] = [];
   if (net !== 0) {
@@ -473,6 +473,69 @@ function getMerchandiseCatalogForPricing(organizationId: string, dataAdapterMode
   return listActiveProductsForOrganization(organizationId, dataAdapterMode);
 }
 
+
+/**
+ * Phase 37 (Product Variants — ADR-041): the SERVER-authoritative order
+ * calculation — service lines + VARIANT-resolved merchandise lines. Replaces
+ * the pure `calculateOrderTotalsWithMerchandise` on the server path because that
+ * pure function cannot resolve a variant (it needs a variant fetch). Merchandise
+ * economics resolve through B2 inheritance (variant override → parent) and are
+ * SNAPSHOTTED onto the line (unitPrice, variant sku / name / id in metadata) —
+ * history never re-derives from the live catalog. A variant-parent product with
+ * no `variantId` is not sellable and is silently skipped (same "org doesn't sell
+ * that" contract as a missing product). Deterministic and idempotent.
+ */
+async function computeOrderWithVariants(
+  organizationId: string,
+  catalog: ServiceCatalogItem[],
+  products: MerchandiseProduct[],
+  orderSelections: { services: ServiceSelections; merchandise: MerchandiseSelection[] },
+  dataAdapterMode: DataAdapterMode,
+): Promise<CalculatedOrderTotals> {
+  const serviceLines = calculateOrderTotals(catalog, orderSelections.services).lineItems;
+  const productsById = new Map(products.map((p) => [p.id, p]));
+
+  const merchLines: CalculatedLineItem[] = [];
+  for (const sel of orderSelections.merchandise) {
+    const product = productsById.get(sel.productId);
+    if (!product) continue;
+    const variantId = sel.variantId ?? null;
+    if (product.hasVariants && !variantId) continue; // parent not independently sellable (R6)
+    const variant = variantId ? await getVariantById(organizationId, variantId, dataAdapterMode) : null;
+    if (variantId && (!variant || !variant.isActive || variant.productId !== product.id)) continue;
+    const eco = resolveVariantEconomics(product, variant);
+    const sku = variant?.sku ?? product.sku;
+    const description = variant ? `${product.name} — ${variant.name}` : product.name;
+    merchLines.push({
+      lineKind: 'merchandise',
+      serviceCode: sku,
+      description,
+      quantity: sel.quantity,
+      unitPrice: eco.retailPrice,
+      lineTotal: eco.retailPrice * sel.quantity,
+      sortOrder: 0,
+      metadata: { productId: product.id, variantId: variantId ?? '', sku, locationId: sel.locationId },
+    });
+  }
+  // Stable order: category, then description, then sku — identical to the pure
+  // merchandise builder, so lines never reshuffle under repricing.
+  merchLines.sort((a, b) => {
+    const catA = getMerchandiseCategoryDefinition(productsById.get(a.metadata!.productId)!.category)?.sortOrder ?? 999;
+    const catB = getMerchandiseCategoryDefinition(productsById.get(b.metadata!.productId)!.category)?.sortOrder ?? 999;
+    if (catA !== catB) return catA - catB;
+    if (a.description !== b.description) return a.description < b.description ? -1 : 1;
+    return a.serviceCode < b.serviceCode ? -1 : a.serviceCode > b.serviceCode ? 1 : 0;
+  });
+  merchLines.forEach((line, i) => { line.sortOrder = MERCHANDISE_SORT_BASE + i * 10; });
+
+  const lineItems = [...serviceLines, ...merchLines];
+  const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  const discountTotal = 0;
+  const taxTotal = 0;
+  const total = subtotal - discountTotal + taxTotal;
+  return { lineItems, subtotal, discountTotal, taxTotal, total };
+}
+
 /**
  * Resolves the service half of an order's selections from a raw request
  * body, carrying the current selection forward when the caller doesn't
@@ -523,7 +586,7 @@ export async function createCaseOrder(
     services: extractServiceSelections(params.selections, null),
     merchandise: extractMerchandiseSelections(params.selections, null),
   };
-  const calculated = calculateOrderTotalsWithMerchandise(catalog, products, orderSelections);
+  const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, orderSelections, dataAdapterMode);
 
   const orderId = params.idFactory();
   const order: CaseOrder = {
@@ -615,7 +678,7 @@ export async function recalculateOrder(
     return { order: current, lineItems: currentLineItems, auditEntries: [] };
   }
 
-  const calculated = calculateOrderTotalsWithMerchandise(catalog, products, { services: nextServices, merchandise: nextMerchandise });
+  const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, { services: nextServices, merchandise: nextMerchandise }, dataAdapterMode);
   const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
 
   const newOrderId = params.idFactory();

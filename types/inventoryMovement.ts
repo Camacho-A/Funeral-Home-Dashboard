@@ -34,6 +34,12 @@ export type InventoryMovement = {
   organizationId: string;
   /** → merchandiseProducts.beaconMerchandiseProductId. */
   productId: string;
+  /** Phase 37 (ADR-041): the sellable variant this movement is for, when the
+      product is a variant parent (`hasVariants: true`). Null for a non-variant
+      product's movement (Phase 35 behavior) and for every pre-Phase-37 row —
+      additive/backward-compatible: a null variant keeps the exact original
+      stock key `(org, location, product)`. → merchandiseProductVariants. */
+  variantId: string | null;
   /** → organizationLocations.beaconOrganizationLocationId. */
   locationId: string;
   /** Signed integer units: receiving/return_restock/transfer_in positive;

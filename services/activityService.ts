@@ -2010,6 +2010,32 @@ export function recordMerchandiseProductArchived(ctx: ActivityContext, productId
   );
 }
 
+// ---------------------------------------------------------------------------
+// Phase 37 (Product Variants). Variant lifecycle (category `inventory`,
+// emitted only by merchandiseVariantService) — structural-test enforced.
+// ---------------------------------------------------------------------------
+
+export function recordMerchandiseVariantCreated(ctx: ActivityContext, variantId: string, snapshot: { productId: string; sku: string; name: string }, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, { caseId: null, category: 'inventory', eventType: ACTIVITY_EVENT_TYPES.MERCHANDISE_VARIANT_CREATED, resourceType: 'merchandiseProductVariant', resourceId: variantId, previousValue: null, newValue: JSON.stringify(snapshot), description: `Product variant created — ${snapshot.name} (${snapshot.sku})`, metadata: null, severity: 'info' }),
+    dataAdapterMode,
+  );
+}
+
+export function recordMerchandiseVariantUpdated(ctx: ActivityContext, variantId: string, changedFields: Record<string, FieldChange>, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, { caseId: null, category: 'inventory', eventType: ACTIVITY_EVENT_TYPES.MERCHANDISE_VARIANT_UPDATED, resourceType: 'merchandiseProductVariant', resourceId: variantId, previousValue: fieldChangesToJson(changedFields, 'previous'), newValue: fieldChangesToJson(changedFields, 'next'), description: `Product variant updated — ${Object.keys(changedFields).join(', ')}`, metadata: null, severity: 'info' }),
+    dataAdapterMode,
+  );
+}
+
+export function recordMerchandiseVariantArchived(ctx: ActivityContext, variantId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, { caseId: null, category: 'inventory', eventType: ACTIVITY_EVENT_TYPES.MERCHANDISE_VARIANT_ARCHIVED, resourceType: 'merchandiseProductVariant', resourceId: variantId, previousValue: JSON.stringify({ isActive: true }), newValue: JSON.stringify({ isActive: false }), description: 'Product variant archived', metadata: null, severity: 'info' }),
+    dataAdapterMode,
+  );
+}
+
 /** Shared builder for the six stock-movement activity events — every
     inventory movement records who/what/where/how-many through one shape. */
 function recordInventoryMovementEvent(

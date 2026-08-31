@@ -50,9 +50,20 @@ export class InventoryLockLeaseLostError extends InventoryLockError {}
 
 export type InventoryLockHandle = { lockKey: string; lockToken: string; fenceToken: number };
 
-/** The protected key for one stock line. */
-export function stockLineLockKey(organizationId: string, locationId: string, productId: string): string {
-  return `${organizationId}-${locationId}-${productId}`;
+/** The protected key for one stock line, also the `inventoryLocks` /
+    `inventoryWriteClaims` `_id`. Phase 37: a variant scopes the key so
+    reserving/receiving one variant never locks a sibling.
+    - A null variant reproduces the EXACT Phase 35 key (`org-loc-product`),
+      keeping every pre-Phase-37 lock/claim id unchanged.
+    - With a variant, the naive `org-loc-product-variant` concatenation would
+      exceed Wix Data's hard 128-char `_id` cap (WDE0075: org + three UUIDs +
+      separators = 129). So the variant case hashes the full natural key to a
+      fixed, deterministic, collision-resistant 44-char id. Variant-scoped rows
+      are all new in Phase 37, so this has no backward-compat constraint. */
+export function stockLineLockKey(organizationId: string, locationId: string, productId: string, variantId: string | null = null): string {
+  if (!variantId) return `${organizationId}-${locationId}-${productId}`;
+  const digest = crypto.createHash('sha256').update(`${organizationId}|${locationId}|${productId}|${variantId}`).digest('hex').slice(0, 40);
+  return `slk-${digest}`;
 }
 
 function sleep(ms: number): Promise<void> {

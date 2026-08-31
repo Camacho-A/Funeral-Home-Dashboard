@@ -8,6 +8,7 @@ export type WixInventoryBalanceItem = {
   beaconInventoryBalanceId?: unknown;
   organizationId?: unknown;
   productId?: unknown;
+  variantId?: unknown;
   locationId?: unknown;
   onHand?: unknown;
   reserved?: unknown;
@@ -31,6 +32,7 @@ export function mapWixInventoryBalanceItem(item: WixInventoryBalanceItem | undef
     id: item.beaconInventoryBalanceId,
     organizationId: item.organizationId,
     productId: item.productId,
+    variantId: typeof item.variantId === 'string' ? item.variantId : null,
     locationId: item.locationId,
     onHand: item.onHand,
     reserved: item.reserved,
@@ -43,6 +45,7 @@ export function buildWixInventoryBalanceData(balance: InventoryBalance): WixInve
     beaconInventoryBalanceId: balance.id,
     organizationId: balance.organizationId,
     productId: balance.productId,
+    variantId: balance.variantId,
     locationId: balance.locationId,
     onHand: balance.onHand,
     reserved: balance.reserved,

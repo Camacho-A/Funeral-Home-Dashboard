@@ -6,7 +6,9 @@ import {
   applyMerchandiseProductUpdateToWixData,
   type WixMerchandiseProductItem,
 } from '../lib/wixMerchandiseProductMapper';
+import { mapWixMerchandiseProductVariantItem, type WixMerchandiseProductVariantItem } from '../lib/wixMerchandiseProductVariantMapper';
 import type { MerchandiseProduct } from '../types/merchandiseProduct';
+import type { MerchandiseProductVariant } from '../types/merchandiseProductVariant';
 import { isValidMerchandiseCategoryKey, type MerchandiseCategoryKey } from '../domain/merchandise/merchandiseCategoryRegistry';
 import {
   recordMerchandiseProductCreated,
@@ -15,7 +17,7 @@ import {
   type ActivityContext,
   type FieldChange,
 } from './activityService';
-import { merchandiseProductFixtures } from './__mocks__/merchandiseFixtures';
+import { merchandiseProductFixtures, merchandiseProductVariantFixtures } from './__mocks__/merchandiseFixtures';
 
 /**
  * Phase 35 (Merchandise, Inventory & Commerce). Sole writer of the
@@ -75,6 +77,48 @@ export async function getProductById(organizationId: string, productId: string, 
     paging: { limit: 1 },
   });
   return mapWixMerchandiseProductItem(response.dataItems[0]?.data);
+}
+
+/**
+ * Phase 37 (ADR-041): read-only variant getters. Placed here (not in the write
+ * service) so read-only consumers — inventoryService (COGS cost basis),
+ * pricing, procurement — can resolve a variant without importing the variant
+ * write service (which itself imports inventoryService for guards, so the
+ * reverse import would be a cycle). `merchandiseVariantService` is the sole
+ * WRITER of the collection.
+ */
+export async function getVariantById(organizationId: string, variantId: string, dataAdapterMode: DataAdapterMode): Promise<MerchandiseProductVariant | null> {
+  if (dataAdapterMode === 'mock') {
+    return merchandiseProductVariantFixtures.find((v) => v.organizationId === organizationId && v.id === variantId) ?? null;
+  }
+  const response = await queryWixDataItems<WixMerchandiseProductVariantItem>('merchandiseProductVariants', {
+    filter: { organizationId, beaconMerchandiseProductVariantId: variantId },
+    paging: { limit: 1 },
+  });
+  return mapWixMerchandiseProductVariantItem(response.dataItems[0]?.data);
+}
+
+export async function listVariantsForProduct(organizationId: string, productId: string, dataAdapterMode: DataAdapterMode, options: { includeInactive?: boolean } = {}): Promise<MerchandiseProductVariant[]> {
+  let variants: MerchandiseProductVariant[];
+  if (dataAdapterMode === 'mock') {
+    variants = merchandiseProductVariantFixtures.filter((v) => v.organizationId === organizationId && v.productId === productId);
+  } else {
+    const response = await queryWixDataItems<WixMerchandiseProductVariantItem>('merchandiseProductVariants', { filter: { organizationId, productId } });
+    variants = response.dataItems.map((i) => mapWixMerchandiseProductVariantItem(i.data)).filter((v): v is MerchandiseProductVariant => v !== null);
+  }
+  if (!options.includeInactive) variants = variants.filter((v) => v.isActive);
+  return variants.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** Phase 37 (ADR-041): does any PRODUCT already use this SKU in the org? Part
+    of the cross-collection (product + variant) SKU-uniqueness check enforced in
+    application code — Wix's single-field unique index cannot span two
+    collections, so this + the variant-side check are the strongest practical
+    guard (the residual TOCTOU race is documented, same class as the Phase 35
+    product-SKU check). Callers canonicalize (trim) the SKU first, matching the
+    existing product convention. */
+export async function productExistsWithSku(organizationId: string, sku: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return (await findProductBySku(organizationId, sku, dataAdapterMode)) !== null;
 }
 
 async function findProductBySku(organizationId: string, sku: string, dataAdapterMode: DataAdapterMode): Promise<MerchandiseProduct | null> {
@@ -156,6 +200,10 @@ export async function createProduct(
     supplierName: input.supplierName ?? null,
     supplierId: input.supplierId ?? null,
     parentProductId: null,
+    // Phase 37: a newly created product is a non-variant product (Mode A);
+    // merchandiseVariantService flips this to true when the first variant is
+    // added, and back to false when the last variant is removed.
+    hasVariants: false,
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -238,6 +286,23 @@ export async function updateProduct(
 
 /** Archive (or restore). Products are never hard-deleted — historical
     references must always resolve. */
+/**
+ * Phase 37 (ADR-041): server-only setter for the `hasVariants` mode flag —
+ * maintained transactionally (as far as Wix permits) by
+ * `merchandiseVariantService`, never toggled by a client. Idempotent no-op when
+ * the flag already holds the requested value. This is deliberately NOT part of
+ * the client-facing `updateProduct` input so a route can never flip a product's
+ * mode independently of its actual variant lifecycle (decision R3).
+ */
+export async function setProductHasVariants(organizationId: string, productId: string, hasVariants: boolean, dataAdapterMode: DataAdapterMode, now?: string): Promise<MerchandiseProduct> {
+  const existing = await getProductById(organizationId, productId, dataAdapterMode);
+  if (!existing) throw new MerchandiseServiceError('Product not found.', 'not_found');
+  if (existing.hasVariants === hasVariants) return existing;
+  const nowIso = now ?? new Date().toISOString();
+  const updated: MerchandiseProduct = { ...existing, hasVariants, updatedAt: nowIso };
+  return persistProductUpdate(organizationId, productId, updated, { hasVariants, updatedAt: nowIso }, dataAdapterMode);
+}
+
 export async function setProductArchived(
   organizationId: string,
   productId: string,

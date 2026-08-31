@@ -28,6 +28,7 @@ export type WixMerchandiseProductItem = {
   supplierName?: unknown;
   supplierId?: unknown;
   parentProductId?: unknown;
+  hasVariants?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -80,6 +81,9 @@ export function mapWixMerchandiseProductItem(item: WixMerchandiseProductItem | u
     supplierName: nullableString(item.supplierName),
     supplierId: nullableString(item.supplierId),
     parentProductId: nullableString(item.parentProductId),
+    // Phase 37: additive — a pre-Phase-37 row without the field is a
+    // non-variant product (Mode A) by default.
+    hasVariants: typeof item.hasVariants === 'boolean' ? item.hasVariants : false,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
@@ -105,6 +109,7 @@ export function buildWixMerchandiseProductData(product: MerchandiseProduct): Wix
     supplierName: product.supplierName,
     supplierId: product.supplierId,
     parentProductId: product.parentProductId,
+    hasVariants: product.hasVariants,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
   };
@@ -114,7 +119,7 @@ export function buildWixMerchandiseProductData(product: MerchandiseProduct): Wix
     merged object is produced for `updateWixDataItem`'s full-replace. */
 export function applyMerchandiseProductUpdateToWixData(
   existing: WixMerchandiseProductItem,
-  patch: Partial<Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'isActive' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'imageStorageKey' | 'familyVisible' | 'supplierName' | 'supplierId' | 'updatedAt'>>,
+  patch: Partial<Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'isActive' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'imageStorageKey' | 'familyVisible' | 'supplierName' | 'supplierId' | 'hasVariants' | 'updatedAt'>>,
 ): WixMerchandiseProductItem {
   const next: WixMerchandiseProductItem = { ...existing };
   if (patch.name !== undefined) next.name = patch.name;
@@ -131,6 +136,7 @@ export function applyMerchandiseProductUpdateToWixData(
   if (patch.familyVisible !== undefined) next.familyVisible = patch.familyVisible;
   if (patch.supplierName !== undefined) next.supplierName = patch.supplierName;
   if (patch.supplierId !== undefined) next.supplierId = patch.supplierId;
+  if (patch.hasVariants !== undefined) next.hasVariants = patch.hasVariants;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

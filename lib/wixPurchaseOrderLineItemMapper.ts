@@ -13,6 +13,7 @@ export type WixPurchaseOrderLineItemItem = {
   purchaseOrderId?: unknown;
   lineNumber?: unknown;
   productId?: unknown;
+  variantId?: unknown;
   locationId?: unknown;
   descriptionSnapshot?: unknown;
   quantityOrdered?: unknown;
@@ -48,6 +49,7 @@ export function mapWixPurchaseOrderLineItemItem(item: WixPurchaseOrderLineItemIt
     purchaseOrderId: item.purchaseOrderId,
     lineNumber: item.lineNumber,
     productId: item.productId,
+    variantId: typeof item.variantId === 'string' ? item.variantId : null,
     locationId: item.locationId,
     descriptionSnapshot: item.descriptionSnapshot,
     quantityOrdered: item.quantityOrdered,
@@ -66,6 +68,7 @@ export function buildWixPurchaseOrderLineItemData(line: PurchaseOrderLineItem): 
     purchaseOrderId: line.purchaseOrderId,
     lineNumber: line.lineNumber,
     productId: line.productId,
+    variantId: line.variantId,
     locationId: line.locationId,
     descriptionSnapshot: line.descriptionSnapshot,
     quantityOrdered: line.quantityOrdered,

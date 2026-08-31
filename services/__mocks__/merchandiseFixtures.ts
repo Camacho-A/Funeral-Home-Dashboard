@@ -1,4 +1,5 @@
 import type { MerchandiseProduct } from '../../types/merchandiseProduct';
+import type { MerchandiseProductVariant } from '../../types/merchandiseProductVariant';
 import type { InventoryMovement } from '../../types/inventoryMovement';
 import type { InventoryReservation } from '../../types/inventoryReservation';
 import type { InventoryBalance } from '../../types/inventoryBalance';
@@ -15,6 +16,8 @@ import type { InventoryBalance } from '../../types/inventoryBalance';
  * them — the same convention every other `__mocks__/*Fixtures.ts` file uses.
  */
 export const merchandiseProductFixtures: MerchandiseProduct[] = [];
+/** Phase 37 (Product Variants — ADR-041). */
+export const merchandiseProductVariantFixtures: MerchandiseProductVariant[] = [];
 export const inventoryMovementFixtures: InventoryMovement[] = [];
 export const inventoryReservationFixtures: InventoryReservation[] = [];
 export const inventoryBalanceFixtures: InventoryBalance[] = [];

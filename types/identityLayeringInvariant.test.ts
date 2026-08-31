@@ -70,6 +70,10 @@ const FILES_TO_CHECK: readonly string[] = [
   'vendorBill.ts',
   'vendorBillLineItem.ts',
   'billPayment.ts',
+  // Phase 37 (Product Variants) — a new stored entity; it carries no staff
+  // reference, so it trivially satisfies the invariant, and joining the guarded
+  // list keeps it covering new entities as the domain grows.
+  'merchandiseProductVariant.ts',
 ];
 
 describe('Phase 30: hard layering invariant — no *IdentityId operational-assignment field', () => {

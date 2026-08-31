@@ -18,8 +18,14 @@ export type PurchaseOrderLineItem = {
   purchaseOrderId: string;
   lineNumber: number;
   productId: string;
+  /** Phase 37 (ADR-041): the exact variant being ordered, when the product is
+      a variant parent; null for a non-variant product (Phase 35) and every
+      pre-Phase-37 PO line. Receiving this line increments only this variant's
+      inventory, and AP three-way matching identifies this exact variant.
+      → merchandiseProductVariants. */
+  variantId: string | null;
   locationId: string;
-  /** Product name captured at PO time — an immutable snapshot. */
+  /** Product (or variant) name captured at PO time — an immutable snapshot. */
   descriptionSnapshot: string;
   quantityOrdered: number;
   /** Expected acquisition cost per unit at PO time (cents) — an immutable

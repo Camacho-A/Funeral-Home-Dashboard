@@ -127,6 +127,14 @@ describe('CaseOrderCard — itemized services, balance, status', () => {
     await screen.findByText('Paid in full');
     expect(screen.getByRole('button', { name: 'Collect Balance with Clover' })).toBeDisabled();
   });
+
+  it('Phase 37: shows a variant merchandise line with its variant name in the description', async () => {
+    const variantLines = [
+      { id: 'li-m', organizationId: 'managed-cremations', caseOrderId: 'order-1', lineKind: 'merchandise', serviceCode: 'URN-BRZ', description: 'Bronze Urn — Companion', quantity: 2, unitPrice: 50_000, lineTotal: 100_000, sortOrder: 100000, metadata: { productId: 'p1', variantId: 'v1', sku: 'URN-BRZ', locationId: 'loc-1' }, createdAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    renderCard({ order: { order: { ...ACTIVE_ORDER, subtotal: 100_000, total: 100_000, balanceDue: 100_000 }, lineItems: variantLines, auditEntries: [] } });
+    expect(await screen.findByText(/Bronze Urn — Companion/)).toBeInTheDocument();
+  });
 });
 
 describe('CaseOrderCard — Collect Balance with Clover', () => {

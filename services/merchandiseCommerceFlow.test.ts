@@ -49,7 +49,7 @@ describe('end-to-end merchandise commerce flow (mirrors the case-merchandise rou
     expect(recalc!.order.total).toBe(89000 + 39000);
     expect(recalc!.lineItems.some((li) => li.lineKind === 'merchandise')).toBe(true);
     // The order's reconstructed merchandise matches.
-    expect(await listMerchandiseSelectionsForCase(DEFAULT_ORGANIZATION_ID, CASE, 'mock')).toEqual([{ productId: product.id, locationId: LOC, quantity: 1 }]);
+    expect(await listMerchandiseSelectionsForCase(DEFAULT_ORGANIZATION_ID, CASE, 'mock')).toEqual([{ productId: product.id, variantId: null, locationId: LOC, quantity: 1 }]);
 
     // Merchandise revenue posted to 4100, service to 4000.
     const merchRev = (await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.MERCHANDISE_REVENUE, 'mock'))!;

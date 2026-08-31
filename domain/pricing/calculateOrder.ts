@@ -244,12 +244,15 @@ export function normalizeMerchandiseSelections(raw: unknown): MerchandiseSelecti
     const rawQty = typeof row.quantity === 'number' ? row.quantity : 0;
     const quantity = Math.min(Math.max(Math.trunc(rawQty), 0), MAX_MERCHANDISE_LINE_QUANTITY);
     if (quantity <= 0) continue;
-    const key = `${row.productId}::${row.locationId}`;
+    // Phase 37: a variant is part of the stock-line identity, so one
+    // (product, variant, location) is exactly one line/reservation.
+    const variantId = typeof row.variantId === 'string' && row.variantId.length > 0 ? row.variantId : null;
+    const key = `${row.productId}::${variantId ?? ''}::${row.locationId}`;
     const existing = aggregated.get(key);
     if (existing) {
       existing.quantity = Math.min(existing.quantity + quantity, MAX_MERCHANDISE_LINE_QUANTITY);
     } else {
-      aggregated.set(key, { productId: row.productId, locationId: row.locationId, quantity });
+      aggregated.set(key, { productId: row.productId, variantId, locationId: row.locationId, quantity });
     }
   }
   return Array.from(aggregated.values());
@@ -339,7 +342,10 @@ export function merchandiseSelectionsFromLineItems(lineItems: CalculatedLineItem
     const productId = line.metadata.productId;
     const locationId = line.metadata.locationId;
     if (typeof productId !== 'string' || typeof locationId !== 'string') continue;
-    selections.push({ productId, locationId, quantity: line.quantity });
+    // Phase 37: carry the variant forward on repricing. A non-variant line has
+    // no `variantId` in metadata (or an empty string).
+    const variantId = typeof line.metadata.variantId === 'string' && line.metadata.variantId.length > 0 ? line.metadata.variantId : null;
+    selections.push({ productId, variantId, locationId, quantity: line.quantity });
   }
   return selections;
 }
@@ -349,7 +355,8 @@ export function merchandiseSelectionsFromLineItems(lineItems: CalculatedLineItem
  * revenue recognition to credit Service Revenue (4000) and Merchandise
  * Revenue (4100) separately (ADR-039 decision 2). Works over both freshly
  * `CalculatedLineItem[]` and persisted `CaseOrderLineItem[]` (both carry
- * `lineKind` + `lineTotal`).
+ * `lineKind` + `lineTotal`). Merchandise lines route to merchandise; every
+ * other kind routes to service.
  */
 export function sumLineTotalsByKind(
   lineItems: ReadonlyArray<{ lineKind: CaseOrderLineKind; lineTotal: number }>,

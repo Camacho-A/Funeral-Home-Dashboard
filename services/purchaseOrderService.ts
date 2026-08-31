@@ -15,7 +15,7 @@ import {
 import type { PurchaseOrder, PurchaseOrderStatus } from '../types/purchaseOrder';
 import type { PurchaseOrderLineItem } from '../types/purchaseOrderLineItem';
 import { getSupplierById } from './supplierService';
-import { getProductById } from './merchandiseService';
+import { getProductById, getVariantById } from './merchandiseService';
 import { getLocationById } from './organizationLocationService';
 import { receiveStock } from './inventoryService';
 import { withAggregateLease, commitLeasedWrite, purchaseOrderLeaseKey } from './aggregateLeaseService';
@@ -78,6 +78,21 @@ export async function getPurchaseOrderById(organizationId: string, purchaseOrder
   return mapWixPurchaseOrderItem(response.dataItems[0]?.data);
 }
 
+/** Phase 37 bifurcation guard support: is there an OPEN (submitted /
+    partially_received) purchase-order line for this product at the given
+    variant scope? Used to fail-closed before converting a product to a variant
+    parent (`variantId: null`) or archiving a variant (its own id) while a
+    receivable PO line still references it. */
+export async function hasOpenLineForProductVariant(organizationId: string, productId: string, variantId: string | null, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const openStatuses: PurchaseOrderStatus[] = ['submitted', 'partially_received'];
+  const openPos = (await listPurchaseOrdersForOrganization(organizationId, dataAdapterMode)).filter((po) => openStatuses.includes(po.status));
+  for (const po of openPos) {
+    const lines = await listLineItemsForPurchaseOrder(organizationId, po.id, dataAdapterMode);
+    if (lines.some((l) => l.productId === productId && (l.variantId ?? null) === variantId && l.quantityReceived < l.quantityOrdered)) return true;
+  }
+  return false;
+}
+
 export async function listLineItemsForPurchaseOrder(organizationId: string, purchaseOrderId: string, dataAdapterMode: DataAdapterMode): Promise<PurchaseOrderLineItem[]> {
   let lines: PurchaseOrderLineItem[];
   if (dataAdapterMode === 'mock') {
@@ -127,7 +142,7 @@ export type CreatePurchaseOrderInput = {
   orderDate: string;
   expectedDate?: string | null;
   notes?: string | null;
-  lines: Array<{ productId: string; quantityOrdered: number; unitCostCents: number }>;
+  lines: Array<{ productId: string; variantId?: string | null; quantityOrdered: number; unitCostCents: number }>;
   createdByStaffProfileId?: string | null;
   idFactory: () => string;
   now?: string;
@@ -150,6 +165,19 @@ export async function createPurchaseOrder(input: CreatePurchaseOrderInput, ctx: 
     if (!Number.isInteger(raw.unitCostCents) || raw.unitCostCents < 0) throw new PurchaseOrderServiceError('Each line unit cost must be a non-negative integer number of cents.', 'invalid_input');
     const product = await getProductById(input.organizationId, raw.productId, dataAdapterMode);
     if (!product) throw new PurchaseOrderServiceError(`Product ${raw.productId} not found.`, 'invalid_input');
+    // Phase 37: strict bifurcation — a variant-parent product REQUIRES an
+    // active variant that belongs to it; a non-variant product must not carry
+    // one. Receiving this line then increments only the identified variant.
+    const variantId = raw.variantId ?? null;
+    let descriptionSnapshot = product.name;
+    if (product.hasVariants) {
+      if (!variantId) throw new PurchaseOrderServiceError(`Product ${raw.productId} has variants; a variantId is required.`, 'invalid_input');
+      const variant = await getVariantById(input.organizationId, variantId, dataAdapterMode);
+      if (!variant || !variant.isActive || variant.productId !== product.id) throw new PurchaseOrderServiceError(`Variant ${variantId} not found, archived, or not a variant of product ${raw.productId}.`, 'invalid_input');
+      descriptionSnapshot = `${product.name} — ${variant.name}`;
+    } else if (variantId) {
+      throw new PurchaseOrderServiceError(`Product ${raw.productId} has no variants; a variantId must not be supplied.`, 'invalid_input');
+    }
     subtotalCents += raw.quantityOrdered * raw.unitCostCents;
     lineItems.push({
       id: input.idFactory(),
@@ -157,8 +185,9 @@ export async function createPurchaseOrder(input: CreatePurchaseOrderInput, ctx: 
       purchaseOrderId: orderId,
       lineNumber: lineNumber++,
       productId: raw.productId,
+      variantId,
       locationId: input.locationId,
-      descriptionSnapshot: product.name,
+      descriptionSnapshot,
       quantityOrdered: raw.quantityOrdered,
       unitCostCents: raw.unitCostCents,
       quantityReceived: 0,
@@ -249,6 +278,8 @@ export async function receiveAgainstPurchaseOrder(input: ReceiveAgainstPurchaseO
           {
             organizationId: input.organizationId,
             productId: line.productId,
+            // Phase 37: receiving increments only this line's exact variant.
+            variantId: line.variantId,
             locationId: line.locationId,
             quantity: receipt.quantity,
             unitCost,

@@ -14,7 +14,7 @@ const ORG = DEFAULT_ORGANIZATION_ID;
 const CTX = { organizationId: ORG, actorIdentityId: 'i', actorMembershipId: null, actorRoleKey: null, correlationId: 'c' };
 
 function product(over: Partial<MerchandiseProduct>): MerchandiseProduct {
-  return { id: idFactory(), organizationId: ORG, sku: `SK-${idCounter}`, name: 'P', description: null, category: 'urn', cost: 1, retailPrice: 2, taxable: false, isActive: true, trackInventory: true, reorderPoint: null, defaultLocationId: null, imageStorageKey: null, familyVisible: false, supplierName: null, supplierId: null, parentProductId: null, createdAt: NOW, updatedAt: NOW, ...over };
+  return { id: idFactory(), organizationId: ORG, sku: `SK-${idCounter}`, name: 'P', description: null, category: 'urn', cost: 1, retailPrice: 2, taxable: false, isActive: true, trackInventory: true, reorderPoint: null, defaultLocationId: null, imageStorageKey: null, familyVisible: false, supplierName: null, supplierId: null, parentProductId: null, hasVariants: false, createdAt: NOW, updatedAt: NOW, ...over };
 }
 
 beforeEach(() => {

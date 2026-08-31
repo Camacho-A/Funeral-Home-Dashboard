@@ -48,7 +48,7 @@ beforeEach(async () => {
   merchandiseProductFixtures.push({
     id: PRODUCT, organizationId: DEFAULT_ORGANIZATION_ID, sku: 'URN-OAK', name: 'Oak Urn', description: null, category: 'urn',
     cost: 15000, retailPrice: 39000, taxable: false, isActive: true, trackInventory: true, reorderPoint: 2, defaultLocationId: LOC,
-    imageStorageKey: null, familyVisible: false, supplierName: null, supplierId: null, parentProductId: null, createdAt: NOW, updatedAt: NOW,
+    imageStorageKey: null, familyVisible: false, supplierName: null, supplierId: null, parentProductId: null, hasVariants: false, createdAt: NOW, updatedAt: NOW,
   });
 });
 

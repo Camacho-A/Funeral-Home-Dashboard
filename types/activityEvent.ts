@@ -303,6 +303,12 @@ export const ACTIVITY_EVENT_TYPES = {
   MERCHANDISE_PRODUCT_CREATED: 'merchandise.product.created',
   MERCHANDISE_PRODUCT_UPDATED: 'merchandise.product.updated',
   MERCHANDISE_PRODUCT_ARCHIVED: 'merchandise.product.archived',
+  /** Phase 37 (Product Variants) — variant lifecycle, category `inventory`,
+      emitted only by services/merchandiseVariantService.ts (structural-test
+      enforced). */
+  MERCHANDISE_VARIANT_CREATED: 'merchandise.variant.created',
+  MERCHANDISE_VARIANT_UPDATED: 'merchandise.variant.updated',
+  MERCHANDISE_VARIANT_ARCHIVED: 'merchandise.variant.archived',
   INVENTORY_RECEIVED: 'inventory.received',
   INVENTORY_RESERVED: 'inventory.reserved',
   INVENTORY_RELEASED: 'inventory.released',

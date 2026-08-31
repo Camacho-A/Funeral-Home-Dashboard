@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canReadMerchandise, canManageMerchandise } from '@/services/authorizationPolicyService';
-import { getProductById, updateProduct, setProductArchived, MerchandiseServiceError } from '@/services/merchandiseService';
+import { getProductById, updateProduct, MerchandiseServiceError } from '@/services/merchandiseService';
+import { archiveProductWithVariantGuard, MerchandiseVariantServiceError } from '@/services/merchandiseVariantService';
 import { getDataAdapterMode } from '@/lib/env';
 
 /** Phase 35. One product — GET (merchandise.read), PATCH/DELETE-archive
@@ -71,9 +72,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ p
   }
   const ctx = { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() };
   try {
-    const product = await setProductArchived(organizationId, productId, true, ctx, dataAdapterMode);
+    // Phase 37 (R10): fail-closed archival for a variant-parent product — never
+    // blindly cascade over active variants / variant stock / open PO lines.
+    const product = await archiveProductWithVariantGuard(organizationId, productId, ctx, dataAdapterMode);
     return NextResponse.json({ product });
   } catch (error) {
+    if (error instanceof MerchandiseVariantServiceError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === 'not_found' ? 404 : 409 });
+    }
     if (error instanceof MerchandiseServiceError) return NextResponse.json({ error: error.message }, { status: 404 });
     throw error;
   }

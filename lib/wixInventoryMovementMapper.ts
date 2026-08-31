@@ -36,6 +36,7 @@ export type WixInventoryMovementItem = {
   fulfillmentReference?: unknown;
   receiptReference?: unknown;
   supplierName?: unknown;
+  variantId?: unknown;
   purchaseOrderLineItemId?: unknown;
   unitCost?: unknown;
   actorStaffProfileId?: unknown;
@@ -74,6 +75,7 @@ export function mapWixInventoryMovementItem(item: WixInventoryMovementItem | und
     fulfillmentReference: s(item.fulfillmentReference),
     receiptReference: s(item.receiptReference),
     supplierName: s(item.supplierName),
+    variantId: s(item.variantId),
     purchaseOrderLineItemId: s(item.purchaseOrderLineItemId),
     unitCost: n(item.unitCost),
     actorStaffProfileId: s(item.actorStaffProfileId),
@@ -97,6 +99,7 @@ export function buildWixInventoryMovementData(movement: InventoryMovement): WixI
     fulfillmentReference: movement.fulfillmentReference,
     receiptReference: movement.receiptReference,
     supplierName: movement.supplierName,
+    variantId: movement.variantId,
     purchaseOrderLineItemId: movement.purchaseOrderLineItemId,
     unitCost: movement.unitCost,
     actorStaffProfileId: movement.actorStaffProfileId,
