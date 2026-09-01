@@ -1,19 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { identityFixtures, membershipFixtures, identitySessionFixtures } from '@/services/__mocks__/identityFixtures';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { PERMISSION_KEYS } from '@/domain/rbac/permissionCatalog';
 
 let idCounter = 0;
-function idFactory() {
-  idCounter += 1;
-  return `rbac-permissions-route-test-${idCounter}`;
-}
+const idFactory = () => `rbac-health-route-test-${(idCounter += 1)}`;
 
 let mockSession: unknown = null;
-vi.mock('@/lib/auth/session', () => ({
-  getSession: async () => mockSession,
-  clearSession: vi.fn(),
-}));
+vi.mock('@/lib/auth/session', () => ({ getSession: async () => mockSession, clearSession: vi.fn() }));
 
 const { GET } = await import('./route');
 
@@ -29,34 +22,40 @@ afterEach(() => {
   identitySessionFixtures.length = lengths.sessions;
 });
 
-async function seedCaller() {
+async function seedCaller(role: string) {
   const { findOrCreateIdentity, updateIdentity } = await import('@/services/identityService');
   const { createMembership } = await import('@/services/membershipService');
   const { createIdentitySession } = await import('@/services/sessionService');
   const { identity } = await findOrCreateIdentity({ email: `caller-${idFactory()}@example.com`, displayName: 'Caller', idFactory }, 'mock');
   await updateIdentity(identity.id, { status: 'active' }, 'mock');
-  await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'readOnly', status: 'active', invitedBy: null, idFactory }, 'mock');
+  await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role, status: 'active', invitedBy: null, idFactory }, 'mock');
   const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
 }
 
-describe('GET /api/rbac/permissions', () => {
-  it('returns 401 with no session', async () => {
-    const response = await GET();
-    expect(response.status).toBe(401);
+const req = (org?: string) => GET(new Request(`http://localhost/api/rbac/integrity/health${org ? `?organizationId=${org}` : ''}`));
+
+describe('GET /api/rbac/integrity/health', () => {
+  it('401 with no session', async () => {
+    expect((await req(DEFAULT_ORGANIZATION_ID)).status).toBe(401);
   });
 
-  it('returns 401 for a mock/wix-mode session (identity-only route)', async () => {
-    mockSession = { user: { id: 'mock-user', email: 'a@example.com', displayName: 'A', source: 'mock' } };
-    expect((await GET()).status).toBe(401);
+  it('400 without organizationId', async () => {
+    await seedCaller('administrator');
+    expect((await req()).status).toBe(400);
   });
 
-  it('returns the full permission catalog for any authenticated identity, regardless of role', async () => {
-    await seedCaller();
-    const response = await GET();
+  it('403 for a non-admin caller (no organization.manage)', async () => {
+    await seedCaller('readOnly');
+    expect((await req(DEFAULT_ORGANIZATION_ID)).status).toBe(403);
+  });
+
+  it('200 + health report for an administrator', async () => {
+    await seedCaller('administrator');
+    const response = await req(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.permissions).toHaveLength(PERMISSION_KEYS.length); // Phase 38: catalog-driven, not a hardcoded count
-    expect(body.permissions.some((p: { key: string }) => p.key === 'organization.manage')).toBe(true);
+    expect(body.health.status).toBeDefined();
+    expect(body.health.counts.rolesScanned).toBe(7);
   });
 });

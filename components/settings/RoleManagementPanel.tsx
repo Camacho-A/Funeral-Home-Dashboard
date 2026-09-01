@@ -8,6 +8,7 @@ import { RoleList } from './RoleList';
 import { RoleEditor } from './RoleEditor';
 import { AssignRoleDialog } from './AssignRoleDialog';
 import { PermissionInspector } from './PermissionInspector';
+import { RbacHealthBadge } from './RbacHealthBadge';
 import { useRoles, usePermissionCatalog, useMyPermissions, useOrganizationMembers } from '@/hooks/useRbac';
 import styles from './RoleManagementPanel.module.css';
 
@@ -45,6 +46,7 @@ export function RoleManagementPanel() {
   return (
     <div>
       <div className={styles.toolbar}>
+        <RbacHealthBadge organizationId={organizationId} />
         {canManageRoles && (
           <Button variant="secondary" onClick={() => setAssignDialogOpen(true)}>
             Assign Role

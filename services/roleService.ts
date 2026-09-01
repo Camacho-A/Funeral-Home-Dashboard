@@ -17,7 +17,7 @@ import type { PermissionKey } from '../domain/rbac/permissionCatalog';
 import { PERMISSION_KEYS, PERMISSION_DESCRIPTIONS, permissionCategory } from '../domain/rbac/permissionCatalog';
 import type { Membership, MembershipStatus } from '../types/membership';
 import { DEFAULT_ROLE_DEFINITIONS } from '../domain/rbac/defaultRoles';
-import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId } from '../domain/rbac/deterministicIds';
+import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId, customRolePermissionId } from '../domain/rbac/deterministicIds';
 import { updateMembership } from './membershipService';
 import { resolveRoleForKey, resolvePermissionKeysForRole } from './permissionService';
 import { withOrganizationRoleLock, commitProtectedWrite } from './organizationLockService';
@@ -319,7 +319,8 @@ export async function createCustomRole(
   };
   await insertNewRole(role, dataAdapterMode);
   for (const permissionKey of params.permissions) {
-    await insertRolePermissionIdempotent({ id: params.idFactory(), roleId: role.id, permissionKey, createdAt: now }, dataAdapterMode);
+    // Phase 38: deterministic id (roleId+permissionKey) — idempotent, no duplicate grants.
+    await insertRolePermissionIdempotent({ id: customRolePermissionId(role.id, permissionKey), roleId: role.id, permissionKey, createdAt: now }, dataAdapterMode);
   }
   await insertOrganizationRoleEnablementIdempotent({ id: params.idFactory(), organizationId: params.organizationId, roleId: role.id, createdAt: now }, dataAdapterMode);
   await insertAuditEntry(
@@ -357,7 +358,8 @@ export async function cloneRole(
   };
   await insertNewRole(role, dataAdapterMode);
   for (const sourcePermission of sourcePermissions) {
-    await insertRolePermissionIdempotent({ id: params.idFactory(), roleId: role.id, permissionKey: sourcePermission.permissionKey, createdAt: now }, dataAdapterMode);
+    // Phase 38: deterministic id (new role's id + permissionKey) — idempotent clone.
+    await insertRolePermissionIdempotent({ id: customRolePermissionId(role.id, sourcePermission.permissionKey), roleId: role.id, permissionKey: sourcePermission.permissionKey, createdAt: now }, dataAdapterMode);
   }
   await insertOrganizationRoleEnablementIdempotent({ id: params.idFactory(), organizationId: params.organizationId, roleId: role.id, createdAt: now }, dataAdapterMode);
   await insertAuditEntry(
@@ -491,7 +493,8 @@ export async function updateRole(
       for (const permissionKey of params.addPermissions ?? []) {
         const existingGrants = await listRolePermissions(freshRole.id, dataAdapterMode);
         if (existingGrants.some((rp) => rp.permissionKey === permissionKey)) continue;
-        await insertRolePermissionIdempotent({ id: params.idFactory(), roleId: freshRole.id, permissionKey, createdAt: nowIso() }, dataAdapterMode);
+        // Phase 38: deterministic id (roleId+permissionKey) — idempotent, no duplicate grants.
+        await insertRolePermissionIdempotent({ id: customRolePermissionId(freshRole.id, permissionKey), roleId: freshRole.id, permissionKey, createdAt: nowIso() }, dataAdapterMode);
       }
       for (const permissionKey of params.removePermissions ?? []) {
         const existingGrants = await listRolePermissions(freshRole.id, dataAdapterMode);

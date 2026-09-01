@@ -15,6 +15,7 @@ import {
   resendInvitationRequest,
   revokeInvitationRequest,
   setMembershipStatusRequest,
+  fetchRbacHealth,
   type MembershipStatusValue,
 } from '@/lib/identityAuthClient';
 
@@ -40,6 +41,19 @@ const pendingInvitationsKey = (organizationId: string) => ['rbacPendingInvitatio
 
 export function usePermissionCatalog() {
   return useQuery({ queryKey: permissionCatalogKey, queryFn: fetchPermissionCatalog, staleTime: Infinity });
+}
+
+const rbacHealthKey = (organizationId: string) => ['rbacHealth', organizationId];
+
+// Phase 38: authorization-health indicator (admin-only endpoint; a 403 for a
+// non-admin caller simply leaves the badge unrendered).
+export function useRbacHealth(organizationId: string) {
+  return useQuery({
+    queryKey: rbacHealthKey(organizationId),
+    queryFn: () => fetchRbacHealth(organizationId),
+    enabled: Boolean(organizationId),
+    retry: false,
+  });
 }
 
 export function useRoles(organizationId: string) {

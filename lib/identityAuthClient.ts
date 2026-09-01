@@ -115,6 +115,29 @@ export async function fetchMyPermissions(organizationId: string): Promise<{ iden
   return { identityId: body.identityId as string, roleKey: body.roleKey as string, permissions: (body.permissions as string[]) ?? [] };
 }
 
+export type RbacHealthReport = {
+  status: 'HEALTHY' | 'DRIFT_DETECTED' | 'MALFORMED_DATA' | 'DUPLICATES' | 'MISSING_DEFAULT_GRANTS';
+  conditions: string[];
+  counts: {
+    rolesScanned: number;
+    expectedGrants: number;
+    presentGrants: number;
+    missingDefaultGrants: number;
+    createdAtToBackfill: number;
+    duplicateGrants: number;
+    malformedGrants: number;
+    unknownOrStaleKeyGrants: number;
+    unexpectedGrants: number;
+  };
+};
+
+// Phase 38: authorization-health indicator for the Security/Roles page.
+export async function fetchRbacHealth(organizationId: string): Promise<RbacHealthReport> {
+  const response = await fetch(`/api/rbac/integrity/health?organizationId=${encodeURIComponent(organizationId)}`);
+  const body = await parseJsonOrThrow(response);
+  return body.health as RbacHealthReport;
+}
+
 export async function createCustomRole(params: { organizationId: string; name: string; description?: string; permissions: string[] }): Promise<RbacRole> {
   const response = await fetch('/api/rbac/roles', {
     method: 'POST',

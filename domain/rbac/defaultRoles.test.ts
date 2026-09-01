@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_ROLE_KEYS, DEFAULT_ROLE_DEFINITIONS, isDefaultRoleKey, defaultRoleDefinition } from './defaultRoles';
-import { isPermissionKey } from './permissionCatalog';
+import { isPermissionKey, PERMISSION_KEYS } from './permissionCatalog';
 
 describe('defaultRoles', () => {
   it('defines exactly the seven roles named in the phase spec', () => {
@@ -22,9 +22,32 @@ describe('defaultRoles', () => {
     }
   });
 
-  it('administrator grants every permission', () => {
+  it('Phase 38 tier coverage: every catalog permission is granted by at least one default role', () => {
+    // No catalog key may be orphaned — defined but assignable to no default
+    // role tier. (The administrator invariant already guarantees this, but an
+    // explicit coverage check localizes the failure if the admin invariant is
+    // ever intentionally relaxed with exceptions in the future.)
+    const grantedBySomeRole = new Set(DEFAULT_ROLE_DEFINITIONS.flatMap((def) => def.permissions));
+    const orphanKeys = PERMISSION_KEYS.filter((k) => !grantedBySomeRole.has(k));
+    expect(orphanKeys).toEqual([]);
+  });
+
+  it('Phase 38 administrator invariant: administrator grants EXACTLY the full permission catalog (set-equality, not a hardcoded count)', () => {
+    // Security invariant: administrator === PERMISSION_KEYS. This intentionally
+    // replaces the old brittle `toHaveLength(64)` count assertion — adding a
+    // new permission to the catalog without also granting it to administrator
+    // (or granting administrator a key not in the catalog) fails here, so the
+    // admin authorization surface can never silently drift from the catalog.
     const admin = defaultRoleDefinition('administrator');
-    expect(admin.permissions).toHaveLength(64); // Phase 36: 59 + procurement.read/.manage + ap.read/.manage/.pay
+    const adminSet = new Set(admin.permissions);
+    const catalogSet = new Set(PERMISSION_KEYS);
+    const missingFromAdmin = PERMISSION_KEYS.filter((k) => !adminSet.has(k));
+    const extraOnAdmin = admin.permissions.filter((k) => !catalogSet.has(k));
+    expect(missingFromAdmin).toEqual([]);
+    expect(extraOnAdmin).toEqual([]);
+    expect(adminSet).toEqual(catalogSet);
+    // No administrator exceptions currently exist.
+    expect(admin.permissions.length).toBe(PERMISSION_KEYS.length);
   });
 
   it('Phase 25: readOnly is not granted document.upload — the one write action document.view\'s tier would otherwise include', () => {

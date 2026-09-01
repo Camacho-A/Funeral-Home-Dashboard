@@ -18,6 +18,8 @@
  * mock seed both derive ids through these same functions, so mock and
  * live behavior can never silently diverge.
  */
+import crypto from 'crypto';
+
 export function permissionFixtureId(key: string): string {
   return `permission-${key}`;
 }
@@ -28,6 +30,30 @@ export function defaultRoleFixtureId(key: string): string {
 
 export function defaultRolePermissionFixtureId(roleKey: string, permissionKey: string): string {
   return `rolepermission-${roleKey}-${permissionKey}`;
+}
+
+/**
+ * Phase 38 (RBAC Grant Hygiene). Deterministic id for a *custom* role's
+ * permission grant, derived from `roleId + permissionKey` — applied
+ * **prospectively** to new custom-role grant writes (createCustomRole /
+ * cloneRole / updateRole.addPermissions). Historically these used a fresh
+ * random `idFactory()` id, giving no DB-level dedup and allowing (in
+ * principle) two rows for the same (role, permission). A deterministic id
+ * makes re-inserting the same grant a no-op upsert (the existing
+ * insert-idempotent path treats the resulting 409 as success, never an
+ * overwrite), which is the sanctioned substitute for a compound-unique
+ * index Wix cannot provide. A custom role's `id` is a UUID and permission
+ * keys are short, so the readable form is always well under Wix's hard
+ * 128-char `_id` cap; the sha256 branch is a defensive fallback only (same
+ * hashing pattern as the Phase 36/37 variant-aware ids). Two distinct
+ * (roleId, permissionKey) pairs never collide; a collision can only occur
+ * for the *same* grant, which is exactly the idempotent case.
+ */
+export function customRolePermissionId(roleId: string, permissionKey: string): string {
+  const readable = `rolepermission-${roleId}-${permissionKey}`;
+  if (readable.length <= 128) return readable;
+  const digest = crypto.createHash('sha256').update(`rolepermission|${roleId}|${permissionKey}`).digest('hex').slice(0, 40);
+  return `rolepermission-h-${digest}`;
 }
 
 export function organizationRoleFixtureId(organizationId: string, roleKey: string): string {
