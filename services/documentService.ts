@@ -109,6 +109,18 @@ async function getOrganizationForMerge(organizationId: string, dataAdapterMode: 
   return mapWixOrganizationItem(response.dataItems[0]?.data);
 }
 
+/** Phase 39. Case-independent organization identity (name + primary location)
+    — used by `billingDocumentService` for the General Price List, which has no
+    case. Reuses the same readers `resolveMergeSourceData` uses. */
+export async function resolveOrganizationIdentity(organizationId: string, dataAdapterMode: DataAdapterMode) {
+  const [organization, location] = await Promise.all([
+    getOrganizationForMerge(organizationId, dataAdapterMode),
+    getPrimaryLocationForMerge(organizationId, dataAdapterMode),
+  ]);
+  if (!organization) throw new DocumentServiceError('Organization not found.');
+  return { organization, location };
+}
+
 async function getBrandingForMerge(organizationId: string, dataAdapterMode: DataAdapterMode) {
   if (dataAdapterMode === 'mock') {
     return organizationBrandingFixtures.find((b) => b.organizationId === organizationId) ?? null;
@@ -441,6 +453,136 @@ export async function generate(
   }
 
   return finalDocument;
+}
+
+/**
+ * Phase 39 (Family Billing & FTC Compliance). Generates a SYSTEM-RENDERED
+ * compliance document (FTC Statement of Goods & Services) from a pre-built,
+ * deterministically-rendered HTML body — NOT the template-merge path. The
+ * itemized, legally-mandated content is produced by `services/billingDocumentService.ts`
+ * (via the pure `domain/billing/*` renderers) and passed in here; this
+ * function only routes it through the SAME wrap → render → hash → store →
+ * `CaseDocument` pipeline `generate()` uses, so the documentService
+ * render/store structural boundary is preserved (no other module ever touches
+ * the renderer/storage provider). A signed billing document is permanently
+ * locked exactly like any other; a regeneration supersedes the prior version.
+ */
+export async function generateBillingDocument(
+  params: {
+    caseId: string;
+    documentTypeKey: string;
+    category: CaseDocument['category'];
+    fileName: string;
+    bodyHtml: string;
+    existingDocumentId?: string;
+    idFactory: () => string;
+    now?: string;
+  },
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<CaseDocument> {
+  if (params.existingDocumentId) {
+    const existingDocuments = await list(ctx.organizationId, params.caseId, dataAdapterMode);
+    const existingTarget = existingDocuments.find((d) => d.id === params.existingDocumentId);
+    if (existingTarget?.signatureStatus === 'signed') {
+      throw new DocumentServiceError('Cannot regenerate a signed document — it is permanently locked. Generate a new, independent document and create a new signature request instead.');
+    }
+  }
+
+  const documentId = params.idFactory();
+  const nowIsoValue = params.now ?? nowIso();
+  // Version scoped to (case, documentTypeKey) — billing docs have no template.
+  const existing = await list(ctx.organizationId, params.caseId, dataAdapterMode);
+  const sameType = existing.filter((d) => d.documentTypeKey === params.documentTypeKey);
+  const docVersion = sameType.length === 0 ? 1 : Math.max(...sameType.map((d) => d.version ?? 0)) + 1;
+
+  const pendingDocument: CaseDocument = {
+    id: documentId,
+    organizationId: ctx.organizationId,
+    caseId: params.caseId,
+    origin: 'generated',
+    documentTypeKey: params.documentTypeKey,
+    category: params.category,
+    fileName: params.fileName,
+    mimeType: 'application/pdf',
+    fileSizeBytes: 0,
+    checksumSha256: '',
+    storageKey: '',
+    status: 'pending',
+    templateId: null,
+    templateVersion: null,
+    version: docVersion,
+    supersedesId: params.existingDocumentId ?? null,
+    signatureStatus: null,
+    familyVisible: false,
+    generatedBy: ctx.actorIdentityId,
+    uploadedBy: null,
+    createdAt: nowIsoValue,
+    correlationId: ctx.correlationId,
+  };
+  await persistPendingDocument(pendingDocument, dataAdapterMode);
+
+  let finalDocument: CaseDocument;
+  try {
+    const pdfBuffer = await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
+    const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+    const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.pdf`;
+    const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, 'application/pdf');
+    finalDocument = await completeDocumentGeneration(
+      ctx.organizationId,
+      documentId,
+      { status: 'active', storageKey: finalStorageKey, checksumSha256, fileSizeBytes: pdfBuffer.length },
+      dataAdapterMode,
+    );
+  } catch (error) {
+    await completeDocumentGeneration(ctx.organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode);
+    throw new DocumentServiceError(`Billing document generation failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // Phase 39 audit trail: a system-rendered compliance document is still a
+  // CaseDocument — reuse the existing document.generated/.regenerated events
+  // (no dedicated event type needed) so every Statement generation is audited.
+  if (params.existingDocumentId) {
+    await updateDocumentStatus(ctx.organizationId, params.existingDocumentId, 'superseded', dataAdapterMode);
+    try {
+      await recordDocumentRegenerated(ctx, params.caseId, documentId, params.existingDocumentId, docVersion, dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to record document.regenerated activity event:', error instanceof Error ? error.message : error);
+    }
+  } else {
+    try {
+      await recordDocumentGenerated(ctx, params.caseId, documentId, `(system:${params.documentTypeKey})`, docVersion, params.fileName.replace(/\.pdf$/, ''), dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to record document.generated activity event:', error instanceof Error ? error.message : error);
+    }
+  }
+  return finalDocument;
+}
+
+/**
+ * Phase 39 (Family Billing & FTC Compliance). Renders a pre-built HTML body to
+ * a PDF and stores it, returning the storage/checksum metadata — WITHOUT
+ * creating a `CaseDocument`. Used by `billingDocumentService` for the
+ * organization-level General Price List (an `OrgDocument`, not case-scoped).
+ * Exists here so that render/store still flow exclusively through
+ * documentService's providers — the structural boundary is preserved (no
+ * other module imports the renderer/storage). The caller persists whatever
+ * record it owns (e.g. an `orgDocuments` row).
+ */
+export async function renderAndStorePdf(
+  storageKey: string,
+  bodyHtml: string,
+): Promise<{ storageKey: string; checksumSha256: string; fileSizeBytes: number }> {
+  const pdfBuffer = await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(bodyHtml));
+  const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+  const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, 'application/pdf');
+  return { storageKey: finalStorageKey, checksumSha256, fileSizeBytes: pdfBuffer.length };
+}
+
+/** Streams an org-level document's bytes (e.g. a GPL). Mirrors `downloadFile`
+    for `CaseDocument`s but for an `OrgDocument` storage key. */
+export async function downloadOrgDocumentBytes(storageKey: string): Promise<{ buffer: Buffer; contentType: string }> {
+  return documentStorageProvider.downloadFile(storageKey);
 }
 
 export async function upload(

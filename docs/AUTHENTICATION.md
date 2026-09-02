@@ -417,6 +417,16 @@ Procurement/AP posting-sensitive transitions run under **narrow per-aggregate le
 - **Admin surface** (`organization.manage`-gated): `GET /api/rbac/integrity/health` (status `HEALTHY | DRIFT_DETECTED | MALFORMED_DATA | DUPLICATES | MISSING_DEFAULT_GRANTS` + safe counts), `GET /api/rbac/integrity/diagnose` (Identity → Membership → role → expected → persisted → effective), and a minimal Security-page health badge. The global `POST /api/rbac/integrity/reconcile` is **platform-admin**-gated (an apply mutates shared global roles).
 - **Session/cache.** There is no server-side permission cache, so a reconciliation apply takes effect on the **next request** — no session revocation is introduced. The client permission cache is UI-only and can never grant an action the server wouldn't.
 
+## Phase 39 — Family Billing & FTC Compliance permissions
+
+**No new permission keys** (catalog stays at 64). FTC billing documents reuse existing permissions per their real semantics (see docs/adr/ADR-043-family-billing-and-ftc-compliance-documents.md):
+
+- **Statement of Funeral Goods and Services Selected** (a case document) — generate/regenerate reuses **`document.generate`**; view/download reuses **`document.view`**; archive reuses **`document.archive`**. Family delivery reuses the Phase 29 portal `document.read`/`document.download` capabilities; signing reuses the signature workflow (`signature.*` staff-side, `signature.complete` portal-side).
+- **General Price List** generation + list, and the **optional supplemental disclosure config**, reuse **`serviceCatalog.edit`** — the pricing authority already owns the catalog the GPL reflects.
+- **Cash advance items** (display-only FTC data) reuse **`caseOrder.update`** — they affect the family's compliance statement.
+
+Every route resolves the organization server-side via `requireAuthorizedOrganization` and authorizes through `authorizationPolicyService` (`canGenerateDocument`/`canViewDocument`/`canEditServiceCatalog`/`canEditCaseOrder`), never a role-name comparison. Mandatory federal disclosure wording is system-controlled (not permission-gated content) and lives only in `domain/billing/ftcComplianceRegistry.ts`.
+
 ## Known limitations
 
 - **Organization membership has no real data source — for `AUTH_ADAPTER='mock'|'wix'` sessions specifically.** `resolveAuthorizationContext` still reads the same mock fixtures mock mode always has — this remains entirely true for those two modes and is unchanged by any later phase. **(Phase 21 note:** `AUTH_ADAPTER='identity'` sessions *do* now have a real data source — `services/membershipService.ts`'s `Membership` model, backed by the live `organizationMemberships` collection's Phase 21 fields. A real Wix member logging in via `'wix'` mode still has no membership record invented for them; this gap is only closed for the new identity system, not for Wix Member login.)

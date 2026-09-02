@@ -17,6 +17,7 @@ export type WixServiceCatalogItem = {
   category?: unknown;
   pricingType?: unknown;
   defaultPrice?: unknown;
+  ftcClass?: unknown;
   isActive?: unknown;
   sortOrder?: unknown;
   createdAt?: unknown;
@@ -49,6 +50,8 @@ export function mapWixServiceCatalogItem(item: WixServiceCatalogItem | undefined
     category: item.category,
     pricingType: item.pricingType,
     defaultPrice: item.defaultPrice,
+    // Additive/backward-compatible: absent or non-string → null (derive from category).
+    ftcClass: typeof item.ftcClass === 'string' ? item.ftcClass : null,
     isActive: item.isActive,
     sortOrder: item.sortOrder,
     createdAt: item.createdAt,
@@ -65,6 +68,7 @@ export function buildWixServiceCatalogData(entry: ServiceCatalogItem): WixServic
     category: entry.category,
     pricingType: entry.pricingType,
     defaultPrice: entry.defaultPrice,
+    ftcClass: entry.ftcClass ?? null,
     isActive: entry.isActive,
     sortOrder: entry.sortOrder,
     createdAt: entry.createdAt,

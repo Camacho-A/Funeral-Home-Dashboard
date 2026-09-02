@@ -44,6 +44,13 @@ export const DOCUMENT_TYPES = {
 
   STATEMENT_ACCOUNT: { key: 'statement.account', category: 'statement' as DocumentTemplateCategory, displayName: 'Account Statement' },
 
+  /** Phase 39 (Family Billing & FTC Compliance). System-rendered FTC
+      documents — NOT authored via the template-merge path (their itemized,
+      legally-mandated content is generated deterministically from case/order
+      data + the system-locked compliance registry). */
+  FINANCIAL_STATEMENT_GOODS_SERVICES: { key: 'financial.statement_goods_services', category: 'statement' as DocumentTemplateCategory, displayName: 'Statement of Funeral Goods and Services Selected' },
+  PRICE_LIST_GENERAL: { key: 'pricelist.general', category: 'financial' as DocumentTemplateCategory, displayName: 'General Price List' },
+
   LETTER_GENERAL: { key: 'letter.general', category: 'letter' as DocumentTemplateCategory, displayName: 'General Letter' },
   LETTER_CONDOLENCE: { key: 'letter.condolence', category: 'letter' as DocumentTemplateCategory, displayName: 'Condolence Letter' },
 

@@ -35,6 +35,14 @@ export type ServiceCatalogItem = {
   pricingType: string;
   /** Integer cents — matches PaymentRecord.amount's existing convention. */
   defaultPrice: number;
+  /** Phase 39 (Family Billing & FTC Compliance). Optional additive override
+      of the FTC line classification for this item (see
+      domain/billing/ftcClassification.ts). Null/absent = derive from
+      `category` via the classification registry. An explicit, valid value
+      wins; an invalid/unknown value is treated as absent (never fabricates a
+      compliance meaning). Drives only compliance-document rendering — never
+      pricing, the GL, or AR. */
+  ftcClass?: string | null;
   isActive: boolean;
   /** Display/calculation ordering — matches the "Live Itemized Summary"
       example order (base, then weight surcharge, then add-ons). */

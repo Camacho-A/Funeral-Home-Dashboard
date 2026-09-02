@@ -1752,6 +1752,24 @@ One row per reconciliation *run* — the dedicated, rollback-bearing history of 
 
 **Creation record (Phase 38):** **created & live-remediated** on the `managed-cremations` site. The `rbacReconciliationRecords` collection (Collection 82) + its `organizationId` index were created (HTTP 200). A guarded dry-run confirmed the approved plan (25 inserts / 20 backfills / 0 destructive / 0 custom-role changes), then the additive repair was applied: **25 missing default-role grants inserted** (deterministic ids) + **20 `createdAt` backfills** across the seven global platform-default roles — `rolePermissions` went 202 → 227 rows, **0 rows removed or overwritten**. One `PLATFORM`-scoped reconciliation record was persisted (`mode: apply`, `organizationId: null` — no per-org fan-out). A **second dry-run converged to 0 changes**. Post-apply read-back: administrator resolves **64/64** through the normal Identity→Membership→role→`rolePermissions` path; all seven roles resolve their expected counts; custom roles (0) untouched; membership role assignments unchanged; platform-admin semantics unchanged.
 
+## Phase 39 — Family Billing & FTC Compliance Documents (Collections 83–85)
+
+See docs/adr/ADR-043-family-billing-and-ftc-compliance-documents.md and docs/COMPLIANCE_BOUNDARY.md. All backend/API-key access only, tenant-isolated, deterministic `_id`-as-natural-key. **No changes to `caseOrders`, the GL, or `rolePermissions`.**
+
+### Collection 83 — `caseCashAdvanceItems`
+DISPLAY-ONLY FTC cash-advance items for a case (third-party disbursements the Statement must itemize). Fields: `organizationId`, `caseId`, `description`, `amountCents` (integer), `hasMarkup` (bool — FTC markup disclosure), `isEstimated` (bool — good-faith estimate), `isActive`, timestamps. Index: `(organizationId, caseId)`. Sole writer `services/cashAdvanceService.ts`. **Never posted to the GL/AR/PaymentService/reporting** (structurally enforced). Archived via `isActive:false`.
+
+### Collection 84 — `billingSupplementalConfigs`
+Org-level OPTIONAL supplemental compliance language only (D6). Fields: `organizationId`, `version` (append-only), `blocksJson` (JSON-encoded `{key,document,text}[]`), timestamps. Index: `(organizationId)`. Mandatory federal disclosure text is NOT here — it is system-locked in `domain/billing/ftcComplianceRegistry.ts`.
+
+### Collection 85 — `orgDocuments`
+Organization-level generated documents (the General Price List, which has no case). Mirrors `caseDocuments`' immutable-bytes+checksum shape minus `caseId`, plus GPL provenance: `effectiveDate`, `disclosureVersion`, `catalogSnapshotHash`, `version`, `supersedesId`, `status`. Index: `(organizationId, documentTypeKey)`. Sole writer `services/orgDocumentService.ts`. Append-only history — a new active version supersedes the prior; historical GPLs are permanent.
+
+### Existing-collection extension (Phase 39)
+- `serviceCatalog`: `ftcClass` (Text, additive, **nullable**) — optional FTC classification override; null/absent derives from `category`; an invalid value is treated as absent. Drives only compliance rendering — never pricing, the GL, or AR.
+
+**Creation record (Phase 39):** **not yet created.** Collections 83–85 + indexes and the additive `serviceCatalog.ftcClass` field are created only after an explicit Live Wix Authorization Checkpoint. Two new document-type registry entries (`financial.statement_goods_services`, `pricelist.general`) are code-only (no data-model change). No live mutation was performed while implementing Phase 39.
+
 ## Supporting collections evaluated and not created
 
 | Collection | Verdict | Reason |

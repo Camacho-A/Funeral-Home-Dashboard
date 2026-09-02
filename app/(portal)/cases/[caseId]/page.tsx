@@ -16,6 +16,7 @@ import { CaseHeader } from '@/components/case/CaseHeader';
 import { StageStepper, type StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
+import { BillingCard } from '@/components/case/BillingCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
 import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCard';
@@ -216,6 +217,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           />
 
           <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
+
+          <BillingCard caseId={caseId} />
 
           <ChecklistCard
             checklist={viewModel.checklist}
