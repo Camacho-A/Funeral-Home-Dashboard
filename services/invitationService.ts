@@ -2,7 +2,7 @@ import type { DataAdapterMode } from '../lib/env';
 import type { Membership } from '../types/membership';
 import type { Identity } from '../types/identity';
 import { findOrCreateIdentity, getIdentityById } from './identityService';
-import { createMembership, activateMembership, listMembershipsForOrganization, updateMembership } from './membershipService';
+import { createMembership, getMembership, activateMembership, listMembershipsForOrganization, updateMembership } from './membershipService';
 import { createVerificationToken, resendVerification, verifyEmailWithToken, listTokensForIdentity, invalidateTokensForIdentity } from './emailVerificationService';
 import { setPassword } from './passwordService';
 import { insertAuditEntry } from './roleService';
@@ -18,13 +18,39 @@ import { insertAuditEntry } from './roleService';
  */
 
 /**
- * Idempotent: inviting an email already invited/active in this
- * organization returns the existing membership (`isNewMembership: false`)
- * rather than creating a duplicate row or silently re-inviting. Inviting
- * an email that already has an `Identity` (e.g. already a member of a
- * different organization) reuses that identity — never creates a second
- * one for the same person.
+ * Manors go-live invitation-lifecycle fix (2026-09). Every one of the four
+ * `MembershipStatus` values a pre-existing membership could be in when
+ * someone is invited again gets its own explicit, named outcome — no
+ * ambiguous fallthrough:
+ *
+ * - No membership at all -> `'invited'`: create it, mint a fresh token.
+ * - `'invited'` -> `'already_invited'`: never a duplicate membership, never
+ *   a second token from *this* action (use the dedicated resend action).
+ * - `'active'` -> `'already_active'`: this person is already a real member;
+ *   never re-invite them.
+ * - `'disabled'` -> `'disabled'`: a disabled membership is a distinct
+ *   lifecycle state (see `setMembershipStatus`) — re-invite must never
+ *   silently reactivate it; an administrator has to change that status
+ *   directly first.
+ * - `'removed'` -> `'reactivated'`: this is the fix. Previously,
+ *   `createMembership`'s existing-row check didn't look at `status` at
+ *   all, so a `removed` membership was indistinguishable from an active
+ *   one — inviting the same email again silently no-opped forever (no new
+ *   token, no email, but still a 200 response). Now: the row is safely
+ *   reused (never a duplicate), flipped back to `invited` with whichever
+ *   role was just selected (not the old one), `joinedAt` cleared, and a
+ *   completely fresh token is minted. Every previously-invalidated token
+ *   for this identity is left exactly as invalidated as it already was —
+ *   nothing here ever un-invalidates one (see
+ *   `invalidateTokensForIdentity`'s own comment).
  */
+export type InviteToOrganizationResult =
+  | { outcome: 'invited'; identity: Identity; membership: Membership; verificationToken: string }
+  | { outcome: 'reactivated'; identity: Identity; membership: Membership; verificationToken: string }
+  | { outcome: 'already_invited'; identity: Identity; membership: Membership }
+  | { outcome: 'already_active'; identity: Identity; membership: Membership }
+  | { outcome: 'disabled'; identity: Identity; membership: Membership };
+
 export async function inviteToOrganization(
   params: {
     email: string;
@@ -35,40 +61,39 @@ export async function inviteToOrganization(
     idFactory: () => string;
   },
   dataAdapterMode: DataAdapterMode,
-): Promise<{
-  identity: Identity;
-  membership: Membership;
-  isNewIdentity: boolean;
-  isNewMembership: boolean;
-  verificationToken: string | null;
-}> {
-  const { identity, isNew: isNewIdentity } = await findOrCreateIdentity(
+): Promise<InviteToOrganizationResult> {
+  const { identity } = await findOrCreateIdentity(
     { email: params.email, displayName: params.displayName, idFactory: params.idFactory },
     dataAdapterMode,
   );
 
-  const { membership, isNew: isNewMembership } = await createMembership(
-    {
-      identityId: identity.id,
-      organizationId: params.organizationId,
-      role: params.role,
-      status: 'invited',
-      invitedBy: params.invitedByIdentityId,
-      idFactory: params.idFactory,
-    },
-    dataAdapterMode,
-  );
+  const existing = await getMembership(identity.id, params.organizationId, dataAdapterMode);
 
-  // Only issue a fresh verification/acceptance token for a genuinely new
-  // invitation — re-inviting an already-invited/active membership doesn't
-  // spam a new token on every call.
-  let verificationToken: string | null = null;
-  if (isNewMembership) {
+  if (!existing) {
+    const { membership } = await createMembership(
+      {
+        identityId: identity.id,
+        organizationId: params.organizationId,
+        role: params.role,
+        status: 'invited',
+        invitedBy: params.invitedByIdentityId,
+        idFactory: params.idFactory,
+      },
+      dataAdapterMode,
+    );
     const { token } = await createVerificationToken(identity.id, params.idFactory, dataAdapterMode);
-    verificationToken = token;
+    return { outcome: 'invited', identity, membership, verificationToken: token };
   }
 
-  return { identity, membership, isNewIdentity, isNewMembership, verificationToken };
+  if (existing.status === 'invited') return { outcome: 'already_invited', identity, membership: existing };
+  if (existing.status === 'active') return { outcome: 'already_active', identity, membership: existing };
+  if (existing.status === 'disabled') return { outcome: 'disabled', identity, membership: existing };
+
+  // existing.status === 'removed' — the only remaining MembershipStatus.
+  const reactivated = await updateMembership(existing.id, { status: 'invited', role: params.role, joinedAt: null }, dataAdapterMode);
+  if (!reactivated) throw new Error('Failed to reactivate a previously removed membership.');
+  const { token } = await createVerificationToken(identity.id, params.idFactory, dataAdapterMode);
+  return { outcome: 'reactivated', identity, membership: reactivated, verificationToken: token };
 }
 
 /** "Expired invitations may be regenerated" — re-issues an

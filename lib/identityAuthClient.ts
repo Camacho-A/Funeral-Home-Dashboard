@@ -245,7 +245,7 @@ export async function fetchPendingInvitations(organizationId: string): Promise<P
   return (body.invitations as PendingInvitation[]) ?? [];
 }
 
-export async function inviteTeamMember(params: { organizationId: string; email: string; displayName: string; role: string }): Promise<{ membershipId: string; isNewMembership: boolean }> {
+export async function inviteTeamMember(params: { organizationId: string; email: string; displayName: string; role: string }): Promise<{ membershipId: string; outcome: string }> {
   const response = await fetch('/api/auth/invitations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -253,7 +253,7 @@ export async function inviteTeamMember(params: { organizationId: string; email: 
   });
   const body = await parseJsonOrThrow(response);
   const membership = body.membership as { id: string } | undefined;
-  return { membershipId: membership?.id ?? '', isNewMembership: body.isNewMembership === true };
+  return { membershipId: membership?.id ?? '', outcome: typeof body.outcome === 'string' ? body.outcome : 'invited' };
 }
 
 export async function resendInvitationRequest(params: { organizationId: string; membershipId: string; invitedIdentityId: string }): Promise<void> {

@@ -65,5 +65,17 @@
 
 .actions {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.actionButtons {
+  display: flex;
   gap: 8px;
+}
+
+.error {
+  color: var(--color-attention, #b91c1c);
+  font-size: 12px;
+  max-width: 240px;
 }

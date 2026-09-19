@@ -180,7 +180,7 @@ describe('TeamManagementPanel — pending invitations', () => {
   });
 
   it('invites a new team member — the invite modal submits and the list refetches', async () => {
-    vi.mocked(identityAuthClient.inviteTeamMember).mockResolvedValue({ membershipId: 'membership-new', isNewMembership: true });
+    vi.mocked(identityAuthClient.inviteTeamMember).mockResolvedValue({ membershipId: 'membership-new', outcome: 'invited' });
     renderPanel();
     await screen.findByText('Invited Person');
 
@@ -209,6 +209,16 @@ describe('TeamManagementPanel — pending invitations', () => {
         expect.objectContaining({ membershipId: 'membership-invited', invitedIdentityId: 'identity-invited' }),
       ),
     );
+  });
+
+  it('Fix C: surfaces a resend failure to the admin instead of failing silently', async () => {
+    vi.mocked(identityAuthClient.resendInvitationRequest).mockRejectedValue(new Error('Cannot resend: this invitation is currently "removed", not pending.'));
+    renderPanel();
+    await screen.findByText('Invited Person');
+
+    fireEvent.click(screen.getByText('Resend'));
+
+    expect(await screen.findByText('Cannot resend: this invitation is currently "removed", not pending.')).toBeInTheDocument();
   });
 
   it('revokes an invitation after confirming — it disappears from the list', async () => {

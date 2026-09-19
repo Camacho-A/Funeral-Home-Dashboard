@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { identityFixtures, membershipFixtures, identitySessionFixtures, emailVerificationTokenFixtures } from '@/services/__mocks__/identityFixtures';
 import { organizationRoleAuditEntryFixtures } from '@/services/__mocks__/rbacFixtures';
-import { capturedIdentityMessages } from '@/services/__mocks__/identityMessageSender';
+import { capturedIdentityMessages, forceNextSendToFail, clearForcedSendFailure } from '@/services/__mocks__/identityMessageSender';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 let idCounter = 0;
@@ -39,6 +39,7 @@ let lengths: { identity: number; membership: number; sessions: number; tokens: n
 beforeEach(() => {
   idCounter = 0;
   mockSession = null;
+  clearForcedSendFailure();
   lengths = {
     identity: identityFixtures.length,
     membership: membershipFixtures.length,
@@ -49,6 +50,7 @@ beforeEach(() => {
   };
 });
 afterEach(() => {
+  clearForcedSendFailure();
   identityFixtures.length = lengths.identity;
   membershipFixtures.length = lengths.membership;
   identitySessionFixtures.length = lengths.sessions;
@@ -100,6 +102,7 @@ describe('POST /api/auth/invitations', () => {
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'new.staff@example.com', displayName: 'New Staff', role: 'staff' });
     expect(response.status).toBe(200);
     const body = await response.json();
+    expect(body.outcome).toBe('invited');
     expect(body.membership.status).toBe('invited');
     expect(body.invitationToken).toBeUndefined();
     expect(JSON.stringify(body)).not.toMatch(/token/i);
@@ -109,13 +112,97 @@ describe('POST /api/auth/invitations', () => {
     expect(typeof (sent as { token: string }).token).toBe('string');
   });
 
-  it('is idempotent — inviting the same email twice never re-issues a token or sends a second message', async () => {
+  it('is idempotent — inviting an already-invited email again never duplicates the membership, never re-issues a token, and returns an explicit 409 rather than a false success', async () => {
     await seedAdminCaller('administrator');
     await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'repeat@example.com', displayName: 'Repeat', role: 'staff' });
     const second = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'repeat@example.com', displayName: 'Repeat', role: 'staff' });
+    expect(second.status).toBe(409);
     const body = await second.json();
-    expect(body.isNewMembership).toBe(false);
+    expect(body.outcome).toBe('already_invited');
+    expect(typeof body.error).toBe('string');
     expect(capturedIdentityMessages.filter((m) => m.to === 'repeat@example.com')).toHaveLength(1);
+  });
+
+  it('Manors go-live fix: an already-active member cannot be re-invited — 409, no new membership, no email', async () => {
+    await seedAdminCaller('administrator');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'already.active.route@example.com', displayName: 'Active', role: 'staff' });
+    const inviteBody = await invite.json();
+    const sentInvite = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'already.active.route@example.com') as { token: string };
+
+    const { acceptInvitation } = await import('@/services/invitationService');
+    await acceptInvitation({ token: sentInvite.token, membershipId: inviteBody.membership.id, password: 'Active1!' }, 'mock');
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'already.active.route@example.com', displayName: 'Active', role: 'staff' });
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.outcome).toBe('already_active');
+    expect(capturedIdentityMessages.filter((m) => m.to === 'already.active.route@example.com')).toHaveLength(1); // only the original
+  });
+
+  it('Manors go-live fix: a disabled membership is not silently reactivated by re-inviting — 409, explicit outcome', async () => {
+    await seedAdminCaller('administrator');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'disabled.route@example.com', displayName: 'Disabled', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const { updateMembership } = await import('@/services/membershipService');
+    await updateMembership(inviteBody.membership.id, { status: 'disabled' }, 'mock');
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'disabled.route@example.com', displayName: 'Disabled', role: 'staff' });
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.outcome).toBe('disabled');
+    expect(membershipFixtures.find((m) => m.id === inviteBody.membership.id)?.status).toBe('disabled'); // unchanged
+  });
+
+  it('Manors go-live fix: re-inviting a previously removed membership reactivates it with the newly selected role and sends a fresh invitation', async () => {
+    await seedAdminCaller('administrator');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'removed.route@example.com', displayName: 'Removed', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const { revokeInvitation } = await import('@/services/invitationService');
+    await revokeInvitation({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, actorIdentityId: 'irrelevant-for-this-test', idFactory: () => 'audit-id' }, 'mock');
+    expect(membershipFixtures.find((m) => m.id === inviteBody.membership.id)?.status).toBe('removed');
+
+    const membershipCountBefore = membershipFixtures.length;
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'removed.route@example.com', displayName: 'Removed', role: 'manager' });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.outcome).toBe('reactivated');
+    expect(body.membership.id).toBe(inviteBody.membership.id); // same row, no duplicate
+    expect(body.membership.status).toBe('invited');
+    expect(body.membership.role).toBe('manager');
+    expect(membershipFixtures).toHaveLength(membershipCountBefore); // no new row created
+
+    const sentAfterReinvite = capturedIdentityMessages.filter((m) => m.kind === 'invitation' && m.to === 'removed.route@example.com');
+    expect(sentAfterReinvite).toHaveLength(2); // original + the reactivation's fresh send
+    expect((sentAfterReinvite[1] as { token: string }).token).not.toBe((sentAfterReinvite[0] as { token: string }).token);
+  });
+
+  it('Fix C: an email provider failure does not return a false-success response — the membership is still created, but the response is a clear error', async () => {
+    await seedAdminCaller('administrator');
+    forceNextSendToFail('Resend send failed (HTTP 422).');
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'delivery.fails@example.com', displayName: 'Delivery Fails', role: 'staff' });
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(typeof body.error).toBe('string');
+    expect(body.error).toMatch(/could not be sent/i);
+    // The membership genuinely exists — a future Resend can pick it up.
+    expect(body.membership.status).toBe('invited');
+    expect(membershipFixtures.find((m) => m.id === body.membership.id)?.status).toBe('invited');
+    // Never leak the actual token, the API key, or a raw provider payload.
+    expect(JSON.stringify(body)).not.toMatch(/RESEND_API_KEY/i);
+    expect(JSON.stringify(body)).not.toMatch(/re_[a-zA-Z0-9]/); // a plausible Resend key shape
+  });
+
+  it('Fix C: missing/unconfigured email provider fails clearly rather than claiming success', async () => {
+    await seedAdminCaller('administrator');
+    forceNextSendToFail('No identity message provider is configured for production. Beacon has no transactional email integration yet.');
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'no.provider@example.com', displayName: 'No Provider', role: 'staff' });
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.error).toMatch(/could not be sent/i);
   });
 });
 
@@ -126,6 +213,17 @@ describe('PATCH /api/auth/invitations (regenerate)', () => {
       { organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'x', invitedIdentityId: 'y' },
       { origin: 'https://evil.example.com', host: 'localhost' },
     );
+    expect(response.status).toBe(403);
+  });
+
+  it('returns 401 with no session', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'x', invitedIdentityId: 'y' });
+    expect(response.status).toBe(401);
+  });
+
+  it('an ordinary staff-tier caller may not resend invitations', async () => {
+    await seedAdminCaller('staff');
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'x', invitedIdentityId: 'y' });
     expect(response.status).toBe(403);
   });
 
@@ -148,6 +246,68 @@ describe('PATCH /api/auth/invitations (regenerate)', () => {
     await seedAdminCaller('owner');
     const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: 'fabricated-membership-id', invitedIdentityId: 'fabricated-identity-id' });
     expect(response.status).toBe(404);
+  });
+
+  it('Fix A: rejects resend for a removed (revoked) membership — no new token minted, no email sent, an explicit error rather than silent success', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'resend.removed@example.com', displayName: 'Resend Removed', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const { revokeInvitation } = await import('@/services/invitationService');
+    await revokeInvitation({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, actorIdentityId: 'irrelevant', idFactory: () => 'audit-id' }, 'mock');
+
+    const tokenCountBefore = emailVerificationTokenFixtures.length;
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, invitedIdentityId: inviteBody.membership.identityId });
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toMatch(/removed/i);
+
+    // No fresh token was minted for the removed membership.
+    expect(emailVerificationTokenFixtures).toHaveLength(tokenCountBefore);
+    // No second invitation email was sent.
+    expect(capturedIdentityMessages.filter((m) => m.to === 'resend.removed@example.com')).toHaveLength(1); // only the original
+  });
+
+  it('Fix A: rejects resend for an already-active membership, explicitly', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'resend.active@example.com', displayName: 'Resend Active', role: 'staff' });
+    const inviteBody = await invite.json();
+    const sentInvite = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'resend.active@example.com') as { token: string };
+
+    const { acceptInvitation } = await import('@/services/invitationService');
+    await acceptInvitation({ token: sentInvite.token, membershipId: inviteBody.membership.id, password: 'Active1!' }, 'mock');
+
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, invitedIdentityId: inviteBody.membership.identityId });
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toMatch(/active/i);
+  });
+
+  it('Fix A: rejects resend for a disabled membership, explicitly', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'resend.disabled@example.com', displayName: 'Resend Disabled', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    const { updateMembership } = await import('@/services/membershipService');
+    await updateMembership(inviteBody.membership.id, { status: 'disabled' }, 'mock');
+
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, invitedIdentityId: inviteBody.membership.identityId });
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toMatch(/disabled/i);
+  });
+
+  it('Fix C: a resend delivery failure does not return a false success — token is regenerated, but the response is a clear error', async () => {
+    await seedAdminCaller('owner');
+    const invite = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'resend.delivery.fails@example.com', displayName: 'Resend Delivery Fails', role: 'staff' });
+    const inviteBody = await invite.json();
+
+    forceNextSendToFail('Resend send failed (HTTP 500).');
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, invitedIdentityId: inviteBody.membership.identityId });
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.error).toMatch(/could not be sent/i);
+    expect(JSON.stringify(body)).not.toMatch(/RESEND_API_KEY/i);
   });
 });
 

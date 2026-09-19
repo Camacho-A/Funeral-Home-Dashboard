@@ -113,24 +113,56 @@ export async function POST(request: Request) {
     dataAdapterMode,
   );
 
-  if (result.verificationToken) {
-    try {
-      await getIdentityMessageSender().send({
-        kind: 'invitation',
-        to: result.identity.email,
-        token: result.verificationToken,
-        organizationId: authz.context.organizationId,
-        membershipId: result.membership.id,
-      });
-    } catch (error) {
-      console.error('Failed to send invitation message:', error instanceof Error ? error.message : error);
-    }
+  // Manors go-live invitation-lifecycle fix: every outcome gets its own
+  // explicit, honest response — never a blanket 200 regardless of what
+  // actually happened. `already_invited`/`already_active`/`disabled` are
+  // real, distinct states an admin needs to see, not a silent no-op that
+  // looks identical to a fresh invite.
+  if (result.outcome === 'already_invited') {
+    return NextResponse.json(
+      { error: 'This person already has a pending invitation for this organization. Use Resend to send a new link.', membership: result.membership, outcome: result.outcome },
+      { status: 409 },
+    );
+  }
+  if (result.outcome === 'already_active') {
+    return NextResponse.json(
+      { error: 'This person is already an active member of this organization.', outcome: result.outcome },
+      { status: 409 },
+    );
+  }
+  if (result.outcome === 'disabled') {
+    return NextResponse.json(
+      { error: "This person's membership is currently disabled. Reactivate their account status directly (Settings → Team) before re-inviting.", outcome: result.outcome },
+      { status: 409 },
+    );
   }
 
-  return NextResponse.json({
-    membership: result.membership,
-    isNewMembership: result.isNewMembership,
-  });
+  // outcome is 'invited' or 'reactivated' — a fresh token now genuinely
+  // exists and an email attempt is required. A delivery failure here must
+  // never look like success: the membership/token were really created
+  // (that's real, correct state — the row is ready for a future Resend),
+  // but this specific response has to say so honestly.
+  try {
+    await getIdentityMessageSender().send({
+      kind: 'invitation',
+      to: result.identity.email,
+      token: result.verificationToken,
+      organizationId: authz.context.organizationId,
+      membershipId: result.membership.id,
+    });
+  } catch (error) {
+    console.error('Failed to send invitation message:', error instanceof Error ? error.message : error);
+    return NextResponse.json(
+      {
+        error: `The invitation was created, but the email could not be sent (${error instanceof Error ? error.message : 'unknown delivery error'}). Use Resend once email delivery is fixed.`,
+        membership: result.membership,
+        outcome: result.outcome,
+      },
+      { status: 502 },
+    );
+  }
+
+  return NextResponse.json({ membership: result.membership, outcome: result.outcome });
 }
 
 /** "Expired invitations may be regenerated." */
@@ -177,6 +209,20 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Invitation not found.' }, { status: 404 });
   }
 
+  // Fix A (Manors go-live invitation-lifecycle fix): resend must only ever
+  // act on a genuinely still-pending invitation. Previously this had no
+  // status guard at all — a removed/active/disabled membership would get
+  // a brand-new token minted for it just as readily as a pending one,
+  // which for a `removed` row means silently resurrecting an invitation
+  // that was deliberately revoked. Every non-'invited' status is rejected
+  // explicitly, never an ambiguous fallthrough.
+  if (membership.status !== 'invited') {
+    return NextResponse.json(
+      { error: `Cannot resend: this invitation is currently "${membership.status}", not pending.` },
+      { status: 409 },
+    );
+  }
+
   const { token } = await regenerateInvitation(membershipId, invitedIdentityId, () => crypto.randomUUID(), dataAdapterMode);
 
   const invitedIdentity = await getIdentityById(invitedIdentityId, dataAdapterMode);
@@ -191,6 +237,12 @@ export async function PATCH(request: Request) {
       });
     } catch (error) {
       console.error('Failed to send invitation message:', error instanceof Error ? error.message : error);
+      return NextResponse.json(
+        {
+          error: `A new invitation token was created, but the email could not be sent (${error instanceof Error ? error.message : 'unknown delivery error'}). Try Resend again once email delivery is fixed.`,
+        },
+        { status: 502 },
+      );
     }
   }
 

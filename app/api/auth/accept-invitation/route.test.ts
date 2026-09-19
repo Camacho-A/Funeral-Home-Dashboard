@@ -66,6 +66,7 @@ describe('POST /api/auth/accept-invitation', () => {
       { email: 'accept.route@example.com', displayName: 'Accept Route', organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', invitedByIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory },
       'mock',
     );
+    if (invited.outcome !== 'invited') throw new Error('unreachable');
 
     const response = await postRequest({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'BrandNewPass1!' });
     expect(response.status).toBe(200);
