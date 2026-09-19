@@ -23,6 +23,14 @@ export function canEditCase(params: ResolvePermissionsParams, dataAdapterMode: D
   return hasPermission(params, dataAdapterMode, 'case.update');
 }
 
+/** Manors go-live fix. Narrower than `canEditCase` — gates assigning a
+    case's handler to a staff member OTHER than the caller themselves.
+    Assigning a case to yourself never needs this (see the call sites in
+    app/api/cases/route.ts and app/api/cases/[caseId]/route.ts). */
+export function canReassignCase(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'case.reassign');
+}
+
 export function canDeleteCase(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'case.delete');
 }

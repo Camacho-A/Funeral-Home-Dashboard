@@ -14,6 +14,8 @@ import { useCreateCase } from '@/hooks/useCreateCase';
 import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useServiceCatalog } from '@/hooks/useServiceCatalog';
+import { useMyPermissions } from '@/hooks/useRbac';
+import { useStaff } from '@/hooks/useStaff';
 import { useMutation } from '@tanstack/react-query';
 import { caseLogService } from '@/services/caseLogService';
 import { pricingClient } from '@/services/pricingClient';
@@ -120,6 +122,17 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const session = useSession();
   const organization = useOrganization();
   const createCase = useCreateCase();
+  // Manors go-live fix: Assigned Staff defaults to the real authenticated
+  // caller (never a form choice they have to make) — editable only for a
+  // role that actually holds `case.reassign` server-side (the same
+  // permission app/api/cases/route.ts enforces independently; this is a
+  // UI convenience, never the security boundary itself). staffOptions
+  // reuses the exact hook the Case Information "Owner" dropdown already
+  // uses — no new endpoint.
+  const { data: myPermissions } = useMyPermissions(organization.organizationId);
+  const canReassign = (myPermissions?.permissions ?? []).includes('case.reassign');
+  const { data: staffList = [] } = useStaff();
+  const [assignedStaffId, setAssignedStaffId] = useState<string | null>(session.staffId);
   const { data: templates, isSuccess: templatesLoaded } = useWorkflowTemplates();
   const template = templates?.find((t) => t.isEnabled);
   const templateIntake = template?.versions[template.versions.length - 1]?.intake;
@@ -180,7 +193,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     mutationFn: (input: { caseId: string; selections: ServiceSelections }) =>
       pricingClient.createCaseOrder(organization, input.caseId, {
         selections: input.selections,
-        performedBy: session.displayName,
       }),
   });
 
@@ -237,6 +249,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setServicesSelections({ weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false });
     setNextOfKinEmailInput('');
     setNextOfKinEmailError(null);
+    setAssignedStaffId(session.staffId);
     setSubmitError(null);
     setIsSubmitting(false);
     addNote.reset();
@@ -332,6 +345,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         timeOfDeath: structuredFields.timeOfDeath || undefined,
         placeOfDeath: structuredFields.placeOfDeath || undefined,
         weight: structuredFields.weight || undefined,
+        assignedStaffId: assignedStaffId ?? undefined,
         fieldValues: buildIntakeFieldValues(effectiveIntake, draft),
       });
     } catch (error) {
@@ -554,6 +568,27 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                     session's staff member, never a form choice. See
                     types/case.ts's intakeOwnerId comment. */}
                 <div className={styles.readOnlyValue}>{session.displayName}</div>
+              </div>
+              <div>
+                <div className={styles.fieldLabel}>Assigned Staff</div>
+                {/* Manors go-live fix: defaults to yourself, always — only
+                    editable if the server would actually accept a different
+                    value (case.reassign). Office Staff (and everyone else
+                    without that permission) sees a read-only confirmation
+                    instead of a control they can't actually use — the real
+                    boundary is enforced server-side either way. */}
+                {canReassign ? (
+                  <SelectField value={assignedStaffId ?? ''} onChange={(e) => setAssignedStaffId(e.target.value)}>
+                    {!staffList.some((s) => s.id === assignedStaffId) && <option value="">—</option>}
+                    {staffList.map((staff) => (
+                      <option key={staff.id} value={staff.id}>
+                        {staff.displayName}
+                      </option>
+                    ))}
+                  </SelectField>
+                ) : (
+                  <div className={styles.readOnlyValue}>{session.displayName}</div>
+                )}
               </div>
             </div>
           </div>

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NewCaseModal } from './NewCaseModal';
 import { OrganizationProvider } from '@/hooks/useOrganization';
+import { SessionProvider } from '@/hooks/useSession';
 import { staffFixtures, caseFixtures } from '@/services/__mocks__/fixtures';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
@@ -92,12 +93,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// Manors go-live fix: useSession() now reads from a real Context, not a
+// hardcoded stub — tests supply their own explicit value here (still
+// staffFixtures[0], preserving every pre-existing assertion below that
+// expects that exact name) rather than relying on production code to
+// derive it from a fixture.
 function renderModal() {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider>
-        <NewCaseModal open onClose={() => {}} />
+        <SessionProvider value={{ staffId: staffFixtures[0].id, displayName: staffFixtures[0].displayName }}>
+          <NewCaseModal open onClose={() => {}} />
+        </SessionProvider>
       </OrganizationProvider>
     </QueryClientProvider>,
   );
@@ -151,19 +159,25 @@ function customTemplate(overrides: Partial<WorkflowTemplate['versions'][0]>): Wo
 }
 
 describe('NewCaseModal — intake owner is read-only', () => {
+  // Manors go-live fix: "Assigned Staff" also displays the same session
+  // display name by default (a separate field, right below), so every
+  // query here is scoped to "Your name (taking this call)"'s own field
+  // specifically — matching this file's established
+  // scope-by-field-label pattern.
+
   it("displays the current session's staff member as plain text", () => {
     renderModal();
-    expect(screen.getByText(staffFixtures[0].displayName)).toBeInTheDocument();
+    expect(within(screen.getByText('Your name (taking this call)').parentElement!).getByText(staffFixtures[0].displayName)).toBeInTheDocument();
   });
 
-  it('renders no <select> anywhere in the form — no staff picker exists to change the intake owner', () => {
-    const { container } = renderModal();
-    expect(container.querySelectorAll('select')).toHaveLength(0);
+  it('renders no <select> for the intake owner field specifically — no staff picker exists to change it', () => {
+    renderModal();
+    expect(within(screen.getByText('Your name (taking this call)').parentElement!).queryByRole('combobox')).not.toBeInTheDocument();
   });
 
   it('does not render the intake owner name inside any editable form control', () => {
     renderModal();
-    const nameNode = screen.getByText(staffFixtures[0].displayName);
+    const nameNode = within(screen.getByText('Your name (taking this call)').parentElement!).getByText(staffFixtures[0].displayName);
     expect(['INPUT', 'SELECT', 'TEXTAREA']).not.toContain(nameNode.tagName);
   });
 
@@ -176,6 +190,75 @@ describe('NewCaseModal — intake owner is read-only', () => {
     inputs.forEach((el) => {
       expect(el.getAttribute('aria-label') ?? '').not.toMatch(/taking this call|intake owner/i);
     });
+  });
+});
+
+/** Manors go-live fix: "Assigned Staff" defaults to the real authenticated
+    caller and is editable only for a role holding `case.reassign` — a
+    role without it (the default `fetch` stub's empty permissions list,
+    matching Office Staff/every role lacking this key) sees a read-only
+    confirmation instead. */
+describe('NewCaseModal — Assigned Staff (Manors go-live fix)', () => {
+  function stubFetchWithPermissions(permissions: string[]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/api/rbac/my-permissions')) {
+          return Promise.resolve({ ok: true, json: async () => ({ identityId: 'id', organizationId: DEFAULT_ORGANIZATION_ID, roleKey: 'officeStaff', permissions }) });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            workflowTemplates: workflowTemplateFixtures.filter((t) => t.organizationId === DEFAULT_ORGANIZATION_ID),
+            catalog: serviceCatalogFixtures,
+          }),
+        });
+      }),
+    );
+  }
+
+  it('defaults to the authenticated session\'s own staff member, without requiring a selection', async () => {
+    stubFetchWithPermissions([]); // no case.reassign — e.g. Office Staff
+    renderModal();
+    const assignedField = within(screen.getByText('Assigned Staff').parentElement!);
+    expect(await assignedField.findByText(staffFixtures[0].displayName)).toBeInTheDocument();
+  });
+
+  it('a caller without case.reassign sees a read-only value, not a picker — cannot assign the new case to another employee', async () => {
+    stubFetchWithPermissions([]);
+    renderModal();
+    const assignedField = within(screen.getByText('Assigned Staff').parentElement!);
+    await assignedField.findByText(staffFixtures[0].displayName);
+    expect(assignedField.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('a caller with case.reassign (Administrator/Funeral Director/Manager) sees an editable picker, defaulting to themselves', async () => {
+    stubFetchWithPermissions(['case.reassign']);
+    renderModal();
+    const assignedField = within(screen.getByText('Assigned Staff').parentElement!);
+    const select = await assignedField.findByRole('combobox');
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe(staffFixtures[0].id));
+  });
+
+  it('a caller with case.reassign can pick a different active staff member, and that selection is what the case is created with', async () => {
+    stubFetchWithPermissions(['case.reassign']);
+    const { container } = renderModal();
+    await waitFor(() => expect(intakeInputs(container).length).toBeGreaterThanOrEqual(9));
+    fillRequiredFields(container);
+
+    const assignedField = within(screen.getByText('Assigned Staff').parentElement!);
+    const select = await assignedField.findByRole('combobox');
+    const otherStaff = staffFixtures.find((s) => s.id !== staffFixtures[0].id)!;
+    fireEvent.change(select, { target: { value: otherStaff.id } });
+    expect((select as HTMLSelectElement).value).toBe(otherStaff.id);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const createdCase = caseFixtures.find((c) => c.id === newCaseId);
+    expect(createdCase?.assignedStaffId).toBe(otherStaff.id);
   });
 });
 

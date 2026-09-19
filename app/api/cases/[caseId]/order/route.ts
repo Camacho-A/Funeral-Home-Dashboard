@@ -56,6 +56,13 @@ async function parseAuthorizedBody(
   | { ok: true; organizationId: string; selections: unknown; performedBy: string }
   | { ok: false; response: NextResponse }
 > {
+  // Manors go-live fix (2026-09): `performedBy` used to be trusted directly
+  // from the client body (the same class of gap Phase 30 already closed
+  // for Case's createdBy/intakeOwnerId) — this was the one route the
+  // session-identity audit found still doing it. It's now always the
+  // caller's own real, server-resolved identity id (never client input),
+  // matching services/merchandise's own already-correct use of this same
+  // field.
   const csrfResponse = requireSameOrigin(request);
   if (csrfResponse) return { ok: false, response: csrfResponse };
 
@@ -92,19 +99,12 @@ async function parseAuthorizedBody(
   if (!isPlainObject(body.selections)) {
     return { ok: false, response: NextResponse.json({ error: 'selections is required.' }, { status: 400 }) };
   }
-  // Same trust model as Case's createdBy/intakeOwnerId (see app/api/cases/route.ts's
-  // own comment): accepted from the client's trusted useSession() value,
-  // not yet re-derived from a server-side session lookup — a documented,
-  // pre-existing limitation, not new to this phase.
-  if (typeof body.performedBy !== 'string' || body.performedBy.trim() === '') {
-    return { ok: false, response: NextResponse.json({ error: 'performedBy is required.' }, { status: 400 }) };
-  }
 
   return {
     ok: true,
     organizationId: authResult.context.organizationId,
     selections: body.selections,
-    performedBy: body.performedBy,
+    performedBy: authResult.context.userId,
   };
 }
 

@@ -12,6 +12,18 @@ export const PERMISSION_KEYS = [
   'case.update',
   'case.delete',
 
+  /** Manors go-live fix (2026-09). `case.update` alone was too broad for
+      assigning/reassigning a case to a DIFFERENT staff member — every
+      role that can edit ordinary case fields (including Office Staff)
+      also held `case.update`, which meant nothing actually distinguished
+      "edit this case's fields" from "hand this case to someone else."
+      `case.reassign` is a narrower, separate gate for exactly that one
+      action. Assigning a case to *yourself* (at creation or via edit)
+      never needs this — only naming a different `StaffProfile.id` does;
+      see `app/api/cases/route.ts`/`app/api/cases/[caseId]/route.ts`'s own
+      comments on the self-vs-other distinction. */
+  'case.reassign',
+
   'caseOrder.read',
   'caseOrder.update',
 
@@ -245,6 +257,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'case.create': 'Create new case records',
   'case.update': 'Edit case records',
   'case.delete': 'Delete case records',
+  'case.reassign': "Assign or reassign a case's handler to a staff member other than yourself",
 
   'caseOrder.read': "View a case's order (services and merchandise selections)",
   'caseOrder.update': "Edit a case's order",

@@ -34,7 +34,7 @@ export async function getCaseOrder(context: OrganizationContext, caseId: string)
 export async function createCaseOrder(
   context: OrganizationContext,
   caseId: string,
-  input: { selections: ServiceSelections; performedBy: string },
+  input: { selections: ServiceSelections },
 ): Promise<CaseOrderResult> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/order`, {
     method: 'POST',
@@ -51,7 +51,7 @@ export async function createCaseOrder(
 export async function editCaseOrder(
   context: OrganizationContext,
   caseId: string,
-  input: { selections: ServiceSelections; performedBy: string },
+  input: { selections: ServiceSelections },
 ): Promise<CaseOrderResult> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/order`, {
     method: 'PATCH',

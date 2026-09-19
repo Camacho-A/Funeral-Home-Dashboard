@@ -3,7 +3,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems, updateWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, validateAndPickCaseUpdate, applyCaseUpdateToWixData, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
+import { assertAssignableStaffProfile, assertStaffProfileIsActiveAndInOrganization, resolveStaffProfileForCaller, StaffAssignmentError } from '@/services/staffProfileService';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
@@ -186,12 +186,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   // reassignment (a non-null string, not an unassign-to-null patch) is
   // validated before it ever reaches Wix — never a phantom/inactive/
   // cross-org StaffProfile.id.
+  //
+  // Manors go-live fix (2026-09): assigning the case to YOURSELF only
+  // needs the existence/active/org-match check (already covered by the
+  // blanket case.update/pickup.update gate above for the rest of the
+  // patch) — naming a DIFFERENT staff member additionally requires the
+  // narrower case.reassign permission. Office Staff holds case.update but
+  // not case.reassign, so they can edit a case's other fields and even
+  // claim it for themselves, but cannot hand it to someone else.
   if (typeof patch.assignedStaffId === 'string') {
     try {
-      await assertAssignableStaffProfile(
-        { organizationId, staffProfileId: patch.assignedStaffId, permission: 'case.update', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
-        'wix',
-      );
+      const callerProfile = await resolveStaffProfileForCaller({ userId: context.userId, organizationId, role: context.role }, 'wix');
+      if (callerProfile && patch.assignedStaffId === callerProfile.id) {
+        await assertStaffProfileIsActiveAndInOrganization(organizationId, patch.assignedStaffId, 'wix');
+      } else {
+        await assertAssignableStaffProfile(
+          { organizationId, staffProfileId: patch.assignedStaffId, permission: 'case.reassign', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
+          'wix',
+        );
+      }
     } catch (error) {
       const message = error instanceof StaffAssignmentError ? error.message : 'Failed to validate assignedStaffId.';
       return NextResponse.json({ case: null, error: message }, { status: 422 });

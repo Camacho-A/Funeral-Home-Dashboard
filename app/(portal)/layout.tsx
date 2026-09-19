@@ -2,10 +2,13 @@ import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { CaseSearchProvider } from '@/hooks/useCaseSearch';
 import { OrganizationProvider } from '@/hooks/useOrganization';
+import { SessionProvider } from '@/hooks/useSession';
+import type { Session } from '@/types/session';
 import { getSession, clearSession } from '@/lib/auth/session';
 import { resolveAuthorizationContext } from '@/lib/auth/authorize';
 import { resolveIdentitySession } from '@/lib/auth/resolveIdentitySession';
 import { resolveMembershipAuthorizationContext } from '@/lib/auth/resolveMembershipAuthorizationContext';
+import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode, getAuthAdapterMode } from '@/lib/env';
 
 /**
@@ -56,10 +59,14 @@ export default async function PortalLayout({ children }: { children: React.React
       redirect(`/login?error=${membershipResult.reason}`);
     }
 
+    const currentSession = await resolveCurrentSession(membershipResult.context, session.user.displayName, dataAdapterMode);
+
     return (
       <CaseSearchProvider>
         <OrganizationProvider organizationId={membershipResult.context.organizationId} dataAdapterMode={dataAdapterMode}>
-          <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
+          <SessionProvider value={currentSession}>
+            <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
+          </SessionProvider>
         </OrganizationProvider>
       </CaseSearchProvider>
     );
@@ -70,11 +77,36 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect(`/login?error=${result.reason}`);
   }
 
+  const currentSession = await resolveCurrentSession(result.context, session.user.displayName, dataAdapterMode);
+
   return (
     <CaseSearchProvider>
       <OrganizationProvider organizationId={result.context.organizationId} dataAdapterMode={dataAdapterMode}>
-        <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
+        <SessionProvider value={currentSession}>
+          <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
+        </SessionProvider>
       </OrganizationProvider>
     </CaseSearchProvider>
   );
+}
+
+/**
+ * Manors go-live fix (2026-09): the one place the real client-facing
+ * `Session` (`hooks/useSession.ts`) is resolved — reusing
+ * `resolveStaffProfileForCaller`, the exact same function
+ * `app/api/cases/route.ts` already trusts server-side for the identical
+ * lookup, rather than inventing a second resolution path. `staffId` is
+ * `null` when this identity/membership has no `StaffProfile` provisioned
+ * yet in this organization — a real, disclosed possibility (see
+ * `types/session.ts`), not an error condition on its own; `displayName`
+ * always comes from the real, already-authenticated `AuthSession`, never
+ * from the (possibly absent) `StaffProfile`.
+ */
+async function resolveCurrentSession(
+  context: { userId: string; organizationId: string; role: string },
+  displayName: string,
+  dataAdapterMode: ReturnType<typeof getDataAdapterMode>,
+): Promise<Session> {
+  const staffProfile = await resolveStaffProfileForCaller(context, dataAdapterMode);
+  return { staffId: staffProfile?.id ?? null, displayName };
 }

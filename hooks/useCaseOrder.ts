@@ -24,7 +24,7 @@ export function useCreateCaseOrder(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { selections: ServiceSelections; performedBy: string }) =>
+    mutationFn: (input: { selections: ServiceSelections }) =>
       pricingClient.createCaseOrder(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });
@@ -36,7 +36,7 @@ export function useEditCaseOrder(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { selections: ServiceSelections; performedBy: string }) =>
+    mutationFn: (input: { selections: ServiceSelections }) =>
       pricingClient.editCaseOrder(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });

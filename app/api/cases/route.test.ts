@@ -116,7 +116,11 @@ const ADMINISTRATOR_ROLE_ITEM = {
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
 };
-const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.read', 'case.update', 'task.assign'].map((permissionKey) => ({
+// Manors go-live fix: 'case.create'/'case.reassign' added alongside the
+// pre-existing set — every POST test below now goes through the route's
+// new canCreateCase gate first, and the reassignment tests specifically
+// need case.reassign to name a staff member other than the caller.
+const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.read', 'case.update', 'case.create', 'case.reassign', 'task.assign'].map((permissionKey) => ({
   id: `role-permission-administrator-${permissionKey}`,
   dataCollectionId: 'rolePermissions',
   data: {
@@ -168,6 +172,8 @@ function mockEnabledTemplate() {
     if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
     if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
     if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: [CALLER_STAFF_PROFILE_ITEM] });
+    if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
     return Promise.resolve({ dataItems: [] });
   });
 }
@@ -464,6 +470,7 @@ describe('POST /api/cases — validation', () => {
   });
 
   it('returns 400 when a required field is missing or empty', async () => {
+    mockEnabledTemplate();
     const response = await POST(postRequest({ ...VALID_CREATE_BODY, decedentName: '' }));
     const body = await response.json();
     expect(response.status).toBe(400);
@@ -471,6 +478,7 @@ describe('POST /api/cases — validation', () => {
   });
 
   it('returns 400 when an optional field has the wrong type', async () => {
+    mockEnabledTemplate();
     const response = await POST(postRequest({ ...VALID_CREATE_BODY, weight: 123 }));
     expect(response.status).toBe(400);
   });
@@ -685,7 +693,11 @@ describe('POST /api/cases — creation', () => {
   });
 
   it('returns 422 when the organization has no enabled workflow template', async () => {
-    mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+      return Promise.resolve({ dataItems: [] });
+    });
     const response = await POST(postRequest(VALID_CREATE_BODY));
     expect(response.status).toBe(422);
     expect(mockInsertWixDataItem).not.toHaveBeenCalled();
@@ -806,6 +818,8 @@ describe('POST /api/cases — Phase 30 (Identity Model Hardening & Staff Assignm
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
       if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
       return Promise.resolve({ dataItems: [] }); // no staffProfiles row for this caller
     });
     const response = await POST(postRequest(VALID_CREATE_BODY));
@@ -849,5 +863,125 @@ describe('POST /api/cases — Phase 30 (Identity Model Hardening & Staff Assignm
     expect(response.status).toBe(422);
     expect(body.error).toMatch(/staff-does-not-exist/);
     expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
+// Manors go-live fix (real session identity + case assignment
+// authorization). Mirrors [caseId]/route.test.ts's own Dispatch describe
+// block pattern exactly: a role fixture's 'roles'/'rolePermissions' mock
+// resolves to a fixed role regardless of the requested key, so
+// mockSession's own role string never needs to change per test.
+describe('POST /api/cases — role-based authorization (Manors go-live fix: case.create / case.reassign)', () => {
+  const OTHER_STAFF_PROFILE_ITEM = {
+    id: 'staff-chris',
+    dataCollectionId: 'staffProfiles',
+    data: {
+      beaconStaffProfileId: 'staff-chris',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      identityId: 'identity-manors-chris',
+      membershipId: null,
+      displayName: 'Chris',
+      role: 'funeral_director',
+      isActive: true,
+      createdAt: '2026-07-24T00:00:00.000Z',
+      updatedAt: '2026-07-24T00:00:00.000Z',
+    },
+  };
+
+  function roleFixture(key: string, permissions: string[]) {
+    const roleItem = {
+      id: `role-${key}`,
+      dataCollectionId: 'roles',
+      data: {
+        beaconRoleId: `role-${key}`,
+        key,
+        name: key,
+        description: '',
+        organizationId: null,
+        isSystemDefault: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    const permissionItems = permissions.map((permissionKey) => ({
+      id: `role-permission-${key}-${permissionKey}`,
+      dataCollectionId: 'rolePermissions',
+      data: { beaconRolePermissionId: `role-permission-${key}-${permissionKey}`, roleId: `role-${key}`, permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+    }));
+    return { roleItem, permissionItems };
+  }
+
+  function mockRoleAndStaffProfiles(roleKey: string, permissions: string[], profileItems: typeof CALLER_STAFF_PROFILE_ITEM[]) {
+    const { roleItem, permissionItems } = roleFixture(roleKey, permissions);
+    mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+      if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
+      if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [roleItem] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: permissionItems });
+      if (collectionId === 'staffProfiles') {
+        const filter = options?.filter ?? {};
+        const matches = profileItems.filter(
+          (item) =>
+            (filter.identityId === undefined || item.data.identityId === filter.identityId) &&
+            (filter.beaconStaffProfileId === undefined || item.data.beaconStaffProfileId === filter.beaconStaffProfileId) &&
+            (filter.organizationId === undefined || item.data.organizationId === filter.organizationId),
+        );
+        return Promise.resolve({ dataItems: matches });
+      }
+      return Promise.resolve({ dataItems: [] });
+    });
+  }
+
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+  });
+
+  it('Dispatch (pickup.read/pickup.update only) cannot create a case', async () => {
+    mockRoleAndStaffProfiles('dispatch', ['pickup.read', 'pickup.update'], [CALLER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    expect(body.case).toBeNull();
+  });
+
+  it('Read Only cannot create a case', async () => {
+    mockRoleAndStaffProfiles('readOnly', ['case.read'], [CALLER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+
+    expect(response.status).toBe(403);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('Office Staff (case.create + case.update, no case.reassign) can create a case defaulting to themselves', async () => {
+    mockRoleAndStaffProfiles('officeStaff', ['case.create', 'case.update'], [CALLER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.assignedStaffId).toBe('staff-dana');
+  });
+
+  it('Office Staff (no case.reassign) cannot create a case assigned to a different staff member', async () => {
+    mockRoleAndStaffProfiles('officeStaff', ['case.create', 'case.update'], [CALLER_STAFF_PROFILE_ITEM, OTHER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, assignedStaffId: 'staff-chris' }));
+
+    expect(response.status).toBe(422);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('Manager (case.create + case.reassign) can create a case assigned to a different staff member', async () => {
+    mockRoleAndStaffProfiles('manager', ['case.create', 'case.reassign'], [CALLER_STAFF_PROFILE_ITEM, OTHER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, assignedStaffId: 'staff-chris' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.assignedStaffId).toBe('staff-chris');
   });
 });

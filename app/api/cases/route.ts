@@ -16,7 +16,7 @@ import type { Case, NextOfKinRelationship } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { recordCaseCreated } from '@/services/activityService';
-import { canReadCases, canReadPickup } from '@/services/authorizationPolicyService';
+import { canReadCases, canReadPickup, canCreateCase } from '@/services/authorizationPolicyService';
 import { toPickupOnlyView } from '@/domain/cases/pickupView';
 
 /**
@@ -181,6 +181,13 @@ export async function POST(request: Request) {
     );
   }
 
+  // Manors go-live fix: this route had no case.create check at all —
+  // any authenticated org member could create a case regardless of role
+  // (Dispatch/Read Only included, since neither holds it in the catalog).
+  if (!(await canCreateCase({ identityId: context.userId, organizationId, roleKey: context.role }, 'wix'))) {
+    return NextResponse.json({ case: null, error: 'Not authorized to create cases for this organization.' }, { status: 403 });
+  }
+
   const requiredStringFields = ['decedentName', 'nextOfKinName', 'nextOfKinPhone'];
   const missingOrInvalid = requiredStringFields.filter(
     (key) => typeof b[key] !== 'string' || (b[key] as string).trim() === '',
@@ -246,10 +253,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // Manors go-live fix: assigning a case to yourself needs nothing beyond
+  // case.create (already checked above) — only naming a DIFFERENT staff
+  // member requires the narrower case.reassign permission. Office Staff
+  // holds case.create but not case.reassign, so they can create a case
+  // (defaulting to themselves) but cannot hand it to someone else here.
   if (typeof b.assignedStaffId === 'string' && b.assignedStaffId !== callerProfile.id) {
     try {
       await assertAssignableStaffProfile(
-        { organizationId, staffProfileId: b.assignedStaffId, permission: 'case.update', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
+        { organizationId, staffProfileId: b.assignedStaffId, permission: 'case.reassign', actor: { identityId: context.userId, organizationId, roleKey: context.role } },
         'wix',
       );
     } catch (error) {

@@ -154,6 +154,19 @@ describe('POST /api/cases/[caseId]/order', () => {
     expect(body.lineItems).toHaveLength(4);
   });
 
+  it('Manors go-live fix: never trusts a client-supplied performedBy — the audit trail records the real authenticated identity instead', async () => {
+    const caseId = KNOWN_CASE().id;
+    const response = await postRequest(caseId, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      selections: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+      performedBy: 'Forged Actor Name',
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { auditEntries: Array<{ performedBy: string }> };
+    expect(body.auditEntries[0].performedBy).toBe(mockDefaultUser.id);
+    expect(body.auditEntries[0].performedBy).not.toBe('Forged Actor Name');
+  });
+
   it('returns 409 if the case already has an active order', async () => {
     const caseId = KNOWN_CASE().id;
     const create = () =>

@@ -41,7 +41,7 @@ describe('permissionService', () => {
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       expect(permissions.has('organization.manage')).toBe(true);
       expect(permissions.has('case.delete')).toBe(true);
-      expect(permissions.size).toBe(66); // Manors launch-prep: 64 + pickup.read/pickup.update
+      expect(permissions.size).toBe(67); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign
     });
 
     it('resolves readOnly to only read/view permissions', async () => {

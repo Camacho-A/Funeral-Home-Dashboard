@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { ServicesAndChargesSelector } from '@/components/case/ServicesAndChargesSelector';
-import { useSession } from '@/hooks/useSession';
 import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
 import { selectionsFromLineItems } from '@/domain/pricing/calculateOrder';
@@ -44,7 +43,6 @@ export function EditServicesModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const session = useSession();
   const { data: catalog = [] } = useServiceCatalog();
   const createOrder = useCreateCaseOrder(caseId);
   const editOrder = useEditCaseOrder(caseId);
@@ -63,7 +61,7 @@ export function EditServicesModal({
 
   function handleSave() {
     mutation.mutate(
-      { selections, performedBy: session.displayName },
+      { selections },
       { onSuccess: onClose },
     );
   }
