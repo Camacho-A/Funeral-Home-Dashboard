@@ -356,6 +356,18 @@ Four approved add-ons, all catalog-driven (no price hardcoded in any UI componen
 
 `organizations.requireMfa` is confirmed **live and already present** on the `organizations` collection schema (added during Phase 40's own live-Wix step — this section previously said "pending," which was stale; corrected here). Manor's own live organization row has no explicit value set for `requireMfa` (or `enabledModulesJson`) — confirmed by direct read — which resolves to the same effective default either way (MFA not required; advanced modules hidden), so no live write is needed to reach the intended launch state. MFA architecture (TOTP enrollment, recovery codes, staff-login rate limiting) is fully preserved and available opt-in; organization-wide MFA activation is **not** a launch blocker and remains the administrator's choice to flip later via the existing `/api/organization/mfa-policy` route.
 
+### Scheduled/cron jobs — deferred for the initial Vercel Hobby deployment
+
+Vercel's Hobby plan only permits daily (or coarser) cron schedules; three of `vercel.json`'s four cron registrations were sub-daily (every 15 minutes) and blocked deployment outright with *"Hobby accounts are limited to daily cron jobs."* Rather than upgrade to Pro or silently reschedule 15-minute jobs to run once a day (which would misrepresent what they actually do — a digest sweep "every 15 minutes" and one "once a day" are not equivalent behavior), the three offending registrations were **removed from `vercel.json` only**:
+
+- `POST /api/cron/notification-digest` (email/SMS digest + quiet-hours flush, Phase 33)
+- `POST /api/cron/appointment-reminders` (Phase 34)
+- `POST /api/cron/calendar-sync` (Phase 34)
+
+**Nothing about these features was removed from the application** — every route handler, service, and `CRON_SECRET` bearer-auth check (fails closed at 503/401 exactly as before) is fully intact; the routes simply aren't auto-triggered by Vercel anymore. None of the three are Manors Day-1 requirements: digest/SMS delivery has no provider configured yet anyway (dev-console fallback), and appointment reminders/calendar sync are Phase 34 scheduling-integration features Manors doesn't use. Re-enabling any of them later is a one-line `vercel.json` addition (or point an external scheduler/cron service at the same `CRON_SECRET`-gated URL) — no code change required.
+
+`POST /api/cron/bill-reminders` was already daily (`0 8 * * *`, Hobby-compliant) and was left completely unchanged — it isn't part of this deferral, since it never needed to change.
+
 ### Optional integrations — deferred, not blocking
 
 None of the following are required for Beacon to perform the approved Manors operational workflow (case management, NOK, tag/pickup, notes, checklist, documents, additional charges, manual payment recording). Each fails safe when unconfigured — no code path breaks, the integration is simply unavailable:
