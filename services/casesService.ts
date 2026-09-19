@@ -47,7 +47,9 @@ export function matchesSearch(case_: Case, query: string): boolean {
   return (
     case_.decedentName.toLowerCase().includes(q) ||
     case_.nextOfKinPhone.toLowerCase().includes(q) ||
+    (case_.nextOfKinEmail?.toLowerCase().includes(q) ?? false) ||
     case_.caseNumber.toLowerCase().includes(q) ||
+    (case_.tagNumber?.toLowerCase().includes(q) ?? false) ||
     case_.id.includes(q)
   );
 }
@@ -183,6 +185,9 @@ export async function create(
         decedentName: input.decedentName,
         nextOfKinName: input.nextOfKinName,
         nextOfKinPhone: input.nextOfKinPhone,
+        nextOfKinEmail: input.nextOfKinEmail,
+        nextOfKinRelationship: input.nextOfKinRelationship,
+        nextOfKinRelationshipOther: input.nextOfKinRelationshipOther,
         dateOfBirth: input.dateOfBirth,
         dateOfDeath: input.dateOfDeath,
         timeOfDeath: input.timeOfDeath,
@@ -221,12 +226,20 @@ export async function create(
     assignedStaffId: input.assignedStaffId ?? session.staffId,
     nextOfKinName: input.nextOfKinName,
     nextOfKinPhone: input.nextOfKinPhone,
+    nextOfKinEmail: input.nextOfKinEmail?.trim() || null,
+    nextOfKinRelationship: input.nextOfKinRelationship ?? null,
+    nextOfKinRelationshipOther: input.nextOfKinRelationshipOther?.trim() || null,
     paymentStatus: 'awaiting_payment',
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
+    tagNumber: null,
     checklistState: {},
     fieldValues: input.fieldValues ?? {},
+    pickupStatus: 'awaiting_pickup',
+    pickupReleasedTo: null,
+    pickupReleasedAt: null,
+    pickupNote: null,
     daysWaitingInStage: 0,
     isStalled: false,
     stalledReason: null,

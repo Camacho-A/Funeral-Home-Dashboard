@@ -8,6 +8,7 @@ export function CaseHeader({
   decedentName,
   dateOfBirth,
   dateOfDeath,
+  tagNumber,
   stageLabel,
   stageBadgeVariant,
   daysWaitingInStage,
@@ -22,6 +23,10 @@ export function CaseHeader({
   decedentName: string;
   dateOfBirth: string;
   dateOfDeath: string;
+  /** Manors launch-prep. Operational chain-of-custody tag — shown here,
+      always read-only (editing happens in CaseInformationCard), only when
+      one has actually been assigned. */
+  tagNumber?: string | null;
   stageLabel: string;
   stageBadgeVariant: BadgeVariant;
   daysWaitingInStage: number;
@@ -38,6 +43,7 @@ export function CaseHeader({
           <div className={styles.name}>{decedentName}</div>
           <div className={styles.meta}>
             DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
+            {tagNumber ? ` · Tag #${tagNumber}` : ''}
           </div>
         </div>
         <div className={styles.stageColumn}>

@@ -4,6 +4,10 @@ import type { AuthAdapterMode } from '@/lib/env';
 import { Button } from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
 import { useCaseSearch } from '@/hooks/useCaseSearch';
+import { useOrganization } from '@/hooks/useOrganization';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { useMyPermissions } from '@/hooks/useRbac';
+import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { initialsFromName } from '@/utils/string';
 import { logoutAction } from '@/app/login/actions';
 import { SearchInput } from './SearchInput';
@@ -39,6 +43,18 @@ import styles from './TopBar.module.css';
  * dataAdapterMode already established — the "Security" link (Change
  * Password / Manage Sessions) only renders for `'identity'` sessions,
  * since it's the only mode with anything there to manage.
+ *
+ * Manors launch-prep: two independent visibility mechanisms, layered on
+ * top of the existing `authAdapterMode` gate, neither of which changes
+ * what any route/API actually authorizes server-side —
+ *   1. Roles/Team/Audit/Templates are additionally gated on the viewer's
+ *      own permissions (via useMyPermissions) — previously every staff
+ *      member saw these links regardless of whether they could use them.
+ *   2. Resources/Merchandise/Inventory/Suppliers/Purchase Orders/Accounts
+ *      Payable/Calendar Integrations are additionally gated on the
+ *      organization's `enabledModules` (see domain/organization/
+ *      moduleVisibility.ts) — hidden by default, reachable directly by
+ *      URL, RBAC-enforced exactly as before.
  */
 export function TopBar({
   onNewCaseClick,
@@ -49,6 +65,10 @@ export function TopBar({
 }) {
   const { query, setQuery } = useCaseSearch();
   const session = useSession();
+  const { organizationId } = useOrganization();
+  const { data: organization } = useOrganizationRecord();
+  const { data: myPermissions } = useMyPermissions(organizationId);
+  const permissions = myPermissions?.permissions ?? [];
 
   return (
     <div className={styles.topBar}>
@@ -61,47 +81,61 @@ export function TopBar({
           Security
         </a>
       )}
-      {authAdapterMode === 'identity' && (
+      {authAdapterMode === 'identity' && permissions.includes('user.manageRoles') && (
         <a href="/settings/roles" className={styles.signOutButton}>
           Roles
         </a>
       )}
-      {authAdapterMode === 'identity' && (
+      {authAdapterMode === 'identity' && permissions.includes('user.invite') && (
         <a href="/settings/team" className={styles.signOutButton}>
           Team
         </a>
       )}
-      {authAdapterMode === 'identity' && (
+      {authAdapterMode === 'identity' && permissions.includes('audit.read') && (
         <a href="/settings/audit" className={styles.signOutButton}>
           Audit
         </a>
       )}
-      {authAdapterMode === 'identity' && (
+      {authAdapterMode === 'identity' && permissions.includes('document.template.manage') && (
         <a href="/settings/document-templates" className={styles.signOutButton}>
           Templates
         </a>
       )}
-      <a href="/settings/resources" className={styles.signOutButton}>
-        Resources
-      </a>
-      <a href="/settings/merchandise" className={styles.signOutButton}>
-        Merchandise
-      </a>
-      <a href="/settings/inventory" className={styles.signOutButton}>
-        Inventory
-      </a>
-      <a href="/settings/suppliers" className={styles.signOutButton}>
-        Suppliers
-      </a>
-      <a href="/settings/purchase-orders" className={styles.signOutButton}>
-        Purchase Orders
-      </a>
-      <a href="/settings/accounts-payable" className={styles.signOutButton}>
-        Accounts Payable
-      </a>
-      <a href="/settings/calendar-integrations" className={styles.signOutButton}>
-        Calendar
-      </a>
+      {isModuleEnabled(organization, 'resources') && (
+        <a href="/settings/resources" className={styles.signOutButton}>
+          Resources
+        </a>
+      )}
+      {isModuleEnabled(organization, 'merchandise') && (
+        <a href="/settings/merchandise" className={styles.signOutButton}>
+          Merchandise
+        </a>
+      )}
+      {isModuleEnabled(organization, 'inventory') && (
+        <a href="/settings/inventory" className={styles.signOutButton}>
+          Inventory
+        </a>
+      )}
+      {isModuleEnabled(organization, 'procurement') && (
+        <a href="/settings/suppliers" className={styles.signOutButton}>
+          Suppliers
+        </a>
+      )}
+      {isModuleEnabled(organization, 'procurement') && (
+        <a href="/settings/purchase-orders" className={styles.signOutButton}>
+          Purchase Orders
+        </a>
+      )}
+      {isModuleEnabled(organization, 'accountsPayable') && (
+        <a href="/settings/accounts-payable" className={styles.signOutButton}>
+          Accounts Payable
+        </a>
+      )}
+      {isModuleEnabled(organization, 'calendarIntegrations') && (
+        <a href="/settings/calendar-integrations" className={styles.signOutButton}>
+          Calendar
+        </a>
+      )}
       <NotificationBell />
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>

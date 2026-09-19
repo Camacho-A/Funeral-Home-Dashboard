@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/Modal';
 import { TextField } from '@/components/ui/TextField';
@@ -20,7 +20,7 @@ import { pricingClient } from '@/services/pricingClient';
 import { paymentsClient } from '@/services/paymentsClient';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
-import { formatDateInput, getValidationError, normalizeTimeInput } from '@/utils/inputMask';
+import { formatDateInput, getValidationError, normalizeTimeInput, isValidEmail } from '@/utils/inputMask';
 import type { Case } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import type { ServiceSelections } from '@/types/caseOrder';
@@ -155,7 +155,19 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     weightTier: 'under_200',
     extraDeathCertificateQuantity: 0,
     mailCremated: false,
+    keepsakeTransferQuantity: 0,
+    urnTransfer: false,
+    shipping: false,
   });
+  // Manors launch-prep: a fixed field, deliberately outside the
+  // organization's configurable intake template — the same reasoning as
+  // ServicesAndChargesSelector above (always rendered, never dependent on
+  // what a specific org's template happens to declare). Wiring this
+  // through the live workflow-template `intake` JSON instead would mean
+  // editing Manor's real, already-in-use template content — a live-Wix
+  // data mutation this pass deliberately avoids.
+  const [nextOfKinEmailInput, setNextOfKinEmailInput] = useState('');
+  const [nextOfKinEmailError, setNextOfKinEmailError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -222,7 +234,9 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setTouched({});
     setRevealedFields({});
     setCreatedCase(null);
-    setServicesSelections({ weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false });
+    setServicesSelections({ weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false });
+    setNextOfKinEmailInput('');
+    setNextOfKinEmailError(null);
     setSubmitError(null);
     setIsSubmitting(false);
     addNote.reset();
@@ -238,6 +252,18 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     fields: resolveSectionFields(section),
   }));
   const allResolvedFields = resolvedSections.flatMap(({ fields }) => fields);
+
+  // Manors launch-prep: place the fixed NOK-email field (below) right after
+  // whichever real section holds the organization's own next-of-kin fields,
+  // rather than always dead-last after every section — a trailing section
+  // can be anything (e.g. a 'payment' field, which renderIntakeField
+  // deliberately renders as nothing — see its own comment — leaving just an
+  // empty-looking section label directly above the fixed field if it always
+  // rendered last). Falls back to the end only if no section maps a
+  // next-of-kin field at all (e.g. a bare-bones custom template).
+  const nextOfKinSectionIndex = resolvedSections.findIndex(({ fields }) =>
+    fields.some((field) => field.mapsToCaseField === 'nextOfKinName' || field.mapsToCaseField === 'nextOfKinPhone'),
+  );
 
   const structuredFields = buildStructuredCaseFields(effectiveIntake, draft);
 
@@ -255,7 +281,11 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     if (field.fieldType === 'payment') return false;
     return field.required && !(draft[field.key] ?? field.defaultValue).trim();
   });
-  const canSubmit = !hasMissingRequired && !hasFieldErrors;
+  // Manors launch-prep: NOK email is optional (never in hasMissingRequired),
+  // but a non-empty value must still be well-formed before submitting.
+  const nextOfKinEmailTrimmed = nextOfKinEmailInput.trim();
+  const hasInvalidNextOfKinEmail = nextOfKinEmailTrimmed !== '' && !isValidEmail(nextOfKinEmailTrimmed);
+  const canSubmit = !hasMissingRequired && !hasFieldErrors && !hasInvalidNextOfKinEmail;
 
   function goToCase(caseId: string) {
     resetForm();
@@ -296,6 +326,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         decedentName: structuredFields.decedentName ?? '',
         nextOfKinName: structuredFields.nextOfKinName ?? '',
         nextOfKinPhone: structuredFields.nextOfKinPhone ?? '',
+        nextOfKinEmail: nextOfKinEmailTrimmed || undefined,
         dateOfBirth: structuredFields.dateOfBirth || undefined,
         dateOfDeath: structuredFields.dateOfDeath || undefined,
         timeOfDeath: structuredFields.timeOfDeath || undefined,
@@ -348,6 +379,38 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // which still surfaces as an ordinary disabled/retry-the-whole-form state
   // via the Create Case button below.
   const noteSaveFailed = Boolean(createdCase) && addNote.isError;
+
+  function renderNextOfKinEmailField(): ReactNode {
+    return (
+      <div className={styles.group}>
+        <div className={styles.groupFields}>
+          <div>
+            <div className={styles.fieldLabel}>Next of kin — email (optional)</div>
+            <TextField
+              type="email"
+              value={nextOfKinEmailInput}
+              onChange={(e) => {
+                setNextOfKinEmailInput(e.target.value);
+                setNextOfKinEmailError(null);
+              }}
+              onBlur={() => {
+                const trimmed = nextOfKinEmailInput.trim();
+                setNextOfKinEmailInput(trimmed);
+                setNextOfKinEmailError(trimmed !== '' && !isValidEmail(trimmed) ? 'Enter a valid email address.' : null);
+              }}
+              placeholder="name@example.com"
+              aria-label="Next of kin — email (optional)"
+            />
+            {nextOfKinEmailError && (
+              <div className={styles.fieldError} role="alert">
+                {nextOfKinEmailError}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function renderIntakeField(field: ResolvedIntakeField): ReactNode {
     // Phase 19C (Service Catalog, Case Order & Pricing Engine): the
@@ -495,12 +558,36 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           </div>
 
-          {resolvedSections.map(({ section, fields }) => (
-            <div key={section.key} className={styles.group}>
-              <div className={styles.groupLabel}>{section.label}</div>
-              <div className={styles.groupFields}>{fields.map((field) => renderIntakeField(field))}</div>
-            </div>
-          ))}
+          {resolvedSections.map(({ section, fields }, index) => {
+            // A section made up entirely of fieldType 'payment' fields
+            // renders no visible fields at all (renderIntakeField returns
+            // null for 'payment' — see its own comment) — skip the section
+            // header too, rather than showing an empty-looking labeled box.
+            const visibleFields = fields.filter((field) => field.fieldType !== 'payment');
+            // Manors launch-prep: place the fixed NOK-email field (below)
+            // right after the section holding this org's own next-of-kin
+            // fields — see nextOfKinSectionIndex's own comment above —
+            // rather than always dead-last, so it reads as part of that
+            // grouping instead of landing after whatever section happens to
+            // be configured last (e.g. a 'payment' section, which would
+            // otherwise leave it stranded under an empty-looking label).
+            const showNextOfKinEmailHere =
+              templatesLoaded &&
+              (index === nextOfKinSectionIndex ||
+                (nextOfKinSectionIndex === -1 && index === resolvedSections.length - 1));
+            return (
+              <Fragment key={section.key}>
+                {visibleFields.length > 0 && (
+                  <div className={styles.group}>
+                    <div className={styles.groupLabel}>{section.label}</div>
+                    <div className={styles.groupFields}>{fields.map((field) => renderIntakeField(field))}</div>
+                  </div>
+                )}
+                {showNextOfKinEmailHere && renderNextOfKinEmailField()}
+              </Fragment>
+            );
+          })}
+          {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinEmailField()}
 
           {/* Phase 19C (Service Catalog, Case Order & Pricing Engine):
               replaces the old informational-only payment intake field.

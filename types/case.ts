@@ -25,8 +25,37 @@
  */
 import type { CaseWorkflowSnapshot } from './workflowTemplate';
 
+/** Manors launch-prep. The NOK's relationship to the deceased — a small,
+    closed dropdown (never free text) distinct from
+    `domain/portal/portalRelationshipRegistry.ts`'s `PortalRelationshipType`,
+    which answers a different question (what Family Portal *capabilities*
+    a portal user has) — this one is purely descriptive case information,
+    never tied to portal access. `'other'` is the only value that pairs
+    with a free-text detail (`nextOfKinRelationshipOther`). */
+export type NextOfKinRelationship =
+  | 'spouse'
+  | 'domestic_partner'
+  | 'son'
+  | 'daughter'
+  | 'parent'
+  | 'brother'
+  | 'sister'
+  | 'grandchild'
+  | 'grandparent'
+  | 'niece'
+  | 'nephew'
+  | 'other_relative'
+  | 'friend'
+  | 'legal_representative'
+  | 'other';
+
 export type PaymentStatus = 'awaiting_payment' | 'paid_in_full';
 export type VaPublishChoice = 'publish' | 'private';
+/** Manors launch-prep. Whether cremated remains are still with the
+    provider or have been released to the family — the answer staff need
+    at a glance, distinct from the free-text case log. Mirrors
+    `PaymentStatus`'s exact "small closed enum, not a boolean" shape. */
+export type PickupStatus = 'awaiting_pickup' | 'released';
 
 export type Case = {
   id: string;
@@ -59,12 +88,49 @@ export type Case = {
   assignedStaffId: string | null;
   nextOfKinName: string;
   nextOfKinPhone: string;
+  /** Manors launch-prep. Optional — many cases won't have one at intake.
+      A proper structured field on the existing NOK information, never
+      Notes/case log. Trimmed; validated as a reasonably-formatted email
+      when non-null (see utils/inputMask.ts#isValidEmail, the same
+      validator every other email field in this codebase already uses).
+      Capture-only: entering a value here never sends anything, creates a
+      Family Portal account, or sends an invitation — see
+      services/portal/* for the separate, deliberate invitation flow that
+      does. */
+  nextOfKinEmail: string | null;
+  /** Manors launch-prep. Optional — unset until staff know it, editable
+      any time afterward. `null` when not yet set; `'other'` pairs with
+      `nextOfKinRelationshipOther` for a short free-text description. */
+  nextOfKinRelationship: NextOfKinRelationship | null;
+  /** Only meaningful when `nextOfKinRelationship === 'other'` — a short
+      free-text description, same "detail field only shown for one
+      specific selection" pattern as `pickupReleasedTo`/etc. below. */
+  nextOfKinRelationshipOther: string | null;
+  /** Manors launch-prep. Operational tag/ID affixed to the remains for
+      chain-of-custody tracking — distinct from `caseNumber` (Beacon's own
+      permanent record identifier). Null until staff assign one; editable
+      any time, unlike caseNumber. Not required at creation — a case may
+      exist before a physical tag is assigned. */
+  tagNumber: string | null;
   paymentStatus: PaymentStatus;
   isVeteran: boolean;
   vaStepsState: Record<number, boolean>;
   vaPublishChoice: VaPublishChoice | null;
   checklistState: Record<number, boolean>;
   fieldValues: Record<number, string>;
+  /** Manors launch-prep. Structured pickup/release tracking — the answer
+      "are the remains still here or have they gone home?" without relying
+      on free-form Notes/case-log alone. Defaults to 'awaiting_pickup' for
+      every case; the other three fields stay null until release is
+      actually recorded. All staff-entered display strings, matching every
+      other date/name field on Case (dateOfDeath, nextOfKinName, etc.) —
+      no new formatting convention introduced. */
+  pickupStatus: PickupStatus;
+  /** Who the remains were released to — a name, not a StaffProfile
+      reference (this is the family/receiving party, not a staff member). */
+  pickupReleasedTo: string | null;
+  pickupReleasedAt: string | null;
+  pickupNote: string | null;
   daysWaitingInStage: number; // mock-static for this phase; a real backend would derive this from a stage-entry timestamp
   isStalled: boolean;
   stalledReason: string | null;
@@ -125,7 +191,8 @@ export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOf
   Partial<
     Pick<
       Case,
-      'dateOfBirth' | 'dateOfDeath' | 'timeOfDeath' | 'placeOfDeath' | 'weight' | 'assignedStaffId'
+      | 'dateOfBirth' | 'dateOfDeath' | 'timeOfDeath' | 'placeOfDeath' | 'weight' | 'assignedStaffId'
+      | 'nextOfKinEmail' | 'nextOfKinRelationship' | 'nextOfKinRelationshipOther'
     >
   > & {
     fieldValues?: Record<number, string>;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
 import {
   MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY,
+  MAX_KEEPSAKE_TRANSFER_QUANTITY,
   calculateAdjustment,
   calculateBalance,
   calculateOrderTotals,
@@ -35,7 +36,20 @@ const MANORS_CATALOG: ServiceCatalogItem[] = [
   catalogItem({ serviceCode: 'WEIGHT_SURCHARGE_251_300', displayName: 'Weight Surcharge (251–300 lb)', category: 'weight_surcharge', defaultPrice: 39_000, sortOrder: 2 }),
   catalogItem({ serviceCode: 'EXTRA_DEATH_CERTIFICATE', displayName: 'Extra Death Certificate', category: 'addon', pricingType: 'per_unit', defaultPrice: 2_500, sortOrder: 3 }),
   catalogItem({ serviceCode: 'MAIL_CREMATED_REMAINS', displayName: 'Mail Cremated Remains', category: 'addon', defaultPrice: 18_500, sortOrder: 4 }),
+  // Manors launch-prep — additional case charges.
+  catalogItem({ serviceCode: 'KEEPSAKE_TRANSFER', displayName: 'Keepsake Transfer', category: 'addon', pricingType: 'per_unit', defaultPrice: 1_000, sortOrder: 5 }),
+  catalogItem({ serviceCode: 'URN_TRANSFER', displayName: 'Urn Transfer', category: 'addon', defaultPrice: 3_500, sortOrder: 6 }),
+  catalogItem({ serviceCode: 'SHIPPING', displayName: 'Shipping', category: 'addon', defaultPrice: 18_500, sortOrder: 7 }),
 ];
+
+const BASE_SELECTIONS = {
+  weightTier: 'under_200' as const,
+  extraDeathCertificateQuantity: 0,
+  mailCremated: false,
+  keepsakeTransferQuantity: 0,
+  urnTransfer: false,
+  shipping: false,
+};
 
 describe('calculateOrderTotals', () => {
   it('charges only the base service for the minimal case (under 200 lb, no add-ons)', () => {
@@ -43,6 +57,9 @@ describe('calculateOrderTotals', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 0,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.lineItems).toHaveLength(1);
     expect(result.lineItems[0].serviceCode).toBe('DIRECT_CREMATION');
@@ -55,6 +72,9 @@ describe('calculateOrderTotals', () => {
       weightTier: '201_250',
       extraDeathCertificateQuantity: 0,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.total).toBe(89_000 + 29_000);
     expect(result.lineItems.map((l) => l.serviceCode)).toEqual(['DIRECT_CREMATION', 'WEIGHT_SURCHARGE_201_250']);
@@ -65,6 +85,9 @@ describe('calculateOrderTotals', () => {
       weightTier: '251_300',
       extraDeathCertificateQuantity: 0,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.total).toBe(89_000 + 39_000);
   });
@@ -74,6 +97,9 @@ describe('calculateOrderTotals', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 2,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     const certLine = result.lineItems.find((l) => l.serviceCode === 'EXTRA_DEATH_CERTIFICATE');
     expect(certLine?.quantity).toBe(2);
@@ -86,6 +112,9 @@ describe('calculateOrderTotals', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 0,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.lineItems.some((l) => l.serviceCode === 'EXTRA_DEATH_CERTIFICATE')).toBe(false);
   });
@@ -95,6 +124,9 @@ describe('calculateOrderTotals', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 0,
       mailCremated: true,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.total).toBe(89_000 + 18_500);
   });
@@ -106,6 +138,9 @@ describe('calculateOrderTotals', () => {
       weightTier: '201_250',
       extraDeathCertificateQuantity: 2,
       mailCremated: true,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.total).toBe(141_500);
   });
@@ -118,6 +153,9 @@ describe('calculateOrderTotals', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 0,
       mailCremated: true,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.lineItems.some((l) => l.serviceCode === 'MAIL_CREMATED_REMAINS')).toBe(false);
     expect(result.total).toBe(89_000);
@@ -128,6 +166,9 @@ describe('calculateOrderTotals', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 0,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.discountTotal).toBe(0);
     expect(result.taxTotal).toBe(0);
@@ -141,9 +182,79 @@ describe('calculateOrderTotals', () => {
       weightTier: '251_300', // this org's catalog has no such code — silently produces nothing
       extraDeathCertificateQuantity: 3,
       mailCremated: true,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
     expect(result.lineItems).toHaveLength(0); // DIRECT_CREMATION isn't in this catalog either
     expect(result.total).toBe(0);
+  });
+});
+
+describe('calculateOrderTotals — Manors launch-prep additional case charges', () => {
+  it('2 Additional Death Certificates = $50', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, extraDeathCertificateQuantity: 2 });
+    const line = result.lineItems.find((l) => l.serviceCode === 'EXTRA_DEATH_CERTIFICATE');
+    expect(line?.lineTotal).toBe(5_000);
+  });
+
+  it('4 Additional Death Certificates = $100', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, extraDeathCertificateQuantity: 4 });
+    const line = result.lineItems.find((l) => l.serviceCode === 'EXTRA_DEATH_CERTIFICATE');
+    expect(line?.lineTotal).toBe(10_000);
+  });
+
+  it('3 Keepsake Transfers = $30', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, keepsakeTransferQuantity: 3 });
+    const line = result.lineItems.find((l) => l.serviceCode === 'KEEPSAKE_TRANSFER');
+    expect(line?.lineTotal).toBe(3_000);
+  });
+
+  it('1 Urn Transfer = $35', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, urnTransfer: true });
+    const line = result.lineItems.find((l) => l.serviceCode === 'URN_TRANSFER');
+    expect(line?.lineTotal).toBe(3_500);
+  });
+
+  it('1 Shipping = $185', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, shipping: true });
+    const line = result.lineItems.find((l) => l.serviceCode === 'SHIPPING');
+    expect(line?.lineTotal).toBe(18_500);
+  });
+
+  it('combined: 2 Death Certificates ($50) + 1 Keepsake Transfer ($10) + 1 Urn Transfer ($35) + 1 Shipping ($185) — additional charges total $280, on top of the $890 base', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, {
+      ...BASE_SELECTIONS,
+      extraDeathCertificateQuantity: 2,
+      keepsakeTransferQuantity: 1,
+      urnTransfer: true,
+      shipping: true,
+    });
+    const additionalChargesTotal = result.lineItems
+      .filter((l) => ['EXTRA_DEATH_CERTIFICATE', 'KEEPSAKE_TRANSFER', 'URN_TRANSFER', 'SHIPPING'].includes(l.serviceCode))
+      .reduce((sum, l) => sum + l.lineTotal, 0);
+    expect(additionalChargesTotal).toBe(28_000); // $280
+    expect(result.total).toBe(89_000 + 28_000); // base $890 + additional charges $280
+  });
+
+  it('omits every additional-charge line item entirely when none are selected', () => {
+    const result = calculateOrderTotals(MANORS_CATALOG, BASE_SELECTIONS);
+    expect(result.lineItems.some((l) => l.serviceCode === 'KEEPSAKE_TRANSFER')).toBe(false);
+    expect(result.lineItems.some((l) => l.serviceCode === 'URN_TRANSFER')).toBe(false);
+    expect(result.lineItems.some((l) => l.serviceCode === 'SHIPPING')).toBe(false);
+    expect(result.total).toBe(89_000);
+  });
+
+  it('editing quantities does not double-count — recomputing from scratch with a new quantity replaces, never accumulates', () => {
+    // calculateOrderTotals is a pure function of the FULL current selections
+    // (never an incremental "add to previous"), so "editing a quantity"
+    // is structurally just calling this again with the new value — there
+    // is no accumulator anywhere for a repeated call to double.
+    const first = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, keepsakeTransferQuantity: 2 });
+    const edited = calculateOrderTotals(MANORS_CATALOG, { ...BASE_SELECTIONS, keepsakeTransferQuantity: 5 });
+    expect(first.lineItems.find((l) => l.serviceCode === 'KEEPSAKE_TRANSFER')?.lineTotal).toBe(2_000);
+    expect(edited.lineItems.find((l) => l.serviceCode === 'KEEPSAKE_TRANSFER')?.lineTotal).toBe(5_000);
+    // Never 2_000 + 5_000 — each call is independent, not cumulative.
   });
 });
 
@@ -185,6 +296,9 @@ describe('normalizeSelections', () => {
       weightTier: 'under_200',
       extraDeathCertificateQuantity: 0,
       mailCremated: false,
+      keepsakeTransferQuantity: 0,
+      urnTransfer: false,
+      shipping: false,
     });
   });
 
@@ -209,6 +323,21 @@ describe('normalizeSelections', () => {
   it('only treats a literal boolean true as mailCremated', () => {
     expect(normalizeSelections({ mailCremated: 'true' }).mailCremated).toBe(false);
     expect(normalizeSelections({ mailCremated: true }).mailCremated).toBe(true);
+  });
+
+  it('clamps keepsakeTransferQuantity the same way as extraDeathCertificateQuantity (Manors launch-prep)', () => {
+    expect(normalizeSelections({ keepsakeTransferQuantity: -5 }).keepsakeTransferQuantity).toBe(0);
+    expect(normalizeSelections({ keepsakeTransferQuantity: 999_999 }).keepsakeTransferQuantity).toBe(
+      MAX_KEEPSAKE_TRANSFER_QUANTITY,
+    );
+    expect(normalizeSelections({ keepsakeTransferQuantity: 2.9 }).keepsakeTransferQuantity).toBe(2);
+  });
+
+  it('only treats a literal boolean true as urnTransfer/shipping (Manors launch-prep)', () => {
+    expect(normalizeSelections({ urnTransfer: 'true' }).urnTransfer).toBe(false);
+    expect(normalizeSelections({ urnTransfer: true }).urnTransfer).toBe(true);
+    expect(normalizeSelections({ shipping: 'true' }).shipping).toBe(false);
+    expect(normalizeSelections({ shipping: true }).shipping).toBe(true);
   });
 });
 

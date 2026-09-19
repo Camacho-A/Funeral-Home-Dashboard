@@ -8,11 +8,12 @@ import { useOrganization } from './useOrganization';
  * organization-scoped hook (useCase, useCases, ...).
  */
 
-export function useCasePayments(caseId: string) {
+export function useCasePayments(caseId: string, enabled: boolean = true) {
   const organization = useOrganization();
   return useQuery({
     queryKey: ['casePayments', organization.organizationId, caseId],
     queryFn: () => paymentsClient.listPayments(organization, caseId),
+    enabled,
   });
 }
 
@@ -43,6 +44,20 @@ export function useCreateCloverCheckout(caseId: string) {
       paymentsClient.createCloverCheckout(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });
+    },
+  });
+}
+
+export function useRecordManualPayment(caseId: string) {
+  const organization = useOrganization();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { method: 'cash' | 'check' | 'other'; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string }) =>
+      paymentsClient.recordManualPayment(organization, caseId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });
+      queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });
     },
   });
 }

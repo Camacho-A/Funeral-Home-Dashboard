@@ -61,6 +61,26 @@ export type Organization = {
   primaryEmail?: string;
   primaryPhone?: string;
   website?: string | null;
+  /** Phase 40 (MFA & Account Security). When true, every staff member of this
+      organization must have MFA enabled; a member who isn't enrolled is routed
+      to enrollment at login (never hard-locked out). Optional and defaults to
+      false — every pre-Phase-40 organization is backward compatible and
+      unaffected until MFA is explicitly required. This is a staff-side policy
+      only; it never applies to Family Portal (`PortalUser`) authentication. */
+  requireMfa?: boolean;
+  /** Manors launch-prep. The lightest possible module-visibility mechanism:
+      which advanced/SaaS-scale nav modules (see
+      domain/organization/moduleVisibility.ts's ADVANCED_MODULE_KEYS) are
+      shown to this organization's staff. `null`/absent — every
+      pre-existing organization, plus any newly-provisioned one that
+      hasn't been configured — means "none of the advanced modules are
+      shown," a deliberate safe default: Beacon's underlying
+      RBAC/authorization is completely unaffected either way (a hidden
+      module's routes/APIs still enforce their own permissions exactly as
+      before) — this field only ever controls whether a *link* to it is
+      rendered. An administrator can enable specific modules at any time;
+      nothing here is ever destructive to the module's own data/code. */
+  enabledModules?: string[] | null;
   createdAt?: string;
   updatedAt?: string;
 };

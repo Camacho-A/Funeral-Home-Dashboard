@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCaseNumber, parseCaseNumber } from './caseNumber';
+import { formatCaseNumber, parseCaseNumber, orgLocalYear } from './caseNumber';
 
 describe('formatCaseNumber', () => {
   it('formats with a 3-digit, zero-padded sequence', () => {
@@ -35,5 +35,32 @@ describe('parseCaseNumber', () => {
     expect(parseCaseNumber('B2026-1')).toBeNull();
     expect(parseCaseNumber('not a case number')).toBeNull();
     expect(parseCaseNumber('')).toBeNull();
+  });
+});
+
+describe('orgLocalYear (Manors launch-prep — P0 automatic case numbering)', () => {
+  it('defaults to UTC when the organization has no configured timezone', () => {
+    expect(orgLocalYear('2027-01-01T00:30:00.000Z', undefined)).toBe(2027);
+    expect(orgLocalYear('2026-12-31T23:30:00.000Z', undefined)).toBe(2026);
+  });
+
+  it('does NOT roll over to the new year just because UTC already has, for a timezone behind UTC', () => {
+    // 2027-01-01T04:30:00Z is already Jan 1 in UTC, but only 2026-12-31
+    // 23:30 in America/New_York (UTC-5 in winter) — a case created at this
+    // exact instant must still get a B2026-... number, not B2027-....
+    expect(orgLocalYear('2027-01-01T04:30:00.000Z', 'America/New_York')).toBe(2026);
+  });
+
+  it('rolls over to the new year before UTC does, for a timezone ahead of UTC', () => {
+    // 2026-12-31T20:00:00Z is still Dec 31 in UTC, but already 2027-01-01
+    // 05:00 in Asia/Tokyo (UTC+9) — a case created at this exact instant
+    // must get a B2027-... number even though the server/UTC clock hasn't
+    // rolled over yet.
+    expect(orgLocalYear('2026-12-31T20:00:00.000Z', 'Asia/Tokyo')).toBe(2027);
+  });
+
+  it('assigns the new year to a case created shortly after local midnight on January 1st', () => {
+    // 2027-01-01T00:05:00 in America/New_York = 2027-01-01T05:05:00Z.
+    expect(orgLocalYear('2027-01-01T05:05:00.000Z', 'America/New_York')).toBe(2027);
   });
 });

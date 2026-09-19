@@ -83,6 +83,45 @@ export function diffSelections(
     });
   }
 
+  // Manors launch-prep — additional case charges.
+  if (previous.keepsakeTransferQuantity !== next.keepsakeTransferQuantity) {
+    const unitPrice = catalogPrice(catalogByCode, SERVICE_CODES.KEEPSAKE_TRANSFER);
+    const quantityDelta = next.keepsakeTransferQuantity - previous.keepsakeTransferQuantity;
+    const delta = quantityDelta * unitPrice;
+    const verb = quantityDelta > 0 ? 'Added' : 'Removed';
+    entries.push({
+      action: 'keepsake_transfer_quantity_changed',
+      previousValue: String(previous.keepsakeTransferQuantity),
+      newValue: String(next.keepsakeTransferQuantity),
+      amountDeltaCents: delta,
+      description: `${verb}: ${Math.abs(quantityDelta)} Keepsake Transfer${Math.abs(quantityDelta) === 1 ? '' : 's'}, ${formatSignedWholeDollars(delta)}`,
+    });
+  }
+
+  if (previous.urnTransfer !== next.urnTransfer) {
+    const price = catalogPrice(catalogByCode, SERVICE_CODES.URN_TRANSFER);
+    const delta = next.urnTransfer ? price : -price;
+    entries.push({
+      action: next.urnTransfer ? 'urn_transfer_added' : 'urn_transfer_removed',
+      previousValue: previous.urnTransfer ? 'Included' : 'Not included',
+      newValue: next.urnTransfer ? 'Included' : 'Not included',
+      amountDeltaCents: delta,
+      description: `${next.urnTransfer ? 'Added' : 'Removed'}: Urn Transfer, ${formatSignedWholeDollars(delta)}`,
+    });
+  }
+
+  if (previous.shipping !== next.shipping) {
+    const price = catalogPrice(catalogByCode, SERVICE_CODES.SHIPPING);
+    const delta = next.shipping ? price : -price;
+    entries.push({
+      action: next.shipping ? 'shipping_added' : 'shipping_removed',
+      previousValue: previous.shipping ? 'Included' : 'Not included',
+      newValue: next.shipping ? 'Included' : 'Not included',
+      amountDeltaCents: delta,
+      description: `${next.shipping ? 'Added' : 'Removed'}: Shipping, ${formatSignedWholeDollars(delta)}`,
+    });
+  }
+
   return entries;
 }
 

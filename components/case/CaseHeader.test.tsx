@@ -27,3 +27,15 @@ describe('CaseHeader — Case Number (Phase 16B)', () => {
     expect(container.querySelectorAll('input, select, textarea')).toHaveLength(0);
   });
 });
+
+describe('CaseHeader — Tag # (Manors launch-prep)', () => {
+  it('shows the tag number in the meta line when one is assigned', () => {
+    render(<CaseHeader {...baseProps} tagNumber="T-1042" />);
+    expect(screen.getByText(/Tag #T-1042/)).toBeInTheDocument();
+  });
+
+  it('shows no Tag # segment at all when none is assigned', () => {
+    render(<CaseHeader {...baseProps} tagNumber={null} />);
+    expect(screen.queryByText(/Tag #/)).not.toBeInTheDocument();
+  });
+});

@@ -6,6 +6,7 @@ import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
+import { canCollectPayment } from '@/services/authorizationPolicyService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import {
   getEnabledIntegration,
@@ -110,6 +111,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const idempotencyKey = b.idempotencyKey;
 
   const dataAdapterMode = getDataAdapterMode();
+
+  if (!(await canCollectPayment({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+  }
 
   // 2. Confirm the case belongs to this organization.
   let caseExists: boolean;

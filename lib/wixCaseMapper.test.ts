@@ -72,6 +72,39 @@ describe('mapWixCaseItem', () => {
     expect(result?.workflowSnapshot).toEqual(validItem.workflowSnapshot);
   });
 
+  it('maps nextOfKinEmail to null for a pre-existing row that has no such field at all (Manors launch-prep)', () => {
+    // validItem itself has no nextOfKinEmail key — the exact shape of every
+    // case created before this field existed.
+    const result = mapWixCaseItem(validItem);
+    expect(result?.nextOfKinEmail).toBeNull();
+  });
+
+  it('maps a real nextOfKinEmail value through unchanged', () => {
+    const result = mapWixCaseItem({ ...validItem, nextOfKinEmail: 'karen@example.com' });
+    expect(result?.nextOfKinEmail).toBe('karen@example.com');
+  });
+
+  it('maps nextOfKinRelationship to null for a pre-existing row with no such field (Manors launch-prep)', () => {
+    const result = mapWixCaseItem(validItem);
+    expect(result?.nextOfKinRelationship).toBeNull();
+    expect(result?.nextOfKinRelationshipOther).toBeNull();
+  });
+
+  it('maps a valid nextOfKinRelationship value through unchanged', () => {
+    const result = mapWixCaseItem({ ...validItem, nextOfKinRelationship: 'daughter' });
+    expect(result?.nextOfKinRelationship).toBe('daughter');
+  });
+
+  it('maps an unrecognized nextOfKinRelationship value to null rather than trusting it', () => {
+    const result = mapWixCaseItem({ ...validItem, nextOfKinRelationship: 'cousin-twice-removed' });
+    expect(result?.nextOfKinRelationship).toBeNull();
+  });
+
+  it('maps nextOfKinRelationshipOther through unchanged', () => {
+    const result = mapWixCaseItem({ ...validItem, nextOfKinRelationship: 'other', nextOfKinRelationshipOther: 'family friend' });
+    expect(result?.nextOfKinRelationshipOther).toBe('family friend');
+  });
+
   it('allows null for optional identity fields (assignedStaffId, createdBy, intakeOwnerId, stalledReason)', () => {
     const result = mapWixCaseItem({
       ...validItem,
@@ -166,6 +199,16 @@ describe('buildWixCaseData', () => {
     expect(data.checklistState).toEqual({});
     expect(data.isArchived).toBe(false);
   });
+
+  it('defaults nextOfKinEmail to null when not provided at all (Manors launch-prep)', () => {
+    const data = buildWixCaseData(params);
+    expect(mapWixCaseItem(data)?.nextOfKinEmail).toBeNull();
+  });
+
+  it('carries an explicitly-provided nextOfKinEmail through to the built item', () => {
+    const data = buildWixCaseData({ ...params, nextOfKinEmail: 'karen@example.com' });
+    expect(mapWixCaseItem(data)?.nextOfKinEmail).toBe('karen@example.com');
+  });
 });
 
 describe('validateAndPickCaseUpdate', () => {
@@ -220,6 +263,42 @@ describe('validateAndPickCaseUpdate', () => {
   it('returns an error for a non-object body', () => {
     expect(validateAndPickCaseUpdate(null).errors.length).toBeGreaterThan(0);
     expect(validateAndPickCaseUpdate('a string').errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('validateAndPickCaseUpdate — nextOfKinEmail (Manors launch-prep)', () => {
+  it('accepts a well-formed email', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ nextOfKinEmail: 'karen@example.com' });
+    expect(errors).toEqual([]);
+    expect(patch.nextOfKinEmail).toBe('karen@example.com');
+  });
+
+  it('trims surrounding whitespace before validating and persisting', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ nextOfKinEmail: '  karen@example.com  ' });
+    expect(errors).toEqual([]);
+    expect(patch.nextOfKinEmail).toBe('karen@example.com');
+  });
+
+  it('treats an empty (or whitespace-only) string as clearing to null, not a validation error', () => {
+    expect(validateAndPickCaseUpdate({ nextOfKinEmail: '' }).patch.nextOfKinEmail).toBeNull();
+    expect(validateAndPickCaseUpdate({ nextOfKinEmail: '   ' }).patch.nextOfKinEmail).toBeNull();
+  });
+
+  it('accepts an explicit null to clear an existing email', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ nextOfKinEmail: null });
+    expect(errors).toEqual([]);
+    expect(patch.nextOfKinEmail).toBeNull();
+  });
+
+  it('rejects a malformed email rather than silently dropping or coercing it', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ nextOfKinEmail: 'not-an-email' });
+    expect(errors).toContain('nextOfKinEmail');
+    expect(patch).toEqual({});
+  });
+
+  it('rejects a non-string, non-null value', () => {
+    const { errors } = validateAndPickCaseUpdate({ nextOfKinEmail: 12345 });
+    expect(errors).toContain('nextOfKinEmail');
   });
 });
 

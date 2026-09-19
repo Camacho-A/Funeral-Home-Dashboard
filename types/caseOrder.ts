@@ -115,10 +115,22 @@ export type CaseOrderLineItem = {
  */
 export type WeightTier = 'under_200' | '201_250' | '251_300';
 
+/**
+ * Manors launch-prep — additional case charges. Three more addons, same
+ * "structured calculation input, never a dollar amount" contract as
+ * `extraDeathCertificateQuantity`/`mailCremated` above. `keepsakeTransferQuantity`
+ * is quantity-based (mirrors `extraDeathCertificateQuantity`); `urnTransfer`/
+ * `shipping` are flat opt-ins (mirror `mailCremated`) — each resolved against
+ * whatever the organization's actual catalog contains, exactly like every
+ * other field here.
+ */
 export type ServiceSelections = {
   weightTier: WeightTier;
   extraDeathCertificateQuantity: number;
   mailCremated: boolean;
+  keepsakeTransferQuantity: number;
+  urnTransfer: boolean;
+  shipping: boolean;
 };
 
 /**

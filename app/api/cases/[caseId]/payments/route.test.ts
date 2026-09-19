@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
-import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({
@@ -69,5 +69,10 @@ describe('GET /api/cases/[caseId]/payments', () => {
     const response = await requestFor('no-payments-case', DEFAULT_ORGANIZATION_ID);
     const body = await response.json();
     expect(body.payments).toEqual([]);
+  });
+
+  it('returns 403 for a caller without payment.read (Manors launch-prep)', async () => {
+    mockSession = { user: mockMultiOrgUser };
+    expect((await requestFor('case-1', DEFAULT_ORGANIZATION_ID)).status).toBe(403);
   });
 });

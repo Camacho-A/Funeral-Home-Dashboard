@@ -15,6 +15,9 @@ const DEFAULT_SELECTIONS: ServiceSelections = {
   weightTier: 'under_200',
   extraDeathCertificateQuantity: 0,
   mailCremated: false,
+  keepsakeTransferQuantity: 0,
+  urnTransfer: false,
+  shipping: false,
 };
 
 /**

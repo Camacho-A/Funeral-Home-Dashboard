@@ -184,6 +184,45 @@ describe('matchesSearch — Case Number is searchable from the global search bar
   });
 });
 
+describe('matchesSearch — nextOfKinEmail is searchable (Manors launch-prep)', () => {
+  it('matches a full or partial NOK email, case-insensitively, without requiring a new Wix index', () => {
+    const known = { ...caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)!, nextOfKinEmail: 'Karen.Ellison@Example.com' };
+    expect(matchesSearch(known, 'karen.ellison@example.com')).toBe(true);
+    expect(matchesSearch(known, 'KAREN.ELLISON')).toBe(true);
+    expect(matchesSearch(known, 'example.com')).toBe(true);
+  });
+
+  it('never throws when nextOfKinEmail is null — most cases at Manors launch have none yet', () => {
+    const known = { ...caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)!, nextOfKinEmail: null };
+    expect(() => matchesSearch(known, 'anything')).not.toThrow();
+    expect(matchesSearch(known, 'anything-not-present')).toBe(false);
+  });
+});
+
+describe('casesService.create — nextOfKinEmail (Manors launch-prep, mock mode)', () => {
+  it('defaults to null when no NOK email is provided', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      organization,
+      { decedentName: 'No Email Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    expect(newCase.nextOfKinEmail).toBeNull();
+  });
+
+  it('trims and stores a provided NOK email', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      organization,
+      { decedentName: 'With Email Test', nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: '  karen@example.com  ' },
+      session,
+      template,
+    );
+    expect(newCase.nextOfKinEmail).toBe('karen@example.com');
+  });
+});
+
 describe('casesService.create — mock-mode Case Number generation (Phase 16B)', () => {
   it('assigns every new case a well-formed B{YYYY}-{###} caseNumber', async () => {
     const session = sessionFor(staffFixtures[0].id);

@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
-import { mapWixCaseItem, buildWixCaseData, type WixCaseItem } from '@/lib/wixCaseMapper';
+import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
+import { orgLocalYear } from '@/domain/cases/caseNumber';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
+import { isValidEmail } from '@/utils/inputMask';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
+import { getOrganization } from '@/services/organizationProvisioningService';
 import { resolveStaffProfileForCaller, assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
-import type { Case } from '@/types/case';
+import type { Case, NextOfKinRelationship } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { recordCaseCreated } from '@/services/activityService';
@@ -184,6 +187,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ case: null, error: 'Invalid field(s): fieldValues' }, { status: 400 });
   }
 
+  // Manors launch-prep: NOK email is optional, but must be a reasonably-
+  // formatted address if provided at all — trimmed; an empty string after
+  // trimming is treated the same as omitting it entirely.
+  let nextOfKinEmail: string | null = null;
+  if ('nextOfKinEmail' in b) {
+    if (typeof b.nextOfKinEmail !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): nextOfKinEmail' }, { status: 400 });
+    }
+    const trimmed = b.nextOfKinEmail.trim();
+    if (trimmed !== '') {
+      if (!isValidEmail(trimmed)) {
+        return NextResponse.json({ case: null, error: 'nextOfKinEmail must be a valid email address.' }, { status: 400 });
+      }
+      nextOfKinEmail = trimmed;
+    }
+  }
+
+  // Manors launch-prep: relationship is optional at creation — unknown at
+  // intake is fine, updated later. 'other' pairs with a short free-text
+  // description, validated the same way any other optional string is.
+  let nextOfKinRelationship: NextOfKinRelationship | null = null;
+  if ('nextOfKinRelationship' in b) {
+    if (b.nextOfKinRelationship !== null && !isValidNextOfKinRelationship(b.nextOfKinRelationship)) {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): nextOfKinRelationship' }, { status: 400 });
+    }
+    nextOfKinRelationship = (b.nextOfKinRelationship as NextOfKinRelationship | null) ?? null;
+  }
+  let nextOfKinRelationshipOther: string | null = null;
+  if ('nextOfKinRelationshipOther' in b) {
+    if (typeof b.nextOfKinRelationshipOther !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): nextOfKinRelationshipOther' }, { status: 400 });
+    }
+    nextOfKinRelationshipOther = b.nextOfKinRelationshipOther.trim() || null;
+  }
+
   const callerProfile = await resolveStaffProfileForCaller(context, 'wix');
   if (!callerProfile) {
     return NextResponse.json(
@@ -220,7 +258,12 @@ export async function POST(request: Request) {
     const createdBy = callerProfile.id;
     const intakeOwnerId = callerProfile.id;
     const assignedStaffId = typeof b.assignedStaffId === 'string' ? b.assignedStaffId : createdBy;
-    const caseNumber = await reserveNextCaseNumber(organizationId, new Date().getFullYear());
+    // Manors launch-prep — P0: the case-number year is the organization's
+    // own LOCAL calendar year, never the server's/UTC's, so a case created
+    // just after local midnight on Jan 1 gets the new year's prefix — see
+    // domain/cases/caseNumber.ts#orgLocalYear.
+    const organization = await getOrganization(organizationId, 'wix');
+    const caseNumber = await reserveNextCaseNumber(organizationId, orgLocalYear(createdAt, organization?.timezone));
 
     const data = buildWixCaseData({
       beaconCaseId,
@@ -241,6 +284,9 @@ export async function POST(request: Request) {
       weight: (b.weight as string) ?? '—',
       nextOfKinName: b.nextOfKinName as string,
       nextOfKinPhone: b.nextOfKinPhone as string,
+      nextOfKinEmail,
+      nextOfKinRelationship,
+      nextOfKinRelationshipOther,
       fieldValues: (b.fieldValues as Record<number, string>) ?? {},
       createdAt,
     });

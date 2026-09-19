@@ -43,9 +43,26 @@ export type WixOrganizationItem = {
   primaryEmail?: unknown;
   primaryPhone?: unknown;
   website?: unknown;
+  requireMfa?: unknown;
+  /** JSON-encoded string[] — mirrors the existing `categoryOverrides`-style
+      JSON-in-text-field convention for a small array on a single-row entity. */
+  enabledModulesJson?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
+
+function parseEnabledModules(value: unknown): string[] | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string')) {
+      return parsed;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): Organization | null {
   if (
@@ -69,6 +86,8 @@ export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): O
     primaryEmail: typeof item.primaryEmail === 'string' ? item.primaryEmail : undefined,
     primaryPhone: typeof item.primaryPhone === 'string' ? item.primaryPhone : undefined,
     website: typeof item.website === 'string' ? item.website : item.website === null ? null : undefined,
+    requireMfa: typeof item.requireMfa === 'boolean' ? item.requireMfa : undefined,
+    enabledModules: parseEnabledModules(item.enabledModulesJson),
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
   };
@@ -87,6 +106,8 @@ export function buildWixOrganizationData(organization: Organization): WixOrganiz
     primaryEmail: organization.primaryEmail,
     primaryPhone: organization.primaryPhone,
     website: organization.website,
+    requireMfa: organization.requireMfa,
+    enabledModulesJson: organization.enabledModules ? JSON.stringify(organization.enabledModules) : null,
     createdAt: organization.createdAt,
     updatedAt: organization.updatedAt,
   };
@@ -110,6 +131,10 @@ export function applyOrganizationUpdateToWixData(
   if (patch.primaryEmail !== undefined) next.primaryEmail = patch.primaryEmail;
   if (patch.primaryPhone !== undefined) next.primaryPhone = patch.primaryPhone;
   if (patch.website !== undefined) next.website = patch.website;
+  if (patch.requireMfa !== undefined) next.requireMfa = patch.requireMfa;
+  if (patch.enabledModules !== undefined) {
+    next.enabledModulesJson = patch.enabledModules ? JSON.stringify(patch.enabledModules) : null;
+  }
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

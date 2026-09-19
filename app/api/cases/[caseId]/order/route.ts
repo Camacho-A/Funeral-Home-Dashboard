@@ -5,6 +5,7 @@ import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { canReadCaseOrder, canEditCaseOrder } from '@/services/authorizationPolicyService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import {
   getActiveCaseOrder,
@@ -74,6 +75,20 @@ async function parseAuthorizedBody(
   const authResult = await requireAuthorizedOrganization(body.organizationId);
   if (!authResult.authorized) return { ok: false, response: authResult.response };
 
+  // Manors launch-prep — additional case charges: adding/editing a case's
+  // services and add-ons is a write action (`caseOrder.update`), a
+  // pre-existing gap this closes — previously any org member with case
+  // access could create/edit a case order regardless of role.
+  const dataAdapterMode = getDataAdapterMode();
+  if (
+    !(await canEditCaseOrder(
+      { identityId: authResult.context.userId, organizationId: authResult.context.organizationId, roleKey: authResult.context.role },
+      dataAdapterMode,
+    ))
+  ) {
+    return { ok: false, response: NextResponse.json({ error: 'Not authorized.' }, { status: 403 }) };
+  }
+
   if (!isPlainObject(body.selections)) {
     return { ok: false, response: NextResponse.json({ error: 'selections is required.' }, { status: 400 }) };
   }
@@ -104,6 +119,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   const { organizationId } = authResult.context;
 
   const dataAdapterMode = getDataAdapterMode();
+  // Manors launch-prep — additional case charges: viewing/editing a case's
+  // operational services and add-ons is gated on the broader caseOrder.read
+  // (held by every case-working role), not payment.read — that stays
+  // reserved for the case's financial total/balance/history specifically
+  // (see GET /api/cases/[caseId]/payments and CaseOrderCard.tsx).
+  if (!(await canReadCaseOrder({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+  }
+
   const order = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
   const lineItems = order ? await listLineItemsForOrder(organizationId, order.id, dataAdapterMode) : [];
   const auditEntries = await listAuditEntriesForCase(organizationId, caseId, dataAdapterMode);

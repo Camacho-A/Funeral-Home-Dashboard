@@ -38,7 +38,7 @@ describe('GET /api/service-catalog', () => {
     expect((await requestFor(null)).status).toBe(400);
   });
 
-  it("returns Manor's Cremation's five seeded services", async () => {
+  it("returns Manor's Cremation's eight seeded services (Manors launch-prep added three additional-charge addons)", async () => {
     const response = await requestFor(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(200);
     const body = (await response.json()) as { catalog: Array<{ serviceCode: string }> };
@@ -48,6 +48,9 @@ describe('GET /api/service-catalog', () => {
       'WEIGHT_SURCHARGE_251_300',
       'EXTRA_DEATH_CERTIFICATE',
       'MAIL_CREMATED_REMAINS',
+      'KEEPSAKE_TRANSFER',
+      'URN_TRANSFER',
+      'SHIPPING',
     ]);
   });
 });

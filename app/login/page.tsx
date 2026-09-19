@@ -19,7 +19,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   // app/login/actions.ts's identity branch and
   // lib/auth/resolveIdentitySession.ts (via app/(portal)/layout.tsx).
   account_locked: 'Too many failed attempts. Your account is temporarily locked — try again in a few minutes.',
-  mfa_required: 'Multi-factor authentication is required for this account. This login flow does not yet support it.',
+  mfa_required: 'Multi-factor authentication is required for this account.',
+  mfa_challenge_expired: 'Your verification step expired. Please sign in again.',
   revoked: 'This session was signed out. Please sign in again.',
   expired: 'Your session has expired. Please sign in again.',
   password_changed: 'Your password was recently changed. Please sign in again.',

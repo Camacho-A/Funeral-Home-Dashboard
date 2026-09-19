@@ -57,3 +57,25 @@ export function assertCaseNumberUnchanged(patch: unknown): void {
     throw new Error('caseNumber cannot be changed after a case is created');
   }
 }
+
+/**
+ * Manors launch-prep — P0 automatic case numbering. Which calendar year a
+ * new case's number belongs to, in the organization's own local timezone
+ * — never blindly `new Date().getFullYear()` (server/UTC time), so a case
+ * created shortly after local midnight on January 1st gets the new year's
+ * prefix even before UTC has rolled over (and, symmetrically, a case
+ * created late on December 31st local time never jumps the gun into next
+ * year just because UTC already has). Same hand-rolled, no-new-dependency
+ * `Intl.DateTimeFormat` technique `domain/notifications/digestTiming.ts`'s
+ * `orgLocalTime` already established for org-local time-of-day — `year:
+ * 'numeric'` is the one addition needed here. UTC fallback for any
+ * organization predating the optional `timezone` field, exactly like that
+ * same precedent.
+ */
+export function orgLocalYear(nowIso: string, timezone: string | undefined): number {
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    timeZone: timezone || 'UTC',
+  }).format(new Date(nowIso));
+  return Number(formatted);
+}

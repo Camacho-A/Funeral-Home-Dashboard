@@ -167,12 +167,14 @@ This is a deliberate change in direction from what the current codebase actually
 | `defaultCurrency` | Text | Optional (Phase 20) | Mutable |
 | `primaryEmail`, `primaryPhone` | Text | Optional (Phase 20) | Mutable |
 | `website` | Text, nullable | Optional (Phase 20) | Mutable |
+| `requireMfa` | Boolean | Optional (Phase 40) | Mutable — defaults to `false`/unrequired when absent |
+| `enabledModulesJson` | Text, nullable | Optional (Manors launch-prep, live — added revision 3→4) | Mutable — JSON-encoded `string[]` of advanced-module keys (see `domain/organization/moduleVisibility.ts`); absent/null means none of the advanced nav modules are shown, the deliberate safe default for Manors and for any newly-provisioned organization. Never enforces authorization on its own — a hidden module's routes/APIs keep their own RBAC checks regardless of this field |
 | `createdAt`, `updatedAt` | Text | Optional (Phase 20) | `createdAt` immutable, `updatedAt` mutable |
 
 - **Indexes:** unique on `beaconOrganizationId` (pre-existing — occupies this collection's one allowed unique-index slot, confirmed empirically); regular index on `slug` (Phase 20, since a second unique index isn't available).
 - **Permissions:** backend/Admin only.
-- **TS type:** `types/organization.ts`'s `Organization` — the nine Phase 20 fields are all optional, so a pre-Phase-20 record (or a not-yet-migrated live row) remains fully valid.
-- **Mapping:** `id → beaconOrganizationId`, `name → name`, `isActive → isActive`, plus a direct field-for-field mapping for every Phase 20 addition.
+- **TS type:** `types/organization.ts`'s `Organization` — the nine Phase 20 fields (plus `requireMfa` and `enabledModules`) are all optional, so a pre-Phase-20 record (or a not-yet-migrated live row) remains fully valid.
+- **Mapping:** `id → beaconOrganizationId`, `name → name`, `isActive → isActive`, plus a direct field-for-field mapping for every Phase 20 addition; `enabledModules ↔ enabledModulesJson` via `JSON.stringify`/`JSON.parse`, falling back to `undefined` on any malformed value rather than failing the whole read.
 - **Phase 20 correction (2026-07-24):** this collection's fields were extended via `PUT /wix-data/v2/collections` (revision 1→2, resending the full existing field list plus the nine new ones — Wix's "Update Data Collection" replaces the entire `fields` array, so omitting existing fields would have silently dropped them) rather than creating a second, conflicting `organizations`-shaped collection. See [ADR-024](./adr/ADR-024-organization-onboarding-tenant-provisioning.md).
 
 ## Collection 2 — `organizationMemberships`
@@ -268,9 +270,17 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | `createdBy` | Text | Required | Immutable — same identity-space note as `intakeOwnerId` |
 | `isArchived` | Boolean | Required | Mutable — → `isDeleted` |
 | `createdAt` | Date | Required | Immutable |
+| `tagNumber` | Text, nullable | Optional (Manors launch-prep) | Mutable — a proper structured field, not free-form Notes; searchable via the existing in-app `matchesSearch` filter, no dedicated index |
+| `pickupStatus` | Text enum (`awaiting_pickup`\|`released`) | Optional (Manors launch-prep) | Mutable — defaults to `awaiting_pickup` when absent on a pre-existing row |
+| `pickupReleasedTo`, `pickupNote` | Text, nullable | Optional (Manors launch-prep) | Mutable |
+| `pickupReleasedAt` | Text (ISO date), nullable | Optional (Manors launch-prep) | Mutable |
+| `nextOfKinEmail` | Text, nullable | Optional (Manors launch-prep) | Mutable — capture-only; validated via `isValidEmail` at write time, no automatic email/portal/notification side effect of any kind |
+| `nextOfKinRelationship` | Text enum (15-value closed union, see `lib/wixCaseMapper.ts#NEXT_OF_KIN_RELATIONSHIP_VALUES`), nullable | Optional (Manors launch-prep) | Mutable — an unrecognized/absent value maps to `null`, never trusted as-is |
+| `nextOfKinRelationshipOther` | Text, nullable | Optional (Manors launch-prep) | Mutable — only meaningful when `nextOfKinRelationship === 'other'` |
 
 - **References:** `organizationId → organizations`; `workflowTemplateId → workflowTemplates`; `intakeOwnerId`/`caseHandlerId`/`createdBy` → the authenticated-identity space (see "Open design decision").
-- **Indexes:** unique composite `(beaconCaseId, organizationId)`; `(organizationId, currentStage)`; `(organizationId, caseHandlerId)`; `(organizationId, isArchived)`.
+- **Indexes:** unique composite `(beaconCaseId, organizationId)`; `(organizationId, currentStage)`; `(organizationId, caseHandlerId)`; `(organizationId, isArchived)` — already at the 3-regular-index cap; the Manors launch-prep fields above deliberately add none (tag-number search and pickup-status filtering both go through the existing in-memory/query-filter `matchesSearch` path, never a new index).
+- **Manors launch-prep (live, added via `POST /wix-data/v2/collections/create-field`):** `tagNumber`/`pickupStatus`/`pickupReleasedTo`/`pickupReleasedAt`/`pickupNote` are read defensively by `lib/wixCaseMapper.ts#mapWixCaseItem` — every pre-existing row (none of which had these fields until this change) maps with `tagNumber: null` and `pickupStatus: 'awaiting_pickup'` (the other three `null`), so no backfill/migration was required. `nextOfKinEmail`/`nextOfKinRelationship`/`nextOfKinRelationshipOther` were added the same way at Manors launch closeout — confirmed live and present on the collection schema; every pre-existing row (including Manor's one real case) maps all three to `null`, same no-backfill pattern. No index change for any of these six fields — still at the 3-regular/1-unique cap.
 - **Permissions:** backend/Admin only.
 - **TS type:** matches `types/case.ts`'s `Case` field-for-field (see mapping column above; `currentStage`/`caseHandlerId`/`isArchived` are the only renamed fields, mapping to `rawStage`/`assignedStaffId`/`isDeleted` respectively).
 
@@ -296,6 +306,10 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 ## Collection 7 — `caseSequences`
 
 **Purpose:** backs atomic Case Number generation (Phase 16B) — one row per organization+year, holding the next sequence number to hand out. Not read by any client-facing service; only ever touched by `lib/wixCaseNumberSequence.ts`, server-side, at case-creation time. **Ownership:** organization-owned (one row per organization+year).
+
+**Manors launch-prep — P0 automatic case numbering (no new field/collection/index):** two additions on top of the existing `reserveNextCaseNumber`, reusing this exact collection shape —
+- **Administrator-controlled initialization** (`initializeCaseSequence`/`getCaseSequenceState`, exposed via `POST`/`GET /api/organization/case-sequence`, gated by the existing `organization.manage` permission): lets an administrator pre-seed a transitional year's starting number (e.g. Manor's real external 2026 history means the row must start at `nextSequence: 185`, not `1`) *before* the first case of that year is reserved. A fresh insert always succeeds; an already-initialized row is never silently replaced — `forceOverwrite` must be passed explicitly, and even then a request that would move `nextSequence` *backwards* (enabling number reuse) is refused outright. Every other year still rolls over automatically via the existing bootstrap-at-1 path — this is only ever needed once, for the one transitional year.
+- **Organization-local year resolution** (`domain/cases/caseNumber.ts#orgLocalYear`, called from `app/api/cases/route.ts`'s `POST`): the year a new case's number belongs to is now resolved via the organization's own `timezone` field (via `Intl.DateTimeFormat`, the same technique `domain/notifications/digestTiming.ts#orgLocalTime` established), not `new Date().getFullYear()` — a fix, not a schema change; a case created shortly after local midnight on January 1st now correctly gets the new year's prefix even before UTC has rolled over.
 
 | Field | Type | Required | Mutable |
 |---|---|---|---|
@@ -336,8 +350,8 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | Field | Type | Required | Mutable |
 |---|---|---|---|
 | `organizationId`, `caseId` | Text | Required | Immutable |
-| `provider` | Text | Required | Immutable |
-| `providerCheckoutId` | Text | Required | Mutable once — seeded with a per-record placeholder (`pending:{id}`), overwritten once Clover assigns a real session id. Correction pass: no longer uniquely indexed (see below) |
+| `provider` | Text | Required | Immutable — plain Text, no Wix-level enum; Manors launch-prep added the application-level value `'manual'` (staff-recorded cash/check/other payments) alongside the pre-existing `'clover'`, requiring **zero Wix schema change** |
+| `providerCheckoutId` | Text | Required | Mutable once — seeded with a per-record placeholder (`pending:{id}`), overwritten once Clover assigns a real session id. Correction pass: no longer uniquely indexed (see below). For a manual payment, seeded with `manual:{id}` instead, following the same placeholder convention |
 | `providerPaymentId` | Text | Optional | Mutable — set once a webhook confirms one exists |
 | `idempotencyKey` | Text | Required | Immutable — correction-pass addition; the composed `{organizationId}:{clientKey}` value backing the atomic duplicate-checkout guard (see ADR-022's "Idempotency (correction pass)") |
 | `checkoutUrl` | Text | Optional | Mutable — cleared implicitly once a session expires; see types/payment.ts's own comment on why this field exists beyond the phase's original list |

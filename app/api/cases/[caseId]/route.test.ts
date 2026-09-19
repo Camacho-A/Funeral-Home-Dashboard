@@ -445,6 +445,73 @@ describe('PATCH /api/cases/[caseId]', () => {
       expect(mergedData.decedentName).toBe(EXISTING_WIX_CASE_DATA.decedentName);
     });
 
+    it('edits nextOfKinEmail, trimming surrounding whitespace before saving (Manors launch-prep)', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { nextOfKinEmail: '  karen@example.com  ' },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.nextOfKinEmail).toBe('karen@example.com');
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ nextOfKinEmail: 'karen@example.com' }));
+    });
+
+    it('clears nextOfKinEmail to null', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { nextOfKinEmail: null } });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.nextOfKinEmail).toBeNull();
+    });
+
+    it('rejects a malformed nextOfKinEmail with 400, before any write', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { nextOfKinEmail: 'not-an-email' } });
+      expect(response.status).toBe(400);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('edits nextOfKinRelationship to a valid value (Manors launch-prep)', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { nextOfKinRelationship: 'daughter' },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.nextOfKinRelationship).toBe('daughter');
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ nextOfKinRelationship: 'daughter' }));
+    });
+
+    it('edits nextOfKinRelationshipOther (trimming is the caller\'s responsibility at this layer, matching tagNumber/pickupNote)', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { nextOfKinRelationship: 'other', nextOfKinRelationshipOther: 'family friend' },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.nextOfKinRelationship).toBe('other');
+      expect(body.case.nextOfKinRelationshipOther).toBe('family friend');
+    });
+
+    it('clears nextOfKinRelationship to null', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { nextOfKinRelationship: null } });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.nextOfKinRelationship).toBeNull();
+    });
+
+    it('rejects an unrecognized nextOfKinRelationship value with 400, before any write', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { nextOfKinRelationship: 'cousin-twice-removed' },
+      });
+      expect(response.status).toBe(400);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
     it('Phase 24: records a case.updated activity event carrying only the changed field, not the whole case', async () => {
       await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } });
 

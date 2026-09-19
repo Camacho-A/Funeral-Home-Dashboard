@@ -22,4 +22,13 @@ export const SERVICE_CODES = {
   WEIGHT_SURCHARGE_251_300: 'WEIGHT_SURCHARGE_251_300',
   EXTRA_DEATH_CERTIFICATE: 'EXTRA_DEATH_CERTIFICATE',
   MAIL_CREMATED_REMAINS: 'MAIL_CREMATED_REMAINS',
+  /** Manors launch-prep — additional case charges. Quantity-based addon,
+      same role as EXTRA_DEATH_CERTIFICATE ($10/unit for Manor). */
+  KEEPSAKE_TRANSFER: 'KEEPSAKE_TRANSFER',
+  /** Manors launch-prep. Flat, opt-in addon, same role as
+      MAIL_CREMATED_REMAINS ($35 flat for Manor). */
+  URN_TRANSFER: 'URN_TRANSFER',
+  /** Manors launch-prep. Flat, opt-in addon ($185 flat for Manor) —
+      distinct from MAIL_CREMATED_REMAINS, a different operational charge. */
+  SHIPPING: 'SHIPPING',
 } as const;

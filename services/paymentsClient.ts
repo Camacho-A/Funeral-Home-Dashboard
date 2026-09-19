@@ -53,6 +53,26 @@ export async function createCloverCheckout(
   return response.json();
 }
 
+/** Manors launch-prep (manual payment recording) — cash/check/other,
+    collected outside a card processor. Mirrors createCloverCheckout's shape;
+    the server validates the amount against the case's own balance due. */
+export async function recordManualPayment(
+  context: OrganizationContext,
+  caseId: string,
+  input: { method: 'cash' | 'check' | 'other'; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string },
+): Promise<{ payment: PaymentRecord }> {
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/payments/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId: context.organizationId, ...input }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error ?? 'Failed to record payment.');
+  }
+  return response.json();
+}
+
 export async function cancelPayment(
   context: OrganizationContext,
   caseId: string,
@@ -95,6 +115,7 @@ export const paymentsClient = {
   listPayments,
   getPayment,
   createCloverCheckout,
+  recordManualPayment,
   cancelPayment,
   simulateMockPaymentSuccess,
 };

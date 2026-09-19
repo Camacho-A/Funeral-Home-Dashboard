@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import {
   caseOrderFixtures,
@@ -87,6 +87,16 @@ describe('GET /api/cases/[caseId]/order', () => {
     const response = await getRequest(KNOWN_CASE().id, DEFAULT_ORGANIZATION_ID);
     const body = (await response.json()) as { order: unknown };
     expect(body.order).toBeNull();
+  });
+
+  it('allows a caller with only caseOrder.read (e.g. officeStaff) to read the order — additional case charges must remain visible to normal staff (Manors launch-prep)', async () => {
+    // officeStaff holds caseOrder.read but neither payment.read nor
+    // payment.collect — this route is deliberately gated on the broader
+    // permission (see route.ts's own comment) so staff can still see/edit
+    // operational add-ons without needing financial visibility.
+    mockSession = { user: mockMultiOrgUser };
+    const response = await getRequest(KNOWN_CASE().id, DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
   });
 });
 
@@ -230,7 +240,35 @@ describe('GET /api/cases/[caseId]/order — wix mode (mapper round-trip)', () =>
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
 
-    store = { caseOrders: {}, caseOrderLineItems: {}, caseOrderAuditEntries: {} };
+    store = {
+      caseOrders: {},
+      caseOrderLineItems: {},
+      caseOrderAuditEntries: {},
+      // Manors launch-prep: this route gates GET on `caseOrder.read` (see
+      // canReadCaseOrder) — seed mockDefaultUser's 'administrator' role
+      // with that permission so the pre-existing tests below (which
+      // simulate an authorized caller) keep resolving 200s.
+      roles: {
+        'role-administrator': {
+          beaconRoleId: 'role-administrator',
+          key: 'administrator',
+          name: 'Administrator',
+          description: 'Full access.',
+          organizationId: null,
+          isSystemDefault: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      rolePermissions: {
+        'rp-case-order-read': {
+          beaconRolePermissionId: 'rp-case-order-read',
+          roleId: 'role-administrator',
+          permissionKey: 'caseOrder.read',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    };
     mockQueryWixDataItems = vi.fn().mockImplementation((collectionId: string, opts?: { filter?: Record<string, unknown> }) => {
       const filter = opts?.filter ?? {};
       const items = Object.entries(store[collectionId] ?? {})

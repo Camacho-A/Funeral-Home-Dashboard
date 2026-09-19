@@ -303,11 +303,105 @@ These are logical next steps once V1 is in production use at Managed Cremations,
 - **Mobile.** The V1 UI is deliberately fixed-width/desktop-only (see [UI_COMPONENTS.md](./UI_COMPONENTS.md)); a responsive or native mobile pass is a distinct, later effort.
 - ~~**E-signature integration** for the compliance documents already being tracked (permits, authorizations, contracts)~~ — **built in Phase 26.** Remaining next steps in this space: sequential/parallel/witness signing and a third-party (DocuSign/Adobe Sign) adapter — all named extension points in [ADR-030](./adr/ADR-030-electronic-signatures-and-authorization-workflows.md), none implemented yet.
 
+## MANORS LAUNCH SCOPE — COMPLETE / READY FOR DEPLOYMENT
+
+**MANORS APPLICATION DEVELOPMENT: READY FOR DEPLOYMENT**
+**GO-LIVE CUTOVER CONFIGURATION: PENDING — real Manors B2026 starting number**
+
+**Not a numbered phase — a deliberate scope-reduction pass**, distinct from the phase-by-phase roadmap above. Beacon's architecture is not being simplified or thrown away; only what an ordinary Manors Cremation staff member *sees* is. Two goals: close the one real functional gap blocking go-live (no way to record a non-Clover payment), and hide the advanced/SaaS-scale modules Manors doesn't use yet behind the lightest possible mechanism, without deleting or weakening any of them.
+
+All code/test/build work for this scope is complete, verified, and idle pending deployment. Exactly one item remains, and it is **deployment configuration, not unfinished development** — the case number stays intentionally uninitialized until the actual go-live cutover, per the procedure below:
+
+### GO-LIVE CUTOVER CONFIGURATION — PENDING
+
+**What:** the real Manor's Cremation 2026 starting case number (`B2026-XXX`). Manor is still manually issuing case numbers today and receives new cases daily, so "the next unused number" keeps changing until the actual cutover moment — it is deliberately *not* set now, and is not something more code or testing could resolve early.
+
+**Cutover procedure** (final case-number handoff, to run as one of the last steps before Manor stops manual numbering):
+1. Angelica checks the existing manual Manors case tracker.
+2. Determine the last manually issued `B2026-XXX` number.
+3. Angelica provides Beacon the NEXT unused sequence number (e.g. last manual = `B2026-286` → next = `287`).
+4. Initialize the Manors 2026 sequence in Beacon (`POST /api/organization/case-sequence`, `organizationId: managed-cremations`, `year: 2026`, `nextSequence: 287`, `forceOverwrite: true` — the row currently holds disposable dev/test residue, see below).
+5. Read the configuration back (`GET /api/organization/case-sequence`) **without consuming a number** — no case is created as part of this step.
+6. Confirm with Angelica: organization = Manor's Cremation, year = 2026, next number to issue = 287 (or whatever she provided).
+7. Manor stops manually assigning new case numbers from this point forward.
+8. The first real case entered into Beacon consumes `B2026-287`.
+9. Beacon is now the sole authoritative numbering source — `B2026-288`, `B2026-289`, ... follow automatically, never reused, never reassigned.
+
+**Annual rollover needs no manual step and is unaffected by this pending item:** January 1, 2027, in the organization's own local timezone, the first new case automatically gets `B2027-001` (`domain/cases/caseNumber.ts#orgLocalYear` + `lib/wixCaseNumberSequence.ts`'s bootstrap-at-1 path) — tested explicitly for the UTC/local-timezone boundary, see Phase 16B/this section's own case-numbering entry below.
+
+**Do not, before actual cutover:** initialize the real sequence, guess/reserve a number, or create a test case against the real `managed-cremations` organization/sequence. All of this feature's verification used a fully disposable, isolated test organization+sequence (created and fully cleaned up).
+
+### Employee vs. administrator experience (server-side enforced, not just hidden navigation)
+
+**Normal Manors officeStaff** are operational users. Their surface: Dashboard, Cases, NOK/family information, Tag Number, Notes/case log, checklist/workflow, documents needed for the case, pickup tracking, additional case charges (see below), and operational case completion. They do **not** get financial/accounting visibility — no Accounting nav, no case total/balance/payment history/Record Payment, no Dashboard revenue figures.
+
+This is enforced by RBAC permission checks inside the Route Handlers themselves (`canReadCaseOrder`/`caseOrder.read`, `canReadPayment`/`payment.read`, `canCollectPayment`/`payment.collect`, `canViewFinancialReports`/`accounting.report`, `canManageOrganization`/`organization.manage`) — **not** merely by omitting a link from the Sidebar/TopBar. A caller without the right permission gets a real `403` from the API regardless of what the UI shows; verified directly by route-level tests (`app/api/cases/[caseId]/order/route.test.ts`, `.../payments/route.test.ts`, `.../payments/clover/checkout/route.test.ts`) using a caller resolved to the `officeStaff` role, and against live Wix RBAC data for `managed-cremations` (real `officeStaff` grants confirmed to hold zero `payment.*`/`accounting.*` keys).
+
+**Administrator/management** retains every authorized financial capability that already existed — Accounting, General Ledger, journal entries, financial reports, case-level payment collection/history — unchanged. No financial architecture (ledger, journal entries, reconciliation, procurement/AP accounting, reporting) was altered, weakened, or hidden from any role that already needs it.
+
+### Additional case charges — current live configuration
+
+Four approved add-ons, all catalog-driven (no price hardcoded in any UI component) via the existing `ServiceCatalogItem`/`CaseOrder` pricing engine — no second billing system. **Live state for `managed-cremations`, confirmed by direct read against Wix, not assumed:**
+
+| Charge | serviceCode | Type | Price | Live status |
+|---|---|---|---|---|
+| Additional Death Certificate | `EXTRA_DEATH_CERTIFICATE` | per-unit | $25.00 each | **active** |
+| Keepsake Transfer | `KEEPSAKE_TRANSFER` | per-unit | $10.00 each | **active** |
+| Urn Transfer | `URN_TRANSFER` | flat | $35.00 | **active** |
+| Shipping | `SHIPPING` | flat | $185.00 | **inactive** — deactivated at the user's explicit request (functionally duplicated `MAIL_CREMATED_REMAINS`, also $185 flat); row preserved, not deleted, reversible |
+
+`Mail Cremated Remains` ($185 flat, pre-existing) remains the one active shipping-type charge. The app reads catalog rows active-only by default, so the deactivated `SHIPPING` row does not appear anywhere in the employee UI without any code change. Quantity increase/decrease/zero, flat-addon remove-then-re-add, and the full combined worked example are all covered by automated tests against the real recalculation/revenue-recognition pipeline (never double-counted).
+
+### MFA / account security (Phase 40) — status corrected
+
+`organizations.requireMfa` is confirmed **live and already present** on the `organizations` collection schema (added during Phase 40's own live-Wix step — this section previously said "pending," which was stale; corrected here). Manor's own live organization row has no explicit value set for `requireMfa` (or `enabledModulesJson`) — confirmed by direct read — which resolves to the same effective default either way (MFA not required; advanced modules hidden), so no live write is needed to reach the intended launch state. MFA architecture (TOTP enrollment, recovery codes, staff-login rate limiting) is fully preserved and available opt-in; organization-wide MFA activation is **not** a launch blocker and remains the administrator's choice to flip later via the existing `/api/organization/mfa-policy` route.
+
+### Optional integrations — deferred, not blocking
+
+None of the following are required for Beacon to perform the approved Manors operational workflow (case management, NOK, tag/pickup, notes, checklist, documents, additional charges, manual payment recording). Each fails safe when unconfigured — no code path breaks, the integration is simply unavailable:
+
+| Integration | Status | Blocks launch? |
+|---|---|---|
+| Clover (card payments) | Not configured | No — manual payment recording (cash/check/other) covers Day-1 payment collection |
+| Resend (email) | Not configured | No — dev-console delivery fallback |
+| Twilio (SMS) | Not configured | No — dev-console delivery fallback |
+| Google Calendar | Not configured | No — no Beacon workflow requires it |
+| Microsoft Calendar | Not configured | No — no Beacon workflow requires it |
+
+Only marked P0 if Beacon genuinely cannot perform the approved workflow without it — none of these qualify.
+
+- **Manual payment recording.** `POST /api/cases/[caseId]/payments/manual` lets staff record cash/check/other payments (full or partial) against a case's balance due, reusing the existing GL-posting/balance-refresh pipeline end-to-end (`paymentsService` → `financialTransactionService#postPaymentTransaction` → `paymentWorkflow#markCasePaidIfVerified`) — no parallel accounting logic. `PaymentRecord.provider` gains the value `'manual'` (a plain Text field, zero Wix schema change). No accounting/journal-entry complexity is exposed to staff — only case total, amount paid, balance due, method, and an optional reference.
+- **Tag Number.** `Case.tagNumber` — a proper, searchable, tenant-isolated structured field (not free-form Notes), editable inline from the Case Information card, shown in the case header.
+- **Pick-Up tracking (V1).** `Case.pickupStatus` (`awaiting_pickup`/`released`) plus `pickupReleasedTo`/`pickupReleasedAt`/`pickupNote` — the three detail fields only appear once a case is marked released, avoiding a speculative logistics system nobody asked for.
+- **Next of Kin — email.** `Case.nextOfKinEmail` — optional, real email validation (`isValidEmail`, trimmed), a proper structured field on the existing NOK information, not Notes/case log. Capture-only: no automatic email send, Family Portal account creation, invitation, or notification of any kind is ever triggered by setting it (confirmed by grep — zero references from `notificationService`/`portalInvitation`/`resendClient`/`twilio` to this field). Rendered on both the New Case form (fixed field, positioned immediately after whichever section of the org's own intake template holds its next-of-kin fields — never dead-last regardless of that template's own section order) and the Case Information card (inline-editable, `EditableField kind="email"`).
+- **Next of Kin — relationship to deceased.** `Case.nextOfKinRelationship` — a 15-value closed enum (Spouse, Domestic Partner, Son, Daughter, Parent, Brother, Sister, Grandchild, Grandparent, Niece, Nephew, Other Relative, Friend, Legal Representative, Other), optional, editable from the Case Information card only (not yet on the New Case form — data-collection-only scope, matching the approved request). Selecting "Other" reveals `Case.nextOfKinRelationshipOther`, a short free-text description, trimmed client-side before saving. An unrecognized/legacy-absent value always maps to `null`, never guessed. Distinct from `domain/portal/portalRelationshipRegistry.ts`'s `PortalRelationshipType` (a Family Portal access-capability tier, not a descriptive family relationship) — never conflated.
+- **Module-visibility mechanism.** `Organization.enabledModules` (nullable `string[]`, JSON-encoded on the live row — see `domain/organization/moduleVisibility.ts`) is the lightest mechanism that could satisfy this, deliberately not a feature-flag framework: absent/null hides every advanced module (`accounting`, `merchandise`, `inventory`, `procurement`, `accountsPayable`, `resources`, `calendarIntegrations`) from the Sidebar/TopBar by default — the safe default for Manors and for any future organization — while every hidden module's routes/APIs keep enforcing their own RBAC exactly as before. Separately, TopBar's Roles/Team/Audit/Templates links are now gated on the viewer's actual permissions (`user.manageRoles`/`user.invite`/`audit.read`/`document.template.manage`) rather than shown to every staff member regardless of whether they could use them — a real defect fix uncovered by the same audit, not scope creep.
+- **MFA:** `organizations.requireMfa` stays `false` for Manors at launch (see Phase 40 below); MFA remains available, opt-in, not required.
+
+**Explicitly not done as part of this pass** (per the user's own scope boundary): no Phase 41, no case-system redesign, no accounting rebuild, no integration activation (Clover/Twilio/Resend/Google/Microsoft all remain optional and fail safely when unconfigured), no new reporting/inventory/procurement/compliance-automation functionality, no new RBAC permission keys.
+
+**Live-Wix work performed (additive only, approved via the consolidated checkpoint):** `tagNumber`/`pickupStatus`/`pickupReleasedTo`/`pickupReleasedAt`/`pickupNote` added to `cases`; `enabledModulesJson` added to `organizations`. No index change, no migration, no data touched on any existing row. Manor's own `organizations` row was left with `enabledModulesJson` unset (null) — the safe default that already hides every advanced module.
+
+**Scope update (financial visibility for normal staff):** a follow-on decision restricts Beacon's financial/accounting surface — Dashboard financial KPIs, Accounting nav, and case-level payment UI (case total/paid/balance/history/Record Payment) — to staff who actually hold the relevant existing RBAC permission (`payment.read`/`payment.collect`/`accounting.*`), rather than to every authenticated staff member. This is a visibility/permission change only: no financial architecture (ledger, journal entries, reconciliation, procurement/AP accounting, reporting) is altered, weakened, or hidden from any role that already needs it. Concretely:
+- `payment.read` was already in the permission catalog and already granted to the right default roles, but nothing ever checked it — `GET /api/cases/[caseId]/order` and `GET /api/cases/[caseId]/payments` now enforce it (a new `canReadPayment` helper, no new permission key); the Clover checkout route now enforces the pre-existing `payment.collect` gap the same way (the manual-payment route already had it). `CaseOrderCard` self-gates on both, mirroring `RecentActivityPanel`'s existing `audit.read` self-gating pattern — renders nothing without `payment.read`; hides Record Payment/Collect-with-Clover without `payment.collect`.
+- Sidebar's `/accounting` link moved from the `enabledModules` module-flag gate to a direct `accounting.view` permission check — Accounting is core financial infrastructure Manor already uses (unlike the genuinely-unused SaaS-scale modules `enabledModules` gates), so administrators/managers keep access while normal staff roles (which hold none of the `accounting.*` keys by default) do not. `accounting` was removed from `ADVANCED_MODULE_KEYS` accordingly.
+- The Dashboard's financial content (`FinancialSummaryPanel`, the "Failed payments" count) needed **no code change** — both were already server-gated on `accounting.report`, which no normal-staff default role holds.
+- Default role definitions (`domain/rbac/defaultRoles.ts`) already separated this correctly — audited, not changed. No new permission keys, no new roles.
+
+**P0 (automatic case numbering):** Case Number generation (`B{YYYY}-{###}`, Phase 16B/ADR-018) was already fully implemented and genuinely concurrency-safe (atomic `INCREMENT_FIELD`, never read-then-increment) — this pass closed three specific gaps against the new requirement, reusing the existing `caseSequences` collection with **no schema change**:
+- **Year resolution was blind UTC** (`new Date().getFullYear()`) — now resolves via the organization's own local `timezone` (`domain/cases/caseNumber.ts#orgLocalYear`), so a case created just after local midnight on January 1st gets the new year's prefix correctly.
+- **No administrator-controlled way to pre-seed a transitional year's starting number** — added `initializeCaseSequence`/`getCaseSequenceState` + `GET`/`POST /api/organization/case-sequence`, gated by the existing `organization.manage` permission, insert-only by default, `forceOverwrite` required to replace an existing row and refused outright if it would ever move the sequence backwards.
+- **Live production note:** `managed-cremations`' real `caseSequences` row for 2026 is currently at `nextSequence: 17` (one real case, `B2026-016`) — 16 numbers were issued and never reused across this whole project's disposable dev/test case creation, which is itself a correct demonstration of the no-reuse guarantee, but this row is **not** Manor's real external starting number and must not be treated as production-initialized. Per the user's explicit instruction, this is deliberately left untouched until they provide the real number and this pass's own live verification used a fully disposable, isolated test organization/sequence instead (created and fully cleaned up — 0 residual rows).
+
 ## Completed: Product Variants (Phase 37)
 
 **ADR-041.** Adds first-class **product variants** (a dedicated `merchandiseProductVariants` collection with nullable price/cost/supplier overrides that inherit from the parent), threaded through inventory/procurement/orders by an optional `variantId` that is fully backward-compatible (a null variant reproduces the exact Phase 35 stock key). Strict product/variant bifurcation: a variant-parent product is never itself stocked/sold, and mode transitions/archival fail closed while operational state exists. Cross-collection (product + variant) organization-scoped SKU uniqueness; variant procurement + Phase 36 AP compatibility; variant-aware CaseOrder selection/snapshots; a variant editor in the merchandise settings UI; family-safe variant presentation (name only, never cost/supplier). RBAC reuses `merchandise.read`/`merchandise.manage` — **no new permission keys**.
 
 **Sales tax: not currently implemented / out of scope.** An initial Phase 37 draft explored configurable sales tax; it was removed before commit. Beacon does not calculate, collect, accrue, report, or remit sales tax. The draft's live artifacts were cleaned up (live, `managed-cremations`): the empty `salesTaxConfigurations` collection was **deleted cleanly** (0 rows; its indexes went with it); account **`2200` was deactivated** (`isActive:false`, renamed "(deprecated — unused)") rather than deleted because 6 immutable posted disposable-verification journal lines reference it with a **net-zero** effect (debit 31,500 / credit 31,500) — ledger immutability preserved, no entry deleted or rewritten, no code path able to post to it; and the `caseOrders.taxLocationId`/`taxJurisdictionName`/`taxRateMicros` columns were **retained dormant** (reserved/inactive). These retained artifacts are reserved/inactive only and do **not** represent supported functionality.
+
+## Completed (live-Wix confirmed): MFA & Account Security (Phase 40)
+
+**ADR-044.** Activates the orphaned Phase-21 TOTP-MFA foundation and adds account-security enforcement. A correct password alone no longer completes an MFA login: it issues a short-lived, signed, **non-session** challenge token (`beacon_mfa_challenge`) and hands off to a `/login/mfa` second-factor step; a real session is minted only after a TOTP or single-use recovery code verifies. Enrollment (QR/setup-key → verify → one-time recovery codes) + regenerate + disable ship as `/api/auth/mfa/*` routes and a Security-page panel. **Org require-MFA** (`Organization.requireMfa`, additive/nullable/default-false — backward compatible) routes un-enrolled members to enrollment at login (never hard-locks). **Staff-login rate limiting** = the existing server-authoritative account lockout, now also fed by failed MFA-challenge attempts. TOTP-only for V1; **trusted devices, admin-assisted reset, SMS/email OTP, WebAuthn/SSO deferred**. MFA stays separate from RBAC; Family Portal auth is untouched and isolated (structural test-enforced); no plaintext secret/code/token is ever logged. The one additive live change, `organizations.requireMfa`, is **confirmed live** on the `organizations` collection schema (verified by direct read, Manors launch-prep pass) — no new collection was needed (the challenge is a stateless cookie; identity MFA fields already existed). Manor's own organization row has no explicit value set, which resolves to `requireMfa: false`-equivalent (not required) — the correct default for launch; an administrator can flip it later via `/api/organization/mfa-policy`.
 
 ## In progress (implementation complete; pending live-Wix checkpoint): Family Billing & FTC Compliance Documents (Phase 39)
 

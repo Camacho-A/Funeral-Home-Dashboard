@@ -20,7 +20,14 @@ import type { WorkflowTemplate } from '@/types/workflowTemplate';
  * it's never part of this fixed count. Every fixed input-count assertion
  * below that predates this phase now adds this constant.
  */
-const SERVICES_AND_CHARGES_INPUT_COUNT = 5;
+// Manors launch-prep: addon controls (Additional Death Certificate/Keepsake
+// Transfer steppers, Mail Cremated Remains/Urn Transfer/Shipping Add
+// buttons) are all <button> elements now, not <input> — only the 3 weight
+// tier radios remain literal <input>s (was 5: 3 radios + 2 addon
+// checkboxes, before ServicesAndChargesSelector.tsx's rewrite). +1 again
+// for the fixed "Next of kin — email" input (Manors launch-prep) — always
+// rendered once templatesLoaded, independent of the org's own template.
+const SERVICES_AND_CHARGES_INPUT_COUNT = 4;
 
 // A stable, shared mock so tests can assert on navigation — useRouter() is
 // called on every render (React hook rules), so an inline `() => vi.fn()`
@@ -306,6 +313,77 @@ describe('NewCaseModal — Services & Charges (Phase 19C)', () => {
     expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
   });
 
+});
+
+describe('NewCaseModal — Next of kin email (Manors launch-prep)', () => {
+  it('renders a fixed, always-present "Next of kin — email" field, independent of the org template', async () => {
+    await renderModalWithFields();
+    expect(screen.getByLabelText('Next of kin — email (optional)')).toBeInTheDocument();
+  });
+
+  it('allows creating a case with no NOK email at all', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
+  });
+
+  it('trims whitespace on blur', async () => {
+    await renderModalWithFields();
+    const input = screen.getByLabelText('Next of kin — email (optional)');
+    fireEvent.change(input, { target: { value: '  karen@example.com  ' } });
+    fireEvent.blur(input);
+    expect((input as HTMLInputElement).value).toBe('karen@example.com');
+  });
+
+  it('shows an inline error and blocks submission for an invalid (non-empty) email', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const input = screen.getByLabelText('Next of kin — email (optional)');
+    fireEvent.change(input, { target: { value: 'not-an-email' } });
+    fireEvent.blur(input);
+
+    expect(screen.getByText(/valid email/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+
+  it('does not block submission for a valid email', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const input = screen.getByLabelText('Next of kin — email (optional)');
+    fireEvent.change(input, { target: { value: 'karen@example.com' } });
+    fireEvent.blur(input);
+
+    expect(screen.queryByText(/valid email/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
+  });
+
+  it('does not render an empty "Payment" section label — its only field (fieldType payment) renders nothing', async () => {
+    // The default fixture template's trailing section is literally { key:
+    // 'payment', label: 'Payment', fields: [{ fieldType: 'payment' }] } —
+    // renderIntakeField renders nothing for a 'payment' field, so this
+    // section previously showed just an empty labeled box.
+    await renderModalWithFields();
+    expect(screen.queryByText('Payment')).not.toBeInTheDocument();
+  });
+
+  it('places the NOK email field immediately after the section holding this org\'s own next-of-kin fields, not after a later payment-only section', async () => {
+    await renderModalWithFields();
+    const nokPhoneLabel = screen.getByText('Next of kin — phone number');
+    const nokEmailLabel = screen.getByText('Next of kin — email (optional)');
+
+    // DOCUMENT_POSITION_FOLLOWING (4) means nokEmailLabel comes after
+    // nokPhoneLabel in document order.
+    expect(nokPhoneLabel.compareDocumentPosition(nokEmailLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // And nothing else with a field label sits between them — the very
+    // next field-label element after NOK phone's is NOK email's.
+    const allLabels = Array.from(document.querySelectorAll('[class*="fieldLabel"]')).map((el) => el.textContent);
+    const phoneIndex = allLabels.indexOf('Next of kin — phone number');
+    expect(allLabels[phoneIndex + 1]).toBe('Next of kin — email (optional)');
+  });
+});
+
+describe('NewCaseModal — Services & Charges catalog fallback (Phase 19C)', () => {
   it('never renders a hardcoded price if the catalog fetch returns nothing (still renders the rest of the form)', async () => {
     vi.stubGlobal(
       'fetch',

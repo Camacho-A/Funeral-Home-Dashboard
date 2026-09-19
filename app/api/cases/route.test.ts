@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { orgLocalYear } from '@/domain/cases/caseNumber';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -29,6 +30,16 @@ vi.mock('@/lib/wixDataApi', async () => {
 let mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
 vi.mock('@/lib/wixCaseNumberSequence', () => ({
   reserveNextCaseNumber: (...args: unknown[]) => mockReserveNextCaseNumber(...args),
+}));
+
+// Manors launch-prep — P0: the case-number year is resolved via the
+// organization's own local timezone (domain/cases/caseNumber.ts's
+// orgLocalYear), never the server's/UTC's — defaults to null (no
+// organization record, UTC fallback) unless a test needs a specific
+// timezone to prove the org-local-vs-UTC distinction.
+let mockGetOrganization = vi.fn().mockResolvedValue(null);
+vi.mock('@/services/organizationProvisioningService', () => ({
+  getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
 }));
 
 // Phase 15X (Multi-Tenant Authorization Hardening): see the identical
@@ -179,10 +190,12 @@ beforeEach(() => {
   mockQueryWixDataItems = vi.fn();
   mockInsertWixDataItem = vi.fn();
   mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
+  mockGetOrganization = vi.fn().mockResolvedValue(null);
   mockSession = { user: mockDefaultUser };
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   ENV_KEYS.forEach((key) => {
     const value = originalEnv[key];
     if (value === undefined) delete process.env[key];
@@ -461,6 +474,124 @@ describe('POST /api/cases — validation', () => {
   });
 });
 
+describe('POST /api/cases — nextOfKinEmail (Manors launch-prep)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('creates the case without a NOK email — optional, defaults to null', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.nextOfKinEmail).toBeNull();
+  });
+
+  it('creates the case with a valid NOK email, trimmed', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinEmail: '  karen@example.com  ' }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.nextOfKinEmail).toBe('karen@example.com');
+  });
+
+  it('rejects a malformed NOK email with 400 — never silently drops or coerces it', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinEmail: 'not-an-email' }));
+    expect(response.status).toBe(400);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string nextOfKinEmail with 400', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinEmail: 12345 }));
+    expect(response.status).toBe(400);
+  });
+
+  it('treats an empty string the same as omitting it — no validation error, defaults to null', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinEmail: '   ' }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.nextOfKinEmail).toBeNull();
+  });
+});
+
+describe('POST /api/cases — nextOfKinRelationship (Manors launch-prep)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('creates the case without a NOK relationship — optional, defaults to null', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.nextOfKinRelationship).toBeNull();
+    expect(body.case.nextOfKinRelationshipOther).toBeNull();
+  });
+
+  it('creates the case with a valid NOK relationship', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinRelationship: 'daughter' }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.nextOfKinRelationship).toBe('daughter');
+  });
+
+  it('creates the case with relationship "other" and a trimmed description', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(
+      postRequest({ ...VALID_CREATE_BODY, nextOfKinRelationship: 'other', nextOfKinRelationshipOther: '  family friend  ' }),
+    );
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.nextOfKinRelationship).toBe('other');
+    expect(body.case.nextOfKinRelationshipOther).toBe('family friend');
+  });
+
+  it('rejects an unrecognized NOK relationship value with 400 — never silently drops or coerces it', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinRelationship: 'cousin-twice-removed' }));
+    expect(response.status).toBe(400);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string nextOfKinRelationship with 400', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, nextOfKinRelationship: 42 }));
+    expect(response.status).toBe(400);
+  });
+});
+
 describe('POST /api/cases — creation', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';
@@ -552,7 +683,7 @@ describe('POST /api/cases — creation', () => {
     expect(mockInsertWixDataItem).not.toHaveBeenCalled();
   });
 
-  it('reserves the Case Number server-side via reserveNextCaseNumber for the authorized organization and the current year', async () => {
+  it('reserves the Case Number server-side via reserveNextCaseNumber for the authorized organization and the current (UTC-fallback) year', async () => {
     mockEnabledTemplate();
     mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
       Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
@@ -561,8 +692,49 @@ describe('POST /api/cases — creation', () => {
     const response = await POST(postRequest(VALID_CREATE_BODY));
     const body = await response.json();
 
-    expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, new Date().getFullYear());
+    // mockGetOrganization resolves null by default (no org record) — orgLocalYear
+    // falls back to UTC, matching this test's own use of orgLocalYear(now, undefined).
+    const [, yearArg] = mockReserveNextCaseNumber.mock.calls[0];
+    expect(yearArg).toBe(orgLocalYear(new Date().toISOString(), undefined));
     expect(body.case.caseNumber).toBe('B2026-001');
+  });
+
+  describe('Manors launch-prep — P0: case-number year uses the organization\'s LOCAL timezone, never blind UTC', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does NOT roll the case number to the new year just because UTC already has', async () => {
+      mockEnabledTemplate();
+      mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: 'Manor\'s Cremation', isActive: true, timezone: 'America/New_York' });
+      mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+        Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+      );
+      // 2027-01-01T04:30:00Z is already Jan 1 UTC, but 2026-12-31 23:30 in
+      // America/New_York (UTC-5 in winter) — must still reserve for 2026.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2027-01-01T04:30:00.000Z'));
+
+      await POST(postRequest(VALID_CREATE_BODY));
+
+      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026);
+    });
+
+    it('rolls the case number to the new year before UTC does, for a timezone ahead of UTC', async () => {
+      mockEnabledTemplate();
+      mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: 'Test Org', isActive: true, timezone: 'Asia/Tokyo' });
+      mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+        Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+      );
+      // 2026-12-31T20:00:00Z is still Dec 31 in UTC, but already
+      // 2027-01-01 05:00 in Asia/Tokyo (UTC+9) — must reserve for 2027.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-12-31T20:00:00.000Z'));
+
+      await POST(postRequest(VALID_CREATE_BODY));
+
+      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2027);
+    });
   });
 
   it('never trusts a client-supplied caseNumber — the request body value is ignored entirely', async () => {

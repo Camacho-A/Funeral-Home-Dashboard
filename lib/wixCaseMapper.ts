@@ -1,5 +1,30 @@
-import type { Case, CaseUpdate, PaymentStatus, VaPublishChoice } from '../types/case';
+import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, VaPublishChoice } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
+import { isValidEmail } from '../utils/inputMask';
+
+/** Manors launch-prep. Mirrors lib/wixOrganizationMapper.ts's own
+    VALID_STATUSES/isValidStatus local-guard convention exactly. */
+export const NEXT_OF_KIN_RELATIONSHIP_VALUES: NextOfKinRelationship[] = [
+  'spouse',
+  'domestic_partner',
+  'son',
+  'daughter',
+  'parent',
+  'brother',
+  'sister',
+  'grandchild',
+  'grandparent',
+  'niece',
+  'nephew',
+  'other_relative',
+  'friend',
+  'legal_representative',
+  'other',
+];
+
+export function isValidNextOfKinRelationship(value: unknown): value is NextOfKinRelationship {
+  return typeof value === 'string' && (NEXT_OF_KIN_RELATIONSHIP_VALUES as string[]).includes(value);
+}
 
 /**
  * Phase 15C (Wix Case Read Integration). Mirrors lib/wixOrganizationMapper.ts
@@ -63,7 +88,15 @@ export type WixCaseItem = {
   weight?: unknown;
   nextOfKinName?: unknown;
   nextOfKinPhone?: unknown;
+  nextOfKinEmail?: unknown;
+  nextOfKinRelationship?: unknown;
+  nextOfKinRelationshipOther?: unknown;
+  tagNumber?: unknown;
   paymentStatus?: unknown;
+  pickupStatus?: unknown;
+  pickupReleasedTo?: unknown;
+  pickupReleasedAt?: unknown;
+  pickupNote?: unknown;
   isVeteran?: unknown;
   vaStepsState?: unknown;
   vaPublishChoice?: unknown;
@@ -135,6 +168,17 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   const vaPublishChoice: VaPublishChoice | null =
     item.vaPublishChoice === 'publish' || item.vaPublishChoice === 'private' ? item.vaPublishChoice : null;
   const stalledReason = typeof item.stalledReason === 'string' ? item.stalledReason : null;
+  const tagNumber = typeof item.tagNumber === 'string' ? item.tagNumber : null;
+  const nextOfKinEmail = typeof item.nextOfKinEmail === 'string' ? item.nextOfKinEmail : null;
+  const nextOfKinRelationship = isValidNextOfKinRelationship(item.nextOfKinRelationship) ? item.nextOfKinRelationship : null;
+  const nextOfKinRelationshipOther = typeof item.nextOfKinRelationshipOther === 'string' ? item.nextOfKinRelationshipOther : null;
+  // Additive field — a pre-Manors-launch-prep row has no pickupStatus at
+  // all, which must resolve to the same safe default a brand-new case
+  // gets ('awaiting_pickup'), never null/undefined.
+  const pickupStatus: PickupStatus = item.pickupStatus === 'released' ? 'released' : 'awaiting_pickup';
+  const pickupReleasedTo = typeof item.pickupReleasedTo === 'string' ? item.pickupReleasedTo : null;
+  const pickupReleasedAt = typeof item.pickupReleasedAt === 'string' ? item.pickupReleasedAt : null;
+  const pickupNote = typeof item.pickupNote === 'string' ? item.pickupNote : null;
 
   return {
     id: item.beaconCaseId,
@@ -150,7 +194,15 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     assignedStaffId,
     nextOfKinName: item.nextOfKinName,
     nextOfKinPhone: item.nextOfKinPhone,
+    nextOfKinEmail,
+    nextOfKinRelationship,
+    nextOfKinRelationshipOther,
+    tagNumber,
     paymentStatus: item.paymentStatus as PaymentStatus,
+    pickupStatus,
+    pickupReleasedTo,
+    pickupReleasedAt,
+    pickupNote,
     isVeteran: item.isVeteran,
     vaStepsState: isPlainObject(item.vaStepsState) ? (item.vaStepsState as Record<number, boolean>) : {},
     vaPublishChoice,
@@ -198,6 +250,9 @@ export function buildWixCaseData(params: {
   weight: string;
   nextOfKinName: string;
   nextOfKinPhone: string;
+  nextOfKinEmail?: string | null;
+  nextOfKinRelationship?: NextOfKinRelationship | null;
+  nextOfKinRelationshipOther?: string | null;
   fieldValues: Record<number, string>;
   createdAt: string;
 }): WixCaseItem {
@@ -222,7 +277,15 @@ export function buildWixCaseData(params: {
     weight: params.weight,
     nextOfKinName: params.nextOfKinName,
     nextOfKinPhone: params.nextOfKinPhone,
+    nextOfKinEmail: params.nextOfKinEmail ?? null,
+    nextOfKinRelationship: params.nextOfKinRelationship ?? null,
+    nextOfKinRelationshipOther: params.nextOfKinRelationshipOther ?? null,
+    tagNumber: null,
     paymentStatus: 'awaiting_payment',
+    pickupStatus: 'awaiting_pickup',
+    pickupReleasedTo: null,
+    pickupReleasedAt: null,
+    pickupNote: null,
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
@@ -271,6 +334,31 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
       else errors.push(String(key));
     }
   }
+  /** Same as nullableStringField, but additionally rejects a non-null value
+      that isn't a reasonably-formatted email — "validate before saving,"
+      reusing the exact same validator every other email field uses. Trims
+      first so surrounding whitespace never fails validation or gets
+      persisted. An empty string after trimming is treated as null — this
+      is an optional field, never a required "must be non-empty" one. */
+  function nullableEmailField(key: keyof CaseUpdate) {
+    if (key in b) {
+      const raw = b[key];
+      if (raw === null) {
+        (patch as Record<string, unknown>)[key] = null;
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (trimmed === '') {
+          (patch as Record<string, unknown>)[key] = null;
+        } else if (isValidEmail(trimmed)) {
+          (patch as Record<string, unknown>)[key] = trimmed;
+        } else {
+          errors.push(String(key));
+        }
+      } else {
+        errors.push(String(key));
+      }
+    }
+  }
   function booleanField(key: keyof CaseUpdate) {
     if (key in b) {
       if (typeof b[key] === 'boolean') (patch as Record<string, unknown>)[key] = b[key];
@@ -298,6 +386,12 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   stringField('weight');
   stringField('nextOfKinName');
   stringField('nextOfKinPhone');
+  nullableEmailField('nextOfKinEmail');
+  nullableStringField('nextOfKinRelationshipOther');
+  nullableStringField('tagNumber');
+  nullableStringField('pickupReleasedTo');
+  nullableStringField('pickupReleasedAt');
+  nullableStringField('pickupNote');
   numberField('rawStage');
   numberField('daysWaitingInStage');
   booleanField('isVeteran');
@@ -309,6 +403,20 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   plainObjectField('fieldValues');
   plainObjectField('vaStepsState');
 
+  if ('pickupStatus' in b) {
+    if (b.pickupStatus === 'awaiting_pickup' || b.pickupStatus === 'released') {
+      patch.pickupStatus = b.pickupStatus;
+    } else {
+      errors.push('pickupStatus');
+    }
+  }
+  if ('nextOfKinRelationship' in b) {
+    if (b.nextOfKinRelationship === null || isValidNextOfKinRelationship(b.nextOfKinRelationship)) {
+      patch.nextOfKinRelationship = b.nextOfKinRelationship as NextOfKinRelationship | null;
+    } else {
+      errors.push('nextOfKinRelationship');
+    }
+  }
   if ('paymentStatus' in b) {
     if (b.paymentStatus === 'awaiting_payment' || b.paymentStatus === 'paid_in_full') {
       patch.paymentStatus = b.paymentStatus;
@@ -347,6 +455,14 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.weight !== undefined) next.weight = patch.weight;
   if (patch.nextOfKinName !== undefined) next.nextOfKinName = patch.nextOfKinName;
   if (patch.nextOfKinPhone !== undefined) next.nextOfKinPhone = patch.nextOfKinPhone;
+  if (patch.nextOfKinEmail !== undefined) next.nextOfKinEmail = patch.nextOfKinEmail;
+  if (patch.nextOfKinRelationship !== undefined) next.nextOfKinRelationship = patch.nextOfKinRelationship;
+  if (patch.nextOfKinRelationshipOther !== undefined) next.nextOfKinRelationshipOther = patch.nextOfKinRelationshipOther;
+  if (patch.tagNumber !== undefined) next.tagNumber = patch.tagNumber;
+  if (patch.pickupStatus !== undefined) next.pickupStatus = patch.pickupStatus;
+  if (patch.pickupReleasedTo !== undefined) next.pickupReleasedTo = patch.pickupReleasedTo;
+  if (patch.pickupReleasedAt !== undefined) next.pickupReleasedAt = patch.pickupReleasedAt;
+  if (patch.pickupNote !== undefined) next.pickupNote = patch.pickupNote;
   if (patch.rawStage !== undefined) next.currentStage = patch.rawStage;
   if (patch.assignedStaffId !== undefined) next.caseHandlerId = patch.assignedStaffId;
   if (patch.paymentStatus !== undefined) next.paymentStatus = patch.paymentStatus;

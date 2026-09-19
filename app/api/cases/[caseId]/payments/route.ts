@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
+import { canReadPayment } from '@/services/authorizationPolicyService';
 import { listPaymentRecordsForCase } from '@/services/paymentsService';
 
 /**
@@ -23,6 +24,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
 
-  const payments = await listPaymentRecordsForCase(organizationId, caseId, getDataAdapterMode());
+  const dataAdapterMode = getDataAdapterMode();
+  if (!(await canReadPayment({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, dataAdapterMode))) {
+    return NextResponse.json({ payments: [], error: 'Not authorized.' }, { status: 403 });
+  }
+
+  const payments = await listPaymentRecordsForCase(organizationId, caseId, dataAdapterMode);
   return NextResponse.json({ payments });
 }

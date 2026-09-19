@@ -11,6 +11,10 @@ import { findIdentityByEmail, getIdentityById, recordSuccessfulLogin } from '@/s
 import { verifyPassword } from '@/services/passwordService';
 import { recordLoginActivity, checkAndApplyLockout, unlockIfExpired } from '@/services/accountRecoveryService';
 import { createIdentitySession, revokeSession } from '@/services/sessionService';
+import { verifyMfaCode, verifyAndConsumeRecoveryCode } from '@/services/mfaService';
+import { createMfaChallengeToken, verifyMfaChallengeToken } from '@/lib/auth/mfaChallengeToken';
+import { setMfaChallengeCookie, readMfaChallengeCookie, clearMfaChallengeCookie } from '@/lib/auth/mfaChallengeCookie';
+import { identityMustEnrollMfa } from '@/services/mfaPolicyService';
 
 /**
  * Phase 13 (Authentication & Organizations). Server Actions get Next.js's
@@ -152,8 +156,18 @@ async function handleIdentityLogin(
     redirect(`/login?error=invalid_credentials&next=${nextParam}`);
   }
 
+  // Phase 40: MFA challenge. A correct password alone must NOT create a
+  // session when MFA is required. Issue a short-lived, non-session
+  // "challenge pending" token and hand off to the second-factor step; the
+  // real IdentitySession is minted only after the factor verifies.
   if (identity.mfaEnabled) {
-    redirect(`/login?error=mfa_required&next=${nextParam}`);
+    const challengeToken = await createMfaChallengeToken({
+      identityId: identity.id,
+      passwordVersionAtIssue: identity.passwordVersion,
+      rememberDevice,
+    });
+    await setMfaChallengeCookie(challengeToken);
+    redirect(`/login/mfa?next=${nextParam}`);
   }
 
   await recordLoginActivity({ identityId: identity.id, eventType: 'login_succeeded', ipAddress, userAgent, idFactory }, dataAdapterMode);
@@ -177,5 +191,99 @@ async function handleIdentityLogin(
     { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' },
     identitySession.id,
   );
+  // Phase 40 org require-MFA enforcement: a member of a require-MFA org who
+  // isn't enrolled is routed to enrollment (never hard-locked out).
+  if (await identityMustEnrollMfa(identity, dataAdapterMode)) {
+    redirect('/settings/security?notice=mfa_setup_required');
+  }
+  redirect(next);
+}
+
+/**
+ * Phase 40 (MFA & Account Security). The second step of an MFA login. Reads the
+ * short-lived challenge cookie, re-validates it against the current identity
+ * state, verifies the submitted TOTP code OR a single-use recovery code, and
+ * only then mints the real IdentitySession. A wrong code counts toward the
+ * same persistent account lockout as a wrong password. The challenge token is
+ * never accepted as authentication anywhere else.
+ */
+export async function submitMfaChallenge(formData: FormData): Promise<void> {
+  const rawNext = typeof formData.get('next') === 'string' ? (formData.get('next') as string) : '/';
+  const next = sanitizeRedirectPath(rawNext);
+  const nextParam = encodeURIComponent(next);
+  const code = typeof formData.get('code') === 'string' ? (formData.get('code') as string).trim() : '';
+  const useRecoveryCode = formData.get('useRecoveryCode') === 'on' || formData.get('useRecoveryCode') === 'true';
+
+  const dataAdapterMode = getDataAdapterMode();
+  const requestHeaders = await headers();
+  const ipAddress = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+  const userAgent = requestHeaders.get('user-agent');
+  const idFactory = () => crypto.randomUUID();
+
+  const challengeCookie = await readMfaChallengeCookie();
+  const challenge = challengeCookie ? await verifyMfaChallengeToken(challengeCookie) : null;
+  if (!challenge) {
+    await clearMfaChallengeCookie();
+    redirect(`/login?error=mfa_challenge_expired&next=${nextParam}`);
+  }
+
+  let identity = await getIdentityById(challenge.identityId, dataAdapterMode);
+  if (identity) {
+    await unlockIfExpired(identity.id, dataAdapterMode);
+    identity = await getIdentityById(identity.id, dataAdapterMode);
+  }
+  // The identity must still exist, still have MFA on, and its password must
+  // not have changed since the challenge was issued.
+  if (!identity || !identity.mfaEnabled || identity.passwordVersion !== challenge.passwordVersionAtIssue) {
+    await clearMfaChallengeCookie();
+    redirect(`/login?error=mfa_challenge_expired&next=${nextParam}`);
+  }
+  if (identity.status === 'locked') {
+    await clearMfaChallengeCookie();
+    redirect(`/login?error=account_locked&next=${nextParam}`);
+  }
+  if (identity.status !== 'active') {
+    await clearMfaChallengeCookie();
+    redirect(`/login?error=mfa_challenge_expired&next=${nextParam}`);
+  }
+  if (code.length === 0) {
+    redirect(`/login/mfa?error=invalid_code&next=${nextParam}`);
+  }
+
+  const factorOk = useRecoveryCode
+    ? await verifyAndConsumeRecoveryCode(identity.id, code, dataAdapterMode)
+    : await verifyMfaCode(identity.id, code, dataAdapterMode);
+
+  if (!factorOk) {
+    await recordLoginActivity({ identityId: identity.id, eventType: 'login_failed', ipAddress, userAgent, idFactory }, dataAdapterMode);
+    const { locked } = await checkAndApplyLockout(identity.id, dataAdapterMode);
+    if (locked) {
+      await clearMfaChallengeCookie();
+      redirect(`/login?error=account_locked&next=${nextParam}`);
+    }
+    redirect(`/login/mfa?error=invalid_code&next=${nextParam}`);
+  }
+
+  await recordLoginActivity({ identityId: identity.id, eventType: 'login_succeeded', ipAddress, userAgent, idFactory }, dataAdapterMode);
+  await recordSuccessfulLogin(identity.id, dataAdapterMode);
+
+  const identitySession = await createIdentitySession(
+    {
+      identityId: identity.id,
+      deviceId: idFactory(),
+      deviceName: userAgent,
+      ipAddress,
+      userAgent,
+      rememberDevice: challenge.rememberDevice,
+      passwordVersionAtIssue: identity.passwordVersion,
+      idFactory,
+    },
+    dataAdapterMode,
+  );
+  await createSession(
+    { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' },
+    identitySession.id,
+  );
+  await clearMfaChallengeCookie();
   redirect(next);
 }

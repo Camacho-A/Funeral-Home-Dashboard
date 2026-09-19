@@ -331,6 +331,90 @@ export async function createIdempotentPendingPaymentRecord(
   }
 }
 
+/**
+ * Manors launch-prep (manual payment recording). Creates an already-
+ * SUCCEEDED PaymentRecord for a payment collected outside any card
+ * processor (cash, check, or other) — the smallest possible extension of
+ * the existing PaymentRecord/idempotency architecture, deliberately
+ * mirroring `createIdempotentPendingPaymentRecord` above rather than
+ * introducing a second insertion pattern. `provider: 'manual'` is just
+ * another plain string value (see types/payment.ts's own comment on why
+ * `provider` was never a closed union) — no other code path assumes
+ * `provider` can only be `'clover'`.
+ *
+ * Unlike the Clover path, there is no pending/webhook step: the amount was
+ * already physically collected by staff before this call, so the record
+ * is inserted directly as `'succeeded'` with `paidAt` set. Callers are
+ * responsible for posting the corresponding ledger entry and refreshing
+ * the case's balance (see `services/paymentWorkflow.ts#markCasePaidIfVerified`)
+ * — this function only ever creates the payment record itself.
+ */
+export async function createManualSucceededPayment(
+  params: {
+    id: string;
+    organizationId: string;
+    caseId: string;
+    caseOrderId: string | null;
+    amount: number;
+    currency: string;
+    purpose: string;
+    /** A short, non-sensitive reconciliation string — e.g. "Cash" or
+        "Check #1234" — never card data (manual payments never carry any). */
+    receiptReference: string | null;
+    idempotencyKey: string;
+    initiatedByStaffProfileId: string | null;
+    createdAt: string;
+  },
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ record: PaymentRecord; isNew: boolean }> {
+  const storedIdempotencyKey = `${params.organizationId}:${params.idempotencyKey}`;
+
+  const record: PaymentRecord = {
+    id: params.id,
+    organizationId: params.organizationId,
+    caseId: params.caseId,
+    caseOrderId: params.caseOrderId,
+    provider: 'manual',
+    providerCheckoutId: `manual:${params.id}`,
+    providerPaymentId: null,
+    idempotencyKey: storedIdempotencyKey,
+    checkoutUrl: null,
+    status: 'succeeded',
+    amount: params.amount,
+    currency: params.currency,
+    purpose: params.purpose,
+    cardBrand: null,
+    cardLast4: null,
+    receiptReference: params.receiptReference,
+    failureCode: null,
+    failureMessage: null,
+    createdAt: params.createdAt,
+    paidAt: params.createdAt,
+    updatedAt: params.createdAt,
+    initiatedByStaffProfileId: params.initiatedByStaffProfileId,
+    depositedInBankDepositId: null,
+  };
+
+  if (dataAdapterMode === 'mock') {
+    const existing = await findPaymentRecordByIdempotencyKey(params.organizationId, params.idempotencyKey, dataAdapterMode);
+    if (existing) return { record: existing, isNew: false };
+    paymentRecordFixtures.push(record);
+    return { record, isNew: true };
+  }
+
+  try {
+    const inserted = await insertWixDataItem<WixPaymentRecordItem>('paymentRecords', buildWixPaymentRecordData(record), record.id);
+    const mapped = mapWixPaymentRecordItem(inserted.data);
+    if (!mapped) throw new Error('Failed to create payment record.');
+    return { record: mapped, isNew: true };
+  } catch (error) {
+    if (!isWixConflict(error)) throw error;
+    const existing = await findPaymentRecordByIdempotencyKey(params.organizationId, params.idempotencyKey, dataAdapterMode);
+    if (!existing) throw error;
+    return { record: existing, isNew: false };
+  }
+}
+
 const paymentProvider: PaymentProvider = cloverProvider;
 
 /**

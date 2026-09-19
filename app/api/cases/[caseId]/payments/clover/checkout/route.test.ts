@@ -126,6 +126,13 @@ describe('POST .../payments/clover/checkout — authorization', () => {
     const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, organizationId: SECOND_MOCK_ORGANIZATION_ID });
     expect(response.status).toBe(403);
   });
+
+  it('returns 403 for a caller without payment.collect (Manors launch-prep)', async () => {
+    mockSession = { user: mockMultiOrgUser };
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const response = await postRequest(KNOWN_CASE().id, VALID_BODY);
+    expect(response.status).toBe(403);
+  });
 });
 
 describe('POST .../payments/clover/checkout — request validation', () => {
@@ -350,6 +357,45 @@ describe('POST .../payments/clover/checkout — wix mode (real Clover call)', ()
       if (collectionId === 'paymentRecords') {
         const items = Object.entries(insertedRecords).map(([id, data]) => ({ id, dataCollectionId: 'paymentRecords', data }));
         return Promise.resolve({ dataItems: items });
+      }
+      // Manors launch-prep: this route now gates POST on `payment.collect`
+      // — seed mockDefaultUser's 'administrator' role with that permission
+      // so this describe block's "authorized caller" tests keep resolving.
+      if (collectionId === 'roles') {
+        return Promise.resolve({
+          dataItems: [
+            {
+              id: 'role-administrator',
+              dataCollectionId: 'roles',
+              data: {
+                beaconRoleId: 'role-administrator',
+                key: 'administrator',
+                name: 'Administrator',
+                description: 'Full access.',
+                organizationId: null,
+                isSystemDefault: true,
+                createdAt: '2026-01-01T00:00:00.000Z',
+                updatedAt: '2026-01-01T00:00:00.000Z',
+              },
+            },
+          ],
+        });
+      }
+      if (collectionId === 'rolePermissions') {
+        return Promise.resolve({
+          dataItems: [
+            {
+              id: 'rp-payment-collect',
+              dataCollectionId: 'rolePermissions',
+              data: {
+                beaconRolePermissionId: 'rp-payment-collect',
+                roleId: 'role-administrator',
+                permissionKey: 'payment.collect',
+                createdAt: '2026-01-01T00:00:00.000Z',
+              },
+            },
+          ],
+        });
       }
       return Promise.resolve({ dataItems: [] });
     });

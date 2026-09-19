@@ -17,6 +17,14 @@ type FetchHandlers = {
   order?: { order: unknown; lineItems: unknown[]; auditEntries: unknown[] };
   payments?: unknown[];
   checkout?: { paymentId: string; checkoutUrl: string } | { error: string; status: number };
+  manualPayment?: { payment: unknown } | { error: string; status: number };
+  onManualPaymentRequest?: (body: unknown) => void;
+  /** Manors launch-prep: this card is self-gated on the viewer's own
+      caseOrder.read/caseOrder.update/payment.read/payment.collect
+      permissions. Defaults to a caller who holds all four, matching every
+      pre-existing test's assumption of full access — pass a narrower list
+      to test the gated behavior itself. */
+  permissions?: string[];
 };
 
 function stubFetch(handlers: FetchHandlers) {
@@ -24,6 +32,10 @@ function stubFetch(handlers: FetchHandlers) {
     'fetch',
     vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/rbac/my-permissions')) {
+        const permissions = handlers.permissions ?? ['caseOrder.read', 'caseOrder.update', 'payment.read', 'payment.collect'];
+        return Promise.resolve({ ok: true, json: async () => ({ identityId: 'staff-1', roleKey: 'administrator', permissions }) });
+      }
       if (url.includes('/service-catalog')) {
         return Promise.resolve({ ok: true, json: async () => ({ catalog: serviceCatalogFixtures }) });
       }
@@ -49,6 +61,14 @@ function stubFetch(handlers: FetchHandlers) {
             auditEntries: [],
           }),
         });
+      }
+      if (url.includes('/payments/manual') && init?.method === 'POST') {
+        if (handlers.onManualPaymentRequest && init?.body) handlers.onManualPaymentRequest(JSON.parse(init.body as string));
+        const result = handlers.manualPayment ?? { payment: { id: 'payment-manual-1', status: 'succeeded', provider: 'manual', amount: 118_000, currency: 'usd', purpose: 'Case order balance due', receiptReference: 'Cash', createdAt: '2026-01-01T00:00:00.000Z' } };
+        if ('error' in result) {
+          return Promise.resolve({ ok: false, status: result.status, json: async () => ({ error: result.error }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => result });
       }
       if (url.includes('/payments')) {
         return Promise.resolve({ ok: true, json: async () => ({ payments: handlers.payments ?? [] }) });
@@ -197,6 +217,62 @@ describe('CaseOrderCard — payment history', () => {
     expect(screen.getByText('Deposit')).toBeInTheDocument();
     expect(screen.getByText(/visa/)).toBeInTheDocument();
   });
+
+  it('renders a manual payment\'s receiptReference (method/reference) in place of a card', async () => {
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [
+        {
+          id: 'p2', organizationId: 'managed-cremations', caseId: 'case-1', caseOrderId: 'order-1', provider: 'manual',
+          providerCheckoutId: 'manual:p2', providerPaymentId: null, idempotencyKey: 'k2', checkoutUrl: null,
+          status: 'succeeded', amount: 50_000, currency: 'usd', purpose: 'Case order balance due', cardBrand: null, cardLast4: null,
+          receiptReference: 'Check — 1234', failureCode: null, failureMessage: null,
+          createdAt: '2026-01-01T00:00:00.000Z', paidAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(await screen.findByText('Check — 1234')).toBeInTheDocument();
+  });
+});
+
+describe('CaseOrderCard — Record Payment (manual)', () => {
+  it('shows a "Record Payment" button alongside Collect Balance with Clover', async () => {
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    expect(await screen.findByRole('button', { name: 'Collect Balance with Clover' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
+  });
+
+  it('opens an inline form pre-filled with the balance due, and submits cash/check with the entered amount', async () => {
+    let requestBody: unknown = null;
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      onManualPaymentRequest: (body) => {
+        requestBody = body;
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Record Payment' }));
+    expect(screen.getByText('Record a payment')).toBeInTheDocument();
+    // pre-filled with the full balance due ($1,180.00)
+    const amountInput = screen.getByDisplayValue('1180.00');
+    fireEvent.change(amountInput, { target: { value: '500' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'check' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Payment' }));
+
+    await waitFor(() => expect(requestBody).not.toBeNull());
+    expect(requestBody).toMatchObject({ method: 'check', amountCents: 50_000 });
+  });
+
+  it('closes the form and refreshes payment history after a successful manual payment', async () => {
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Record Payment' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Payment' }));
+    await waitFor(() => expect(screen.queryByText('Record a payment')).not.toBeInTheDocument());
+  });
+
+  it('disables Record Payment when there is no remaining balance', async () => {
+    renderCard({ order: { order: { ...ACTIVE_ORDER, balanceDue: 0 }, lineItems: LINE_ITEMS, auditEntries: [] } });
+    expect(await screen.findByRole('button', { name: 'Record Payment' })).toBeDisabled();
+  });
 });
 
 describe('CaseOrderCard — Edit Services / Set Up Services & Charges', () => {
@@ -227,5 +303,72 @@ describe('CaseOrderCard — Edit Services / Set Up Services & Charges', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
+  it('renders nothing at all for a caller without caseOrder.read', async () => {
+    const { container } = renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [],
+      permissions: [],
+    });
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+    expect(screen.queryByText('Case Order')).not.toBeInTheDocument();
+    expect(screen.queryByText('Direct Cremation')).not.toBeInTheDocument();
+  });
+
+  it('shows line items (operational add-ons) for caseOrder.read alone — no financial totals, no Edit Services, no payment actions', async () => {
+    // The exact "normal employee without payment access" case: officeStaff
+    // holds caseOrder.read but neither caseOrder.update nor any payment.*
+    // key — must still see what's on the order, just not touch pricing or
+    // money. This is the whole point of splitting the gate three ways.
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [],
+      permissions: ['caseOrder.read'],
+    });
+    expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
+    expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Services' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
+  });
+
+  it('additionally shows "Edit Services" for caseOrder.read + caseOrder.update — additional case charges must stay addable without financial access', async () => {
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [],
+      permissions: ['caseOrder.read', 'caseOrder.update'],
+    });
+    expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Services' })).toBeInTheDocument();
+    expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+  });
+
+  it('additionally shows totals, balance, and payment history for caseOrder.read + payment.read — but still not the action buttons without payment.collect', async () => {
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [],
+      permissions: ['caseOrder.read', 'payment.read'],
+    });
+    expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
+    expect(screen.getAllByText('Balance due').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Edit Services' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
+  });
+
+  it('shows everything for a caller with all four permissions', async () => {
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [],
+      permissions: ['caseOrder.read', 'caseOrder.update', 'payment.read', 'payment.collect'],
+    });
+    expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Services' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collect Balance with Clover' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
   });
 });

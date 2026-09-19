@@ -3,6 +3,7 @@
 import type { AuthAdapterMode } from '@/lib/env';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { useMyPermissions } from '@/hooks/useRbac';
 import { SidebarNavItem } from './SidebarNavItem';
 import styles from './Sidebar.module.css';
 
@@ -21,11 +22,24 @@ import styles from './Sidebar.module.css';
  * `authAdapterMode === 'identity'`, the same pattern TopBar's own RBAC-only
  * links already use, since access is governed by the new `accounting.*`
  * permissions which only exist under that auth mode.
+ *
+ * Manors launch-prep: financial information should not be part of the
+ * normal Manors employee experience, but should remain available to an
+ * appropriate administrator/management role — a visibility decision, not
+ * a module-activation one (Accounting is core financial infrastructure
+ * Manor already actively uses via case payments/GL, unlike the genuinely
+ * unused SaaS-scale modules `domain/organization/moduleVisibility.ts`
+ * gates). So this link is gated on the viewer's own `accounting.view`
+ * permission instead — held by administrator/manager/accounting by
+ * default, not by funeralDirector/arranger/officeStaff/readOnly. Still
+ * reachable by URL with `accounting.*` RBAC fully enforced regardless.
  */
 export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode }) {
   const { organizationId } = useOrganization();
   const { data: organization } = useOrganizationRecord();
   const organizationName = organization?.name ?? organizationId;
+  const permissionsQuery = useMyPermissions(organizationId);
+  const canViewAccounting = (permissionsQuery.data?.permissions ?? []).includes('accounting.view');
 
   return (
     <nav className={styles.sidebar} aria-label="Primary">
@@ -39,7 +53,9 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
         <SidebarNavItem href="/tasks" label="Tasks" />
         <SidebarNavItem href="/calendar" label="Calendar" />
         <SidebarNavItem href="/reports" label="Reports" />
-        {authAdapterMode === 'identity' && <SidebarNavItem href="/accounting" label="Accounting" />}
+        {authAdapterMode === 'identity' && canViewAccounting && (
+          <SidebarNavItem href="/accounting" label="Accounting" />
+        )}
         <SidebarNavItem href="/settings" label="Settings" />
       </div>
 

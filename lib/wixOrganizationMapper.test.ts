@@ -100,6 +100,37 @@ describe('mapWixOrganizationItem — Phase 20 profile fields', () => {
   });
 });
 
+describe('mapWixOrganizationItem — enabledModules (Manors launch-prep)', () => {
+  it('maps a row with no enabledModulesJson at all to enabledModules: undefined', () => {
+    const result = mapWixOrganizationItem({
+      beaconOrganizationId: 'x',
+      name: 'x',
+      isActive: true,
+    } as never);
+    expect(result?.enabledModules).toBeUndefined();
+  });
+
+  it('parses a well-formed JSON array', () => {
+    const result = mapWixOrganizationItem({
+      beaconOrganizationId: 'x',
+      name: 'x',
+      isActive: true,
+      enabledModulesJson: JSON.stringify(['accounting', 'merchandise']),
+    } as never);
+    expect(result?.enabledModules).toEqual(['accounting', 'merchandise']);
+  });
+
+  it('falls back to undefined on malformed JSON rather than throwing', () => {
+    const result = mapWixOrganizationItem({
+      beaconOrganizationId: 'x',
+      name: 'x',
+      isActive: true,
+      enabledModulesJson: 'not json',
+    } as never);
+    expect(result?.enabledModules).toBeUndefined();
+  });
+});
+
 describe('buildWixOrganizationData / applyOrganizationUpdateToWixData', () => {
   const ORG: Organization = {
     id: 'org-1',
@@ -128,5 +159,20 @@ describe('buildWixOrganizationData / applyOrganizationUpdateToWixData', () => {
     expect(mapped?.isActive).toBe(true);
     expect(mapped?.slug).toBe('test-org'); // untouched
     expect(mapped?.updatedAt).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  it('round-trips enabledModules through build then map', () => {
+    const withModules: Organization = { ...ORG, enabledModules: ['accounting', 'resources'] };
+    const wixData = buildWixOrganizationData(withModules);
+    expect(mapWixOrganizationItem(wixData)?.enabledModules).toEqual(['accounting', 'resources']);
+  });
+
+  it('applyOrganizationUpdateToWixData patches enabledModules, including clearing it to null', () => {
+    const existing = buildWixOrganizationData(ORG);
+    const withModules = applyOrganizationUpdateToWixData(existing, { enabledModules: ['inventory'] });
+    expect(mapWixOrganizationItem(withModules)?.enabledModules).toEqual(['inventory']);
+
+    const cleared = applyOrganizationUpdateToWixData(withModules, { enabledModules: null });
+    expect(mapWixOrganizationItem(cleared)?.enabledModules).toBeUndefined();
   });
 });

@@ -85,6 +85,38 @@ export async function verifyAndConsumeRecoveryCode(identityId: string, code: str
   return true;
 }
 
+/** Generates a fresh batch of recovery codes for an already-enrolled identity,
+    replacing the old batch entirely (old codes stop working). Requires a valid
+    current TOTP code as proof of possession — a user who can't produce a code
+    must disable and re-enroll instead. Returns the new plaintext codes once;
+    only hashes are ever stored. */
+export async function regenerateRecoveryCodes(
+  identityId: string,
+  code: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ success: boolean; recoveryCodes?: string[] }> {
+  const secrets = await getIdentitySecrets(identityId, dataAdapterMode);
+  if (!secrets?.mfaSecretReference) return { success: false };
+  if (!verifyTotpCode(decryptTotpSecret(secrets.mfaSecretReference), code)) return { success: false };
+
+  const recoveryCodes: string[] = [];
+  const recoveryCodeHashes: string[] = [];
+  for (let i = 0; i < RECOVERY_CODE_COUNT; i += 1) {
+    const c = randomBytes(5).toString('hex');
+    recoveryCodes.push(c);
+    recoveryCodeHashes.push(hashToken(c));
+  }
+  await updateIdentitySecrets(identityId, { mfaRecoveryCodeHashes: recoveryCodeHashes }, dataAdapterMode);
+  return { success: true, recoveryCodes };
+}
+
+/** How many unused recovery codes remain — for the account-security UI to warn
+    a user running low. Never returns the codes themselves. */
+export async function countRemainingRecoveryCodes(identityId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
+  const secrets = await getIdentitySecrets(identityId, dataAdapterMode);
+  return secrets?.mfaRecoveryCodeHashes.length ?? 0;
+}
+
 export async function disableMfa(identityId: string, dataAdapterMode: DataAdapterMode): Promise<void> {
   await updateIdentitySecrets(identityId, { mfaSecretReference: null, mfaVerifiedAt: null, mfaRecoveryCodeHashes: [] }, dataAdapterMode);
   await updateIdentity(identityId, { mfaEnabled: false }, dataAdapterMode);

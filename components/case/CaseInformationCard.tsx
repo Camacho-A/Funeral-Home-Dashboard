@@ -4,9 +4,9 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
-import type { CaseUpdate, PaymentStatus, VaPublishChoice } from '@/types/case';
+import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, VaPublishChoice } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
-import { formatDateInput, isValidCalendarDate, normalizeTimeInput } from '@/utils/inputMask';
+import { formatDateInput, isValidCalendarDate, normalizeTimeInput, isValidEmail } from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
 import styles from './CaseInformationCard.module.css';
 
@@ -14,6 +14,32 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   paid_in_full: 'Paid in full',
   awaiting_payment: 'Awaiting payment',
 };
+
+const PICKUP_STATUS_LABEL: Record<PickupStatus, string> = {
+  awaiting_pickup: 'Awaiting pickup',
+  released: 'Released to family',
+};
+
+/** Manors launch-prep. Display labels for the NOK-relationship dropdown —
+    same small closed-enum convention as PICKUP_STATUS_LABEL above. */
+const NEXT_OF_KIN_RELATIONSHIP_LABEL: Record<NextOfKinRelationship, string> = {
+  spouse: 'Spouse',
+  domestic_partner: 'Domestic Partner',
+  son: 'Son',
+  daughter: 'Daughter',
+  parent: 'Parent',
+  brother: 'Brother',
+  sister: 'Sister',
+  grandchild: 'Grandchild',
+  grandparent: 'Grandparent',
+  niece: 'Niece',
+  nephew: 'Nephew',
+  other_relative: 'Other Relative',
+  friend: 'Friend',
+  legal_representative: 'Legal Representative',
+  other: 'Other',
+};
+const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = Object.entries(NEXT_OF_KIN_RELATIONSHIP_LABEL) as [NextOfKinRelationship, string][];
 
 export type StaffOption = { id: string; name: string };
 
@@ -43,7 +69,7 @@ function EditableField({
   label: string;
   value: string;
   onSave: (newValue: string) => void;
-  kind?: 'text' | 'date' | 'time';
+  kind?: 'text' | 'date' | 'time' | 'email';
   uppercase?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -105,6 +131,20 @@ function EditableField({
       commit(normalized);
       return;
     }
+    if (kind === 'email') {
+      // Manors launch-prep: trim before validating/committing — surrounding
+      // whitespace never blocks a valid address or ends up persisted. A
+      // blur away from an invalid (non-empty) address reverts, same
+      // "don't fight the browser's own blur order" reasoning as 'date'.
+      const trimmed = draft.trim();
+      if (trimmed !== '' && !isValidEmail(trimmed)) {
+        setDraft(displayValue);
+        setIsEditing(false);
+        return;
+      }
+      commit(trimmed);
+      return;
+    }
     commit();
   }
 
@@ -124,6 +164,15 @@ function EditableField({
         commit(normalized);
         return;
       }
+      if (kind === 'email') {
+        const trimmed = draft.trim();
+        if (trimmed !== '' && !isValidEmail(trimmed)) {
+          setError('Enter a valid email address.');
+          return;
+        }
+        commit(trimmed);
+        return;
+      }
       commit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -140,12 +189,13 @@ function EditableField({
         <>
           <input
             autoFocus
+            type={kind === 'email' ? 'email' : 'text'}
             className={textFieldStyles.field}
             value={draft}
             onChange={(e) => handleChange(e.target.value)}
             onBlur={commitOrRevert}
             onKeyDown={handleKeyDown}
-            placeholder={kind === 'date' ? 'MM/DD/YYYY' : kind === 'time' ? 'e.g. 2:30 PM' : undefined}
+            placeholder={kind === 'date' ? 'MM/DD/YYYY' : kind === 'time' ? 'e.g. 2:30 PM' : kind === 'email' ? 'name@example.com' : undefined}
           />
           {error && (
             <div className={styles.fieldError} role="alert">
@@ -171,7 +221,15 @@ export function CaseInformationCard({
   weightOver200,
   nextOfKinName,
   nextOfKinPhone,
+  nextOfKinEmail,
+  nextOfKinRelationship,
+  nextOfKinRelationshipOther,
+  tagNumber,
   paymentStatus,
+  pickupStatus,
+  pickupReleasedTo,
+  pickupReleasedAt,
+  pickupNote,
   ownerStaffId,
   staffOptions,
   onReassignOwner,
@@ -193,7 +251,24 @@ export function CaseInformationCard({
   weightOver200: boolean;
   nextOfKinName: string;
   nextOfKinPhone: string;
+  /** Manors launch-prep. Optional — null until staff enter one. Capture
+      only; never triggers any communication on its own. */
+  nextOfKinEmail: string | null;
+  /** Manors launch-prep. Optional — unset until staff know it. */
+  nextOfKinRelationship: NextOfKinRelationship | null;
+  /** Only meaningful when nextOfKinRelationship === 'other'. */
+  nextOfKinRelationshipOther: string | null;
+  /** Manors launch-prep. Operational chain-of-custody tag — null until
+      staff assign one. */
+  tagNumber: string | null;
   paymentStatus: PaymentStatus;
+  /** Manors launch-prep. Structured pickup/release tracking — see
+      types/case.ts's own comment on why this exists separately from the
+      free-text case log. */
+  pickupStatus: PickupStatus;
+  pickupReleasedTo: string | null;
+  pickupReleasedAt: string | null;
+  pickupNote: string | null;
   ownerStaffId: string | null;
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
@@ -253,6 +328,43 @@ export function CaseInformationCard({
           value={nextOfKinPhone}
           onSave={(v) => onUpdateCaseInfo({ nextOfKinPhone: v })}
         />
+        <EditableField
+          label="NOK email"
+          value={nextOfKinEmail ?? ''}
+          kind="email"
+          onSave={(v) => onUpdateCaseInfo({ nextOfKinEmail: v.trim().length > 0 ? v.trim() : null })}
+        />
+        <div>
+          <div className={styles.fieldLabel}>NOK relationship</div>
+          <SelectField
+            value={nextOfKinRelationship ?? ''}
+            onChange={(e) =>
+              onUpdateCaseInfo({
+                nextOfKinRelationship: e.target.value ? (e.target.value as NextOfKinRelationship) : null,
+              })
+            }
+          >
+            <option value="">—</option>
+            {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </SelectField>
+        </div>
+        {nextOfKinRelationship === 'other' && (
+          <EditableField
+            label="Relationship (describe)"
+            value={nextOfKinRelationshipOther ?? ''}
+            onSave={(v) => onUpdateCaseInfo({ nextOfKinRelationshipOther: v.trim().length > 0 ? v.trim() : null })}
+          />
+        )}
+        <EditableField
+          label="Tag #"
+          value={tagNumber ?? ''}
+          uppercase
+          onSave={(v) => onUpdateCaseInfo({ tagNumber: v.trim().length > 0 ? v.trim() : null })}
+        />
         <div>
           <div className={styles.fieldLabel}>Payment</div>
           <SelectField
@@ -278,6 +390,41 @@ export function CaseInformationCard({
             ))}
           </SelectField>
         </div>
+      </div>
+
+      <div className={styles.grid}>
+        <div>
+          <div className={styles.fieldLabel}>Pickup status</div>
+          <SelectField
+            className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
+            value={pickupStatus}
+            onChange={(e) => onUpdateCaseInfo({ pickupStatus: e.target.value as PickupStatus })}
+          >
+            <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
+            <option value="released">{PICKUP_STATUS_LABEL.released}</option>
+          </SelectField>
+        </div>
+        {pickupStatus === 'released' && (
+          <>
+            <EditableField
+              label="Released to"
+              value={pickupReleasedTo ?? ''}
+              uppercase
+              onSave={(v) => onUpdateCaseInfo({ pickupReleasedTo: v.trim().length > 0 ? v.trim() : null })}
+            />
+            <EditableField
+              label="Released date"
+              value={pickupReleasedAt ?? ''}
+              kind="date"
+              onSave={(v) => onUpdateCaseInfo({ pickupReleasedAt: v.trim().length > 0 ? v.trim() : null })}
+            />
+            <EditableField
+              label="Pickup note (optional)"
+              value={pickupNote ?? ''}
+              onSave={(v) => onUpdateCaseInfo({ pickupNote: v.trim().length > 0 ? v.trim() : null })}
+            />
+          </>
+        )}
       </div>
 
       <div

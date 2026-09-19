@@ -31,12 +31,31 @@ export function canEditCaseOrder(params: ResolvePermissionsParams, dataAdapterMo
   return hasPermission(params, dataAdapterMode, 'caseOrder.update');
 }
 
+/** Manors launch-prep — additional case charges. `caseOrder.read` is
+    deliberately broader than `payment.read` below: viewing/selecting a
+    case's operational services and add-ons (what's on the order) is core
+    case-working, held by every default role that manages cases; viewing
+    the case's TOTAL/BALANCE/payment-history is the narrower financial
+    concern `canReadPayment` alone gates. See CaseOrderCard.tsx's own
+    comment on how these two combine. */
+export function canReadCaseOrder(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'caseOrder.read');
+}
+
 export function canEditWorkflow(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'workflow.edit');
 }
 
 export function canPublishWorkflow(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'workflow.publish');
+}
+
+/** Manors launch-prep: `payment.read` was already in the permission catalog
+    and already granted to the appropriate default roles, but nothing ever
+    checked it — case total/balance/payment-history reads were gated only
+    by case-view access. This closes that gap without adding a new key. */
+export function canReadPayment(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'payment.read');
 }
 
 export function canCollectPayment(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {

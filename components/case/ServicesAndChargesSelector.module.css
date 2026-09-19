@@ -61,6 +61,48 @@
   margin-left: auto;
 }
 
+.stepperRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--font-size-13);
+}
+
+.stepperLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.stepperControl {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.stepperButton {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--font-size-14);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepperButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepperValue {
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: var(--font-weight-semibold);
+}
+
 .summary {
   background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);

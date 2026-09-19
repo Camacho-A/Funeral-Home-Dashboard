@@ -31,15 +31,15 @@ const CATALOG: ServiceCatalogItem[] = [
 
 describe('diffSelections', () => {
   it('produces no entries when nothing changed', () => {
-    const s = { weightTier: 'under_200' as const, extraDeathCertificateQuantity: 0, mailCremated: false };
+    const s = { weightTier: 'under_200' as const, extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false };
     expect(diffSelections(CATALOG, s, { ...s })).toEqual([]);
   });
 
   it('records a weight tier change with the exact spec example format', () => {
     const entries = diffSelections(
       CATALOG,
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
-      { weightTier: '201_250', extraDeathCertificateQuantity: 0, mailCremated: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: '201_250', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(entries).toHaveLength(1);
     expect(entries[0].action).toBe('weight_tier_changed');
@@ -50,8 +50,8 @@ describe('diffSelections', () => {
   it('records a negative delta when moving to a cheaper (or no) surcharge tier', () => {
     const entries = diffSelections(
       CATALOG,
-      { weightTier: '251_300', extraDeathCertificateQuantity: 0, mailCremated: false },
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+      { weightTier: '251_300', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(entries[0].amountDeltaCents).toBe(-39_000);
     expect(entries[0].description).toContain('-$390');
@@ -60,8 +60,8 @@ describe('diffSelections', () => {
   it('records an added death certificate quantity matching the spec example', () => {
     const entries = diffSelections(
       CATALOG,
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 2, mailCremated: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 2, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(entries[0].action).toBe('death_certificate_quantity_changed');
     expect(entries[0].amountDeltaCents).toBe(5_000);
@@ -71,8 +71,8 @@ describe('diffSelections', () => {
   it('records a removed death certificate with singular wording for quantity 1', () => {
     const entries = diffSelections(
       CATALOG,
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 3, mailCremated: false },
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 2, mailCremated: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 3, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 2, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(entries[0].description).toBe('Removed: 1 Death Certificate, -$25');
   });
@@ -80,16 +80,16 @@ describe('diffSelections', () => {
   it('records mail cremated remains added/removed', () => {
     const added = diffSelections(
       CATALOG,
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: true },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: true, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(added[0].action).toBe('mail_cremated_remains_added');
     expect(added[0].amountDeltaCents).toBe(18_500);
 
     const removed = diffSelections(
       CATALOG,
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: true },
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: true, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(removed[0].action).toBe('mail_cremated_remains_removed');
     expect(removed[0].amountDeltaCents).toBe(-18_500);
@@ -98,8 +98,8 @@ describe('diffSelections', () => {
   it('produces multiple entries when several things change at once', () => {
     const entries = diffSelections(
       CATALOG,
-      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
-      { weightTier: '251_300', extraDeathCertificateQuantity: 1, mailCremated: true },
+      { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
+      { weightTier: '251_300', extraDeathCertificateQuantity: 1, mailCremated: true, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
     );
     expect(entries.map((e) => e.action)).toEqual([
       'weight_tier_changed',

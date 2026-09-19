@@ -613,3 +613,96 @@ describe('Phase 32 (Reporting, Analytics & Executive Dashboard): revenue recogni
     expect(balanceSheet.totalAssets).toBe(balanceSheet.totalLiabilitiesAndEquity);
   });
 });
+
+describe('Manors launch-prep — additional case charges: quantity edits, removal, re-add never double-count', () => {
+  const BASE_SELECTIONS = { weightTier: 'under_200' as const, extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false };
+
+  it('quantity increase: 2 -> 4 Keepsake Transfers recalculates to the new total, not additive', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-qty-1', selections: { ...BASE_SELECTIONS, keepsakeTransferQuantity: 2 }, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    const result = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-qty-1', selections: { ...BASE_SELECTIONS, keepsakeTransferQuantity: 4 }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      'mock',
+    );
+    expect(result?.order.total).toBe(89_000 + 4_000); // base + 4 x $10, never 2+4=6 x $10
+    const line = result?.lineItems.find((li) => li.serviceCode === 'KEEPSAKE_TRANSFER');
+    expect(line?.quantity).toBe(4);
+    expect(line?.lineTotal).toBe(4_000);
+  });
+
+  it('quantity decrease: 4 -> 1 Keepsake Transfer recalculates down correctly', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-qty-2', selections: { ...BASE_SELECTIONS, keepsakeTransferQuantity: 4 }, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    const result = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-qty-2', selections: { ...BASE_SELECTIONS, keepsakeTransferQuantity: 1 }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      'mock',
+    );
+    expect(result?.order.total).toBe(89_000 + 1_000);
+  });
+
+  it('quantity reaches zero: the line item disappears entirely, order total drops to base', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-qty-3', selections: { ...BASE_SELECTIONS, keepsakeTransferQuantity: 3 }, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    const result = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-qty-3', selections: { ...BASE_SELECTIONS, keepsakeTransferQuantity: 0 }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      'mock',
+    );
+    expect(result?.order.total).toBe(89_000);
+    expect(result?.lineItems.some((li) => li.serviceCode === 'KEEPSAKE_TRANSFER')).toBe(false);
+  });
+
+  it('flat add-on removed then added again returns to exactly the original total — never doubled', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    const { order: v1 } = await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-toggle-1', selections: { ...BASE_SELECTIONS, shipping: true }, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    expect(v1.total).toBe(89_000 + 18_500);
+
+    const removed = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-toggle-1', selections: { ...BASE_SELECTIONS, shipping: false }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      'mock',
+    );
+    expect(removed?.order.total).toBe(89_000);
+
+    const readded = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-addon-toggle-1', selections: { ...BASE_SELECTIONS, shipping: true }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-22T00:00:00.000Z' },
+      'mock',
+    );
+    expect(readded?.order.total).toBe(89_000 + 18_500); // back to exactly v1's total, not 89_000 + 18_500*2
+
+    // The authoritative revenue ledger reflects only the FINAL state — never
+    // accumulated across the add -> remove -> re-add cycle.
+    const serviceRevenue = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, 'mock');
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, serviceRevenue!.id, 'mock')).toBe(-readded!.order.total);
+  });
+
+  it('combined worked example ($280 additional charges) posts correctly and matches the authoritative order total', async () => {
+    const { createCaseOrder } = await import('./pricingService');
+    const { order } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-addon-combined-1',
+        selections: { ...BASE_SELECTIONS, extraDeathCertificateQuantity: 2, keepsakeTransferQuantity: 1, urnTransfer: true, shipping: true },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    expect(order.total).toBe(89_000 + 28_000); // base $890 + additional charges $280
+    expect(order.balanceDue).toBe(order.total);
+
+    const serviceRevenue = await getAccountByNumber(DEFAULT_ORGANIZATION_ID, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, 'mock');
+    expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, serviceRevenue!.id, 'mock')).toBe(-order.total);
+  });
+});

@@ -23,6 +23,10 @@ import { SERVICE_CODES } from './serviceCodes';
  */
 
 export const MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY = 20;
+/** Manors launch-prep. Same sanity-ceiling reasoning as the death
+    certificate cap above — a real keepsake-transfer order is never in the
+    dozens, this only guards against a tampered/malformed browser total. */
+export const MAX_KEEPSAKE_TRANSFER_QUANTITY = 20;
 
 const WEIGHT_TIERS: WeightTier[] = ['under_200', '201_250', '251_300'];
 
@@ -55,6 +59,9 @@ export function normalizeSelections(raw: {
   weightTier?: unknown;
   extraDeathCertificateQuantity?: unknown;
   mailCremated?: unknown;
+  keepsakeTransferQuantity?: unknown;
+  urnTransfer?: unknown;
+  shipping?: unknown;
 }): ServiceSelections {
   const weightTier = isValidWeightTier(raw.weightTier) ? raw.weightTier : 'under_200';
   const rawQty = typeof raw.extraDeathCertificateQuantity === 'number' ? raw.extraDeathCertificateQuantity : 0;
@@ -63,7 +70,14 @@ export function normalizeSelections(raw: {
     MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY,
   );
   const mailCremated = raw.mailCremated === true;
-  return { weightTier, extraDeathCertificateQuantity, mailCremated };
+  const rawKeepsakeQty = typeof raw.keepsakeTransferQuantity === 'number' ? raw.keepsakeTransferQuantity : 0;
+  const keepsakeTransferQuantity = Math.min(
+    Math.max(Math.trunc(rawKeepsakeQty), 0),
+    MAX_KEEPSAKE_TRANSFER_QUANTITY,
+  );
+  const urnTransfer = raw.urnTransfer === true;
+  const shipping = raw.shipping === true;
+  return { weightTier, extraDeathCertificateQuantity, mailCremated, keepsakeTransferQuantity, urnTransfer, shipping };
 }
 
 export type CalculatedLineItem = {
@@ -137,6 +151,17 @@ export function calculateOrderTotals(
     addFlatLine(SERVICE_CODES.MAIL_CREMATED_REMAINS, 1);
   }
 
+  // Manors launch-prep — additional case charges.
+  if (selections.keepsakeTransferQuantity > 0) {
+    addFlatLine(SERVICE_CODES.KEEPSAKE_TRANSFER, selections.keepsakeTransferQuantity);
+  }
+  if (selections.urnTransfer) {
+    addFlatLine(SERVICE_CODES.URN_TRANSFER, 1);
+  }
+  if (selections.shipping) {
+    addFlatLine(SERVICE_CODES.SHIPPING, 1);
+  }
+
   lineItems.sort((a, b) => a.sortOrder - b.sortOrder);
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
@@ -208,6 +233,9 @@ export function selectionsFromLineItems(lineItems: CalculatedLineItem[]): Servic
     weightTier,
     extraDeathCertificateQuantity: byCode.get(SERVICE_CODES.EXTRA_DEATH_CERTIFICATE)?.quantity ?? 0,
     mailCremated: byCode.has(SERVICE_CODES.MAIL_CREMATED_REMAINS),
+    keepsakeTransferQuantity: byCode.get(SERVICE_CODES.KEEPSAKE_TRANSFER)?.quantity ?? 0,
+    urnTransfer: byCode.has(SERVICE_CODES.URN_TRANSFER),
+    shipping: byCode.has(SERVICE_CODES.SHIPPING),
   };
 }
 

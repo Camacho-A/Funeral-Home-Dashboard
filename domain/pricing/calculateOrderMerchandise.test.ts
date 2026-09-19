@@ -108,7 +108,7 @@ describe('calculateMerchandiseLineItems', () => {
 describe('calculateOrderTotalsWithMerchandise', () => {
   it('combines service and merchandise lines into one total', () => {
     const totals = calculateOrderTotalsWithMerchandise(SERVICE_CATALOG, [OAK_URN], {
-      services: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+      services: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false },
       merchandise: [{ productId: 'p-urn', locationId: 'loc-1', quantity: 1 }],
     });
     expect(totals.subtotal).toBe(89000 + 39000);

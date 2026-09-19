@@ -11,11 +11,12 @@ import { useOrganization } from './useOrganization';
  * too — a fresh Case Order affects what "Collect Balance with Clover"
  * will charge next).
  */
-export function useCaseOrder(caseId: string) {
+export function useCaseOrder(caseId: string, enabled: boolean = true) {
   const organization = useOrganization();
   return useQuery({
     queryKey: ['caseOrder', organization.organizationId, caseId],
     queryFn: () => pricingClient.getCaseOrder(organization, caseId),
+    enabled,
   });
 }
 

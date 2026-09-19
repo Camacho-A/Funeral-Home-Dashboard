@@ -11,6 +11,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useIdentitySessions, useRevokeSession, useSignOutEverywhere } from '@/hooks/useIdentitySessions';
 import { useChangePassword } from '@/hooks/useChangePassword';
 import { useMyIdentityProfile, useUpdateMyPhone } from '@/hooks/useIdentityProfile';
+import { MfaPanel } from './MfaPanel';
 import styles from './SecuritySettingsPanel.module.css';
 
 /**
@@ -180,6 +181,12 @@ export function SecuritySettingsPanel() {
               {changePassword.isPending ? 'Changing password…' : 'Change password'}
             </Button>
           </form>
+        </Card>
+      </section>
+
+      <section className={styles.section}>
+        <Card>
+          <MfaPanel />
         </Card>
       </section>
 
