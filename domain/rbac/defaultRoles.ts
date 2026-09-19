@@ -78,6 +78,7 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'audit.read',
   'audit.export',
   'organization.manage',
+  'user.read',
   'user.invite',
   'user.remove',
   'user.manageRoles',
@@ -160,6 +161,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'dashboard.manage',
       'audit.read',
       'audit.export',
+      'user.read',
       'user.invite',
       'merchandise.read',
       'merchandise.manage',
@@ -243,7 +245,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
   {
     key: 'officeStaff',
     name: 'Office Staff',
-    description: 'Administrative support — can view, create, and update cases, and generate documents, without payment or workflow access.',
+    description: 'Administrative support — can view, create, and update cases, and generate documents, without payment, accounting, or workflow access.',
     permissions: [
       'case.read',
       'case.create',
@@ -266,7 +268,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'inventory.manage',
       'procurement.read',
       'procurement.manage',
-      'ap.read',
+      // Manors go-live hardening: 'ap.read' removed — production testing
+      // showed Office Staff could render the full Accounts Payable
+      // workflow (supplier picker, bill entry, vendor bill list), which
+      // conflicts with the approved Manors role model (Office Staff =
+      // operational case work, zero accounting/financial access). No
+      // other accounting.*/ap.* keys were present on this role.
     ],
   },
   {
@@ -280,8 +287,16 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
   {
     key: 'readOnly',
     name: 'Read Only',
-    description: 'View-only access to cases, workflows, payments, the service catalog, documents, and reports.',
-    /** Phase 25: deliberately NOT given `document.upload` despite
+    description: 'View-only access to operational cases, workflows, payments, the service catalog, documents, and reports — no accounting/financial visibility.',
+    /** Manors go-live hardening (2026-09): `ap.read` removed. Read Only's
+        own name/description describe read-only *operational* access —
+        that was never meant to imply read-only access to Accounts
+        Payable or any other financial/accounting surface. Distinct from
+        Funeral Director, which retains `ap.read` by explicit decision
+        (a day-to-day case-managing role, not a name asserting "view-only,
+        no financial exposure"). See `ap.read`'s own comment for the full
+        per-role reasoning.
+        Phase 25: deliberately NOT given `document.upload` despite
         `document.view`'s own tier otherwise including this role —
         uploading is a write action, and this is the one role in the
         catalog whose entire permission list is read/view-only today;
@@ -322,7 +337,8 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'merchandise.read',
       'inventory.read',
       'procurement.read',
-      'ap.read',
+      // Manors go-live hardening: 'ap.read' removed — Read Only's
+      // "view-only" scope is operational, never financial.
     ],
   },
   {

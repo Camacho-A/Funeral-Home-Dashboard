@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useSuppliers, useBills, useCreateBill, useVoidBill, useRecordPayment } from '@/hooks/useProcurement';
+import { useMyPermissions } from '@/hooks/useRbac';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
@@ -27,18 +28,33 @@ function money(cents: number): string {
 
 export function AccountsPayablePanel() {
   const { organizationId } = useOrganization();
+  const myPermissionsQuery = useMyPermissions(organizationId);
   const suppliersQuery = useSuppliers(organizationId, false);
   const billsQuery = useBills(organizationId);
   const createBill = useCreateBill(organizationId);
   const voidBill = useVoidBill(organizationId);
   const recordPayment = useRecordPayment(organizationId);
 
-  const suppliers = suppliersQuery.data ?? [];
-  const bills = billsQuery.data ?? [];
   const [billForm, setBillForm] = useState({ supplierId: '', billNumber: '', dueDate: '', accountNumber: '5010', amount: '' });
   const [payFor, setPayFor] = useState<string | null>(null);
   const [payForm, setPayForm] = useState({ amount: '', method: 'check', cashAccountNumber: '1000', referenceNumber: '' });
   const [error, setError] = useState<string | null>(null);
+
+  if (myPermissionsQuery.isPending) {
+    return <p>Loading accounts payable…</p>;
+  }
+
+  // Manors go-live hardening: a page/UI guard, not just relying on the
+  // underlying supplier/bill routes' own ap.read enforcement — production
+  // testing showed this panel rendered the full AP workflow (supplier
+  // picker, bill entry, vendor bill list) for a caller lacking ap.read,
+  // since it had no permission check of its own at all.
+  if (!(myPermissionsQuery.data?.permissions ?? []).includes('ap.read')) {
+    return <EmptyState message="You don't have access to accounts payable for this organization." />;
+  }
+
+  const suppliers = suppliersQuery.data ?? [];
+  const bills = billsQuery.data ?? [];
 
   async function handleCreateExpenseBill(e: React.FormEvent) {
     e.preventDefault();

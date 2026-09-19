@@ -144,6 +144,22 @@ export const PERMISSION_KEYS = [
 
   'organization.manage',
 
+  /** Manors go-live hardening. Viewing the organization's own team roster
+      (names/emails/roles/status) was, until now, gated by nothing —
+      `GET /api/rbac/members` allowed any authenticated org member to read
+      it, on the theory that "knowing who else is in your own
+      organization is not itself sensitive." Production testing showed
+      this was too broad for a role like Office Staff. `user.read` is the
+      narrowest fit: this catalog's own established convention pairs a
+      `.read`/`.view` permission with every other resource's write
+      permission(s) (`case.read`/`case.update`, `document.view`/
+      `document.upload`, `ap.read`/`ap.manage`, etc.) — `user.*` was the
+      one category missing that pairing entirely. Granted to
+      administrator (via ALL_PERMISSIONS) and manager (who already holds
+      `user.invite` and needs the roster to invite sensibly); withheld
+      from funeralDirector/arranger/officeStaff/accounting/readOnly/
+      dispatch, none of whom previously held any `user.*` permission. */
+  'user.read',
   'user.invite',
   'user.remove',
   'user.manageRoles',
@@ -217,7 +233,17 @@ export const PERMISSION_KEYS = [
       role may enter bills without being authorized to disburse against them
       (segregation of duties). Physical receiving stays governed by the
       existing `inventory.manage` (it is an inventory operation). See
-      docs/adr/ADR-040-procurement-and-accounts-payable.md. */
+      docs/adr/ADR-040-procurement-and-accounts-payable.md.
+
+      Manors go-live hardening (2026-09), `ap.read`'s per-default-role
+      grant is a deliberate business decision, not a mechanical default:
+      Office Staff and Read Only do NOT hold it (removed after production
+      testing showed both could render the real AP workflow — neither
+      role is meant to have any accounting/financial visibility, and
+      "Read Only" specifically means read-only *operational* access, not
+      read-only financial access). Funeral Director DOES retain it (an
+      explicit exception — a day-to-day case-managing role for whom
+      limited AP visibility is acceptable, never `ap.manage`/`ap.pay`). */
   'procurement.read',
   'procurement.manage',
   'ap.read',
@@ -310,6 +336,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
 
   'organization.manage': "Manage the organization's own profile and settings",
 
+  'user.read': "View the organization's team membership (names, emails, roles, and status)",
   'user.invite': 'Invite a new user to the organization',
   'user.remove': "Remove a user from the organization's membership",
   'user.manageRoles': 'Create, edit, and assign roles',

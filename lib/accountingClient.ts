@@ -28,7 +28,14 @@ async function parseJsonOrThrow(response: Response): Promise<Record<string, unkn
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = typeof body.error === 'string' ? body.error : 'Something went wrong. Please try again.';
-    throw new Error(message);
+    // Manors go-live hardening: `status` lets app/providers.tsx's shared
+    // QueryClient retry policy recognize an authorization failure and
+    // skip its usual retries — production testing showed an unauthorized
+    // caller's /accounting dashboard took ~9s and 12 retried 403s before
+    // reaching its "not authorized" state.
+    const error = new Error(message) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   return body;
 }

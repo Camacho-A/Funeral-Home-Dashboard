@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { supplierFixtures, purchaseOrderFixtures, purchaseOrderLineItemFixtures, vendorBillFixtures, vendorBillLineItemFixtures, billPaymentFixtures } from '@/services/__mocks__/procurementFixtures';
 import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
@@ -59,17 +59,44 @@ describe('PO route — procurement.manage; non-posting', () => {
 });
 
 describe('AP routes — ap.manage / ap.pay separation', () => {
-  it('officeStaff can VIEW bills (ap.read) but cannot ENTER a bill (ap.manage → 403)', async () => {
-    mockSession = { user: mockMultiOrgUser };
+  // Manors go-live hardening: officeStaff no longer holds ap.read at all
+  // (removed — see domain/rbac/defaultRoles.ts) since production testing
+  // showed it let Office Staff render the full Accounts Payable workflow,
+  // conflicting with "Office Staff = zero accounting/financial access."
+  it('officeStaff cannot VIEW bills (ap.read removed) and cannot ENTER one either', async () => {
+    mockSession = { user: mockMultiOrgUser }; // role "staff" → officeStaff in DEFAULT org
     const list = await bills.GET(new Request(`http://localhost/api/accounting/bills?organizationId=${DEFAULT_ORGANIZATION_ID}`));
-    expect(list.status).toBe(200); // ap.read
+    expect(list.status).toBe(403);
     const create = await post(bills, '/api/accounting/bills', { organizationId: DEFAULT_ORGANIZATION_ID, supplierId: 's', billNumber: 'INV-1', billDate: '2026-08-21', dueDate: '2026-08-21', expenseLines: [{ accountNumber: '5010', amountCents: 100 }] });
+    expect(create.status).toBe(403);
+  });
+
+  // The ap.read-vs-ap.manage separation this describe block exists to
+  // cover is still real — funeralDirector (mockMultiOrgUser's role in the
+  // second org, via the caseManager legacy alias) retains ap.read without
+  // ap.manage/ap.pay, unaffected by the officeStaff change above.
+  it('funeralDirector can VIEW bills (ap.read) but cannot ENTER a bill (ap.manage → 403)', async () => {
+    mockSession = { user: mockMultiOrgUser };
+    const list = await bills.GET(new Request(`http://localhost/api/accounting/bills?organizationId=${SECOND_MOCK_ORGANIZATION_ID}`));
+    expect(list.status).toBe(200); // ap.read
+    const create = await post(bills, '/api/accounting/bills', { organizationId: SECOND_MOCK_ORGANIZATION_ID, supplierId: 's', billNumber: 'INV-1', billDate: '2026-08-21', dueDate: '2026-08-21', expenseLines: [{ accountNumber: '5010', amountCents: 100 }] });
     expect(create.status).toBe(403); // lacks ap.manage
   });
 
   it('officeStaff cannot RECORD a payment (ap.pay → 403) — procurement authority does not imply payment authority', async () => {
     mockSession = { user: mockMultiOrgUser };
     expect((await paymentsPost({ organizationId: DEFAULT_ORGANIZATION_ID, amountCents: 100, cashAccountNumber: '1000' })).status).toBe(403);
+  });
+
+  it('readOnly cannot retrieve AP data server-side (ap.read removed — "view-only" is operational, not financial)', async () => {
+    const readOnlyUser = { id: 'mock-user-readonly-ap-test', email: 'readonly-ap@beacon.test', displayName: 'Read Only Test User', source: 'mock' as const };
+    mockMembershipFixtures.push({ organizationId: DEFAULT_ORGANIZATION_ID, userId: readOnlyUser.id, role: 'readOnly', isActive: true });
+    mockSession = { user: readOnlyUser };
+
+    const list = await bills.GET(new Request(`http://localhost/api/accounting/bills?organizationId=${DEFAULT_ORGANIZATION_ID}`));
+    expect(list.status).toBe(403);
+
+    mockMembershipFixtures.pop();
   });
 
   it('administrator (ap.manage + ap.pay) passes the policy gate on both', async () => {

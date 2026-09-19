@@ -225,6 +225,14 @@ export function canManageOrganization(params: ResolvePermissionsParams, dataAdap
   return hasPermission(params, dataAdapterMode, 'organization.manage');
 }
 
+/** Manors go-live hardening. Gates `GET /api/rbac/members` (the team
+    roster) — previously ungated (any authenticated org member could
+    read it). See `user.read`'s own catalog comment for why this is the
+    narrowest fit rather than reusing `user.invite`/`user.manageRoles`. */
+export function canReadTeamMembers(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'user.read');
+}
+
 export function canInviteUser(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'user.invite');
 }
@@ -239,6 +247,20 @@ export function canRemoveUser(params: ResolvePermissionsParams, dataAdapterMode:
     `user.manageRoles` directly. */
 export function canManageRoles(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'user.manageRoles');
+}
+
+/** Manors go-live hardening. Gates `GET /api/rbac/roles` (the full role
+    list with each role's resolved permission set) — previously ungated.
+    Deliberately broader than `canManageRoles` alone: `user.invite`
+    holders (e.g. manager) need this same role data to populate the
+    Team page's "assign a role to this invite" picker, even though they
+    can't manage roles themselves. The dedicated Organization Roles page
+    (`RoleManagementPanel`) still gates its own rendering on
+    `canManageRoles` alone — see that component's own guard — so a
+    manager can fetch role data for the invite flow without ever seeing
+    the standalone Roles & Permissions administration page. */
+export function canViewRoleCatalog(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasAnyPermission(params, dataAdapterMode, ['user.manageRoles', 'user.invite']);
 }
 
 export function canManageSettings(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {

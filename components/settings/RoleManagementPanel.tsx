@@ -35,10 +35,23 @@ export function RoleManagementPanel() {
     return <p>Loading roles…</p>;
   }
 
+  const canManageRoles = (myPermissionsQuery.data?.permissions ?? []).includes('user.manageRoles');
+
+  // Manors go-live hardening: a page/UI guard, not just hiding the
+  // "Assign Role" button — this whole page is administrative RBAC
+  // configuration (every role's full permission set), gated on the same
+  // permission GET /api/rbac/roles now enforces server-side for this
+  // specific page. Anyone lacking it (e.g. a manager who can still fetch
+  // role data for the Team page's invite picker via canViewRoleCatalog)
+  // gets a clean "not authorized" state here instead of an empty/partial
+  // Roles page.
+  if (!canManageRoles) {
+    return <EmptyState message="You don't have access to organization roles for this organization." />;
+  }
+
   const roles = rolesQuery.data ?? [];
   const catalog = catalogQuery.data ?? [];
   const members = membersQuery.data ?? [];
-  const canManageRoles = (myPermissionsQuery.data?.permissions ?? []).includes('user.manageRoles');
 
   const activeRoleId = selectedRoleId ?? roles[0]?.id ?? null;
   const activeRole = roles.find((r) => r.id === activeRoleId) ?? null;

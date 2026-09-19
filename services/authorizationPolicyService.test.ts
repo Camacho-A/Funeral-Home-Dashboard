@@ -7,6 +7,8 @@ import {
   canCollectPayment,
   canRefundPayment,
   canPublishWorkflow,
+  canReadTeamMembers,
+  canViewRoleCatalog,
   canInviteUser,
   canManageOrganization,
   canManageRoles,
@@ -92,6 +94,34 @@ describe('authorizationPolicyService', () => {
     expect(await canEditCase(p, 'mock')).toBe(false);
     expect(await canCollectPayment(p, 'mock')).toBe(false);
     expect(await canInviteUser(p, 'mock')).toBe(false);
+  });
+
+  describe('Manors go-live hardening: canReadTeamMembers / canViewRoleCatalog', () => {
+    it('administrator can read team members and view the role catalog', async () => {
+      const p = params('administrator');
+      expect(await canReadTeamMembers(p, 'mock')).toBe(true);
+      expect(await canViewRoleCatalog(p, 'mock')).toBe(true);
+    });
+
+    it('manager can read team members (user.read) and view the role catalog (user.invite)', async () => {
+      const p = params('manager');
+      expect(await canReadTeamMembers(p, 'mock')).toBe(true);
+      expect(await canViewRoleCatalog(p, 'mock')).toBe(true);
+    });
+
+    it('officeStaff, dispatch, and readOnly can do neither', async () => {
+      for (const role of ['officeStaff', 'dispatch', 'readOnly']) {
+        const p = params(role);
+        expect(await canReadTeamMembers(p, 'mock')).toBe(false);
+        expect(await canViewRoleCatalog(p, 'mock')).toBe(false);
+      }
+    });
+
+    it('funeralDirector holds no existing team-management permission, so gets neither', async () => {
+      const p = params('funeralDirector');
+      expect(await canReadTeamMembers(p, 'mock')).toBe(false);
+      expect(await canViewRoleCatalog(p, 'mock')).toBe(false);
+    });
   });
 
   it('Manors launch-prep: officeStaff has no need for pickup.read/pickup.update since case.read/case.update already covers it — resolves false (never granted the narrower key)', async () => {

@@ -62,7 +62,7 @@ beforeEach(() => {
   vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({
     identityId: SELF.identityId,
     roleKey: 'administrator',
-    permissions: ['organization.manage', 'user.remove', 'user.invite', 'user.manageRoles'],
+    permissions: ['organization.manage', 'user.read', 'user.remove', 'user.invite', 'user.manageRoles'],
   });
 });
 
@@ -235,5 +235,20 @@ describe('TeamManagementPanel — pending invitations', () => {
     // After revocation, the query is invalidated and refetched — simulate the
     // now-empty pending list the server would actually return.
     vi.mocked(identityAuthClient.fetchPendingInvitations).mockResolvedValue([]);
+  });
+});
+
+describe('TeamManagementPanel — authorization guard (Manors go-live hardening)', () => {
+  it('renders a not-authorized state instead of the roster for a caller lacking user.read', async () => {
+    vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({
+      identityId: 'identity-office-staff',
+      roleKey: 'officeStaff',
+      permissions: ['case.read', 'case.create', 'case.update'],
+    });
+    renderPanel();
+    expect(await screen.findByText("You don't have access to team management for this organization.")).toBeInTheDocument();
+    expect(screen.queryByText('Self Admin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Invited Person')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Invite Team Member' })).not.toBeInTheDocument();
   });
 });

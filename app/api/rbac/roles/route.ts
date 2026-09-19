@@ -5,7 +5,7 @@ import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
 import { resolveMembershipAuthorizationContext } from '@/lib/auth/resolveMembershipAuthorizationContext';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { listRolesForOrganization, createCustomRole } from '@/services/roleService';
-import { canManageRoles } from '@/services/authorizationPolicyService';
+import { canManageRoles, canViewRoleCatalog } from '@/services/authorizationPolicyService';
 import { resolvePermissionKeysForRole } from '@/services/permissionService';
 import { isPermissionKey } from '@/domain/rbac/permissionCatalog';
 
@@ -17,11 +17,20 @@ import { isPermissionKey } from '@/domain/rbac/permissionCatalog';
  * separate per-role request — and the endpoint for creating a brand-new
  * custom role from scratch (cloning an existing role instead is
  * `/api/rbac/roles/[roleId]/clone`).
+ *
+ * Manors go-live hardening (2026-09): previously any active member could
+ * read this (documented at the time as "any active member may list
+ * roles"). Production testing against a live Office Staff account showed
+ * this exposed the complete role/permission catalog — every role's name
+ * and full resolved permission set — to a role never meant to see
+ * administrative RBAC configuration. Now requires `canViewRoleCatalog`
+ * (`user.manageRoles` OR `user.invite`) — see that function's own
+ * comment for why it's broader than `user.manageRoles` alone.
  */
 export async function GET(request: Request) {
   const access = await requireIdentitySession();
   if (!access.authorized) return access.response;
-  const { identitySession, dataAdapterMode } = access;
+  const { identity, identitySession, dataAdapterMode } = access;
 
   const organizationId = new URL(request.url).searchParams.get('organizationId');
   if (!organizationId) {
@@ -31,6 +40,10 @@ export async function GET(request: Request) {
   const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
+  }
+
+  if (!(await canViewRoleCatalog({ identityId: identity.id, organizationId: authz.context.organizationId, roleKey: authz.context.role }, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Not authorized to view roles for this organization.' }, { status: 403 });
   }
 
   const roles = await listRolesForOrganization(authz.context.organizationId, dataAdapterMode);

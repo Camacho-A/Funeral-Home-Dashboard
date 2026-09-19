@@ -70,12 +70,46 @@ describe('GET /api/rbac/roles', () => {
     expect((await getRequest('http://localhost/api/rbac/roles')).status).toBe(400);
   });
 
-  it("any active member (even readOnly) can list the organization's roles", async () => {
+  // Manors go-live hardening: previously any active member (even
+  // readOnly) could list every role's full permission set — production
+  // testing against a live Office Staff account showed this exposed the
+  // complete administrative role/permission catalog. Now requires
+  // canViewRoleCatalog (user.manageRoles OR user.invite).
+  it('a readOnly caller cannot list the organization\'s roles', async () => {
     await seedCaller('readOnly');
+    const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+    expect(response.status).toBe(403);
+  });
+
+  it('an officeStaff caller cannot list the organization\'s roles', async () => {
+    await seedCaller('officeStaff');
+    const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+    expect(response.status).toBe(403);
+  });
+
+  it('a dispatch caller cannot list the organization\'s roles', async () => {
+    await seedCaller('dispatch');
+    const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+    expect(response.status).toBe(403);
+  });
+
+  it('an administrator can list the organization\'s roles', async () => {
+    await seedCaller('administrator');
     const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.roles).toHaveLength(8);
+  });
+
+  // A manager holds user.invite, not user.manageRoles — canViewRoleCatalog
+  // deliberately admits this (the Team page's invite flow needs role
+  // names/keys to populate its role picker), even though the standalone
+  // Roles & Permissions page itself still blocks a manager via its own,
+  // narrower canManageRoles-only guard (see RoleManagementPanel.test.tsx).
+  it('a manager (user.invite, not user.manageRoles) can still fetch role data', async () => {
+    await seedCaller('manager');
+    const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
+    expect(response.status).toBe(200);
   });
 });
 

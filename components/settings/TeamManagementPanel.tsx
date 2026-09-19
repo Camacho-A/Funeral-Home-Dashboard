@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useOrganizationMembers, usePendingInvitations, useRoles, useMyPermissions } from '@/hooks/useRbac';
 import { TeamMemberList } from './TeamMemberList';
 import { PendingInvitationList } from './PendingInvitationList';
@@ -32,10 +33,19 @@ export function TeamManagementPanel() {
     return <p>Loading team…</p>;
   }
 
+  const permissions = myPermissionsQuery.data?.permissions ?? [];
+
+  // Manors go-live hardening: a page/UI guard, not just hiding the
+  // "+ Invite Team Member" button — matches GET /api/rbac/members' own
+  // new server-side `user.read` requirement, so direct navigation to
+  // this page can't render the real roster for a caller who lacks it.
+  if (!permissions.includes('user.read')) {
+    return <EmptyState message="You don't have access to team management for this organization." />;
+  }
+
   const members = membersQuery.data ?? [];
   const invitations = invitationsQuery.data ?? [];
   const roles = rolesQuery.data ?? [];
-  const permissions = myPermissionsQuery.data?.permissions ?? [];
   const canInvite = permissions.includes('user.invite');
   const canRemove = permissions.includes('user.remove');
   const canManageRoles = permissions.includes('user.manageRoles');

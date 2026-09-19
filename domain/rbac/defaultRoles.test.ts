@@ -220,6 +220,75 @@ describe('defaultRoles', () => {
     expect(dispatch.permissions.includes('case.update')).toBe(false);
   });
 
+  describe('Manors go-live hardening: Office Staff has zero accounting/financial access', () => {
+    it('does not have ap.read (or any other ap.*/accounting.* permission)', () => {
+      const officeStaff = defaultRoleDefinition('officeStaff');
+      const financialLeaks = officeStaff.permissions.filter((p) => p.startsWith('ap.') || p.startsWith('accounting.'));
+      expect(financialLeaks).toEqual([]);
+    });
+
+    it('retains case.create/case.read/case.update', () => {
+      const officeStaff = defaultRoleDefinition('officeStaff');
+      expect(officeStaff.permissions.includes('case.create')).toBe(true);
+      expect(officeStaff.permissions.includes('case.read')).toBe(true);
+      expect(officeStaff.permissions.includes('case.update')).toBe(true);
+    });
+
+    it('does not have case.reassign', () => {
+      const officeStaff = defaultRoleDefinition('officeStaff');
+      expect(officeStaff.permissions.includes('case.reassign')).toBe(false);
+    });
+  });
+
+  describe('Manors go-live hardening: ap.read decision (Office Staff/Read Only NO, Funeral Director YES)', () => {
+    it('Read Only does not have ap.read', () => {
+      expect(defaultRoleDefinition('readOnly').permissions.includes('ap.read')).toBe(false);
+    });
+
+    it('Read Only has zero accounting.*/ap.*/financial-management permissions, while retaining its normal operational read permissions', () => {
+      const readOnly = defaultRoleDefinition('readOnly');
+      const financialLeaks = readOnly.permissions.filter((p) => p.startsWith('ap.') || p.startsWith('accounting.'));
+      expect(financialLeaks).toEqual([]);
+      // Normal operational read access must be untouched by this change.
+      expect(readOnly.permissions.includes('case.read')).toBe(true);
+      expect(readOnly.permissions.includes('payment.read')).toBe(true);
+      expect(readOnly.permissions.includes('procurement.read')).toBe(true);
+      expect(readOnly.permissions.includes('inventory.read')).toBe(true);
+    });
+
+    it('Office Staff still does not have ap.read (unchanged by this Read Only fix)', () => {
+      expect(defaultRoleDefinition('officeStaff').permissions.includes('ap.read')).toBe(false);
+    });
+
+    it('Funeral Director retains ap.read, and gains no ap.manage/ap.pay/accounting.* through this change', () => {
+      const funeralDirector = defaultRoleDefinition('funeralDirector');
+      expect(funeralDirector.permissions.includes('ap.read')).toBe(true);
+      expect(funeralDirector.permissions.includes('ap.manage')).toBe(false);
+      expect(funeralDirector.permissions.includes('ap.pay')).toBe(false);
+      expect(funeralDirector.permissions.some((p) => p.startsWith('accounting.'))).toBe(false);
+    });
+
+    it('Administrator is unaffected — still has ap.read via the full permission set', () => {
+      expect(defaultRoleDefinition('administrator').permissions.includes('ap.read')).toBe(true);
+    });
+  });
+
+  describe('Manors go-live hardening: user.read (team roster visibility)', () => {
+    it('administrator, via ALL_PERMISSIONS, has user.read', () => {
+      expect(defaultRoleDefinition('administrator').permissions.includes('user.read')).toBe(true);
+    });
+
+    it('manager has user.read (matches its existing user.invite grant)', () => {
+      expect(defaultRoleDefinition('manager').permissions.includes('user.read')).toBe(true);
+    });
+
+    it('officeStaff, dispatch, readOnly, funeralDirector, arranger, and accounting do not have user.read', () => {
+      for (const key of ['officeStaff', 'dispatch', 'readOnly', 'funeralDirector', 'arranger', 'accounting'] as const) {
+        expect(defaultRoleDefinition(key).permissions.includes('user.read')).toBe(false);
+      }
+    });
+  });
+
   describe('isDefaultRoleKey', () => {
     it('accepts every default key', () => {
       for (const key of DEFAULT_ROLE_KEYS) {

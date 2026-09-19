@@ -17,7 +17,15 @@ async function parseJsonOrThrow(response: Response): Promise<Record<string, unkn
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = typeof body.error === 'string' ? body.error : 'Something went wrong. Please try again.';
-    throw new Error(message);
+    // Manors go-live hardening: `status` lets app/providers.tsx's shared
+    // QueryClient retry policy recognize an authorization failure and
+    // skip its usual retries — a permission-denied response will never
+    // succeed on retry, so retrying it only delays the UI reaching its
+    // "not authorized" state (observed as a ~9s hang in production
+    // testing against newly-403ing RBAC endpoints).
+    const error = new Error(message) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   return body;
 }

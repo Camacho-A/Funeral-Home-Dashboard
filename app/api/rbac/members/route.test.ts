@@ -100,3 +100,45 @@ describe('GET /api/rbac/members', () => {
     expect(disabledRow.status).toBe('disabled');
   });
 });
+
+describe('GET /api/rbac/members — role-based authorization (Manors go-live hardening)', () => {
+  // Previously any active member could read the full team roster
+  // (documented at the time as "not itself sensitive"). Production
+  // testing against a live Office Staff account showed this exposed
+  // every member's name/email/role/status. Now requires user.read.
+  it('an officeStaff caller cannot list team members', async () => {
+    await seedCaller('officeStaff');
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(403);
+  });
+
+  it('a dispatch caller cannot list team members', async () => {
+    await seedCaller('dispatch');
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(403);
+  });
+
+  it('a readOnly caller cannot list team members', async () => {
+    await seedCaller('readOnly');
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(403);
+  });
+
+  it('an administrator can list team members', async () => {
+    await seedCaller('administrator');
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+  });
+
+  it('a manager (holds user.read) can list team members', async () => {
+    await seedCaller('manager');
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+  });
+
+  it('a funeralDirector caller cannot list team members (no existing team-management permission)', async () => {
+    await seedCaller('funeralDirector');
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(403);
+  });
+});
