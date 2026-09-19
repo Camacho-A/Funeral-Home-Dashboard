@@ -75,7 +75,7 @@ describe('GET /api/rbac/roles', () => {
     const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.roles).toHaveLength(7);
+    expect(body.roles).toHaveLength(8);
   });
 });
 

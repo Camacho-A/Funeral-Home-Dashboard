@@ -16,6 +16,8 @@ import type { Case, NextOfKinRelationship } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { recordCaseCreated } from '@/services/activityService';
+import { canReadCases, canReadPickup } from '@/services/authorizationPolicyService';
+import { toPickupOnlyView } from '@/domain/cases/pickupView';
 
 /**
  * Phase 15C (Wix Case Read Integration). Lists cases for one organization
@@ -49,18 +51,32 @@ export async function GET(request: Request) {
   // caller's session/membership, never trusted from the query param.
   const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
   if (!authResult.authorized) return authResult.response;
-  const { organizationId } = authResult.context;
+  const { organizationId, userId, role } = authResult.context;
 
   const adapter = getDataAdapterMode();
-
-  if (adapter === 'mock') {
-    const cases = caseFixtures.filter(
-      (c) => c.organizationId === organizationId && !c.isDeleted && matchesSearch(c, searchQuery),
-    );
-    return NextResponse.json({ cases });
-  }
+  const policyParams = { identityId: userId, organizationId, roleKey: role };
 
   try {
+    // Manors launch-prep (Dispatch role): a caller with only `pickup.read`
+    // (never `case.read`) gets a redacted view of every case in the list —
+    // see domain/cases/pickupView.ts's own comment. The search filter
+    // still runs against the full Case shape first (matchesSearch expects
+    // full Case fields), redaction only happens on the response.
+    const [hasFullRead, hasPickupOnlyRead] = await Promise.all([
+      canReadCases(policyParams, adapter),
+      canReadPickup(policyParams, adapter),
+    ]);
+    if (!hasFullRead && !hasPickupOnlyRead) {
+      return NextResponse.json({ cases: [], error: 'Not authorized to view cases for this organization.' }, { status: 403 });
+    }
+
+    if (adapter === 'mock') {
+      const cases = caseFixtures.filter(
+        (c) => c.organizationId === organizationId && !c.isDeleted && matchesSearch(c, searchQuery),
+      );
+      return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView) });
+    }
+
     const response = await queryWixDataItems<WixCaseItem>('cases', {
       filter: { organizationId, isArchived: false },
     });
@@ -70,7 +86,7 @@ export async function GET(request: Request) {
       .filter((c): c is Case => c !== null)
       .filter((c) => matchesSearch(c, searchQuery));
 
-    return NextResponse.json({ cases });
+    return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView) });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
     return NextResponse.json({ cases: [], error: message }, { status: 503 });

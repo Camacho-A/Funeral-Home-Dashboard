@@ -9,6 +9,8 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { recordCaseUpdated, recordStageChanged, type FieldChange } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
+import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
+import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Beacon
@@ -29,20 +31,32 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
 
   const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
   if (!authResult.authorized) return authResult.response;
-  const { organizationId } = authResult.context;
+  const { organizationId, userId, role } = authResult.context;
 
   const adapter = getDataAdapterMode();
-
-  if (adapter === 'mock') {
-    const found =
-      caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted) ?? null;
-    if (!found) {
-      return NextResponse.json({ case: null }, { status: 404 });
-    }
-    return NextResponse.json({ case: found });
-  }
+  const policyParams = { identityId: userId, organizationId, roleKey: role };
 
   try {
+    // Manors launch-prep (Dispatch role): a caller with only `pickup.read`
+    // (never `case.read`) gets a redacted view instead of the full case —
+    // see domain/cases/pickupView.ts's own comment.
+    const [hasFullRead, hasPickupOnlyRead] = await Promise.all([
+      canReadCases(policyParams, adapter),
+      canReadPickup(policyParams, adapter),
+    ]);
+    if (!hasFullRead && !hasPickupOnlyRead) {
+      return NextResponse.json({ case: null, error: 'Not authorized to view this case.' }, { status: 403 });
+    }
+
+    if (adapter === 'mock') {
+      const found =
+        caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted) ?? null;
+      if (!found) {
+        return NextResponse.json({ case: null }, { status: 404 });
+      }
+      return NextResponse.json({ case: hasFullRead ? found : toPickupOnlyView(found) });
+    }
+
     const response = await queryWixDataItems<WixCaseItem>('cases', {
       filter: { beaconCaseId: caseId, organizationId, isArchived: false },
       paging: { limit: 1 },
@@ -52,7 +66,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
     if (!found) {
       return NextResponse.json({ case: null }, { status: 404 });
     }
-    return NextResponse.json({ case: found });
+    return NextResponse.json({ case: hasFullRead ? found : toPickupOnlyView(found) });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
     return NextResponse.json({ case: null, error: message }, { status: 503 });
@@ -144,6 +158,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     return NextResponse.json({ case: null, error: `Invalid field(s): ${errors.join(', ')}` }, { status: 400 });
   }
 
+  // Manors launch-prep (Dispatch role): `case.update` may patch anything;
+  // a caller with only `pickup.update` may patch only the pickup fields —
+  // see domain/cases/pickupView.ts's own comment. Checked against the
+  // already-validated/allowlisted `patch` object (not the raw body), so a
+  // caller can never smuggle a non-pickup field in under a pickup key.
+  const policyParams = { identityId: context.userId, organizationId, roleKey: context.role };
+  const [hasFullEdit, hasPickupOnlyEdit] = await Promise.all([
+    canEditCase(policyParams, 'wix'),
+    canUpdatePickup(policyParams, 'wix'),
+  ]);
+  if (!hasFullEdit && !hasPickupOnlyEdit) {
+    return NextResponse.json({ case: null, error: 'Not authorized to update this case.' }, { status: 403 });
+  }
+  if (!hasFullEdit) {
+    const patchKeys = Object.keys(patch);
+    const disallowed = patchKeys.filter((key) => !(PICKUP_ONLY_PATCH_FIELDS as readonly string[]).includes(key));
+    if (disallowed.length > 0) {
+      return NextResponse.json(
+        { case: null, error: `Not authorized to update field(s): ${disallowed.join(', ')}` },
+        { status: 403 },
+      );
+    }
+  }
+
   // Phase 30 (Identity Model Hardening & Staff Assignment Unification): a
   // reassignment (a non-null string, not an unassign-to-null patch) is
   // validated before it ever reaches Wix — never a phantom/inactive/
@@ -206,7 +244,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       console.error('Failed to record case-update activity event(s):', error instanceof Error ? error.message : error);
     }
 
-    return NextResponse.json({ case: result });
+    return NextResponse.json({ case: hasFullEdit ? result : toPickupOnlyView(result) });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
     return NextResponse.json({ case: null, error: message }, { status: 503 });

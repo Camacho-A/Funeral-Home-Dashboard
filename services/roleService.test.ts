@@ -100,7 +100,7 @@ describe('seedPlatformDefaultRoles', () => {
   it('is idempotent — already-seeded default roles (mock fixtures) are returned unchanged, not duplicated', async () => {
     const before = roleFixtures.length;
     const roles = await seedPlatformDefaultRoles('mock');
-    expect(roles).toHaveLength(7);
+    expect(roles).toHaveLength(8);
     expect(roleFixtures.length).toBe(before);
   });
 
@@ -118,34 +118,34 @@ describe('seedDefaultRoles', () => {
     const before = organizationRoleFixtures.length;
     const { enablements, isNew } = await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock');
     expect(isNew).toBe(false);
-    expect(enablements).toHaveLength(7);
+    expect(enablements).toHaveLength(8);
     expect(organizationRoleFixtures.length).toBe(before);
   });
 
-  it('seeds 7 enablements for a brand-new organization', async () => {
+  it('seeds 8 enablements for a brand-new organization', async () => {
     const { enablements, isNew } = await seedDefaultRoles('brand-new-org', 'mock');
     expect(isNew).toBe(true);
-    expect(enablements).toHaveLength(7);
+    expect(enablements).toHaveLength(8);
     const roles = await listRolesForOrganization('brand-new-org', 'mock');
-    expect(roles.map((r) => r.key).sort()).toEqual(['accounting', 'administrator', 'arranger', 'funeralDirector', 'manager', 'officeStaff', 'readOnly']);
+    expect(roles.map((r) => r.key).sort()).toEqual(['accounting', 'administrator', 'arranger', 'dispatch', 'funeralDirector', 'manager', 'officeStaff', 'readOnly']);
   });
 
-  it('concurrent seeding for the same brand-new organization creates exactly 7 enablements, never 14', async () => {
+  it('concurrent seeding for the same brand-new organization creates exactly 8 enablements, never 24', async () => {
     const orgId = 'concurrent-seed-org';
     await Promise.all([seedDefaultRoles(orgId, 'mock'), seedDefaultRoles(orgId, 'mock'), seedDefaultRoles(orgId, 'mock')]);
     const enablements = await listOrganizationRoleEnablements(orgId, 'mock');
-    expect(enablements).toHaveLength(7);
+    expect(enablements).toHaveLength(8);
     // No duplicate roleIds among the enablements — three concurrent
     // seeding attempts produced one enablement per default role, not
     // three of each.
-    expect(new Set(enablements.map((e) => e.roleId)).size).toBe(7);
+    expect(new Set(enablements.map((e) => e.roleId)).size).toBe(8);
   });
 });
 
 describe('listRolesForOrganization', () => {
-  it("returns Manor's Cremation's seven seeded default roles", async () => {
+  it("returns Manor's Cremation's eight seeded default roles", async () => {
     const roles = await listRolesForOrganization(DEFAULT_ORGANIZATION_ID, 'mock');
-    expect(roles).toHaveLength(7);
+    expect(roles).toHaveLength(8);
     expect(roles.every((r) => r.isSystemDefault)).toBe(true);
   });
 });
@@ -303,7 +303,7 @@ describe('assignRole / removeRole', () => {
 
   it('refuses to change the last administrator away from admin-tier', async () => {
     const solo = await seedDefaultRoles('solo-admin-org', 'mock');
-    expect(solo.enablements.length).toBe(7);
+    expect(solo.enablements.length).toBe(8);
     const onlyAdmin = pushMembership({ id: 'membership-only-admin', identityId: 'identity-only-admin', role: 'administrator', organizationId: 'solo-admin-org' });
     await expect(assignRole({ membership: onlyAdmin, roleKey: 'readOnly', actorIdentityId: 'actor-1', idFactory }, 'mock')).rejects.toThrow(RoleServiceError);
   });

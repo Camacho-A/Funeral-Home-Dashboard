@@ -56,6 +56,6 @@ describe('GET /api/rbac/integrity/health', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.health.status).toBeDefined();
-    expect(body.health.counts.rolesScanned).toBe(7);
+    expect(body.health.counts.rolesScanned).toBe(8);
   });
 });

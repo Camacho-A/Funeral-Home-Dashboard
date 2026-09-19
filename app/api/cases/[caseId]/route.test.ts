@@ -92,6 +92,46 @@ function patchRequest(caseId: string, body: unknown, headers: Record<string, str
   );
 }
 
+// Manors launch-prep (Dispatch role): GET/PATCH now gate on case.read/
+// case.update (or the narrower pickup.read/pickup.update) — every wix-mode
+// test below runs as mockDefaultUser's 'administrator' role, so the
+// mocked queryWixDataItems must resolve a real 'roles'/'rolePermissions'
+// answer for it, not just 'cases' data. Collection-aware, mirroring
+// app/api/cases/[caseId]/order/route.test.ts's own wix-mode pattern.
+const ADMINISTRATOR_ROLE_ITEM = {
+  id: 'role-administrator',
+  dataCollectionId: 'roles',
+  data: {
+    beaconRoleId: 'role-administrator',
+    key: 'administrator',
+    name: 'Administrator',
+    description: 'Full access.',
+    organizationId: null,
+    isSystemDefault: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
+};
+const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.read', 'case.update', 'task.assign'].map((permissionKey) => ({
+  id: `role-permission-administrator-${permissionKey}`,
+  dataCollectionId: 'rolePermissions',
+  data: { beaconRolePermissionId: `role-permission-administrator-${permissionKey}`, roleId: 'role-administrator', permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+}));
+
+/** A collection-aware mockQueryWixDataItems implementation — 'roles'/
+    'rolePermissions' always resolve to the administrator seed above;
+    'cases' resolves to whatever the caller passes (defaulting to the
+    file's one standard case row), so per-test overrides only need to
+    describe the case-shaped part, never re-seed roles/permissions. */
+function mockWixQueries(caseItems: { id: string; dataCollectionId: string; data: unknown }[] = [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]) {
+  mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+    if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+    if (collectionId === 'cases') return Promise.resolve({ dataItems: caseItems });
+    return Promise.resolve({ dataItems: [] });
+  });
+}
+
 beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   ENV_KEYS.forEach((key) => delete process.env[key]);
@@ -155,45 +195,43 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
 
-    mockQueryWixDataItems.mockResolvedValue({
-      dataItems: [
-        {
-          id: '1042',
-          dataCollectionId: 'cases',
-          data: {
-            beaconCaseId: '1042',
-            organizationId: DEFAULT_ORGANIZATION_ID,
-            caseNumber: 'B2026-001',
-            caseType: 'cremation',
+    mockWixQueries([
+      {
+        id: '1042',
+        dataCollectionId: 'cases',
+        data: {
+          beaconCaseId: '1042',
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          caseNumber: 'B2026-001',
+          caseType: 'cremation',
+          workflowTemplateId: 'workflow-template-standard-cremation',
+          workflowTemplateVersion: 1,
+          workflowSnapshot: {
             workflowTemplateId: 'workflow-template-standard-cremation',
             workflowTemplateVersion: 1,
-            workflowSnapshot: {
-              workflowTemplateId: 'workflow-template-standard-cremation',
-              workflowTemplateVersion: 1,
-              stages: [],
-              intake: { sections: [] },
-            },
-            intakeOwnerId: 'staff-dana',
-            caseHandlerId: 'staff-dana',
-            currentStage: 0,
-            checklistState: {},
-            fieldValues: {},
-            decedentName: 'Test Decedent',
-            dateOfBirth: '01/01/2000',
-            dateOfDeath: '01/01/2026',
-            timeOfDeath: '00:00',
-            placeOfDeath: 'Test Hospital',
-            weight: '150 lb',
-            nextOfKinName: 'Test NOK',
-            nextOfKinPhone: '555-0000',
-            paymentStatus: 'awaiting_payment',
-            isVeteran: false,
-            isArchived: false,
-            createdAt: '2026-07-22T00:00:00.000Z',
+            stages: [],
+            intake: { sections: [] },
           },
+          intakeOwnerId: 'staff-dana',
+          caseHandlerId: 'staff-dana',
+          currentStage: 0,
+          checklistState: {},
+          fieldValues: {},
+          decedentName: 'Test Decedent',
+          dateOfBirth: '01/01/2000',
+          dateOfDeath: '01/01/2026',
+          timeOfDeath: '00:00',
+          placeOfDeath: 'Test Hospital',
+          weight: '150 lb',
+          nextOfKinName: 'Test NOK',
+          nextOfKinPhone: '555-0000',
+          paymentStatus: 'awaiting_payment',
+          isVeteran: false,
+          isArchived: false,
+          createdAt: '2026-07-22T00:00:00.000Z',
         },
-      ],
-    });
+      },
+    ]);
 
     const response = await requestFor('1042', DEFAULT_ORGANIZATION_ID);
     const body = await response.json();
@@ -210,7 +248,7 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
-    mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
+    mockWixQueries([]);
 
     const response = await requestFor('no-such-case', DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(404);
@@ -221,7 +259,7 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
-    mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
+    mockWixQueries([]);
 
     const response = await requestFor('1042', SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(404);
@@ -246,9 +284,7 @@ describe('PATCH /api/cases/[caseId]', () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
-    mockQueryWixDataItems.mockResolvedValue({
-      dataItems: [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }],
-    });
+    mockWixQueries();
     mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
       Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
     );
@@ -280,7 +316,7 @@ describe('PATCH /api/cases/[caseId]', () => {
 
     it("returns 404 (not the case's real data) when the case belongs to a different organization the caller IS authorized for — cross-tenant update rejected", async () => {
       mockSession = { user: mockMultiOrgUser };
-      mockQueryWixDataItems.mockResolvedValue({ dataItems: [] }); // compound filter finds nothing for org B
+      mockWixQueries([]); // compound filter finds nothing for org B
       const response = await patchRequest('1042', { organizationId: SECOND_MOCK_ORGANIZATION_ID, patch: { decedentName: 'x' } });
       expect(response.status).toBe(404);
       expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
@@ -652,10 +688,116 @@ describe('PATCH /api/cases/[caseId]', () => {
     it('allows unassigning (a null patch value) with no staff-profile lookup at all', async () => {
       mockQueryWixDataItems.mockImplementation((collectionId: string) => {
         if (collectionId === 'staffProfiles') throw new Error('must not be queried for a null (unassign) patch');
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
         return Promise.resolve({ dataItems: [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }] });
       });
       const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assignedStaffId: null } });
       expect(response.status).toBe(200);
     });
+  });
+});
+
+// Manors launch-prep (Dispatch role). A caller with only pickup.read/
+// pickup.update (never case.read/case.update) — mirrors the collection-
+// aware mocking pattern above, seeding a 'role-dispatch' role instead.
+describe('Dispatch (pickup-only) authorization — GET and PATCH /api/cases/[caseId]', () => {
+  const DISPATCH_ROLE_ITEM = {
+    id: 'role-dispatch',
+    dataCollectionId: 'roles',
+    data: {
+      beaconRoleId: 'role-dispatch',
+      key: 'dispatch',
+      name: 'Dispatch',
+      description: 'Pickup/removal work only.',
+      organizationId: null,
+      isSystemDefault: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
+  const DISPATCH_ROLE_PERMISSION_ITEMS = ['pickup.read', 'pickup.update'].map((permissionKey) => ({
+    id: `role-permission-dispatch-${permissionKey}`,
+    dataCollectionId: 'rolePermissions',
+    data: { beaconRolePermissionId: `role-permission-dispatch-${permissionKey}`, roleId: 'role-dispatch', permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+  }));
+
+  function mockDispatchQueries(caseItems: { id: string; dataCollectionId: string; data: unknown }[]) {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [DISPATCH_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: DISPATCH_ROLE_PERMISSION_ITEMS });
+      if (collectionId === 'cases') return Promise.resolve({ dataItems: caseItems });
+      return Promise.resolve({ dataItems: [] });
+    });
+  }
+
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    // The role KEY string here is what mockDefaultUser resolves to via the
+    // mock membership fixtures — swapped to 'dispatch' just for this
+    // describe block via a dedicated session override below, not a real
+    // fixture change (see mockSession assignment per test).
+  });
+
+  it('GET returns a redacted pickup-only view — no NOK, no financial, no other Case field', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+    // mockDefaultUser's own resolved role string is irrelevant here — the
+    // mocked 'roles'/'rolePermissions' queries always resolve to
+    // 'dispatch' regardless of the requested key, exactly mirroring how
+    // this file's other ADMINISTRATOR_ROLE_ITEM mocks already simplify
+    // role resolution (see mockCaseAndStaffProfiles above).
+    const response = await requestFor('1042', DEFAULT_ORGANIZATION_ID);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case).toEqual({
+      id: '1042',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-001',
+      decedentName: 'Test Decedent',
+      pickupStatus: 'awaiting_pickup',
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+      pickupNote: null,
+    });
+    expect(body.case.nextOfKinName).toBeUndefined();
+    expect(body.case.nextOfKinPhone).toBeUndefined();
+    expect(body.case.paymentStatus).toBeUndefined();
+  });
+
+  it('PATCH accepts a pickup-only field change and returns a redacted view', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupStatus: 'released' } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.pickupStatus).toBe('released');
+    expect(body.case.nextOfKinName).toBeUndefined();
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ pickupStatus: 'released' }));
+  });
+
+  it('PATCH rejects an attempt to change a non-pickup field, with 403, before any write', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Forged Name' } });
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('PATCH rejects a mixed patch (one pickup field + one non-pickup field) entirely, with 403, before any write', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', decedentName: 'Forged Name' },
+    });
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 });

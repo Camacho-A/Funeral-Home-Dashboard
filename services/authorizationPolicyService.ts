@@ -27,6 +27,19 @@ export function canDeleteCase(params: ResolvePermissionsParams, dataAdapterMode:
   return hasPermission(params, dataAdapterMode, 'case.delete');
 }
 
+/** Manors launch-prep (Dispatch role). A narrower alternative to
+    `canReadCases`/`canEditCase` — grants a redacted pickup-only view/edit
+    of a case (decedent name, case number, pickup fields) without the
+    full `case.read`/`case.update` a Dispatch caller must never hold. See
+    `pickup.read`/`pickup.update`'s own catalog comment. */
+export function canReadPickup(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'pickup.read');
+}
+
+export function canUpdatePickup(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'pickup.update');
+}
+
 export function canEditCaseOrder(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'caseOrder.update');
 }

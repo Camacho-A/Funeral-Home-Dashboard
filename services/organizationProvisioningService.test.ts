@@ -553,15 +553,15 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     };
   }
 
-  it('a newly provisioned organization automatically receives all seven default roles', async () => {
+  it('a newly provisioned organization automatically receives all eight default roles', async () => {
     const { startOnboarding } = await import('./organizationProvisioningService');
     const { listRolesForOrganization } = await import('./roleService');
 
     const { organization } = await startOnboarding(startInput(), 'mock');
     const roles = await listRolesForOrganization(organization.id, 'mock');
 
-    expect(roles).toHaveLength(7);
-    expect(roles.map((r) => r.key).sort()).toEqual(['accounting', 'administrator', 'arranger', 'funeralDirector', 'manager', 'officeStaff', 'readOnly']);
+    expect(roles).toHaveLength(8);
+    expect(roles.map((r) => r.key).sort()).toEqual(['accounting', 'administrator', 'arranger', 'dispatch', 'funeralDirector', 'manager', 'officeStaff', 'readOnly']);
   });
 
   it("the initial administrator's role resolves to the expected full permission set", async () => {
@@ -572,7 +572,7 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     await assignInitialAdministrator(organization.id, 'new-owner-user', idFactory, 'mock');
 
     const permissions = await resolvePermissionKeysForRole('administrator', organization.id, 'mock');
-    expect(permissions.size).toBe(64); // Phase 36: 59 + procurement.read/.manage + ap.read/.manage/.pay
+    expect(permissions.size).toBe(66); // Manors launch-prep: 64 + pickup.read/pickup.update
     expect(permissions.has('organization.manage')).toBe(true);
   });
 
@@ -607,7 +607,7 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     expect(second.id).toBe(first.id);
 
     const enablements = await listOrganizationRoleEnablements(first.id, 'mock');
-    expect(enablements).toHaveLength(7);
+    expect(enablements).toHaveLength(8);
     expect(roleFixtures.length).toBe(beforeRoles);
     expect(rolePermissionFixtures.length).toBe(beforeGrants);
   });
@@ -635,7 +635,7 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     expect(retried.id).toBe(organization.id);
 
     const enablements = await listOrganizationRoleEnablements(organization.id, 'mock');
-    expect(enablements).toHaveLength(7);
+    expect(enablements).toHaveLength(8);
   });
 
   it("existing custom roles and role assignments are preserved across repeated provisioning calls for the same organization", async () => {
@@ -655,7 +655,7 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     await startOnboarding(input, 'mock');
 
     const roles = await listRolesForOrganization(organization.id, 'mock');
-    expect(roles).toHaveLength(8); // 7 defaults + the custom role, untouched
+    expect(roles).toHaveLength(9); // 8 defaults + the custom role, untouched
     expect(roles.some((r) => r.id === custom.id)).toBe(true);
 
     const adminMembership = mockMembershipFixtures.find((m) => m.organizationId === organization.id && m.userId === 'the-owner');
@@ -674,8 +674,8 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     const rolesForA = await listRolesForOrganization(orgA.id, 'mock');
     const rolesForB = await listRolesForOrganization(orgB.id, 'mock');
 
-    expect(rolesForA).toHaveLength(8);
-    expect(rolesForB).toHaveLength(7);
+    expect(rolesForA).toHaveLength(9); // 8 defaults + the org-A-only custom role
+    expect(rolesForB).toHaveLength(8);
     expect(rolesForB.some((r) => r.name === 'Org A Only')).toBe(false);
   });
 
@@ -701,6 +701,6 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     );
 
     const roles = await listRolesForOrganization(orgId, 'mock');
-    expect(roles).toHaveLength(7);
+    expect(roles).toHaveLength(8);
   });
 });

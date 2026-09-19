@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   canEditCase,
   canDeleteCase,
+  canReadPickup,
+  canUpdatePickup,
   canCollectPayment,
   canRefundPayment,
   canPublishWorkflow,
@@ -81,6 +83,22 @@ describe('authorizationPolicyService', () => {
     expect(await canCollectPayment(p, 'mock')).toBe(false);
     expect(await canInviteUser(p, 'mock')).toBe(false);
     expect(await canManageOrganization(p, 'mock')).toBe(false);
+  });
+
+  it('Manors launch-prep: dispatch can read/update pickup info but holds no other case, NOK, or financial permission', async () => {
+    const p = params('dispatch');
+    expect(await canReadPickup(p, 'mock')).toBe(true);
+    expect(await canUpdatePickup(p, 'mock')).toBe(true);
+    expect(await canEditCase(p, 'mock')).toBe(false);
+    expect(await canCollectPayment(p, 'mock')).toBe(false);
+    expect(await canInviteUser(p, 'mock')).toBe(false);
+  });
+
+  it('Manors launch-prep: officeStaff has no need for pickup.read/pickup.update since case.read/case.update already covers it — resolves false (never granted the narrower key)', async () => {
+    const officeStaff = params('officeStaff');
+    expect(await canReadPickup(officeStaff, 'mock')).toBe(false);
+    expect(await canUpdatePickup(officeStaff, 'mock')).toBe(false);
+    expect(await canEditCase(officeStaff, 'mock')).toBe(true);
   });
 
   it('Phase 24: audit.read is broadly held (matches report.view\'s tier) but audit.export is narrower (matches payment.refund\'s tier)', async () => {

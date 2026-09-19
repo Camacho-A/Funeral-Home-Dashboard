@@ -116,7 +116,7 @@ const ADMINISTRATOR_ROLE_ITEM = {
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
 };
-const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.update', 'task.assign'].map((permissionKey) => ({
+const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.read', 'case.update', 'task.assign'].map((permissionKey) => ({
   id: `role-permission-administrator-${permissionKey}`,
   dataCollectionId: 'rolePermissions',
   data: {
@@ -147,6 +147,18 @@ function mockCasesRoutesWithStaffProfiles(profileItems: typeof CALLER_STAFF_PROF
       );
       return Promise.resolve({ dataItems: matches });
     }
+    return Promise.resolve({ dataItems: [] });
+  });
+}
+
+/** Collection-aware mock for the GET /api/cases (list) wix-mode tests —
+    'roles'/'rolePermissions' always resolve the administrator seed above
+    (case.read included), 'cases' resolves to whatever the test passes. */
+function mockCasesListQuery(caseItems: { id: string; dataCollectionId: string; data: unknown }[]) {
+  mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+    if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+    if (collectionId === 'cases') return Promise.resolve({ dataItems: caseItems });
     return Promise.resolve({ dataItems: [] });
   });
 }
@@ -269,45 +281,43 @@ describe('GET /api/cases — wix mode', () => {
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
 
-    mockQueryWixDataItems.mockResolvedValue({
-      dataItems: [
-        {
-          id: '1042',
-          dataCollectionId: 'cases',
-          data: {
-            beaconCaseId: '1042',
-            organizationId: DEFAULT_ORGANIZATION_ID,
-            caseNumber: 'B2026-001',
-            caseType: 'cremation',
+    mockCasesListQuery([
+      {
+        id: '1042',
+        dataCollectionId: 'cases',
+        data: {
+          beaconCaseId: '1042',
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          caseNumber: 'B2026-001',
+          caseType: 'cremation',
+          workflowTemplateId: 'workflow-template-standard-cremation',
+          workflowTemplateVersion: 1,
+          workflowSnapshot: {
             workflowTemplateId: 'workflow-template-standard-cremation',
             workflowTemplateVersion: 1,
-            workflowSnapshot: {
-              workflowTemplateId: 'workflow-template-standard-cremation',
-              workflowTemplateVersion: 1,
-              stages: [],
-              intake: { sections: [] },
-            },
-            intakeOwnerId: 'staff-dana',
-            caseHandlerId: 'staff-dana',
-            currentStage: 0,
-            checklistState: {},
-            fieldValues: {},
-            decedentName: 'Test Decedent',
-            dateOfBirth: '01/01/2000',
-            dateOfDeath: '01/01/2026',
-            timeOfDeath: '00:00',
-            placeOfDeath: 'Test Hospital',
-            weight: '150 lb',
-            nextOfKinName: 'Test NOK',
-            nextOfKinPhone: '555-0000',
-            paymentStatus: 'awaiting_payment',
-            isVeteran: false,
-            isArchived: false,
-            createdAt: '2026-07-22T00:00:00.000Z',
+            stages: [],
+            intake: { sections: [] },
           },
+          intakeOwnerId: 'staff-dana',
+          caseHandlerId: 'staff-dana',
+          currentStage: 0,
+          checklistState: {},
+          fieldValues: {},
+          decedentName: 'Test Decedent',
+          dateOfBirth: '01/01/2000',
+          dateOfDeath: '01/01/2026',
+          timeOfDeath: '00:00',
+          placeOfDeath: 'Test Hospital',
+          weight: '150 lb',
+          nextOfKinName: 'Test NOK',
+          nextOfKinPhone: '555-0000',
+          paymentStatus: 'awaiting_payment',
+          isVeteran: false,
+          isArchived: false,
+          createdAt: '2026-07-22T00:00:00.000Z',
         },
-      ],
-    });
+      },
+    ]);
 
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const body = await response.json();
@@ -325,7 +335,7 @@ describe('GET /api/cases — wix mode', () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
-    mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
+    mockCasesListQuery([]);
 
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const body = await response.json();
@@ -338,9 +348,7 @@ describe('GET /api/cases — wix mode', () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
-    mockQueryWixDataItems.mockResolvedValue({
-      dataItems: [{ id: 'x', dataCollectionId: 'cases', data: { decedentName: 'Missing required fields' } }],
-    });
+    mockCasesListQuery([{ id: 'x', dataCollectionId: 'cases', data: { decedentName: 'Missing required fields' } }]);
 
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const body = await response.json();

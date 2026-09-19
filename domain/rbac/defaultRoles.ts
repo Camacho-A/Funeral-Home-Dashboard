@@ -15,7 +15,7 @@ import { type PermissionKey } from './permissionCatalog';
  * existing membership row ever needs to change for this phase to resolve
  * its permissions correctly.
  */
-export type DefaultRoleKey = 'administrator' | 'manager' | 'funeralDirector' | 'arranger' | 'officeStaff' | 'accounting' | 'readOnly';
+export type DefaultRoleKey = 'administrator' | 'manager' | 'funeralDirector' | 'arranger' | 'officeStaff' | 'accounting' | 'readOnly' | 'dispatch';
 
 export const DEFAULT_ROLE_KEYS: readonly DefaultRoleKey[] = [
   'administrator',
@@ -25,6 +25,7 @@ export const DEFAULT_ROLE_KEYS: readonly DefaultRoleKey[] = [
   'officeStaff',
   'accounting',
   'readOnly',
+  'dispatch',
 ];
 
 export type DefaultRoleDefinition = {
@@ -99,6 +100,8 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'ap.read',
   'ap.manage',
   'ap.pay',
+  'pickup.read',
+  'pickup.update',
 ];
 
 export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
@@ -317,6 +320,19 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'procurement.read',
       'ap.read',
     ],
+  },
+  {
+    key: 'dispatch',
+    name: 'Dispatch',
+    description: 'Narrowly scoped pickup/removal work — decedent name, case number, and pickup status/details only, with no general case-editing, NOK, financial, or administrative access.',
+    /** Manors launch-prep. Deliberately just these two — see
+        `pickup.read`/`pickup.update`'s own catalog comment for why a
+        Dispatch caller must never hold `case.read`/`case.update`
+        (which would expose/permit editing NOK and every other Case
+        field). No document/signature/schedule/financial/notification
+        keys either — pickup status updates are recorded directly on the
+        case, not through any of those other subsystems. */
+    permissions: ['pickup.read', 'pickup.update'],
   },
 ];
 

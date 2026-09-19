@@ -211,6 +211,21 @@ export const PERMISSION_KEYS = [
   'ap.read',
   'ap.manage',
   'ap.pay',
+
+  /** Manors launch-prep (Dispatch role). A distinct `pickup` resource,
+      deliberately not folded into `case.*` — `case.read`/`case.update`
+      expose (and permit editing) the entire Case object, including NOK
+      and other fields a narrowly-scoped pickup/removal role must never
+      see or touch. `pickup.read` grants only a redacted view (decedent
+      name, case number, pickup status/detail fields); `pickup.update`
+      grants write access to only the four pickup fields
+      (`pickupStatus`/`pickupReleasedTo`/`pickupReleasedAt`/`pickupNote`),
+      never any other Case field. A caller holding `case.read`/`case.update`
+      already implicitly has everything `pickup.read`/`pickup.update`
+      would grant — these two keys exist solely for a role that should
+      have pickup access WITHOUT general case-read/edit access. */
+  'pickup.read',
+  'pickup.update',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -309,4 +324,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'ap.read': 'View vendor bills and accounts-payable aging',
   'ap.manage': 'Enter and void vendor bills',
   'ap.pay': 'Record vendor payments against bills (separately enforceable from entering bills)',
+
+  'pickup.read': "View a case's decedent name, case number, and pickup/removal status and details only",
+  'pickup.update': "Update a case's pickup status and pickup/removal details only",
 };

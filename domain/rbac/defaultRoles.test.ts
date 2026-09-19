@@ -3,9 +3,9 @@ import { DEFAULT_ROLE_KEYS, DEFAULT_ROLE_DEFINITIONS, isDefaultRoleKey, defaultR
 import { isPermissionKey, PERMISSION_KEYS } from './permissionCatalog';
 
 describe('defaultRoles', () => {
-  it('defines exactly the seven roles named in the phase spec', () => {
-    expect(DEFAULT_ROLE_KEYS).toEqual(['administrator', 'manager', 'funeralDirector', 'arranger', 'officeStaff', 'accounting', 'readOnly']);
-    expect(DEFAULT_ROLE_DEFINITIONS).toHaveLength(7);
+  it('defines exactly the eight roles named in the phase spec (seven original + Manors launch-prep Dispatch)', () => {
+    expect(DEFAULT_ROLE_KEYS).toEqual(['administrator', 'manager', 'funeralDirector', 'arranger', 'officeStaff', 'accounting', 'readOnly', 'dispatch']);
+    expect(DEFAULT_ROLE_DEFINITIONS).toHaveLength(8);
   });
 
   it('every definition only references real permission keys', () => {
@@ -188,9 +188,9 @@ describe('defaultRoles', () => {
     expect(readOnly.permissions.includes('portal.message')).toBe(false);
   });
 
-  it('Phase 30: task.assign is tiered like schedule.edit — every role except accounting/readOnly', () => {
+  it('Phase 30: task.assign is tiered like schedule.edit — every role except accounting/readOnly/dispatch', () => {
     for (const def of DEFAULT_ROLE_DEFINITIONS) {
-      const expected = def.key !== 'accounting' && def.key !== 'readOnly';
+      const expected = def.key !== 'accounting' && def.key !== 'readOnly' && def.key !== 'dispatch';
       expect(def.permissions.includes('task.assign')).toBe(expected);
     }
   });
@@ -211,6 +211,13 @@ describe('defaultRoles', () => {
         expect(def.permissions.includes('settings.manage')).toBe(false);
       }
     }
+  });
+
+  it('Manors launch-prep: dispatch is granted ONLY pickup.read/pickup.update — no case.read/case.update, NOK, financial, or admin access of any kind', () => {
+    const dispatch = defaultRoleDefinition('dispatch');
+    expect(dispatch.permissions).toEqual(['pickup.read', 'pickup.update']);
+    expect(dispatch.permissions.includes('case.read')).toBe(false);
+    expect(dispatch.permissions.includes('case.update')).toBe(false);
   });
 
   describe('isDefaultRoleKey', () => {

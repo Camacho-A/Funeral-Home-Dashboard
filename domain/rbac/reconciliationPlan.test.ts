@@ -27,7 +27,7 @@ describe('computeDefaultRoleReconciliationPlan', () => {
     expect(plan.summary.requiredChanges).toBe(0);
     expect(plan.changes).toEqual([]);
     expect(plan.summary.destructiveChanges).toBe(0);
-    expect(plan.summary.rolesScanned).toBe(7);
+    expect(plan.summary.rolesScanned).toBe(8);
   });
 
   it('a missing expected grant produces exactly one additive grant_added with the deterministic id', () => {
