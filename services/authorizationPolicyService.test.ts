@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  canCreateCase,
   canEditCase,
   canDeleteCase,
   canReadPickup,
@@ -71,29 +72,62 @@ describe('authorizationPolicyService', () => {
     expect(await isAdminTier(p, 'mock')).toBe(false);
   });
 
-  it('accounting can collect and refund payments but cannot edit cases', async () => {
+  it('accounting can collect and refund payments but cannot edit cases or create cases (Manors case.create policy)', async () => {
     const p = params('accounting');
     expect(await canCollectPayment(p, 'mock')).toBe(true);
     expect(await canRefundPayment(p, 'mock')).toBe(true);
     expect(await canEditCase(p, 'mock')).toBe(false);
+    expect(await canCreateCase(p, 'mock')).toBe(false);
   });
 
-  it('readOnly cannot perform any mutating action', async () => {
+  it('readOnly cannot perform any mutating action, including case.create — genuinely read-only', async () => {
     const p = params('readOnly');
     expect(await canEditCase(p, 'mock')).toBe(false);
     expect(await canDeleteCase(p, 'mock')).toBe(false);
     expect(await canCollectPayment(p, 'mock')).toBe(false);
     expect(await canInviteUser(p, 'mock')).toBe(false);
     expect(await canManageOrganization(p, 'mock')).toBe(false);
+    expect(await canCreateCase(p, 'mock')).toBe(false);
   });
 
-  it('Manors launch-prep: dispatch can read/update pickup info but holds no other case, NOK, or financial permission', async () => {
+  it('Manors launch-prep: dispatch can read/update pickup info but holds no other case, NOK, financial, or case-creation permission', async () => {
     const p = params('dispatch');
     expect(await canReadPickup(p, 'mock')).toBe(true);
     expect(await canUpdatePickup(p, 'mock')).toBe(true);
     expect(await canEditCase(p, 'mock')).toBe(false);
     expect(await canCollectPayment(p, 'mock')).toBe(false);
     expect(await canInviteUser(p, 'mock')).toBe(false);
+    expect(await canCreateCase(p, 'mock')).toBe(false);
+  });
+
+  describe('Manors case.create policy (authoritative correction, 2026-09)', () => {
+    it('Administrator: case.create = YES', async () => {
+      expect(await canCreateCase(params('administrator'), 'mock')).toBe(true);
+    });
+
+    it('Funeral Director: case.create = YES', async () => {
+      expect(await canCreateCase(params('funeralDirector'), 'mock')).toBe(true);
+    });
+
+    it('Manager: case.create = YES', async () => {
+      expect(await canCreateCase(params('manager'), 'mock')).toBe(true);
+    });
+
+    it('Office Staff: case.create = YES', async () => {
+      expect(await canCreateCase(params('officeStaff'), 'mock')).toBe(true);
+    });
+
+    it('Accounting: case.create = NO', async () => {
+      expect(await canCreateCase(params('accounting'), 'mock')).toBe(false);
+    });
+
+    it('Read Only: case.create = NO', async () => {
+      expect(await canCreateCase(params('readOnly'), 'mock')).toBe(false);
+    });
+
+    it('Dispatch: case.create = NO', async () => {
+      expect(await canCreateCase(params('dispatch'), 'mock')).toBe(false);
+    });
   });
 
   describe('Manors go-live hardening: canReadTeamMembers / canViewRoleCatalog', () => {

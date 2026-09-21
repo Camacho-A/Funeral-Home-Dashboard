@@ -8,7 +8,7 @@ import { inviteToOrganization, regenerateInvitation, listPendingInvitations, rev
 import { getMembership } from '@/services/membershipService';
 import { getIdentityById } from '@/services/identityService';
 import { getIdentityMessageSender } from '@/lib/identity/messageSender';
-import { resolveRoleForKey } from '@/services/permissionService';
+import { resolveEnabledRoleForKey } from '@/services/roleService';
 import { canInviteUser } from '@/services/authorizationPolicyService';
 
 /**
@@ -28,9 +28,17 @@ import { canInviteUser } from '@/services/authorizationPolicyService';
  * every pre-existing role value, but now also correctly extends to
  * whichever roles an organization's own custom role configuration grants
  * it to. The invited `role` itself is validated by resolving it for this
- * organization (`resolveRoleForKey`) — accepting any of the legacy values,
- * a Phase 22 default role key, or one of this organization's own custom
+ * organization AND confirming this organization has actually enabled it
+ * (`resolveEnabledRoleForKey`) — accepting any of the legacy values, a
+ * Phase 22 default role key, or one of this organization's own custom
  * roles, instead of a fixed five-value list.
+ *
+ * Correction (2026-09): the role check used to call the enablement-
+ * agnostic `resolveRoleForKey`, which left a real gap — a platform-default
+ * role this organization deliberately never enabled (e.g. Arranger for
+ * Manors) could still be assigned to a new invitee via a direct API call,
+ * even though it never appears in this organization's own role-selection
+ * UI. `resolveEnabledRoleForKey` (services/roleService.ts) closes that.
  *
  * Security correction (2026-07-25): the raw invitation token used to be
  * returned directly in this response. See
@@ -89,7 +97,7 @@ export async function POST(request: Request) {
   if (typeof displayName !== 'string' || displayName.trim().length === 0) {
     return NextResponse.json({ error: 'displayName is required.' }, { status: 400 });
   }
-  if (typeof role !== 'string' || !(await resolveRoleForKey(role, organizationId, dataAdapterMode))) {
+  if (typeof role !== 'string' || !(await resolveEnabledRoleForKey(role, organizationId, dataAdapterMode))) {
     return NextResponse.json({ error: 'role must be a valid role for this organization.' }, { status: 400 });
   }
 

@@ -3,7 +3,7 @@ import type { Identity } from '../../types/identity';
 import type { IdentitySession } from '../../types/identitySession';
 import type { DataAdapterMode } from '../env';
 import { getDataAdapterMode } from '../env';
-import { getSession, clearSession } from './session';
+import { getSession, clearSession, createSession } from './session';
 import { resolveIdentitySession } from './resolveIdentitySession';
 
 /**
@@ -38,6 +38,18 @@ export async function requireIdentitySession(): Promise<IdentitySessionAccessRes
     await clearSession();
     return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
   }
+
+  // Session-timeout fix (2026-09): this is a Route Handler call site (never
+  // a Server Component render), so re-minting the cookie here is safe —
+  // see sessionToken.ts's own comment. Re-signs the *outer* token with a
+  // fresh expiry on every successfully-validated request, so its ceiling
+  // slides forward in step with the *inner* IdentitySession registry row
+  // resolveIdentitySession already just touched — genuine rolling renewal,
+  // not just a longer fixed ceiling.
+  await createSession(
+    { id: resolved.identity.id, email: resolved.identity.email, displayName: resolved.identity.displayName, source: 'identity' },
+    resolved.identitySession.id,
+  );
 
   return {
     authorized: true,

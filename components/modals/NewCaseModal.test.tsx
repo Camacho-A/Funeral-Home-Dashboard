@@ -295,17 +295,15 @@ describe('NewCaseModal — uppercase transform on free-text fields', () => {
     expect(inputs[7]).toHaveValue('KAREN ELLISON');
   });
 
-  it('does not uppercase the phone, weight, or time fields', async () => {
+  it('does not uppercase the phone or weight fields', async () => {
     const { container } = await renderModalWithFields();
     const inputs = intakeInputs(container);
 
     fireEvent.change(inputs[8], { target: { value: '555-abc-1234' } }); // nextOfKinPhone
     fireEvent.change(inputs[3], { target: { value: '165 lb' } }); // weight
-    fireEvent.change(inputs[5], { target: { value: '14:30pm' } }); // timeOfDeath
 
     expect(inputs[8]).toHaveValue('555-abc-1234');
     expect(inputs[3]).toHaveValue('165 lb');
-    expect(inputs[5]).toHaveValue('14:30pm');
   });
 
 });
@@ -352,6 +350,102 @@ describe('NewCaseModal — MM/DD/YYYY date mask', () => {
 
     fireEvent.change(weight, { target: { value: '165lb' } });
     expect(weight).toHaveValue('165lb');
+  });
+});
+
+describe('NewCaseModal — two-digit year expansion (Solis go-live checkpoint)', () => {
+  it('expands a fully-typed two-digit year on blur, per the spec examples', async () => {
+    const { container } = await renderModalWithFields();
+    const dateOfBirth = intakeInputs(container)[2];
+
+    fireEvent.change(dateOfBirth, { target: { value: '010585' } });
+    expect(dateOfBirth).toHaveValue('01/05/85');
+    fireEvent.blur(dateOfBirth);
+    expect(dateOfBirth).toHaveValue('01/05/1985');
+  });
+
+  it('does not expand while still mid-typing (no blur yet)', async () => {
+    const { container } = await renderModalWithFields();
+    const dateOfDeath = intakeInputs(container)[4];
+
+    fireEvent.change(dateOfDeath, { target: { value: '092126' } });
+    expect(dateOfDeath).toHaveValue('09/21/26'); // not yet expanded
+  });
+
+  it('leaves an already-4-digit-year value unchanged on blur', async () => {
+    const { container } = await renderModalWithFields();
+    const dateOfBirth = intakeInputs(container)[2];
+
+    fireEvent.change(dateOfBirth, { target: { value: '07202026' } });
+    fireEvent.blur(dateOfBirth);
+    expect(dateOfBirth).toHaveValue('07/20/2026');
+  });
+
+  it('persists the expanded four-digit year on the created case, even without an explicit blur before submitting', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfBirth = intakeInputs(container)[2];
+
+    fireEvent.change(dateOfBirth, { target: { value: '010585' } });
+    // Deliberately no fireEvent.blur here — exercises the defensive
+    // expansion at submit time, not just the on-blur path.
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const createdCase = caseFixtures.find((c) => c.id === newCaseId);
+    expect(createdCase?.dateOfBirth).toBe('01/05/1985');
+  });
+});
+
+describe('NewCaseModal — DOB/DOD cross-field validation (Solis go-live checkpoint)', () => {
+  it('flags Date of Birth after Date of Death and blocks submission', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfBirth = intakeInputs(container)[2];
+    const dateOfDeath = intakeInputs(container)[4];
+
+    fireEvent.change(dateOfBirth, { target: { value: '07202026' } });
+    fireEvent.blur(dateOfBirth);
+    fireEvent.change(dateOfDeath, { target: { value: '01052000' } });
+    fireEvent.blur(dateOfDeath);
+
+    // Shown under both fields — each one is "wrong" relative to the other.
+    expect(screen.getAllByText(/date of birth cannot be after date of death/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+
+  it('flags a future Date of Death', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfDeath = intakeInputs(container)[4];
+
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(dateOfDeath, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.blur(dateOfDeath);
+
+    expect(screen.getByText(/date of death cannot be in the future/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+
+  it('allows a valid DOB/DOD pair and clears the error once corrected', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfBirth = intakeInputs(container)[2];
+    const dateOfDeath = intakeInputs(container)[4];
+
+    fireEvent.change(dateOfBirth, { target: { value: '07202026' } });
+    fireEvent.blur(dateOfBirth);
+    fireEvent.change(dateOfDeath, { target: { value: '01052000' } });
+    fireEvent.blur(dateOfDeath);
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+
+    fireEvent.change(dateOfBirth, { target: { value: '01011950' } });
+    fireEvent.blur(dateOfBirth);
+
+    expect(screen.queryByText(/date of birth cannot be after date of death/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).not.toBeDisabled();
   });
 });
 
@@ -588,103 +682,96 @@ describe('NewCaseModal — calendar date and expiry validation', () => {
   // anything typed into it.
 });
 
-describe('NewCaseModal — time input normalization (Phase 19.1)', () => {
-  it('normalizes a 12-hour PM value to 24-hour HH:mm once the field is blurred', async () => {
+describe('NewCaseModal — Time of Death 24-hour input (Solis go-live checkpoint)', () => {
+  it('auto-inserts ":" as digits are typed, never auto-populated with the current time', async () => {
     const { container } = await renderModalWithFields();
     const timeOfDeath = intakeInputs(container)[5];
 
-    fireEvent.change(timeOfDeath, { target: { value: '2:30 PM' } });
-    fireEvent.blur(timeOfDeath);
+    expect(timeOfDeath).toHaveValue('');
 
+    fireEvent.change(timeOfDeath, { target: { value: '0930' } });
+    expect(timeOfDeath).toHaveValue('09:30');
+  });
+
+  it('masks each of the spec examples correctly', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '1430' } });
     expect(timeOfDeath).toHaveValue('14:30');
+
+    fireEvent.change(timeOfDeath, { target: { value: '2305' } });
+    expect(timeOfDeath).toHaveValue('23:05');
+
+    fireEvent.change(timeOfDeath, { target: { value: '0005' } });
+    expect(timeOfDeath).toHaveValue('00:05');
   });
 
-  it('normalizes a 12-hour AM value to 24-hour HH:mm', async () => {
+  it('never introduces AM/PM — typed letters are stripped, not interpreted', async () => {
     const { container } = await renderModalWithFields();
     const timeOfDeath = intakeInputs(container)[5];
 
-    fireEvent.change(timeOfDeath, { target: { value: '2:30 AM' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(timeOfDeath).toHaveValue('02:30');
+    fireEvent.change(timeOfDeath, { target: { value: '0930pm' } });
+    expect(timeOfDeath).toHaveValue('09:30');
   });
 
-  it('normalizes noon and midnight correctly', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '12:00 PM' } });
-    fireEvent.blur(timeOfDeath);
-    expect(timeOfDeath).toHaveValue('12:00');
-
-    fireEvent.change(timeOfDeath, { target: { value: '12:00 AM' } });
-    fireEvent.blur(timeOfDeath);
-    expect(timeOfDeath).toHaveValue('00:00');
-  });
-
-  it('accepts direct 24-hour input unchanged', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '14:30' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(timeOfDeath).toHaveValue('14:30');
-  });
-
-  it('accepts lowercase am/pm', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '02:30 am' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(timeOfDeath).toHaveValue('02:30');
-  });
-
-  it('preserves invalid input for correction and shows an inline error, without normalizing it', async () => {
+  it('flags an out-of-range hour (25:00) with an inline error and blocks submission', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const timeOfDeath = intakeInputs(container)[5];
 
-    fireEvent.change(timeOfDeath, { target: { value: '25:00' } });
+    fireEvent.change(timeOfDeath, { target: { value: '2500' } });
     fireEvent.blur(timeOfDeath);
 
-    expect(timeOfDeath).toHaveValue('25:00'); // unchanged, not silently cleared or altered
+    expect(timeOfDeath).toHaveValue('25:00'); // preserved for correction, not silently cleared
     expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
   });
 
-  it('rejects an ambiguous value with no AM/PM marker', async () => {
+  it('flags an out-of-range minute (12:75) with an inline error', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const timeOfDeath = intakeInputs(container)[5];
 
-    fireEvent.change(timeOfDeath, { target: { value: '2:30' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(timeOfDeath).toHaveValue('2:30');
-    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
-  });
-
-  it('rejects an invalid hour/minute combination like "12:75 PM"', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '12:75 PM' } });
+    fireEvent.change(timeOfDeath, { target: { value: '1275' } });
     fireEvent.blur(timeOfDeath);
 
     expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
   });
 
-  it('persists the normalized HH:mm value — not the raw typed text — on the created case', async () => {
+  it('flags an incomplete value on blur', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const timeOfDeath = intakeInputs(container)[5];
 
-    fireEvent.change(timeOfDeath, { target: { value: '2:30 PM' } });
+    fireEvent.change(timeOfDeath, { target: { value: '093' } });
+    fireEvent.blur(timeOfDeath);
+
+    expect(timeOfDeath).toHaveValue('09:3');
+    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
+  });
+
+  it('remains easy to correct — backspacing and retyping produces a clean value', async () => {
+    const { container } = await renderModalWithFields();
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '0930' } });
+    expect(timeOfDeath).toHaveValue('09:30');
+
+    fireEvent.change(timeOfDeath, { target: { value: '093' } });
+    expect(timeOfDeath).toHaveValue('09:3');
+
+    fireEvent.change(timeOfDeath, { target: { value: '1430' } });
+    expect(timeOfDeath).toHaveValue('14:30');
+  });
+
+  it('persists the typed HH:MM value on the created case', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const timeOfDeath = intakeInputs(container)[5];
+
+    fireEvent.change(timeOfDeath, { target: { value: '1430' } });
     fireEvent.blur(timeOfDeath);
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));

@@ -690,6 +690,25 @@ describe('POST /api/cases — creation', () => {
     expect(itemId.length).toBeGreaterThan(0);
   });
 
+  it('returns 500 "Failed to create case." with a specific server-side diagnostic log when the inserted item fails to round-trip (Solis go-live diagnostics)', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      // Simulates a malformed round-trip — currentStage comes back as a
+      // string, so mapWixCaseItem fails closed and returns null.
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId, currentStage: '0' } }),
+    );
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe('Failed to create case.'); // client-visible message stays generic
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('mapWixCaseItem returned null'));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('currentStage: expected number, got string'));
+    consoleErrorSpy.mockRestore();
+  });
+
   it('never trusts a client-supplied workflowTemplateId — ignores it and resolves the template independently', async () => {
     mockEnabledTemplate();
     mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
@@ -826,7 +845,7 @@ describe('POST /api/cases — Phase 30 (Identity Model Hardening & Staff Assignm
     expect(body.case.intakeOwnerId).toBe('staff-dana');
   });
 
-  it('returns 422 when the caller has no linked StaffProfile in this organization', async () => {
+  it('returns 422 when the caller has no linked StaffProfile in this organization, with a specific message and server-side diagnostic log (Solis go-live: confirmed root cause of "Failed to create case.")', async () => {
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
       if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
@@ -834,12 +853,20 @@ describe('POST /api/cases — Phase 30 (Identity Model Hardening & Staff Assignm
       if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
       return Promise.resolve({ dataItems: [] }); // no staffProfiles row for this caller
     });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const response = await POST(postRequest(VALID_CREATE_BODY));
     const body = await response.json();
 
     expect(response.status).toBe(422);
+    expect(body.error).toBe('No StaffProfile is linked to your account in this organization.');
     expect(mockInsertWixDataItem).not.toHaveBeenCalled();
-    void body;
+    // The specific, already-safe-to-display reason must be traceable
+    // server-side too — this is the exact branch that a real production
+    // "Failed to create case." report traced back to (see
+    // services/casesService.ts's error-surfacing fix).
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('No StaffProfile linked'));
+    consoleErrorSpy.mockRestore();
   });
 
   it('accepts an explicit assignedStaffId naming another active, in-organization staff profile', async () => {
@@ -953,7 +980,7 @@ describe('POST /api/cases — role-based authorization (Manors go-live fix: case
     );
   });
 
-  it('Dispatch (pickup.read/pickup.update only) cannot create a case', async () => {
+  it('Manors case.create policy (authoritative, 2026-09 correction): Dispatch (pickup.read/pickup.update only) cannot create a case', async () => {
     mockRoleAndStaffProfiles('dispatch', ['pickup.read', 'pickup.update'], [CALLER_STAFF_PROFILE_ITEM]);
     const response = await POST(postRequest(VALID_CREATE_BODY));
     const body = await response.json();
@@ -963,12 +990,29 @@ describe('POST /api/cases — role-based authorization (Manors go-live fix: case
     expect(body.case).toBeNull();
   });
 
-  it('Read Only cannot create a case', async () => {
+  it('Manors case.create policy (authoritative, 2026-09 correction): Read Only (case.read only) cannot create a case', async () => {
     mockRoleAndStaffProfiles('readOnly', ['case.read'], [CALLER_STAFF_PROFILE_ITEM]);
     const response = await POST(postRequest(VALID_CREATE_BODY));
 
     expect(response.status).toBe(403);
     expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('Manors case.create policy (authoritative, 2026-09 correction): Accounting (case.read only, no case.create) cannot create a case', async () => {
+    mockRoleAndStaffProfiles('accounting', ['case.read', 'payment.read', 'payment.collect'], [CALLER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+
+    expect(response.status).toBe(403);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('Manors case.create policy (authoritative, 2026-09 correction): Funeral Director (case.create + case.update) can create a case', async () => {
+    mockRoleAndStaffProfiles('funeralDirector', ['case.create', 'case.update'], [CALLER_STAFF_PROFILE_ITEM]);
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.assignedStaffId).toBe('staff-dana');
   });
 
   it('Office Staff (case.create + case.update, no case.reassign) can create a case defaulting to themselves', async () => {

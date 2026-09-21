@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
-import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, type WixCaseItem } from '@/lib/wixCaseMapper';
+import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, describeMapWixCaseItemFailure, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
@@ -247,6 +247,14 @@ export async function POST(request: Request) {
 
   const callerProfile = await resolveStaffProfileForCaller(context, 'wix');
   if (!callerProfile) {
+    // Solis go-live diagnostics: the client-visible message is already
+    // specific and safe to show as-is (see services/casesService.ts's
+    // error-surfacing fix), but this is logged server-side too since a
+    // missing StaffProfile link is a data-state issue worth being able to
+    // trace back to a specific identity/org without digging through Wix.
+    console.error(
+      `[POST /api/cases] No StaffProfile linked for identityId=${context.userId} organizationId=${organizationId} correlationId=${correlationId}`,
+    );
     return NextResponse.json(
       { case: null, error: 'No StaffProfile is linked to your account in this organization.' },
       { status: 422 },
@@ -322,6 +330,14 @@ export async function POST(request: Request) {
     const inserted = await insertWixDataItem<WixCaseItem>('cases', data, beaconCaseId);
     const created = mapWixCaseItem(inserted.data);
     if (!created) {
+      // Solis go-live diagnostics: mapWixCaseItem fails closed with no
+      // reason by design (safe for the read path), which left this branch
+      // completely opaque. Log exactly which field(s) didn't round-trip so
+      // a future "Failed to create case." report is traceable without
+      // guessing — never returned to the client.
+      console.error(
+        `[POST /api/cases] mapWixCaseItem returned null after insert, beaconCaseId=${beaconCaseId} organizationId=${organizationId} correlationId=${correlationId}. Failures: ${describeMapWixCaseItemFailure(inserted.data).join('; ')}`,
+      );
       return NextResponse.json({ case: null, error: 'Failed to create case.' }, { status: 500 });
     }
 
@@ -342,6 +358,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ case: created }, { status: 201 });
   } catch (error) {
+    // Solis go-live diagnostics: log the full error (message + stack) so an
+    // unexpected Wix/network failure is traceable server-side, even though
+    // only the short message is ever returned to the client.
+    console.error(`[POST /api/cases] Unhandled error, correlationId=${correlationId}:`, error);
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
     return NextResponse.json({ case: null, error: message }, { status: 503 });
   }

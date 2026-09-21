@@ -4,6 +4,7 @@ import {
   buildWixCaseData,
   validateAndPickCaseUpdate,
   applyCaseUpdateToWixData,
+  describeMapWixCaseItemFailure,
 } from './wixCaseMapper';
 
 const validItem = {
@@ -153,6 +154,36 @@ describe('mapWixCaseItem', () => {
   it('maps caseNumber through unchanged (no reformatting at the mapper boundary)', () => {
     const result = mapWixCaseItem(validItem);
     expect(result?.caseNumber).toBe('B2026-001');
+  });
+});
+
+describe('describeMapWixCaseItemFailure (Solis go-live diagnostics)', () => {
+  it('returns an empty array for a well-formed item (mirrors mapWixCaseItem accepting it)', () => {
+    expect(describeMapWixCaseItemFailure(validItem)).toEqual([]);
+  });
+
+  it('reports a single, specific failure for one bad field', () => {
+    const failures = describeMapWixCaseItemFailure({ ...validItem, currentStage: '3' });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/currentStage/);
+    expect(failures[0]).toMatch(/expected number, got string/);
+  });
+
+  it('reports every failing field, not just the first, unlike mapWixCaseItem\'s fail-fast null', () => {
+    const failures = describeMapWixCaseItemFailure({
+      ...validItem,
+      organizationId: 123,
+      isVeteran: 'no',
+      checklistState: 'not-an-object',
+    });
+    expect(failures.length).toBe(3);
+    expect(failures.some((f) => f.includes('organizationId'))).toBe(true);
+    expect(failures.some((f) => f.includes('isVeteran'))).toBe(true);
+    expect(failures.some((f) => f.includes('checklistState'))).toBe(true);
+  });
+
+  it('reports a missing/undefined item distinctly rather than throwing', () => {
+    expect(describeMapWixCaseItemFailure(undefined)).toEqual(['item is missing/undefined']);
   });
 });
 

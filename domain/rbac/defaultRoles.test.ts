@@ -195,12 +195,13 @@ describe('defaultRoles', () => {
     }
   });
 
-  it('readOnly grants only *.read/*.view permissions (plus Phase 32\'s report.operational/report.staff, which are pure view actions despite not following the .read/.view suffix convention)', () => {
+  it('readOnly grants only *.read/*.view permissions (plus Phase 32\'s report.operational/report.staff, which are pure view actions despite not following the .read/.view suffix convention) — genuinely read-only, no write action of any kind, including case.create', () => {
     const readOnly = defaultRoleDefinition('readOnly');
     const viewOnlyExceptions = ['report.operational', 'report.staff'];
     for (const permission of readOnly.permissions) {
       expect(permission.endsWith('.read') || permission.endsWith('.view') || viewOnlyExceptions.includes(permission)).toBe(true);
     }
+    expect(readOnly.permissions.includes('case.create')).toBe(false);
   });
 
   it('only administrator and manager may invite users; only administrator may manage roles or the organization', () => {
@@ -213,11 +214,19 @@ describe('defaultRoles', () => {
     }
   });
 
-  it('Manors launch-prep: dispatch is granted ONLY pickup.read/pickup.update — no case.read/case.update, NOK, financial, or admin access of any kind', () => {
+  it('Manors launch-prep: dispatch is granted ONLY pickup.read/pickup.update — no case.read/case.update/case.create, NOK, financial, or admin access of any kind', () => {
     const dispatch = defaultRoleDefinition('dispatch');
     expect(dispatch.permissions).toEqual(['pickup.read', 'pickup.update']);
     expect(dispatch.permissions.includes('case.read')).toBe(false);
     expect(dispatch.permissions.includes('case.update')).toBe(false);
+    expect(dispatch.permissions.includes('case.create')).toBe(false);
+  });
+
+  it('Manors case.create policy (authoritative, 2026-09 correction): exactly administrator/manager/funeralDirector/arranger/officeStaff grant case.create — accounting/readOnly/dispatch do not', () => {
+    const expectedYes = new Set(['administrator', 'manager', 'funeralDirector', 'arranger', 'officeStaff']);
+    for (const def of DEFAULT_ROLE_DEFINITIONS) {
+      expect(def.permissions.includes('case.create')).toBe(expectedYes.has(def.key));
+    }
   });
 
   describe('Manors go-live hardening: Office Staff has zero accounting/financial access', () => {

@@ -13,6 +13,7 @@ function idFactory() {
 let mockSession: unknown = null;
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: vi.fn(),
   clearSession: vi.fn(),
 }));
 vi.mock('@/lib/identity/messageSender', async () => {
@@ -91,6 +92,20 @@ describe('POST /api/auth/invitations', () => {
     expect(response.status).toBe(400);
   });
 
+  it('Manors role-model correction (2026-09): returns 400 when inviting with role Arranger — a real platform role, never enabled for Manors', async () => {
+    await seedAdminCaller();
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'x@example.com', displayName: 'X', role: 'arranger' });
+    expect(response.status).toBe(400);
+  });
+
+  it('allows inviting with role Accounting — one of Manors\' seven required roles', async () => {
+    await seedAdminCaller();
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'new.accounting@example.com', displayName: 'New Accounting', role: 'accounting' });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.membership.role).toBe('accounting');
+  });
+
   it('an ordinary staff-tier caller may not invite anyone', async () => {
     await seedAdminCaller('staff');
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'x@example.com', displayName: 'X', role: 'staff' });
@@ -130,7 +145,7 @@ describe('POST /api/auth/invitations', () => {
     const sentInvite = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'already.active.route@example.com') as { token: string };
 
     const { acceptInvitation } = await import('@/services/invitationService');
-    await acceptInvitation({ token: sentInvite.token, membershipId: inviteBody.membership.id, password: 'Active1!' }, 'mock');
+    await acceptInvitation({ token: sentInvite.token, membershipId: inviteBody.membership.id, password: 'Active1!', idFactory }, 'mock');
 
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'already.active.route@example.com', displayName: 'Active', role: 'staff' });
     expect(response.status).toBe(409);
@@ -275,7 +290,7 @@ describe('PATCH /api/auth/invitations (regenerate)', () => {
     const sentInvite = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'resend.active@example.com') as { token: string };
 
     const { acceptInvitation } = await import('@/services/invitationService');
-    await acceptInvitation({ token: sentInvite.token, membershipId: inviteBody.membership.id, password: 'Active1!' }, 'mock');
+    await acceptInvitation({ token: sentInvite.token, membershipId: inviteBody.membership.id, password: 'Active1!', idFactory }, 'mock');
 
     const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id, invitedIdentityId: inviteBody.membership.identityId });
     expect(response.status).toBe(409);
@@ -387,7 +402,7 @@ describe('DELETE /api/auth/invitations (Phase 23: revoke)', () => {
     const sent = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'revoke.accepted@example.com') as { token: string };
 
     const { acceptInvitation } = await import('@/services/invitationService');
-    await acceptInvitation({ token: sent.token, membershipId: inviteBody.membership.id, password: 'Accepted1!' }, 'mock');
+    await acceptInvitation({ token: sent.token, membershipId: inviteBody.membership.id, password: 'Accepted1!', idFactory }, 'mock');
 
     const response = await deleteRequest({ organizationId: DEFAULT_ORGANIZATION_ID, membershipId: inviteBody.membership.id });
     expect(response.status).toBe(409);

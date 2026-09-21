@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { AuthorizationContext } from '../../types/authorization';
-import { getSession } from './session';
+import { getSession, createSession } from './session';
 import { resolveAuthorizationContext } from './authorize';
 import { resolveIdentitySession } from './resolveIdentitySession';
 import { resolveMembershipAuthorizationContext } from './resolveMembershipAuthorizationContext';
@@ -80,6 +80,16 @@ export async function requireAuthorizedOrganization(
     if (!result.granted) {
       return { authorized: false, response: FORBIDDEN_RESPONSE() };
     }
+
+    // Session-timeout fix (2026-09): see the identical comment in
+    // requireIdentitySession.ts — this is a Route Handler call site, so
+    // re-minting the cookie here is safe, giving genuine rolling renewal
+    // for every authorized cases/tasks/etc. API call.
+    await createSession(
+      { id: resolved.identity.id, email: resolved.identity.email, displayName: resolved.identity.displayName, source: 'identity' },
+      resolved.identitySession.id,
+    );
+
     return { authorized: true, context: result.context };
   }
 

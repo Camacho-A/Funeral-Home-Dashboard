@@ -223,6 +223,49 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
 }
 
 /**
+ * Solis go-live diagnostics (case-creation 500 investigation). `mapWixCaseItem`
+ * fails closed by design — any type mismatch returns `null` with no reason,
+ * which is correct for the read path but left the create path's "Failed to
+ * create case." 500 branch with zero insight into *why* the just-inserted
+ * item didn't round-trip. This mirrors the exact same required-field checks
+ * for server-side logging only — never returned to the client, never called
+ * from the read path.
+ */
+export function describeMapWixCaseItemFailure(item: WixCaseItem | undefined): string[] {
+  if (!item) return ['item is missing/undefined'];
+  const failures: string[] = [];
+  const check = (condition: boolean, label: string) => {
+    if (!condition) failures.push(label);
+  };
+  check(typeof item.beaconCaseId === 'string', `beaconCaseId: expected string, got ${typeof item.beaconCaseId}`);
+  check(typeof item.organizationId === 'string', `organizationId: expected string, got ${typeof item.organizationId}`);
+  check(typeof item.caseNumber === 'string', `caseNumber: expected string, got ${typeof item.caseNumber}`);
+  check(typeof item.caseType === 'string', `caseType: expected string, got ${typeof item.caseType}`);
+  check(typeof item.workflowTemplateId === 'string', `workflowTemplateId: expected string, got ${typeof item.workflowTemplateId}`);
+  check(typeof item.workflowTemplateVersion === 'number', `workflowTemplateVersion: expected number, got ${typeof item.workflowTemplateVersion}`);
+  check(isValidWorkflowSnapshot(item.workflowSnapshot), 'workflowSnapshot: invalid shape');
+  check(typeof item.currentStage === 'number', `currentStage: expected number, got ${typeof item.currentStage}`);
+  check(isPlainObject(item.checklistState), `checklistState: expected object, got ${typeof item.checklistState}`);
+  check(isPlainObject(item.fieldValues), `fieldValues: expected object, got ${typeof item.fieldValues}`);
+  check(typeof item.decedentName === 'string', `decedentName: expected string, got ${typeof item.decedentName}`);
+  check(typeof item.dateOfBirth === 'string', `dateOfBirth: expected string, got ${typeof item.dateOfBirth}`);
+  check(typeof item.dateOfDeath === 'string', `dateOfDeath: expected string, got ${typeof item.dateOfDeath}`);
+  check(typeof item.timeOfDeath === 'string', `timeOfDeath: expected string, got ${typeof item.timeOfDeath}`);
+  check(typeof item.placeOfDeath === 'string', `placeOfDeath: expected string, got ${typeof item.placeOfDeath}`);
+  check(typeof item.weight === 'string', `weight: expected string, got ${typeof item.weight}`);
+  check(typeof item.nextOfKinName === 'string', `nextOfKinName: expected string, got ${typeof item.nextOfKinName}`);
+  check(typeof item.nextOfKinPhone === 'string', `nextOfKinPhone: expected string, got ${typeof item.nextOfKinPhone}`);
+  check(
+    item.paymentStatus === 'awaiting_payment' || item.paymentStatus === 'paid_in_full',
+    `paymentStatus: expected 'awaiting_payment'|'paid_in_full', got ${JSON.stringify(item.paymentStatus)}`,
+  );
+  check(typeof item.isVeteran === 'boolean', `isVeteran: expected boolean, got ${typeof item.isVeteran}`);
+  check(typeof item.isArchived === 'boolean', `isArchived: expected boolean, got ${typeof item.isArchived}`);
+  check(typeof item.createdAt === 'string', `createdAt: expected string, got ${typeof item.createdAt}`);
+  return failures;
+}
+
+/**
  * Phase 16 (Wix Write Integration). The inverse of mapWixCaseItem: builds a
  * complete `cases` Wix item's `data` object for insertion. Every field
  * here is either server-derived (organizationId from

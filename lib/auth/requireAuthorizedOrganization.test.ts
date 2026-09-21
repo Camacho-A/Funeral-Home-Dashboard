@@ -13,14 +13,17 @@ let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUs
 // request context. resolveAuthorizationContext (the actual authorization
 // decision) is left completely real, run against the real mock membership
 // fixtures — only "read the session cookie" is faked.
+const mockCreateSession = vi.fn(async () => undefined);
 vi.mock('./session', () => ({
   getSession: async () => mockSession,
+  createSession: mockCreateSession,
 }));
 
 const { requireAuthorizedOrganization } = await import('./requireAuthorizedOrganization');
 
 beforeEach(() => {
   mockSession = { user: mockDefaultUser };
+  mockCreateSession.mockClear();
 });
 
 describe('requireAuthorizedOrganization — authorized access', () => {
@@ -176,6 +179,15 @@ describe('requireAuthorizedOrganization — AUTH_ADAPTER=identity sessions', () 
     if (result.authorized) {
       expect(result.context).toEqual({ userId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff' });
     }
+
+    // Solis session-timeout fix (2026-09): every successfully-authorized
+    // identity-mode request re-mints the outer session cookie, giving
+    // genuine rolling renewal — this is the other half of the fix beyond
+    // sessionDurationSecondsFor's longer identity-mode ceiling.
+    expect(mockCreateSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: identity.id, source: 'identity' }),
+      identitySession.id,
+    );
   });
 
   it('rejects an organizationId the identity has no active Membership in', async () => {

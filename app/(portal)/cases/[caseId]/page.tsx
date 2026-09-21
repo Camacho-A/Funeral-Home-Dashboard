@@ -2,6 +2,7 @@
 
 import { use, useState } from 'react';
 import { useCase } from '@/hooks/useCase';
+import { useResetMainContentScrollOnChange } from '@/hooks/useResetMainContentScrollOnChange';
 import { useCaseViewModel } from '@/hooks/useCaseViewModel';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { useCaseLog } from '@/hooks/useCaseLog';
@@ -46,6 +47,14 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const { caseId } = use(params);
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
+
+  // Solis go-live checkpoint: Case Detail was opening scrolled to (or near)
+  // the bottom — see useResetMainContentScrollOnChange's own comment for
+  // the root cause. Keyed on caseId so this also covers navigating
+  // directly from one case's detail page to another's, without touching
+  // the Case List page's own scroll position (Case List -> Case -> Back
+  // still restores where the list was).
+  useResetMainContentScrollOnChange(caseId);
 
   const { data: case_, isPending } = useCase(caseId);
   const { data: staffList = [] } = useStaff();

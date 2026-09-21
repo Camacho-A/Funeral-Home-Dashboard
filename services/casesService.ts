@@ -200,7 +200,23 @@ export async function create(
       }),
     });
     if (!response.ok) {
-      throw new Error('Failed to create case.');
+      // Manors go-live fix: this used to always throw the same generic
+      // message, discarding whatever specific, already-safe-to-display
+      // error the route handler returned (e.g. "No StaffProfile is linked
+      // to your account in this organization.") — the exact reason for a
+      // real production "Failed to create case." report. The route only
+      // ever returns short, user-appropriate strings (never a stack trace
+      // or raw Wix error), so surfacing `body.error` directly is safe.
+      let message = 'Failed to create case.';
+      try {
+        const errorBody = (await response.json()) as { error?: string };
+        if (typeof errorBody?.error === 'string' && errorBody.error.trim() !== '') {
+          message = errorBody.error;
+        }
+      } catch {
+        // Response body wasn't valid JSON — fall back to the generic message.
+      }
+      throw new Error(message);
     }
     const body = (await response.json()) as { case: Case };
     return body.case;

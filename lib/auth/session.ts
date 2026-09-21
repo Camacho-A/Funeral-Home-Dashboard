@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import type { AuthSession } from '../../types/auth';
-import { SESSION_COOKIE_NAME, createSessionToken, verifySessionToken } from './sessionToken';
+import { SESSION_COOKIE_NAME, createSessionToken, verifySessionToken, sessionDurationSecondsFor } from './sessionToken';
 
 /**
  * Phase 13 (Authentication & Organizations). The one Solis session cookie
@@ -17,15 +17,15 @@ import { SESSION_COOKIE_NAME, createSessionToken, verifySessionToken } from './s
  * explicitly out of this phase's scope.
  */
 
-function cookieOptions() {
+function cookieOptions(source: AuthSession['user']['source']) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
-    // Matches sessionToken.ts's own expiry — the cookie and the signed
-    // payload inside it always expire together.
-    maxAge: 60 * 60 * 12,
+    // Matches sessionToken.ts's own expiry (sessionDurationSecondsFor) — the
+    // cookie and the signed payload inside it always expire together.
+    maxAge: sessionDurationSecondsFor(source),
   };
 }
 
@@ -50,7 +50,7 @@ export async function getSession(): Promise<AuthSession | null> {
 export async function createSession(user: AuthSession['user'], sessionId?: string): Promise<void> {
   const token = await createSessionToken(user, undefined, sessionId);
   const store = await cookies();
-  store.set(SESSION_COOKIE_NAME, token, cookieOptions());
+  store.set(SESSION_COOKIE_NAME, token, cookieOptions(user.source));
 }
 
 /** Logout. Clears the cookie outright rather than setting an empty value,

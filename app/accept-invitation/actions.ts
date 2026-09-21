@@ -33,7 +33,8 @@ export async function acceptInvitationAction(formData: FormData): Promise<void> 
   }
 
   const dataAdapterMode = getDataAdapterMode();
-  const result = await acceptInvitation({ token, membershipId, password }, dataAdapterMode);
+  const idFactory = () => crypto.randomUUID();
+  const result = await acceptInvitation({ token, membershipId, password, idFactory }, dataAdapterMode);
   if (!result.success) {
     redirect(`/accept-invitation?${query}&error=invalid`);
   }
@@ -46,7 +47,6 @@ export async function acceptInvitationAction(formData: FormData): Promise<void> 
   const requestHeaders = await headers();
   const ipAddress = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
   const userAgent = requestHeaders.get('user-agent');
-  const idFactory = () => crypto.randomUUID();
 
   await recordLoginActivity({ identityId: identity.id, eventType: 'invitation_accepted', ipAddress, userAgent, idFactory }, dataAdapterMode);
   await recordSuccessfulLogin(identity.id, dataAdapterMode);

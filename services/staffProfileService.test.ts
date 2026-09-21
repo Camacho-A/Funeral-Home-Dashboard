@@ -8,6 +8,8 @@ import {
   assertAssignableStaffProfile,
   create,
   deactivate,
+  deriveDisplayRoleFromMembershipRole,
+  ensureStaffProfileForActivatedMembership,
   StaffAssignmentError,
 } from './staffProfileService';
 import { staffFixtures } from './__mocks__/fixtures';
@@ -135,6 +137,90 @@ describe('create', () => {
     );
     expect(profile.isActive).toBe(true);
     expect(staffFixtures.some((s) => s.id === profile.id)).toBe(true);
+  });
+});
+
+describe('deriveDisplayRoleFromMembershipRole (Solis go-live checkpoint — staff provisioning fix)', () => {
+  it('maps administrator (and its legacy alias owner) to admin', () => {
+    expect(deriveDisplayRoleFromMembershipRole('administrator')).toBe('admin');
+    expect(deriveDisplayRoleFromMembershipRole('owner')).toBe('admin');
+  });
+
+  it('maps funeralDirector (and its legacy alias caseManager) to funeral_director', () => {
+    expect(deriveDisplayRoleFromMembershipRole('funeralDirector')).toBe('funeral_director');
+    expect(deriveDisplayRoleFromMembershipRole('caseManager')).toBe('funeral_director');
+  });
+
+  it('maps every other role (manager, arranger, officeStaff, accounting, readOnly, dispatch, custom roles) to the generic staff default', () => {
+    for (const role of ['manager', 'arranger', 'officeStaff', 'accounting', 'readOnly', 'dispatch', 'staff', 'some-custom-role-key']) {
+      expect(deriveDisplayRoleFromMembershipRole(role)).toBe('staff');
+    }
+  });
+});
+
+describe('ensureStaffProfileForActivatedMembership (Solis go-live checkpoint — staff provisioning fix)', () => {
+  it('creates a new StaffProfile when none exists for this (organizationId, identityId)', async () => {
+    const profile = await ensureStaffProfileForActivatedMembership(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        identityId: 'identity-brand-new-hire',
+        membershipId: 'membership-brand-new-hire',
+        displayName: 'Brand New Hire',
+        membershipRole: 'manager',
+        idFactory,
+      },
+      'mock',
+    );
+    expect(profile.isActive).toBe(true);
+    expect(profile.role).toBe('staff'); // manager has no dedicated display label
+    expect(profile.membershipId).toBe('membership-brand-new-hire');
+    expect(staffFixtures.some((s) => s.identityId === 'identity-brand-new-hire')).toBe(true);
+  });
+
+  it('is idempotent — returns the existing profile untouched rather than creating a duplicate', async () => {
+    const first = await ensureStaffProfileForActivatedMembership(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        identityId: 'identity-idempotent-test',
+        membershipId: 'membership-idempotent-test',
+        displayName: 'Idempotent Test',
+        membershipRole: 'officeStaff',
+        idFactory,
+      },
+      'mock',
+    );
+    const countAfterFirst = staffFixtures.length;
+
+    const second = await ensureStaffProfileForActivatedMembership(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        identityId: 'identity-idempotent-test',
+        membershipId: 'membership-idempotent-test',
+        displayName: 'Idempotent Test — Renamed',
+        membershipRole: 'officeStaff',
+        idFactory,
+      },
+      'mock',
+    );
+
+    expect(second.id).toBe(first.id);
+    expect(second.displayName).toBe('Idempotent Test'); // never overwritten
+    expect(staffFixtures.length).toBe(countAfterFirst); // no duplicate row
+  });
+
+  it('an administrator membership gets the admin display role', async () => {
+    const profile = await ensureStaffProfileForActivatedMembership(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        identityId: 'identity-new-admin',
+        membershipId: 'membership-new-admin',
+        displayName: 'New Admin',
+        membershipRole: 'administrator',
+        idFactory,
+      },
+      'mock',
+    );
+    expect(profile.role).toBe('admin');
   });
 });
 

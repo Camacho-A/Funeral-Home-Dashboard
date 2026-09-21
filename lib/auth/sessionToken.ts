@@ -18,7 +18,46 @@ import { getSessionSecret } from '../env';
 
 export const SESSION_COOKIE_NAME = 'beacon_session';
 
-const SESSION_DURATION_SECONDS = 60 * 60 * 12; // 12 hours
+/**
+ * Session-timeout investigation (2026-09). Root cause of "users logged out
+ * while actively working": this token's `expiresAt` was a flat, absolute
+ * 12-hour deadline from login, with no renewal of any kind — `createSession`
+ * (the only writer of this token) was only ever called at explicit
+ * login-type events, never on ongoing activity. A separate mechanism
+ * *does* correctly implement sliding, activity-based expiry for
+ * `'identity'`-mode sessions — the server-side `IdentitySession` registry
+ * row (`services/sessionService.ts`'s `touchSession`, called on every
+ * validated request via `lib/auth/resolveIdentitySession.ts`) — but that
+ * inner sliding state could never rescue a session once this *outer*
+ * token's own hard, non-renewing deadline passed, since `middleware.ts`
+ * checks this token's embedded expiry first, on the edge, with no access
+ * to the registry at all.
+ *
+ * Fix: for `'identity'`-mode sessions specifically (the only mode with
+ * that registry-backed sliding backstop), this outer token's own absolute
+ * ceiling is raised to match `services/sessionService.ts`'s existing
+ * `REMEMBERED_DEVICE_TTL_MS` convention (30 days) — the *real*,
+ * precise, inactivity-based cutoff for an actively-used session is still
+ * entirely governed by that already-correct sliding registry check (1
+ * hour of inactivity, or 30 days if "remember this device" was checked),
+ * completely unchanged by this. This token's ceiling becomes a secondary,
+ * coarse "must fully re-authenticate at least this often" backstop, not
+ * the primary expiry mechanism. `'mock'`/`'wix'` sessions have no such
+ * registry to fall back on, so their duration is deliberately left
+ * unchanged — widening their window would be a real, uncompensated
+ * security regression for those modes.
+ * See `lib/auth/requireIdentitySession.ts`/`requireAuthorizedOrganization.ts`
+ * for the other half of this fix: both now also re-mint this token on
+ * every successfully-validated Route Handler request, giving genuine
+ * rolling renewal (not just a longer fixed ceiling) for the overwhelming
+ * majority of real interactive traffic.
+ */
+const DEFAULT_SESSION_DURATION_SECONDS = 60 * 60 * 12; // 12 hours — unchanged, mock/wix only
+const IDENTITY_SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30; // 30 days — identity mode only; see comment above
+
+export function sessionDurationSecondsFor(source: AuthSession['user']['source']): number {
+  return source === 'identity' ? IDENTITY_SESSION_DURATION_SECONDS : DEFAULT_SESSION_DURATION_SECONDS;
+}
 
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = '';
@@ -62,10 +101,10 @@ function isValidAuthSessionShape(value: unknown): value is AuthSession {
 }
 
 /** Builds a fresh, signed session token for a user, expiring
-    SESSION_DURATION_SECONDS from now. `sessionId` (Phase 21) links an
-    `'identity'`-source token to its server-side `IdentitySession` registry
-    row — omitted entirely for `'mock'`/`'wix'` sessions, which have no
-    such row. */
+    `sessionDurationSecondsFor(user.source)` from now. `sessionId` (Phase 21)
+    links an `'identity'`-source token to its server-side `IdentitySession`
+    registry row — omitted entirely for `'mock'`/`'wix'` sessions, which
+    have no such row. */
 export async function createSessionToken(
   user: AuthSession['user'],
   now: number = Math.floor(Date.now() / 1000),
@@ -74,7 +113,7 @@ export async function createSessionToken(
   const payload: AuthSession = {
     user,
     issuedAt: now,
-    expiresAt: now + SESSION_DURATION_SECONDS,
+    expiresAt: now + sessionDurationSecondsFor(user.source),
     ...(sessionId ? { sessionId } : {}),
   };
 

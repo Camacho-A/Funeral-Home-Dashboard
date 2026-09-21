@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSessionToken, verifySessionToken } from './sessionToken';
+import { createSessionToken, verifySessionToken, sessionDurationSecondsFor } from './sessionToken';
 import type { AuthenticatedUser } from '../../types/auth';
 
 const testUser: AuthenticatedUser = {
@@ -7,6 +7,13 @@ const testUser: AuthenticatedUser = {
   email: 'dana@managedcremations.test',
   displayName: 'Dana',
   source: 'mock',
+};
+
+const identityTestUser: AuthenticatedUser = {
+  id: 'identity-dana',
+  email: 'dana@managedcremations.test',
+  displayName: 'Dana',
+  source: 'identity',
 };
 
 describe('createSessionToken / verifySessionToken', () => {
@@ -84,5 +91,44 @@ describe('createSessionToken / verifySessionToken', () => {
     const decoded = Buffer.from(payloadPart.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
 
     expect(decoded.toLowerCase()).not.toMatch(/password|accesstoken|refreshtoken/);
+  });
+});
+
+describe('sessionDurationSecondsFor (Solis session-timeout fix, 2026-09)', () => {
+  it('returns the unchanged 12-hour ceiling for mock/wix sessions', () => {
+    expect(sessionDurationSecondsFor('mock')).toBe(60 * 60 * 12);
+    expect(sessionDurationSecondsFor('wix')).toBe(60 * 60 * 12);
+  });
+
+  it('returns a 30-day ceiling for identity-mode sessions, matching the IdentitySession registry\'s own remembered-device TTL convention', () => {
+    expect(sessionDurationSecondsFor('identity')).toBe(60 * 60 * 24 * 30);
+  });
+});
+
+describe('createSessionToken — source-specific expiry (Solis session-timeout fix, 2026-09)', () => {
+  it('a mock/wix token still expires at the unchanged 12-hour ceiling', async () => {
+    const now = 1_000_000;
+    const token = await createSessionToken(testUser, now);
+
+    expect(await verifySessionToken(token, now + 60 * 60 * 12 - 1)).not.toBeNull();
+    expect(await verifySessionToken(token, now + 60 * 60 * 12 + 1)).toBeNull();
+  });
+
+  it('an identity-mode token survives well past the old 12-hour ceiling — the actual fix for "logged out while actively working"', async () => {
+    const now = 1_000_000;
+    const token = await createSessionToken(identityTestUser, now, 'identity-session-1');
+
+    // 20 hours in: would have been rejected under the old flat 12h ceiling.
+    const session = await verifySessionToken(token, now + 60 * 60 * 20);
+    expect(session).not.toBeNull();
+    expect(session?.user.source).toBe('identity');
+  });
+
+  it('an identity-mode token still expires at its own 30-day outer ceiling', async () => {
+    const now = 1_000_000;
+    const token = await createSessionToken(identityTestUser, now, 'identity-session-1');
+
+    expect(await verifySessionToken(token, now + 60 * 60 * 24 * 30 - 1)).not.toBeNull();
+    expect(await verifySessionToken(token, now + 60 * 60 * 24 * 30 + 1)).toBeNull();
   });
 });

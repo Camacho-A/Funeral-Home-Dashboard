@@ -298,7 +298,11 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
     name: 'Accounting',
     description: 'Financial operations across every case — collecting and refunding payments, the general ledger, banking, and reports — without case-editing access.',
     /** Phase 31: this is literally the role the whole `accounting.*`
-        category exists for — gets all five keys. */
+        category exists for — gets all five keys.
+        Correction (2026-09): a prior checkpoint briefly added `case.create`
+        here under a mistaken "every staff role must have it" reading —
+        reverted. Manors' authoritative policy is Accounting =
+        case.create: NO, confirmed explicitly. */
     permissions: ['case.read', 'caseOrder.read', 'payment.read', 'payment.collect', 'payment.refund', 'notification.read', 'report.view', 'audit.read', 'audit.export', 'accounting.view', 'accounting.manage', 'accounting.post', 'accounting.reconcile', 'accounting.report', 'merchandise.read', 'inventory.read', 'procurement.read', 'ap.read', 'ap.manage', 'ap.pay'],
   },
   {
@@ -336,7 +340,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         view actions and fit this role's tier exactly; `report.export`
         (a write-adjacent action, generating a file) and `dashboard.manage`
         are withheld, mirroring the same administrator/manager-only split
-        as `portal.manage`. */
+        as `portal.manage`.
+        Correction (2026-09): a prior checkpoint briefly added `case.create`
+        here under a mistaken "every staff role must have it" reading —
+        reverted. Manors' authoritative policy is Read Only =
+        case.create: NO, confirmed explicitly; this role stays genuinely
+        read-only, no write action of any kind. */
     permissions: [
       'case.read',
       'caseOrder.read',
@@ -368,7 +377,12 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
         (which would expose/permit editing NOK and every other Case
         field). No document/signature/schedule/financial/notification
         keys either — pickup status updates are recorded directly on the
-        case, not through any of those other subsystems. */
+        case, not through any of those other subsystems.
+        Correction (2026-09): a prior checkpoint briefly added `case.create`
+        here under a mistaken "every staff role must have it" reading —
+        reverted. Manors' authoritative policy is Dispatch =
+        case.create: NO, confirmed explicitly; this role keeps its
+        narrow pickup-only scope, nothing more. */
     permissions: ['pickup.read', 'pickup.update'],
   },
 ];

@@ -6,6 +6,7 @@ import {
   MANORS_ADMIN_IDENTITY_ID,
 } from './__mocks__/identityFixtures';
 import { organizationRoleAuditEntryFixtures } from './__mocks__/rbacFixtures';
+import { staffFixtures } from './__mocks__/fixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import type { InviteToOrganizationResult } from './invitationService';
 
@@ -15,7 +16,12 @@ function idFactory(): string {
   return `invite-test-${idCounter}`;
 }
 
-let lengths: { identity: number; membership: number; tokens: number; audit: number };
+// Solis go-live checkpoint: `staffFixtures` cleanup added alongside the
+// other fixture arrays — acceptInvitation now provisions a StaffProfile on
+// activation (see the "staff provisioning fix" describe block below), so
+// leaving old rows in place between tests risks a later test's
+// counter-reset identityId colliding with a stale row from an earlier one.
+let lengths: { identity: number; membership: number; tokens: number; audit: number; staff: number };
 beforeEach(() => {
   idCounter = 0;
   lengths = {
@@ -23,6 +29,7 @@ beforeEach(() => {
     membership: membershipFixtures.length,
     tokens: emailVerificationTokenFixtures.length,
     audit: organizationRoleAuditEntryFixtures.length,
+    staff: staffFixtures.length,
   };
 });
 afterEach(() => {
@@ -30,6 +37,7 @@ afterEach(() => {
   membershipFixtures.length = lengths.membership;
   emailVerificationTokenFixtures.length = lengths.tokens;
   organizationRoleAuditEntryFixtures.length = lengths.audit;
+  staffFixtures.length = lengths.staff;
 });
 
 type InviteParams = {
@@ -101,7 +109,7 @@ describe('inviteToOrganization', () => {
   it('Manors go-live fix: an already-active member cannot be accidentally re-invited (outcome: already_active), and no second invitation is created', async () => {
     const { inviteToOrganization, acceptInvitation } = await import('./invitationService');
     const invited = await inviteFresh(baseInvite({ email: 'already.active.reinvite@example.com', displayName: 'Already Active' }));
-    await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'Active1!' }, 'mock');
+    await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'Active1!', idFactory }, 'mock');
 
     const second = await inviteToOrganization(baseInvite({ email: 'already.active.reinvite@example.com', displayName: 'Already Active' }), 'mock');
     expect(second.outcome).toBe('already_active');
@@ -161,11 +169,11 @@ describe('inviteToOrganization', () => {
       // #5: the OLD token (invalidated by revoke) remains permanently unusable
       // even after reactivation — acceptInvitation with it must still fail.
       const { acceptInvitation } = await import('./invitationService');
-      const oldTokenResult = await acceptInvitation({ token: originalToken, membershipId: originalMembershipId, password: 'ShouldFail1!' }, 'mock');
+      const oldTokenResult = await acceptInvitation({ token: originalToken, membershipId: originalMembershipId, password: 'ShouldFail1!', idFactory }, 'mock');
       expect(oldTokenResult.success).toBe(false);
 
       // The fresh token, however, genuinely works.
-      const freshTokenResult = await acceptInvitation({ token: result.verificationToken, membershipId: originalMembershipId, password: 'Fresh1!' }, 'mock');
+      const freshTokenResult = await acceptInvitation({ token: result.verificationToken, membershipId: originalMembershipId, password: 'Fresh1!', idFactory }, 'mock');
       expect(freshTokenResult.success).toBe(true);
       if (freshTokenResult.success) expect(freshTokenResult.membership.role).toBe('manager');
     });
@@ -191,7 +199,7 @@ describe('acceptInvitation', () => {
     const invited = await inviteFresh(baseInvite({ email: 'accept.me@example.com', displayName: 'Accept Me' }));
 
     const { acceptInvitation } = await import('./invitationService');
-    const result = await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'BrandNew1!' }, 'mock');
+    const result = await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'BrandNew1!', idFactory }, 'mock');
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.membership.status).toBe('active');
@@ -208,8 +216,39 @@ describe('acceptInvitation', () => {
   it('rejects an invalid token', async () => {
     const invited = await inviteFresh(baseInvite({ email: 'bad.token@example.com', displayName: 'Bad Token' }));
     const { acceptInvitation } = await import('./invitationService');
-    const result = await acceptInvitation({ token: 'forged', membershipId: invited.membership.id, password: 'X1!' }, 'mock');
+    const result = await acceptInvitation({ token: 'forged', membershipId: invited.membership.id, password: 'X1!', idFactory }, 'mock');
     expect(result.success).toBe(false);
+  });
+
+  describe('Solis go-live checkpoint — staff provisioning fix: StaffProfile is guaranteed on activation', () => {
+    it('creates a linked, active StaffProfile the moment the membership activates', async () => {
+      const invited = await inviteFresh(baseInvite({ email: 'gets.staffprofile@example.com', displayName: 'Gets StaffProfile', role: 'manager' }));
+
+      const { acceptInvitation } = await import('./invitationService');
+      const result = await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'BrandNew1!', idFactory }, 'mock');
+      expect(result.success).toBe(true);
+
+      const profile = staffFixtures.find(
+        (s) => s.identityId === invited.identity.id && s.organizationId === DEFAULT_ORGANIZATION_ID,
+      );
+      expect(profile).toBeTruthy();
+      expect(profile?.isActive).toBe(true);
+      expect(profile?.membershipId).toBe(invited.membership.id);
+      expect(profile?.displayName).toBe('Gets StaffProfile');
+    });
+
+    it('the caller can now create a case immediately — resolveStaffProfileForCaller no longer returns null (the exact production bug this closes)', async () => {
+      const invited = await inviteFresh(baseInvite({ email: 'can.now.create.case@example.com', displayName: 'Now Provisioned', role: 'officeStaff' }));
+      const { acceptInvitation } = await import('./invitationService');
+      await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'BrandNew1!', idFactory }, 'mock');
+
+      const { resolveStaffProfileForCaller } = await import('./staffProfileService');
+      const profile = await resolveStaffProfileForCaller(
+        { userId: invited.identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'officeStaff' },
+        'mock',
+      );
+      expect(profile).not.toBeNull();
+    });
   });
 });
 
@@ -222,7 +261,7 @@ describe('regenerateInvitation', () => {
 
     const { regenerateInvitation, acceptInvitation } = await import('./invitationService');
     const { token: freshToken } = await regenerateInvitation(invited.membership.id, invited.identity.id, idFactory, 'mock');
-    const result = await acceptInvitation({ token: freshToken, membershipId: invited.membership.id, password: 'Fresh1!' }, 'mock');
+    const result = await acceptInvitation({ token: freshToken, membershipId: invited.membership.id, password: 'Fresh1!', idFactory }, 'mock');
     expect(result.success).toBe(true);
   });
 });
@@ -267,7 +306,7 @@ describe('listPendingInvitations', () => {
     const acceptedInvite = await inviteFresh(baseInvite({ email: 'already.active@example.com', displayName: 'Already Active' }));
 
     const { acceptInvitation, listPendingInvitations } = await import('./invitationService');
-    await acceptInvitation({ token: acceptedInvite.verificationToken, membershipId: acceptedInvite.membership.id, password: 'Active1!' }, 'mock');
+    await acceptInvitation({ token: acceptedInvite.verificationToken, membershipId: acceptedInvite.membership.id, password: 'Active1!', idFactory }, 'mock');
 
     const rows = await listPendingInvitations(DEFAULT_ORGANIZATION_ID, 'mock');
     expect(rows.some((r) => r.membershipId === otherOrgInvite.membership.id)).toBe(false);
@@ -288,7 +327,7 @@ describe('revokeInvitation', () => {
     if (result.outcome === 'revoked') expect(result.membership.status).toBe('removed');
 
     // The original invitation token can no longer be used to accept.
-    const acceptResult = await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'TooLate1!' }, 'mock');
+    const acceptResult = await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'TooLate1!', idFactory }, 'mock');
     expect(acceptResult.success).toBe(false);
 
     const audit = organizationRoleAuditEntryFixtures.filter((e) => e.targetIdentityId === invited.identity.id && e.action === 'invitation_revoked');
@@ -318,7 +357,7 @@ describe('revokeInvitation', () => {
   it('refuses to revoke an already-accepted invitation, leaving the active member untouched', async () => {
     const invited = await inviteFresh(baseInvite({ email: 'already.accepted@example.com', displayName: 'Already Accepted' }));
     const { acceptInvitation, revokeInvitation } = await import('./invitationService');
-    await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'Accepted1!' }, 'mock');
+    await acceptInvitation({ token: invited.verificationToken, membershipId: invited.membership.id, password: 'Accepted1!', idFactory }, 'mock');
 
     const result = await revokeInvitation(
       { organizationId: DEFAULT_ORGANIZATION_ID, membershipId: invited.membership.id, actorIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory },

@@ -11,6 +11,7 @@ let mockSession: unknown = null;
 const clearSessionMock = vi.fn();
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: vi.fn(),
   clearSession: clearSessionMock,
 }));
 

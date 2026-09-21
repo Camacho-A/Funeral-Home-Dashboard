@@ -11,7 +11,13 @@ import {
   isValidCurrencyAmount,
   isValidCreditCardNumber,
   getValidationError,
-  normalizeTimeInput,
+  formatMilitaryTimeInput,
+  isValidMilitaryTime,
+  expandTwoDigitYear,
+  expandTwoDigitYearInDateInput,
+  isValidCalendarDateAllowingTwoDigitYear,
+  getDateOfBirthDeathOrderError,
+  getDateOfDeathFutureError,
 } from './inputMask';
 
 describe('formatDateInput', () => {
@@ -73,6 +79,124 @@ describe('isValidCalendarDate', () => {
   it('rejects a malformed string entirely', () => {
     expect(isValidCalendarDate('not a date')).toBe(false);
     expect(isValidCalendarDate('2026/07/20')).toBe(false);
+  });
+});
+
+describe('expandTwoDigitYear (Solis go-live checkpoint — DOB/DOD pivot-year rule)', () => {
+  it('expands 00-29 to 20YY', () => {
+    expect(expandTwoDigitYear(0)).toBe(2000);
+    expect(expandTwoDigitYear(26)).toBe(2026);
+    expect(expandTwoDigitYear(29)).toBe(2029);
+  });
+
+  it('expands 30-99 to 19YY', () => {
+    expect(expandTwoDigitYear(30)).toBe(1930);
+    expect(expandTwoDigitYear(85)).toBe(1985);
+    expect(expandTwoDigitYear(99)).toBe(1999);
+  });
+
+  it('the pivot boundary itself: 29 -> 2029, 30 -> 1930', () => {
+    expect(expandTwoDigitYear(29)).toBe(2029);
+    expect(expandTwoDigitYear(30)).toBe(1930);
+  });
+});
+
+describe('expandTwoDigitYearInDateInput (Solis go-live checkpoint)', () => {
+  it('expands a fully-typed MM/DD/YY value per the spec examples', () => {
+    expect(expandTwoDigitYearInDateInput('01/05/85')).toBe('01/05/1985');
+    expect(expandTwoDigitYearInDateInput('09/21/26')).toBe('09/21/2026');
+  });
+
+  it('leaves an already-4-digit-year value unchanged', () => {
+    expect(expandTwoDigitYearInDateInput('07/20/2026')).toBe('07/20/2026');
+  });
+
+  it('leaves an incomplete/partial value unchanged (never invents digits mid-typing)', () => {
+    expect(expandTwoDigitYearInDateInput('01/05')).toBe('01/05');
+    expect(expandTwoDigitYearInDateInput('01')).toBe('01');
+    expect(expandTwoDigitYearInDateInput('')).toBe('');
+  });
+
+  it('leaves malformed input unchanged', () => {
+    expect(expandTwoDigitYearInDateInput('not a date')).toBe('not a date');
+  });
+});
+
+describe('isValidCalendarDateAllowingTwoDigitYear (Solis go-live checkpoint)', () => {
+  it('accepts a complete 4-digit-year date, same as isValidCalendarDate', () => {
+    expect(isValidCalendarDateAllowingTwoDigitYear('07/20/2026')).toBe(true);
+  });
+
+  it('accepts a complete, valid two-digit-year date (would expand successfully)', () => {
+    expect(isValidCalendarDateAllowingTwoDigitYear('01/05/85')).toBe(true);
+    expect(isValidCalendarDateAllowingTwoDigitYear('09/21/26')).toBe(true);
+  });
+
+  it('rejects a two-digit-year date whose month/day is invalid even after expansion', () => {
+    expect(isValidCalendarDateAllowingTwoDigitYear('02/30/26')).toBe(false); // Feb 30 never exists
+    expect(isValidCalendarDateAllowingTwoDigitYear('13/15/26')).toBe(false);
+  });
+
+  it('rejects an incomplete value', () => {
+    expect(isValidCalendarDateAllowingTwoDigitYear('01/05')).toBe(false);
+  });
+
+  it('treats an empty string as valid', () => {
+    expect(isValidCalendarDateAllowingTwoDigitYear('')).toBe(true);
+  });
+});
+
+describe('getDateOfBirthDeathOrderError (Solis go-live checkpoint)', () => {
+  it('returns null when Date of Birth is before Date of Death', () => {
+    expect(getDateOfBirthDeathOrderError('01/05/1950', '07/20/2026')).toBeNull();
+  });
+
+  it('returns null when the two dates are the same', () => {
+    expect(getDateOfBirthDeathOrderError('07/20/2026', '07/20/2026')).toBeNull();
+  });
+
+  it('flags Date of Birth after Date of Death', () => {
+    expect(getDateOfBirthDeathOrderError('07/20/2026', '01/05/2000')).toBe('Date of Birth cannot be after Date of Death.');
+  });
+
+  it('returns null when either field is empty (nothing to cross-check yet)', () => {
+    expect(getDateOfBirthDeathOrderError('', '07/20/2026')).toBeNull();
+    expect(getDateOfBirthDeathOrderError('01/05/1950', '')).toBeNull();
+  });
+
+  it('returns null when either field is individually invalid — that is isValidCalendarDate\'s own job to flag', () => {
+    expect(getDateOfBirthDeathOrderError('13/15/2026', '07/20/2026')).toBeNull();
+  });
+
+  it('understands a two-digit year on either side without requiring pre-expansion', () => {
+    expect(getDateOfBirthDeathOrderError('01/05/85', '07/20/26')).toBeNull(); // 1985 before 2026
+    expect(getDateOfBirthDeathOrderError('07/20/26', '01/05/85')).toBe('Date of Birth cannot be after Date of Death.'); // 2026 after 1985
+  });
+});
+
+describe('getDateOfDeathFutureError (Solis go-live checkpoint)', () => {
+  const fixedNow = new Date(2026, 6, 20); // July 20, 2026 (local)
+
+  it('returns null for a past date of death', () => {
+    expect(getDateOfDeathFutureError('07/19/2026', fixedNow)).toBeNull();
+  });
+
+  it('returns null for today', () => {
+    expect(getDateOfDeathFutureError('07/20/2026', fixedNow)).toBeNull();
+  });
+
+  it('flags a future date of death', () => {
+    expect(getDateOfDeathFutureError('07/21/2026', fixedNow)).toBe('Date of Death cannot be in the future.');
+  });
+
+  it('returns null for an empty or individually-invalid value', () => {
+    expect(getDateOfDeathFutureError('', fixedNow)).toBeNull();
+    expect(getDateOfDeathFutureError('13/15/2026', fixedNow)).toBeNull();
+  });
+
+  it('understands a two-digit year without requiring pre-expansion', () => {
+    expect(getDateOfDeathFutureError('07/21/26', fixedNow)).toBe('Date of Death cannot be in the future.');
+    expect(getDateOfDeathFutureError('07/19/26', fixedNow)).toBeNull();
   });
 });
 
@@ -241,6 +365,10 @@ describe('getValidationError (Phase 19)', () => {
 
     expect(getValidationError('date', '07/20/2026')).toBeNull();
     expect(getValidationError('date', '02/30/2026')).toMatch(/valid date/i);
+    // Solis go-live checkpoint: a complete two-digit-year date is already
+    // considered valid pre-expansion (canSubmit/button-enabled state
+    // reflects a finished entry immediately, without waiting for blur).
+    expect(getValidationError('date', '01/05/85')).toBeNull();
 
     expect(getValidationError('zip', '94112')).toBeNull();
     expect(getValidationError('zip', '9')).toMatch(/valid zip/i);
@@ -267,115 +395,72 @@ describe('getValidationError (Phase 19)', () => {
   });
 });
 
-describe('normalizeTimeInput (Phase 19.1 — Time Input Normalization)', () => {
-  it('treats an empty string as valid, returning empty (nothing to normalize yet)', () => {
-    expect(normalizeTimeInput('')).toBe('');
-    expect(normalizeTimeInput('   ')).toBe('');
+describe('formatMilitaryTimeInput (Solis go-live — Time of Death 24-hour input)', () => {
+  it('inserts ":" after the first two digits', () => {
+    expect(formatMilitaryTimeInput('0930')).toBe('09:30');
+    expect(formatMilitaryTimeInput('1430')).toBe('14:30');
+    expect(formatMilitaryTimeInput('2305')).toBe('23:05');
+    expect(formatMilitaryTimeInput('0005')).toBe('00:05');
   });
 
-  describe('PM', () => {
-    it('normalizes an afternoon/evening PM time to 24-hour', () => {
-      expect(normalizeTimeInput('2:30 PM')).toBe('14:30');
-      expect(normalizeTimeInput('2:30PM')).toBe('14:30'); // no space
-      expect(normalizeTimeInput('11:59 PM')).toBe('23:59');
-    });
-
-    it('accepts an hour with no minutes ("2 PM"), defaulting minutes to 00', () => {
-      expect(normalizeTimeInput('2 PM')).toBe('14:00');
-    });
+  it('formats progressively as digits accumulate', () => {
+    expect(formatMilitaryTimeInput('0')).toBe('0');
+    expect(formatMilitaryTimeInput('09')).toBe('09');
+    expect(formatMilitaryTimeInput('093')).toBe('09:3');
+    expect(formatMilitaryTimeInput('0930')).toBe('09:30');
   });
 
-  describe('AM', () => {
-    it('normalizes a morning AM time to 24-hour', () => {
-      expect(normalizeTimeInput('2:30 AM')).toBe('02:30');
-      expect(normalizeTimeInput('11:15 AM')).toBe('11:15');
-    });
+  it('strips non-digit characters (typing through an existing ":")', () => {
+    expect(formatMilitaryTimeInput('09:30')).toBe('09:30');
+    expect(formatMilitaryTimeInput('09a30')).toBe('09:30');
   });
 
-  describe('noon and midnight — the 12 o\'clock special case', () => {
-    it('normalizes 12:00 PM (noon) to 12:00, not 24:00', () => {
-      expect(normalizeTimeInput('12:00 PM')).toBe('12:00');
-    });
-
-    it('normalizes 12:00 AM (midnight) to 00:00, not 12:00', () => {
-      expect(normalizeTimeInput('12:00 AM')).toBe('00:00');
-    });
-
-    it('normalizes other 12:xx PM/AM values correctly too', () => {
-      expect(normalizeTimeInput('12:15 PM')).toBe('12:15');
-      expect(normalizeTimeInput('12:15 AM')).toBe('00:15');
-    });
+  it('never introduces AM/PM and caps at 4 digits', () => {
+    expect(formatMilitaryTimeInput('093099999')).toBe('09:30');
   });
 
-  describe('lowercase input', () => {
-    it('accepts lowercase am/pm', () => {
-      expect(normalizeTimeInput('02:30 am')).toBe('02:30');
-      expect(normalizeTimeInput('2:30pm')).toBe('14:30');
-    });
+  it('returns an empty string for empty/non-digit input', () => {
+    expect(formatMilitaryTimeInput('')).toBe('');
+    expect(formatMilitaryTimeInput('abc')).toBe('');
+  });
+});
 
-    it('accepts mixed case', () => {
-      expect(normalizeTimeInput('2:30 Pm')).toBe('14:30');
-    });
+describe('isValidMilitaryTime (Solis go-live — Time of Death 24-hour input)', () => {
+  it('treats an empty string as valid (untouched optional field)', () => {
+    expect(isValidMilitaryTime('')).toBe(true);
   });
 
-  describe('whitespace', () => {
-    it('trims leading/trailing whitespace around the whole value', () => {
-      expect(normalizeTimeInput('  2:30 PM  ')).toBe('14:30');
-    });
-
-    it('tolerates extra internal whitespace before the meridiem', () => {
-      expect(normalizeTimeInput('2:30    PM')).toBe('14:30');
-    });
+  it('accepts every valid hour/minute boundary', () => {
+    expect(isValidMilitaryTime('00:00')).toBe(true);
+    expect(isValidMilitaryTime('09:30')).toBe(true);
+    expect(isValidMilitaryTime('14:30')).toBe(true);
+    expect(isValidMilitaryTime('23:05')).toBe(true);
+    expect(isValidMilitaryTime('00:05')).toBe(true);
+    expect(isValidMilitaryTime('23:59')).toBe(true);
   });
 
-  describe('direct 24-hour input', () => {
-    it('accepts an unambiguous 24-hour value (hour 13-23) with no AM/PM marker', () => {
-      expect(normalizeTimeInput('14:30')).toBe('14:30');
-      expect(normalizeTimeInput('23:59')).toBe('23:59');
-      expect(normalizeTimeInput('13:00')).toBe('13:00');
-    });
-
-    it('accepts hour 0 (midnight, 24-hour notation) with no AM/PM marker', () => {
-      expect(normalizeTimeInput('0:30')).toBe('00:30');
-      expect(normalizeTimeInput('00:00')).toBe('00:00');
-    });
+  it('rejects an out-of-range hour', () => {
+    expect(isValidMilitaryTime('25:00')).toBe(false);
+    expect(isValidMilitaryTime('24:00')).toBe(false);
   });
 
-  describe('missing AM/PM (ambiguous)', () => {
-    it('rejects an hour 1-12 with no AM/PM marker — genuinely ambiguous', () => {
-      expect(normalizeTimeInput('2:30')).toBeNull();
-      expect(normalizeTimeInput('12:00')).toBeNull();
-      expect(normalizeTimeInput('9:00')).toBeNull();
-    });
+  it('rejects an out-of-range minute', () => {
+    expect(isValidMilitaryTime('12:75')).toBe(false);
   });
 
-  describe('invalid hours', () => {
-    it('rejects an out-of-range 24-hour value', () => {
-      expect(normalizeTimeInput('25:00')).toBeNull();
-      expect(normalizeTimeInput('24:00')).toBeNull();
-    });
-
-    it('rejects an hour outside 1-12 when an AM/PM marker is present', () => {
-      expect(normalizeTimeInput('13:00 PM')).toBeNull();
-      expect(normalizeTimeInput('0:30 PM')).toBeNull();
-    });
+  it('rejects an incomplete value', () => {
+    expect(isValidMilitaryTime('09:3')).toBe(false);
+    expect(isValidMilitaryTime('09')).toBe(false);
+    expect(isValidMilitaryTime('9:30')).toBe(false);
   });
 
-  describe('invalid minutes', () => {
-    it('rejects out-of-range minutes with an AM/PM marker', () => {
-      expect(normalizeTimeInput('12:75 PM')).toBeNull();
-    });
-
-    it('rejects out-of-range minutes in direct 24-hour input', () => {
-      expect(normalizeTimeInput('14:75')).toBeNull();
-    });
+  it('rejects an AM/PM form — this field never accepts one', () => {
+    expect(isValidMilitaryTime('2:30 PM')).toBe(false);
+    expect(isValidMilitaryTime('09:30 AM')).toBe(false);
   });
 
-  describe('malformed input', () => {
-    it('rejects non-time garbage', () => {
-      expect(normalizeTimeInput('not a time')).toBeNull();
-      expect(normalizeTimeInput('14:30:00')).toBeNull();
-      expect(normalizeTimeInput('PM')).toBeNull();
-    });
+  it('rejects non-time garbage', () => {
+    expect(isValidMilitaryTime('not a time')).toBe(false);
+    expect(isValidMilitaryTime('14:30:00')).toBe(false);
   });
 });

@@ -16,10 +16,13 @@ import type { OrganizationRoleAuditAction, OrganizationRoleAuditEntry } from '..
 import type { PermissionKey } from '../domain/rbac/permissionCatalog';
 import { PERMISSION_KEYS, PERMISSION_DESCRIPTIONS, permissionCategory } from '../domain/rbac/permissionCatalog';
 import type { Membership, MembershipStatus } from '../types/membership';
+import type { OrganizationStatus } from '../types/organization';
 import { DEFAULT_ROLE_DEFINITIONS } from '../domain/rbac/defaultRoles';
 import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId, customRolePermissionId } from '../domain/rbac/deterministicIds';
 import { updateMembership } from './membershipService';
 import { resolveRoleForKey, resolvePermissionKeysForRole } from './permissionService';
+import { getIdentityById } from './identityService';
+import { ensureStaffProfileForActivatedMembership } from './staffProfileService';
 import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
 import { withOrganizationRoleLock, commitProtectedWrite } from './organizationLockService';
 import { listMembershipsForOrganization, isActiveMembership } from './membershipService';
@@ -268,14 +271,55 @@ export async function seedPlatformDefaultRoles(dataAdapterMode: DataAdapterMode)
 }
 
 /**
- * Enables all seven platform-default roles for one organization —
- * idempotent by (organizationId, roleKey) via deterministic enablement
- * ids, safe under concurrent calls for the same organization. Called once
- * at organization creation (Phase 20's provisioning flow).
+ * Enables the platform-default roles for one organization — idempotent by
+ * (organizationId, roleKey) via deterministic enablement ids, safe under
+ * concurrent calls for the same organization. Called at organization
+ * creation and, defensively, at a couple of other points in the
+ * onboarding flow (Phase 20's provisioning flow).
+ *
+ * Correction (2026-09) — role-subset integrity: this used to
+ * unconditionally top up an organization to the *full* platform-default
+ * set on every call, with no way for an organization to end up with, and
+ * keep, an intentionally *narrower* enabled-role subset (e.g. Manor's
+ * Cremation's Arranger role — disabled by explicit product decision after
+ * initial seeding). Any future re-run of this function against that
+ * organization — a reconciliation pass, a backfill script, a re-run of an
+ * existing-tenant migration — would have silently re-enabled it. This is
+ * a generic fix, not specific to any one organization: once an
+ * organization already has *any* enablement rows (`!isNew`), this
+ * function only expands its roster further when `organizationStatus`
+ * proves the organization is still mid-provisioning (`'draft'` or
+ * `'onboarding'` — i.e. not yet activated, so nothing about its role set
+ * could have been deliberately curated yet). Every other case — including
+ * an omitted `organizationStatus`, so a caller that doesn't think to pass
+ * it gets the *safe* behavior by default, not the expansive one — is a
+ * strict no-op that returns the organization's existing enablements
+ * completely unchanged. A genuinely new organization (`isNew`) is
+ * unaffected by any of this and always receives the full platform-default
+ * set, regardless of status — preserving "a new organization gets a
+ * sensible starting roster" exactly as before.
+ *
+ * This says nothing about the platform-default *role definitions*
+ * themselves (`domain/rbac/defaultRoles.ts`) or their permissions —
+ * Arranger (or any other role) remains fully intact and available to any
+ * organization that either is still provisioning or is deliberately,
+ * explicitly enabled for it afterward (a one-off
+ * `insertOrganizationRoleEnablementIdempotent` call, the same primitive
+ * this function itself uses — never through a blanket reconciliation
+ * pass).
  */
-export async function seedDefaultRoles(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<{ enablements: OrganizationRoleEnablement[]; isNew: boolean }> {
+export async function seedDefaultRoles(
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+  organizationStatus?: OrganizationStatus,
+): Promise<{ enablements: OrganizationRoleEnablement[]; isNew: boolean }> {
   const before = await listOrganizationRoleEnablements(organizationId, dataAdapterMode);
   const isNew = before.length === 0;
+  const stillProvisioning = organizationStatus === 'draft' || organizationStatus === 'onboarding';
+
+  if (!isNew && !stillProvisioning) {
+    return { enablements: before, isNew: false };
+  }
 
   const defaultRoles = await seedPlatformDefaultRoles(dataAdapterMode);
   const now = nowIso();
@@ -294,6 +338,31 @@ export async function listRolesForOrganization(organizationId: string, dataAdapt
   const enablements = await listOrganizationRoleEnablements(organizationId, dataAdapterMode);
   const roles = await Promise.all(enablements.map((e) => getRole(e.roleId, dataAdapterMode)));
   return roles.filter((r): r is Role => r !== null);
+}
+
+/**
+ * Correction (2026-09) — closes the "not selectable but still assignable"
+ * gap `resolveRoleForKey` alone left open. `resolveRoleForKey` only
+ * confirms a role exists and belongs to this organization (or is a
+ * shared platform default) — deliberately NOT enablement-aware, because
+ * its other callers (permission resolution for an existing membership's
+ * role, the admin-count strand-prevention check, initial org
+ * provisioning) must keep resolving a role even if this organization's
+ * enablement of it changes later. But that same permissiveness meant a
+ * role this organization never enabled (e.g. Arranger for Manors — see
+ * ADR/role-policy correction) could still be *assigned* via a direct API
+ * call, even though it never appears in this organization's own
+ * role-selection UI (`listRolesForOrganization`, which is enablement-
+ * driven). This wraps `resolveRoleForKey` with that same enablement
+ * check, for use only at the two points a *new* role assignment actually
+ * happens: inviting a new member, and changing an existing member's
+ * role (`changeMembershipRole` below).
+ */
+export async function resolveEnabledRoleForKey(roleKey: string, organizationId: string, dataAdapterMode: DataAdapterMode): Promise<Role | null> {
+  const role = await resolveRoleForKey(roleKey, organizationId, dataAdapterMode);
+  if (!role) return null;
+  const enablements = await listOrganizationRoleEnablements(organizationId, dataAdapterMode);
+  return enablements.some((e) => e.roleId === role.id) ? role : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -596,7 +665,7 @@ async function changeMembershipRole(
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ membership: Membership; auditEntry: OrganizationRoleAuditEntry }> {
   return withOrganizationRoleLock(params.membership.organizationId, dataAdapterMode, async (lockHandle) => {
-    const role = await resolveRoleForKey(params.roleKey, params.membership.organizationId, dataAdapterMode);
+    const role = await resolveEnabledRoleForKey(params.roleKey, params.membership.organizationId, dataAdapterMode);
     if (!role) throw new RoleServiceError('Role not found for this organization.');
 
     const remainingAdmins = await countActiveAdminTierMembers(params.membership.organizationId, dataAdapterMode, {
@@ -705,6 +774,35 @@ export async function setMembershipStatus(
       },
       dataAdapterMode,
     );
+
+    // Solis go-live checkpoint (2026-09) — staff provisioning fix: this is
+    // the *second* live path (besides invitation acceptance) that can turn
+    // a membership active, so it gets the same StaffProfile guarantee —
+    // never overwrites an existing profile, best-effort/non-blocking on
+    // failure, exactly matching services/invitationService.ts#acceptInvitation's
+    // own reasoning for why this shouldn't fail the whole operation.
+    try {
+      const identity = await getIdentityById(updated.identityId, dataAdapterMode);
+      if (identity) {
+        await ensureStaffProfileForActivatedMembership(
+          {
+            organizationId: updated.organizationId,
+            identityId: updated.identityId,
+            membershipId: updated.id,
+            displayName: identity.displayName,
+            membershipRole: updated.role,
+            idFactory: params.idFactory,
+          },
+          dataAdapterMode,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[setMembershipStatus] StaffProfile provisioning failed for identityId=${updated.identityId} membershipId=${updated.id}:`,
+        error,
+      );
+    }
+
     return { membership: updated, auditEntry };
   }
 

@@ -6,6 +6,7 @@ import { createMembership, getMembership, activateMembership, listMembershipsFor
 import { createVerificationToken, resendVerification, verifyEmailWithToken, listTokensForIdentity, invalidateTokensForIdentity } from './emailVerificationService';
 import { setPassword } from './passwordService';
 import { insertAuditEntry } from './roleService';
+import { ensureStaffProfileForActivatedMembership } from './staffProfileService';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). "Organization
@@ -120,9 +121,30 @@ export type AcceptInvitationResult =
  * the same email-verification mechanism — the token alone proves email
  * ownership; `membershipId` says which specific invitation is being
  * accepted.
+ *
+ * Solis go-live checkpoint (2026-09) — staff provisioning fix: "Membership
+ * Activated" now also guarantees a linked `StaffProfile` exists, via
+ * `staffProfileService.ensureStaffProfileForActivatedMembership`, closing
+ * the exact gap a live audit found (an active Membership with no
+ * StaffProfile cannot create a case or perform any other operational
+ * assignment). `idFactory` is now required for this reason — every other
+ * id this function's effects need (the Membership row, the token) already
+ * existed before this call; only the newly-provisioned StaffProfile needs
+ * a fresh one.
+ *
+ * Wix Data has no cross-collection transaction — `activateMembership` and
+ * this StaffProfile provisioning are two separate writes, not one atomic
+ * unit. If the StaffProfile write fails, the failure is logged loudly
+ * server-side (never silent) but does NOT fail the overall accept-invitation
+ * flow: the person already proved email ownership and set a password, and
+ * blocking their ability to log in at all over a provisioning hiccup would
+ * be a worse outcome than a StaffProfile gap that self-reports the next
+ * time they try to create a case (see app/api/cases/route.ts's specific,
+ * no-longer-swallowed 422 for exactly this condition) or is repaired by
+ * re-running this same idempotent call.
  */
 export async function acceptInvitation(
-  params: { token: string; membershipId: string; password: string },
+  params: { token: string; membershipId: string; password: string; idFactory: () => string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<AcceptInvitationResult> {
   const verification = await verifyEmailWithToken(params.token, dataAdapterMode);
@@ -134,6 +156,30 @@ export async function acceptInvitation(
   }
 
   await setPassword(verification.identityId, params.password, dataAdapterMode);
+
+  try {
+    const identity = await getIdentityById(verification.identityId, dataAdapterMode);
+    if (identity) {
+      await ensureStaffProfileForActivatedMembership(
+        {
+          organizationId: activated.organizationId,
+          identityId: activated.identityId,
+          membershipId: activated.id,
+          displayName: identity.displayName,
+          membershipRole: activated.role,
+          idFactory: params.idFactory,
+        },
+        dataAdapterMode,
+      );
+    } else {
+      console.error(`[acceptInvitation] Could not provision StaffProfile — identity ${verification.identityId} not found immediately after activation.`);
+    }
+  } catch (error) {
+    console.error(
+      `[acceptInvitation] StaffProfile provisioning failed for identityId=${verification.identityId} membershipId=${activated.id}:`,
+      error,
+    );
+  }
 
   return { success: true, identityId: verification.identityId, membership: activated };
 }

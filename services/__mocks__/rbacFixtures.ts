@@ -63,7 +63,22 @@ export const rolePermissionFixtures: RolePermission[] = DEFAULT_ROLE_DEFINITIONS
   })),
 );
 
-export const organizationRoleFixtures: OrganizationRoleEnablement[] = DEFAULT_ROLE_DEFINITIONS.map((def) => ({
+/**
+ * Manors role-model correction (2026-09): Manor's Cremation's authoritative
+ * role roster is exactly these seven — 'arranger' is deliberately excluded
+ * (a real platform-default role other organizations may use, but never
+ * enabled/selectable/assignable for Manors specifically) — mirroring the
+ * live Wix `organizationRoles` state exactly (confirmed via live read
+ * during this correction: managed-cremations has 6 enablement rows today,
+ * missing 'accounting' — a real data gap flagged for a separate, approved
+ * live fix — this mock fixture reflects the *intended*, fully-corrected
+ * roster of 7, not today's live gap, so tests exercise the target state).
+ */
+const MANORS_ENABLED_ROLE_KEYS: readonly string[] = ['administrator', 'manager', 'funeralDirector', 'officeStaff', 'accounting', 'readOnly', 'dispatch'];
+
+export const organizationRoleFixtures: OrganizationRoleEnablement[] = DEFAULT_ROLE_DEFINITIONS.filter((def) =>
+  MANORS_ENABLED_ROLE_KEYS.includes(def.key),
+).map((def) => ({
   id: organizationRoleFixtureId(DEFAULT_ORGANIZATION_ID, def.key),
   organizationId: DEFAULT_ORGANIZATION_ID,
   roleId: defaultRoleFixtureId(def.key),

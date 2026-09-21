@@ -422,9 +422,50 @@ describe('casesService.create/update — wix mode (dataAdapterMode = "wix")', ()
     );
   });
 
-  it('create() throws a clear error on a non-ok response', async () => {
+  it('create() falls back to the generic message when the error response has no parseable JSON body', async () => {
     const session = sessionFor(staffFixtures[0].id);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => { throw new Error('not json'); } }));
+
+    await expect(
+      casesService.create(
+        organization,
+        { decedentName: 'Test', nextOfKinName: '', nextOfKinPhone: '' },
+        session,
+        template,
+        'wix',
+      ),
+    ).rejects.toThrow('Failed to create case.');
+  });
+
+  it('create() surfaces the server\'s specific error message instead of the generic one (Solis go-live fix)', async () => {
+    // This is the confirmed root cause of the production "Failed to create
+    // case." report: the route returns a specific, already-safe-to-display
+    // 422 reason (e.g. a caller with no linked StaffProfile), but the old
+    // code discarded it and always threw the same generic string.
+    const session = sessionFor(staffFixtures[0].id);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: async () => ({ case: null, error: 'No StaffProfile is linked to your account in this organization.' }),
+      }),
+    );
+
+    await expect(
+      casesService.create(
+        organization,
+        { decedentName: 'Test', nextOfKinName: '', nextOfKinPhone: '' },
+        session,
+        template,
+        'wix',
+      ),
+    ).rejects.toThrow('No StaffProfile is linked to your account in this organization.');
+  });
+
+  it('create() falls back to the generic message when the error response has an empty/missing error field', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }));
 
     await expect(
       casesService.create(

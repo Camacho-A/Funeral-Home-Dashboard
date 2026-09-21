@@ -15,7 +15,7 @@ import {
   listAuditEntries,
   RoleServiceError,
 } from './roleService';
-import { resolvePermissionKeysForRole } from './permissionService';
+import { resolvePermissionKeysForRole, resolveRoleForKey } from './permissionService';
 import { updateMembership } from './membershipService';
 import { withOrganizationRoleLock, assertFenceStillCurrent, commitProtectedWrite, LockLeaseLostError } from './organizationLockService';
 import { membershipFixtures, MANORS_ADMIN_IDENTITY_ID } from './__mocks__/identityFixtures';
@@ -115,12 +115,106 @@ describe('seedPlatformDefaultRoles', () => {
 });
 
 describe('seedDefaultRoles', () => {
-  it('is idempotent for an organization that already has enablements', async () => {
+  it('is idempotent for an organization that already has all eight enablements', async () => {
+    // Deliberately NOT DEFAULT_ORGANIZATION_ID — Manor's Cremation's own
+    // fixture is now intentionally partial (7 of 8; see the Manors
+    // role-model correction test below) to mirror its real, corrected
+    // role roster, so a generic "already fully seeded" idempotency check
+    // needs its own, separately-seeded organization.
+    const orgId = 'fully-seeded-idempotency-org';
+    await seedDefaultRoles(orgId, 'mock');
     const before = organizationRoleFixtures.length;
-    const { enablements, isNew } = await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock');
+
+    const { enablements, isNew } = await seedDefaultRoles(orgId, 'mock');
     expect(isNew).toBe(false);
     expect(enablements).toHaveLength(8);
     expect(organizationRoleFixtures.length).toBe(before);
+  });
+
+  describe('Manors role-subset integrity fix (2026-09): seedDefaultRoles never silently expands an already-provisioned organization', () => {
+    it('1. re-running seedDefaultRoles against managed-cremations (status omitted, matching a careless future caller) does NOT enable Arranger', async () => {
+      const before = await listOrganizationRoleEnablements(DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(before).toHaveLength(7);
+
+      const { enablements, isNew } = await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(isNew).toBe(false);
+      expect(enablements).toHaveLength(7);
+      expect(enablements.some((e) => e.roleId === 'role-arranger')).toBe(false);
+    });
+
+    it('1b. same result even when the caller explicitly passes the real, current status (\'active\') — the gate is status-driven, not a guess', async () => {
+      const { enablements } = await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock', 'active');
+      expect(enablements).toHaveLength(7);
+      expect(enablements.some((e) => e.roleId === 'role-arranger')).toBe(false);
+    });
+
+    it('2. the seven currently-enabled Manors roles all remain enabled after a re-run', async () => {
+      await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock');
+      const after = await listOrganizationRoleEnablements(DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(after.map((e) => e.roleId).sort()).toEqual(
+        ['role-accounting', 'role-administrator', 'role-dispatch', 'role-funeralDirector', 'role-manager', 'role-officeStaff', 'role-readOnly'].sort(),
+      );
+    });
+
+    it('3. Arranger remains a fully available platform-default role — its Role/permission definitions are completely untouched by this gate', async () => {
+      const role = await resolveRoleForKey('arranger', DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(role?.key).toBe('arranger');
+      const permissions = await resolvePermissionKeysForRole('arranger', DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(permissions.size).toBeGreaterThan(0);
+    });
+
+    it('4. a future/new organization can still receive Arranger — status \'draft\'/\'onboarding\' (still provisioning) keeps the full expansive seed', async () => {
+      const orgId = 'newly-onboarding-org';
+      // First call: genuinely new (isNew) — full set regardless of status.
+      const first = await seedDefaultRoles(orgId, 'mock', 'draft');
+      expect(first.isNew).toBe(true);
+      expect(first.enablements.some((e) => e.roleId === 'role-arranger')).toBe(true);
+
+      // A second call mid-onboarding (status still 'onboarding', not yet
+      // active) must keep completing/confirming the full set, not freeze
+      // at whatever partial state a prior attempt left behind.
+      const second = await seedDefaultRoles(orgId, 'mock', 'onboarding');
+      expect(second.enablements).toHaveLength(8);
+      expect(second.enablements.some((e) => e.roleId === 'role-arranger')).toBe(true);
+    });
+
+    it('4b. an organization can still be intentionally, explicitly enabled for Arranger after activation — via a direct, one-off enablement, never a blanket reconciliation pass', async () => {
+      const orgId = 'active-org-explicit-arranger';
+      await seedDefaultRoles(orgId, 'mock', 'draft'); // provisions normally first
+      // Simulate a deliberate later curation down to a narrower set, then
+      // activation — mirroring Manors' own real history.
+      const idx = organizationRoleFixtures.findIndex((e) => e.organizationId === orgId && e.roleId === 'role-arranger');
+      organizationRoleFixtures.splice(idx, 1);
+      let enablements = await listOrganizationRoleEnablements(orgId, 'mock');
+      expect(enablements).toHaveLength(7);
+
+      // A reconciliation-style re-run post-activation must NOT bring it back...
+      const reconciled = await seedDefaultRoles(orgId, 'mock', 'active');
+      expect(reconciled.enablements.some((e) => e.roleId === 'role-arranger')).toBe(false);
+
+      // ...but a deliberate, explicit enablement (the same primitive
+      // seedDefaultRoles itself uses) still works exactly as it always
+      // has — this organization's earlier narrowing was a choice, not a
+      // platform-wide removal of Arranger.
+      organizationRoleFixtures.push({
+        id: 'orgrole-active-org-explicit-arranger-arranger',
+        organizationId: orgId,
+        roleId: 'role-arranger',
+        createdAt: '2026-09-22T00:00:00.000Z',
+      });
+      enablements = await listOrganizationRoleEnablements(orgId, 'mock');
+      expect(enablements.some((e) => e.roleId === 'role-arranger')).toBe(true);
+    });
+
+    it('5. re-running the operation against managed-cremations is fully idempotent — no duplicate rows, stable count across repeated calls', async () => {
+      const before = organizationRoleFixtures.length;
+      await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock');
+      await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock');
+      await seedDefaultRoles(DEFAULT_ORGANIZATION_ID, 'mock', 'active');
+      expect(organizationRoleFixtures.length).toBe(before);
+      const finalEnablements = await listOrganizationRoleEnablements(DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(finalEnablements).toHaveLength(7);
+    });
   });
 
   it('seeds 8 enablements for a brand-new organization', async () => {
@@ -144,10 +238,20 @@ describe('seedDefaultRoles', () => {
 });
 
 describe('listRolesForOrganization', () => {
-  it("returns Manor's Cremation's eight seeded default roles", async () => {
+  it("returns Manor's Cremation's seven enabled default roles — Arranger excluded (Manors role-model correction, 2026-09)", async () => {
     const roles = await listRolesForOrganization(DEFAULT_ORGANIZATION_ID, 'mock');
-    expect(roles).toHaveLength(8);
+    expect(roles).toHaveLength(7);
     expect(roles.every((r) => r.isSystemDefault)).toBe(true);
+    expect(roles.map((r) => r.key).sort()).toEqual([
+      'accounting',
+      'administrator',
+      'dispatch',
+      'funeralDirector',
+      'manager',
+      'officeStaff',
+      'readOnly',
+    ]);
+    expect(roles.some((r) => r.key === 'arranger')).toBe(false);
   });
 });
 
@@ -399,6 +503,17 @@ describe('assignRole / removeRole', () => {
     await expect(assignRole({ membership, roleKey: 'not-a-real-role', actorIdentityId: 'actor-1', idFactory }, 'mock')).rejects.toThrow(RoleServiceError);
   });
 
+  it('Manors role-model correction (2026-09): rejects assigning Arranger — a real platform role, but never enabled for Manors', async () => {
+    const membership = pushMembership({ id: 'membership-assign-arranger', identityId: 'identity-assign-arranger', role: 'readOnly' });
+    await expect(assignRole({ membership, roleKey: 'arranger', actorIdentityId: 'actor-1', idFactory }, 'mock')).rejects.toThrow(RoleServiceError);
+  });
+
+  it('allows assigning Accounting — one of Manors\' seven required roles', async () => {
+    const membership = pushMembership({ id: 'membership-assign-accounting', identityId: 'identity-assign-accounting', role: 'readOnly' });
+    const { membership: updated } = await assignRole({ membership, roleKey: 'accounting', actorIdentityId: 'actor-1', idFactory }, 'mock');
+    expect(updated.role).toBe('accounting');
+  });
+
   it('refuses to change the last administrator away from admin-tier', async () => {
     const solo = await seedDefaultRoles('solo-admin-org', 'mock');
     expect(solo.enablements.length).toBe(8);
@@ -519,6 +634,50 @@ describe('setMembershipStatus', () => {
     it('refuses to act on a pending invitation — directs the caller to revokeInvitation instead', async () => {
       const membership = pushMembership({ id: 'membership-invited-1', identityId: 'identity-invited-1', role: 'readOnly', status: 'invited' });
       await expect(setMembershipStatus({ membership, status: 'disabled', actorIdentityId: 'actor-1', idFactory }, 'mock')).rejects.toThrow(RoleServiceError);
+    });
+
+    it('Solis go-live checkpoint — staff provisioning fix: reactivating a disabled membership also provisions a StaffProfile if none is linked (the second live path this invariant must hold on)', async () => {
+      const { identityFixtures } = await import('./__mocks__/identityFixtures');
+      const { staffFixtures } = await import('./__mocks__/fixtures');
+      const identityId = 'identity-reactivate-provisions-staffprofile';
+      identityFixtures.push({
+        id: identityId,
+        email: 'reactivate.provision@example.com',
+        normalizedEmail: 'reactivate.provision@example.com',
+        displayName: 'Reactivate Provision',
+        phone: null,
+        status: 'active',
+        emailVerified: true,
+        passwordVersion: 1,
+        mfaEnabled: false,
+        lastLoginAt: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        get passwordHash() {
+          return 'irrelevant-for-this-test';
+        },
+        mfaSecretReference: null,
+        mfaVerifiedAt: null,
+        mfaRecoveryCodeHashes: [],
+      });
+
+      try {
+        const membership = pushMembership({ id: 'membership-reactivate-provisions', identityId, role: 'manager', status: 'disabled' });
+        expect(staffFixtures.some((s) => s.identityId === identityId)).toBe(false);
+
+        const { membership: updated } = await setMembershipStatus({ membership, status: 'active', actorIdentityId: 'actor-1', idFactory }, 'mock');
+        expect(updated.status).toBe('active');
+
+        const profile = staffFixtures.find((s) => s.identityId === identityId && s.organizationId === DEFAULT_ORGANIZATION_ID);
+        expect(profile).toBeTruthy();
+        expect(profile?.isActive).toBe(true);
+        expect(profile?.membershipId).toBe(updated.id);
+      } finally {
+        const identityIndex = identityFixtures.findIndex((i) => i.id === identityId);
+        if (identityIndex !== -1) identityFixtures.splice(identityIndex, 1);
+        const staffIndex = staffFixtures.findIndex((s) => s.identityId === identityId);
+        if (staffIndex !== -1) staffFixtures.splice(staffIndex, 1);
+      }
     });
   });
 });

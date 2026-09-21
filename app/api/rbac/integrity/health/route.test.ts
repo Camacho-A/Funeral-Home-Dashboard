@@ -6,7 +6,8 @@ let idCounter = 0;
 const idFactory = () => `rbac-health-route-test-${(idCounter += 1)}`;
 
 let mockSession: unknown = null;
-vi.mock('@/lib/auth/session', () => ({ getSession: async () => mockSession, clearSession: vi.fn() }));
+vi.mock('@/lib/auth/session', () => ({ getSession: async () => mockSession,
+  createSession: vi.fn(), clearSession: vi.fn() }));
 
 const { GET } = await import('./route');
 

@@ -154,50 +154,144 @@ describe('CaseInformationCard — date fields reuse the New Case form\'s mask an
   });
 });
 
-describe('CaseInformationCard — time input normalization (Phase 19.1)', () => {
-  it('commits a normalized 24-hour value on Enter after a 12-hour PM entry', () => {
+describe('CaseInformationCard — two-digit year expansion (Solis go-live checkpoint)', () => {
+  it('expands a fully-typed two-digit year on commit', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '03/14/1951' }));
+    const input = screen.getByDisplayValue('03/14/1951');
+    fireEvent.change(input, { target: { value: '030150' } });
+    expect(input).toHaveValue('03/01/50'); // not yet expanded, still typing
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfBirth: '03/01/1950' });
+  });
+
+  it('expands on blur too', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '03/14/1951' }));
+    const input = screen.getByDisplayValue('03/14/1951');
+    fireEvent.change(input, { target: { value: '030105' } }); // -> 2005
+    fireEvent.blur(input);
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfBirth: '03/01/2005' });
+  });
+});
+
+describe('CaseInformationCard — DOB/DOD cross-field validation (Solis go-live checkpoint)', () => {
+  it('blocks Enter when Date of Birth would be after the existing Date of Death, showing an inline error', () => {
+    // baseProps.dateOfDeath is '07/09/2026'.
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '03/14/1951' }));
+    const input = screen.getByDisplayValue('03/14/1951');
+    fireEvent.change(input, { target: { value: '08012026' } }); // after 07/09/2026
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText(/date of birth cannot be after date of death/i)).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('reverts on blur rather than saving a Date of Birth after Date of Death', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '03/14/1951' }));
+    const input = screen.getByDisplayValue('03/14/1951');
+    fireEvent.change(input, { target: { value: '08012026' } });
+    fireEvent.blur(input);
+
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '03/14/1951' })).toBeInTheDocument();
+  });
+
+  it('blocks Enter on a future Date of Death', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '07/09/2026' }));
+    const input = screen.getByDisplayValue('07/09/2026');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText(/date of death cannot be in the future/i)).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('allows committing a valid Date of Death that is still after Date of Birth', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '07/09/2026' }));
+    const input = screen.getByDisplayValue('07/09/2026');
+    fireEvent.change(input, { target: { value: '07102026' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfDeath: '07/10/2026' });
+  });
+});
+
+describe('CaseInformationCard — Time of Death 24-hour input (Solis go-live checkpoint)', () => {
+  it('auto-inserts ":" as digits are typed and commits the masked value on Enter', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '3:45 PM' } });
+    fireEvent.change(input, { target: { value: '1545' } });
+    expect(input).toHaveValue('15:45');
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ timeOfDeath: '15:45' });
   });
 
-  it('normalizes noon and midnight correctly on commit', () => {
+  it('masks midnight correctly', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '12:00 AM' } });
+    fireEvent.change(input, { target: { value: '0000' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ timeOfDeath: '00:00' });
   });
 
-  it('commits the normalized value on blur too, not the raw typed text', () => {
+  it('commits the masked value on blur too', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '11:15 am' } });
+    fireEvent.change(input, { target: { value: '1115' } });
     fireEvent.blur(input);
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ timeOfDeath: '11:15' });
   });
 
-  it('blocks Enter on an invalid time and shows an inline error, preserving the typed text', () => {
+  it('never introduces AM/PM — typed letters are stripped, not interpreted', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '25:00' } });
+    fireEvent.change(input, { target: { value: '1115pm' } });
+
+    expect(input).toHaveValue('11:15');
+  });
+
+  it('blocks Enter on an out-of-range hour and shows an inline error, preserving the typed text', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
+    const input = screen.getByDisplayValue('14:30');
+    fireEvent.change(input, { target: { value: '2500' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
@@ -205,39 +299,39 @@ describe('CaseInformationCard — time input normalization (Phase 19.1)', () => 
     expect(input).toHaveValue('25:00'); // preserved for correction, not cleared
   });
 
-  it('rejects an ambiguous value with no AM/PM marker on Enter', () => {
+  it('rejects an incomplete value on Enter', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '2:30' } });
+    fireEvent.change(input, { target: { value: '930' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
     expect(onUpdateCaseInfo).not.toHaveBeenCalled();
   });
 
-  it('reverts an invalid time on blur rather than saving it', () => {
+  it('reverts an out-of-range minute on blur rather than saving it', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '12:75 PM' } });
+    fireEvent.change(input, { target: { value: '1275' } });
     fireEvent.blur(input);
 
     expect(onUpdateCaseInfo).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '14:30' })).toBeInTheDocument();
   });
 
-  it('accepts direct 24-hour input unchanged (unambiguous hour, no AM/PM needed)', () => {
+  it('accepts direct 24-hour input with no AM/PM marker needed', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: '14:30' }));
     const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '21:15' } });
+    fireEvent.change(input, { target: { value: '2115' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ timeOfDeath: '21:15' });

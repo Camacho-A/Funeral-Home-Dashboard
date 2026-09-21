@@ -47,7 +47,8 @@ export async function POST(request: Request) {
   }
 
   const dataAdapterMode = getDataAdapterMode();
-  const result = await acceptInvitation({ token, membershipId, password }, dataAdapterMode);
+  const idFactory = () => crypto.randomUUID();
+  const result = await acceptInvitation({ token, membershipId, password, idFactory }, dataAdapterMode);
   if (!result.success) {
     return NextResponse.json({ error: 'This invitation link is invalid or has expired.' }, { status: ERROR_STATUS[result.reason] ?? 400 });
   }
@@ -60,7 +61,6 @@ export async function POST(request: Request) {
   const requestHeaders = await headers();
   const ipAddress = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
   const userAgent = requestHeaders.get('user-agent');
-  const idFactory = () => crypto.randomUUID();
 
   await recordLoginActivity({ identityId: identity.id, eventType: 'invitation_accepted', ipAddress, userAgent, idFactory }, dataAdapterMode);
   await recordSuccessfulLogin(identity.id, dataAdapterMode);

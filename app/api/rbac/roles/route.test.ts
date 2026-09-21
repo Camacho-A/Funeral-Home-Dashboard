@@ -12,6 +12,7 @@ function idFactory() {
 let mockSession: unknown = null;
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: vi.fn(),
   clearSession: vi.fn(),
 }));
 
@@ -93,12 +94,22 @@ describe('GET /api/rbac/roles', () => {
     expect(response.status).toBe(403);
   });
 
-  it('an administrator can list the organization\'s roles', async () => {
+  it('an administrator can list the organization\'s roles — Manors\' 7 enabled roles, Arranger excluded', async () => {
     await seedCaller('administrator');
     const response = await getRequest(`http://localhost/api/rbac/roles?organizationId=${DEFAULT_ORGANIZATION_ID}`);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.roles).toHaveLength(8);
+    expect(body.roles).toHaveLength(7);
+    expect(body.roles.map((r: { key: string }) => r.key).sort()).toEqual([
+      'accounting',
+      'administrator',
+      'dispatch',
+      'funeralDirector',
+      'manager',
+      'officeStaff',
+      'readOnly',
+    ]);
+    expect(body.roles.some((r: { key: string }) => r.key === 'arranger')).toBe(false);
   });
 
   // A manager holds user.invite, not user.manageRoles — canViewRoleCatalog

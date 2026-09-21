@@ -4,6 +4,7 @@ import { mapWixStaffProfileItem, buildWixStaffProfileData, applyStaffProfileUpda
 import type { StaffProfile } from '../types/staffProfile';
 import type { AuthorizationContext } from '../types/authorization';
 import type { PermissionKey } from '../domain/rbac/permissionCatalog';
+import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
 import { hasPermission, type ResolvePermissionsParams } from './permissionService';
 import { getMembershipById } from './membershipService';
 import { staffFixtures } from './__mocks__/fixtures';
@@ -63,6 +64,74 @@ export async function getById(organizationId: string, staffProfileId: string, da
  * only ever exists there (never from a client component directly — see
  * `lib/auth/requireAuthorizedOrganization.ts`).
  */
+/**
+ * Solis go-live checkpoint (2026-09) — staff provisioning fix. Derives
+ * `StaffProfile.role` (the display-only cosmetic label — see
+ * `types/staffProfile.ts`'s own header comment) from a real
+ * `Membership.role`/RBAC role key, for the one place that label needs to
+ * be invented rather than supplied: auto-provisioning a `StaffProfile` the
+ * moment a Membership activates (`ensureStaffProfileForActivatedMembership`
+ * below). Resolves legacy aliases first (`owner`/`caseManager`/`staff`/
+ * `readOnly` -> their Phase 22 default-role equivalents) so a pre-Phase-22
+ * membership row maps exactly as it would today, then: `administrator` (or
+ * its alias `owner`) -> `'admin'`; `funeralDirector` (or its alias
+ * `caseManager`) -> `'funeral_director'`; every other role (manager,
+ * arranger, officeStaff, accounting, readOnly, dispatch, or any custom
+ * role) -> `'staff'`, the honest generic default — this label is never
+ * read by any authorization decision, so a role without a dedicated title
+ * getting the generic one is correct, not a loss of information.
+ */
+export function deriveDisplayRoleFromMembershipRole(membershipRole: string): StaffProfile['role'] {
+  const resolved = resolveRoleKeyAlias(membershipRole);
+  if (resolved === 'administrator') return 'admin';
+  if (resolved === 'funeralDirector') return 'funeral_director';
+  return 'staff';
+}
+
+/**
+ * Solis go-live checkpoint (2026-09) — staff provisioning fix. Root cause
+ * of "an active staff Membership can exist with no linked StaffProfile":
+ * `services/invitationService.ts#acceptInvitation` flipped a Membership to
+ * `'active'` and set a password, but never created the `StaffProfile` that
+ * every operational-assignment/case-creation path requires (confirmed via
+ * a live audit — the Manager and Office Staff memberships accepted through
+ * this exact path had none, while the one StaffProfile that *did* exist
+ * was provisioned by a different, earlier path). This is the fix: called
+ * from `acceptInvitation` immediately after `activateMembership` succeeds,
+ * so "Membership Activated" and "StaffProfile exists" become one
+ * guaranteed outcome instead of two independent, silently-divergible ones.
+ *
+ * Idempotent by construction — checks for an existing profile first via
+ * the same `(organizationId, identityId)` lookup `resolveStaffProfileForCaller`
+ * uses, so retrying this call (e.g. after a prior partial failure) never
+ * creates a duplicate. Never overwrites an existing profile's role/
+ * displayName — if one already exists (however it got there), it is left
+ * exactly as-is.
+ */
+export async function ensureStaffProfileForActivatedMembership(
+  params: { organizationId: string; identityId: string; membershipId: string; displayName: string; membershipRole: string; idFactory: () => string; now?: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<StaffProfile> {
+  const existing = await resolveStaffProfileForCaller(
+    { userId: params.identityId, organizationId: params.organizationId, role: params.membershipRole },
+    dataAdapterMode,
+  );
+  if (existing) return existing;
+
+  return create(
+    params.organizationId,
+    {
+      identityId: params.identityId,
+      membershipId: params.membershipId,
+      displayName: params.displayName,
+      role: deriveDisplayRoleFromMembershipRole(params.membershipRole),
+      idFactory: params.idFactory,
+      now: params.now,
+    },
+    dataAdapterMode,
+  );
+}
+
 export async function resolveStaffProfileForCaller(context: AuthorizationContext, dataAdapterMode: DataAdapterMode): Promise<StaffProfile | null> {
   if (dataAdapterMode === 'mock') {
     return staffFixtures.find((s) => s.organizationId === context.organizationId && s.identityId === context.userId) ?? null;

@@ -6,7 +6,16 @@ import { SelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
 import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, VaPublishChoice } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
-import { formatDateInput, isValidCalendarDate, normalizeTimeInput, isValidEmail } from '@/utils/inputMask';
+import {
+  formatDateInput,
+  formatMilitaryTimeInput,
+  isValidCalendarDate,
+  isValidMilitaryTime,
+  isValidEmail,
+  expandTwoDigitYearInDateInput,
+  getDateOfBirthDeathOrderError,
+  getDateOfDeathFutureError,
+} from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
 import styles from './CaseInformationCard.module.css';
 
@@ -65,12 +74,18 @@ function EditableField({
   onSave,
   kind = 'text',
   uppercase = false,
+  crossFieldValidate,
 }: {
   label: string;
   value: string;
   onSave: (newValue: string) => void;
   kind?: 'text' | 'date' | 'time' | 'email';
   uppercase?: boolean;
+  /** Solis go-live checkpoint. 'date'-kind only — a relative-to-another-
+      field check (DOB/DOD ordering, DOD-not-in-the-future) that a single
+      field's own format validity can't express. Called with the value
+      already expanded to a 4-digit year. */
+  crossFieldValidate?: (value: string) => string | null;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -96,6 +111,7 @@ function EditableField({
   function handleChange(raw: string) {
     let next = raw;
     if (kind === 'date') next = formatDateInput(raw);
+    else if (kind === 'time') next = formatMilitaryTimeInput(raw);
     else if (uppercase) next = raw.toUpperCase();
     setDraft(next);
     setError(null);
@@ -110,25 +126,30 @@ function EditableField({
   }
 
   function commitOrRevert() {
-    if (kind === 'date' && draft !== '' && !isValidCalendarDate(draft)) {
-      setDraft(displayValue);
-      setIsEditing(false);
-      return;
-    }
-    if (kind === 'time') {
-      // Phase 19.1 (Time Input Normalization): the same shared
-      // utils/inputMask.ts#normalizeTimeInput components/modals/NewCaseModal.tsx
-      // uses — a blur away from an invalid/ambiguous value reverts (same
-      // "don't fight the browser's own blur order" reasoning as 'date'
-      // above), but a *valid* one commits its normalized canonical form,
-      // not the raw text the user actually typed.
-      const normalized = normalizeTimeInput(draft);
-      if (normalized === null) {
+    if (kind === 'date') {
+      // Solis go-live checkpoint: expand a fully-typed two-digit year
+      // before validating/committing — see
+      // utils/inputMask.ts#expandTwoDigitYearInDateInput's own comment.
+      const expanded = expandTwoDigitYearInDateInput(draft);
+      if (expanded !== '' && (!isValidCalendarDate(expanded) || crossFieldValidate?.(expanded))) {
         setDraft(displayValue);
         setIsEditing(false);
         return;
       }
-      commit(normalized);
+      commit(expanded);
+      return;
+    }
+    if (kind === 'time') {
+      // Solis go-live checkpoint: handleChange already keeps `draft` in
+      // live-masked "HH:MM" form (utils/inputMask.ts#formatMilitaryTimeInput),
+      // so there's no separate normalization step — just the same
+      // "invalid non-empty value reverts on blur" reasoning as 'date' above.
+      if (draft !== '' && !isValidMilitaryTime(draft)) {
+        setDraft(displayValue);
+        setIsEditing(false);
+        return;
+      }
+      commit();
       return;
     }
     if (kind === 'email') {
@@ -151,17 +172,26 @@ function EditableField({
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (kind === 'date' && draft !== '' && !isValidCalendarDate(draft)) {
-        setError('Enter a valid date (MM/DD/YYYY).');
+      if (kind === 'date') {
+        const expanded = expandTwoDigitYearInDateInput(draft);
+        if (expanded !== '' && !isValidCalendarDate(expanded)) {
+          setError('Enter a valid date (MM/DD/YYYY).');
+          return;
+        }
+        const crossFieldError = expanded !== '' ? (crossFieldValidate?.(expanded) ?? null) : null;
+        if (crossFieldError) {
+          setError(crossFieldError);
+          return;
+        }
+        commit(expanded);
         return;
       }
       if (kind === 'time') {
-        const normalized = normalizeTimeInput(draft);
-        if (normalized === null) {
-          setError('Enter a valid time (e.g. 2:30 PM or 14:30).');
+        if (draft !== '' && !isValidMilitaryTime(draft)) {
+          setError('Enter a valid time (HH:MM, 24-hour).');
           return;
         }
-        commit(normalized);
+        commit();
         return;
       }
       if (kind === 'email') {
@@ -195,7 +225,7 @@ function EditableField({
             onChange={(e) => handleChange(e.target.value)}
             onBlur={commitOrRevert}
             onKeyDown={handleKeyDown}
-            placeholder={kind === 'date' ? 'MM/DD/YYYY' : kind === 'time' ? 'e.g. 2:30 PM' : kind === 'email' ? 'name@example.com' : undefined}
+            placeholder={kind === 'date' ? 'MM/DD/YYYY' : kind === 'time' ? 'HH:MM' : kind === 'email' ? 'name@example.com' : undefined}
           />
           {error && (
             <div className={styles.fieldError} role="alert">
@@ -291,12 +321,14 @@ export function CaseInformationCard({
           value={dateOfBirth}
           kind="date"
           onSave={(v) => onUpdateCaseInfo({ dateOfBirth: v })}
+          crossFieldValidate={(v) => getDateOfBirthDeathOrderError(v, dateOfDeath)}
         />
         <EditableField
           label="Date of death"
           value={dateOfDeath}
           kind="date"
           onSave={(v) => onUpdateCaseInfo({ dateOfDeath: v })}
+          crossFieldValidate={(v) => getDateOfDeathFutureError(v) ?? getDateOfBirthDeathOrderError(dateOfBirth, v)}
         />
         <EditableField
           label="Time of death"

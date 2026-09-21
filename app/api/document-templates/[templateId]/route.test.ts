@@ -14,6 +14,7 @@ function idFactory() {
 let mockSession: unknown = null;
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: vi.fn(),
   clearSession: vi.fn(),
 }));
 

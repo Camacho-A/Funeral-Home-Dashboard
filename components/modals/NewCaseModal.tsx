@@ -22,7 +22,15 @@ import { pricingClient } from '@/services/pricingClient';
 import { paymentsClient } from '@/services/paymentsClient';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
-import { formatDateInput, getValidationError, normalizeTimeInput, isValidEmail } from '@/utils/inputMask';
+import {
+  formatDateInput,
+  formatMilitaryTimeInput,
+  getValidationError,
+  isValidEmail,
+  expandTwoDigitYearInDateInput,
+  getDateOfBirthDeathOrderError,
+  getDateOfDeathFutureError,
+} from '@/utils/inputMask';
 import type { Case } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import type { ServiceSelections } from '@/types/caseOrder';
@@ -209,6 +217,11 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     let value = rawValue;
     if (field.fieldType === 'date') {
       value = formatDateInput(rawValue);
+    } else if (field.fieldType === 'time') {
+      // Solis go-live checkpoint: live 24-hour masking as the user types
+      // ("0930" -> "09:30"), replacing the old blur-time free-text parse —
+      // see utils/inputMask.ts#formatMilitaryTimeInput's own comment.
+      value = formatMilitaryTimeInput(rawValue);
     } else if (field.uppercase) {
       value = rawValue.toUpperCase();
     }
@@ -220,20 +233,17 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   /**
-   * Phase 19.1 (Time Input Normalization). On blur, a time field's raw
-   * typed text ("2:30 PM") is replaced with its canonical "HH:mm" form via
-   * the one shared utils/inputMask.ts#normalizeTimeInput — the same
-   * function components/case/CaseInformationCard.tsx's inline editor uses.
-   * An invalid/ambiguous value is left exactly as typed (per "preserve
-   * invalid user input for correction") — getValidationError's own 'time'
-   * case (below, in renderIntakeField) then reports the same failure as an
-   * inline error once `touched` is set.
+   * Solis go-live checkpoint (DOB/DOD two-digit year expansion). On blur, a
+   * date field's fully-typed two-digit year ("01/05/85") is expanded to
+   * its four-digit form ("01/05/1985") — see
+   * utils/inputMask.ts#expandTwoDigitYearInDateInput's own comment for why
+   * this happens on blur/commit rather than live, per keystroke.
    */
   function handleFieldBlur(field: ResolvedIntakeField) {
     markTouched(field.key);
-    if (field.fieldType === 'time') {
-      const normalized = normalizeTimeInput(draft[field.key] ?? field.defaultValue);
-      if (normalized !== null) setDraftValue(field.key, normalized);
+    if (field.fieldType === 'date') {
+      const expanded = expandTwoDigitYearInDateInput(draft[field.key] ?? field.defaultValue);
+      if (expanded !== (draft[field.key] ?? field.defaultValue)) setDraftValue(field.key, expanded);
     }
   }
 
@@ -280,11 +290,27 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
   const structuredFields = buildStructuredCaseFields(effectiveIntake, draft);
 
-  const hasFieldErrors = allResolvedFields.some(
-    (field) =>
-      field.fieldType !== 'payment' &&
-      getValidationError(field.validationType, draft[field.key] ?? field.defaultValue) !== null,
-  );
+  // Solis go-live checkpoint: cross-field DOB/DOD validation — genuinely
+  // relative-to-each-other checks getValidationError's per-field dispatch
+  // can't express (it only ever sees one field's own value). Resolved by
+  // mapsToCaseField, matching the same convention the fixed NOK-email
+  // field's own section-placement lookup above already uses; null (no
+  // check performed) for a custom template with no such field configured.
+  const dobField = allResolvedFields.find((f) => f.mapsToCaseField === 'dateOfBirth');
+  const dodField = allResolvedFields.find((f) => f.mapsToCaseField === 'dateOfDeath');
+  const dobValue = dobField ? (draft[dobField.key] ?? dobField.defaultValue) : '';
+  const dodValue = dodField ? (draft[dodField.key] ?? dodField.defaultValue) : '';
+  const dobDodOrderError = getDateOfBirthDeathOrderError(dobValue, dodValue);
+  const dodFutureError = getDateOfDeathFutureError(dodValue);
+
+  const hasFieldErrors =
+    allResolvedFields.some(
+      (field) =>
+        field.fieldType !== 'payment' &&
+        getValidationError(field.validationType, draft[field.key] ?? field.defaultValue) !== null,
+    ) ||
+    dobDodOrderError !== null ||
+    dodFutureError !== null;
   const hasMissingRequired = allResolvedFields.some((field) => {
     // Phase 19B (Clover Hosted Checkout Integration): a payment field is
     // purely informational at intake time now — real collection happens
@@ -340,8 +366,12 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         nextOfKinName: structuredFields.nextOfKinName ?? '',
         nextOfKinPhone: structuredFields.nextOfKinPhone ?? '',
         nextOfKinEmail: nextOfKinEmailTrimmed || undefined,
-        dateOfBirth: structuredFields.dateOfBirth || undefined,
-        dateOfDeath: structuredFields.dateOfDeath || undefined,
+        // Solis go-live checkpoint: expanded defensively here too (not
+        // just on blur) — a click on Create Case immediately after typing
+        // a two-digit year, before any blur has fired, must never submit
+        // an un-expanded "MM/DD/YY".
+        dateOfBirth: expandTwoDigitYearInDateInput(structuredFields.dateOfBirth ?? '') || undefined,
+        dateOfDeath: expandTwoDigitYearInDateInput(structuredFields.dateOfDeath ?? '') || undefined,
         timeOfDeath: structuredFields.timeOfDeath || undefined,
         placeOfDeath: structuredFields.placeOfDeath || undefined,
         weight: structuredFields.weight || undefined,
@@ -436,7 +466,16 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     if (field.fieldType === 'payment') return null;
 
     const value = draft[field.key] ?? field.defaultValue;
-    const error = touched[field.key] ? getValidationError(field.validationType, value) : null;
+    let error = touched[field.key] ? getValidationError(field.validationType, value) : null;
+    // Solis go-live checkpoint: cross-field DOB/DOD errors surface under
+    // whichever of the two fields is "the one that's wrong" relative to
+    // its counterpart — Date of Death also carries its own not-in-the-
+    // future check, checked first since it never depends on Date of Birth
+    // at all.
+    if (!error && touched[field.key]) {
+      if (field.mapsToCaseField === 'dateOfBirth') error = dobDodOrderError;
+      else if (field.mapsToCaseField === 'dateOfDeath') error = dodFutureError ?? dobDodOrderError;
+    }
     const isRevealed = revealedFields[field.key];
     const labelClassName = field.required
       ? `${styles.fieldLabel} ${styles.fieldLabelRequired}`

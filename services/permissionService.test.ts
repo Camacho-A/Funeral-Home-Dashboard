@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { resolveRoleForKey, resolvePermissionKeysForRole, resolvePermissions, hasPermission, hasAnyPermission, hasAllPermissions } from './permissionService';
+import { resolveEnabledRoleForKey } from './roleService';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import { PERMISSION_KEYS } from '../domain/rbac/permissionCatalog';
 
@@ -34,6 +35,40 @@ describe('permissionService', () => {
       const forDefault = await resolveRoleForKey('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       const forOther = await resolveRoleForKey('administrator', OTHER_ORG, 'mock');
       expect(forDefault?.id).toBe(forOther?.id);
+    });
+
+    it('Manors role-model correction (2026-09): still resolves Arranger for Manors — enablement-agnostic by design, so read-only permission resolution for an existing membership never breaks even if this organization never enabled the role', async () => {
+      const role = await resolveRoleForKey('arranger', DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(role?.key).toBe('arranger');
+    });
+  });
+
+  describe('resolveEnabledRoleForKey (Manors role-model correction, 2026-09) — the assignment-time gate resolveRoleForKey deliberately is not', () => {
+    it('resolves a role Manors has actually enabled', async () => {
+      const role = await resolveEnabledRoleForKey('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(role?.key).toBe('administrator');
+    });
+
+    it('resolves the newly-required Accounting role for Manors', async () => {
+      const role = await resolveEnabledRoleForKey('accounting', DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(role?.key).toBe('accounting');
+    });
+
+    it('returns null for Arranger — a real platform role, but never enabled for Manors', async () => {
+      const role = await resolveEnabledRoleForKey('arranger', DEFAULT_ORGANIZATION_ID, 'mock');
+      expect(role).toBeNull();
+    });
+
+    it('Arranger remains fully available platform-wide for a different organization that has enabled it', async () => {
+      const { seedDefaultRoles } = await import('./roleService');
+      const otherOrgId = 'org-that-uses-arranger';
+      await seedDefaultRoles(otherOrgId, 'mock');
+      const role = await resolveEnabledRoleForKey('arranger', otherOrgId, 'mock');
+      expect(role?.key).toBe('arranger');
+    });
+
+    it('returns null for an unknown role key, same as resolveRoleForKey', async () => {
+      expect(await resolveEnabledRoleForKey('not-a-real-role', DEFAULT_ORGANIZATION_ID, 'mock')).toBeNull();
     });
   });
 

@@ -41,6 +41,97 @@ export function isValidCalendarDate(value: string): boolean {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
+/**
+ * Solis go-live checkpoint (DOB/DOD two-digit year expansion). Pivot rule —
+ * deliberately the same well-established convention Microsoft Excel's own
+ * two-digit-year interpretation has used for decades, rather than an
+ * invented one: YY 00-29 -> 20YY, YY 30-99 -> 19YY. For a funeral home's
+ * realistic date range (decedents and staff spanning roughly the last
+ * ~100 years), this reads correctly in the common cases that matter most —
+ * "26" -> 2026 (a same-year date of death), "85" -> 1985, "05" -> 2005 (a
+ * young decedent or recent date of birth) — without ever depending on
+ * today's date to decide (a fixed, deterministic boundary, documented
+ * once, here).
+ */
+export function expandTwoDigitYear(twoDigitYear: number): number {
+  return twoDigitYear <= 29 ? 2000 + twoDigitYear : 1900 + twoDigitYear;
+}
+
+/**
+ * Solis go-live checkpoint. Expands a fully-typed MM/DD/YY value's
+ * two-digit year into MM/DD/YYYY via expandTwoDigitYear above. Anything
+ * else (already a 4-digit year, incomplete, malformed) is returned
+ * unchanged — this only ever adds digits to a value the user finished
+ * typing in full, never reinterprets a value mid-edit. Deliberately not
+ * part of formatDateInput's live per-keystroke mask: expanding while the
+ * user might still be about to type a 3rd/4th year digit would fight
+ * their own typing/correction (see formatDateInput's own "re-derives from
+ * raw digits every keystroke" design) — this runs only at commit time
+ * (blur/Enter in the UI, and defensively again right before submission).
+ */
+export function expandTwoDigitYearInDateInput(value: string): string {
+  const match = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, month, day, twoDigitYear] = match;
+  return `${month}/${day}/${expandTwoDigitYear(Number(twoDigitYear))}`;
+}
+
+/**
+ * Solis go-live checkpoint. Same convention as isValidCalendarDate ("empty
+ * is valid, partial is not") but additionally treats an as-yet-unexpanded
+ * two-digit-year value as already valid if expanding it would be —
+ * so a field's "is this complete and valid" state (canSubmit/button-enabled
+ * logic) reflects a finished MM/DD/YY entry immediately, without waiting
+ * for the blur event that actually performs the display-value expansion.
+ */
+export function isValidCalendarDateAllowingTwoDigitYear(value: string): boolean {
+  if (isValidCalendarDate(value)) return true;
+  const expanded = expandTwoDigitYearInDateInput(value);
+  return expanded !== value && isValidCalendarDate(expanded);
+}
+
+function parseMonthDayYearToLocalDate(value: string): Date {
+  const [month, day, year] = value.split('/').map(Number);
+  // Local-time components only (never `new Date(dateString)`, which some
+  // engines parse as UTC midnight) — this is a calendar date, not an
+  // instant, and must never shift by a day depending on the server/
+  // browser's timezone offset.
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Solis go-live checkpoint. Cross-field check: Date of Birth cannot be
+ * after Date of Death. Returns null (no error) if either field is empty
+ * or not yet a complete, valid calendar date on its own — each field's own
+ * isValidCalendarDateAllowingTwoDigitYear check already reports that;
+ * this only ever adds a *second*, relative-to-each-other error once both
+ * individually parse. Accepts either field mid-typing with a two-digit
+ * year (expands internally) so it never fights formatDateInput's own
+ * per-keystroke mask.
+ */
+export function getDateOfBirthDeathOrderError(dateOfBirth: string, dateOfDeath: string): string | null {
+  const dob = expandTwoDigitYearInDateInput(dateOfBirth);
+  const dod = expandTwoDigitYearInDateInput(dateOfDeath);
+  if (dob === '' || dod === '' || !isValidCalendarDate(dob) || !isValidCalendarDate(dod)) return null;
+  return parseMonthDayYearToLocalDate(dob) > parseMonthDayYearToLocalDate(dod)
+    ? 'Date of Birth cannot be after Date of Death.'
+    : null;
+}
+
+/**
+ * Solis go-live checkpoint. Date of Death cannot be an invalid future
+ * date — compared against local calendar "today" (midnight-to-midnight),
+ * never a UTC day boundary. `now` is injectable for deterministic testing
+ * (no real-clock dependency), matching this codebase's established
+ * discipline for anything that reads "today."
+ */
+export function getDateOfDeathFutureError(dateOfDeath: string, now: Date = new Date()): string | null {
+  const dod = expandTwoDigitYearInDateInput(dateOfDeath);
+  if (dod === '' || !isValidCalendarDate(dod)) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return parseMonthDayYearToLocalDate(dod) > today ? 'Date of Death cannot be in the future.' : null;
+}
+
 /** Reformats raw input toward MM/YY, inserting "/" after the month —
     same digit-stripping approach as formatDateInput, capped at 4 digits. */
 export function formatCardExpiryInput(rawValue: string): string {
@@ -148,47 +239,34 @@ export function isValidCreditCardNumber(value: string): boolean {
  * validationType. Returns null for a valid (or empty/untouched) value.
  */
 /**
- * Phase 19.1 (Time Input Normalization). Parses familiar 12-hour input
- * ("2:30 PM", "2:30PM", "2 PM", "02:30 am") as well as direct 24-hour input
- * ("14:30") into a canonical, zero-padded 24-hour "HH:mm" string — the only
- * form ever persisted (see components/modals/NewCaseModal.tsx and
- * components/case/CaseInformationCard.tsx, the two callers, neither of
- * which re-implements this parsing). Returns `null` for anything invalid
- * or ambiguous; returns `''` for an empty string (an untouched optional
- * field isn't invalid, same convention as isValidCalendarDate above).
- *
- * Ambiguity rule: a bare "HH:mm" with no AM/PM marker is only accepted
- * when it's *unambiguously* 24-hour notation — hour 0, or 13-23. Hours
- * 1-12 without an AM/PM marker are rejected outright ("2:30" alone is
- * genuinely ambiguous between 2 AM and 2 PM); with an AM/PM marker, only
- * hours 1-12 are valid (12-hour clocks have no "13 PM" or "0 PM").
+ * Solis go-live checkpoint (Time of Death military-time input). Replaces
+ * the old Phase 19.1 normalizeTimeInput dual 12h/24h parser — this field is
+ * never auto-populated with the current time and must never accept an
+ * AM/PM form (explicit product requirement), so a live digit-stripping mask
+ * is a better fit than blur-time parsing of free text. Reformats raw input
+ * toward strict 24-hour "HH:MM" by stripping everything but digits, capping
+ * at 4 digits, and inserting ":" after the first two — same approach as
+ * formatDateInput above. "0930" -> "09:30" as the user types; backspacing
+ * back through the colon and retyping works exactly like formatDateInput's
+ * "/" does, since the mask is re-derived from scratch on every keystroke
+ * rather than edited in place.
  */
-export function normalizeTimeInput(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') return '';
+export function formatMilitaryTimeInput(rawValue: string): string {
+  const digits = rawValue.replace(/\D/g, '').slice(0, 4);
+  const parts = [digits.slice(0, 2), digits.slice(2, 4)].filter(Boolean);
+  return parts.join(':');
+}
 
-  const twelveHourMatch = /^(\d{1,2})(?::(\d{2}))?\s*([aApP][mM])$/.exec(trimmed);
-  if (twelveHourMatch) {
-    const hour = Number(twelveHourMatch[1]);
-    const minute = twelveHourMatch[2] !== undefined ? Number(twelveHourMatch[2]) : 0;
-    const meridiem = twelveHourMatch[3].toLowerCase();
-    if (hour < 1 || hour > 12) return null;
-    if (minute < 0 || minute > 59) return null;
-    const hour24 = (hour % 12) + (meridiem === 'pm' ? 12 : 0);
-    return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-  }
-
-  const twentyFourHourMatch = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
-  if (twentyFourHourMatch) {
-    const hour = Number(twentyFourHourMatch[1]);
-    const minute = Number(twentyFourHourMatch[2]);
-    if (hour < 0 || hour > 23) return null;
-    if (minute < 0 || minute > 59) return null;
-    if (hour >= 1 && hour <= 12) return null; // ambiguous without AM/PM
-    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-  }
-
-  return null;
+/**
+ * True for an empty string (an untouched optional field isn't invalid) or a
+ * complete, strict 24-hour "HH:MM" value — hours 00-23, minutes 00-59. No
+ * AM/PM form is ever accepted; a partially-typed value ("09:3") is false,
+ * matching isValidCalendarDate's "only a fully-typed value can be valid"
+ * convention.
+ */
+export function isValidMilitaryTime(value: string): boolean {
+  if (value === '') return true;
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 export function getValidationError(
@@ -213,7 +291,7 @@ export function getValidationError(
     case 'phone':
       return isValidPhoneNumber(value) ? null : 'Enter a valid phone number.';
     case 'date':
-      return isValidCalendarDate(value) ? null : 'Enter a valid date (MM/DD/YYYY).';
+      return isValidCalendarDateAllowingTwoDigitYear(value) ? null : 'Enter a valid date (MM/DD/YYYY).';
     case 'zip':
       return isValidZip(value) ? null : 'Enter a valid ZIP code.';
     case 'numeric':
@@ -225,7 +303,7 @@ export function getValidationError(
     case 'expiration':
       return isValidExpiryMonth(value) ? null : 'Enter a valid expiration (MM/YY).';
     case 'time':
-      return normalizeTimeInput(value) !== null ? null : 'Enter a valid time (e.g. 2:30 PM or 14:30).';
+      return isValidMilitaryTime(value) ? null : 'Enter a valid time (HH:MM, 24-hour).';
     default:
       return null;
   }

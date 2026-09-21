@@ -420,8 +420,11 @@ export async function startOnboarding(
   // idempotent (deterministic ids; a conflict on re-seeding is treated as
   // "already seeded," never an error), so a resumed/retried onboarding
   // session that already has RBAC seeded incurs a handful of cheap
-  // no-op lookups, not a duplicate-creation risk.
-  await seedDefaultRoles(session.organizationId, dataAdapterMode);
+  // no-op lookups, not a duplicate-creation risk. `organization.status`
+  // is passed through so seedDefaultRoles can tell it's still safe to
+  // keep completing this organization's roster — see that function's own
+  // comment for the role-subset-integrity correction this is part of.
+  await seedDefaultRoles(session.organizationId, dataAdapterMode, organization.status);
 
   return { organization, session, isNew };
 }
@@ -1088,8 +1091,12 @@ export async function completeOnboarding(
   // invariant holds regardless of which code path actually created this
   // organization (defense in depth against, e.g., a future direct-creation
   // path that bypasses `startOnboarding`), and never activates an
-  // organization whose roster isn't confirmed seeded.
-  await seedDefaultRoles(session.organizationId, dataAdapterMode);
+  // organization whose roster isn't confirmed seeded. Reads the
+  // organization fresh (still pre-activation at this point, always
+  // 'draft'/'onboarding') so seedDefaultRoles' role-subset-integrity gate
+  // sees accurate status, not a guess.
+  const preActivationOrganization = await getOrganization(session.organizationId, dataAdapterMode);
+  await seedDefaultRoles(session.organizationId, dataAdapterMode, preActivationOrganization?.status);
 
   const now = nowIso();
   const organization = await updateOrganization(session.organizationId, { status: 'active', isActive: true }, dataAdapterMode);
@@ -1306,9 +1313,14 @@ export async function migrateExistingOrganization(
   // already-live tenant migrated through this path needs its RBAC roster
   // exactly as much as a brand-new one provisioned through
   // `startOnboarding` — "Manor's Cremation must not depend on manual setup
-  // that future tenants will not receive." Idempotent; a no-op if already
-  // seeded (as Manor's Cremation's own roster already is).
-  await seedDefaultRoles(input.organizationId, dataAdapterMode);
+  // that future tenants will not receive." Idempotent; a genuinely first-
+  // time migration (no enablement rows yet) still gets the full
+  // platform-default set. A *re-run* against a tenant already migrated
+  // once (organization.status is 'active' by this point, per the backfill
+  // above) is now a strict no-op — see seedDefaultRoles' own comment —
+  // rather than silently re-expanding a roster this tenant may have had
+  // deliberately narrowed since its original migration.
+  await seedDefaultRoles(input.organizationId, dataAdapterMode, organization.status);
 
   const { location, isNew: locationCreated } = await createPrimaryLocation(
     input.organizationId,
