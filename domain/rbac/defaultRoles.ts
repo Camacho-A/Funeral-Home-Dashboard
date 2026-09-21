@@ -215,6 +215,15 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'inventory.manage',
       'procurement.read',
       'procurement.manage',
+      // Manors go-live hardening: 'accounting.view'/'accounting.report'
+      // formalize the limited financial VISIBILITY this role is intended
+      // to have — confirmed live in production audit — never
+      // 'accounting.manage'/'accounting.post'/'accounting.reconcile'
+      // (management authority) nor 'ap.manage'/'ap.pay' (only 'ap.read',
+      // already below). Funeral Director sees financial standing; only
+      // Manager/Administrator/Accounting can act on it.
+      'accounting.view',
+      'accounting.report',
       'ap.read',
     ],
   },
@@ -251,6 +260,14 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'case.create',
       'case.update',
       'caseOrder.read',
+      // Manors go-live hardening: 'caseOrder.update' formalizes normal
+      // arrangement work this role is intended to perform — additional
+      // charges, merchandise adjustments, and cash-advance entry (all
+      // gated by this one permission via canEditCaseOrder). Confirmed via
+      // live production audit that this was already effectively granted;
+      // this makes it standard Beacon behavior rather than undocumented
+      // per-organization drift.
+      'caseOrder.update',
       'serviceCatalog.read',
       'document.generate',
       'document.view',

@@ -2,8 +2,10 @@ import type { DataAdapterMode } from '../lib/env';
 import { inspectDefaultRoleReconciliation } from './rbacReconciliationService';
 import { getMembership, isActiveMembership } from './membershipService';
 import { resolveRoleForKey, resolvePermissionKeysForRole } from './permissionService';
+import { getOverridesForRole } from './organizationRoleOverrideService';
 import { isDefaultRoleKey, defaultRoleDefinition } from '../domain/rbac/defaultRoles';
 import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
+import { applyPermissionOverrides, type OverrideLike } from '../domain/rbac/permissionOverrides';
 import { PERMISSION_KEYS, type PermissionKey } from '../domain/rbac/permissionCatalog';
 
 /**
@@ -86,20 +88,54 @@ export type RoleAuthorizationDiagnosis = {
   roleId: string | null;
   roleResolved: boolean;
   isDefaultRole: boolean;
+  organizationId: string;
+  /** This organization's own grant/revoke overrides for this role (empty
+      for a custom role — overrides only apply to platform-default roles;
+      see `types/organizationRolePermissionOverride.ts`). Manors go-live
+      hardening — lets a caller see exactly which deviations are
+      *documented organization intent* rather than unexplained drift. */
+  overridesApplied: OverrideLike[];
+  /** The pure code-catalog expectation, ignoring this organization's
+      overrides entirely — "what would every organization on the platform
+      get by default." Manors go-live hardening. */
+  baseExpectedCount: number;
+  /** Expected by the pure code catalog but not currently effective —
+      computed WITHOUT regard to overrides, so an intentional revoke
+      override still appears here (by design: this field answers "does
+      this org differ from the platform base," not "is anything
+      unexplained"). `missingPermissions` below is the override-aware
+      sibling that answers the latter. Manors go-live hardening. */
+  baseMissingPermissions: PermissionKey[];
+  /** Base catalog + this organization's grant overrides − revoke
+      overrides (identical computation to
+      `permissionService.ts#resolvePermissionKeysForRole`'s own
+      resolution) — for a default role. For a custom role, unchanged from
+      before: expected == effective, since a custom role's own live
+      grants are authoritative. */
   expectedCount: number;
   effectiveCount: number;
+  /** Expected (override-aware) but not effective — TRUE unexplained
+      drift: nothing in this organization's own documented overrides
+      accounts for it. */
   missingPermissions: PermissionKey[];
-  /** Present-and-effective but not expected (custom roles legitimately differ). */
+  /** Effective but not expected (override-aware) — TRUE unexplained
+      extra grant (custom roles legitimately differ from any external
+      expectation at all, so this is always empty for one). */
   extraPermissions: PermissionKey[];
   permissions: PermissionResolution[];
 };
 
 /**
  * Diagnoses one role's authorization. "Expected" is the source-of-truth grant
- * set for a default role (`DEFAULT_ROLE_DEFINITIONS`); for a custom role there
- * is no external expectation, so expected == effective (a custom role is
- * authoritative over its own grants — never "missing" anything). "Effective"
- * is what the live authorization pipeline actually resolves.
+ * set for a default role (`DEFAULT_ROLE_DEFINITIONS`), adjusted by this
+ * organization's own permission overrides if any (Manors go-live
+ * hardening — see `overridesApplied`/`baseExpectedCount`/
+ * `baseMissingPermissions` above for how to see the pre-override picture
+ * too); for a custom role there is no external expectation, so expected ==
+ * effective (a custom role is authoritative over its own grants — never
+ * "missing" anything, and never has overrides). "Effective" is what the
+ * live authorization pipeline actually resolves — already override-aware
+ * via `resolvePermissionKeysForRole` itself.
  */
 export async function diagnoseRoleAuthorization(
   roleKey: string,
@@ -111,9 +147,15 @@ export async function diagnoseRoleAuthorization(
   const effectiveSet = await resolvePermissionKeysForRole(roleKey, organizationId, dataAdapterMode);
   const isDefault = isDefaultRoleKey(resolvedRoleKey);
 
-  const expectedSet: Set<PermissionKey> = isDefault
+  const baseExpectedSet: Set<PermissionKey> = isDefault
     ? new Set(defaultRoleDefinition(resolvedRoleKey).permissions)
     : new Set(effectiveSet); // custom role: its own live grants are authoritative
+
+  const overridesApplied: OverrideLike[] = isDefault
+    ? (await getOverridesForRole(organizationId, resolvedRoleKey, dataAdapterMode)).map((o) => ({ permissionKey: o.permissionKey, action: o.action }))
+    : [];
+
+  const expectedSet: Set<PermissionKey> = isDefault ? applyPermissionOverrides(baseExpectedSet, overridesApplied) : baseExpectedSet;
 
   const permissions: PermissionResolution[] = PERMISSION_KEYS.map((key) => {
     const expected = expectedSet.has(key);
@@ -121,12 +163,18 @@ export async function diagnoseRoleAuthorization(
     return { permissionKey: key, expected, effective, missing: expected && !effective };
   });
 
+  const baseMissingPermissions = [...baseExpectedSet].filter((key) => !effectiveSet.has(key));
+
   return {
     roleKey,
     resolvedRoleKey,
     roleId: role?.id ?? null,
     roleResolved: role !== null,
     isDefaultRole: isDefault,
+    organizationId,
+    overridesApplied,
+    baseExpectedCount: baseExpectedSet.size,
+    baseMissingPermissions,
     expectedCount: expectedSet.size,
     effectiveCount: effectiveSet.size,
     missingPermissions: permissions.filter((p) => p.missing).map((p) => p.permissionKey),

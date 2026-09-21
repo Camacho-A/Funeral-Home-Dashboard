@@ -1,3 +1,5 @@
+import type { PermissionKey } from '../domain/rbac/permissionCatalog';
+
 /**
  * Phase 22 (Role-Based Access Control). One row of the
  * `organizationRoleAuditEntries` Wix collection — an append-only record of
@@ -23,7 +25,15 @@ export type OrganizationRoleAuditAction =
       changes. */
   | 'membership_disabled'
   | 'membership_reactivated'
-  | 'membership_removed';
+  | 'membership_removed'
+  /** Manors go-live hardening (2026-09) —
+      `services/organizationRoleOverrideService.ts`. `override_granted`/
+      `override_revoked` cover both creating a new override and flipping an
+      existing one's `action`; `override_removed` covers deleting one
+      entirely (reverting to pure base-role behavior). */
+  | 'override_granted'
+  | 'override_revoked'
+  | 'override_removed';
 
 export type OrganizationRoleAuditEntry = {
   id: string;
@@ -39,5 +49,8 @@ export type OrganizationRoleAuditEntry = {
   /** Set only for role_assigned/role_removed — the previous role key, if
       any, that this event replaced. */
   previousRoleKey: string | null;
+  /** Set only for override_granted/override_revoked/override_removed —
+      which permission the override concerned. */
+  permissionKey: PermissionKey | null;
   createdAt: string;
 };

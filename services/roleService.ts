@@ -20,6 +20,7 @@ import { DEFAULT_ROLE_DEFINITIONS } from '../domain/rbac/defaultRoles';
 import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId, customRolePermissionId } from '../domain/rbac/deterministicIds';
 import { updateMembership } from './membershipService';
 import { resolveRoleForKey, resolvePermissionKeysForRole } from './permissionService';
+import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
 import { withOrganizationRoleLock, commitProtectedWrite } from './organizationLockService';
 import { listMembershipsForOrganization, isActiveMembership } from './membershipService';
 import {
@@ -159,12 +160,14 @@ async function insertOrganizationRoleEnablementIdempotent(enablement: Organizati
 
 /** Exported (Phase 23) so `services/invitationService.ts`'s
     `revokeInvitation` can log to the same `organizationRoleAuditEntries`
-    collection without duplicating this logic. */
+    collection without duplicating this logic. `permissionKey` defaults to
+    `null` (Manors go-live hardening — only the override_* actions set it;
+    every pre-existing call site is left unchanged). */
 export async function insertAuditEntry(
-  entry: Omit<OrganizationRoleAuditEntry, 'id' | 'createdAt'> & { id: string },
+  entry: Omit<OrganizationRoleAuditEntry, 'id' | 'createdAt' | 'permissionKey'> & { id: string; permissionKey?: OrganizationRoleAuditEntry['permissionKey'] },
   dataAdapterMode: DataAdapterMode,
 ): Promise<OrganizationRoleAuditEntry> {
-  const fullEntry: OrganizationRoleAuditEntry = { ...entry, createdAt: nowIso() };
+  const fullEntry: OrganizationRoleAuditEntry = { ...entry, permissionKey: entry.permissionKey ?? null, createdAt: nowIso() };
   if (dataAdapterMode === 'mock') {
     organizationRoleAuditEntryFixtures.push(fullEntry);
     return fullEntry;
@@ -374,7 +377,7 @@ export async function cloneRole(
 // administrators." Shared by every mutation that can affect it.
 // ---------------------------------------------------------------------------
 
-type AdminCountSimulation = {
+export type AdminCountSimulation = {
   /** Treat this membership as not active for the count — used by
       `setMembershipStatus` to simulate disabling/removing a member. */
   excludeMembershipId?: string;
@@ -385,14 +388,28 @@ type AdminCountSimulation = {
       than its currently-stored grants — used by `updateRole` when editing
       an assigned role's own permissions. */
   permissionOverride?: { roleId: string; permissions: Set<PermissionKey> };
+  /** Treat every active membership whose (possibly `roleOverride`'d)
+      role key equals `roleKey` as having the given hypothetical
+      permission set, rather than its currently-resolved one — used by
+      `organizationRoleOverrideService.ts` to check "would writing this
+      revoke override strand the organization" without needing a specific
+      role id (an organization-scoped override applies to a role *key*,
+      not one role row). */
+  roleKeyPermissionOverride?: { roleKey: string; permissions: Set<PermissionKey> };
 };
 
 /** Counts active members whose *effective* role (after applying the given
     hypothetical `simulation`, if any) resolves to `organization.manage`.
     Always resolves permissions fresh (`permissionService` no longer
     caches anything) so this reflects the true current state of the
-    organization's roles/memberships every time it's called. */
-async function countActiveAdminTierMembers(organizationId: string, dataAdapterMode: DataAdapterMode, simulation?: AdminCountSimulation): Promise<number> {
+    organization's roles/memberships every time it's called.
+    Exported (Manors go-live hardening) so
+    `services/organizationRoleOverrideService.ts` can apply the identical
+    invariant to a revoke override that would remove `organization.manage`
+    from a role's effective set — the same class of change `updateRole`
+    already guards, just via an override row instead of a direct grant
+    edit (see `roleKeyPermissionOverride` below). */
+export async function countActiveAdminTierMembers(organizationId: string, dataAdapterMode: DataAdapterMode, simulation?: AdminCountSimulation): Promise<number> {
   const memberships = (await listMembershipsForOrganization(organizationId, dataAdapterMode)).filter(isActiveMembership);
   let count = 0;
 
@@ -402,7 +419,9 @@ async function countActiveAdminTierMembers(organizationId: string, dataAdapterMo
     const roleKey = simulation?.roleOverride?.membershipId === membership.id ? simulation.roleOverride.roleKey : membership.role;
 
     let permissions: Set<PermissionKey>;
-    if (simulation?.permissionOverride) {
+    if (simulation?.roleKeyPermissionOverride && resolveRoleKeyAlias(roleKey) === simulation.roleKeyPermissionOverride.roleKey) {
+      permissions = simulation.roleKeyPermissionOverride.permissions;
+    } else if (simulation?.permissionOverride) {
       const role = await resolveRoleForKey(roleKey, organizationId, dataAdapterMode);
       permissions =
         role && role.id === simulation.permissionOverride.roleId ? simulation.permissionOverride.permissions : await resolvePermissionKeysForRole(roleKey, organizationId, dataAdapterMode);

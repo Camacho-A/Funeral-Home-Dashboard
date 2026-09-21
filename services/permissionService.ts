@@ -2,11 +2,13 @@ import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixRoleItem, type WixRoleItem } from '../lib/wixRoleMapper';
 import { mapWixRolePermissionItem, type WixRolePermissionItem } from '../lib/wixRolePermissionMapper';
+import { mapWixOrganizationRolePermissionOverrideItem, type WixOrganizationRolePermissionOverrideItem } from '../lib/wixOrganizationRolePermissionOverrideMapper';
 import type { Role } from '../types/role';
 import type { RolePermission } from '../types/rolePermission';
 import type { PermissionKey } from '../domain/rbac/permissionCatalog';
 import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
-import { roleFixtures, rolePermissionFixtures } from './__mocks__/rbacFixtures';
+import { applyPermissionOverrides } from '../domain/rbac/permissionOverrides';
+import { roleFixtures, rolePermissionFixtures, organizationRolePermissionOverrideFixtures } from './__mocks__/rbacFixtures';
 
 /**
  * Phase 22 (Role-Based Access Control). Resolves *what a role may do* —
@@ -89,14 +91,55 @@ async function fetchRolePermissions(roleId: string, dataAdapterMode: DataAdapter
     .map((rp) => rp.permissionKey);
 }
 
+/**
+ * Manors go-live hardening (2026-09). This organization's grant/revoke
+ * overrides for one (canonical) role key — read directly against the
+ * `organizationRolePermissionOverrides` collection here, deliberately
+ * *not* imported from `services/organizationRoleOverrideService.ts` (that
+ * module imports from `services/roleService.ts`, which itself imports
+ * `resolvePermissionKeysForRole` from *this* file — importing the
+ * override service here would create a three-file import cycle). Mirrors
+ * this same file's own `fetchRolePermissions` below: a small, private,
+ * read-only query against one collection, independently maintained
+ * rather than shared — the same precedent `services/roleService.ts`'s
+ * own separate `listRolePermissions` already set for the sibling
+ * `rolePermissions` collection.
+ */
+async function fetchOrganizationRoleOverrides(
+  organizationId: string,
+  roleKey: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<Array<{ permissionKey: PermissionKey; action: 'grant' | 'revoke' }>> {
+  if (dataAdapterMode === 'mock') {
+    return organizationRolePermissionOverrideFixtures
+      .filter((o) => o.organizationId === organizationId && o.roleKey === roleKey)
+      .map((o) => ({ permissionKey: o.permissionKey, action: o.action }));
+  }
+  const response = await queryWixDataItems<WixOrganizationRolePermissionOverrideItem>('organizationRolePermissionOverrides', {
+    filter: { organizationId, roleKey },
+  });
+  return response.dataItems
+    .map((item) => mapWixOrganizationRolePermissionOverrideItem(item.data))
+    .filter((o): o is NonNullable<typeof o> => o !== null)
+    .map((o) => ({ permissionKey: o.permissionKey, action: o.action }));
+}
+
 /** Resolves a role key directly to its permission set — always a fresh
     read, never cached. An unresolvable role key (unknown, or a custom
     role belonging to a different organization) yields an empty set,
-    fail-closed. */
+    fail-closed.
+    Manors go-live hardening: layers this organization's grant/revoke
+    overrides on top of the role's base persisted grants — `(base ∪
+    grants) − revokes`, via `domain/rbac/permissionOverrides.ts`'s pure
+    resolution logic. Every existing caller (every `hasPermission`/
+    `canXxx` check in the codebase) receives the effective, override-aware
+    set automatically, with no change needed at any other call site. */
 export async function resolvePermissionKeysForRole(roleKey: string, organizationId: string, dataAdapterMode: DataAdapterMode): Promise<Set<PermissionKey>> {
   const role = await resolveRoleForKey(roleKey, organizationId, dataAdapterMode);
   if (!role) return new Set();
-  return new Set(await fetchRolePermissions(role.id, dataAdapterMode));
+  const basePermissions = await fetchRolePermissions(role.id, dataAdapterMode);
+  const overrides = await fetchOrganizationRoleOverrides(organizationId, resolveRoleKeyAlias(roleKey), dataAdapterMode);
+  return applyPermissionOverrides(basePermissions, overrides);
 }
 
 export type ResolvePermissionsParams = {

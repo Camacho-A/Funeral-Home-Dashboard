@@ -238,6 +238,24 @@ describe('defaultRoles', () => {
       const officeStaff = defaultRoleDefinition('officeStaff');
       expect(officeStaff.permissions.includes('case.reassign')).toBe(false);
     });
+
+    // Manors go-live hardening (catalog alignment): caseOrder.update
+    // formalizes normal arrangement work — additional charges,
+    // merchandise adjustments, cash-advance entry (canEditCaseOrder).
+    it('includes caseOrder.update (additional charges / merchandise / cash-advance entry)', () => {
+      const officeStaff = defaultRoleDefinition('officeStaff');
+      expect(officeStaff.permissions.includes('caseOrder.update')).toBe(true);
+    });
+  });
+
+  it('Manors go-live hardening: Manager retains case.read/case.create/case.update/case.reassign + user.read as intended', () => {
+    const manager = defaultRoleDefinition('manager');
+    expect(manager.permissions.includes('case.read')).toBe(true);
+    expect(manager.permissions.includes('case.create')).toBe(true);
+    expect(manager.permissions.includes('case.update')).toBe(true);
+    expect(manager.permissions.includes('case.reassign')).toBe(true);
+    expect(manager.permissions.includes('user.read')).toBe(true);
+    expect(manager.permissions.some((p) => p.startsWith('accounting.'))).toBe(false);
   });
 
   describe('Manors go-live hardening: ap.read decision (Office Staff/Read Only NO, Funeral Director YES)', () => {
@@ -260,12 +278,25 @@ describe('defaultRoles', () => {
       expect(defaultRoleDefinition('officeStaff').permissions.includes('ap.read')).toBe(false);
     });
 
-    it('Funeral Director retains ap.read, and gains no ap.manage/ap.pay/accounting.* through this change', () => {
+    it('Funeral Director retains ap.read, and gains no ap.manage/ap.pay through this change', () => {
       const funeralDirector = defaultRoleDefinition('funeralDirector');
       expect(funeralDirector.permissions.includes('ap.read')).toBe(true);
       expect(funeralDirector.permissions.includes('ap.manage')).toBe(false);
       expect(funeralDirector.permissions.includes('ap.pay')).toBe(false);
-      expect(funeralDirector.permissions.some((p) => p.startsWith('accounting.'))).toBe(false);
+    });
+
+    // Manors go-live hardening (catalog alignment): accounting.view/
+    // accounting.report formalize Funeral Director's limited financial
+    // VISIBILITY (confirmed live in production audit) — never
+    // accounting.manage/accounting.post/accounting.reconcile
+    // (management authority).
+    it('Funeral Director has accounting.view/accounting.report (visibility) but no accounting management/post/reconcile authority', () => {
+      const funeralDirector = defaultRoleDefinition('funeralDirector');
+      expect(funeralDirector.permissions.includes('accounting.view')).toBe(true);
+      expect(funeralDirector.permissions.includes('accounting.report')).toBe(true);
+      expect(funeralDirector.permissions.includes('accounting.manage')).toBe(false);
+      expect(funeralDirector.permissions.includes('accounting.post')).toBe(false);
+      expect(funeralDirector.permissions.includes('accounting.reconcile')).toBe(false);
     });
 
     it('Administrator is unaffected — still has ap.read via the full permission set', () => {

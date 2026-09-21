@@ -3,6 +3,7 @@ import type { Role } from '../../types/role';
 import type { RolePermission } from '../../types/rolePermission';
 import type { OrganizationRoleEnablement } from '../../types/organizationRole';
 import type { OrganizationRoleAuditEntry } from '../../types/organizationRoleAuditEntry';
+import type { OrganizationRolePermissionOverride } from '../../types/organizationRolePermissionOverride';
 import type { OrganizationRoleLock } from '../../types/organizationRoleLock';
 import type { OrganizationRoleWriteClaim } from '../../types/organizationRoleWriteClaim';
 import { PERMISSION_KEYS, PERMISSION_DESCRIPTIONS, permissionCategory } from '../../domain/rbac/permissionCatalog';
@@ -70,5 +71,6 @@ export const organizationRoleFixtures: OrganizationRoleEnablement[] = DEFAULT_RO
 }));
 
 export const organizationRoleAuditEntryFixtures: OrganizationRoleAuditEntry[] = [];
+export const organizationRolePermissionOverrideFixtures: OrganizationRolePermissionOverride[] = [];
 export const organizationRoleLockFixtures: OrganizationRoleLock[] = [];
 export const organizationRoleWriteClaimFixtures: OrganizationRoleWriteClaim[] = [];

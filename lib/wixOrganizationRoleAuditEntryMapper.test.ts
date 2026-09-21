@@ -10,6 +10,7 @@ const ROLE_CREATED: OrganizationRoleAuditEntry = {
   roleId: 'role-1',
   targetIdentityId: null,
   previousRoleKey: null,
+  permissionKey: null,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 

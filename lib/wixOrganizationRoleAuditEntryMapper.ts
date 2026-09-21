@@ -1,3 +1,4 @@
+import { isPermissionKey } from '../domain/rbac/permissionCatalog';
 import type { OrganizationRoleAuditAction, OrganizationRoleAuditEntry } from '../types/organizationRoleAuditEntry';
 
 const VALID_ACTIONS: OrganizationRoleAuditAction[] = [
@@ -11,6 +12,9 @@ const VALID_ACTIONS: OrganizationRoleAuditAction[] = [
   'membership_disabled',
   'membership_reactivated',
   'membership_removed',
+  'override_granted',
+  'override_revoked',
+  'override_removed',
 ];
 
 function isValidAction(value: unknown): value is OrganizationRoleAuditAction {
@@ -25,6 +29,7 @@ export type WixOrganizationRoleAuditEntryItem = {
   roleId?: unknown;
   targetIdentityId?: unknown;
   previousRoleKey?: unknown;
+  permissionKey?: unknown;
   createdAt?: unknown;
 };
 
@@ -48,6 +53,7 @@ export function mapWixOrganizationRoleAuditEntryItem(item: WixOrganizationRoleAu
     roleId: typeof item.roleId === 'string' ? item.roleId : null,
     targetIdentityId: typeof item.targetIdentityId === 'string' ? item.targetIdentityId : null,
     previousRoleKey: typeof item.previousRoleKey === 'string' ? item.previousRoleKey : null,
+    permissionKey: isPermissionKey(item.permissionKey) ? item.permissionKey : null,
     createdAt: item.createdAt,
   };
 }
@@ -61,6 +67,7 @@ export function buildWixOrganizationRoleAuditEntryData(entry: OrganizationRoleAu
     roleId: entry.roleId,
     targetIdentityId: entry.targetIdentityId,
     previousRoleKey: entry.previousRoleKey,
+    permissionKey: entry.permissionKey,
     createdAt: entry.createdAt,
   };
 }

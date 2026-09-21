@@ -1,20 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkRbacHealth, diagnoseRoleAuthorization, diagnoseMemberAuthorization } from './rbacIntegrityService';
-import { rolePermissionFixtures } from './__mocks__/rbacFixtures';
+import { upsertOverride } from './organizationRoleOverrideService';
+import { rolePermissionFixtures, organizationRolePermissionOverrideFixtures, organizationRoleAuditEntryFixtures } from './__mocks__/rbacFixtures';
 import { membershipFixtures } from './__mocks__/identityFixtures';
 import { defaultRoleFixtureId } from '../domain/rbac/deterministicIds';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
 
+let idCounter = 0;
+function idFactory() {
+  idCounter += 1;
+  return `integrity-test-${idCounter}`;
+}
+
 let snapshot: typeof rolePermissionFixtures;
 let memSnapshot: number;
+let overrideLen: number;
+let auditLen: number;
 beforeEach(() => {
+  idCounter = 0;
   snapshot = rolePermissionFixtures.map((rp) => ({ ...rp }));
   memSnapshot = membershipFixtures.length;
+  overrideLen = organizationRolePermissionOverrideFixtures.length;
+  auditLen = organizationRoleAuditEntryFixtures.length;
 });
 afterEach(() => {
   rolePermissionFixtures.length = 0;
   rolePermissionFixtures.push(...snapshot);
   membershipFixtures.length = memSnapshot;
+  organizationRolePermissionOverrideFixtures.length = overrideLen;
+  organizationRoleAuditEntryFixtures.length = auditLen;
 });
 
 describe('checkRbacHealth', () => {
@@ -60,6 +74,57 @@ describe('diagnoseRoleAuthorization', () => {
     const diag = await diagnoseRoleAuthorization('owner', DEFAULT_ORGANIZATION_ID, 'mock');
     expect(diag.resolvedRoleKey).toBe('administrator');
     expect(diag.isDefaultRole).toBe(true);
+  });
+});
+
+describe('diagnoseRoleAuthorization — organization override awareness (Manors go-live hardening)', () => {
+  it('an intentional revoke override is represented as expected, not unexplained drift', async () => {
+    await upsertOverride({ organizationId: DEFAULT_ORGANIZATION_ID, roleKey: 'officeStaff', permissionKey: 'caseOrder.update', action: 'revoke', actorIdentityId: 'actor-1', idFactory }, 'mock');
+
+    const diag = await diagnoseRoleAuthorization('officeStaff', DEFAULT_ORGANIZATION_ID, 'mock');
+
+    // Override-aware "true drift" view: nothing unexplained.
+    expect(diag.missingPermissions).not.toContain('caseOrder.update');
+    expect(diag.extraPermissions).not.toContain('caseOrder.update');
+    expect(diag.overridesApplied).toContainEqual({ permissionKey: 'caseOrder.update', action: 'revoke' });
+
+    // Pure base-catalog view still shows the deviation from the shared
+    // platform default — it's just explained, not absent.
+    expect(diag.baseMissingPermissions).toContain('caseOrder.update');
+  });
+
+  it('a genuine base-role missing grant is still detected independently of any override', async () => {
+    // Remove a live grant that has no override at all.
+    const idx = rolePermissionFixtures.findIndex((rp) => rp.roleId === defaultRoleFixtureId('officeStaff') && rp.permissionKey === 'case.create');
+    rolePermissionFixtures.splice(idx, 1);
+
+    const diag = await diagnoseRoleAuthorization('officeStaff', DEFAULT_ORGANIZATION_ID, 'mock');
+
+    expect(diag.missingPermissions).toContain('case.create');
+    expect(diag.baseMissingPermissions).toContain('case.create');
+    expect(diag.overridesApplied).toEqual([]);
+  });
+
+  it('a grant override is reflected in overridesApplied and does not appear as unexplained extra', async () => {
+    await upsertOverride({ organizationId: DEFAULT_ORGANIZATION_ID, roleKey: 'readOnly', permissionKey: 'ap.read', action: 'grant', actorIdentityId: 'actor-1', idFactory }, 'mock');
+
+    const diag = await diagnoseRoleAuthorization('readOnly', DEFAULT_ORGANIZATION_ID, 'mock');
+
+    expect(diag.effectiveCount).toBe(diag.expectedCount);
+    expect(diag.extraPermissions).toEqual([]);
+    expect(diag.overridesApplied).toContainEqual({ permissionKey: 'ap.read', action: 'grant' });
+  });
+});
+
+describe('checkRbacHealth — platform-wide behavior remains intact despite organization overrides', () => {
+  it('an organization-scoped override never affects the global health check', async () => {
+    const before = await checkRbacHealth('mock');
+
+    await upsertOverride({ organizationId: DEFAULT_ORGANIZATION_ID, roleKey: 'officeStaff', permissionKey: 'ap.read', action: 'revoke', actorIdentityId: 'actor-1', idFactory }, 'mock');
+
+    const after = await checkRbacHealth('mock');
+    expect(after.counts).toEqual(before.counts);
+    expect(after.status).toBe(before.status);
   });
 });
 

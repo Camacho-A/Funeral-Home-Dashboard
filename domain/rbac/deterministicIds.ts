@@ -59,3 +59,21 @@ export function customRolePermissionId(roleId: string, permissionKey: string): s
 export function organizationRoleFixtureId(organizationId: string, roleKey: string): string {
   return `orgrole-${organizationId}-${roleKey}`;
 }
+
+/**
+ * Manors go-live hardening. Deterministic id for one organization's
+ * permission override on one platform-default role — `(organizationId,
+ * roleKey, permissionKey)` is the enforced-unique tuple (see
+ * `types/organizationRolePermissionOverride.ts`'s own comment for why a
+ * deterministic id is the substitute for a compound-unique index Wix
+ * cannot provide). Same readable-form-with-sha256-fallback shape as
+ * `customRolePermissionId`, for the same reason: organization ids are
+ * real Wix item ids and not bounded short, so the 128-char `_id` cap is a
+ * genuine (if unlikely) risk worth guarding against defensively.
+ */
+export function organizationRolePermissionOverrideId(organizationId: string, roleKey: string, permissionKey: string): string {
+  const readable = `roleoverride-${organizationId}-${roleKey}-${permissionKey}`;
+  if (readable.length <= 128) return readable;
+  const digest = crypto.createHash('sha256').update(`roleoverride|${organizationId}|${roleKey}|${permissionKey}`).digest('hex').slice(0, 40);
+  return `roleoverride-h-${digest}`;
+}
