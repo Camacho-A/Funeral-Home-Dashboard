@@ -10,16 +10,16 @@
  *
  * D6: mandatory federal wording is system-locked. It is defined ONLY here —
  * never inlined in a UI component, a route, a template, or org config — so
- * Beacon can update the federal wording deliberately (bump
+ * Solis can update the federal wording deliberately (bump
  * `FTC_DISCLOSURE_VERSION`, add a new versioned block) if the Rule changes,
  * and every historical document can record exactly which disclosure version
  * it was rendered against.
  *
  * ⚠️ LEGAL-REVIEW BOUNDARY (do not remove): the disclosure strings below are
- * Beacon's rendering of the FTC Funeral Rule's required model language, each
+ * Solis's rendering of the FTC Funeral Rule's required model language, each
  * tagged with its `citation`. They MUST be verified verbatim against the
  * current text of 16 CFR Part 453 by qualified counsel before production use.
- * Beacon assists with structured FTC documents; it does NOT provide a
+ * Solis assists with structured FTC documents; it does NOT provide a
  * legal-compliance guarantee, and state/local/cemetery/crematory requirements
  * are out of scope of this federal registry. See docs/COMPLIANCE_BOUNDARY.md.
  */

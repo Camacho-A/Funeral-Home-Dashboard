@@ -17,7 +17,7 @@ const workSans = Work_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Beacon',
+  title: 'Solis',
   description: 'Operations platform for funeral homes and cremation providers.',
 };
 

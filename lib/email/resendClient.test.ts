@@ -52,7 +52,7 @@ describe('sendResendEmail', () => {
     await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
 
     const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(sentBody.from).toBe('Beacon <notifications@beacon.app>');
+    expect(sentBody.from).toBe('Solis <notifications@beacon.app>');
   });
 
   it('throws ResendApiError with the real HTTP status on a non-ok response', async () => {

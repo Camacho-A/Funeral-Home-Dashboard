@@ -59,7 +59,7 @@ export type MerchandiseProduct = {
   defaultLocationId: string | null;
   /** A DocumentStorageProvider storage key (Phase 25) — never a URL. Bytes
       live in blob storage; downloads are proxied through an auth-checked
-      Beacon route. Null ⇒ no image. */
+      Solis route. Null ⇒ no image. */
   imageStorageKey: string | null;
   /** Whether this product may appear in the family portal's order summary
       (name/price/image only — never cost). Defaults false. */

@@ -22,7 +22,7 @@ export async function list(context: OrganizationContext): Promise<WorkflowTempla
 }
 
 /**
- * Retrieves one workflow template by its Beacon domain id, scoped by
+ * Retrieves one workflow template by its Solis domain id, scoped by
  * organizationId — never trusts templateId alone as proof it belongs to
  * this organization.
  */

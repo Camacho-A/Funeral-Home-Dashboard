@@ -52,11 +52,11 @@ export const cloverProvider: PaymentProvider = {
             name: request.purpose,
             price: request.amount,
             unitQty: 1,
-            // Phase 19B's own instruction: "Attach non-sensitive Beacon
+            // Phase 19B's own instruction: "Attach non-sensitive Solis
             // correlation metadata where Clover supports it." Clover's
             // checkout-session body has no dedicated metadata field —
             // the per-line-item `note` is the one place available.
-            note: `Beacon payment ${request.beaconPaymentId} — case ${request.caseId}`,
+            note: `Solis payment ${request.beaconPaymentId} — case ${request.caseId}`,
           },
         ],
       },

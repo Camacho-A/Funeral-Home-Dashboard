@@ -74,7 +74,7 @@ export type Organization = {
       shown to this organization's staff. `null`/absent — every
       pre-existing organization, plus any newly-provisioned one that
       hasn't been configured — means "none of the advanced modules are
-      shown," a deliberate safe default: Beacon's underlying
+      shown," a deliberate safe default: Solis's underlying
       RBAC/authorization is completely unaffected either way (a hidden
       module's routes/APIs still enforce their own permissions exactly as
       before) — this field only ever controls whether a *link* to it is

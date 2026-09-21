@@ -2,7 +2,7 @@
 
 This document describes the environment-controlled data adapter, the server-side Wix client, and the connectivity health check added in Phase 12, plus what's deliberately still missing ahead of Phase 13. See [ADR-007](./adr/ADR-007-wix-integration-foundation.md) for why this shape was chosen.
 
-**Nothing about the running application changed this phase.** Mock mode (`DATA_ADAPTER=mock`, the default) is byte-for-byte the same fixture-backed behavior Beacon has had since Phase 4. Everything below is additive: new code that exists but that no page, component, or existing service calls into yet.
+**Nothing about the running application changed this phase.** Mock mode (`DATA_ADAPTER=mock`, the default) is byte-for-byte the same fixture-backed behavior Solis has had since Phase 4. Everything below is additive: new code that exists but that no page, component, or existing service calls into yet.
 
 ## The data adapter
 
@@ -66,7 +66,7 @@ Set `DATA_ADAPTER`, `WIX_API_KEY`, `WIX_SITE_ID` (and `WIX_ACCOUNT_ID` if a futu
 
 This phase deliberately stopped at "prove the server can talk to Wix." It does **not** decide:
 
-- **Which authorization strategy visitor/member-facing features will use.** API Key (admin) is correct for a background connectivity check, but per Wix's own guidance, it's explicitly the wrong strategy for anything acting on behalf of a specific visitor or staff member — that needs OAuth. Phase 13 needs to decide how Beacon's staff sessions map onto a Wix identity (Wix Members? A first-party session backed by an API-Key-authenticated backend, per the original `docs/ARCHITECTURE.md` plan? Something else?).
+- **Which authorization strategy visitor/member-facing features will use.** API Key (admin) is correct for a background connectivity check, but per Wix's own guidance, it's explicitly the wrong strategy for anything acting on behalf of a specific visitor or staff member — that needs OAuth. Phase 13 needs to decide how Solis's staff sessions map onto a Wix identity (Wix Members? A first-party session backed by an API-Key-authenticated backend, per the original `docs/ARCHITECTURE.md` plan? Something else?).
 - **Whether `organizationId` maps onto a Wix site ID 1:1, or onto something else** once more than one organization is real. Today there's exactly one site (Beacon Development) and one mock `organizationId` — the multi-tenant story from `docs/adr/ADR-002-multi-tenant-architecture.md` and this phase's `WIX_SITE_ID` haven't been reconciled yet.
 - **How `organizationId` gets authenticated, not just carried.** This phase's instructions are explicit that a browser-supplied `organizationId` must never be trusted as authorization on its own — Phase 13's real services need a server-side source of truth (a session, a token, something the client can't forge) that a request's claimed `organizationId` gets checked against, not merely read from.
 - **Which Wix data modules the production schema actually needs**, and whether the existing `docs/CMS_SCHEMA.md` (written well before Phase 11's workflow-template model existed) still matches what will actually be built.

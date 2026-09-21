@@ -10,7 +10,7 @@ import type { BillingStatementModel, StatementLineItem } from './billingModels';
  * stores it.
  *
  * CRITICAL COMPLIANCE INVARIANT (D4): the FTC "total cost of arrangements"
- * (goods/services + cash advances) and Beacon's authoritative Accounts
+ * (goods/services + cash advances) and Solis's authoritative Accounts
  * Receivable balance due (from the CaseOrder, cash-advances excluded) are
  * rendered as DISTINCT, explicitly-labeled figures. Cash advances are marked
  * display-only and, where estimated, labeled as estimates.

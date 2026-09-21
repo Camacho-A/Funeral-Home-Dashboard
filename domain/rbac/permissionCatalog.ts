@@ -1,6 +1,6 @@
 /**
  * Phase 22 (Role-Based Access Control). The complete, closed catalog of
- * permission keys Beacon's authorization model can ever grant — every
+ * permission keys Solis's authorization model can ever grant — every
  * `roles`/`rolePermissions` row and every `AuthorizationPolicyService`
  * check is validated against this list, never an ad hoc string. Grouped
  * by the resource it governs (`<resource>.<action>`), matching the

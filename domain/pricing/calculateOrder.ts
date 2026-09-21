@@ -5,7 +5,7 @@ import { getMerchandiseCategoryDefinition } from '../merchandise/merchandiseCate
 import { SERVICE_CODES } from './serviceCodes';
 
 /**
- * Phase 19C (Service Catalog, Case Order & Pricing Engine) — Beacon's
+ * Phase 19C (Service Catalog, Case Order & Pricing Engine) — Solis's
  * pricing engine. Pure, side-effect-free: no fetch, no I/O, no
  * organizationId. Both the browser (for the New Case/Edit Services "Live
  * Itemized Summary", instant, zero-latency) and the server

@@ -8,7 +8,7 @@ import type { NotificationDelivery } from '../types/notificationDelivery';
  * Phase 33 (Real Notification Delivery). The thin, cron-triggered
  * orchestrator behind digest batching and quiet-hours deferral — see
  * docs/adr/ADR-037-real-notification-delivery.md's own "Finding" section
- * for why this exists at all (Beacon has no background/scheduled-job
+ * for why this exists at all (Solis has no background/scheduled-job
  * mechanism anywhere else; `vercel.json` + `app/api/cron/notification-digest/route.ts`
  * are the two other pieces of this same primitive).
  *

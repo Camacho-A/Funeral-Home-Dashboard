@@ -2,7 +2,7 @@ import type { PermissionKey } from '../rbac/permissionCatalog';
 
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). The complete,
- * closed catalog of stable, machine-readable metric identifiers Beacon's
+ * closed catalog of stable, machine-readable metric identifiers Solis's
  * reporting layer can ever compute — mirrors
  * `domain/rbac/permissionCatalog.ts`'s own pattern exactly: an in-code,
  * developer-defined, git-versioned list, never a database table and

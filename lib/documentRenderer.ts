@@ -14,7 +14,7 @@
 
 export type DocumentRenderer = {
   /** Renders a complete, already-merged HTML document to a PDF buffer.
-      `html` is expected to be a full document (or a fragment Beacon
+      `html` is expected to be a full document (or a fragment Solis
       wraps in its own print stylesheet before calling this) — the
       renderer itself does no merge-field substitution; that already
       happened via domain/documents/mergeEngine.ts. */

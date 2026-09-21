@@ -1,6 +1,6 @@
 /**
  * Phase 30 (Identity Model Hardening & Staff Assignment Unification).
- * `StaffProfile` is the **operational profile** layer in Beacon's canonical
+ * `StaffProfile` is the **operational profile** layer in Solis's canonical
  * identity chain: `Identity` (authentication) → `Membership` (organizational
  * authorization) → `StaffProfile` (operational profile, this type) →
  * operational assignments (`Case.assignedStaffId`/`intakeOwnerId`/`createdBy`,

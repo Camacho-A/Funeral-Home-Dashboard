@@ -15,16 +15,16 @@ import { NextResponse } from 'next/server';
  * send one on state-changing cross-origin-*capable* requests — its
  * absence is itself rejected, not treated as "same-origin by default"),
  * and that Origin's host must exactly match the request's own `Host`
- * header. A same-site form post or `fetch()` from Beacon's own pages
+ * header. A same-site form post or `fetch()` from Solis's own pages
  * satisfies this trivially; a cross-site page trying to trigger a
  * state-changing request against a signed-in user's session cannot make
- * the browser send an `Origin` matching Beacon's own host.
+ * the browser send an `Origin` matching Solis's own host.
  *
  * **No trusted-proxy forwarded-host header is honored.** `X-Forwarded-Host`
  * (or similar) is attacker-controllable on an ordinary request unless a
  * specific upstream proxy is configured to strip/overwrite it before this
  * app ever sees it — no such proxy is configured for this deployment today,
- * so trusting that header would let an attacker simply set it to Beacon's
+ * so trusting that header would let an attacker simply set it to Solis's
  * own hostname and bypass this check entirely. If a real reverse-proxy
  * topology is introduced later, this function is the one place to update,
  * deliberately, comparing against a specific known-trusted forwarded value

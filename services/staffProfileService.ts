@@ -11,7 +11,7 @@ import { staffFixtures } from './__mocks__/fixtures';
 /**
  * Phase 30 (Identity Model Hardening & Staff Assignment Unification).
  * Replaces `services/staffService.ts` (deleted this phase). Owns the
- * `StaffProfile` operational-profile layer of Beacon's canonical identity
+ * `StaffProfile` operational-profile layer of Solis's canonical identity
  * chain — `Identity` -> `Membership` -> `StaffProfile` -> operational
  * assignments (see `types/staffProfile.ts`'s own header comment and
  * `docs/adr/ADR-034-identity-model-hardening-and-staff-assignment-architecture.md`).

@@ -57,9 +57,9 @@ export type Resource = {
       same as `linkedMembershipId`. */
   linkedStaffProfileId: string | null;
   capacity: number | null;
-  /** True for resources Beacon does not itself operate (a cemetery, an
+  /** True for resources Solis does not itself operate (a cemetery, an
       outside florist) — trackable on an appointment for contact/notes
-      purposes, but never conflict-checked, since Beacon has no visibility
+      purposes, but never conflict-checked, since Solis has no visibility
       into a vendor's real availability. */
   isExternal: boolean;
   status: ResourceStatus;

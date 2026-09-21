@@ -103,7 +103,7 @@ export function CalendarIntegrationsPanel() {
     <div className={styles.sections}>
       <Card className={styles.card}>
         <h3 className={styles.sectionTitle}>Connected calendars</h3>
-        <p className={styles.hint}>Push your Beacon appointments to your own Google or Microsoft calendar. Sync is one-way — changes made here reach your calendar, never the other way around.</p>
+        <p className={styles.hint}>Push your Solis appointments to your own Google or Microsoft calendar. Sync is one-way — changes made here reach your calendar, never the other way around.</p>
 
         {connectionsQuery.isPending && <p className={styles.loading}>Loading connections…</p>}
         {connectionsQuery.isError && <p className={styles.errorText}>Couldn&rsquo;t load calendar connections. Please try again.</p>}

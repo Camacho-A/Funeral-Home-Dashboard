@@ -10,11 +10,11 @@
  * them — see `IcsEventInput.description`) a caller responsibility, not
  * this module's.
  *
- * Materialized VEVENTs, not RRULE — Beacon's own recurrence is already
+ * Materialized VEVENTs, not RRULE — Solis's own recurrence is already
  * fully materialized into independent `Appointment` rows (ADR-031), so
  * one independent VEVENT per row is simpler and always correct by
  * construction; reconstructing an RRULE would risk an expansion that
- * silently diverges from Beacon's real, edited-exception-aware
+ * silently diverges from Solis's real, edited-exception-aware
  * occurrence list. UTC (`...Z`) timestamps rather than TZID/VTIMEZONE —
  * every mainstream client converts a UTC-stamped event to the viewer's
  * own local time correctly, sidestepping a hand-rolled VTIMEZONE
@@ -100,7 +100,7 @@ export function buildIcsCalendar(calendarName: string, events: IcsEventInput[], 
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Beacon//Scheduling//EN',
+    'PRODID:-//Solis//Scheduling//EN',
     'CALSCALE:GREGORIAN',
     `X-WR-CALNAME:${escapeIcsText(calendarName)}`,
     ...events.map((event) => buildVEvent(event, generatedAt)),

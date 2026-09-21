@@ -46,7 +46,7 @@ export type AuthAdapterMode = 'mock' | 'wix' | 'identity';
  * adapter combinations" section.
  *
  * Phase 21 (Identity, Authentication & Session Management) adds
- * `"identity"` — Beacon's own real email+password identity system
+ * `"identity"` — Solis's own real email+password identity system
  * (`services/identityService.ts` and friends). Purely additive: `"mock"`
  * and `"wix"` behave exactly as before. See
  * docs/adr/ADR-025-identity-authentication-architecture.md.
@@ -117,7 +117,7 @@ export function getWixOAuthClientId(): string {
 }
 
 /**
- * The HMAC signing key for Beacon's own session cookie (lib/auth/sessionToken.ts)
+ * The HMAC signing key for Solis's own session cookie (lib/auth/sessionToken.ts)
  * — not a Wix credential at all, needed in *every* mode including mock, since
  * mock login also issues a real signed session. Reuses SESSION_JWT_SECRET,
  * reserved in .env.example since Phase 0 for exactly this purpose ("Wix

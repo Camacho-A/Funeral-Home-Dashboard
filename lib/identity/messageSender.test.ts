@@ -156,4 +156,61 @@ describe('resendIdentityMessageSender (Phase 33)', () => {
     expect(body.text).toContain('code-2');
     expect(body.text).toContain('code-3');
   });
+
+  /** Solis rename (2026-09): every transactional email subject uses the
+      current product name, never the retired "Beacon" branding. */
+  describe('subject lines use Solis branding', () => {
+    it('password_reset', async () => {
+      const fetchMock = stubFetch();
+      await resendIdentityMessageSender.send({ kind: 'password_reset', to: 'x@example.com', token: 'raw-token' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe('Reset your Solis password');
+    });
+
+    it('email_verification', async () => {
+      const fetchMock = stubFetch();
+      await resendIdentityMessageSender.send({ kind: 'email_verification', to: 'x@example.com', token: 'raw-token' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe('Verify your Solis email address');
+    });
+
+    it('invitation', async () => {
+      const fetchMock = stubFetch();
+      await resendIdentityMessageSender.send({ kind: 'invitation', to: 'x@example.com', token: 'raw-token', organizationId: 'org-1', membershipId: 'membership-1' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to join a Solis organization");
+    });
+
+    it('mfa_recovery_codes', async () => {
+      const fetchMock = stubFetch();
+      await resendIdentityMessageSender.send({ kind: 'mfa_recovery_codes', to: 'x@example.com', codes: ['code-1'] });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe('Your Solis MFA recovery codes');
+    });
+
+    it('portal_invitation', async () => {
+      const fetchMock = stubFetch();
+      await resendIdentityMessageSender.send({ kind: 'portal_invitation', to: 'x@example.com', token: 'raw-token', organizationId: 'org-1', caseId: 'case-1', invitationId: 'inv-1' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to the Solis family portal");
+    });
+
+    it('none of the five subject lines contain the retired "Beacon" branding', async () => {
+      const fetchMock = stubFetch();
+      const messages = [
+        { kind: 'password_reset' as const, to: 'x@example.com', token: 't' },
+        { kind: 'email_verification' as const, to: 'x@example.com', token: 't' },
+        { kind: 'invitation' as const, to: 'x@example.com', token: 't', organizationId: 'org-1', membershipId: 'm-1' },
+        { kind: 'mfa_recovery_codes' as const, to: 'x@example.com', codes: ['c'] },
+        { kind: 'portal_invitation' as const, to: 'x@example.com', token: 't', organizationId: 'org-1', caseId: 'case-1', invitationId: 'inv-1' },
+      ];
+      for (const message of messages) {
+        await resendIdentityMessageSender.send(message);
+      }
+      for (const call of fetchMock.mock.calls) {
+        const body = JSON.parse(call[1].body as string);
+        expect(body.subject).not.toMatch(/Beacon/);
+      }
+    });
+  });
 });

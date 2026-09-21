@@ -86,7 +86,7 @@ export const NOTIFICATION_TYPES = {
   // (same "Bounded integration surface" pattern as the CASE_CREATED/
   // DOCUMENT_GENERATED/etc. entries above). INVOICE_OVERDUE in particular
   // can only ever be evaluated on-demand (e.g. when the AR Aging report is
-  // viewed) — Beacon has no background/scheduled-job infrastructure
+  // viewed) — Solis has no background/scheduled-job infrastructure
   // anywhere to fire it on a true nightly schedule; a disclosed, deferred
   // gap (see ADR-035's own Deferred section), not glossed over.
   JOURNAL_ENTRY_NEEDS_REVIEW: { key: 'financial.journal_entry_needs_review', category: 'financial' as NotificationCategory, displayName: 'Journal Entry Needs Review' },

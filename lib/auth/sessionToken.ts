@@ -3,7 +3,7 @@ import { getSessionSecret } from '../env';
 
 /**
  * Phase 13 (Authentication & Organizations). A signed, self-contained
- * session token — the value stored in Beacon's httpOnly session cookie
+ * session token — the value stored in Solis's httpOnly session cookie
  * (see lib/auth/session.ts). Built on Web Crypto (crypto.subtle), not
  * Node's `crypto` module, deliberately: this makes it work unchanged in
  * both `middleware.ts` (edge runtime, no Node crypto) and ordinary Server

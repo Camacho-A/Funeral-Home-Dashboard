@@ -48,7 +48,7 @@ describe('requireSameOrigin', () => {
   });
 
   it('never trusts X-Forwarded-Host as a substitute for a matching Origin (no proxy is configured to honor it)', () => {
-    // An attacker can set X-Forwarded-Host to Beacon's own hostname
+    // An attacker can set X-Forwarded-Host to Solis's own hostname
     // trivially on an ordinary, un-proxied request — this must not let a
     // foreign Origin through.
     const result = requireSameOrigin(

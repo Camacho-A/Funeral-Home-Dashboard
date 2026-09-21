@@ -1,12 +1,12 @@
-# Beacon Documentation
+# Solis Documentation
 
-This folder is the source of truth for Beacon's product, architecture, and business rules. **Every future architectural decision should be documented here before it's implemented** — if it isn't written down, it isn't decided.
+This folder is the source of truth for Solis's product, architecture, and business rules. **Every future architectural decision should be documented here before it's implemented** — if it isn't written down, it isn't decided.
 
 ## Index
 
 | Document | Purpose |
 |---|---|
-| [PRODUCT_VISION.md](./PRODUCT_VISION.md) | What Beacon is, who it's for, the problem it solves, and what's explicitly out of scope. |
+| [PRODUCT_VISION.md](./PRODUCT_VISION.md) | What Solis is, who it's for, the problem it solves, and what's explicitly out of scope. |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, the Wix Headless / Postgres split, tenant isolation, auth, and folder-to-concern mapping. |
 | [CMS_SCHEMA.md](./CMS_SCHEMA.md) | Wix Data collection field lists and the Postgres/Prisma schema for compliance documents. |
 | [USER_ROLES.md](./USER_ROLES.md) | The `admin` / `funeral_director` / `staff` roles and what each can do. |

@@ -6,7 +6,7 @@ import { canReconcileBank } from '@/services/authorizationPolicyService';
 import { excludeStatementLine, BankingServiceError } from '@/services/bankingService';
 import { getDataAdapterMode } from '@/lib/env';
 
-/** Phase 31. Excludes a bank-only line with no corresponding Beacon
+/** Phase 31. Excludes a bank-only line with no corresponding Solis
     entry (e.g. a bank fee) from matching — see
     `excludeStatementLine`'s own comment on the disclosed gap this leaves
     (staff must separately post a manual adjustment). Gated

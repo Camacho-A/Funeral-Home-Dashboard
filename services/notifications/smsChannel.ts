@@ -45,7 +45,7 @@ export const consoleSmsProvider: SmsProvider = {
 export const productionUnconfiguredSmsProvider: SmsProvider = {
   async send() {
     throw new Error(
-      'No SMS provider is configured for production. Beacon has no Twilio integration configured — ' +
+      'No SMS provider is configured for production. Solis has no Twilio integration configured — ' +
         'wire one up (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER) and provide a real ' +
         'SmsProvider before relying on SMS notification delivery in production.',
     );

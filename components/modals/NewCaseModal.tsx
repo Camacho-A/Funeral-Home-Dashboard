@@ -626,7 +626,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
           {/* Phase 19C (Service Catalog, Case Order & Pricing Engine):
               replaces the old informational-only payment intake field.
-              Beacon calculates every total server-side once the case is
+              Solis calculates every total server-side once the case is
               created — this preview is for the staff member's benefit
               only, never submitted as a trusted amount. See
               ServicesAndChargesSelector's own comment and

@@ -317,7 +317,7 @@ describe('bankingService', () => {
       expect(matched.matchedJournalEntryId).toBe('je-manual-1');
     });
 
-    it('excludes a bank-only line with no corresponding Beacon entry', async () => {
+    it('excludes a bank-only line with no corresponding Solis entry', async () => {
       const account = await seedBankAccount();
       const { lines } = await importBankStatement(
         DEFAULT_ORGANIZATION_ID,

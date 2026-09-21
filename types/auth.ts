@@ -5,7 +5,7 @@
  */
 
 /**
- * A logged-in Beacon user — deliberately separate from Wix's own `Member`
+ * A logged-in Solis user — deliberately separate from Wix's own `Member`
  * type (never imported into this type directly). `source` distinguishes a
  * mock identity from a real Wix member without either code or a test ever
  * needing to guess from the shape of `id` alone — a mock id and a real Wix

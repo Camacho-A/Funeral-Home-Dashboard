@@ -1,6 +1,6 @@
 /**
  * Phase 19A (Secure Payment Architecture). The one canonical list of
- * literal field names that must never appear in any request body Beacon
+ * literal field names that must never appear in any request body Solis
  * accepts — a raw PAN, expiration, or CVV, however named. Server-side
  * enforcement (this file) is the mandatory backstop the phase's own
  * instructions call for: "do not rely on client validation." Reused by

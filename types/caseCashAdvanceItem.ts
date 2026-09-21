@@ -9,7 +9,7 @@
  * are deliberately NOT posted to the general ledger, NOT part of
  * `CaseOrder.total`/`balanceDue`, NOT visible to `PaymentService`, and NOT
  * counted in financial reporting or AR. The FTC "total cost of arrangements"
- * shown on the Statement includes them; Beacon's authoritative AR balance does
+ * shown on the Statement includes them; Solis's authoritative AR balance does
  * not — and the Statement labels that distinction explicitly. First-class
  * GL-posted cash advances (with a pass-through clearing account) are deferred.
  */
@@ -21,7 +21,7 @@ export type CaseCashAdvanceItem = {
   description: string;
   /** Integer cents — same convention as every other money field. */
   amountCents: number;
-  /** FTC 453.3(f)(2): true when Beacon charges the family MORE than the
+  /** FTC 453.3(f)(2): true when Solis charges the family MORE than the
       provider's actual cost — requires the cash-advance markup disclosure. */
   hasMarkup: boolean;
   /** True when `amountCents` is a good-faith ESTIMATE rather than a known

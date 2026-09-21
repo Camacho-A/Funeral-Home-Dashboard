@@ -5,7 +5,7 @@ import { resolveSigningToken, markSignatureViewed, getSigningPageContext, Signat
 /**
  * Phase 26 (Electronic Signatures & Authorization Workflows). The public
  * signing surface's entry point — authenticated purely by the token in
- * the URL, never a Beacon session/cookie (see `signatureService.ts`'s
+ * the URL, never a Solis session/cookie (see `signatureService.ts`'s
  * own header comment for why). Delegates entirely to
  * `services/signatureService.ts`; this route never validates the token
  * itself, never touches `CaseDocument`, never records an activity event.

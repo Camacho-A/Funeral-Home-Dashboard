@@ -6,7 +6,7 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Retrieves one
- * workflow template by its Beacon domain id, scoped by organizationId —
+ * workflow template by its Solis domain id, scoped by organizationId —
  * a template whose id matches but whose organizationId doesn't is treated
  * identically to "not found" (404), never returned, per "every
  * workflow-template list or lookup must be scoped by organizationId."

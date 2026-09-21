@@ -85,7 +85,7 @@ export const consoleIdentityMessageSender: IdentityMessageSender = {
 export const productionUnconfiguredIdentityMessageSender: IdentityMessageSender = {
   async send() {
     throw new Error(
-      'No identity message provider is configured for production. Beacon has no transactional ' +
+      'No identity message provider is configured for production. Solis has no transactional ' +
         'email integration yet — wire one up and provide a real IdentityMessageSender before ' +
         'relying on AUTH_ADAPTER=identity in production.',
     );
@@ -106,7 +106,7 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
     case 'password_reset': {
       const link = `${base}/reset-password?token=${encodeURIComponent(message.token)}`;
       return {
-        subject: 'Reset your Beacon password',
+        subject: 'Reset your Solis password',
         html: `<p>Click the link below to reset your password.</p><p><a href="${link}">${link}</a></p>`,
         text: `Reset your password: ${link}`,
       };
@@ -114,7 +114,7 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
     case 'email_verification': {
       const link = `${base}/verify-email?token=${encodeURIComponent(message.token)}`;
       return {
-        subject: 'Verify your Beacon email address',
+        subject: 'Verify your Solis email address',
         html: `<p>Click the link below to verify your email address.</p><p><a href="${link}">${link}</a></p>`,
         text: `Verify your email: ${link}`,
       };
@@ -122,14 +122,14 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
     case 'invitation': {
       const link = `${base}/accept-invitation?token=${encodeURIComponent(message.token)}&membershipId=${encodeURIComponent(message.membershipId)}`;
       return {
-        subject: "You've been invited to join a Beacon organization",
+        subject: "You've been invited to join a Solis organization",
         html: `<p>Click the link below to accept your invitation.</p><p><a href="${link}">${link}</a></p>`,
         text: `Accept your invitation: ${link}`,
       };
     }
     case 'mfa_recovery_codes': {
       return {
-        subject: 'Your Beacon MFA recovery codes',
+        subject: 'Your Solis MFA recovery codes',
         html: `<p>Store these recovery codes somewhere safe — each can be used once if you lose access to your authenticator.</p><ul>${message.codes.map((c) => `<li>${c}</li>`).join('')}</ul>`,
         text: `Your MFA recovery codes:\n${message.codes.join('\n')}`,
       };
@@ -163,7 +163,7 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
     case 'portal_invitation': {
       const link = `${base}/family/accept-invitation?token=${encodeURIComponent(message.token)}`;
       return {
-        subject: "You've been invited to the Beacon family portal",
+        subject: "You've been invited to the Solis family portal",
         html: `<p>Click the link below to accept your invitation and view case updates.</p><p><a href="${link}">${link}</a></p>`,
         text: `Accept your invitation: ${link}`,
       };

@@ -265,7 +265,7 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       // charges, merchandise adjustments, and cash-advance entry (all
       // gated by this one permission via canEditCaseOrder). Confirmed via
       // live production audit that this was already effectively granted;
-      // this makes it standard Beacon behavior rather than undocumented
+      // this makes it standard Solis behavior rather than undocumented
       // per-organization drift.
       'caseOrder.update',
       'serviceCatalog.read',

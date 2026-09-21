@@ -3,7 +3,7 @@ import type { AuthSession } from '../../types/auth';
 import { SESSION_COOKIE_NAME, createSessionToken, verifySessionToken } from './sessionToken';
 
 /**
- * Phase 13 (Authentication & Organizations). The one Beacon session cookie
+ * Phase 13 (Authentication & Organizations). The one Solis session cookie
  * — server-managed, httpOnly, and the sole source of "is this browser
  * logged in." Both mock and wix login paths converge here: whichever one
  * authenticates the user, the result is the same kind of signed session

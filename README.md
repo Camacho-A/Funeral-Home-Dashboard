@@ -1,10 +1,10 @@
-# Beacon
+# Solis
 
 Operations platform for funeral homes and cremation providers — case tracking, staff task management, and operational reporting, built to enforce a provider's own regulated process at every stage.
 
 ## Project Overview
 
-Beacon replaces the spreadsheets and paper case files most small-to-mid-size funeral homes use to track a case from first call through final disposition. It gives staff a single system of record that makes the correct next step obvious, surfaces delays before they become a family's or a regulator's problem, and keeps a permanent, auditable record of what happened and when.
+Solis replaces the spreadsheets and paper case files most small-to-mid-size funeral homes use to track a case from first call through final disposition. It gives staff a single system of record that makes the correct next step obvious, surfaces delays before they become a family's or a regulator's problem, and keeps a permanent, auditable record of what happened and when.
 
 Version 1 is being built for a single client, Managed Cremations (operating as Manor Cremation), but the platform is architected from day one to become a multi-tenant SaaS product serving many independent funeral homes.
 
@@ -55,7 +55,7 @@ See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the folder-to-concern map
 
 ## Documentation Standards
 
-`docs/` is the source of truth for Beacon. See [docs/README.md](./docs/README.md) for the full index and the workflow for keeping it current. In short: architecture changes get an ADR before they get code; scope changes update `PRODUCT_VISION.md`/`ROADMAP.md`; schema changes update `CMS_SCHEMA.md`; every merge gets a `CHANGELOG.md` entry.
+`docs/` is the source of truth for Solis. See [docs/README.md](./docs/README.md) for the full index and the workflow for keeping it current. In short: architecture changes get an ADR before they get code; scope changes update `PRODUCT_VISION.md`/`ROADMAP.md`; schema changes update `CMS_SCHEMA.md`; every merge gets a `CHANGELOG.md` entry.
 
 ## How to Run
 
@@ -67,7 +67,7 @@ See [docs/ROADMAP.md](./docs/ROADMAP.md) for Version 1 scope and candidate Versi
 
 ## Versioning Strategy
 
-Beacon follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`. Pre-1.0 releases (`0.x.y`) indicate the product is still stabilizing its core case-management data model and workflows; `1.0.0` marks the first release considered stable enough for another funeral home to be onboarded onto. Every notable change is recorded in [docs/CHANGELOG.md](./docs/CHANGELOG.md).
+Solis follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`. Pre-1.0 releases (`0.x.y`) indicate the product is still stabilizing its core case-management data model and workflows; `1.0.0` marks the first release considered stable enough for another funeral home to be onboarded onto. Every notable change is recorded in [docs/CHANGELOG.md](./docs/CHANGELOG.md).
 
 ## Git Workflow
 
@@ -78,6 +78,6 @@ Trunk-based development: short-lived feature branches off `main` (or the primary
 - **Application**: deployed to Vercel from the primary branch, with preview deployments per pull request.
 - **Compliance database**: Neon or Supabase (Postgres), migrated via Prisma migrations.
 - **Object storage**: Cloudflare R2 (or AWS S3), private bucket, access mediated entirely through short-lived presigned URLs minted by the application after role/organization checks — never public.
-- **Operational data & auth**: Wix Managed Headless, managed through the Wix platform directly (no separate deployment step on Beacon's side).
+- **Operational data & auth**: Wix Managed Headless, managed through the Wix platform directly (no separate deployment step on Solis's side).
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the full system diagram.

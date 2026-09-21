@@ -269,7 +269,7 @@ export async function completeAuthorization(
     completely untouched (invariant #2). No provider-side revocation
     call is made: Google/Microsoft's own "third-party app access"
     management is the normal, industry-standard place that grant is
-    revoked from, not something Beacon needs to force — a deliberate,
+    revoked from, not something Solis needs to force — a deliberate,
     disclosed scope decision, not an oversight. `ctx` is built by the
     caller (the DELETE route) from its own resolved actor — the owning
     staff member disconnecting their own calendar, or an administrator

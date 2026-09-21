@@ -1,6 +1,6 @@
 /**
  * Phase 31 (Financial Management & General Ledger). The double-entry
- * general ledger — every financial event in Beacon is journaled as one
+ * general ledger — every financial event in Solis is journaled as one
  * `JournalEntry` header plus ≥2 balanced `JournalEntryLine` rows. See
  * docs/adr/ADR-035-financial-management-and-general-ledger.md.
  *
@@ -79,7 +79,7 @@ export type JournalEntrySourceType =
   | 'bill'
   /** Phase 36. Dr Accounts Payable (2000) / Cr Cash (a bank/operating cash
       account) — a record of an externally-executed vendor payment (check /
-      ACH / card / manual); Beacon never initiates the actual bank transfer. */
+      ACH / card / manual); Solis never initiates the actual bank transfer. */
   | 'bill_payment';
 
 export type JournalEntryStatus = 'draft' | 'posted' | 'void';

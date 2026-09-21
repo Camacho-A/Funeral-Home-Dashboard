@@ -15,14 +15,23 @@ const BASE_EVENT: IcsEventInput = {
 
 describe('buildIcsCalendar', () => {
   it('produces a well-formed VCALENDAR wrapper with the expected required properties', () => {
-    const ics = buildIcsCalendar('Dana — Beacon', [BASE_EVENT], '2026-09-05T00:00:00.000Z');
+    const ics = buildIcsCalendar('Dana — Solis', [BASE_EVENT], '2026-09-05T00:00:00.000Z');
     expect(ics.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
     expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true);
     expect(ics).toContain('VERSION:2.0');
-    expect(ics).toContain('PRODID:-//Beacon//Scheduling//EN');
-    expect(ics).toContain('X-WR-CALNAME:Dana — Beacon');
+    expect(ics).toContain('PRODID:-//Solis//Scheduling//EN');
+    expect(ics).toContain('X-WR-CALNAME:Dana — Solis');
   });
 
+  /** The event UID intentionally keeps its `beacon-appointment-...@beacon.app`
+      form through the Solis rename (2026-09) — RFC5545 UIDs are a stable,
+      deterministic identity calendar clients use to recognize a re-pulled
+      feed as an update to the SAME event, not a new one. Changing it would
+      make every already-subscribed calendar (the personal feed, any
+      previously-downloaded single-event file) generate a duplicate entry on
+      the next sync — a real migration cost for an identifier no user ever
+      sees. See `lib/wixDataApi.ts`-adjacent `beacon<Entity>Id` field
+      convention for the same reasoning applied elsewhere in this codebase. */
   it('emits a deterministic, stable UID keyed only by the appointment id', () => {
     const ics = buildIcsCalendar('cal', [BASE_EVENT]);
     expect(ics).toContain('UID:beacon-appointment-appt-1@beacon.app');

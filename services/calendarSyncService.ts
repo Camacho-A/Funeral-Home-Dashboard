@@ -33,7 +33,7 @@ import { calendarEventLinkFixtures } from './__mocks__/calendarFixtures';
  * `schedulingService.ts` and every UI component reach neither provider
  * nor this file's own sweep query directly.
  *
- * One-way sync only (Beacon -> external calendar): the functions called
+ * One-way sync only (Solis -> external calendar): the functions called
  * from `schedulingService.ts` (`markPendingForAppointment`/
  * `markPendingForCancellation`) NEVER call a provider — they only ever
  * write a `calendarEventLinks` row with `syncStatus: 'pending'`, a

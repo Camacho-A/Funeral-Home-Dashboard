@@ -32,15 +32,25 @@ describe('normalizeSlugCandidate', () => {
 
 describe('isReservedSlug / RESERVED_SLUGS', () => {
   it('rejects every example the phase spec explicitly named', () => {
-    for (const reserved of ['admin', 'api', 'login', 'payments', 'settings', 'support', 'beacon']) {
+    for (const reserved of ['admin', 'api', 'login', 'payments', 'settings', 'support', 'beacon', 'solis']) {
       expect(isReservedSlug(reserved)).toBe(true);
       expect(RESERVED_SLUGS.has(reserved)).toBe(true);
     }
   });
 
+  /** Solis rename (2026-09): both the current product name and the
+      retired "Beacon" name stay reserved — an organization must never be
+      able to claim either as its own slug, regardless of which one is
+      the live brand at a given time. */
+  it('reserves both "solis" (current product name) and "beacon" (retired product name)', () => {
+    expect(isReservedSlug('solis')).toBe(true);
+    expect(isReservedSlug('beacon')).toBe(true);
+  });
+
   it('is case-insensitive', () => {
     expect(isReservedSlug('ADMIN')).toBe(true);
     expect(isReservedSlug('Api')).toBe(true);
+    expect(isReservedSlug('SOLIS')).toBe(true);
   });
 
   it('accepts an ordinary organization name', () => {

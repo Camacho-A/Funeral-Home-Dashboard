@@ -80,7 +80,7 @@ function buildSigningLink(rawToken: string): string {
   return `${getAppBaseUrl()}/sign?token=${encodeURIComponent(rawToken)}`;
 }
 
-/** Every action a *signer* (never a Beacon session-holder) performs —
+/** Every action a *signer* (never a Solis session-holder) performs —
     view/complete/decline — is attributed this way: `actorIdentityId`
     is null only because `isSystemGenerated` is true here (the one valid
     combination per `types/activityEvent.ts`'s own comment), even though
@@ -523,7 +523,7 @@ export async function expireOverdueSignatureRequests(organizationId: string, dat
 }
 
 // ---------------------------------------------------------------------------
-// Signer-initiated actions (no Beacon session ever involved)
+// Signer-initiated actions (no Solis session ever involved)
 // ---------------------------------------------------------------------------
 
 /** First-view-only transition to `'viewed'` — every subsequent access

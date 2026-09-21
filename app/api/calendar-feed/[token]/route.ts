@@ -9,7 +9,7 @@ import { getDataAdapterMode } from '@/lib/env';
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
  * Reminders). A staff member's personal subscription feed — the ONE
  * route in this codebase meant to be pulled by an external calendar
- * client (Google Calendar, Apple Calendar, Outlook) with no Beacon
+ * client (Google Calendar, Apple Calendar, Outlook) with no Solis
  * session at all, exactly like `/sign`'s public signing routes. The
  * token itself, resolved via `resolveFeedTokenService.ts`'s hash-at-rest
  * lookup, is the sole authenticity mechanism — no `requireSameOrigin`
@@ -51,6 +51,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
 
   await touchFeedTokenAccess(feedToken, dataAdapterMode);
 
-  const ics = buildIcsCalendar('Beacon Appointments', events);
+  const ics = buildIcsCalendar('Solis Appointments', events);
   return new NextResponse(ics, { status: 200, headers: { 'Content-Type': 'text/calendar; charset=utf-8' } });
 }

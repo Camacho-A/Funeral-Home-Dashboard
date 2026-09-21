@@ -133,7 +133,7 @@ describe('POST /api/signing/[token]/complete', () => {
     expect(response.status).toBe(400);
   });
 
-  it('completes the signature, locking the document, with no Beacon session required', async () => {
+  it('completes the signature, locking the document, with no Solis session required', async () => {
     const { doc, rawToken } = await seedActiveRequestAndToken();
 
     const response = await completeRequest(rawToken, { signedName: 'Jane Doe', initials: 'JD', consentAcknowledged: true });

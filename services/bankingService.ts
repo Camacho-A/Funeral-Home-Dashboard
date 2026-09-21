@@ -377,7 +377,7 @@ export async function manuallyMatchStatementLine(
   return updated;
 }
 
-/** For bank-only events with no corresponding Beacon-authored entry yet
+/** For bank-only events with no corresponding Solis-authored entry yet
     (e.g. a bank fee) — a named, disclosed gap: staff must separately post
     a manual adjustment before a reconciliation including this line can
     balance (see types/bankStatement.ts's own comment). */

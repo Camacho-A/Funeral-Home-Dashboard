@@ -60,7 +60,7 @@ export const consoleEmailProvider: EmailProvider = {
 export const productionUnconfiguredEmailProvider: EmailProvider = {
   async send() {
     throw new Error(
-      'No email provider is configured for production. Beacon has no transactional email ' +
+      'No email provider is configured for production. Solis has no transactional email ' +
         'integration yet — wire one up and provide a real EmailProvider before relying on email ' +
         'notification delivery in production.',
     );

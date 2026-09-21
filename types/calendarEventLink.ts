@@ -1,8 +1,8 @@
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated Reminders).
- * The mapping between one Beacon `Appointment` and its projection onto
+ * The mapping between one Solis `Appointment` and its projection onto
  * one external calendar (via one `CalendarConnection`) — one-way,
- * Beacon-authoritative sync only (see
+ * Solis-authoritative sync only (see
  * docs/adr/ADR-038-scheduling-integrations-calendar-sync-and-reminders.md's
  * "Synchronization model" section for why two-way sync is explicitly
  * out of scope this phase).

@@ -18,7 +18,7 @@ import { formatCentsAsCurrency } from '@/utils/format';
  *
  * The placeholder text below is what a *recognized but reserved* field
  * (no backing data exists — either because the feature doesn't exist in
- * Beacon at all, like funeral service scheduling, or because this
+ * Solis at all, like funeral service scheduling, or because this
  * specific case/organization simply has no value for an otherwise-real
  * field, like a case with no CaseOrder yet) renders as — visible in the
  * generated document, never a silent blank. This is distinct from an
@@ -168,7 +168,7 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     identifier: 'case.primaryContact.fullName',
     displayName: 'Primary Contact Name',
     dataType: 'string',
-    description: "The case's next-of-kin — Beacon has no separate generic contacts list, so this is the closest real concept.",
+    description: "The case's next-of-kin — Solis has no separate generic contacts list, so this is the closest real concept.",
     exampleValue: 'Margaret Ellison',
     category: 'contact',
     wired: true,

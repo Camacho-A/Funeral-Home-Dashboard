@@ -29,7 +29,7 @@ export type WixLoginResult =
  * `members.getCurrentMember()` and are then discarded — not persisted
  * anywhere (not the session cookie, not any other storage). A real Wix
  * member's login today only proves who they are at that moment; nothing
- * yet lets Beacon make further Wix API calls on their behalf afterward —
+ * yet lets Solis make further Wix API calls on their behalf afterward —
  * that's explicitly deferred (see docs/AUTHENTICATION.md's known
  * limitations, and ADR-007's note that no service calls Wix yet either).
  */

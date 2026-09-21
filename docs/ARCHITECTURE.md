@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Beacon is a single Next.js application (App Router, TypeScript) that serves as a staff operations portal. It talks to two backend systems, split deliberately by data sensitivity:
+Solis is a single Next.js application (App Router, TypeScript) that serves as a staff operations portal. It talks to two backend systems, split deliberately by data sensitivity:
 
 ```
                          ┌─────────────────────────────┐
@@ -35,7 +35,7 @@ Version 1 has exactly one tenant (Managed Cremations), but every record in every
 
 ## Auth & Identity
 
-Staff authenticate through **Wix Members** — Wix issues and owns the member session, so Beacon never builds or maintains a parallel identity system. Wix's own member roles are not used for authorization, though: they're too coarse for Beacon's admin / funeral_director / staff distinction. Instead, a `StaffProfiles` Wix Data collection (keyed 1:1 to a Wix Member) carries the app-specific `role` and `organizationId`, and all of Beacon's role-based access control reads from that collection, not from Wix's own permission model.
+Staff authenticate through **Wix Members** — Wix issues and owns the member session, so Solis never builds or maintains a parallel identity system. Wix's own member roles are not used for authorization, though: they're too coarse for Solis's admin / funeral_director / staff distinction. Instead, a `StaffProfiles` Wix Data collection (keyed 1:1 to a Wix Member) carries the app-specific `role` and `organizationId`, and all of Solis's role-based access control reads from that collection, not from Wix's own permission model.
 
 On login, the Next.js app validates the Wix Member session server-side, looks up the matching `StaffProfiles` row, and mints its own signed session token (a JWT) into an HttpOnly, Secure cookie containing `{ memberId, organizationId, role, staffProfileId }`. `middleware.ts` verifies that token on every request to a protected route or API endpoint before anything else runs. See [USER_ROLES.md](./USER_ROLES.md) for what each role can do.
 
@@ -67,7 +67,7 @@ As of Phase 15A.1, which login provider is used is controlled by its own `AUTH_A
 
 ## Wix Data Schema
 
-As of Phase 14, `docs/WIX_DATA_SCHEMA.md` is the authoritative, approved specification for the six Wix Data collections (`organizations`, `organizationMemberships`, `workflowTemplates`, `workflowTemplateVersions`, `cases`, `tasks`) Beacon's first backend integration needs — superseding `docs/CMS_SCHEMA.md`'s `Cases`/`CaseTasks`/`StaffProfiles` sections. See [ADR-009](./adr/ADR-009-wix-data-schema.md) for why this shape was chosen. **None of these collections exist in Wix yet** — the schema is approved but not created; see WIX_DATA_SCHEMA.md's "Known limitations." No `services/*` module reads or writes Wix Data; `DATA_ADAPTER=mock` remains the default and only functioning mode.
+As of Phase 14, `docs/WIX_DATA_SCHEMA.md` is the authoritative, approved specification for the six Wix Data collections (`organizations`, `organizationMemberships`, `workflowTemplates`, `workflowTemplateVersions`, `cases`, `tasks`) Solis's first backend integration needs — superseding `docs/CMS_SCHEMA.md`'s `Cases`/`CaseTasks`/`StaffProfiles` sections. See [ADR-009](./adr/ADR-009-wix-data-schema.md) for why this shape was chosen. **None of these collections exist in Wix yet** — the schema is approved but not created; see WIX_DATA_SCHEMA.md's "Known limitations." No `services/*` module reads or writes Wix Data; `DATA_ADAPTER=mock` remains the default and only functioning mode.
 
 ## API Layer
 

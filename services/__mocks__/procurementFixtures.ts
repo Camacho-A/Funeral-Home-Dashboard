@@ -8,7 +8,7 @@ import type { BillPayment } from '../../types/billPayment';
 /**
  * Phase 36 (Procurement & Accounts Payable). Mock fixtures for the six new
  * procurement/AP collections. All start EMPTY — no procurement data exists in
- * Beacon today (Phase 35 used free-text supplierName, no structured supplier
+ * Solis today (Phase 35 used free-text supplierName, no structured supplier
  * entity). Tests populate these through the services under test, exactly as
  * the Phase 35 merchandise fixtures do. Mutable arrays so mock-mode writes
  * push/splice into them. See docs/adr/ADR-040-procurement-and-accounts-payable.md.

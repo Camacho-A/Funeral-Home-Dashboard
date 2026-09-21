@@ -19,7 +19,7 @@
  * than hand the browser a URL that, once seen, works indefinitely, this
  * interface instead exposes `downloadFile`, which returns the raw bytes
  * for the download Route Handler to stream back itself — the browser
- * never receives a Vercel Blob URL at all, only Beacon's own
+ * never receives a Vercel Blob URL at all, only Solis's own
  * `/api/cases/[caseId]/documents/[documentId]/download` endpoint, which
  * re-checks authorization on every single request. This is a strictly
  * stronger guarantee than a signed URL with expiry (no token to leak,

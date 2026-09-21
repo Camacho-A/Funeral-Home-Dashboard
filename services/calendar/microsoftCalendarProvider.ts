@@ -12,7 +12,7 @@ import { CalendarProviderError } from './calendarProvider';
  * `Calendars.ReadWrite` to receive a refresh token at all.
  *
  * App registration must be "Accounts in any organizational directory
- * and personal Microsoft accounts" (the `common` authority) — Beacon
+ * and personal Microsoft accounts" (the `common` authority) — Solis
  * serves many independent funeral homes, each potentially its own
  * Microsoft 365 tenant or a personal Outlook.com account; a
  * single-tenant registration would only work for one customer.
@@ -25,7 +25,7 @@ import { CalendarProviderError } from './calendarProvider';
  * around**: many Microsoft 365 business tenants require a tenant admin
  * to grant consent before any user can complete this OAuth flow for a
  * third-party app. When that happens, Microsoft's own authorize
- * redirect carries an error Beacon surfaces as-is — not a Beacon bug.
+ * redirect carries an error Solis surfaces as-is — not a Solis bug.
  *
  * Subscriptions/webhooks (push notifications) are deliberately not
  * implemented — max 3-day lifetime requiring active renewal, and

@@ -39,7 +39,7 @@ function addMinutes(iso: string, minutes: number): string {
     (`out_of_service`/`archived`), regardless of time. Soft: the
     resource is `maintenance`, or the requested window falls inside a
     buffer/turnaround gap immediately adjacent to another booking for the
-    same resource. External resources (Beacon does not operate them) are
+    same resource. External resources (Solis does not operate them) are
     never conflict-checked at all. */
 export async function checkConflicts(
   organizationId: string,

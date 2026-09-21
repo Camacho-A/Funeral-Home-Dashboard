@@ -7,7 +7,7 @@ import { getSessionSecret } from '../env';
  * the redirect to Google/Microsoft and back — the equivalent of
  * `requireSameOrigin` for the one class of route that is genuinely,
  * legitimately cross-origin (the provider's own redirect back to
- * Beacon), mirroring `app/api/webhooks/clover/route.ts`'s own
+ * Solis), mirroring `app/api/webhooks/clover/route.ts`'s own
  * "substitute a purpose-built authenticity check for the origin check"
  * precedent (there: an HMAC webhook signature; here: a signed,
  * single-use, short-lived state cookie).

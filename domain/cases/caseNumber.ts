@@ -9,7 +9,7 @@
  * This is a funeral-home business identifier, not a generic string-
  * formatting utility, which is why it lives in domain/ rather than utils/
  * (see docs/adr/ADR-004-domain-layer.md) — the "B" prefix and 3-digit,
- * per-year-per-organization sequence are Beacon/Manor Cremations/Gus
+ * per-year-per-organization sequence are Solis/Manor Cremations/Gus
  * Camacho business rules, not something any app with a date field would
  * want.
  */

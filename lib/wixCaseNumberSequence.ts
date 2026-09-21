@@ -112,7 +112,7 @@ export async function getCaseSequenceState(organizationId: string, year: number)
  * not 1) *before* the first case of that year is reserved. Every future
  * year still rolls over automatically via `reserveNextCaseNumber`'s own
  * bootstrap-at-1 path — this function only ever needs to be called for a
- * transitional year with pre-Beacon history to skip past.
+ * transitional year with pre-Solis history to skip past.
  *
  * Deliberately conservative: a fresh row (no prior initialization, no
  * case ever reserved for this org+year) always succeeds via a plain

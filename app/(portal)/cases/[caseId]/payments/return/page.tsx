@@ -65,7 +65,7 @@ export default function PaymentReturnPage({ params }: { params: Promise<{ caseId
           <>
             <div className={styles.title}>Confirming payment…</div>
             <p className={styles.description}>
-              Beacon is waiting for Clover to confirm this payment. This updates automatically — no need to refresh.
+              Solis is waiting for Clover to confirm this payment. This updates automatically — no need to refresh.
             </p>
           </>
         ) : (

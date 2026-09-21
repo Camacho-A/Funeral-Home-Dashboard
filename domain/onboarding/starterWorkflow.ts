@@ -16,7 +16,7 @@ import type { StageTemplate, IntakeTemplate } from '../../types/workflowTemplate
  * cremation-home workflow) and `MINIMAL_WORKFLOW` (the smallest workflow
  * that still functions — one stage, one checklist item, one intake
  * field) — matching this phase's "start from a minimal workflow" option
- * distinctly from "select a Beacon starter workflow".
+ * distinctly from "select a Solis starter workflow".
  */
 export type StarterWorkflowContent = {
   caseTypes: string[];

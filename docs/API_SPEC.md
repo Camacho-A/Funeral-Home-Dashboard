@@ -1,12 +1,12 @@
 # API Specification (Proposed — Not Implemented)
 
-**Status: proposed structure only.** No API routes exist in the codebase yet. This document defines the route list and request/response contract Beacon's Next.js Route Handlers are expected to implement in a later, separately approved phase — nothing here should be read as already built. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the general request-handling pattern (verify session → check role → validate → call a `services/*` function scoped by `organizationId` → audit log → respond).
+**Status: proposed structure only.** No API routes exist in the codebase yet. This document defines the route list and request/response contract Solis's Next.js Route Handlers are expected to implement in a later, separately approved phase — nothing here should be read as already built. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the general request-handling pattern (verify session → check role → validate → call a `services/*` function scoped by `organizationId` → audit log → respond).
 
 ## Auth
 
 | Method | Route | Purpose |
 |---|---|---|
-| `POST` | `/api/auth/session` | Exchange a validated Wix Member session for Beacon's first-party session cookie. |
+| `POST` | `/api/auth/session` | Exchange a validated Wix Member session for Solis's first-party session cookie. |
 | `DELETE` | `/api/auth/session` | Log out — clears the session cookie. |
 
 ## Cases

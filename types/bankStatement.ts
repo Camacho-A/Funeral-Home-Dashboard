@@ -1,7 +1,7 @@
 /**
  * Phase 31 (Financial Management & General Ledger). Bank statement import
  * and reconciliation matching — the least-precedented part of this phase
- * (no prior Beacon feature imports/reconciles external data), so kept
+ * (no prior Solis feature imports/reconciles external data), so kept
  * fully concrete rather than sketched. See
  * docs/adr/ADR-035-financial-management-and-general-ledger.md.
  *
@@ -16,7 +16,7 @@
  * candidate auto-matches; zero or multiple are left `unmatched` for a
  * human (`manuallyMatchStatementLine` or `excludeStatementLine`, the
  * latter for bank-only events like fees that have no corresponding
- * Beacon-authored entry yet — a named, disclosed gap: staff must
+ * Solis-authored entry yet — a named, disclosed gap: staff must
  * separately post a manual adjustment for those before a reconciliation
  * can balance).
  */

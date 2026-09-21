@@ -45,7 +45,7 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
     <nav className={styles.sidebar} aria-label="Primary">
       <div className={styles.brand}>
         <div className={styles.brandMark} aria-hidden="true" />
-        <div className={styles.brandWordmark}>Beacon</div>
+        <div className={styles.brandWordmark}>Solis</div>
       </div>
 
       <div className={styles.navList}>

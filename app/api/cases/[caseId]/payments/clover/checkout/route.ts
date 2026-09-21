@@ -157,7 +157,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   const now = Date.now();
 
-  // 5/8. Create a pending Beacon PaymentRecord — atomically, via Wix's own
+  // 5/8. Create a pending Solis PaymentRecord — atomically, via Wix's own
   // unique index on the composed (organizationId, idempotencyKey) value,
   // not an application-level scan. A concurrent duplicate request (the
   // same idempotencyKey, e.g. a double-click or two racing network
@@ -203,7 +203,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (dataAdapterMode === 'mock') {
     // Mock mode never calls the real Clover API — see this route's own
     // top comment. The "session" is a synthetic id and the checkout URL
-    // simply points straight at Beacon's own return page, letting the
+    // simply points straight at Solis's own return page, letting the
     // return page's mock-mode handling simulate an outcome locally.
     const mockCheckoutUrl = `${returnUrl}&mock=1`;
     const updated = await updatePaymentRecord(

@@ -1,6 +1,6 @@
 /**
  * Phase 19B (Clover Hosted Checkout Integration) — final durability
- * correction. A `WebhookEventRecord` is Beacon's own durable record of
+ * correction. A `WebhookEventRecord` is Solis's own durable record of
  * "have I already, successfully finished processing this exact webhook
  * event" — distinct from a `PaymentRecord`, which tracks the *payment's*
  * lifecycle. Conflating the two (the previous design: a bare presence

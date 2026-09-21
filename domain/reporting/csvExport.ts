@@ -1,6 +1,6 @@
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). The one CSV
- * serializer every exporter in Beacon shares — extracted from
+ * serializer every exporter in Solis shares — extracted from
  * `services/activityService.ts#exportCsv` (Phase 24), which had the only
  * hand-rolled CSV logic in the codebase before this phase. Pure, no I/O:
  * callers own fetching/pagination/row-capping; this only turns an

@@ -267,7 +267,7 @@ export async function expireOverduePortalInvitations(organizationId: string, dat
 }
 
 // ---------------------------------------------------------------------------
-// Family-initiated action (no Beacon staff session ever involved)
+// Family-initiated action (no Solis staff session ever involved)
 // ---------------------------------------------------------------------------
 
 export type AcceptInvitationResult =

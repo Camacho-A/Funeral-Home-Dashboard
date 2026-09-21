@@ -57,7 +57,7 @@ import { getMetricDefinition, type MetricKey } from '../domain/reporting/metricR
  * staff, and revenue-recognition metric functions named in
  * `domain/reporting/metricRegistry.ts`'s own `source` column — this file
  * is what actually computes them. Every function composes read-only calls
- * into the same canonical services every other Beacon feature already
+ * into the same canonical services every other Solis feature already
  * uses (`casesService`, `tasksService`, `staffProfileService`,
  * `scheduling/appointmentReads`, `resourceService`, `documentService`,
  * `signatureService`, `paymentsService`, `activityService`,

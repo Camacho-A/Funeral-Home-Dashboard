@@ -378,7 +378,7 @@ describe('markSignatureViewed', () => {
     expect(viewedEvents).toHaveLength(2);
   });
 
-  it('attributes the view to a system-generated (sessionless) actor, never a Beacon identity', async () => {
+  it('attributes the view to a system-generated (sessionless) actor, never a Solis identity', async () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
 

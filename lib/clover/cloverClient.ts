@@ -123,7 +123,7 @@ export type CloverRefund = {
  * Hosted-Checkout-specific endpoints above. Always the full original
  * amount in this phase (see lib/paymentProvider.ts's RefundRequest
  * comment on why) — an omitted `amount` in Clover's own API means "refund
- * everything," but Beacon always passes the amount explicitly so a
+ * everything," but Solis always passes the amount explicitly so a
  * silent Clover-side API change can never refund more than intended.
  */
 export async function refundCloverPayment(

@@ -20,13 +20,13 @@ export type CheckoutSessionRequest = {
   amount: number;
   currency: string;
   purpose: string;
-  /** Beacon's own PaymentRecord id, for embedding in the return-page
+  /** Solis's own PaymentRecord id, for embedding in the return-page
       redirect URLs (a UX hint only — never authoritative; see
       ADR-022's "redirect is not authoritative"). */
   beaconPaymentId: string;
   caseId: string;
   /** Absolute URLs the provider should redirect the browser to after the
-      customer finishes (or cancels) — both point at Beacon's own
+      customer finishes (or cancels) — both point at Solis's own
       /cases/[caseId]/payments/return page, disambiguated by a query
       param, since that page always re-confirms status server-side rather
       than trusting which URL it landed on. */
@@ -70,7 +70,7 @@ export type RefundResult = {
   providerRefundId: string;
 };
 
-/** What a verified webhook (or a status poll) tells Beacon about one
+/** What a verified webhook (or a status poll) tells Solis about one
     payment — always mapped through `mapProviderPayment`, never used to
     construct a `PaymentRecord` update directly, so a provider-specific
     payload shape never leaks past its own module. */

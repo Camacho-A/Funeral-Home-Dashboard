@@ -1,6 +1,6 @@
 # Workflow Template Versioning
 
-Phase 11 moved Beacon's case workflow — stages, checklist items, intake fields — out of hardcoded domain constants and React components into per-organization, versioned configuration. This document describes the model, how versioning works, how existing mock cases were migrated onto it, and what's deliberately still out of scope. See [ADR-006](./adr/ADR-006-workflow-template-architecture.md) for why this shape was chosen over the alternatives.
+Phase 11 moved Solis's case workflow — stages, checklist items, intake fields — out of hardcoded domain constants and React components into per-organization, versioned configuration. This document describes the model, how versioning works, how existing mock cases were migrated onto it, and what's deliberately still out of scope. See [ADR-006](./adr/ADR-006-workflow-template-architecture.md) for why this shape was chosen over the alternatives.
 
 Types live in `types/workflowTemplate.ts` and `types/externalFormIntegration.ts`. Resolution logic lives in `domain/workflow/`. The fixture data lives in `services/__mocks__/workflowTemplates.ts`.
 

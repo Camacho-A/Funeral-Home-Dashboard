@@ -52,7 +52,7 @@ import {
  * `lib/puppeteerDocumentRenderer.ts`/`lib/vercelBlob/vercelBlobStorageProvider.ts`.
  *
  * The concrete renderer/storage provider are imported directly (matching
- * `lib/clover/cloverProvider.ts`'s own precedent — Beacon has no central
+ * `lib/clover/cloverProvider.ts`'s own precedent — Solis has no central
  * "getPaymentProvider()" indirection today, just a direct import of the
  * one real implementation), but every function below is typed against
  * the neutral `DocumentRenderer`/`DocumentStorageProvider` interfaces —

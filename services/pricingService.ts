@@ -56,7 +56,7 @@ import {
 } from './__mocks__/pricingFixtures';
 
 /**
- * Phase 19C (Service Catalog, Case Order & Pricing Engine). Beacon's
+ * Phase 19C (Service Catalog, Case Order & Pricing Engine). Solis's
  * pricing engine's orchestration/persistence layer — see
  * docs/adr/ADR-023-case-order-pricing-engine.md. All arithmetic lives in
  * domain/pricing/ (pure, shareable with the browser's live-preview

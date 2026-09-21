@@ -1,6 +1,6 @@
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The single, general
- * event envelope every module in Beacon records into — see ADR-028 for the
+ * event envelope every module in Solis records into — see ADR-028 for the
  * full rationale. `organizationRoleAuditEntries` (Phase 22),
  * `caseOrderAuditEntries` (Phase 19C), `onboardingAuditEntries` (Phase 20),
  * and `loginActivityEvents` (Phase 21) are deliberately left untouched;
@@ -111,7 +111,7 @@ export const ACTIVITY_EVENT_TYPES = {
   PAYMENT_RECORDED: 'payment.recorded',
   PAYMENT_FAILED: 'payment.failed',
   PAYMENT_CANCELLED: 'payment.cancelled',
-  /** Was reserved ("no refund code path exists in Beacon yet") until
+  /** Was reserved ("no refund code path exists in Solis yet") until
       Phase 31 (Financial Management & General Ledger), which gives it its
       first real emitter — `services/financialTransactionService.ts`'s
       `postRefundTransaction`. Deliberately reused, not replaced by a
@@ -188,7 +188,7 @@ export const ACTIVITY_EVENT_TYPES = {
   ORGANIZATION_CREATED: 'organization.created',
   ORGANIZATION_UPDATED: 'organization.updated',
 
-  /** Reserved — no reminder/automation engine exists in Beacon at all yet. */
+  /** Reserved — no reminder/automation engine exists in Solis at all yet. */
   SYSTEM_REMINDER_TRIGGERED: 'system.reminder.triggered',
   SYSTEM_WORKFLOW_AUTOMATION_EXECUTED: 'system.workflow_automation.executed',
 

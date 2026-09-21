@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   const { secret } = await beginMfaEnrollment(identity.id, dataAdapterMode);
-  const label = encodeURIComponent(`Beacon:${identity.email}`);
-  const otpauthUri = `otpauth://totp/${label}?secret=${secret}&issuer=Beacon&algorithm=SHA1&digits=6&period=30`;
+  const label = encodeURIComponent(`Solis:${identity.email}`);
+  const otpauthUri = `otpauth://totp/${label}?secret=${secret}&issuer=Solis&algorithm=SHA1&digits=6&period=30`;
   return NextResponse.json({ secret, otpauthUri });
 }

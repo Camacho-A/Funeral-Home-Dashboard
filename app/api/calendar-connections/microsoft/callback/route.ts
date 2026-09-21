@@ -8,7 +8,7 @@ const SETTINGS_PATH = '/settings/calendar-integrations';
 
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
- * Reminders). Microsoft's own redirect back to Beacon — see
+ * Reminders). Microsoft's own redirect back to Solis — see
  * google/callback/route.ts's own comment for the full rationale
  * (genuinely cross-origin, state-cookie-verified, always redirects
  * back to Settings rather than returning a raw JSON error). Identical

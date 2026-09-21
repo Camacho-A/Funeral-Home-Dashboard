@@ -15,7 +15,7 @@ import { createNotification } from '@/services/notificationService';
 
 /**
  * Phase 16 (Wix Write Integration). Updates or deletes one task by its
- * Beacon domain id, scoped by organizationId — see
+ * Solis domain id, scoped by organizationId — see
  * docs/adr/ADR-016-wix-write-integration.md. There was no GET-by-id route
  * for tasks (Phase 15D — nothing ever needed one), but PATCH/DELETE
  * inherently need a task id in the path, so this file exists purely for

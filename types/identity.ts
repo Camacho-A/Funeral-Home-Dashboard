@@ -1,6 +1,6 @@
 /**
  * Phase 21 (Identity, Authentication & Session Management). A real,
- * Beacon-owned identity — distinct from `types/auth.ts`'s
+ * Solis-owned identity — distinct from `types/auth.ts`'s
  * `AuthenticatedUser` (the *session's* view of who's logged in, which can
  * be backed by a mock fixture, a Wix Member, or — as of this phase — an
  * `Identity`) and from the pre-existing mock-only `OrganizationMembership`

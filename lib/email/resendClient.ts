@@ -6,7 +6,7 @@
  *
  * Unlike Clover's per-organization `PaymentIntegration` credential
  * indirection (`lib/clover/cloverConfig.ts`), Resend is a single,
- * platform-level provider — Beacon sends transactional email on its own
+ * platform-level provider — Solis sends transactional email on its own
  * behalf, not per-tenant merchant credentials — so `RESEND_API_KEY` is
  * read directly from `process.env` here, the simpler of this codebase's
  * two established env-var-reading shapes, not the reference-indirection
@@ -53,7 +53,7 @@ function getResendApiKey(): string {
     a domain-verified sender, so this is deliberately a single configured
     value, never per-message-supplied. */
 function getResendFromAddress(): string {
-  return process.env.RESEND_FROM_ADDRESS || 'Beacon <notifications@beacon.app>';
+  return process.env.RESEND_FROM_ADDRESS || 'Solis <notifications@beacon.app>';
 }
 
 export async function sendResendEmail(request: ResendEmailRequest): Promise<void> {

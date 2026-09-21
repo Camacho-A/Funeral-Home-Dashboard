@@ -13,7 +13,7 @@ import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/ser
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 
 /**
- * Phase 15C (Wix Case Read Integration). Retrieves one case by its Beacon
+ * Phase 15C (Wix Case Read Integration). Retrieves one case by its Solis
  * domain id, scoped by organizationId — a case whose id matches but whose
  * organizationId doesn't is treated identically to "not found" (404),
  * mirroring app/api/workflow-templates/[templateId]/route.ts exactly.

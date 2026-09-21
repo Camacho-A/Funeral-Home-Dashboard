@@ -20,6 +20,7 @@ export const RESERVED_SLUGS = new Set([
   'settings',
   'support',
   'beacon',
+  'solis',
   'onboarding',
   'dashboard',
   'cases',

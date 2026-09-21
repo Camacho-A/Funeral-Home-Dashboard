@@ -11,7 +11,7 @@ This document is the authoritative breakdown of the UI defined in `design/Beacon
 ```
 AppShell                                    (full-height flex row)
 ├── Sidebar                                 (fixed 216px)
-│   ├── Brand                               (logo mark + "Beacon" wordmark)
+│   ├── Brand                               (logo mark + "Solis" wordmark)
 │   ├── NavList
 │   │   └── SidebarNavItem × 4              (Dashboard, Tasks, Reports, Settings[disabled])
 │   └── FooterInfo                          (org name + "N staff online")

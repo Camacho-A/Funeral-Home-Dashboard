@@ -1,6 +1,6 @@
 /**
  * Phase 36 (Procurement & Accounts Payable). A record of an
- * EXTERNALLY-EXECUTED vendor payment against a bill. Beacon records the
+ * EXTERNALLY-EXECUTED vendor payment against a bill. Solis records the
  * payment (amount, date, method, external reference, cash account, actor,
  * bill allocation, accounting posting, audit history) but NEVER initiates or
  * transmits an actual bank/ACH/card payment — exactly as banking deposits

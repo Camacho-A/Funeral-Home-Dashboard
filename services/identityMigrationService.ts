@@ -28,7 +28,7 @@ import { createMembership, updateMembership } from './membershipService';
  * "No forced password resets": a migrated identity is marked
  * `emailVerified: true` and `status: 'active'` immediately (the legacy
  * model already trusted this person), but is given no password at all —
- * there was never a Beacon-owned password to carry over in the first
+ * there was never a Solis-owned password to carry over in the first
  * place, so there is nothing to "force reset." The very first time a
  * migrated person authenticates, they go through the ordinary
  * forgot-password flow to set their first password — establishing one,

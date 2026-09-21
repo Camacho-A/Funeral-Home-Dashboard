@@ -107,7 +107,7 @@ export type Case = {
       specific selection" pattern as `pickupReleasedTo`/etc. below. */
   nextOfKinRelationshipOther: string | null;
   /** Manors launch-prep. Operational tag/ID affixed to the remains for
-      chain-of-custody tracking — distinct from `caseNumber` (Beacon's own
+      chain-of-custody tracking — distinct from `caseNumber` (Solis's own
       permanent record identifier). Null until staff assign one; editable
       any time, unlike caseNumber. Not required at creation — a case may
       exist before a physical tag is assigned. */

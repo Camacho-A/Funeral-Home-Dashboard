@@ -66,7 +66,7 @@ export default async function LoginPage({
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.title}>Beacon</h1>
+        <h1 className={styles.title}>Solis</h1>
         <p className={styles.subtitle}>Sign in to continue.</p>
 
         {errorMessage && (

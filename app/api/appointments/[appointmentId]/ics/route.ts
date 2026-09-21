@@ -34,7 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ appo
   if (!appointment) return NextResponse.json({ error: 'Appointment not found.' }, { status: 404 });
 
   const location = await resolveLocationText(organizationId, appointment.locationId, dataAdapterMode);
-  const ics = buildSingleEventIcs('Beacon', {
+  const ics = buildSingleEventIcs('Solis', {
     appointmentId: appointment.id,
     title: appointment.title,
     description: appointment.notes,

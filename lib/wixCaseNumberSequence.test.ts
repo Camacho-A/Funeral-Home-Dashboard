@@ -238,7 +238,7 @@ describe('reserveNextCaseNumber — no reuse after a case is later deleted/cance
   it('never hands out a number again just because the case that held it is gone — the counter only ever increments forward', async () => {
     // Mirrors the exact P0 scenario: B2026-185, B2026-186, B2026-187 are
     // issued; the case holding B2026-186 is later deleted/cancelled
-    // (Beacon is soft-delete-only and has no action that could ever touch
+    // (Solis is soft-delete-only and has no action that could ever touch
     // caseSequences on deletion in the first place — this is structural,
     // not merely tested — see docs/adr/ADR-018-case-number-generation.md's
     // "Deletion / never-reused guarantee"). The 4th reservation, made after

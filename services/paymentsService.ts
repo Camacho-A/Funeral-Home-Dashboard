@@ -189,7 +189,7 @@ export async function getPaymentRecordById(
 
 /**
  * Webhook correlation: Clover's event names only a checkout session id
- * and a merchantId — never Beacon's organizationId. This looks the
+ * and a merchantId — never Solis's organizationId. This looks the
  * record up by providerCheckoutId alone (a Clover-issued UUID, unique
  * regardless of organization); the caller (the webhook route) is
  * responsible for then confirming the resolved record's own organization
@@ -727,7 +727,7 @@ export async function updatePaymentRecord(
 
 /**
  * Same shape as updatePaymentRecord, but looked up by providerCheckoutId
- * rather than Beacon's own id — the webhook route's one write path, used
+ * rather than Solis's own id — the webhook route's one write path, used
  * only after it has independently verified the resolved record's
  * organization/merchant match the event (see findPaymentRecordByCheckoutId's
  * own comment).

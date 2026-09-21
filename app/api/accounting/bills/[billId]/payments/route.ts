@@ -11,7 +11,7 @@ import type { BillPaymentMethod } from '@/types/billPayment';
 /**
  * Phase 36. Vendor payments against a bill. GET (ap.read) lists; POST
  * (ap.pay — SEPARATELY enforceable from ap.manage) records an
- * externally-executed payment. Beacon records the payment and posts Dr 2000
+ * externally-executed payment. Solis records the payment and posts Dr 2000
  * AP / Cr Cash through the ledger; it never initiates a bank/ACH/card
  * transfer and never uses the customer-facing PaymentRecord.
  */

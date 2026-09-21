@@ -75,7 +75,7 @@ export const config = {
   //
   // Phase 26 (Electronic Signatures & Authorization Workflows) adds /sign —
   // architecturally distinct from every route above: those four all
-  // eventually mint a Beacon session for the person using them; /sign never
+  // eventually mint a Solis session for the person using them; /sign never
   // does, for anyone, ever (see services/signatureService.ts's own header
   // comment). The signer is authenticated purely by the token in the URL,
   // validated entirely by /api/signing/* (already outside this matcher,

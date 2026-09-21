@@ -117,7 +117,7 @@ async function seedActiveRequestAndToken() {
 }
 
 describe('GET /api/signing/[token]', () => {
-  it('resolves a valid token and marks the request viewed, never requiring a Beacon session', async () => {
+  it('resolves a valid token and marks the request viewed, never requiring a Solis session', async () => {
     const { rawToken } = await seedActiveRequestAndToken();
 
     const response = await signingRequest(rawToken);

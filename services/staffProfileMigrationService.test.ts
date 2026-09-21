@@ -31,7 +31,7 @@ function seedIdentity(id: string, email: string) {
     lastLoginAt: null,
     createdAt: NOW,
     updatedAt: NOW,
-    passwordHash: hashPassword('BeaconDemo123!'),
+    passwordHash: hashPassword('SolisDemo123!'),
     mfaSecretReference: null,
     mfaVerifiedAt: null,
     mfaRecoveryCodeHashes: [],

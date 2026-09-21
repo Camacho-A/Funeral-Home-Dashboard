@@ -14,7 +14,7 @@ import {
  * controlled initialization mechanism `lib/wixCaseNumberSequence.ts`'s own
  * comment describes: reads or sets a specific organization+year's starting
  * `nextSequence` in the `caseSequences` collection, so a transitional year
- * with pre-Beacon manual history (Manor's real 2026 starting number) can
+ * with pre-Solis manual history (Manor's real 2026 starting number) can
  * be seeded before the first case of that year is reserved. Every other
  * year still rolls over automatically via `reserveNextCaseNumber`'s own
  * bootstrap-at-1 path — this route is never required for normal annual

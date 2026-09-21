@@ -7,7 +7,7 @@ import type { IntakeFieldTemplate, IntakeTemplate, StageTemplate } from '../../t
  * an edited copy as a brand-new WorkflowTemplateVersion — never mutating a
  * historical version in place (see docs/adr/ADR-019-workflow-management.md,
  * docs/adr/ADR-020-configurable-intake-form-builder.md). These are business
- * invariants specific to Beacon's workflow model (not generic array
+ * invariants specific to Solis's workflow model (not generic array
  * helpers), so they live in domain/, not utils/, per
  * docs/adr/ADR-004-domain-layer.md.
  */

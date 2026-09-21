@@ -40,7 +40,7 @@ export function WorkflowStep({
       <div className={styles.fields}>
         <label className={styles.optionRow}>
           <input type="radio" name="workflowMode" checked={mode === 'starter'} onChange={() => setMode('starter')} />
-          Use a Beacon starter workflow
+          Use a Solis starter workflow
         </label>
         <label className={styles.optionRow}>
           <input type="radio" name="workflowMode" checked={mode === 'clone_existing'} onChange={() => setMode('clone_existing')} />

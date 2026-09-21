@@ -8,7 +8,7 @@ import { recordPaymentCancelled } from '@/services/activityService';
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Marks a still-pending
  * payment attempt cancelled — reached when the customer lands back on
- * Beacon via Clover's cancel redirect (see
+ * Solis via Clover's cancel redirect (see
  * app/(portal)/cases/[caseId]/payments/return/page.tsx). Safe to apply
  * directly from the client's own request, unlike a "succeeded" status:
  * "cancelled" carries no claim that money changed hands, so nothing here

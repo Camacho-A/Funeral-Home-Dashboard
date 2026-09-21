@@ -36,7 +36,7 @@ const NOW = '2026-07-24T00:00:00.000Z';
 /** Never a real secret — a fixed, documented demo password for mock-mode
     identity login (dev/demo/test only; wix-mode identities always get a
     freshly hashed real password, never this one). */
-export const MANORS_ADMIN_DEMO_PASSWORD = 'BeaconDemo123!';
+export const MANORS_ADMIN_DEMO_PASSWORD = 'SolisDemo123!';
 export const MANORS_ADMIN_IDENTITY_ID = 'identity-manors-admin';
 export const MANORS_ADMIN_MEMBERSHIP_ID = 'membership-manors-admin';
 

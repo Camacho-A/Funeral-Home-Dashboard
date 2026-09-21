@@ -14,7 +14,7 @@ const TERMINAL_STATUS_MESSAGE: Record<string, string> = {
 
 /**
  * Phase 26 (Electronic Signatures & Authorization Workflows). The public
- * signing experience — authenticated purely by `token`, never a Beacon
+ * signing experience — authenticated purely by `token`, never a Solis
  * session (see `services/signatureService.ts`'s own header comment). A
  * typed, attested signature (not a canvas/drawn-signature widget) is this
  * phase's deliberate scope boundary — see ADR-030's "Extension points."

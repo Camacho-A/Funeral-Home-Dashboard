@@ -7,7 +7,7 @@ import type { InventoryBalance } from '../../types/inventoryBalance';
 /**
  * Phase 35 (Merchandise, Inventory & Commerce). Mock fixtures for the
  * merchandise/inventory collections. All start EMPTY: no merchandise data
- * exists anywhere in Beacon today (confirmed — `serviceCatalog` is services,
+ * exists anywhere in Solis today (confirmed — `serviceCatalog` is services,
  * not merchandise), so there is nothing to seed and no historical migration.
  * Tests populate these through the services under test, exactly as the
  * Phase 19C caseOrder fixtures do.

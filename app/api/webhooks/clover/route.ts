@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   // therefore which integration/secret) this event claims to be for.
   const record = await findPaymentRecordByCheckoutId('clover', correlationId, dataAdapterMode);
   if (!record) {
-    // Return promptly with 200 — nothing to retry; Beacon has no record
+    // Return promptly with 200 — nothing to retry; Solis has no record
     // of this checkout session at all (stale, foreign, or malformed), so
     // there's nothing actionable here regardless of signature validity.
     return NextResponse.json({ received: true });
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
   }
 
   // Step 3: verify the signature against the *correct* organization's
-  // webhook secret — resolved only from Beacon's own stored data above,
+  // webhook secret — resolved only from Solis's own stored data above,
   // never from anything in the request itself.
   const verification = cloverProvider.verifyWebhook(rawBody, request.headers, integration);
   if (!verification.valid) {

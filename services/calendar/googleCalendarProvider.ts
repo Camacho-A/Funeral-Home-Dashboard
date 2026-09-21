@@ -19,7 +19,7 @@ import { CalendarProviderError } from './calendarProvider';
  * first/forced consent, not on every re-authorization).
  *
  * Push notifications (`watch`) are deliberately not implemented here —
- * Phase 34's one-way (Beacon -> Google) sync baseline never needs to
+ * Phase 34's one-way (Solis -> Google) sync baseline never needs to
  * learn about external changes, and `watch` channels require domain
  * verification plus manual 7-day renewal with no auto-renew mechanism,
  * a real operational cost this phase's scope doesn't need to take on.

@@ -1,18 +1,18 @@
 # Product Vision
 
-## What Beacon Is
+## What Solis Is
 
-Beacon is an operations platform for funeral homes and cremation providers. It replaces the spreadsheets, sticky notes, and paper case files that most small-to-mid-size funeral homes currently rely on to track a case from first call through final disposition, with a single system of record that enforces the provider's own operating procedure at every stage.
+Solis is an operations platform for funeral homes and cremation providers. It replaces the spreadsheets, sticky notes, and paper case files that most small-to-mid-size funeral homes currently rely on to track a case from first call through final disposition, with a single system of record that enforces the provider's own operating procedure at every stage.
 
-Beacon is not a website builder, an obituary publisher, or a point-of-sale system. It is the internal tool the staff of a funeral home use every day to know: which cases are open, what's overdue, who owns what, and what's still missing before a case can move forward.
+Solis is not a website builder, an obituary publisher, or a point-of-sale system. It is the internal tool the staff of a funeral home use every day to know: which cases are open, what's overdue, who owns what, and what's still missing before a case can move forward.
 
 ## Who It's For
 
-**Version 1** is built for a single client, Managed Cremations (operating as Manor Cremation), a cremation-focused provider. Version 1 ships as a single-tenant deployment, but the data model and every architectural decision documented here assume Beacon will grow into a **multi-tenant SaaS product** serving many independent funeral homes, each with their own staff, cases, and data, fully isolated from one another. See [DECISIONS.md](./DECISIONS.md) for how that constraint shapes the schema from day one, and [ARCHITECTURE.md](./ARCHITECTURE.md) for the mechanics.
+**Version 1** is built for a single client, Managed Cremations (operating as Manor Cremation), a cremation-focused provider. Version 1 ships as a single-tenant deployment, but the data model and every architectural decision documented here assume Solis will grow into a **multi-tenant SaaS product** serving many independent funeral homes, each with their own staff, cases, and data, fully isolated from one another. See [DECISIONS.md](./DECISIONS.md) for how that constraint shapes the schema from day one, and [ARCHITECTURE.md](./ARCHITECTURE.md) for the mechanics.
 
-The users are internal staff: funeral directors, office staff, and administrators. There is no public-facing or family-facing surface in Version 1 — Beacon V1 is a staff tool, full stop.
+The users are internal staff: funeral directors, office staff, and administrators. There is no public-facing or family-facing surface in Version 1 — Solis V1 is a staff tool, full stop.
 
-## The Problem Beacon Solves
+## The Problem Solis Solves
 
 Funeral home operations are procedure-heavy and time-sensitive in ways that generic task/CRM software doesn't model well:
 
@@ -21,7 +21,7 @@ Funeral home operations are procedure-heavy and time-sensitive in ways that gene
 - **A lot of institutional knowledge currently lives in people's heads or a paper folder**: who was called, who picked up, what the family asked for, whether the decedent was a veteran and whether the VA has been notified. When that's on paper, it doesn't survive a staff member being out sick, and it isn't there when a family calls asking for an update.
 - **Compliance documents (death certificates, cremation permits, signed authorizations) need to be retrievable long after a case is "done"** — for at least as long as state retention requirements demand, independent of whatever software the office happens to be running that year.
 
-Beacon's job is to make the *correct* next step obvious, make delays visible before they become a family's or a regulator's problem, and keep a permanent, auditable record of what happened and when.
+Solis's job is to make the *correct* next step obvious, make delays visible before they become a family's or a regulator's problem, and keep a permanent, auditable record of what happened and when.
 
 ## Version 1 Scope
 

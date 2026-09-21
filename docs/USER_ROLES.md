@@ -1,6 +1,6 @@
 # User Roles
 
-Beacon has no public-facing users in Version 1 — every account is a staff member of the funeral home, authenticated via Wix Members, with a role stored in `StaffProfiles.role` (see [CMS_SCHEMA.md](./CMS_SCHEMA.md)). Role checks happen in both `middleware.ts` (page-level gating) and in every Route Handler (action-level gating), reading from the same permission table so the two can't drift apart. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the session/auth mechanics.
+Solis has no public-facing users in Version 1 — every account is a staff member of the funeral home, authenticated via Wix Members, with a role stored in `StaffProfiles.role` (see [CMS_SCHEMA.md](./CMS_SCHEMA.md)). Role checks happen in both `middleware.ts` (page-level gating) and in every Route Handler (action-level gating), reading from the same permission table so the two can't drift apart. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the session/auth mechanics.
 
 ## `admin`
 

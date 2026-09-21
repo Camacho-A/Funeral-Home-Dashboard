@@ -1,7 +1,7 @@
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). The
  * authoritative, itemized pricing record for one case — see
- * docs/adr/ADR-023-case-order-pricing-engine.md. Beacon calculates every
+ * docs/adr/ADR-023-case-order-pricing-engine.md. Solis calculates every
  * total server-side (domain/pricing/calculateOrder.ts,
  * services/pricingService.ts); Clover only ever collects `balanceDue` (see
  * types/payment.ts's PaymentRecord.caseOrderId and
@@ -32,7 +32,7 @@ export type CaseOrder = {
       only ever be set server-side once such a feature exists. */
   discountTotal: number;
   /** Reserved for a future tax feature — always 0 today. Sales tax is not part
-      of Beacon's business requirements (Phase 37 removed the sales-tax feature;
+      of Solis's business requirements (Phase 37 removed the sales-tax feature;
       see docs/adr/ADR-041-product-variants.md). Kept as a reserved field so a
       future feature is additive, mirroring `discountTotal`. */
   taxTotal: number;

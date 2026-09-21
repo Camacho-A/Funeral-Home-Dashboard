@@ -8,7 +8,7 @@ const SETTINGS_PATH = '/settings/calendar-integrations';
 
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
- * Reminders). Google's own redirect back to Beacon — genuinely
+ * Reminders). Google's own redirect back to Solis — genuinely
  * cross-origin, so `requireSameOrigin` does not (and cannot) apply
  * here; `completeAuthorization`'s signed-state-cookie verification is
  * the substitute authenticity check, mirroring
