@@ -65,4 +65,45 @@ describe('POST /api/family/forgot-password', () => {
     expect(capturedIdentityMessages).toHaveLength(1);
     expect(capturedIdentityMessages[0]).toMatchObject({ kind: 'password_reset', to: 'family-forgot@example.com' });
   });
+
+  /** Security correction (2026-09, Manors go-live): the same active-only
+      policy as the staff side — `isPortalUserEligibleForPasswordReset`. */
+  it('disabled portal user → generic response, no message sent', async () => {
+    const { findOrCreatePortalUser, updatePortalUser } = await import('@/services/portal/portalUserService');
+    const { portalUser } = await findOrCreatePortalUser(
+      { email: 'family-disabled@example.com', displayName: 'Disabled Family', passwordHash: hashPassword('Password123!'), idFactory },
+      'mock',
+    );
+    await updatePortalUser(portalUser.id, { status: 'disabled' }, 'mock');
+
+    const response = await forgotRequest({ email: 'family-disabled@example.com' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(capturedIdentityMessages.some((m) => m.to === 'family-disabled@example.com')).toBe(false);
+  });
+
+  it('returns identical responses for an active user, a disabled user, and a nonexistent email', async () => {
+    const { findOrCreatePortalUser, updatePortalUser } = await import('@/services/portal/portalUserService');
+    await findOrCreatePortalUser(
+      { email: 'family-identical-active@example.com', displayName: 'Active Family', passwordHash: hashPassword('Password123!'), idFactory },
+      'mock',
+    );
+    const { portalUser: disabledUser } = await findOrCreatePortalUser(
+      { email: 'family-identical-disabled@example.com', displayName: 'Disabled Family', passwordHash: hashPassword('Password123!'), idFactory },
+      'mock',
+    );
+    await updatePortalUser(disabledUser.id, { status: 'disabled' }, 'mock');
+
+    const emails = ['family-identical-active@example.com', 'family-identical-disabled@example.com', 'family-identical-nonexistent@example.com'];
+    const results = await Promise.all(emails.map(async (email) => {
+      const response = await forgotRequest({ email });
+      return { status: response.status, body: await response.json() };
+    }));
+
+    const [first, ...rest] = results;
+    for (const r of rest) {
+      expect(r.status).toBe(first.status);
+      expect(r.body).toEqual(first.body);
+    }
+  });
 });

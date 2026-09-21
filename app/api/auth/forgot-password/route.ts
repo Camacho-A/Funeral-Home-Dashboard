@@ -4,7 +4,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findIdentityByEmail } from '@/services/identityService';
-import { createPasswordResetToken } from '@/services/passwordService';
+import { createPasswordResetToken, isIdentityEligibleForPasswordReset } from '@/services/passwordService';
 import { getIdentityMessageSender } from '@/lib/identity/messageSender';
 
 const GENERIC_RESPONSE = { ok: true, message: 'If an account exists for that email, a password reset link has been sent.' };
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   const dataAdapterMode = getDataAdapterMode();
   const identity = await findIdentityByEmail(email, dataAdapterMode);
 
-  if (identity && identity.status !== 'disabled' && identity.status !== 'deleted') {
+  if (isIdentityEligibleForPasswordReset(identity)) {
     const { token } = await createPasswordResetToken(identity.id, () => crypto.randomUUID(), dataAdapterMode);
     try {
       await getIdentityMessageSender().send({ kind: 'password_reset', to: identity.email, token });

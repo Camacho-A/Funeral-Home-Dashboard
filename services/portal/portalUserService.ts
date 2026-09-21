@@ -156,12 +156,28 @@ export async function updatePortalUser(
     did. Mirrors `passwordService.ts`'s own `requestPasswordReset`
     precedent, reusing `lib/identity/tokens.ts`'s `generateToken`/`hashToken` —
     the raw token is returned here for the route to email; never persisted. */
+/**
+ * Security correction (2026-09, Manors go-live) — the Family Portal
+ * sibling of `passwordService.ts#isIdentityEligibleForPasswordReset`.
+ * `PortalUserStatus` is only `'active' | 'disabled'` (no `pending`/
+ * `locked` here — Family Portal users are provisioned directly active via
+ * invitation acceptance, never left in an intermediate state), but the
+ * previous checks (`if (!user) return null`) let a `disabled` portal user
+ * still receive and redeem a fully working reset link — the exact same
+ * class of gap the staff-side identity flow had. Not a separate type,
+ * since `Identity`/`PortalUser` are deliberately distinct models (see this
+ * file's own header comment) with different status enums.
+ */
+export function isPortalUserEligibleForPasswordReset(user: PortalUser | null): user is PortalUser {
+  return user !== null && user.status === 'active';
+}
+
 export async function requestPortalPasswordReset(
   params: { email: string; tokenHash: string; expiresAt: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<PortalUser | null> {
   const user = await findPortalUserByEmail(params.email, dataAdapterMode);
-  if (!user) return null;
+  if (!isPortalUserEligibleForPasswordReset(user)) return null;
   return updatePortalUser(user.id, { passwordResetTokenHash: params.tokenHash, passwordResetExpiresAt: params.expiresAt }, dataAdapterMode);
 }
 
@@ -170,7 +186,13 @@ export async function requestPortalPasswordReset(
     clears the token fields so it can never be replayed (no separate
     "used" flag needed, mirroring `PortalInvitation`'s own single-use
     status-machine convention). Returns `null` for any invalid, expired,
-    or unknown token — the caller never distinguishes which. */
+    or unknown token — the caller never distinguishes which.
+    Security correction (2026-09, Manors go-live): also re-checks the
+    user's *current* status here, at redemption time, the same
+    fail-closed re-validation `passwordService.ts#resetPasswordWithToken`
+    performs — a token issued while active must not be redeemable after
+    the user was disabled in the meantime. Nothing is mutated when this
+    rejects (the token fields are left untouched). */
 export async function resetPortalPasswordWithToken(
   tokenHash: string,
   newPasswordHash: string,
@@ -179,6 +201,7 @@ export async function resetPortalPasswordWithToken(
   const user = await findPortalUserByPasswordResetTokenHash(tokenHash, dataAdapterMode);
   if (!user || !user.passwordResetTokenHash || !user.passwordResetExpiresAt) return null;
   if (new Date(user.passwordResetExpiresAt).getTime() < Date.now()) return null;
+  if (!isPortalUserEligibleForPasswordReset(user)) return null;
 
   return updatePortalUser(user.id, { passwordHash: newPasswordHash, passwordResetTokenHash: null, passwordResetExpiresAt: null }, dataAdapterMode);
 }

@@ -125,4 +125,42 @@ describe('portalUserService', () => {
     const { resetPortalPasswordWithToken } = await import('./portalUserService');
     expect(await resetPortalPasswordWithToken('e'.repeat(64), hashPassword('NewPassword1!'), 'mock')).toBeNull();
   });
+
+  /** Security correction (2026-09, Manors go-live): the Family Portal
+      sibling of the staff-side active-only policy —
+      `isPortalUserEligibleForPasswordReset`. A `disabled` portal user
+      must not receive or redeem a reset link, and a token issued while
+      active must fail closed if the user is disabled before redemption. */
+  describe('active-only eligibility (Manors go-live security correction)', () => {
+    it('requestPortalPasswordReset does not set token fields for a disabled portal user', async () => {
+      const { findOrCreatePortalUser, updatePortalUser, requestPortalPasswordReset } = await import('./portalUserService');
+      const { portalUser } = await findOrCreatePortalUser(
+        { email: 'disabled.reset@example.com', displayName: 'Disabled Reset', passwordHash: hashPassword('Password123!'), idFactory },
+        'mock',
+      );
+      await updatePortalUser(portalUser.id, { status: 'disabled' }, 'mock');
+
+      const result = await requestPortalPasswordReset({ email: 'disabled.reset@example.com', tokenHash: 'f'.repeat(64), expiresAt: '2030-01-01T00:00:00.000Z' }, 'mock');
+      expect(result).toBeNull();
+    });
+
+    it('resetPortalPasswordWithToken rejects a valid, unexpired token whose user became disabled before redemption, and changes nothing', async () => {
+      const { findOrCreatePortalUser, updatePortalUser, requestPortalPasswordReset, resetPortalPasswordWithToken, getPortalUserById } = await import('./portalUserService');
+      const { portalUser } = await findOrCreatePortalUser(
+        { email: 'becomes.disabled@example.com', displayName: 'Becomes Disabled', passwordHash: hashPassword('OldPassword1!'), idFactory },
+        'mock',
+      );
+      await requestPortalPasswordReset({ email: 'becomes.disabled@example.com', tokenHash: 'a1'.repeat(32), expiresAt: '2030-01-01T00:00:00.000Z' }, 'mock');
+
+      // Disabled AFTER the token was issued, before it's redeemed.
+      await updatePortalUser(portalUser.id, { status: 'disabled' }, 'mock');
+
+      const result = await resetPortalPasswordWithToken('a1'.repeat(32), hashPassword('NewPassword1!'), 'mock');
+      expect(result).toBeNull();
+
+      const unchanged = await getPortalUserById(portalUser.id, 'mock');
+      expect(unchanged?.passwordHash).toBe(portalUser.passwordHash);
+      expect(unchanged?.status).toBe('disabled');
+    });
+  });
 });

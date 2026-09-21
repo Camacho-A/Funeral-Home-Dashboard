@@ -8,6 +8,10 @@ const ERROR_STATUS: Record<string, number> = {
   invalid_token: 400,
   expired_token: 400,
   already_used: 400,
+  // Same generic message/status as every other rejection reason below —
+  // never reveals that the identity became ineligible after the token was
+  // issued (see passwordService.ts#resetPasswordWithToken).
+  identity_not_eligible: 400,
 };
 
 /**

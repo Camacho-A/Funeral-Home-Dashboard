@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { findIdentityByEmail } from '@/services/identityService';
-import { createPasswordResetToken } from '@/services/passwordService';
+import { createPasswordResetToken, isIdentityEligibleForPasswordReset } from '@/services/passwordService';
 import { getIdentityMessageSender } from '@/lib/identity/messageSender';
 
 /**
@@ -30,7 +30,7 @@ export async function forgotPasswordAction(formData: FormData): Promise<void> {
   const dataAdapterMode = getDataAdapterMode();
 
   const identity = await findIdentityByEmail(email, dataAdapterMode);
-  if (identity && identity.status !== 'disabled' && identity.status !== 'deleted') {
+  if (isIdentityEligibleForPasswordReset(identity)) {
     const { token } = await createPasswordResetToken(identity.id, () => crypto.randomUUID(), dataAdapterMode);
     try {
       await getIdentityMessageSender().send({ kind: 'password_reset', to: identity.email, token });

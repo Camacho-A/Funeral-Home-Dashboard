@@ -9,6 +9,7 @@ import {
 import { hashPassword, verifyPassword as verifyPasswordHash } from '../lib/identity/passwordHashing';
 import { generateToken, verifyTokenHash, hashToken } from '../lib/identity/tokens';
 import type { PasswordResetToken } from '../types/passwordResetToken';
+import type { Identity } from '../types/identity';
 import { getIdentitySecrets, updateIdentitySecrets, getIdentityById, updateIdentity } from './identityService';
 import { passwordResetTokenFixtures } from './__mocks__/identityFixtures';
 
@@ -69,6 +70,27 @@ export async function changePassword(
 // Forgot / reset password
 // ---------------------------------------------------------------------------
 
+/**
+ * Security correction (2026-09, Manors go-live). The single source of truth
+ * for "is this identity allowed to receive/redeem a password reset" —
+ * `active` only, matching `app/login/actions.ts`'s own pre-existing policy
+ * for who may authenticate at all (`pending` → "complete email
+ * verification first"; `locked` → "account locked"; anything else is
+ * rejected too). Previously each call site checked
+ * `status !== 'disabled' && status !== 'deleted'`, an exclude-list that
+ * silently left `pending` (never-activated, no password set yet — a
+ * forgot-password reset makes no sense for an account with nothing to
+ * reset) and `locked` (an active brute-force lockout) able to receive and
+ * redeem a fully working reset link, undermining the lockout entirely and
+ * letting a reset activate an invited-but-never-onboarded identity outside
+ * its real invitation/setup flow. Exported so both the API route and the
+ * Server Action (and this file's own consumption-time re-check) share one
+ * definition — never re-implemented at each call site again.
+ */
+export function isIdentityEligibleForPasswordReset(identity: Identity | null): identity is Identity {
+  return identity !== null && identity.status === 'active';
+}
+
 async function findResetTokenByHash(tokenHash: string, dataAdapterMode: DataAdapterMode): Promise<PasswordResetToken | null> {
   if (dataAdapterMode === 'mock') {
     return passwordResetTokenFixtures.find((t) => t.tokenHash === tokenHash) ?? null;
@@ -114,12 +136,21 @@ export async function createPasswordResetToken(
 
 export type ResetPasswordResult =
   | { success: true; identityId: string }
-  | { success: false; reason: 'invalid_token' | 'expired_token' | 'already_used' };
+  | { success: false; reason: 'invalid_token' | 'expired_token' | 'already_used' | 'identity_not_eligible' };
 
 /** Single-use: a token already marked `usedAt` is rejected even if it
     would otherwise still verify and hasn't expired — replaying a reset
     link (e.g. from an email client's link-prefetching) can never reset
-    the password twice. */
+    the password twice.
+    Security correction (2026-09, Manors go-live): re-reads the identity's
+    *current* status here, at redemption time — never trusts that it's
+    still eligible just because a token was validly issued for it earlier.
+    A token issued while `active` fails closed (`identity_not_eligible`,
+    same as an invalid/expired token — no distinguishing detail leaked) if
+    the identity has since become `pending`/`locked`/`disabled`/`deleted`.
+    Nothing is mutated on this path — the token is not marked used and no
+    password is touched, so a transient state (e.g. a lockout that later
+    expires) doesn't permanently burn an otherwise-valid, unexpired token. */
 export async function resetPasswordWithToken(
   rawToken: string,
   newPassword: string,
@@ -132,6 +163,11 @@ export async function resetPasswordWithToken(
   }
   if (record.usedAt) return { success: false, reason: 'already_used' };
   if (new Date(record.expiresAt).getTime() < Date.now()) return { success: false, reason: 'expired_token' };
+
+  const identity = await getIdentityById(record.identityId, dataAdapterMode);
+  if (!isIdentityEligibleForPasswordReset(identity)) {
+    return { success: false, reason: 'identity_not_eligible' };
+  }
 
   await markResetTokenUsed(record, dataAdapterMode);
   await setPassword(record.identityId, newPassword, dataAdapterMode);
