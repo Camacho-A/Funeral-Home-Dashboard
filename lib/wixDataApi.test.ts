@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   queryWixDataItems,
+  queryAllWixDataItems,
   insertWixDataItem,
   updateWixDataItem,
   deleteWixDataItem,
@@ -69,6 +70,99 @@ describe('queryWixDataItems', () => {
     );
 
     await expect(queryWixDataItems('organizations', {})).rejects.not.toThrow(/test-key-value/);
+  });
+});
+
+describe('queryAllWixDataItems — Manors go-live incident fix (2026-09)', () => {
+  function page(items: unknown[], hasNext: boolean, next?: string) {
+    return { ok: true, json: async () => ({ dataItems: items, pagingMetadata: { hasNext, cursors: { next: next ?? null } } }) };
+  }
+
+  it('returns every item from a single page unchanged (hasNext: false)', async () => {
+    const items = [{ id: '1', dataCollectionId: 'rolePermissions', data: { permissionKey: 'case.read' } }];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(page(items, false)));
+
+    const result = await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
+    expect(result).toEqual(items);
+  });
+
+  it('aggregates across multiple pages, following the cursor until hasNext is false — this is the exact bug fixed: a role with more than 50 grants (e.g. 68) is now read completely, not silently capped at the first page', async () => {
+    const page1Items = Array.from({ length: 50 }, (_, i) => ({ id: `p1-${i}`, dataCollectionId: 'rolePermissions', data: { seq: i } }));
+    const page2Items = Array.from({ length: 18 }, (_, i) => ({ id: `p2-${i}`, dataCollectionId: 'rolePermissions', data: { seq: 50 + i } }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(page(page1Items, true, 'cursor-abc'))
+      .mockResolvedValueOnce(page(page2Items, false));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await queryAllWixDataItems('rolePermissions', { roleId: 'role-administrator' });
+
+    expect(result).toHaveLength(68);
+    expect(result.map((r) => r.id)).toContain('p2-17'); // the very last item on "page 2" — proof it isn't dropped
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('requests the first page via paging.limit alone, and every subsequent page via paging.cursor alone (never both together, per Wix Data\'s own contract)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: '1', dataCollectionId: 'x', data: {} }], true, 'cursor-1'))
+      .mockResolvedValueOnce(page([{ id: '2', dataCollectionId: 'x', data: {} }], false));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' }, { limit: 100 });
+
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(firstBody.query.paging).toEqual({ limit: 100 });
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(secondBody.query.paging).toEqual({ cursor: 'cursor-1' });
+  });
+
+  it('passes the filter through on every page, not just the first', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: '1', dataCollectionId: 'x', data: {} }], true, 'cursor-1'))
+      .mockResolvedValueOnce(page([{ id: '2', dataCollectionId: 'x', data: {} }], false));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await queryAllWixDataItems('rolePermissions', { roleId: 'role-administrator' });
+
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(firstBody.query.filter).toEqual({ roleId: 'role-administrator' });
+    expect(secondBody.query.filter).toEqual({ roleId: 'role-administrator' });
+  });
+
+  it('defaults to a 100-item page size when no limit is given', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(page([], false));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.query.paging).toEqual({ limit: 100 });
+  });
+
+  it('stops if hasNext is true but no cursor is actually returned, rather than looping forever', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(page([{ id: '1', dataCollectionId: 'x', data: {} }], true, undefined));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
+    expect(result).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws rather than looping unbounded if hasNext never becomes false', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => page([{ id: 'x', dataCollectionId: 'x', data: {} }], true, 'always-more'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(queryAllWixDataItems('rolePermissions', { roleId: 'role-x' })).rejects.toThrow(/did not terminate/);
+  });
+
+  it('treats a missing pagingMetadata (older/mocked response shape) as a single, complete page', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ dataItems: [{ id: '1', dataCollectionId: 'x', data: {} }] }) }));
+
+    const result = await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
+    expect(result).toHaveLength(1);
   });
 });
 

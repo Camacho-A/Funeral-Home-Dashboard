@@ -17,6 +17,13 @@ vi.mock('@/lib/wixDataApi', async () => {
       getWixServerConfig();
       return mockQueryWixDataItems(...args);
     },
+    // Manors go-live pagination fix (2026-09): see the identical comment
+    // in app/api/cases/route.test.ts.
+    queryAllWixDataItems: async (collectionId: string, filter?: Record<string, unknown>) => {
+      getWixServerConfig();
+      const response = await mockQueryWixDataItems(collectionId, { filter });
+      return response.dataItems;
+    },
     updateWixDataItem: (...args: unknown[]) => {
       getWixServerConfig();
       return mockUpdateWixDataItem(...args);

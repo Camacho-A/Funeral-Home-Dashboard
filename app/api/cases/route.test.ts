@@ -17,6 +17,18 @@ vi.mock('@/lib/wixDataApi', async () => {
       getWixServerConfig();
       return mockQueryWixDataItems(...args);
     },
+    // Manors go-live pagination fix (2026-09): permissionService's
+    // fetchRolePermissions now calls queryAllWixDataItems instead of
+    // queryWixDataItems directly. Every canned rolePermissions/roles
+    // response in this file is a single, complete page (well under Wix's
+    // real 50-item cap), so delegating straight to the same
+    // mockQueryWixDataItems implementation reproduces that page correctly
+    // with zero change to any existing mockImplementation in this file.
+    queryAllWixDataItems: async (collectionId: string, filter?: Record<string, unknown>) => {
+      getWixServerConfig();
+      const response = await mockQueryWixDataItems(collectionId, { filter });
+      return response.dataItems;
+    },
     insertWixDataItem: (...args: unknown[]) => {
       getWixServerConfig();
       return mockInsertWixDataItem(...args);

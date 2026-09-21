@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import { buildWixRolePermissionData, type WixRolePermissionItem } from '../lib/wixRolePermissionMapper';
 import { buildWixRbacReconciliationRecordData, type WixRbacReconciliationRecordItem } from '../lib/wixRbacReconciliationRecordMapper';
 import { DEFAULT_ROLE_DEFINITIONS } from '../domain/rbac/defaultRoles';
@@ -35,7 +35,14 @@ function nowIso(): string {
 const DEFAULT_ROLE_IDS = new Set(DEFAULT_ROLE_DEFINITIONS.map((def) => defaultRoleFixtureId(def.key)));
 
 /** Reads the raw (pre-mapper) default-role grant rows so the planner can see
-    the true `createdAt` state, including rows missing it. */
+    the true `createdAt` state, including rows missing it.
+    Manors go-live incident fix (2026-09): previously unpaginated — for any
+    default role whose live grant count exceeds Wix Data's silent 50-item
+    cap (role-administrator's real 68, first exposed by this exact
+    reconciliation), this would have under-read the role's existing
+    grants, causing the planner to see already-granted permissions as
+    "missing" on every subsequent run. Now paginates fully via
+    `queryAllWixDataItems`. */
 async function readDefaultRoleGrantRows(dataAdapterMode: DataAdapterMode): Promise<RawGrantRow[]> {
   if (dataAdapterMode === 'mock') {
     return rolePermissionFixtures
@@ -45,8 +52,8 @@ async function readDefaultRoleGrantRows(dataAdapterMode: DataAdapterMode): Promi
   const rows: RawGrantRow[] = [];
   for (const def of DEFAULT_ROLE_DEFINITIONS) {
     const roleId = defaultRoleFixtureId(def.key);
-    const response = await queryWixDataItems<WixRolePermissionItem>(ROLE_PERMISSIONS_COLLECTION, { filter: { roleId } });
-    for (const item of response.dataItems) {
+    const items = await queryAllWixDataItems<WixRolePermissionItem>(ROLE_PERMISSIONS_COLLECTION, { roleId });
+    for (const item of items) {
       const d = item.data;
       rows.push({ id: d.beaconRolePermissionId, roleId: d.roleId, permissionKey: d.permissionKey, createdAt: d.createdAt });
     }

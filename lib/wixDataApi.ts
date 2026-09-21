@@ -16,7 +16,13 @@ import { getWixServerConfig } from './env';
 
 type WixDataQueryRequest = {
   filter?: Record<string, unknown>;
-  paging?: { limit?: number; offset?: number };
+  /** `cursor`, added for `queryAllWixDataItems` below: Wix Data's own
+      cursor-paging contract requires the *first* page be requested via
+      `limit` alone and every subsequent page via `cursor` alone (never
+      both together) — verified empirically against the live site (not
+      merely assumed) while diagnosing the `rolePermissions` 50-item
+      silent-cap incident this type change fixes. */
+  paging?: { limit?: number; offset?: number; cursor?: string };
   /** Phase 24 (Case Activity Timeline & Audit Center): the first caller in
       this codebase to need ordering — every prior query either fetched a
       single row (`paging: { limit: 1 }`) or filtered/sorted an already-small
@@ -28,6 +34,10 @@ type WixDataQueryRequest = {
 
 type WixDataQueryResponse<Item> = {
   dataItems: Array<{ id: string; dataCollectionId: string; data: Item }>;
+  /** Present on every real Wix Data query response; optional here only so
+      existing hand-built test fixtures (which predate this field) keep
+      compiling unchanged. */
+  pagingMetadata?: { hasNext?: boolean; cursors?: { next?: string | null } };
 };
 
 /**
@@ -74,6 +84,54 @@ export async function queryWixDataItems<Item = Record<string, unknown>>(
   }
 
   return response.json();
+}
+
+/** Wix Data silently caps an unpaginated (no explicit `paging`, or
+    `paging` without a `limit`) query at 50 items — `hasNext: true` is
+    returned, but a caller that never checks it (as `fetchRolePermissions`
+    didn't, until this fix) silently loses every row past the 50th. This
+    surfaced for real in production once `role-administrator`'s live grant
+    count passed 50 (68 real grants): the app's own permission resolution
+    started reading only the first 50, dropping `organization.manage`
+    (Manors go-live incident, 2026-09).
+    `queryAllWixDataItems` is the general-purpose fix: pages through
+    Wix's cursor-based pagination (first page via `paging: { limit }`,
+    every subsequent page via `paging: { cursor } }` alone — the two are
+    mutually exclusive per Wix's own contract, confirmed empirically) until
+    `pagingMetadata.hasNext` is false, returning every matching row
+    regardless of collection size. `MAX_PAGES` is a safety backstop against
+    an unbounded loop (e.g. a Wix response that never sets `hasNext:
+    false`) — 200 pages * the default 100-item page size is 20,000 rows,
+    far beyond any realistic single-filter query in this codebase today;
+    hitting it throws rather than looping forever. */
+const MAX_PAGES = 200;
+
+export async function queryAllWixDataItems<Item = Record<string, unknown>>(
+  dataCollectionId: string,
+  filter?: Record<string, unknown>,
+  options?: { limit?: number; sort?: WixDataQueryRequest['sort'] },
+): Promise<Array<{ id: string; dataCollectionId: string; data: Item }>> {
+  const limit = options?.limit ?? 100;
+  const all: Array<{ id: string; dataCollectionId: string; data: Item }> = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const response = await queryWixDataItems<Item>(dataCollectionId, {
+      filter,
+      sort: options?.sort,
+      paging: cursor ? { cursor } : { limit },
+    });
+    all.push(...response.dataItems);
+
+    if (!response.pagingMetadata?.hasNext) return all;
+    cursor = response.pagingMetadata.cursors?.next ?? undefined;
+    if (!cursor) return all;
+  }
+
+  throw new WixDataApiError(
+    `Wix Data query for collection "${dataCollectionId}" did not terminate within ${MAX_PAGES} pages — aborting rather than looping unbounded.`,
+    599,
+  );
 }
 
 type WixDataItem<Item> = { id: string; dataCollectionId: string; data: Item };

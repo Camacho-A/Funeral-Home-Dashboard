@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem, WixDataApiError } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import { mapWixRoleItem, buildWixRoleData, applyRoleUpdateToWixData, type WixRoleItem } from '../lib/wixRoleMapper';
 import { mapWixRolePermissionItem, buildWixRolePermissionData, type WixRolePermissionItem } from '../lib/wixRolePermissionMapper';
 import { mapWixOrganizationRoleItem, buildWixOrganizationRoleData, type WixOrganizationRoleItem } from '../lib/wixOrganizationRoleMapper';
@@ -100,12 +100,18 @@ async function insertRoleIdempotent(role: Role, dataAdapterMode: DataAdapterMode
   }
 }
 
+/** Manors go-live incident fix (2026-09): previously unpaginated, so any
+    role's grants past Wix Data's silent 50-item cap were invisible to
+    `cloneRole` (dropped from the clone), `updateRole`'s admin-safety
+    check (miscounted a role's true permission set), and `deleteRole`
+    (would leave grant rows past the 50th orphaned). Now paginates fully
+    via `queryAllWixDataItems`. */
 async function listRolePermissions(roleId: string, dataAdapterMode: DataAdapterMode): Promise<RolePermission[]> {
   if (dataAdapterMode === 'mock') {
     return rolePermissionFixtures.filter((rp) => rp.roleId === roleId);
   }
-  const response = await queryWixDataItems<WixRolePermissionItem>('rolePermissions', { filter: { roleId } });
-  return response.dataItems.map((item) => mapWixRolePermissionItem(item.data)).filter((rp): rp is RolePermission => rp !== null);
+  const items = await queryAllWixDataItems<WixRolePermissionItem>('rolePermissions', { roleId });
+  return items.map((item) => mapWixRolePermissionItem(item.data)).filter((rp): rp is RolePermission => rp !== null);
 }
 
 /** Inserts a role-permission grant, treating an id conflict (a concurrent

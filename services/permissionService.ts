@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems } from '../lib/wixDataApi';
 import { mapWixRoleItem, type WixRoleItem } from '../lib/wixRoleMapper';
 import { mapWixRolePermissionItem, type WixRolePermissionItem } from '../lib/wixRolePermissionMapper';
 import { mapWixOrganizationRolePermissionOverrideItem, type WixOrganizationRolePermissionOverrideItem } from '../lib/wixOrganizationRolePermissionOverrideMapper';
@@ -78,14 +78,19 @@ export async function resolveRoleForKey(roleKey: string, organizationId: string,
   return role;
 }
 
+/** Manors go-live incident fix (2026-09): this previously called
+    `queryWixDataItems` with no `paging`, which Wix Data silently caps at
+    50 items — any role with more than 50 live grants (first hit by
+    `role-administrator`'s real 68) had every grant past the 50th silently
+    dropped from every authorization decision. Now paginates fully via
+    `queryAllWixDataItems`, so a role's true grant count — however large —
+    is always read completely. */
 async function fetchRolePermissions(roleId: string, dataAdapterMode: DataAdapterMode): Promise<PermissionKey[]> {
   if (dataAdapterMode === 'mock') {
     return rolePermissionFixtures.filter((rp) => rp.roleId === roleId).map((rp) => rp.permissionKey);
   }
-  const response = await queryWixDataItems<WixRolePermissionItem>('rolePermissions', {
-    filter: { roleId },
-  });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixRolePermissionItem>('rolePermissions', { roleId });
+  return items
     .map((item) => mapWixRolePermissionItem(item.data))
     .filter((rp): rp is RolePermission => rp !== null)
     .map((rp) => rp.permissionKey);

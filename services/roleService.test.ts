@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   seedPermissionCatalog,
   seedPlatformDefaultRoles,
@@ -29,6 +29,7 @@ import {
   organizationRoleWriteClaimFixtures,
 } from './__mocks__/rbacFixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
+import { PERMISSION_KEYS } from '../domain/rbac/permissionCatalog';
 import type { Membership } from '../types/membership';
 
 function sleep(ms: number): Promise<void> {
@@ -197,6 +198,103 @@ describe('cloneRole', () => {
     await expect(
       cloneRole({ organizationId: SECOND_MOCK_ORGANIZATION_ID, sourceRoleId: custom.id, name: 'Stolen Clone', actorIdentityId: 'actor-1', idFactory }, 'mock'),
     ).rejects.toThrow(RoleServiceError);
+  });
+
+  describe('wix mode — pagination fix (Manors go-live incident, 2026-09)', () => {
+    let originalApiKey: string | undefined;
+    let originalSiteId: string | undefined;
+
+    beforeEach(() => {
+      originalApiKey = process.env.WIX_API_KEY;
+      originalSiteId = process.env.WIX_SITE_ID;
+      process.env.WIX_API_KEY = 'test-key-value';
+      process.env.WIX_SITE_ID = 'test-site-id';
+    });
+
+    afterEach(() => {
+      if (originalApiKey === undefined) delete process.env.WIX_API_KEY;
+      else process.env.WIX_API_KEY = originalApiKey;
+      if (originalSiteId === undefined) delete process.env.WIX_SITE_ID;
+      else process.env.WIX_SITE_ID = originalSiteId;
+      vi.unstubAllGlobals();
+    });
+
+    it("clones every one of a source role's grants, including ones past Wix Data's 50-item page cap — listRolePermissions previously dropped them silently", async () => {
+      const sourceRoleId = 'role-big-source';
+      const page1 = PERMISSION_KEYS.slice(0, 50);
+      const page2 = PERMISSION_KEYS.slice(50, 55);
+      const allKeys = [...page1, ...page2];
+
+      const insertedRolePermissionKeys: string[] = [];
+      const fetchMock = vi.fn(async (url: string, init: { method?: string; body: string }) => {
+        const body = JSON.parse(init.body);
+
+        if (url.endsWith('/items/query')) {
+          const { dataCollectionId, query } = body;
+          if (dataCollectionId === 'roles') {
+            return {
+              ok: true,
+              json: async () => ({
+                dataItems: [
+                  {
+                    id: sourceRoleId,
+                    dataCollectionId: 'roles',
+                    data: {
+                      beaconRoleId: sourceRoleId,
+                      key: 'bigSource',
+                      name: 'Big Source',
+                      description: 'test',
+                      organizationId: null,
+                      isSystemDefault: true,
+                      createdAt: '2026-01-01T00:00:00.000Z',
+                      updatedAt: '2026-01-01T00:00:00.000Z',
+                    },
+                  },
+                ],
+              }),
+            };
+          }
+          if (dataCollectionId === 'rolePermissions') {
+            const pageIndex = query.paging?.cursor ? Number(query.paging.cursor.replace('page-', '')) : 0;
+            const pages = [page1, page2];
+            const keys = pages[pageIndex] ?? [];
+            const hasNext = pageIndex + 1 < pages.length;
+            return {
+              ok: true,
+              json: async () => ({
+                dataItems: keys.map((permissionKey, i) => ({
+                  id: `${sourceRoleId}-${pageIndex}-${i}`,
+                  dataCollectionId: 'rolePermissions',
+                  data: { beaconRolePermissionId: `${sourceRoleId}-${permissionKey}`, roleId: sourceRoleId, permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+                })),
+                pagingMetadata: { hasNext, cursors: { next: hasNext ? `page-${pageIndex + 1}` : null } },
+              }),
+            };
+          }
+          throw new Error(`Unexpected query collection in test: ${dataCollectionId}`);
+        }
+
+        if (url.endsWith('/items') && init.method === 'POST') {
+          if (body.dataCollectionId === 'rolePermissions') {
+            insertedRolePermissionKeys.push(body.dataItem.data.permissionKey);
+          }
+          return { ok: true, json: async () => ({ dataItem: body.dataItem }) };
+        }
+
+        throw new Error(`Unexpected request in test: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const cloned = await cloneRole(
+        { organizationId: DEFAULT_ORGANIZATION_ID, sourceRoleId, name: 'Big Source Clone', actorIdentityId: 'actor-1', idFactory },
+        'wix',
+      );
+
+      expect(cloned.name).toBe('Big Source Clone');
+      expect(insertedRolePermissionKeys.sort()).toEqual([...allKeys].sort());
+      expect(insertedRolePermissionKeys).toContain(page2[page2.length - 1]); // the very last "page 2" grant wasn't dropped
+      expect(insertedRolePermissionKeys.length).toBe(55);
+    });
   });
 });
 
