@@ -36,9 +36,6 @@ export type MfaChallengePayload = {
       time — if the password changes mid-challenge, this stale token is
       rejected. */
   passwordVersionAtIssue: number;
-  /** Carried through so the eventual real session honors the login form's
-      "remember this device" choice. */
-  rememberDevice: boolean;
   issuedAt: number;
   expiresAt: number;
 };
@@ -71,21 +68,19 @@ function isValidShape(value: unknown): value is MfaChallengePayload {
     typeof c.identityId === 'string' &&
     c.aud === MFA_CHALLENGE_AUDIENCE &&
     typeof c.passwordVersionAtIssue === 'number' &&
-    typeof c.rememberDevice === 'boolean' &&
     typeof c.issuedAt === 'number' &&
     typeof c.expiresAt === 'number'
   );
 }
 
 export async function createMfaChallengeToken(
-  params: { identityId: string; passwordVersionAtIssue: number; rememberDevice: boolean },
+  params: { identityId: string; passwordVersionAtIssue: number },
   now: number = Math.floor(Date.now() / 1000),
 ): Promise<string> {
   const payload: MfaChallengePayload = {
     identityId: params.identityId,
     aud: MFA_CHALLENGE_AUDIENCE,
     passwordVersionAtIssue: params.passwordVersionAtIssue,
-    rememberDevice: params.rememberDevice,
     issuedAt: now,
     expiresAt: now + MFA_CHALLENGE_DURATION_SECONDS,
   };

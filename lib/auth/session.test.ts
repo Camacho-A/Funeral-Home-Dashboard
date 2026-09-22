@@ -64,8 +64,8 @@ describe('session cookie lifecycle', () => {
     expect(cookieStore.get(SESSION_COOKIE_NAME)?.options?.maxAge).toBe(60 * 60 * 12);
   });
 
-  it('sets a 30-day cookie maxAge for an identity-mode session — the actual session-timeout fix', async () => {
+  it('sets a 24-hour cookie maxAge for an identity-mode session — comfortably above the registry\'s own 16-hour absolute maximum', async () => {
     await createSession(identityTestUser, 'identity-session-1');
-    expect(cookieStore.get(SESSION_COOKIE_NAME)?.options?.maxAge).toBe(60 * 60 * 24 * 30);
+    expect(cookieStore.get(SESSION_COOKIE_NAME)?.options?.maxAge).toBe(60 * 60 * 24);
   });
 });

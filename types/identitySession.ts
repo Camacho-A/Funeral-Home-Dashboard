@@ -27,11 +27,11 @@ export type IdentitySession = {
   deviceName: string | null;
   ipAddress: string | null;
   userAgent: string | null;
-  /** Sliding — extended on every validated request, up to a hard
-      re-authentication ceiling enforced by the cookie's own expiry. */
+  /** Sliding — extended (subject to touch-throttling) on every validated
+      request, but never past `createdAt` + the absolute session maximum
+      (see `services/sessionService.ts`'s own constants). */
   expiresAt: string;
   lastSeenAt: string;
-  rememberDevice: boolean;
   /** The identity's own `passwordVersion` at the moment this session was
       issued — a mismatch against the identity's *current* value means the
       password changed since, and this session is treated as invalid

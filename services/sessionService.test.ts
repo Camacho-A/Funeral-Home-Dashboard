@@ -22,10 +22,13 @@ const BASE_PARAMS = {
   deviceName: 'Chrome on macOS',
   ipAddress: '203.0.113.5',
   userAgent: 'Mozilla/5.0',
-  rememberDevice: false,
   passwordVersionAtIssue: 1,
   idFactory,
 };
+
+const HOUR_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const TOLERANCE_MS = 5000;
 
 describe('createIdentitySession', () => {
   it('creates a session with no organization selected yet', async () => {
@@ -35,11 +38,18 @@ describe('createIdentitySession', () => {
     expect(session.revokedAt).toBeNull();
   });
 
-  it('a remembered device gets a much longer expiry than an unremembered one', async () => {
+  it('no longer carries a rememberDevice field — "Remember this device" was removed', async () => {
     const { createIdentitySession } = await import('./sessionService');
-    const short = await createIdentitySession({ ...BASE_PARAMS, rememberDevice: false }, 'mock');
-    const long = await createIdentitySession({ ...BASE_PARAMS, rememberDevice: true }, 'mock');
-    expect(new Date(long.expiresAt).getTime()).toBeGreaterThan(new Date(short.expiresAt).getTime());
+    const session = await createIdentitySession(BASE_PARAMS, 'mock');
+    expect('rememberDevice' in session).toBe(false);
+  });
+
+  it('sets expiresAt to the 4-hour idle deadline on creation, since the 16-hour absolute cap is not yet binding', async () => {
+    const { createIdentitySession } = await import('./sessionService');
+    const before = Date.now();
+    const session = await createIdentitySession(BASE_PARAMS, 'mock');
+    const expected = before + 4 * HOUR_MS;
+    expect(Math.abs(new Date(session.expiresAt).getTime() - expected)).toBeLessThan(TOLERANCE_MS);
   });
 });
 
@@ -61,6 +71,56 @@ describe('touchSession (sliding expiration)', () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     const touched = await touchSession(session.id, 'mock');
     expect(new Date(touched!.expiresAt).getTime()).toBeGreaterThanOrEqual(new Date(originalExpiry).getTime());
+  });
+
+  it('is throttled — a touch within 5 minutes of lastSeenAt is a no-op, not a fresh write', async () => {
+    const { createIdentitySession, touchSession } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'throttle-identity' }, 'mock');
+
+    const touched = await touchSession(session.id, 'mock');
+    expect(touched!.lastSeenAt).toBe(session.lastSeenAt);
+    expect(touched!.expiresAt).toBe(session.expiresAt);
+  });
+
+  it('past the throttle window, extends the idle deadline to lastSeenAt + 4 hours', async () => {
+    const { createIdentitySession, touchSession } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'past-throttle-identity' }, 'mock');
+    const record = identitySessionFixtures.find((s) => s.id === session.id)!;
+    record.lastSeenAt = new Date(Date.now() - 6 * MINUTE_MS).toISOString();
+
+    const before = Date.now();
+    const touched = await touchSession(session.id, 'mock');
+    expect(touched!.lastSeenAt).not.toBe(session.lastSeenAt);
+    expect(Math.abs(new Date(touched!.expiresAt).getTime() - (before + 4 * HOUR_MS))).toBeLessThan(TOLERANCE_MS);
+  });
+
+  it('never extends expiresAt past createdAt + 16 hours, even when the idle window would otherwise allow it', async () => {
+    const { createIdentitySession, touchSession } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'near-absolute-cap-identity' }, 'mock');
+    const record = identitySessionFixtures.find((s) => s.id === session.id)!;
+    const createdAt = new Date(Date.now() - 15 * HOUR_MS - 50 * MINUTE_MS); // 15h50m old — 10 minutes from the 16h ceiling
+    record.createdAt = createdAt.toISOString();
+    record.lastSeenAt = new Date(Date.now() - 6 * MINUTE_MS).toISOString(); // past the touch throttle
+
+    const touched = await touchSession(session.id, 'mock');
+    const absoluteDeadline = createdAt.getTime() + 16 * HOUR_MS;
+    const naiveIdleDeadline = Date.now() + 4 * HOUR_MS;
+    expect(Math.abs(new Date(touched!.expiresAt).getTime() - absoluteDeadline)).toBeLessThan(TOLERANCE_MS);
+    expect(new Date(touched!.expiresAt).getTime()).toBeLessThan(naiveIdleDeadline);
+  });
+
+  it('cannot revive a session already past its 16-hour absolute maximum by touching it', async () => {
+    const { createIdentitySession, touchSession } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'past-absolute-cap-identity' }, 'mock');
+    const record = identitySessionFixtures.find((s) => s.id === session.id)!;
+    const createdAt = new Date(Date.now() - 17 * HOUR_MS); // already past the 16h ceiling
+    record.createdAt = createdAt.toISOString();
+    record.lastSeenAt = new Date(Date.now() - 6 * MINUTE_MS).toISOString(); // past the touch throttle
+
+    const touched = await touchSession(session.id, 'mock');
+    const absoluteDeadline = createdAt.getTime() + 16 * HOUR_MS;
+    expect(Math.abs(new Date(touched!.expiresAt).getTime() - absoluteDeadline)).toBeLessThan(TOLERANCE_MS);
+    expect(new Date(touched!.expiresAt).getTime()).toBeLessThan(Date.now());
   });
 });
 

@@ -22,7 +22,7 @@ afterEach(() => {
 async function seedSession(identityId: string, organizationId: string | null = null) {
   const { createIdentitySession, setSessionOrganization } = await import('../../services/sessionService');
   const session = await createIdentitySession(
-    { identityId, deviceId: 'device-1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory },
+    { identityId, deviceId: 'device-1', passwordVersionAtIssue: 0, idFactory },
     'mock',
   );
   if (organizationId) return (await setSessionOrganization(session.id, organizationId, 'mock'))!;

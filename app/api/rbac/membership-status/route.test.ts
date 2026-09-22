@@ -57,7 +57,7 @@ async function seedIdentityWithRole(role: string, status: 'active' | 'disabled' 
 async function seedCallerSession(role: string) {
   const { createIdentitySession } = await import('@/services/sessionService');
   const identity = await seedIdentityWithRole(role);
-  const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+  const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
   return identity;
 }
@@ -163,7 +163,7 @@ describe('PATCH /api/rbac/membership-status', () => {
     const { identity: caller } = await findOrCreateIdentity({ email: `caller-${idFactory()}@example.com`, displayName: 'Caller', idFactory }, 'mock');
     await updateIdentity(caller.id, { status: 'active' }, 'mock');
     await createMembership({ identityId: caller.id, organizationId: orgId, role: removerRole.key, status: 'active', invitedBy: null, idFactory }, 'mock');
-    const session = await createIdentitySession({ identityId: caller.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: caller.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
     mockSession = { user: { id: caller.id, email: caller.email, displayName: caller.displayName, source: 'identity' }, sessionId: session.id };
 
     const { identity: soleAdmin } = await findOrCreateIdentity({ email: `sole-admin-${idFactory()}@example.com`, displayName: 'Sole Admin', idFactory }, 'mock');

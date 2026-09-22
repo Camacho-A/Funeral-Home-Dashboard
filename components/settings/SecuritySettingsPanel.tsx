@@ -207,7 +207,6 @@ export function SecuritySettingsPanel() {
               <div className={styles.sessionInfo}>
                 <div className={styles.sessionDevice}>
                   {session.deviceName ?? 'Unknown device'} {session.isCurrent && '· This device'}
-                  {session.rememberDevice && ' · Remembered'}
                 </div>
                 <div className={styles.sessionMeta}>
                   {session.ipAddress ?? 'Unknown location'} · Last seen {formatTimestamp(session.lastSeenAt)}

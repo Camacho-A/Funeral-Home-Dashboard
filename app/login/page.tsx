@@ -102,12 +102,6 @@ export default async function LoginPage({
               className={styles.input}
             />
           </label>
-          {authAdapter === 'identity' && (
-            <label className={styles.label}>
-              <input type="checkbox" name="rememberDevice" />
-              {' '}Remember this device
-            </label>
-          )}
           <button type="submit" className={styles.submit}>
             {authAdapter === 'wix' ? 'Sign in with Wix' : authAdapter === 'identity' ? 'Sign In' : 'Sign In (Development)'}
           </button>

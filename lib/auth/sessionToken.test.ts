@@ -100,8 +100,8 @@ describe('sessionDurationSecondsFor (Solis session-timeout fix, 2026-09)', () =>
     expect(sessionDurationSecondsFor('wix')).toBe(60 * 60 * 12);
   });
 
-  it('returns a 30-day ceiling for identity-mode sessions, matching the IdentitySession registry\'s own remembered-device TTL convention', () => {
-    expect(sessionDurationSecondsFor('identity')).toBe(60 * 60 * 24 * 30);
+  it('returns a 24-hour ceiling for identity-mode sessions, comfortably above the IdentitySession registry\'s own 16-hour absolute maximum', () => {
+    expect(sessionDurationSecondsFor('identity')).toBe(60 * 60 * 24);
   });
 });
 
@@ -124,11 +124,11 @@ describe('createSessionToken — source-specific expiry (Solis session-timeout f
     expect(session?.user.source).toBe('identity');
   });
 
-  it('an identity-mode token still expires at its own 30-day outer ceiling', async () => {
+  it('an identity-mode token still expires at its own 24-hour outer ceiling', async () => {
     const now = 1_000_000;
     const token = await createSessionToken(identityTestUser, now, 'identity-session-1');
 
-    expect(await verifySessionToken(token, now + 60 * 60 * 24 * 30 - 1)).not.toBeNull();
-    expect(await verifySessionToken(token, now + 60 * 60 * 24 * 30 + 1)).toBeNull();
+    expect(await verifySessionToken(token, now + 60 * 60 * 24 - 1)).not.toBeNull();
+    expect(await verifySessionToken(token, now + 60 * 60 * 24 + 1)).toBeNull();
   });
 });

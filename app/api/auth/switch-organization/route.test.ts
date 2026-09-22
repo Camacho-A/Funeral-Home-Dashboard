@@ -51,7 +51,7 @@ describe('POST /api/auth/switch-organization', () => {
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
     await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
     await createMembership({ identityId: identity.id, organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'owner', status: 'active', invitedBy: null, idFactory }, 'mock');
-    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
     mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
 
     const response = await postRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
@@ -70,7 +70,7 @@ describe('POST /api/auth/switch-organization', () => {
     const { identity } = await findOrCreateIdentity({ email: 'noswitchaccess@example.com', displayName: 'No Switch Access', idFactory }, 'mock');
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
     await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
-    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
     mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
 
     const response = await postRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID });

@@ -42,7 +42,7 @@ describe('POST /api/auth/reset-password', () => {
     const { identity } = await findOrCreateIdentity({ email: 'resetme@example.com', displayName: 'Reset Me', idFactory }, 'mock');
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
     await setPassword(identity.id, 'OldPassword1!', 'mock');
-    await createIdentitySession({ identityId: identity.id, deviceId: 'device-1', rememberDevice: false, passwordVersionAtIssue: 1, idFactory }, 'mock');
+    await createIdentitySession({ identityId: identity.id, deviceId: 'device-1', passwordVersionAtIssue: 1, idFactory }, 'mock');
     expect(await listActiveSessionsForIdentity(identity.id, 'mock')).toHaveLength(1);
 
     const { token } = await createPasswordResetToken(identity.id, idFactory, 'mock');

@@ -55,7 +55,7 @@ export async function loginAction(formData: FormData): Promise<void> {
   }
 
   if (authAdapter === 'identity') {
-    await handleIdentityLogin(email, password, formData.get('rememberDevice') === 'on', next, nextParam);
+    await handleIdentityLogin(email, password, next, nextParam);
   }
 
   let wixResult;
@@ -121,7 +121,6 @@ export async function logoutAction(): Promise<void> {
 async function handleIdentityLogin(
   email: string,
   password: string,
-  rememberDevice: boolean,
   next: string,
   nextParam: string,
 ): Promise<void> {
@@ -164,7 +163,6 @@ async function handleIdentityLogin(
     const challengeToken = await createMfaChallengeToken({
       identityId: identity.id,
       passwordVersionAtIssue: identity.passwordVersion,
-      rememberDevice,
     });
     await setMfaChallengeCookie(challengeToken);
     redirect(`/login/mfa?next=${nextParam}`);
@@ -180,7 +178,6 @@ async function handleIdentityLogin(
       deviceName: userAgent,
       ipAddress,
       userAgent,
-      rememberDevice,
       passwordVersionAtIssue: identity.passwordVersion,
       idFactory,
     },
@@ -274,7 +271,6 @@ export async function submitMfaChallenge(formData: FormData): Promise<void> {
       deviceName: userAgent,
       ipAddress,
       userAgent,
-      rememberDevice: challenge.rememberDevice,
       passwordVersionAtIssue: identity.passwordVersion,
       idFactory,
     },

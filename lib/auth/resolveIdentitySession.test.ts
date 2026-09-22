@@ -26,7 +26,6 @@ async function seedIdentityAndSession(email: string, overrides: { passwordVersio
     {
       identityId: identity.id,
       deviceId: 'device-1',
-      rememberDevice: false,
       passwordVersionAtIssue: overrides.passwordVersionAtIssue ?? identity.passwordVersion,
       idFactory,
     },
@@ -111,5 +110,37 @@ describe('resolveIdentitySession', () => {
 
     const result = await resolveIdentitySession({ user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, issuedAt: 0, expiresAt: Number.MAX_SAFE_INTEGER, sessionId: session.id }, 'mock');
     expect(result).toEqual({ valid: false, reason: 'identity_not_active' });
+  });
+
+  it('rejects a session past its 16-hour absolute maximum even though it was recently active', async () => {
+    const { resolveIdentitySession } = await import('./resolveIdentitySession');
+    const { identity, session } = await seedIdentityAndSession('past.absolute.max@example.com');
+    const record = identitySessionFixtures.find((s) => s.id === session.id)!;
+    // Simulate a session created 17 hours ago whose sliding window was never allowed past the
+    // absolute cap — expiresAt reflects createdAt + 16h, already in the past, despite lastSeenAt
+    // being fresh (proves the resolve layer honors the absolute cap baked into expiresAt, not just
+    // simple idle-since-lastSeenAt math).
+    record.createdAt = new Date(Date.now() - 17 * 60 * 60 * 1000).toISOString();
+    record.lastSeenAt = new Date(Date.now() - 1000).toISOString();
+    record.expiresAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const result = await resolveIdentitySession({ user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, issuedAt: 0, expiresAt: Number.MAX_SAFE_INTEGER, sessionId: session.id }, 'mock');
+    expect(result).toEqual({ valid: false, reason: 'expired' });
+  });
+
+  it('a successful resolve never slides expiresAt past createdAt + 16 hours', async () => {
+    const { resolveIdentitySession } = await import('./resolveIdentitySession');
+    const { identity, session } = await seedIdentityAndSession('near.absolute.max@example.com');
+    const record = identitySessionFixtures.find((s) => s.id === session.id)!;
+    const createdAt = new Date(Date.now() - 15 * 60 * 60 * 1000 - 50 * 60 * 1000); // 15h50m old
+    record.createdAt = createdAt.toISOString();
+    record.lastSeenAt = new Date(Date.now() - 6 * 60 * 1000).toISOString(); // past the 5-min touch throttle
+    record.expiresAt = new Date(createdAt.getTime() + 16 * 60 * 60 * 1000).toISOString();
+
+    await resolveIdentitySession({ user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, issuedAt: 0, expiresAt: Number.MAX_SAFE_INTEGER, sessionId: session.id }, 'mock');
+
+    const updated = identitySessionFixtures.find((s) => s.id === session.id)!;
+    const absoluteDeadline = createdAt.getTime() + 16 * 60 * 60 * 1000;
+    expect(Math.abs(new Date(updated.expiresAt).getTime() - absoluteDeadline)).toBeLessThan(5000);
   });
 });

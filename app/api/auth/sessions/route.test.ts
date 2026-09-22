@@ -38,8 +38,8 @@ describe('GET /api/auth/sessions', () => {
     const { identity } = await findOrCreateIdentity({ email: 'sessions.list@example.com', displayName: 'Sessions List', idFactory }, 'mock');
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
 
-    const current = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
-    await createIdentitySession({ identityId: identity.id, deviceId: 'd2', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const current = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
+    await createIdentitySession({ identityId: identity.id, deviceId: 'd2', passwordVersionAtIssue: 0, idFactory }, 'mock');
 
     mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: current.id };
 

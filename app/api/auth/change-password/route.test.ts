@@ -31,7 +31,7 @@ async function seedLoggedInIdentity(email: string, password: string) {
   const { getIdentityById } = await import('@/services/identityService');
   const identity = (await getIdentityById(created.id, 'mock'))!;
   const identitySession = await createIdentitySession(
-    { identityId: identity.id, deviceId: 'device-1', rememberDevice: false, passwordVersionAtIssue: identity.passwordVersion, idFactory },
+    { identityId: identity.id, deviceId: 'device-1', passwordVersionAtIssue: identity.passwordVersion, idFactory },
     'mock',
   );
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: identitySession.id };

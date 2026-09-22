@@ -161,7 +161,7 @@ describe('requireAuthorizedOrganization — AUTH_ADAPTER=identity sessions', () 
       );
     }
     const identitySession = await createIdentitySession(
-      { identityId: identity.id, deviceId: 'device-1', rememberDevice: false, passwordVersionAtIssue: identity.passwordVersion, idFactory },
+      { identityId: identity.id, deviceId: 'device-1', passwordVersionAtIssue: identity.passwordVersion, idFactory },
       'mock',
     );
     return { identity, identitySession };

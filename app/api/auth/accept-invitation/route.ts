@@ -72,7 +72,6 @@ export async function POST(request: Request) {
       deviceName: userAgent,
       ipAddress,
       userAgent,
-      rememberDevice: false,
       passwordVersionAtIssue: identity.passwordVersion,
       idFactory,
     },

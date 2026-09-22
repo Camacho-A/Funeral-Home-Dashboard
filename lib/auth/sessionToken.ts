@@ -35,25 +35,32 @@ export const SESSION_COOKIE_NAME = 'beacon_session';
  *
  * Fix: for `'identity'`-mode sessions specifically (the only mode with
  * that registry-backed sliding backstop), this outer token's own absolute
- * ceiling is raised to match `services/sessionService.ts`'s existing
- * `REMEMBERED_DEVICE_TTL_MS` convention (30 days) — the *real*,
- * precise, inactivity-based cutoff for an actively-used session is still
- * entirely governed by that already-correct sliding registry check (1
- * hour of inactivity, or 30 days if "remember this device" was checked),
- * completely unchanged by this. This token's ceiling becomes a secondary,
- * coarse "must fully re-authenticate at least this often" backstop, not
- * the primary expiry mechanism. `'mock'`/`'wix'` sessions have no such
- * registry to fall back on, so their duration is deliberately left
- * unchanged — widening their window would be a real, uncompensated
- * security regression for those modes.
+ * ceiling is raised above the registry's own precise cutoff so the outer
+ * token is never the thing that fires first. This token's ceiling is a
+ * secondary, coarse "must fully re-authenticate at least this often"
+ * backstop, not the primary expiry mechanism. `'mock'`/`'wix'` sessions
+ * have no such registry to fall back on, so their duration is
+ * deliberately left unchanged — widening their window would be a real,
+ * uncompensated security regression for those modes.
  * See `lib/auth/requireIdentitySession.ts`/`requireAuthorizedOrganization.ts`
  * for the other half of this fix: both now also re-mint this token on
  * every successfully-validated Route Handler request, giving genuine
  * rolling renewal (not just a longer fixed ceiling) for the overwhelming
  * majority of real interactive traffic.
+ *
+ * Staff session policy correction (2026-09): the registry's own precise
+ * cutoff (`services/sessionService.ts`) is now `min(lastSeenAt + 4h,
+ * createdAt + 16h)` — a real, active-shift-length policy, not the coarse
+ * "1h idle / 30d remembered" split this comment originally described.
+ * This outer ceiling is tightened to match: 24 hours, comfortably above
+ * the registry's own 16-hour absolute maximum (so the registry check —
+ * the one with the precise, activity-aware logic — always fires first;
+ * this token's own ceiling is never the actually-binding constraint), and
+ * no longer a disconnected 30-day number that implied a much longer
+ * effective session than the registry ever actually granted in practice.
  */
 const DEFAULT_SESSION_DURATION_SECONDS = 60 * 60 * 12; // 12 hours — unchanged, mock/wix only
-const IDENTITY_SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30; // 30 days — identity mode only; see comment above
+const IDENTITY_SESSION_DURATION_SECONDS = 60 * 60 * 24; // 24 hours — identity mode only; see comment above
 
 export function sessionDurationSecondsFor(source: AuthSession['user']['source']): number {
   return source === 'identity' ? IDENTITY_SESSION_DURATION_SECONDS : DEFAULT_SESSION_DURATION_SECONDS;

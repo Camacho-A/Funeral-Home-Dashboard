@@ -38,8 +38,8 @@ async function seedTwoSessions(email: string) {
   const { createIdentitySession } = await import('@/services/sessionService');
   const { identity } = await findOrCreateIdentity({ email, displayName: 'Delete Session Test', idFactory }, 'mock');
   await updateIdentity(identity.id, { status: 'active' }, 'mock');
-  const current = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
-  const other = await createIdentitySession({ identityId: identity.id, deviceId: 'd2', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+  const current = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
+  const other = await createIdentitySession({ identityId: identity.id, deviceId: 'd2', passwordVersionAtIssue: 0, idFactory }, 'mock');
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: current.id };
   return { identity, current, other };
 }
@@ -76,7 +76,7 @@ describe('DELETE /api/auth/sessions/[sessionId]', () => {
     const { findOrCreateIdentity } = await import('@/services/identityService');
     const { createIdentitySession } = await import('@/services/sessionService');
     const { identity: otherIdentity } = await findOrCreateIdentity({ email: 'someone.else@example.com', displayName: 'Someone Else', idFactory }, 'mock');
-    const otherPersonsSession = await createIdentitySession({ identityId: otherIdentity.id, deviceId: 'd3', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const otherPersonsSession = await createIdentitySession({ identityId: otherIdentity.id, deviceId: 'd3', passwordVersionAtIssue: 0, idFactory }, 'mock');
 
     const response = await deleteRequest(otherPersonsSession.id);
     expect(response.status).toBe(404);

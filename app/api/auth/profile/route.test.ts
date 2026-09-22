@@ -45,7 +45,7 @@ async function seedIdentityCaller() {
   const { identity } = await findOrCreateIdentity({ email: `caller-${idFactory()}@example.com`, displayName: 'Caller', idFactory }, 'mock');
   await updateIdentity(identity.id, { status: 'active' }, 'mock');
   await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'manager', status: 'active', invitedBy: null, idFactory }, 'mock');
-  const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+  const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
   return identity;
 }

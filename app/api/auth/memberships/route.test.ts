@@ -42,7 +42,7 @@ describe('GET /api/auth/memberships', () => {
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
     await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
     await createMembership({ identityId: identity.id, organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'owner', status: 'active', invitedBy: null, idFactory }, 'mock');
-    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
     await setSessionOrganization(session.id, DEFAULT_ORGANIZATION_ID, 'mock');
     mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
 
@@ -61,7 +61,7 @@ describe('GET /api/auth/memberships', () => {
     const { identity } = await findOrCreateIdentity({ email: 'memberships.invited@example.com', displayName: 'Invited Only', idFactory }, 'mock');
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
     await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'invited', invitedBy: null, idFactory }, 'mock');
-    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
     mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
 
     const response = await GET();

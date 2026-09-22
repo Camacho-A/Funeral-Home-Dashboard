@@ -10,6 +10,10 @@ export type WixIdentitySessionItem = {
   userAgent?: unknown;
   expiresAt?: unknown;
   lastSeenAt?: unknown;
+  /** No longer read or written (staff session policy correction, 2026-09
+      — "Remember this device" removed). A row created before this change
+      may still carry this field in live Wix data; it's simply ignored,
+      never migrated. */
   rememberDevice?: unknown;
   passwordVersionAtIssue?: unknown;
   revokedAt?: unknown;
@@ -24,7 +28,6 @@ export function mapWixIdentitySessionItem(item: WixIdentitySessionItem | undefin
     typeof item.deviceId !== 'string' ||
     typeof item.expiresAt !== 'string' ||
     typeof item.lastSeenAt !== 'string' ||
-    typeof item.rememberDevice !== 'boolean' ||
     typeof item.passwordVersionAtIssue !== 'number' ||
     typeof item.createdAt !== 'string'
   ) {
@@ -41,7 +44,6 @@ export function mapWixIdentitySessionItem(item: WixIdentitySessionItem | undefin
     userAgent: typeof item.userAgent === 'string' ? item.userAgent : null,
     expiresAt: item.expiresAt,
     lastSeenAt: item.lastSeenAt,
-    rememberDevice: item.rememberDevice,
     passwordVersionAtIssue: item.passwordVersionAtIssue,
     revokedAt: typeof item.revokedAt === 'string' ? item.revokedAt : null,
     createdAt: item.createdAt,
@@ -59,7 +61,6 @@ export function buildWixIdentitySessionData(session: IdentitySession): WixIdenti
     userAgent: session.userAgent,
     expiresAt: session.expiresAt,
     lastSeenAt: session.lastSeenAt,
-    rememberDevice: session.rememberDevice,
     passwordVersionAtIssue: session.passwordVersionAtIssue,
     revokedAt: session.revokedAt,
     createdAt: session.createdAt,

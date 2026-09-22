@@ -55,7 +55,7 @@ async function seedIdentityWithRole(role: string) {
 async function seedCallerSession(role: string) {
   const { createIdentitySession } = await import('@/services/sessionService');
   const identity = await seedIdentityWithRole(role);
-  const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+  const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
   return identity;
 }

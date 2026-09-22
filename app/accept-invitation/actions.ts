@@ -58,7 +58,6 @@ export async function acceptInvitationAction(formData: FormData): Promise<void> 
       deviceName: userAgent,
       ipAddress,
       userAgent,
-      rememberDevice: false,
       passwordVersionAtIssue: identity.passwordVersion,
       idFactory,
     },

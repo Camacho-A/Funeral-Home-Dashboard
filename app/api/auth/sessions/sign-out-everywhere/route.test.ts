@@ -48,8 +48,8 @@ describe('POST /api/auth/sessions/sign-out-everywhere', () => {
     const { createIdentitySession, listActiveSessionsForIdentity } = await import('@/services/sessionService');
     const { identity } = await findOrCreateIdentity({ email: 'signout.everywhere@example.com', displayName: 'Sign Out Everywhere', idFactory }, 'mock');
     await updateIdentity(identity.id, { status: 'active' }, 'mock');
-    const current = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
-    await createIdentitySession({ identityId: identity.id, deviceId: 'd2', rememberDevice: false, passwordVersionAtIssue: 0, idFactory }, 'mock');
+    const current = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
+    await createIdentitySession({ identityId: identity.id, deviceId: 'd2', passwordVersionAtIssue: 0, idFactory }, 'mock');
     mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: current.id };
 
     const response = await postRequest();

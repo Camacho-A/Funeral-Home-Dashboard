@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { createMfaChallengeToken, verifyMfaChallengeToken } from './mfaChallengeToken';
 import { createFamilySessionToken, verifyFamilySessionToken } from './familySessionToken';
 
-const PARAMS = { identityId: 'id-1', passwordVersionAtIssue: 3, rememberDevice: true };
+const PARAMS = { identityId: 'id-1', passwordVersionAtIssue: 3 };
 
 describe('mfaChallengeToken', () => {
   it('round-trips a valid challenge token', async () => {
     const token = await createMfaChallengeToken(PARAMS);
     const payload = await verifyMfaChallengeToken(token);
     expect(payload).not.toBeNull();
-    expect(payload).toMatchObject({ identityId: 'id-1', aud: 'mfa_challenge', passwordVersionAtIssue: 3, rememberDevice: true });
+    expect(payload).toMatchObject({ identityId: 'id-1', aud: 'mfa_challenge', passwordVersionAtIssue: 3 });
   });
 
   it('rejects a tampered payload', async () => {
