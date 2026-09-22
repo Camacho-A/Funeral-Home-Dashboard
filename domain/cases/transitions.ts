@@ -1,14 +1,25 @@
 import type { Case } from '../../types/case';
-import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 
 /**
- * "Completed" is only shown once ashes are actually confirmed picked up —
- * ported from design/support.js's buildCase(), which falls back to the
- * prior stage's label otherwise. `checklist` is the checklist already built
- * for the case's raw display stage (its first item is "Family picked up
- * ashes" at the terminal stage — see domain/cases/checklist.ts).
+ * "Completed" is only shown once the remains-return requirement is
+ * actually satisfied — ported from design/support.js's buildCase(), which
+ * falls back to the prior stage's label otherwise.
  *
- * Phase 11: `lastDisplayStage` is now a parameter (from the case's own
+ * Conditional shipping/tracking (2026-09): this used to read
+ * `checklist[0]?.done` — an independent, manually-toggled checkbox
+ * ("Family picked up ashes") with zero connection to the structured
+ * `pickupStatus` field. That created exactly the "two competing completion
+ * mechanisms" risk this phase was asked to eliminate: staff could check the
+ * box without ever recording a release, or vice versa, and neither
+ * Shipping nor Undecided had any sensible checkbox text at all. The
+ * completion signal now comes from `remainsReturnRequirementComplete`
+ * (computed by the caller via
+ * `domain/cases/returnMethod.ts#isTerminalReturnRequirementComplete`,
+ * derived from `returnMethod` + `pickupStatus`/`shippingDeliveryStatus`) —
+ * the checklist item itself is now a read-only reflection of this same
+ * value, never an independent input (see domain/cases/viewModel.ts).
+ *
+ * Phase 11: `lastDisplayStage` is a parameter (from the case's own
  * workflowSnapshot, via domain/workflow/resolveStages.ts's
  * lastDisplayStage) instead of the hardcoded LAST_DISPLAY_STAGE constant —
  * this rule is applied uniformly to every template's own final stage, not
@@ -18,12 +29,11 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
  */
 export function resolveEffectiveDisplayStage(
   displayStage: number,
-  checklist: ChecklistItemViewModel[],
   lastDisplayStage: number,
+  remainsReturnRequirementComplete: boolean,
 ): number {
   const isLastStage = displayStage === lastDisplayStage;
-  const ashesPickedUp = checklist[0]?.done ?? false;
-  return isLastStage && !ashesPickedUp ? displayStage - 1 : displayStage;
+  return isLastStage && !remainsReturnRequirementComplete ? displayStage - 1 : displayStage;
 }
 
 /**

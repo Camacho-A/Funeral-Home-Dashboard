@@ -9,7 +9,7 @@ export function CaseHeader({
   dateOfBirth,
   dateOfDeath,
   tagNumber,
-  stageLabel,
+  caseDetailStageHeading,
   stageBadgeVariant,
   daysWaitingInStage,
   slaTargetLabel,
@@ -27,7 +27,12 @@ export function CaseHeader({
       always read-only (editing happens in CaseInformationCard), only when
       one has actually been assigned. */
   tagNumber?: string | null;
-  stageLabel: string;
+  /** Conditional shipping/tracking (2026-09): `CaseViewModel.caseDetailStageHeading`
+      — equal to `stageLabel` everywhere except the stage immediately before
+      Completed, where it adapts to `returnMethod` ("Ready for Pickup"/
+      "Ready for Shipping"/"Return of Cremated Remains"). See
+      domain/cases/returnMethod.ts. */
+  caseDetailStageHeading: string;
   stageBadgeVariant: BadgeVariant;
   daysWaitingInStage: number;
   slaTargetLabel: string;
@@ -47,7 +52,7 @@ export function CaseHeader({
           </div>
         </div>
         <div className={styles.stageColumn}>
-          <Badge variant={stageBadgeVariant}>{stageLabel}</Badge>
+          <Badge variant={stageBadgeVariant}>{caseDetailStageHeading}</Badge>
           <span className={`${styles.slaLine} ${isOverdue ? styles.slaOverdue : styles.slaNeutral}`}>
             {daysWaitingInStage}d in stage · target {slaTargetLabel}
           </span>

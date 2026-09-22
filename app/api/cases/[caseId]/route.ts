@@ -7,9 +7,18 @@ import { assertAssignableStaffProfile, assertStaffProfileIsActiveAndInOrganizati
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
-import { recordCaseUpdated, recordStageChanged, type FieldChange } from '@/services/activityService';
+import {
+  recordCaseUpdated,
+  recordStageChanged,
+  recordReturnMethodChanged,
+  recordShipmentRecorded,
+  recordShipmentTrackingNumberChanged,
+  recordShipmentDelivered,
+  type FieldChange,
+} from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
 import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
+import type { ReturnMethod } from '@/types/case';
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 
 /**
@@ -243,9 +252,52 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         await recordStageChanged(activityCtx, caseId, stageLabel(existing.rawStage), stageLabel(patchRecord.rawStage as number), 'wix');
       }
 
+      // Conditional shipping/tracking (2026-09): returnMethod and the five
+      // shipping fields get their own specific, human-readable events
+      // (mirroring recordStageChanged's convention) instead of falling into
+      // the generic "Case updated (...)" bucket — see
+      // services/activityService.ts's recorder functions for the exact
+      // wording. Excluded from the generic changedFields sweep below so
+      // neither fires twice for the same change.
+      if (patchRecord.returnMethod !== undefined && patchRecord.returnMethod !== existing.returnMethod) {
+        await recordReturnMethodChanged(activityCtx, caseId, existing.returnMethod, patchRecord.returnMethod as ReturnMethod, 'wix');
+      }
+      if (
+        patchRecord.shippingCarrier !== undefined &&
+        patchRecord.shippingCarrier !== existing.shippingCarrier &&
+        typeof patchRecord.shippingCarrier === 'string' &&
+        patchRecord.shippingCarrier.trim() !== ''
+      ) {
+        await recordShipmentRecorded(activityCtx, caseId, patchRecord.shippingCarrier, 'wix');
+      }
+      if (
+        patchRecord.shippingTrackingNumber !== undefined &&
+        patchRecord.shippingTrackingNumber !== existing.shippingTrackingNumber &&
+        typeof patchRecord.shippingTrackingNumber === 'string' &&
+        patchRecord.shippingTrackingNumber.trim() !== ''
+      ) {
+        await recordShipmentTrackingNumberChanged(activityCtx, caseId, existing.shippingTrackingNumber ? 'updated' : 'added', 'wix');
+      }
+      if (
+        patchRecord.shippingDeliveryStatus !== undefined &&
+        patchRecord.shippingDeliveryStatus === 'delivered' &&
+        existing.shippingDeliveryStatus !== 'delivered'
+      ) {
+        await recordShipmentDelivered(activityCtx, caseId, 'wix');
+      }
+
+      const SHIPPING_EVENT_FIELDS = new Set([
+        'rawStage',
+        'returnMethod',
+        'shippingCarrier',
+        'shippingTrackingNumber',
+        'shippingDateShipped',
+        'shippingDeliveryStatus',
+        'shippingDeliveredAt',
+      ]);
       const changedFields: Record<string, FieldChange> = {};
       for (const key of Object.keys(patchRecord)) {
-        if (key === 'rawStage') continue;
+        if (SHIPPING_EVENT_FIELDS.has(key)) continue;
         const previous = existingRecord[key];
         const next = patchRecord[key];
         if (previous !== next) changedFields[key] = { previous, next };

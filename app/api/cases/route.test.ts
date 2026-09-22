@@ -620,6 +620,79 @@ describe('POST /api/cases — nextOfKinRelationship (Manors launch-prep)', () =>
   });
 });
 
+describe('POST /api/cases — returnMethod (conditional shipping/tracking, 2026-09)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('creates the case defaulting to returnMethod "undecided" when not provided — a family has not necessarily decided at intake', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.returnMethod).toBe('undecided');
+    expect(body.case.shippingCarrier).toBeNull();
+    expect(body.case.shippingTrackingNumber).toBeNull();
+  });
+
+  it('creates the case with returnMethod "shipping" selected at intake, with zero shipping details required', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, returnMethod: 'shipping' }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.returnMethod).toBe('shipping');
+    expect(body.case.shippingCarrier).toBeNull();
+    expect(body.case.shippingTrackingNumber).toBeNull();
+    expect(body.case.shippingDateShipped).toBeNull();
+  });
+
+  it('creates the case with returnMethod "pickup" selected at intake', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, returnMethod: 'pickup' }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.returnMethod).toBe('pickup');
+  });
+
+  it('rejects an unrecognized returnMethod value with 400 — never silently drops or coerces it', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, returnMethod: 'carrier-pigeon' }));
+    expect(response.status).toBe(400);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('there is no request-body field for shipping carrier/tracking number/date shipped at creation at all', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+    // Even if a caller forges these fields into the request body, POST
+    // /api/cases has no code path that reads them off `b` at all — buildWixCaseData
+    // is never passed them, so they can never reach the created case.
+    const response = await POST(
+      postRequest({ ...VALID_CREATE_BODY, returnMethod: 'shipping', shippingCarrier: 'USPS', shippingTrackingNumber: '9400111899223197428019' }),
+    );
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.shippingCarrier).toBeNull();
+    expect(body.case.shippingTrackingNumber).toBeNull();
+  });
+});
+
 describe('POST /api/cases — creation', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';

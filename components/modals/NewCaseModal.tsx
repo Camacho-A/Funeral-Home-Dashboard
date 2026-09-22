@@ -31,7 +31,7 @@ import {
   getDateOfBirthDeathOrderError,
   getDateOfDeathFutureError,
 } from '@/utils/inputMask';
-import type { Case } from '@/types/case';
+import type { Case, ReturnMethod } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import type { ServiceSelections } from '@/types/caseOrder';
 import styles from './NewCaseModal.module.css';
@@ -141,6 +141,13 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const canReassign = (myPermissions?.permissions ?? []).includes('case.reassign');
   const { data: staffList = [] } = useStaff();
   const [assignedStaffId, setAssignedStaffId] = useState<string | null>(session.staffId);
+  // Conditional shipping/tracking (2026-09): 'undecided' is the honest
+  // default — a family calling in doesn't necessarily know yet how they
+  // want the cremated remains returned, and this is never assumed to be
+  // Pickup. Freely changeable later on Case Detail (CaseInformationCard) —
+  // this is only the starting value, never a permanent branch. See
+  // domain/cases/returnMethod.ts.
+  const [returnMethod, setReturnMethod] = useState<ReturnMethod>('undecided');
   const { data: templates, isSuccess: templatesLoaded } = useWorkflowTemplates();
   const template = templates?.find((t) => t.isEnabled);
   const templateIntake = template?.versions[template.versions.length - 1]?.intake;
@@ -260,6 +267,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setNextOfKinEmailInput('');
     setNextOfKinEmailError(null);
     setAssignedStaffId(session.staffId);
+    setReturnMethod('undecided');
     setSubmitError(null);
     setIsSubmitting(false);
     addNote.reset();
@@ -377,6 +385,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         weight: structuredFields.weight || undefined,
         assignedStaffId: assignedStaffId ?? undefined,
         fieldValues: buildIntakeFieldValues(effectiveIntake, draft),
+        returnMethod,
       });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Failed to create case.');
@@ -628,6 +637,20 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                 ) : (
                   <div className={styles.readOnlyValue}>{session.displayName}</div>
                 )}
+              </div>
+              <div>
+                <div className={styles.fieldLabel}>Return method</div>
+                {/* Conditional shipping/tracking (2026-09): defaults to
+                    Undecided — no shipping detail fields (carrier/tracking
+                    number/date shipped) are ever shown here, by
+                    construction; selecting Shipping is enough to create the
+                    case, and those details are entered later on Case
+                    Detail once known. */}
+                <SelectField value={returnMethod} onChange={(e) => setReturnMethod(e.target.value as ReturnMethod)}>
+                  <option value="undecided">Undecided</option>
+                  <option value="pickup">Pickup</option>
+                  <option value="shipping">Shipping</option>
+                </SelectField>
               </div>
             </div>
           </div>

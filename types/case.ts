@@ -57,6 +57,23 @@ export type VaPublishChoice = 'publish' | 'private';
     `PaymentStatus`'s exact "small closed enum, not a boolean" shape. */
 export type PickupStatus = 'awaiting_pickup' | 'released';
 
+/** Conditional shipping/tracking (2026-09). How cremated remains will be
+    (or were) returned to the family — deliberately NOT decided at intake
+    by default: `'undecided'` is the honest starting state for every new
+    case, distinct from `'pickup'`, since a family not yet having chosen is
+    not the same fact as a family having chosen pickup. See
+    `domain/cases/returnMethod.ts` for the completion/heading logic this
+    field drives. */
+export type ReturnMethod = 'undecided' | 'pickup' | 'shipping';
+
+/** Mirrors `PickupStatus`'s own "small closed enum" shape — `'shipped'` is
+    reachable before a carrier/tracking number necessarily exist yet
+    (staff may record "shipped" the same day they enter tracking, or a beat
+    later); `'delivered'` is the one state that satisfies the terminal
+    return-of-remains requirement for a Shipping case — see
+    `domain/cases/returnMethod.ts#isTerminalReturnRequirementComplete`. */
+export type ShippingDeliveryStatus = 'shipped' | 'delivered';
+
 export type Case = {
   id: string;
   organizationId: string;
@@ -131,6 +148,24 @@ export type Case = {
   pickupReleasedTo: string | null;
   pickupReleasedAt: string | null;
   pickupNote: string | null;
+  /** Conditional shipping/tracking (2026-09). Defaults to `'undecided'` for
+      every new case — never `'pickup'`, see `ReturnMethod`'s own comment.
+      Freely editable at any point in the case's life, including after
+      Completed (see `domain/cases/returnMethod.ts`); switching between
+      values never clears the other method's fields below, only changes
+      which of them the UI renders. */
+  returnMethod: ReturnMethod;
+  /** The five fields below are only ever meaningful when
+      `returnMethod === 'shipping'`, but are never cleared when it isn't —
+      preserving previously entered shipping data if staff switch back to
+      Pickup (or Undecided) and later switch to Shipping again, mirroring
+      `pickupReleasedTo`/etc.'s own existing "toggle hides, never destroys"
+      behavior. */
+  shippingCarrier: string | null;
+  shippingTrackingNumber: string | null;
+  shippingDateShipped: string | null;
+  shippingDeliveryStatus: ShippingDeliveryStatus | null;
+  shippingDeliveredAt: string | null;
   daysWaitingInStage: number; // mock-static for this phase; a real backend would derive this from a stage-entry timestamp
   isStalled: boolean;
   stalledReason: string | null;
@@ -193,6 +228,12 @@ export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOf
       Case,
       | 'dateOfBirth' | 'dateOfDeath' | 'timeOfDeath' | 'placeOfDeath' | 'weight' | 'assignedStaffId'
       | 'nextOfKinEmail' | 'nextOfKinRelationship' | 'nextOfKinRelationshipOther'
+      /** Optional at intake — a family may not have decided yet. Omitted
+          defaults to `'undecided'`, never `'pickup'` (see `ReturnMethod`'s
+          own comment). No shipping-detail field is ever accepted here —
+          Carrier/Tracking Number/Date Shipped cannot be set at case
+          creation, by construction (not present in this type at all). */
+      | 'returnMethod'
     >
   > & {
     fieldValues?: Record<number, string>;

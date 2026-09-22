@@ -337,6 +337,110 @@ export function recordStageChanged(ctx: ActivityContext, caseId: string, fromSta
   );
 }
 
+/** Conditional shipping/tracking (2026-09). Human-readable labels for
+    activity-event wording only — never used for persistence/comparison
+    (that's ReturnMethod's own string literal values). */
+const RETURN_METHOD_LABEL: Record<'undecided' | 'pickup' | 'shipping', string> = {
+  undecided: 'Undecided',
+  pickup: 'Pickup',
+  shipping: 'Shipping',
+};
+
+export function recordReturnMethodChanged(
+  ctx: ActivityContext,
+  caseId: string,
+  fromMethod: 'undecided' | 'pickup' | 'shipping',
+  toMethod: 'undecided' | 'pickup' | 'shipping',
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_RETURN_METHOD_CHANGED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ returnMethod: fromMethod }),
+      newValue: JSON.stringify({ returnMethod: toMethod }),
+      description: `Return method changed from ${RETURN_METHOD_LABEL[fromMethod]} to ${RETURN_METHOD_LABEL[toMethod]}.`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Fires when a carrier is recorded for the first time on a shipping case —
+    "shipped via X," matching the funeral-home-facing wording of the actual
+    event, not a generic field-name description. */
+export function recordShipmentRecorded(
+  ctx: ActivityContext,
+  caseId: string,
+  carrier: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SHIPMENT_RECORDED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: JSON.stringify({ carrier }),
+      description: `Cremated remains shipped via ${carrier}.`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordShipmentTrackingNumberChanged(
+  ctx: ActivityContext,
+  caseId: string,
+  changeKind: 'added' | 'updated',
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: changeKind === 'added' ? ACTIVITY_EVENT_TYPES.CASE_SHIPMENT_TRACKING_ADDED : ACTIVITY_EVENT_TYPES.CASE_SHIPMENT_TRACKING_UPDATED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: null,
+      description: changeKind === 'added' ? 'Tracking number added.' : 'Tracking number updated.',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordShipmentDelivered(
+  ctx: ActivityContext,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SHIPMENT_DELIVERED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: null,
+      description: 'Shipment marked delivered.',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCaseNoteAdded(
   ctx: ActivityContext,
   caseId: string,

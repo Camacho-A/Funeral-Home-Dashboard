@@ -95,6 +95,15 @@ export const ACTIVITY_EVENT_TYPES = {
   CASE_CREATED: 'case.created',
   CASE_UPDATED: 'case.updated',
   CASE_STAGE_CHANGED: 'case.stage.changed',
+  /** Conditional shipping/tracking (2026-09). Mirrors CASE_STAGE_CHANGED's
+      "specific, human-readable description" convention rather than falling
+      into the generic CASE_UPDATED bucket — see
+      app/api/cases/[caseId]/route.ts's PATCH handler. */
+  CASE_RETURN_METHOD_CHANGED: 'case.return_method.changed',
+  CASE_SHIPMENT_RECORDED: 'case.shipment.recorded',
+  CASE_SHIPMENT_TRACKING_ADDED: 'case.shipment.tracking_added',
+  CASE_SHIPMENT_TRACKING_UPDATED: 'case.shipment.tracking_updated',
+  CASE_SHIPMENT_DELIVERED: 'case.shipment.delivered',
   /** Reserved — discovered during implementation, not assumed in
       planning: `services/caseLogService.ts` has no server-side or Wix
       integration at all, in any mode (pure client-side mock fixtures,

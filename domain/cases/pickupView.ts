@@ -8,10 +8,18 @@ import type { Case } from '../../types/case';
  * `pickup.read`'s own catalog comment for why. `id`/`organizationId` are
  * included since they're required to address the case at all (e.g. for
  * the pickup-update PATCH call), not because they're sensitive.
+ *
+ * Conditional shipping/tracking (2026-09): `returnMethod` was added here,
+ * read-only, so Dispatch can tell "this case is being shipped, it's not
+ * waiting for pickup here" instead of a confusing blank — explicitly NOT
+ * paired with write access (`PICKUP_ONLY_PATCH_FIELDS` below is
+ * deliberately unchanged) and none of the five shipping detail fields
+ * (carrier/tracking number/date shipped/delivery status/delivered date)
+ * are included at all — Dispatch remains pickup-only, full stop.
  */
 export type PickupOnlyCaseView = Pick<
   Case,
-  'id' | 'organizationId' | 'caseNumber' | 'decedentName' | 'pickupStatus' | 'pickupReleasedTo' | 'pickupReleasedAt' | 'pickupNote'
+  'id' | 'organizationId' | 'caseNumber' | 'decedentName' | 'pickupStatus' | 'pickupReleasedTo' | 'pickupReleasedAt' | 'pickupNote' | 'returnMethod'
 >;
 
 export function toPickupOnlyView(case_: Case): PickupOnlyCaseView {
@@ -24,11 +32,16 @@ export function toPickupOnlyView(case_: Case): PickupOnlyCaseView {
     pickupReleasedTo: case_.pickupReleasedTo,
     pickupReleasedAt: case_.pickupReleasedAt,
     pickupNote: case_.pickupNote,
+    returnMethod: case_.returnMethod,
   };
 }
 
 /** The only fields a `pickup.update`-only caller (no `case.update`) may
     patch — anything else in the request must be rejected, never silently
     dropped (silently dropping would let a Dispatch-scoped caller believe
-    a field was saved when it wasn't). */
+    a field was saved when it wasn't). Conditional shipping/tracking
+    (2026-09): deliberately NOT broadened to include `returnMethod` or any
+    shipping field — Dispatch may read `returnMethod` (see
+    `PickupOnlyCaseView` above) but never write it, and has no visibility
+    into shipping details at all. */
 export const PICKUP_ONLY_PATCH_FIELDS = ['pickupStatus', 'pickupReleasedTo', 'pickupReleasedAt', 'pickupNote'] as const;

@@ -854,6 +854,7 @@ describe('Dispatch (pickup-only) authorization — GET and PATCH /api/cases/[cas
       pickupReleasedTo: null,
       pickupReleasedAt: null,
       pickupNote: null,
+      returnMethod: 'undecided',
     });
     expect(body.case.nextOfKinName).toBeUndefined();
     expect(body.case.nextOfKinPhone).toBeUndefined();
@@ -892,5 +893,138 @@ describe('Dispatch (pickup-only) authorization — GET and PATCH /api/cases/[cas
     });
     expect(response.status).toBe(403);
     expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  // Conditional shipping/tracking (2026-09): Dispatch reads returnMethod
+  // (already asserted by the GET test above) but may never write it, and
+  // has no visibility into any shipping field at all — see
+  // domain/cases/pickupView.ts's own comment.
+  it('GET never includes any shipping detail field in the redacted view', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: { ...EXISTING_WIX_CASE_DATA, shippingCarrier: 'USPS', shippingTrackingNumber: '9400111899223197428019' } }]);
+    const response = await requestFor('1042', DEFAULT_ORGANIZATION_ID);
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.shippingCarrier).toBeUndefined();
+    expect(body.case.shippingTrackingNumber).toBeUndefined();
+    expect(body.case.shippingDateShipped).toBeUndefined();
+    expect(body.case.shippingDeliveryStatus).toBeUndefined();
+    expect(body.case.shippingDeliveredAt).toBeUndefined();
+  });
+
+  it('PATCH rejects an attempt to change returnMethod, with 403, before any write', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { returnMethod: 'shipping' } });
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('PATCH rejects an attempt to write any shipping field, with 403, before any write', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { shippingCarrier: 'USPS', shippingTrackingNumber: '9400111899223197428019' },
+    });
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /api/cases/[caseId] — conditional shipping/tracking (2026-09)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  it('a full case editor can change returnMethod from undecided to shipping without providing any tracking info', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { returnMethod: 'shipping' } });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.returnMethod).toBe('shipping');
+    expect(body.case.shippingCarrier).toBeNull();
+    expect(body.case.shippingTrackingNumber).toBeNull();
+  });
+
+  it('switching Pickup to Shipping preserves previously entered pickup data untouched', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, returnMethod: 'pickup', pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { returnMethod: 'shipping' } });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.returnMethod).toBe('shipping');
+    expect(body.case.pickupStatus).toBe('released');
+    expect(body.case.pickupReleasedTo).toBe('Karen Ellison');
+    expect(body.case.pickupReleasedAt).toBe('07/10/2026');
+    // The PATCH request never even mentioned the pickup fields — confirming
+    // they were carried through applyCaseUpdateToWixData's merge, not
+    // silently cleared by the returnMethod change.
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison' }));
+  });
+
+  it('switching Shipping to Pickup preserves previously entered shipping data untouched', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, returnMethod: 'shipping', shippingCarrier: 'USPS', shippingTrackingNumber: '9400111899223197428019', shippingDeliveryStatus: 'shipped' });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { returnMethod: 'pickup' } });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.returnMethod).toBe('pickup');
+    expect(body.case.shippingCarrier).toBe('USPS');
+    expect(body.case.shippingTrackingNumber).toBe('9400111899223197428019');
+    expect(body.case.shippingDeliveryStatus).toBe('shipped');
+  });
+
+  it('a late undecided -> shipping change never moves rawStage backward or forward', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, currentStage: 4, returnMethod: 'undecided' });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { returnMethod: 'shipping' } });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.rawStage).toBe(4);
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ currentStage: 4 }));
+  });
+
+  it('shipping fields remain editable once the case has reached the terminal stage', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, currentStage: 7, returnMethod: 'shipping', shippingCarrier: 'USPS' });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { shippingTrackingNumber: '9400111899223197428019', shippingDeliveryStatus: 'delivered' },
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.shippingTrackingNumber).toBe('9400111899223197428019');
+    expect(body.case.shippingDeliveryStatus).toBe('delivered');
+  });
+
+  it('records a specific "Return method changed" activity event, not the generic case.updated bucket', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, returnMethod: 'pickup' });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { returnMethod: 'shipping' } });
+    const activityInsertCalls = mockInsertWixDataItem.mock.calls.filter(([collectionId]) => collectionId === 'activityEvents');
+    expect(activityInsertCalls.some(([, data]) => (data as Record<string, unknown>).description === 'Return method changed from Pickup to Shipping.')).toBe(true);
+    expect(activityInsertCalls.some(([, data]) => (data as Record<string, unknown>).eventType === 'case.updated' && String((data as Record<string, unknown>).description).includes('returnMethod'))).toBe(false);
+  });
+
+  it('records "Tracking number added." the first time, "Tracking number updated." on a later change', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, returnMethod: 'shipping', shippingTrackingNumber: null });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { shippingTrackingNumber: '9400111899223197428019' } });
+    let activityInsertCalls = mockInsertWixDataItem.mock.calls.filter(([collectionId]) => collectionId === 'activityEvents');
+    expect(activityInsertCalls.some(([, data]) => (data as Record<string, unknown>).description === 'Tracking number added.')).toBe(true);
+
+    mockInsertWixDataItem.mockClear();
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, returnMethod: 'shipping', shippingTrackingNumber: '9400111899223197428019' });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { shippingTrackingNumber: '9400111899223197428020' } });
+    activityInsertCalls = mockInsertWixDataItem.mock.calls.filter(([collectionId]) => collectionId === 'activityEvents');
+    expect(activityInsertCalls.some(([, data]) => (data as Record<string, unknown>).description === 'Tracking number updated.')).toBe(true);
+  });
+
+  it('records "Shipment marked delivered." only when shippingDeliveryStatus newly becomes delivered', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, returnMethod: 'shipping', shippingDeliveryStatus: 'shipped' });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { shippingDeliveryStatus: 'delivered' } });
+    const activityInsertCalls = mockInsertWixDataItem.mock.calls.filter(([collectionId]) => collectionId === 'activityEvents');
+    expect(activityInsertCalls.some(([, data]) => (data as Record<string, unknown>).description === 'Shipment marked delivered.')).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
-import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, VaPublishChoice } from '@/types/case';
+import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
 import {
   formatDateInput,
@@ -27,6 +27,20 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
 const PICKUP_STATUS_LABEL: Record<PickupStatus, string> = {
   awaiting_pickup: 'Awaiting pickup',
   released: 'Released to family',
+};
+
+/** Conditional shipping/tracking (2026-09). 'undecided' is the honest
+    default for a new case — never silently rendered as if Pickup had been
+    chosen. See types/case.ts's ReturnMethod comment. */
+const RETURN_METHOD_LABEL: Record<ReturnMethod, string> = {
+  undecided: 'Undecided',
+  pickup: 'Pickup',
+  shipping: 'Shipping',
+};
+
+const SHIPPING_DELIVERY_STATUS_LABEL: Record<ShippingDeliveryStatus, string> = {
+  shipped: 'Shipped',
+  delivered: 'Delivered',
 };
 
 /** Manors launch-prep. Display labels for the NOK-relationship dropdown —
@@ -260,6 +274,12 @@ export function CaseInformationCard({
   pickupReleasedTo,
   pickupReleasedAt,
   pickupNote,
+  returnMethod,
+  shippingCarrier,
+  shippingTrackingNumber,
+  shippingDateShipped,
+  shippingDeliveryStatus,
+  shippingDeliveredAt,
   ownerStaffId,
   staffOptions,
   onReassignOwner,
@@ -299,6 +319,16 @@ export function CaseInformationCard({
   pickupReleasedTo: string | null;
   pickupReleasedAt: string | null;
   pickupNote: string | null;
+  /** Conditional shipping/tracking (2026-09). Governs which of the pickup
+      block above / shipping block below renders — see
+      domain/cases/returnMethod.ts. Switching between values never clears
+      the other's stored fields, only which block is shown. */
+  returnMethod: ReturnMethod;
+  shippingCarrier: string | null;
+  shippingTrackingNumber: string | null;
+  shippingDateShipped: string | null;
+  shippingDeliveryStatus: ShippingDeliveryStatus | null;
+  shippingDeliveredAt: string | null;
   ownerStaffId: string | null;
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
@@ -426,34 +456,96 @@ export function CaseInformationCard({
 
       <div className={styles.grid}>
         <div>
-          <div className={styles.fieldLabel}>Pickup status</div>
+          <div className={styles.fieldLabel}>Return method</div>
           <SelectField
-            className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
-            value={pickupStatus}
-            onChange={(e) => onUpdateCaseInfo({ pickupStatus: e.target.value as PickupStatus })}
+            className={`${styles.paymentSelect} ${returnMethod === 'undecided' ? styles.paymentPending : styles.paymentSuccess}`}
+            value={returnMethod}
+            onChange={(e) => onUpdateCaseInfo({ returnMethod: e.target.value as ReturnMethod })}
           >
-            <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
-            <option value="released">{PICKUP_STATUS_LABEL.released}</option>
+            <option value="undecided">{RETURN_METHOD_LABEL.undecided}</option>
+            <option value="pickup">{RETURN_METHOD_LABEL.pickup}</option>
+            <option value="shipping">{RETURN_METHOD_LABEL.shipping}</option>
           </SelectField>
         </div>
-        {pickupStatus === 'released' && (
+
+        {returnMethod === 'pickup' && (
+          <>
+            <div>
+              <div className={styles.fieldLabel}>Pickup status</div>
+              <SelectField
+                className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
+                value={pickupStatus}
+                onChange={(e) => onUpdateCaseInfo({ pickupStatus: e.target.value as PickupStatus })}
+              >
+                <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
+                <option value="released">{PICKUP_STATUS_LABEL.released}</option>
+              </SelectField>
+            </div>
+            {pickupStatus === 'released' && (
+              <>
+                <EditableField
+                  label="Released to"
+                  value={pickupReleasedTo ?? ''}
+                  uppercase
+                  onSave={(v) => onUpdateCaseInfo({ pickupReleasedTo: v.trim().length > 0 ? v.trim() : null })}
+                />
+                <EditableField
+                  label="Released date"
+                  value={pickupReleasedAt ?? ''}
+                  kind="date"
+                  onSave={(v) => onUpdateCaseInfo({ pickupReleasedAt: v.trim().length > 0 ? v.trim() : null })}
+                />
+                <EditableField
+                  label="Pickup note (optional)"
+                  value={pickupNote ?? ''}
+                  onSave={(v) => onUpdateCaseInfo({ pickupNote: v.trim().length > 0 ? v.trim() : null })}
+                />
+              </>
+            )}
+          </>
+        )}
+
+        {returnMethod === 'shipping' && (
           <>
             <EditableField
-              label="Released to"
-              value={pickupReleasedTo ?? ''}
+              label="Carrier"
+              value={shippingCarrier ?? ''}
               uppercase
-              onSave={(v) => onUpdateCaseInfo({ pickupReleasedTo: v.trim().length > 0 ? v.trim() : null })}
+              onSave={(v) => onUpdateCaseInfo({ shippingCarrier: v.trim().length > 0 ? v.trim() : null })}
             />
             <EditableField
-              label="Released date"
-              value={pickupReleasedAt ?? ''}
+              label="Tracking number"
+              value={shippingTrackingNumber ?? ''}
+              uppercase
+              onSave={(v) => onUpdateCaseInfo({ shippingTrackingNumber: v.trim().length > 0 ? v.trim() : null })}
+            />
+            <EditableField
+              label="Date shipped"
+              value={shippingDateShipped ?? ''}
               kind="date"
-              onSave={(v) => onUpdateCaseInfo({ pickupReleasedAt: v.trim().length > 0 ? v.trim() : null })}
+              onSave={(v) => onUpdateCaseInfo({ shippingDateShipped: v.trim().length > 0 ? v.trim() : null })}
             />
+            <div>
+              <div className={styles.fieldLabel}>Shipping status</div>
+              <SelectField
+                className={`${styles.paymentSelect} ${shippingDeliveryStatus === 'delivered' ? styles.paymentSuccess : styles.paymentPending}`}
+                value={shippingDeliveryStatus ?? ''}
+                onChange={(e) =>
+                  onUpdateCaseInfo({
+                    shippingDeliveryStatus: e.target.value ? (e.target.value as ShippingDeliveryStatus) : null,
+                  })
+                }
+              >
+                <option value="">Not yet shipped</option>
+                <option value="shipped">{SHIPPING_DELIVERY_STATUS_LABEL.shipped}</option>
+                <option value="delivered">{SHIPPING_DELIVERY_STATUS_LABEL.delivered}</option>
+              </SelectField>
+            </div>
             <EditableField
-              label="Pickup note (optional)"
-              value={pickupNote ?? ''}
-              onSave={(v) => onUpdateCaseInfo({ pickupNote: v.trim().length > 0 ? v.trim() : null })}
+              label="Delivered date"
+              value={shippingDeliveredAt ?? ''}
+              kind="date"
+              onSave={(v) => onUpdateCaseInfo({ shippingDeliveredAt: v.trim().length > 0 ? v.trim() : null })}
             />
           </>
         )}

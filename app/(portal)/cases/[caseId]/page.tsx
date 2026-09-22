@@ -132,7 +132,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         dateOfBirth={viewModel.dateOfBirth}
         dateOfDeath={viewModel.dateOfDeath}
         tagNumber={case_.tagNumber}
-        stageLabel={viewModel.stageLabel}
+        caseDetailStageHeading={viewModel.caseDetailStageHeading}
         stageBadgeVariant={viewModel.stageBadgeVariant}
         daysWaitingInStage={viewModel.daysWaitingInStage}
         slaTargetLabel={viewModel.slaTargetLabel}
@@ -220,6 +220,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             pickupReleasedTo={case_.pickupReleasedTo}
             pickupReleasedAt={case_.pickupReleasedAt}
             pickupNote={case_.pickupNote}
+            returnMethod={case_.returnMethod}
+            shippingCarrier={case_.shippingCarrier}
+            shippingTrackingNumber={case_.shippingTrackingNumber}
+            shippingDateShipped={case_.shippingDateShipped}
+            shippingDeliveryStatus={case_.shippingDeliveryStatus}
+            shippingDeliveredAt={case_.shippingDeliveredAt}
             ownerStaffId={viewModel.ownerStaffId}
             staffOptions={staffOptions}
             onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}

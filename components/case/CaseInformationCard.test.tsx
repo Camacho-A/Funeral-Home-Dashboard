@@ -20,6 +20,12 @@ const baseProps = {
   pickupReleasedTo: null,
   pickupReleasedAt: null,
   pickupNote: null,
+  returnMethod: 'undecided' as const,
+  shippingCarrier: null,
+  shippingTrackingNumber: null,
+  shippingDateShipped: null,
+  shippingDeliveryStatus: null,
+  shippingDeliveredAt: null,
   ownerStaffId: 'staff-dana',
   staffOptions: [{ id: 'staff-dana', name: 'Dana' }],
   onReassignOwner: vi.fn(),
@@ -488,8 +494,8 @@ describe('CaseInformationCard — NOK relationship (Manors launch-prep)', () => 
 });
 
 describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
-  it('shows "Awaiting pickup" by default and no released-detail fields', () => {
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+  it('shows "Awaiting pickup" by default and no released-detail fields, once Return method is Pickup', () => {
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByDisplayValue('Awaiting pickup')).toBeInTheDocument();
     expect(screen.queryByText('Released to')).not.toBeInTheDocument();
     expect(screen.queryByText('Released date')).not.toBeInTheDocument();
@@ -497,7 +503,7 @@ describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
 
   it('flipping the pickup status to released updates through onUpdateCaseInfo', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.change(screen.getByDisplayValue('Awaiting pickup'), { target: { value: 'released' } });
 
@@ -505,7 +511,7 @@ describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
   });
 
   it('reveals Released to / Released date / note fields once the case is already released', () => {
-    render(<CaseInformationCard {...baseProps} pickupStatus="released" pickupReleasedTo="Karen Ellison" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={vi.fn()} />);
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Karen Ellison" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByDisplayValue('Released to family')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'KAREN ELLISON' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '07/10/2026' })).toBeInTheDocument();
@@ -513,7 +519,7 @@ describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
 
   it('saving a released-to name trims and uppercases it, matching other name fields', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} pickupStatus="released" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     const releasedToField = screen.getByText('Released to').parentElement!;
     fireEvent.click(within(releasedToField).getByRole('button'));
@@ -522,5 +528,69 @@ describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupReleasedTo: 'KAREN ELLISON' });
+  });
+});
+
+describe('CaseInformationCard — Return method (conditional shipping/tracking, 2026-09)', () => {
+  it('defaults to Undecided and shows neither pickup nor shipping detail blocks', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByDisplayValue('Undecided')).toBeInTheDocument();
+    expect(screen.queryByText('Pickup status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Carrier')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tracking number')).not.toBeInTheDocument();
+  });
+
+  it('changing Return method to Shipping updates through onUpdateCaseInfo', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Undecided'), { target: { value: 'shipping' } });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ returnMethod: 'shipping' });
+  });
+
+  it('shows the shipping block — Carrier, Tracking number, Date shipped, Shipping status, Delivered date — when Return method is Shipping', () => {
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Carrier')).toBeInTheDocument();
+    expect(screen.getByText('Tracking number')).toBeInTheDocument();
+    expect(screen.getByText('Date shipped')).toBeInTheDocument();
+    expect(screen.getByText('Shipping status')).toBeInTheDocument();
+    expect(screen.getByText('Delivered date')).toBeInTheDocument();
+    expect(screen.queryByText('Pickup status')).not.toBeInTheDocument();
+  });
+
+  it('never shows the shipping block for a Pickup case, and never the pickup block for a Shipping case', () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Carrier')).not.toBeInTheDocument();
+    rerender(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Pickup status')).not.toBeInTheDocument();
+  });
+
+  it('saving a carrier trims and uppercases it', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    const carrierField = screen.getByText('Carrier').parentElement!;
+    fireEvent.click(within(carrierField).getByRole('button'));
+    const input = within(carrierField).getByDisplayValue('');
+    fireEvent.change(input, { target: { value: ' usps ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingCarrier: 'USPS' });
+  });
+
+  it('shows previously entered shipping data untouched when switching back to Shipping after visiting Pickup', () => {
+    const { rerender } = render(
+      <CaseInformationCard {...baseProps} returnMethod="shipping" shippingCarrier="USPS" shippingTrackingNumber="9400111899223197428019" onUpdateCaseInfo={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'USPS' })).toBeInTheDocument();
+    rerender(<CaseInformationCard {...baseProps} returnMethod="pickup" shippingCarrier="USPS" shippingTrackingNumber="9400111899223197428019" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Carrier')).not.toBeInTheDocument();
+    rerender(<CaseInformationCard {...baseProps} returnMethod="shipping" shippingCarrier="USPS" shippingTrackingNumber="9400111899223197428019" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'USPS' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '9400111899223197428019' })).toBeInTheDocument();
+  });
+
+  it('setting shipping status to Delivered updates through onUpdateCaseInfo', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Not yet shipped'), { target: { value: 'delivered' } });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingDeliveryStatus: 'delivered' });
   });
 });

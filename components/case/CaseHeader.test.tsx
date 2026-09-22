@@ -7,7 +7,7 @@ const baseProps = {
   decedentName: 'Robert Ellison',
   dateOfBirth: '03/14/1951',
   dateOfDeath: '07/09/2026',
-  stageLabel: 'First Call & Payment',
+  caseDetailStageHeading: 'First Call & Payment',
   stageBadgeVariant: 'neutral' as const,
   daysWaitingInStage: 2,
   slaTargetLabel: '1d',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCaseViewModel } from './viewModel';
 import type { Case } from '../../types/case';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../workflow/snapshot';
+import { findStageByRawStage } from '../workflow/resolveStages';
 import {
   standardCremationWorkflowTemplateFixture,
   secondOrgWorkflowTemplateFixture,
@@ -40,6 +41,12 @@ function baseCase(overrides: Partial<Case>): Case {
     pickupReleasedTo: null,
     pickupReleasedAt: null,
     pickupNote: null,
+    returnMethod: 'undecided',
+    shippingCarrier: null,
+    shippingTrackingNumber: null,
+    shippingDateShipped: null,
+    shippingDeliveryStatus: null,
+    shippingDeliveredAt: null,
     daysWaitingInStage: 0,
     isStalled: false,
     stalledReason: null,
@@ -89,14 +96,121 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
     ]);
   });
 
-  it('does not show "Completed" until the last stage\'s first checklist item (ashes picked up) is done', () => {
-    const notPickedUp = baseCase({ rawStage: 7, checklistState: { 0: false } });
-    const pickedUp = baseCase({ rawStage: 7, checklistState: { 0: true } });
+  describe('conditional shipping/tracking (2026-09) — terminal return-of-remains requirement', () => {
+    it('an undecided case at the last stage never shows "Completed" — no manual bypass exists', () => {
+      const case_ = baseCase({ rawStage: 7, returnMethod: 'undecided' });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(vm.checklist[0].done).toBe(false);
+      expect(vm.checklist[0].isDerived).toBe(true);
+    });
 
-    expect(buildCaseViewModel(notPickedUp, { staffList: [] }).stageLabel).toBe(
-      'Ready for Pickup / Contact Family',
-    );
-    expect(buildCaseViewModel(pickedUp, { staffList: [] }).stageLabel).toBe('Completed');
+    it('a pickup case shows "Completed" only once pickupStatus is released', () => {
+      const notReleased = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'awaiting_pickup' });
+      const released = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
+
+      expect(buildCaseViewModel(notReleased, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(released, { staffList: [] }).stageLabel).toBe('Completed');
+    });
+
+    it('a shipping case shows "Completed" only once shippingDeliveryStatus is delivered — tracking number/shipped alone is not enough', () => {
+      const noTracking = baseCase({ rawStage: 7, returnMethod: 'shipping' });
+      const shippedNotDelivered = baseCase({
+        rawStage: 7,
+        returnMethod: 'shipping',
+        shippingCarrier: 'USPS',
+        shippingTrackingNumber: '9400111899223197428019',
+        shippingDeliveryStatus: 'shipped',
+      });
+      const delivered = baseCase({
+        rawStage: 7,
+        returnMethod: 'shipping',
+        shippingCarrier: 'USPS',
+        shippingTrackingNumber: '9400111899223197428019',
+        shippingDeliveryStatus: 'delivered',
+      });
+
+      expect(buildCaseViewModel(noTracking, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(shippedNotDelivered, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(delivered, { staffList: [] }).stageLabel).toBe('Completed');
+    });
+
+    it('the checklistState-stored checkbox no longer has any effect on completion — the old mechanism is fully retired', () => {
+      const checkedButNotReleased = baseCase({
+        rawStage: 7,
+        returnMethod: 'pickup',
+        pickupStatus: 'awaiting_pickup',
+        checklistState: { 0: true },
+      });
+      const uncheckedButReleased = baseCase({
+        rawStage: 7,
+        returnMethod: 'pickup',
+        pickupStatus: 'released',
+        checklistState: { 0: false },
+      });
+
+      expect(buildCaseViewModel(checkedButNotReleased, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(uncheckedButReleased, { staffList: [] }).stageLabel).toBe('Completed');
+    });
+
+    it('overrides the terminal checklist item label per returnMethod, never rewriting the stored workflowSnapshot', () => {
+      const pickup = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
+      const shipping = baseCase({ rawStage: 7, returnMethod: 'shipping', shippingDeliveryStatus: 'delivered' });
+      const undecided = baseCase({ rawStage: 7, returnMethod: 'undecided' });
+
+      expect(buildCaseViewModel(pickup, { staffList: [] }).checklist[0].label).toBe('Family picked up ashes');
+      expect(buildCaseViewModel(shipping, { staffList: [] }).checklist[0].label).toBe('Cremated remains confirmed delivered');
+      expect(buildCaseViewModel(undecided, { staffList: [] }).checklist[0].label).toBe('Return of cremated remains confirmed');
+      // The snapshot's own stored item text is untouched — confirmed by
+      // reading the terminal stage directly from the snapshot rather than
+      // through the overridden view model.
+      const terminalStage = findStageByRawStage(pickup.workflowSnapshot!, 7);
+      expect(terminalStage?.checklist.items[0]?.label).toBe('Family picked up ashes');
+    });
+
+    it('the terminal checklist item is marked read-only/derived — not independently toggleable', () => {
+      const case_ = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist[0].isDerived).toBe(true);
+      // Every non-terminal checklist item stays a normal, independently-
+      // toggleable item.
+      const midStage = baseCase({ rawStage: 3 });
+      const midVm = buildCaseViewModel(midStage, { staffList: [] });
+      expect(midVm.checklist.every((item) => item.isDerived === false)).toBe(true);
+    });
+
+    describe('Case Detail adaptive heading — presentational only, never the structural stageLabel', () => {
+      it('adapts the heading at the stage before Completed based on returnMethod', () => {
+        const undecided = baseCase({ rawStage: 6, returnMethod: 'undecided' });
+        const pickup = baseCase({ rawStage: 6, returnMethod: 'pickup' });
+        const shipping = baseCase({ rawStage: 6, returnMethod: 'shipping' });
+
+        expect(buildCaseViewModel(undecided, { staffList: [] }).caseDetailStageHeading).toBe('Return of Cremated Remains');
+        expect(buildCaseViewModel(pickup, { staffList: [] }).caseDetailStageHeading).toBe('Ready for Pickup');
+        expect(buildCaseViewModel(shipping, { staffList: [] }).caseDetailStageHeading).toBe('Ready for Shipping');
+      });
+
+      it('also adapts when the case rolled back from the terminal stage (rawStage 7, not yet complete)', () => {
+        const case_ = baseCase({ rawStage: 7, returnMethod: 'shipping' });
+        const vm = buildCaseViewModel(case_, { staffList: [] });
+        expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family'); // structural label unchanged
+        expect(vm.caseDetailStageHeading).toBe('Ready for Shipping'); // presentational override
+      });
+
+      it('never affects stageLabel — reports/dashboard filtering keys off the exact structural text', () => {
+        const case_ = baseCase({ rawStage: 6, returnMethod: 'shipping' });
+        const vm = buildCaseViewModel(case_, { staffList: [] });
+        expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family');
+        expect(vm.caseDetailStageHeading).toBe('Ready for Shipping');
+      });
+
+      it('is identical to stageLabel everywhere except the one adaptive stage', () => {
+        const case_ = baseCase({ rawStage: 3, returnMethod: 'shipping' });
+        const vm = buildCaseViewModel(case_, { staffList: [] });
+        expect(vm.caseDetailStageHeading).toBe(vm.stageLabel);
+        expect(vm.caseDetailStageHeading).toBe('EDRS & Doctor / Cause of Death');
+      });
+    });
   });
 });
 

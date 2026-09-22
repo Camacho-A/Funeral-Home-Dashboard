@@ -46,6 +46,7 @@ export function resolveChecklist(
       hasField: item.hasField,
       fieldValue: item.hasField ? (case_.fieldValues[index] ?? '') : '',
       fieldIsPassword: Boolean(item.isPasswordField),
+      isDerived: false,
     };
   });
 }

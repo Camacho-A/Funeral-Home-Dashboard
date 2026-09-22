@@ -10,6 +10,7 @@ import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileServi
 import { caseFixtures } from './__mocks__/fixtures';
 import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
+import { DEFAULT_RETURN_METHOD } from '../domain/cases/returnMethod';
 
 export type CaseFilters = {
   searchQuery?: string;
@@ -197,6 +198,7 @@ export async function create(
         fieldValues: input.fieldValues,
         createdBy: session.staffId,
         intakeOwnerId: session.staffId,
+        returnMethod: input.returnMethod,
       }),
     });
     if (!response.ok) {
@@ -256,6 +258,12 @@ export async function create(
     pickupReleasedTo: null,
     pickupReleasedAt: null,
     pickupNote: null,
+    returnMethod: input.returnMethod ?? DEFAULT_RETURN_METHOD,
+    shippingCarrier: null,
+    shippingTrackingNumber: null,
+    shippingDateShipped: null,
+    shippingDeliveryStatus: null,
+    shippingDeliveredAt: null,
     daysWaitingInStage: 0,
     isStalled: false,
     stalledReason: null,

@@ -10,6 +10,7 @@ import {
   isOverdue,
 } from '../workflow/resolveStages';
 import { resolveEffectiveDisplayStage } from './transitions';
+import { isTerminalReturnRequirementComplete, terminalReturnRequirementLabel, returnMethodStageHeading } from './returnMethod';
 import { formatSlaTarget } from './sla';
 import {
   buildVaSteps,
@@ -76,11 +77,46 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
 
   const rawDisplayStage = findStageByRawStage(snapshot, case_.rawStage)?.displayStage ?? 0;
   const currentStageItems = findStageByRawStage(snapshot, case_.rawStage)?.checklist.items ?? [];
-  const currentChecklist = resolveChecklist(currentStageItems, case_);
   const lastStage = lastDisplayStage(snapshot);
-  const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, currentChecklist, lastStage);
+
+  // Conditional shipping/tracking (2026-09): the terminal return-of-remains
+  // requirement is now derived from structured data (returnMethod +
+  // pickupStatus/shippingDeliveryStatus), never from an independently
+  // toggled checkbox — see domain/cases/returnMethod.ts and
+  // domain/cases/transitions.ts's own comment. `remainsReturnComplete` is
+  // computed once here and drives both the effective-stage rollback below
+  // and the terminal checklist item's overridden label/done state, so the
+  // two can never drift apart into competing signals.
+  const remainsReturnComplete = isTerminalReturnRequirementComplete(case_);
+  const currentChecklist = resolveChecklist(currentStageItems, case_);
+  // The immutable workflowSnapshot still carries its original "Family
+  // picked up ashes" item text (never rewritten — see this project's
+  // append-only-snapshot discipline); when the case is actually sitting at
+  // the terminal stage, its one checklist item is overridden at render
+  // time only, to reflect the derived, return-method-aware label/done
+  // state, and marked isDerived so ChecklistCard renders it as a read-only
+  // indicator rather than a toggle a staff member could contradict.
+  const effectiveCurrentChecklist =
+    rawDisplayStage === lastStage && currentChecklist.length > 0
+      ? [
+          {
+            ...currentChecklist[0],
+            label: terminalReturnRequirementLabel(case_.returnMethod),
+            done: remainsReturnComplete,
+            locked: false,
+            isDerived: true,
+          },
+          ...currentChecklist.slice(1),
+        ]
+      : currentChecklist;
+  const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, lastStage, remainsReturnComplete);
   const effectiveStage = findStageByDisplayStage(snapshot, effectiveDisplayStage);
   const stageLabel = effectiveStage?.label ?? '';
+  // Case Detail-only presentational overlay (never the structural STAGES/
+  // snapshot label sla.ts, the dashboard, and reports key off) — see
+  // domain/cases/returnMethod.ts#returnMethodStageHeading's own comment.
+  const caseDetailStageHeading =
+    effectiveDisplayStage === lastStage - 1 ? returnMethodStageHeading(case_.returnMethod) : stageLabel;
 
   const owner = resolveOwner(case_, staffList);
   // Used for attribution wherever an actor name is needed but the case may
@@ -111,7 +147,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // computed once here instead (nextActionLabel/rowSummaryText/Variant) so
   // Phase 5's two list components (AllCasesList, StageFilteredPanel) share
   // it rather than re-deriving it.
-  const firstUndoneItem = currentChecklist.find((item) => !item.done);
+  const firstUndoneItem = effectiveCurrentChecklist.find((item) => !item.done);
   const nextActionLabel = firstUndoneItem?.label ?? 'Review case';
   const rowSummaryText = case_.isStalled ? (case_.stalledReason ?? '') : nextActionLabel;
   const rowSummaryVariant: 'danger' | 'neutral' = case_.isStalled ? 'danger' : 'neutral';
@@ -128,7 +164,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
           case_,
           { isPastStage: viewingDisplayStage < effectiveDisplayStage },
         )
-      : currentChecklist;
+      : effectiveCurrentChecklist;
 
   return {
     id: case_.id,
@@ -141,6 +177,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
 
     displayStage: effectiveDisplayStage,
     stageLabel,
+    caseDetailStageHeading,
     stageBadgeVariant: effectiveStage?.isAttentionStage ? 'danger' : 'neutral',
 
     ownerStaffId: case_.assignedStaffId,
@@ -178,7 +215,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     checklist: viewedChecklist,
     viewingDisplayStage,
 
-    timeline: buildTimeline(case_, currentChecklist, rawDisplayStage, effectiveOwnerName, snapshot),
+    timeline: buildTimeline(case_, effectiveCurrentChecklist, rawDisplayStage, effectiveOwnerName, snapshot),
     requiredDocuments: buildRequiredDocuments(case_.rawStage),
 
     // Ordered display-stage labels from the case's own snapshot — lets the

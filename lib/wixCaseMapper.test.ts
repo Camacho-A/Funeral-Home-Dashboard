@@ -157,6 +157,56 @@ describe('mapWixCaseItem', () => {
   });
 });
 
+describe('mapWixCaseItem — conditional shipping/tracking (2026-09)', () => {
+  it('maps returnMethod to "undecided" for a pre-existing row with no such field at all — never "pickup"', () => {
+    // validItem itself has no returnMethod key — the exact shape of every
+    // case created before this field existed.
+    const result = mapWixCaseItem(validItem);
+    expect(result?.returnMethod).toBe('undecided');
+  });
+
+  it('maps a real returnMethod value through unchanged', () => {
+    expect(mapWixCaseItem({ ...validItem, returnMethod: 'pickup' })?.returnMethod).toBe('pickup');
+    expect(mapWixCaseItem({ ...validItem, returnMethod: 'shipping' })?.returnMethod).toBe('shipping');
+  });
+
+  it('maps an unrecognized returnMethod value to "undecided" rather than trusting it', () => {
+    const result = mapWixCaseItem({ ...validItem, returnMethod: 'mailed-somehow' });
+    expect(result?.returnMethod).toBe('undecided');
+  });
+
+  it('maps all five shipping detail fields to null for a pre-existing row with none of them', () => {
+    const result = mapWixCaseItem(validItem);
+    expect(result?.shippingCarrier).toBeNull();
+    expect(result?.shippingTrackingNumber).toBeNull();
+    expect(result?.shippingDateShipped).toBeNull();
+    expect(result?.shippingDeliveryStatus).toBeNull();
+    expect(result?.shippingDeliveredAt).toBeNull();
+  });
+
+  it('maps real shipping detail values through unchanged', () => {
+    const result = mapWixCaseItem({
+      ...validItem,
+      returnMethod: 'shipping',
+      shippingCarrier: 'USPS',
+      shippingTrackingNumber: '9400111899223197428019',
+      shippingDateShipped: '07/15/2026',
+      shippingDeliveryStatus: 'delivered',
+      shippingDeliveredAt: '07/18/2026',
+    });
+    expect(result?.shippingCarrier).toBe('USPS');
+    expect(result?.shippingTrackingNumber).toBe('9400111899223197428019');
+    expect(result?.shippingDateShipped).toBe('07/15/2026');
+    expect(result?.shippingDeliveryStatus).toBe('delivered');
+    expect(result?.shippingDeliveredAt).toBe('07/18/2026');
+  });
+
+  it('maps an unrecognized shippingDeliveryStatus value to null rather than trusting it', () => {
+    const result = mapWixCaseItem({ ...validItem, shippingDeliveryStatus: 'in-transit' });
+    expect(result?.shippingDeliveryStatus).toBeNull();
+  });
+});
+
 describe('describeMapWixCaseItemFailure (Solis go-live diagnostics)', () => {
   it('returns an empty array for a well-formed item (mirrors mapWixCaseItem accepting it)', () => {
     expect(describeMapWixCaseItemFailure(validItem)).toEqual([]);
@@ -240,6 +290,19 @@ describe('buildWixCaseData', () => {
     const data = buildWixCaseData({ ...params, nextOfKinEmail: 'karen@example.com' });
     expect(mapWixCaseItem(data)?.nextOfKinEmail).toBe('karen@example.com');
   });
+
+  it('conditional shipping/tracking (2026-09): defaults a new case to returnMethod "undecided" when not provided — never "pickup"', () => {
+    const data = buildWixCaseData(params);
+    expect(mapWixCaseItem(data)?.returnMethod).toBe('undecided');
+  });
+
+  it('carries an explicitly-provided returnMethod through to the built item, with no shipping detail fields ever required at creation', () => {
+    const data = buildWixCaseData({ ...params, returnMethod: 'shipping' });
+    const mapped = mapWixCaseItem(data);
+    expect(mapped?.returnMethod).toBe('shipping');
+    expect(mapped?.shippingCarrier).toBeNull();
+    expect(mapped?.shippingTrackingNumber).toBeNull();
+  });
 });
 
 describe('validateAndPickCaseUpdate', () => {
@@ -294,6 +357,49 @@ describe('validateAndPickCaseUpdate', () => {
   it('returns an error for a non-object body', () => {
     expect(validateAndPickCaseUpdate(null).errors.length).toBeGreaterThan(0);
     expect(validateAndPickCaseUpdate('a string').errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('validateAndPickCaseUpdate — conditional shipping/tracking (2026-09)', () => {
+  it('accepts a valid returnMethod value', () => {
+    expect(validateAndPickCaseUpdate({ returnMethod: 'shipping' }).patch.returnMethod).toBe('shipping');
+    expect(validateAndPickCaseUpdate({ returnMethod: 'pickup' }).patch.returnMethod).toBe('pickup');
+    expect(validateAndPickCaseUpdate({ returnMethod: 'undecided' }).patch.returnMethod).toBe('undecided');
+  });
+
+  it('rejects an unrecognized returnMethod value rather than silently dropping or coercing it', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ returnMethod: 'carrier-pigeon' });
+    expect(errors).toContain('returnMethod');
+    expect(patch).toEqual({});
+  });
+
+  it('accepts and nullably clears the five shipping detail fields', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      shippingCarrier: 'USPS',
+      shippingTrackingNumber: '9400111899223197428019',
+      shippingDateShipped: '07/15/2026',
+      shippingDeliveryStatus: 'delivered',
+      shippingDeliveredAt: '07/18/2026',
+    });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({
+      shippingCarrier: 'USPS',
+      shippingTrackingNumber: '9400111899223197428019',
+      shippingDateShipped: '07/15/2026',
+      shippingDeliveryStatus: 'delivered',
+      shippingDeliveredAt: '07/18/2026',
+    });
+
+    const cleared = validateAndPickCaseUpdate({ shippingCarrier: null, shippingDeliveryStatus: null });
+    expect(cleared.errors).toEqual([]);
+    expect(cleared.patch.shippingCarrier).toBeNull();
+    expect(cleared.patch.shippingDeliveryStatus).toBeNull();
+  });
+
+  it('rejects an unrecognized shippingDeliveryStatus value', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ shippingDeliveryStatus: 'in-transit' });
+    expect(errors).toContain('shippingDeliveryStatus');
+    expect(patch).toEqual({});
   });
 });
 
@@ -361,5 +467,25 @@ describe('applyCaseUpdateToWixData', () => {
     const existing = { ...validItem };
     applyCaseUpdateToWixData(existing, { decedentName: 'Renamed' });
     expect(existing.decedentName).toBe(validItem.decedentName);
+  });
+
+  it('conditional shipping/tracking (2026-09): applies returnMethod and shipping fields onto the existing data', () => {
+    const existing = { ...validItem, returnMethod: 'undecided' };
+    const result = applyCaseUpdateToWixData(existing, {
+      returnMethod: 'shipping',
+      shippingCarrier: 'USPS',
+      shippingTrackingNumber: '9400111899223197428019',
+    });
+    expect(result.returnMethod).toBe('shipping');
+    expect(result.shippingCarrier).toBe('USPS');
+    expect(result.shippingTrackingNumber).toBe('9400111899223197428019');
+  });
+
+  it('a returnMethod change never touches the pickup or the other shipping fields already on the record', () => {
+    const existing = { ...validItem, returnMethod: 'pickup', pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison' };
+    const result = applyCaseUpdateToWixData(existing, { returnMethod: 'shipping' });
+    expect(result.returnMethod).toBe('shipping');
+    expect(result.pickupStatus).toBe('released');
+    expect(result.pickupReleasedTo).toBe('Karen Ellison');
   });
 });

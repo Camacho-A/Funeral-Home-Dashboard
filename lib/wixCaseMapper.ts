@@ -1,6 +1,7 @@
-import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, VaPublishChoice } from '../types/case';
+import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail } from '../utils/inputMask';
+import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
 
 /** Manors launch-prep. Mirrors lib/wixOrganizationMapper.ts's own
     VALID_STATUSES/isValidStatus local-guard convention exactly. */
@@ -97,6 +98,12 @@ export type WixCaseItem = {
   pickupReleasedTo?: unknown;
   pickupReleasedAt?: unknown;
   pickupNote?: unknown;
+  returnMethod?: unknown;
+  shippingCarrier?: unknown;
+  shippingTrackingNumber?: unknown;
+  shippingDateShipped?: unknown;
+  shippingDeliveryStatus?: unknown;
+  shippingDeliveredAt?: unknown;
   isVeteran?: unknown;
   vaStepsState?: unknown;
   vaPublishChoice?: unknown;
@@ -179,6 +186,20 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   const pickupReleasedTo = typeof item.pickupReleasedTo === 'string' ? item.pickupReleasedTo : null;
   const pickupReleasedAt = typeof item.pickupReleasedAt === 'string' ? item.pickupReleasedAt : null;
   const pickupNote = typeof item.pickupNote === 'string' ? item.pickupNote : null;
+  // Conditional shipping/tracking (2026-09). Additive field — a pre-existing
+  // row (or any legacy/malformed row) has no returnMethod at all, which must
+  // resolve to 'undecided', never 'pickup' — see ReturnMethod's own comment
+  // on why silently assuming pickup would misrepresent an undecided
+  // family's actual state. Mirrors pickupStatus's own defensive-default
+  // pattern immediately above.
+  const returnMethod: ReturnMethod = isValidReturnMethod(item.returnMethod) ? item.returnMethod : DEFAULT_RETURN_METHOD;
+  const shippingCarrier = typeof item.shippingCarrier === 'string' ? item.shippingCarrier : null;
+  const shippingTrackingNumber = typeof item.shippingTrackingNumber === 'string' ? item.shippingTrackingNumber : null;
+  const shippingDateShipped = typeof item.shippingDateShipped === 'string' ? item.shippingDateShipped : null;
+  const shippingDeliveryStatus: ShippingDeliveryStatus | null = isValidShippingDeliveryStatus(item.shippingDeliveryStatus)
+    ? item.shippingDeliveryStatus
+    : null;
+  const shippingDeliveredAt = typeof item.shippingDeliveredAt === 'string' ? item.shippingDeliveredAt : null;
 
   return {
     id: item.beaconCaseId,
@@ -203,6 +224,12 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     pickupReleasedTo,
     pickupReleasedAt,
     pickupNote,
+    returnMethod,
+    shippingCarrier,
+    shippingTrackingNumber,
+    shippingDateShipped,
+    shippingDeliveryStatus,
+    shippingDeliveredAt,
     isVeteran: item.isVeteran,
     vaStepsState: isPlainObject(item.vaStepsState) ? (item.vaStepsState as Record<number, boolean>) : {},
     vaPublishChoice,
@@ -298,6 +325,9 @@ export function buildWixCaseData(params: {
   nextOfKinRelationshipOther?: string | null;
   fieldValues: Record<number, string>;
   createdAt: string;
+  /** Optional at creation — a family may not have decided yet. Omitted
+      defaults to 'undecided', never 'pickup'. */
+  returnMethod?: ReturnMethod;
 }): WixCaseItem {
   return {
     beaconCaseId: params.beaconCaseId,
@@ -329,6 +359,12 @@ export function buildWixCaseData(params: {
     pickupReleasedTo: null,
     pickupReleasedAt: null,
     pickupNote: null,
+    returnMethod: params.returnMethod ?? DEFAULT_RETURN_METHOD,
+    shippingCarrier: null,
+    shippingTrackingNumber: null,
+    shippingDateShipped: null,
+    shippingDeliveryStatus: null,
+    shippingDeliveredAt: null,
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
@@ -435,6 +471,10 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   nullableStringField('pickupReleasedTo');
   nullableStringField('pickupReleasedAt');
   nullableStringField('pickupNote');
+  nullableStringField('shippingCarrier');
+  nullableStringField('shippingTrackingNumber');
+  nullableStringField('shippingDateShipped');
+  nullableStringField('shippingDeliveredAt');
   numberField('rawStage');
   numberField('daysWaitingInStage');
   booleanField('isVeteran');
@@ -451,6 +491,20 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
       patch.pickupStatus = b.pickupStatus;
     } else {
       errors.push('pickupStatus');
+    }
+  }
+  if ('returnMethod' in b) {
+    if (isValidReturnMethod(b.returnMethod)) {
+      patch.returnMethod = b.returnMethod;
+    } else {
+      errors.push('returnMethod');
+    }
+  }
+  if ('shippingDeliveryStatus' in b) {
+    if (b.shippingDeliveryStatus === null || isValidShippingDeliveryStatus(b.shippingDeliveryStatus)) {
+      patch.shippingDeliveryStatus = b.shippingDeliveryStatus as ShippingDeliveryStatus | null;
+    } else {
+      errors.push('shippingDeliveryStatus');
     }
   }
   if ('nextOfKinRelationship' in b) {
@@ -506,6 +560,12 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.pickupReleasedTo !== undefined) next.pickupReleasedTo = patch.pickupReleasedTo;
   if (patch.pickupReleasedAt !== undefined) next.pickupReleasedAt = patch.pickupReleasedAt;
   if (patch.pickupNote !== undefined) next.pickupNote = patch.pickupNote;
+  if (patch.returnMethod !== undefined) next.returnMethod = patch.returnMethod;
+  if (patch.shippingCarrier !== undefined) next.shippingCarrier = patch.shippingCarrier;
+  if (patch.shippingTrackingNumber !== undefined) next.shippingTrackingNumber = patch.shippingTrackingNumber;
+  if (patch.shippingDateShipped !== undefined) next.shippingDateShipped = patch.shippingDateShipped;
+  if (patch.shippingDeliveryStatus !== undefined) next.shippingDeliveryStatus = patch.shippingDeliveryStatus;
+  if (patch.shippingDeliveredAt !== undefined) next.shippingDeliveredAt = patch.shippingDeliveredAt;
   if (patch.rawStage !== undefined) next.currentStage = patch.rawStage;
   if (patch.assignedStaffId !== undefined) next.caseHandlerId = patch.assignedStaffId;
   if (patch.paymentStatus !== undefined) next.paymentStatus = patch.paymentStatus;

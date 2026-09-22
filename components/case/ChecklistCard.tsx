@@ -46,7 +46,13 @@ export function ChecklistCard({
 
       <div className={styles.list}>
         {checklist.map((item) => {
-          const disabled = readOnly || item.hasField || item.locked;
+          // Conditional shipping/tracking (2026-09): the terminal return-of-
+          // remains item is computed from returnMethod +
+          // pickupStatus/shippingDeliveryStatus (domain/cases/returnMethod.ts)
+          // — never independently toggleable, or it would become a second,
+          // contradicting completion signal alongside the structured data
+          // that actually drives it.
+          const disabled = readOnly || item.hasField || item.locked || item.isDerived;
           const labelClass = item.done
             ? styles.itemLabelDone
             : item.locked

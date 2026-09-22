@@ -8,6 +8,8 @@ import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
 import { orgLocalYear } from '@/domain/cases/caseNumber';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { isValidEmail } from '@/utils/inputMask';
+import { isValidReturnMethod } from '@/domain/cases/returnMethod';
+import type { ReturnMethod } from '@/types/case';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
 import { getOrganization } from '@/services/organizationProvisioningService';
@@ -245,6 +247,21 @@ export async function POST(request: Request) {
     nextOfKinRelationshipOther = b.nextOfKinRelationshipOther.trim() || null;
   }
 
+  // Conditional shipping/tracking (2026-09): optional at intake — a family
+  // may not have decided yet. Omitted (or explicitly null/undefined)
+  // defaults to 'undecided' in buildWixCaseData below, never 'pickup'. No
+  // shipping-detail field (carrier/tracking number/date shipped) is ever
+  // accepted here — they aren't part of this request body's schema at all,
+  // by construction, so Shipping can be selected at intake with zero
+  // tracking information required.
+  let returnMethod: ReturnMethod | undefined;
+  if ('returnMethod' in b && b.returnMethod !== null && b.returnMethod !== undefined) {
+    if (!isValidReturnMethod(b.returnMethod)) {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): returnMethod' }, { status: 400 });
+    }
+    returnMethod = b.returnMethod;
+  }
+
   const callerProfile = await resolveStaffProfileForCaller(context, 'wix');
   if (!callerProfile) {
     // Solis go-live diagnostics: the client-visible message is already
@@ -325,6 +342,7 @@ export async function POST(request: Request) {
       nextOfKinRelationshipOther,
       fieldValues: (b.fieldValues as Record<number, string>) ?? {},
       createdAt,
+      returnMethod,
     });
 
     const inserted = await insertWixDataItem<WixCaseItem>('cases', data, beaconCaseId);

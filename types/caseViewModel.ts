@@ -24,6 +24,13 @@ export type ChecklistItemViewModel = {
   hasField: boolean;
   fieldValue: string;
   fieldIsPassword: boolean;
+  /** Conditional shipping/tracking (2026-09). `true` only for the terminal
+      stage's return-of-remains item, whose `done`/`label` are computed from
+      `returnMethod` + `pickupStatus`/`shippingDeliveryStatus` (see
+      domain/cases/returnMethod.ts) rather than from `checklistState` —
+      ChecklistCard renders it read-only, never toggleable, so it can never
+      become a second, contradicting completion signal. */
+  isDerived: boolean;
 };
 
 export type VaStepViewModel = {
@@ -62,6 +69,14 @@ export type CaseViewModel = {
 
   displayStage: number; // 0-6
   stageLabel: string;
+  /** Conditional shipping/tracking (2026-09). Case Detail's own adaptive
+      heading for the stage immediately before Completed — "Ready for
+      Pickup"/"Ready for Shipping"/"Return of Cremated Remains" depending on
+      `returnMethod` — see domain/cases/returnMethod.ts. Equal to
+      `stageLabel` everywhere else. Presentational only: `stageLabel` itself
+      is unchanged, since reports/dashboard filtering key off its exact,
+      structural text (domain/cases/sla.ts, services/reportingService.ts). */
+  caseDetailStageHeading: string;
   stageBadgeVariant: BadgeVariant; // 'danger' only for the known-bottleneck stage, 'neutral' otherwise — see domain/cases/stages.ts
 
   ownerStaffId: string | null;
