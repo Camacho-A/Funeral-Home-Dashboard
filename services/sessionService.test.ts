@@ -144,6 +144,85 @@ describe('revokeSession / listActiveSessionsForIdentity', () => {
   });
 });
 
+describe('countDistinctActiveStaffForOrganization ("N staff online")', () => {
+  it('is 0 when no session has selected this organization', async () => {
+    const { countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    expect(await countDistinctActiveStaffForOrganization('org-empty', 'mock')).toBe(0);
+  });
+
+  it('counts 1 for a single active staff member', async () => {
+    const { createIdentitySession, setSessionOrganization, countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'solo-identity' }, 'mock');
+    await setSessionOrganization(session.id, 'org-solo', 'mock');
+
+    expect(await countDistinctActiveStaffForOrganization('org-solo', 'mock')).toBe(1);
+  });
+
+  it('counts multiple distinct active staff members', async () => {
+    const { createIdentitySession, setSessionOrganization, countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const a = await createIdentitySession({ ...BASE_PARAMS, identityId: 'multi-a' }, 'mock');
+    const b = await createIdentitySession({ ...BASE_PARAMS, identityId: 'multi-b' }, 'mock');
+    await setSessionOrganization(a.id, 'org-multi', 'mock');
+    await setSessionOrganization(b.id, 'org-multi', 'mock');
+
+    expect(await countDistinctActiveStaffForOrganization('org-multi', 'mock')).toBe(2);
+  });
+
+  it('counts the same employee once even with two active sessions (two devices)', async () => {
+    const { createIdentitySession, setSessionOrganization, countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const laptop = await createIdentitySession({ ...BASE_PARAMS, identityId: 'dual-device-identity', deviceId: 'laptop' }, 'mock');
+    const phone = await createIdentitySession({ ...BASE_PARAMS, identityId: 'dual-device-identity', deviceId: 'phone' }, 'mock');
+    await setSessionOrganization(laptop.id, 'org-dual', 'mock');
+    await setSessionOrganization(phone.id, 'org-dual', 'mock');
+
+    expect(await countDistinctActiveStaffForOrganization('org-dual', 'mock')).toBe(1);
+  });
+
+  it('excludes an expired session', async () => {
+    const { createIdentitySession, setSessionOrganization, countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'expired-identity' }, 'mock');
+    await setSessionOrganization(session.id, 'org-expired', 'mock');
+    const record = identitySessionFixtures.find((s) => s.id === session.id)!;
+    record.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+    expect(await countDistinctActiveStaffForOrganization('org-expired', 'mock')).toBe(0);
+  });
+
+  it('excludes a logged-out (revoked) session', async () => {
+    const { createIdentitySession, setSessionOrganization, revokeSession, countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'revoked-identity' }, 'mock');
+    await setSessionOrganization(session.id, 'org-revoked', 'mock');
+    expect(await countDistinctActiveStaffForOrganization('org-revoked', 'mock')).toBe(1);
+
+    await revokeSession(session.id, 'mock');
+    expect(await countDistinctActiveStaffForOrganization('org-revoked', 'mock')).toBe(0);
+  });
+
+  it('excludes a Family Portal session for the same person — an entirely separate collection with no organizationId at all', async () => {
+    const { createPortalSession } = await import('./portal/portalSessionService');
+    const { portalSessionFixtures } = await import('./__mocks__/portalFixtures');
+    const { countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const before = portalSessionFixtures.length;
+    let portalIdCounter = 0;
+    await createPortalSession(
+      { portalUserId: 'family-member-x', deviceId: 'family-device', idFactory: () => `portal-session-${++portalIdCounter}` },
+      'mock',
+    );
+
+    expect(await countDistinctActiveStaffForOrganization('org-with-no-staff-sessions', 'mock')).toBe(0);
+    portalSessionFixtures.length = before; // cleanup — this suite doesn't otherwise touch portal fixtures
+  });
+
+  it("excludes another organization's staff — a session pointed at org-a never contributes to org-b's count", async () => {
+    const { createIdentitySession, setSessionOrganization, countDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'other-org-identity' }, 'mock');
+    await setSessionOrganization(session.id, 'org-a', 'mock');
+
+    expect(await countDistinctActiveStaffForOrganization('org-a', 'mock')).toBe(1);
+    expect(await countDistinctActiveStaffForOrganization('org-b', 'mock')).toBe(0);
+  });
+});
+
 describe('revokeAllSessionsForIdentity', () => {
   it('signs out everywhere when no exception is given', async () => {
     const { createIdentitySession, revokeAllSessionsForIdentity, listActiveSessionsForIdentity } = await import('./sessionService');

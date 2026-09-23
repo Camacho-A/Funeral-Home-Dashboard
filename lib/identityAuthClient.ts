@@ -41,6 +41,13 @@ export async function revokeSessionById(sessionId: string): Promise<void> {
   await parseJsonOrThrow(response);
 }
 
+export async function fetchActiveStaffCount(organizationId: string): Promise<number> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(`/api/staff/active-count?${params.toString()}`);
+  const body = await parseJsonOrThrow(response);
+  return (body.count as number) ?? 0;
+}
+
 export async function signOutEverywhere(): Promise<void> {
   const response = await fetch('/api/auth/sessions/sign-out-everywhere', { method: 'POST' });
   await parseJsonOrThrow(response);

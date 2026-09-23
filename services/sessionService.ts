@@ -187,6 +187,31 @@ export async function touchSession(sessionId: string, dataAdapterMode: DataAdapt
   );
 }
 
+/** Distinct active-staff count for the sidebar's "N staff online" — an
+    identity with sessions on two devices counts once. "Active" is exactly
+    `listActiveSessionsForIdentity`'s own definition (`revokedAt === null`
+    and `expiresAt` in the future), scoped by `organizationId` instead of
+    `identityId`. A session's `organizationId` is only set once the
+    identity has selected/switched into one (see `IdentitySession`'s own
+    comment), so a session that never selected this organization is
+    correctly excluded — not merely uncounted, but a session for a
+    *different* organization can never contribute to this one's total.
+    Family Portal sessions live in an entirely separate `portalSessions`
+    collection/service and never appear here. */
+export async function countDistinctActiveStaffForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
+  const now = Date.now();
+  const all =
+    dataAdapterMode === 'mock'
+      ? identitySessionFixtures.filter((s) => s.organizationId === organizationId)
+      : await (async () => {
+          const response = await queryWixDataItems<WixIdentitySessionItem>('sessions', { filter: { organizationId } });
+          return response.dataItems.map((item) => mapWixIdentitySessionItem(item.data)).filter((s): s is IdentitySession => s !== null);
+        })();
+
+  const active = all.filter((s) => s.revokedAt === null && new Date(s.expiresAt).getTime() > now);
+  return new Set(active.map((s) => s.identityId)).size;
+}
+
 /** Never trusts a client-supplied organizationId as proof of membership —
     the caller (the `/switch-organization` route) must independently
     confirm an active `Membership` exists before calling this. */

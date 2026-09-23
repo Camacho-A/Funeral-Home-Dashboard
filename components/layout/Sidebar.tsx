@@ -4,6 +4,7 @@ import type { AuthAdapterMode } from '@/lib/env';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useMyPermissions } from '@/hooks/useRbac';
+import { useActiveStaffCount } from '@/hooks/useIdentitySessions';
 import { SidebarNavItem } from './SidebarNavItem';
 import styles from './Sidebar.module.css';
 
@@ -13,8 +14,16 @@ import styles from './Sidebar.module.css';
  * fixture-backed in `mock` mode, same Organization shape either way).
  * Falls back to the raw organizationId if the record hasn't loaded yet or
  * couldn't be found — the same "always show something" behavior the prior
- * mock-only lookup already had. Staff-online count remains a static
- * placeholder, unchanged, until useStaff()-backed aggregation exists.
+ * mock-only lookup already had.
+ *
+ * "N staff online" (2026-09 correction): previously a hardcoded "3 staff
+ * online" placeholder. Now backed by `useActiveStaffCount` — a distinct
+ * count of identities with a currently valid (non-revoked, non-expired)
+ * `IdentitySession` scoped to this organization (`services/sessionService.ts#countDistinctActiveStaffForOrganization`).
+ * Identity-mode only, matching the Accounting link's own gate immediately
+ * below — `AUTH_ADAPTER='mock'|'wix'` never populates the `sessions`
+ * registry this count reads, so nothing is shown there rather than
+ * fabricating a number.
  *
  * Phase 31 (Financial Management & General Ledger): `/accounting` gets its
  * own top-level entry, matching how Calendar/Tasks/Reports already got
@@ -40,6 +49,7 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
   const organizationName = organization?.name ?? organizationId;
   const permissionsQuery = useMyPermissions(organizationId);
   const canViewAccounting = (permissionsQuery.data?.permissions ?? []).includes('accounting.view');
+  const activeStaffCountQuery = useActiveStaffCount(organizationId, authAdapterMode === 'identity');
 
   return (
     <nav className={styles.sidebar} aria-label="Primary">
@@ -61,8 +71,12 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
 
       <div className={styles.footer}>
         {organizationName}
-        <br />
-        <span className={styles.footerStaffOnline}>3 staff online</span>
+        {authAdapterMode === 'identity' && activeStaffCountQuery.data !== undefined && (
+          <>
+            <br />
+            <span className={styles.footerStaffOnline}>{activeStaffCountQuery.data} staff online</span>
+          </>
+        )}
       </div>
     </nav>
   );
