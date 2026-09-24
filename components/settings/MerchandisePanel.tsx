@@ -60,7 +60,10 @@ export function MerchandisePanel() {
         <h2>Add a product</h2>
         <form onSubmit={handleCreate}>
           <TextField placeholder="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} required />
-          <TextField placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          {/* SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
+              server (services/merchandiseService.ts) normalizes
+              authoritatively. */}
+          <TextField placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value.toUpperCase() })} required />
           <SelectField value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as typeof form.category })}>
             {categories.map((c) => (
               <option key={c.key} value={c.key}>

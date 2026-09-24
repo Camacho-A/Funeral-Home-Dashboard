@@ -63,7 +63,9 @@ export function CaseTasksCard({
       <div className={styles.composer}>
         <TextField
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          // SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
+          // server (lib/wixTaskMapper.ts) normalizes authoritatively.
+          onChange={(e) => setDraft(e.target.value.toUpperCase())}
           placeholder="Add a task for this case…"
         />
         <Button onClick={handleAdd}>Add</Button>

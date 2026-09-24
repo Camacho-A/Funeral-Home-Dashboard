@@ -51,7 +51,10 @@ export function TaskComposer({
       <TextField
         className={styles.textInput}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        // SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
+        // server (lib/wixTaskMapper.ts) normalizes authoritatively
+        // regardless of what reaches it.
+        onChange={(e) => setText(e.target.value.toUpperCase())}
         placeholder="Add a follow-up, reminder, or to-do…"
       />
       <SelectField

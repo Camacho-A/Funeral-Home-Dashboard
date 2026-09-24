@@ -26,7 +26,7 @@ export default async function MfaChallengePage({
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.title}>Solis</h1>
+        <h1 className={styles.title}>SOLIS</h1>
         <p className={styles.subtitle}>Enter your verification code.</p>
 
         {errorMessage && (

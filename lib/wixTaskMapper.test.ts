@@ -125,7 +125,10 @@ describe('validateAndPickTaskUpdate', () => {
   it('picks only known, correctly-typed fields', () => {
     const { patch, errors } = validateAndPickTaskUpdate({ text: 'Renamed', isDone: true });
     expect(errors).toEqual([]);
-    expect(patch).toEqual({ text: 'Renamed', isDone: true });
+    // SOLIS ALL-CAPS data standard (2026-09): text is normalized before the
+    // patch is ever returned — see the dedicated describe block below for
+    // exhaustive normalization coverage.
+    expect(patch).toEqual({ text: 'RENAMED', isDone: true });
   });
 
   it('silently drops immutable/unknown fields even when present in the body', () => {
@@ -137,7 +140,7 @@ describe('validateAndPickTaskUpdate', () => {
       createdAt: '2000-01-01T00:00:00.000Z',
     });
     expect(errors).toEqual([]);
-    expect(patch).toEqual({ text: 'Renamed' });
+    expect(patch).toEqual({ text: 'RENAMED' });
   });
 
   it('rejects a present-but-wrong-typed field rather than silently dropping or coercing it', () => {
@@ -178,5 +181,48 @@ describe('applyTaskUpdateToWixData', () => {
     const existing = { ...validItem };
     applyTaskUpdateToWixData(existing, { text: 'Renamed' });
     expect(existing.text).toBe(validItem.text);
+  });
+});
+
+describe('SOLIS ALL-CAPS data standard (2026-09)', () => {
+  it('buildWixTaskData uppercases text on creation', () => {
+    const data = buildWixTaskData({
+      beaconTaskId: 'new-task-2',
+      organizationId: 'managed-cremations',
+      text: 'call the family back',
+      assigneeStaffId: null,
+      caseId: null,
+      createdAt: '2026-07-23T00:00:00.000Z',
+    });
+    expect(data.text).toBe('CALL THE FAMILY BACK');
+  });
+
+  it('POST /api/tasks cannot bypass normalization — a raw lowercase body still persists uppercase via buildWixTaskData', () => {
+    const data = buildWixTaskData({
+      beaconTaskId: 'new-task-3',
+      organizationId: 'managed-cremations',
+      text: 'forged lowercase text',
+      assigneeStaffId: null,
+      caseId: null,
+      createdAt: '2026-07-23T00:00:00.000Z',
+    });
+    expect(data.text).toBe('FORGED LOWERCASE TEXT');
+  });
+
+  it('PATCH /api/tasks/[taskId] cannot bypass normalization — a raw lowercase patch still persists uppercase via validateAndPickTaskUpdate', () => {
+    const { patch } = validateAndPickTaskUpdate({ text: 'forged lowercase text' });
+    expect(patch.text).toBe('FORGED LOWERCASE TEXT');
+  });
+
+  it('leaves technical fields (isDone, assigneeStaffId, dueDate) untouched', () => {
+    const { patch } = validateAndPickTaskUpdate({ text: 'follow up', isDone: true, assigneeStaffId: 'staff-1', dueDate: '2026-10-01' });
+    expect(patch.isDone).toBe(true);
+    expect(patch.assigneeStaffId).toBe('staff-1');
+    expect(patch.dueDate).toBe('2026-10-01');
+  });
+
+  it('is idempotent — already-uppercase text is unchanged', () => {
+    const { patch } = validateAndPickTaskUpdate({ text: 'ALREADY CAPS' });
+    expect(patch.text).toBe('ALREADY CAPS');
   });
 });

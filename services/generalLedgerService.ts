@@ -10,6 +10,7 @@ import { mapWixJournalEntryLineItem, buildWixJournalEntryLineData, type WixJourn
 import type { JournalEntry, JournalEntryLine, JournalEntrySourceType } from '../types/journalEntry';
 import { assertJournalEntryBalances, type JournalEntryLineInput } from '../domain/ledger/balancing';
 import { journalEntryFixtures, journalEntryLineFixtures } from './__mocks__/ledgerFixtures';
+import { normalizeManualJournalEntryMemo, normalizeManualJournalEntryLineDescription } from '../domain/accounting/textNormalization';
 
 /**
  * Phase 31 (Financial Management & General Ledger). Owns the
@@ -256,6 +257,11 @@ export async function createDraftJournalEntry(
   dataAdapterMode: DataAdapterMode,
 ): Promise<JournalEntry> {
   const now = params.now ?? nowIso();
+  // SOLIS-wide ALL-CAPS data standard (2026-09): this is the ONLY entry
+  // point for a `sourceType: 'manual'` entry — every system-generated
+  // sourceType goes through createAndPostJournalEntry instead, which never
+  // calls this normalizer, so a system-composed memo is never rewritten.
+  const memo = normalizeManualJournalEntryMemo(params.memo);
   return insertEntryWithRetry(
     organizationId,
     (entryNumber) => ({
@@ -268,7 +274,7 @@ export async function createDraftJournalEntry(
       sourceType: 'manual',
       sourceReferenceId: null,
       caseId: params.caseId ?? null,
-      memo: params.memo,
+      memo,
       reversesEntryId: null,
       postedAt: null,
       postedByStaffProfileId: null,
@@ -368,7 +374,13 @@ export async function updateDraftJournalEntryLines(
   if (entry.status !== 'draft') {
     throw new GeneralLedgerServiceError(`Journal entry ${entry.entryNumber} is not a draft and can no longer be edited.`);
   }
-  return replaceDraftLines(organizationId, entryId, lines, dataAdapterMode, nowIso());
+  // SOLIS-wide ALL-CAPS data standard (2026-09): this function is only ever
+  // reachable for a draft (manual) entry — the `status !== 'draft'` guard
+  // above already ensures a system-generated entry's lines (written by
+  // createAndPostJournalEntry, which never calls this function) can never
+  // reach this normalization.
+  const normalizedLines = lines.map((line) => ({ ...line, description: normalizeManualJournalEntryLineDescription(line.description) }));
+  return replaceDraftLines(organizationId, entryId, normalizedLines, dataAdapterMode, nowIso());
 }
 
 async function updateEntryRow(

@@ -35,7 +35,13 @@ export type ActivityEventCategory =
       vendor-bill, and vendor-payment lifecycle — kept as its own category so
       a procurement/AP review can filter cleanly, distinct from `'financial'`
       (ledger/banking) and `'inventory'` (physical stock). */
-  | 'procurement';
+  | 'procurement'
+  /** Manors Jotform integration (case-first architecture, 2026-09). A
+      submission's own lifecycle (received/matched/unmatched/linked) plus
+      its independent PDF-preservation outcome — kept separate from
+      `'cases'` so a high-frequency webhook-driven surface never dilutes
+      ordinary case activity. */
+  | 'external_form';
 
 export type ActivitySeverity = 'info' | 'warning' | 'critical';
 
@@ -345,6 +351,24 @@ export const ACTIVITY_EVENT_TYPES = {
   VENDOR_BILL_CREATED: 'procurement.bill.created',
   VENDOR_BILL_VOIDED: 'procurement.bill.voided',
   BILL_PAYMENT_RECORDED: 'procurement.bill_payment.recorded',
+
+  /** Manors Jotform integration (case-first architecture, 2026-09). All
+      use the `'external_form'` category. `LINK_GENERATED` and
+      `SUBMISSION_RECEIVED` are recorded but deliberately excluded from
+      Dashboard Recent Activity (routine, webhook-driven, high-frequency)
+      — `CASE_CREATED_FROM...` does not exist in this registry at all,
+      since a submission structurally never creates a case (see
+      app/api/webhooks/jotform/route.ts's own structural test).
+      `SUBMISSION_LINKED`, `FIELDS_APPLIED`, and `PDF_FAILED` are the ones
+      genuinely worth a Recent Activity row. */
+  EXTERNAL_FORM_LINK_GENERATED: 'external_form.link_generated',
+  EXTERNAL_FORM_SUBMISSION_RECEIVED: 'external_form.submission_received',
+  EXTERNAL_FORM_SUBMISSION_UNMATCHED: 'external_form.submission_unmatched',
+  EXTERNAL_FORM_SUBMISSION_LINKED: 'external_form.submission_linked',
+  EXTERNAL_FORM_PDF_STORED: 'external_form.pdf_stored',
+  EXTERNAL_FORM_PDF_FAILED: 'external_form.pdf_failed',
+  EXTERNAL_FORM_SUBMISSION_REVIEWED: 'external_form.submission_reviewed',
+  EXTERNAL_FORM_FIELDS_APPLIED: 'external_form.fields_applied',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

@@ -7,11 +7,11 @@ function renderMfaChallengePage(searchParams: { next?: string; error?: string } 
 }
 
 describe('MfaChallengePage', () => {
-  /** Solis rename (2026-09): the MFA challenge heading must read "Solis",
-      never the retired "Beacon" branding. */
-  it('renders the Solis heading', async () => {
+  /** SOLIS branding (2026-09): the MFA challenge heading must read "SOLIS",
+      never the retired "Beacon" branding or the lowercase-tail "Solis". */
+  it('renders the SOLIS heading', async () => {
     render(await renderMfaChallengePage());
-    expect(screen.getByRole('heading', { name: 'Solis' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
     expect(screen.queryByText('Beacon')).not.toBeInTheDocument();
   });
 });

@@ -17,6 +17,7 @@ import { mapWixCaseWriteOffItem, buildWixCaseWriteOffData, type WixCaseWriteOffI
 import { mapWixBankDepositItem, buildWixBankDepositData, type WixBankDepositItem } from '../lib/wixBankDepositMapper';
 import { mapWixBankAccountItem, type WixBankAccountItem } from '../lib/wixBankAccountMapper';
 import type { CaseWriteOff } from '../types/caseWriteOff';
+import { normalizeWriteOffTextFields } from '../domain/accounting/textNormalization';
 import type { BankDeposit } from '../types/bankDeposit';
 import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
 import { caseWriteOffFixtures } from './__mocks__/ledgerFixtures';
@@ -139,13 +140,22 @@ export async function postWriteOffTransaction(
   const accountsReceivable = await requireAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, dataAdapterMode);
   const now = nowIso();
 
+  // SOLIS-wide ALL-CAPS data standard (2026-09): normalized once, here —
+  // `params.reason` feeds both the CaseWriteOff row below and this
+  // system-generated journal-entry memo's interpolated text, so
+  // normalizing it once at the source means neither consumer needs its
+  // own normalization call, and the surrounding "Write-off: " prose (a
+  // system-generated sentence, never independently re-normalized) is left
+  // exactly as composed.
+  const { reason } = normalizeWriteOffTextFields({ reason: params.reason });
+
   const { entry } = await createAndPostJournalEntry(
     organizationId,
     {
       entryDate: params.entryDate ?? now,
       sourceType: 'write_off',
       caseId: params.caseId,
-      memo: `Write-off: ${params.reason}`,
+      memo: `Write-off: ${reason}`,
       lines: [
         { accountId: badDebtExpense.id, direction: 'debit', amount: params.amountCents, caseId: params.caseId },
         { accountId: accountsReceivable.id, direction: 'credit', amount: params.amountCents, caseId: params.caseId },
@@ -164,7 +174,7 @@ export async function postWriteOffTransaction(
       caseId: params.caseId,
       amount: params.amountCents,
       journalEntryId: entry.id,
-      reason: params.reason,
+      reason,
       performedByStaffProfileId: params.performedByStaffProfileId ?? null,
       createdAt: now,
     },

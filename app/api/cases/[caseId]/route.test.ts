@@ -434,7 +434,8 @@ describe('PATCH /api/cases/[caseId]', () => {
 
       const mergedData = mockUpdateWixDataItem.mock.calls[0][2];
       expect(mergedData.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
-      expect(mergedData.decedentName).toBe('Renamed');
+      // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+      expect(mergedData.decedentName).toBe('RENAMED');
     });
 
     it('ignores an attempt to reassign caseNumber via the patch — the Case Number is permanent and always read-only', async () => {
@@ -475,8 +476,9 @@ describe('PATCH /api/cases/[caseId]', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body.case.decedentName).toBe('Renamed');
-      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ decedentName: 'Renamed' }));
+      // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+      expect(body.case.decedentName).toBe('RENAMED');
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ decedentName: 'RENAMED' }));
     });
 
     it('sends the full merged object to Wix, preserving fields the patch did not touch', async () => {
@@ -535,7 +537,8 @@ describe('PATCH /api/cases/[caseId]', () => {
 
       expect(response.status).toBe(200);
       expect(body.case.nextOfKinRelationship).toBe('other');
-      expect(body.case.nextOfKinRelationshipOther).toBe('family friend');
+      // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+      expect(body.case.nextOfKinRelationshipOther).toBe('FAMILY FRIEND');
     });
 
     it('clears nextOfKinRelationship to null', async () => {
@@ -564,7 +567,9 @@ describe('PATCH /api/cases/[caseId]', () => {
         expect.any(String),
       );
       const eventData = mockInsertWixDataItem.mock.calls[0][1];
-      expect(JSON.parse(eventData.newValue)).toEqual({ decedentName: 'Renamed' });
+      // SOLIS ALL-CAPS data standard (2026-09): normalized before the
+      // activity event's newValue is ever recorded.
+      expect(JSON.parse(eventData.newValue)).toEqual({ decedentName: 'RENAMED' });
       expect(JSON.parse(eventData.previousValue)).toEqual({ decedentName: EXISTING_WIX_CASE_DATA.decedentName });
     });
 
@@ -595,7 +600,8 @@ describe('PATCH /api/cases/[caseId]', () => {
       const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Still Works' } });
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body.case.decedentName).toBe('Still Works');
+      // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+      expect(body.case.decedentName).toBe('STILL WORKS');
     });
   });
 
@@ -786,7 +792,8 @@ describe('PATCH /api/cases/[caseId]', () => {
 
       const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Updated Name' } });
       expect(response.status).toBe(200);
-      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ decedentName: 'Updated Name' }));
+      // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ decedentName: 'UPDATED NAME' }));
     });
   });
 });

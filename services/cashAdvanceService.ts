@@ -3,6 +3,7 @@ import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/
 import { mapWixCaseCashAdvanceItem, buildWixCaseCashAdvanceItemData, type WixCaseCashAdvanceItem } from '../lib/wixCaseCashAdvanceItemMapper';
 import type { CaseCashAdvanceItem } from '../types/caseCashAdvanceItem';
 import { caseCashAdvanceItemFixtures } from './__mocks__/billingFixtures';
+import { normalizeCashAdvanceTextFields } from '../domain/accounting/textNormalization';
 
 /**
  * Phase 39 (Family Billing & FTC Compliance). Sole writer of
@@ -51,11 +52,14 @@ export async function createCashAdvanceItem(
   },
   dataAdapterMode: DataAdapterMode,
 ): Promise<CaseCashAdvanceItem> {
-  const description = params.description.trim();
-  if (description.length === 0) throw new CashAdvanceServiceError('A cash advance item requires a description.');
+  const trimmed = params.description.trim();
+  if (trimmed.length === 0) throw new CashAdvanceServiceError('A cash advance item requires a description.');
   if (!Number.isInteger(params.amountCents) || params.amountCents < 0) {
     throw new CashAdvanceServiceError('A cash advance amount must be a non-negative integer number of cents.');
   }
+  // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+  // normalization point for a newly created cash-advance item.
+  const { description } = normalizeCashAdvanceTextFields({ description: trimmed });
   const now = nowIso();
   const item: CaseCashAdvanceItem = {
     id: params.idFactory(),
@@ -109,9 +113,13 @@ export async function updateCashAdvanceItem(
     throw new CashAdvanceServiceError('A cash advance amount must be a non-negative integer number of cents.');
   }
   const { item, wixItemId } = await findOwned(organizationId, caseId, itemId, dataAdapterMode);
+  // SOLIS-wide ALL-CAPS data standard (2026-09): normalized here, the sole
+  // update chokepoint for this field.
+  const normalizedDescription =
+    patch.description !== undefined ? normalizeCashAdvanceTextFields({ description: patch.description.trim() }).description : item.description;
   const merged: CaseCashAdvanceItem = {
     ...item,
-    description: patch.description !== undefined ? patch.description.trim() : item.description,
+    description: normalizedDescription,
     amountCents: patch.amountCents ?? item.amountCents,
     hasMarkup: patch.hasMarkup ?? item.hasMarkup,
     isEstimated: patch.isEstimated ?? item.isEstimated,

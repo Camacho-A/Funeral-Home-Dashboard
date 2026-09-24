@@ -32,6 +32,7 @@ import { createNotification } from './notificationService';
 import { scheduleRemindersForAppointment, cancelRemindersForAppointment, rescheduleRemindersForAppointment } from './appointmentReminderService';
 import { markPendingForAppointment, markPendingForCancellation } from './calendarSyncService';
 import { getAppBaseUrl } from '../lib/env';
+import { normalizeAppointmentTextFields, normalizeAppointmentCancelReason } from '../domain/scheduling/textNormalization';
 import { appointmentFixtures, appointmentResourceAssignmentFixtures } from './__mocks__/schedulingFixtures';
 
 /**
@@ -324,14 +325,24 @@ export async function createAppointment(params: NewAppointmentInput & { idFactor
     }
   }
 
+  // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+  // normalization point for a newly created appointment's staff-entered
+  // prose — this is Appointment's only real persistence chokepoint (see
+  // this file's own header comment: "no Route Handler ever ... only this
+  // file does").
+  const { title: normalizedTitle, notes: normalizedNotes } = normalizeAppointmentTextFields({
+    title: params.title,
+    notes: params.notes ?? null,
+  });
+
   const appointmentId = params.idFactory();
   const appointment: Appointment = {
     id: appointmentId,
     organizationId: ctx.organizationId,
     caseId: params.caseId ?? null,
     appointmentType: params.appointmentType,
-    title: params.title,
-    notes: params.notes ?? null,
+    title: normalizedTitle as string,
+    notes: normalizedNotes as string | null,
     locationId: params.locationId ?? null,
     status: willBeDraft ? 'draft' : 'scheduled',
     startAt: params.startAt,
@@ -603,10 +614,13 @@ export async function cancelAppointment(organizationId: string, appointmentId: s
   if (isTerminalAppointmentStatus(existing.status)) throw new SchedulingServiceError('This appointment can no longer be cancelled.');
 
   const now = nowIso();
+  // SOLIS-wide ALL-CAPS data standard (2026-09): normalized here, the sole
+  // place a cancelReason is ever written.
+  const normalizedReason = normalizeAppointmentCancelReason(reason);
   const updated = await patchAppointment(
     organizationId,
     appointmentId,
-    { status: 'cancelled', cancelledAt: now, cancelledBy: ctx.actorIdentityId ?? null, cancelReason: reason, updatedAt: now },
+    { status: 'cancelled', cancelledAt: now, cancelledBy: ctx.actorIdentityId ?? null, cancelReason: normalizedReason, updatedAt: now },
     dataAdapterMode,
   );
   await releaseAllLiveAssignments(organizationId, appointmentId, existing.caseId, ctx, dataAdapterMode);

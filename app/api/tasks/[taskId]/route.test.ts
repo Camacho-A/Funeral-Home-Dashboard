@@ -187,7 +187,8 @@ describe('PATCH /api/tasks/[taskId] — protected-field reassignment', () => {
     const mergedData = mockUpdateWixDataItem.mock.calls[0][2];
     expect(mergedData.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
     expect(mergedData.caseId).toBe(EXISTING_WIX_TASK_DATA.caseId);
-    expect(mergedData.text).toBe('Renamed');
+    // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+    expect(mergedData.text).toBe('RENAMED');
   });
 });
 
@@ -197,7 +198,8 @@ describe('PATCH /api/tasks/[taskId] — successful mutations', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.task.text).toBe('Renamed Task');
+    // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
+    expect(body.task.text).toBe('RENAMED TASK');
   });
 
   it('completes a task (isDone: true)', async () => {

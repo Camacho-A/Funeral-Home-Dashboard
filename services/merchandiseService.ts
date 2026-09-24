@@ -18,6 +18,7 @@ import {
   type FieldChange,
 } from './activityService';
 import { merchandiseProductFixtures, merchandiseProductVariantFixtures } from './__mocks__/merchandiseFixtures';
+import { normalizeMerchandiseTextFields } from '../domain/merchandise/textNormalization';
 
 /**
  * Phase 35 (Merchandise, Inventory & Commerce). Sole writer of the
@@ -181,12 +182,15 @@ export async function createProduct(
   if (existing) throw new MerchandiseServiceError(`A product with SKU "${sku}" already exists.`, 'duplicate_sku');
 
   const nowIso = input.now ?? new Date().toISOString();
+  // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+  // normalization point for a newly created merchandise product.
+  const normalized = normalizeMerchandiseTextFields({ name, description: input.description ?? null, supplierName: input.supplierName ?? null });
   const product: MerchandiseProduct = {
     id: input.idFactory(),
     organizationId: input.organizationId,
     sku,
-    name,
-    description: input.description ?? null,
+    name: normalized.name as string,
+    description: normalized.description as string | null,
     category: input.category as MerchandiseCategoryKey,
     cost: input.cost,
     retailPrice: input.retailPrice,
@@ -197,7 +201,7 @@ export async function createProduct(
     defaultLocationId: input.defaultLocationId ?? null,
     imageStorageKey: null,
     familyVisible: input.familyVisible ?? false,
-    supplierName: input.supplierName ?? null,
+    supplierName: normalized.supplierName as string | null,
     supplierId: input.supplierId ?? null,
     parentProductId: null,
     // Phase 37: a newly created product is a non-variant product (Mode A);
@@ -226,6 +230,11 @@ export async function updateProduct(
 ): Promise<MerchandiseProduct> {
   const existing = await getProductById(organizationId, productId, dataAdapterMode);
   if (!existing) throw new MerchandiseServiceError('Product not found.', 'not_found');
+
+  // SOLIS-wide ALL-CAPS data standard (2026-09): normalized before any
+  // comparison/persistence below, so the activity log's changedFields and
+  // the persisted row agree on the actual (uppercase) value.
+  patch = { ...patch, ...normalizeMerchandiseTextFields({ name: patch.name, description: patch.description, supplierName: patch.supplierName }) };
 
   if (patch.category !== undefined && !isValidMerchandiseCategoryKey(patch.category)) {
     throw new MerchandiseServiceError(`Unknown merchandise category "${patch.category}".`, 'invalid_input');

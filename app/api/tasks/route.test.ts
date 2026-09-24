@@ -399,7 +399,8 @@ describe('POST /api/tasks', () => {
       const body = await response.json();
 
       expect(response.status).toBe(201);
-      expect(body.task.text).toBe('New task');
+      // SOLIS ALL-CAPS data standard (2026-09): normalized on creation.
+      expect(body.task.text).toBe('NEW TASK');
       expect(body.task.assigneeStaffId).toBe('staff-dana');
       expect(body.task.isDone).toBe(false);
       expect(body.task.organizationId).toBe(DEFAULT_ORGANIZATION_ID);

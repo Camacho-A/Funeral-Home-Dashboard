@@ -130,7 +130,9 @@ describe('GET /api/signing/[token]', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.status).toBe('viewed');
-    expect(body.signerName).toBe('Jane Doe');
+    // SOLIS ALL-CAPS data standard (2026-09): signerName is normalized on
+    // signature-request creation.
+    expect(body.signerName).toBe('JANE DOE');
     expect(body.decedentName).toBe('Robert Ellison');
     expect(body.documentFileName).toContain('Cremation Authorization');
   });

@@ -484,7 +484,9 @@ describe('CaseInformationCard — NOK relationship (Manors launch-prep)', () => 
     fireEvent.change(input, { target: { value: '  close family friend  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinRelationshipOther: 'close family friend' });
+    // SOLIS ALL-CAPS data standard (2026-09): this field now uppercases
+    // as-you-type (UX only — the server normalizes authoritatively).
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinRelationshipOther: 'CLOSE FAMILY FRIEND' });
   });
 
   it('does not show the detail field for a non-"other" relationship, even if nextOfKinRelationshipOther happens to be set', () => {

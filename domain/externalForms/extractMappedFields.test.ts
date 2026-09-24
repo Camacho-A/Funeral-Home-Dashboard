@@ -1,0 +1,87 @@
+import { describe, expect, it } from 'vitest';
+import { extractMappedFields } from './extractMappedFields';
+import { FIELD_MAP_VITAL_STATISTICS, FIELD_MAP_ARRANGEMENT_FORMS } from './fieldMapping';
+
+describe('extractMappedFields — Vital Statistics (synthetic fixture, no real submission data)', () => {
+  it('combines compound fullname subfields into one Solis-shaped name', () => {
+    const answers = {
+      '3': { answer: { first: 'John', last: 'Doe' } },
+    };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.decedentName).toBe('John Doe');
+  });
+
+  it('extracts a simple date field directly', () => {
+    const answers = { '6': { answer: '08/15/2026' } };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.dateOfDeath).toBe('08/15/2026');
+  });
+
+  it('applies a valueMap for isVeteran (YES/NO -> true/false)', () => {
+    const answers = { '12': { answer: 'YES' } };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.isVeteran).toBe('true');
+  });
+
+  it('remaps Mother/Father NOK-relationship dropdown values onto the generic "parent" enum value', () => {
+    const motherAnswers = { '38': { answer: 'Mother' } };
+    const fatherAnswers = { '38': { answer: 'Father' } };
+    expect(extractMappedFields(FIELD_MAP_VITAL_STATISTICS, motherAnswers).nextOfKinRelationship).toBe('parent');
+    expect(extractMappedFields(FIELD_MAP_VITAL_STATISTICS, fatherAnswers).nextOfKinRelationship).toBe('parent');
+  });
+
+  it('extracts a compound phone field via its "full" subfield', () => {
+    const answers = { '24': { answer: { full: '(555) 123-4567' } } };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.nextOfKinPhone).toBe('(555) 123-4567');
+  });
+
+  it('never maps SSN — no entry exists in the field map for it at all', () => {
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, { '7': { answer: 'not-a-real-ssn' } });
+    expect(Object.keys(result)).not.toContain('ssn');
+    expect(FIELD_MAP_VITAL_STATISTICS.some((e) => e.qid === '7')).toBe(false);
+  });
+
+  it('omits a field entirely when its answer is absent', () => {
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, {});
+    expect(result.decedentName).toBeUndefined();
+    expect(result.dateOfBirth).toBeUndefined();
+  });
+});
+
+describe('extractMappedFields — Arrangement Forms', () => {
+  it('maps "Release Cremated Remains to:" onto pickupReleasedTo', () => {
+    const answers = { '174': { answer: { first: 'Mary', last: 'Smith' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.pickupReleasedTo).toBe('Mary Smith');
+  });
+
+  it('captures the release relationship as review-only data, not a Case field', () => {
+    const answers = { '175': { answer: 'Daughter' } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.pickupReleaseRelationship).toBe('Daughter');
+  });
+
+  it('never maps race/education/employment/parents-name fields — no entries exist for them', () => {
+    const mappedQids = new Set(FIELD_MAP_ARRANGEMENT_FORMS.map((e) => e.qid));
+    // qid=108 (race), qid=113 (education), qid=25/26 (occupation/business), qid=118/120 (parents' names)
+    for (const excludedQid of ['108', '113', '25', '26', '118', '120']) {
+      expect(mappedQids.has(excludedQid)).toBe(false);
+    }
+  });
+
+  it('data minimization (2026-09): a synthetic SSN/signature-like answer is never surfaced in mappedFields, even when present in the raw answer map — because no FieldMapEntry references those qids at all', () => {
+    // Synthetic fixture only — these qids are illustrative stand-ins for
+    // the real (excluded) SSN/signature question ids, never real values.
+    const answers = {
+      '174': { answer: { first: 'Mary', last: 'Smith' } },
+      '900': { answer: 'synthetic-ssn-000-00-0000' },
+      '901': { answer: 'synthetic-signature-blob-data' },
+    };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('synthetic-ssn-000-00-0000');
+    expect(serialized).not.toContain('synthetic-signature-blob-data');
+    expect(result.pickupReleasedTo).toBe('Mary Smith');
+  });
+});

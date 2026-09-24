@@ -160,7 +160,10 @@ export function AppointmentDialog({
             <label className={styles.label} htmlFor="appointment-title">
               Title
             </label>
-            <TextField id="appointment-title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+            {/* SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
+                server (services/schedulingService.ts) normalizes
+                authoritatively. */}
+            <TextField id="appointment-title" value={title} onChange={(e) => setTitle(e.target.value.toUpperCase())} required />
           </div>
 
           {!caseId && (
@@ -191,7 +194,7 @@ export function AppointmentDialog({
             <label className={styles.label} htmlFor="appointment-notes">
               Notes
             </label>
-            <TextArea id="appointment-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            <TextArea id="appointment-notes" value={notes} onChange={(e) => setNotes(e.target.value.toUpperCase())} rows={2} />
           </div>
 
           <div className={styles.field}>

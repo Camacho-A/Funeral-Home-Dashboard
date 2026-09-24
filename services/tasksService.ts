@@ -5,6 +5,7 @@ import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileServi
 import { taskFixtures } from './__mocks__/fixtures';
 import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixTaskItem, type WixTaskItem } from '../lib/wixTaskMapper';
+import { normalizeTaskTextFields } from '../domain/tasks/textNormalization';
 
 export type TaskFilters = {
   caseId?: string;
@@ -118,7 +119,7 @@ export async function create(
   const newTask: CaseTask = {
     id: `task-${taskFixtures.length + 1}`,
     organizationId: context.organizationId,
-    text: input.text,
+    text: normalizeTaskTextFields({ text: input.text }).text,
     assigneeStaffId: input.assigneeStaffId,
     isDone: false,
     caseId: input.caseId ?? null,
@@ -156,7 +157,7 @@ export async function update(
     (t) => t.id === taskId && t.organizationId === context.organizationId,
   );
   if (index === -1) throw new Error(`Task ${taskId} not found for this organization`);
-  const updated = { ...taskFixtures[index], ...patch };
+  const updated = { ...taskFixtures[index], ...normalizeTaskTextFields(patch) };
   taskFixtures[index] = updated;
   return updated;
 }

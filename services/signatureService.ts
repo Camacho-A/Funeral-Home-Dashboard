@@ -30,6 +30,7 @@ import {
 } from './activityService';
 import { signatureRequestFixtures, signatureRecordFixtures } from './__mocks__/documentFixtures';
 import { caseFixtures } from './__mocks__/fixtures';
+import { normalizeSignatureRequestTextFields } from '../domain/signatures/textNormalization';
 
 /**
  * Phase 26 (Electronic Signatures & Authorization Workflows).
@@ -365,6 +366,12 @@ export async function createSignatureRequest(
   const now = params.now ?? nowIso();
   const { token, tokenHash } = generateToken();
   const requestId = params.idFactory();
+  // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+  // normalization point for a newly created signature request's
+  // staff-entered signerName. declineReason/signedName/initials are
+  // deliberately never touched anywhere in this file — see
+  // domain/signatures/textNormalization.ts's own comment.
+  const { signerName } = normalizeSignatureRequestTextFields({ signerName: params.signerName });
 
   const request: SignatureRequest = {
     id: requestId,
@@ -372,7 +379,7 @@ export async function createSignatureRequest(
     caseId: params.caseId,
     documentId: params.documentId,
     documentVersion: targetDocument.version ?? 1,
-    signerName: params.signerName,
+    signerName,
     signerEmail: params.signerEmail,
     signerRole: params.signerRole,
     status: 'draft',

@@ -2293,3 +2293,164 @@ export function recordVendorBillVoided(ctx: ActivityContext, vendorBillId: strin
 export function recordBillPaymentRecorded(ctx: ActivityContext, billPaymentId: string, snapshot: { vendorBillId: string; amountCents: number; method: string }, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   return recordProcurementEvent(ctx, ACTIVITY_EVENT_TYPES.BILL_PAYMENT_RECORDED, 'billPayment', billPaymentId, `Vendor payment recorded (${snapshot.method})`, snapshot, 'info', dataAdapterMode);
 }
+
+// ---------------------------------------------------------------------------
+// Manors Jotform integration (case-first architecture, 2026-09). Every
+// event here uses category 'external_form', resourceType 'externalFormSubmission'
+// (or 'caseFormLink' for link-generation, which precedes any submission),
+// always anchored to the real `caseId` so it appears on that case's own
+// timeline. `recordExternalFormLinkGenerated`/`recordExternalFormSubmissionReceived`
+// are recorded but excluded from Dashboard Recent Activity by the
+// Dashboard's own query (see components/dashboard/RecentActivityPanel.tsx —
+// no change needed there; this is a note for future filtering, not a
+// mechanism that exists yet to configure).
+// ---------------------------------------------------------------------------
+
+export function recordExternalFormLinkGenerated(ctx: ActivityContext, caseId: string, caseFormLinkId: string, formLabel: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_LINK_GENERATED,
+      resourceType: 'caseFormLink',
+      resourceId: caseFormLinkId,
+      previousValue: null,
+      newValue: null,
+      description: `${formLabel} link generated`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordExternalFormSubmissionReceived(ctx: ActivityContext, caseId: string, submissionId: string, formLabel: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_SUBMISSION_RECEIVED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: null,
+      description: `${formLabel} submission received`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** `caseId: null` — an unmatched submission has no case to anchor to
+    yet; this event exists only in the organization-wide audit trail. */
+export function recordExternalFormSubmissionUnmatched(ctx: ActivityContext, submissionId: string, formLabel: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_SUBMISSION_UNMATCHED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: null,
+      description: `${formLabel} submission could not be matched to a case`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordExternalFormSubmissionLinked(ctx: ActivityContext, caseId: string, submissionId: string, formLabel: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_SUBMISSION_LINKED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: null,
+      description: `${formLabel} submission manually linked to this case`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordExternalFormPdfStored(ctx: ActivityContext, caseId: string, submissionId: string, fileName: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_PDF_STORED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: null,
+      description: `Original ${fileName} stored to Documents`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** `sanitizedReason` must already be a fixed, generic phrase (see
+    services/externalFormPdfService.ts) — never a raw provider error body,
+    never anything derived from submission content. */
+export function recordExternalFormPdfFailed(ctx: ActivityContext, caseId: string, submissionId: string, sanitizedReason: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_PDF_FAILED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: JSON.stringify({ reason: sanitizedReason }),
+      description: `PDF preservation failed: ${sanitizedReason}`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordExternalFormSubmissionReviewed(ctx: ActivityContext, caseId: string, submissionId: string, formLabel: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_SUBMISSION_REVIEWED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: null,
+      description: `${formLabel} submission reviewed`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordExternalFormFieldsApplied(ctx: ActivityContext, caseId: string, submissionId: string, appliedFieldNames: string[], dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_FIELDS_APPLIED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: JSON.stringify({ fields: appliedFieldNames }),
+      description: `Applied from external form: ${appliedFieldNames.join(', ')}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}

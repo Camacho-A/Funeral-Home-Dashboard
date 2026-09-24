@@ -1,4 +1,5 @@
 import type { CaseTask, TaskUpdate } from '../types/task';
+import { normalizeTaskTextFields } from '../domain/tasks/textNormalization';
 
 /**
  * Phase 15D (Wix Task Read Integration). Mirrors lib/wixCaseMapper.ts's
@@ -96,10 +97,14 @@ export function buildWixTaskData(params: {
   dueDate?: string | null;
   createdAt: string;
 }): WixTaskItem {
+  // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+  // normalization point for a newly created task — see
+  // app/api/tasks/route.ts's POST handler, this function's only caller.
+  const { text } = normalizeTaskTextFields({ text: params.text });
   return {
     beaconTaskId: params.beaconTaskId,
     organizationId: params.organizationId,
-    text: params.text,
+    text,
     assigneeId: params.assigneeStaffId,
     isDone: false,
     caseId: params.caseId,
@@ -148,7 +153,11 @@ export function validateAndPickTaskUpdate(body: unknown): { patch: TaskUpdate; e
     }
   }
 
-  return { patch, errors };
+  // SOLIS-wide ALL-CAPS data standard (2026-09): normalized after
+  // validation/allowlisting, before the patch is ever returned — the one
+  // PATCH /api/tasks/[taskId] chokepoint every task-update path funnels
+  // through.
+  return { patch: normalizeTaskTextFields(patch), errors };
 }
 
 /** Applies a validated TaskUpdate patch onto an existing `tasks` Wix

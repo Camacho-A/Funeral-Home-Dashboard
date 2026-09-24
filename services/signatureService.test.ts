@@ -198,6 +198,16 @@ describe('createSignatureRequest', () => {
     expect(eventTypes).toContain('document.signature.email.sent');
   });
 
+  it('SOLIS ALL-CAPS data standard: uppercases staff-entered signerName', async () => {
+    const doc = await createSampleDocument();
+    const request = await createSignatureRequest(
+      { caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'jane doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory },
+      ctx(),
+      'mock',
+    );
+    expect(request.signerName).toBe('JANE DOE');
+  });
+
   it('never persists the raw token — only its hash', async () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest(
@@ -409,6 +419,9 @@ describe('completeSignatureRequest', () => {
     );
 
     expect(signedRequest.status).toBe('signed');
+    // SOLIS ALL-CAPS data standard (2026-09): signedName/initials are the
+    // signer's own typed legal attestation — must remain byte-for-byte as
+    // typed, never uppercased.
     expect(record.signedName).toBe('Jane Doe');
     expect(record.initials).toBe('JD');
     expect(record.verificationStatus).toBe('verified');
@@ -505,6 +518,8 @@ describe('declineSignatureRequest', () => {
     const declined = await declineSignatureRequest(request, { reason: 'Disagrees with terms', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0' }, 'mock');
 
     expect(declined.status).toBe('declined');
+    // SOLIS ALL-CAPS data standard (2026-09): declineReason is often the
+    // signer's own words, not staff's — must never be uppercased.
     expect(declined.declineReason).toBe('Disagrees with terms');
     expect(mockNotifyDeclined).toHaveBeenCalledTimes(1);
     expect(activityEventFixtures.some((e) => e.eventType === 'document.signature.declined')).toBe(true);

@@ -139,6 +139,22 @@ describe('portalMessagingService', () => {
     expect(recipient?.identityId).toBe('portal-user-1');
   });
 
+  it('SOLIS ALL-CAPS data standard: never normalizes PortalMessage.body — staff/family conversational text stays exactly as written', async () => {
+    const { sendStaffMessage, sendFamilyMessage } = await import('./portalMessagingService');
+    const staffMessage = await sendStaffMessage(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE_ID, body: 'we will call you this afternoon', idFactory },
+      staffCtx(),
+      'mock',
+    );
+    expect(staffMessage.body).toBe('we will call you this afternoon');
+
+    const familyMessage = await sendFamilyMessage(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE_ID, portalUserId: 'p1', portalAccessId: 'a1', relationshipType: 'primary_next_of_kin', body: 'Thank you so much.', idFactory },
+      'mock',
+    );
+    expect(familyMessage.body).toBe('Thank you so much.');
+  });
+
   it('sendStaffMessage never notifies a portal user whose grant is not active or lacks message.read', async () => {
     portalAccessFixtures.push(
       { id: 'access-disabled', portalUserId: 'portal-user-2', organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE_ID, relationshipType: 'primary_next_of_kin', status: 'disabled', grantedFromInvitationId: 'invitation-2', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },

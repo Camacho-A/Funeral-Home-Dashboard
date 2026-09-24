@@ -36,7 +36,7 @@ export function AdministratorStep({
     <div>
       <div className={styles.title}>Administrator Account</div>
       <div className={styles.description}>
-        The person who will manage this organization in Solis. They&apos;ll be granted the organization-scoped Administrator
+        The person who will manage this organization in SOLIS. They&apos;ll be granted the organization-scoped Administrator
         role — never a platform-level permission.
       </div>
 
@@ -46,7 +46,7 @@ export function AdministratorStep({
           <TextField
             value={administratorUserId}
             onChange={(e) => setAdministratorUserId(e.target.value)}
-            placeholder="Existing Solis or Wix member id"
+            placeholder="Existing SOLIS or Wix member id"
           />
         </div>
       </div>

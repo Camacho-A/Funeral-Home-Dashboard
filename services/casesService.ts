@@ -11,6 +11,7 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 import { DEFAULT_RETURN_METHOD } from '../domain/cases/returnMethod';
+import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
 
 export type CaseFilters = {
   searchQuery?: string;
@@ -230,30 +231,40 @@ export async function create(
 
   const version = latestTemplateVersion(template);
   const creationYear = new Date().getFullYear();
+  const workflowSnapshot = buildCaseWorkflowSnapshot(template, version);
+  // SOLIS-wide ALL-CAPS data standard (2026-09): mirrors
+  // lib/wixCaseMapper.ts#buildWixCaseData's normalization exactly, so
+  // dev/test behavior (DATA_ADAPTER=mock) never diverges from production.
+  const normalized = normalizeCaseTextFields({
+    decedentName: input.decedentName,
+    placeOfDeath: input.placeOfDeath ?? '—',
+    nextOfKinName: input.nextOfKinName,
+    nextOfKinRelationshipOther: input.nextOfKinRelationshipOther?.trim() || null,
+  });
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
     organizationId: context.organizationId,
     caseNumber: nextMockCaseNumber(context.organizationId, creationYear),
-    decedentName: input.decedentName,
+    decedentName: normalized.decedentName as string,
     dateOfBirth: input.dateOfBirth ?? '—',
     dateOfDeath: input.dateOfDeath ?? '—',
     timeOfDeath: input.timeOfDeath ?? '—',
-    placeOfDeath: input.placeOfDeath ?? '—',
+    placeOfDeath: normalized.placeOfDeath as string,
     weight: input.weight ?? '—',
     rawStage: 0,
     assignedStaffId: input.assignedStaffId ?? session.staffId,
-    nextOfKinName: input.nextOfKinName,
+    nextOfKinName: normalized.nextOfKinName as string,
     nextOfKinPhone: input.nextOfKinPhone,
     nextOfKinEmail: input.nextOfKinEmail?.trim() || null,
     nextOfKinRelationship: input.nextOfKinRelationship ?? null,
-    nextOfKinRelationshipOther: input.nextOfKinRelationshipOther?.trim() || null,
+    nextOfKinRelationshipOther: normalized.nextOfKinRelationshipOther as string | null,
     paymentStatus: 'awaiting_payment',
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
     tagNumber: null,
     checklistState: {},
-    fieldValues: input.fieldValues ?? {},
+    fieldValues: normalizeCaseFieldValues(input.fieldValues ?? {}, workflowSnapshot) ?? {},
     pickupStatus: 'awaiting_pickup',
     pickupReleasedTo: null,
     pickupReleasedAt: null,
@@ -274,7 +285,7 @@ export async function create(
     workflowTemplateId: template.id,
     workflowTemplateVersion: version.version,
     caseType: version.caseTypes[0],
-    workflowSnapshot: buildCaseWorkflowSnapshot(template, version),
+    workflowSnapshot,
   };
   caseFixtures.push(newCase);
   return newCase;
@@ -311,7 +322,15 @@ export async function update(
     (c) => c.id === caseId && c.organizationId === context.organizationId,
   );
   if (index === -1) throw new Error(`Case ${caseId} not found for this organization`);
-  const updated = { ...caseFixtures[index], ...patch };
+  // SOLIS-wide ALL-CAPS data standard (2026-09): mirrors
+  // lib/wixCaseMapper.ts's validateAndPickCaseUpdate/applyCaseUpdateToWixData
+  // normalization exactly, so dev/test behavior (DATA_ADAPTER=mock) never
+  // diverges from production.
+  const normalizedPatch = normalizeCaseTextFields(patch) as CaseUpdate;
+  if (normalizedPatch.fieldValues !== undefined) {
+    normalizedPatch.fieldValues = normalizeCaseFieldValues(normalizedPatch.fieldValues, caseFixtures[index].workflowSnapshot);
+  }
+  const updated = { ...caseFixtures[index], ...normalizedPatch };
   caseFixtures[index] = updated;
   return updated;
 }

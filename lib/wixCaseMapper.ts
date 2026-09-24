@@ -2,6 +2,7 @@ import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStat
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
+import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
 
 /** Manors launch-prep. Mirrors lib/wixOrganizationMapper.ts's own
     VALID_STATUSES/isValidStatus local-guard convention exactly. */
@@ -329,6 +330,18 @@ export function buildWixCaseData(params: {
       defaults to 'undecided', never 'pickup'. */
   returnMethod?: ReturnMethod;
 }): WixCaseItem {
+  // SOLIS-wide ALL-CAPS data standard (2026-09): the single authoritative
+  // normalization point for a newly created case — applies regardless of
+  // whether the caller is the New Case UI or any future direct API caller,
+  // since this function is the only thing that ever builds a `cases` insert
+  // payload (see app/api/cases/route.ts's POST handler, its sole caller).
+  const normalized = normalizeCaseTextFields({
+    decedentName: params.decedentName,
+    placeOfDeath: params.placeOfDeath,
+    nextOfKinName: params.nextOfKinName,
+    nextOfKinRelationshipOther: params.nextOfKinRelationshipOther ?? null,
+  });
+
   return {
     beaconCaseId: params.beaconCaseId,
     organizationId: params.organizationId,
@@ -341,18 +354,18 @@ export function buildWixCaseData(params: {
     caseHandlerId: params.assignedStaffId,
     currentStage: 0,
     checklistState: {},
-    fieldValues: params.fieldValues,
-    decedentName: params.decedentName,
+    fieldValues: normalizeCaseFieldValues(params.fieldValues, params.workflowSnapshot),
+    decedentName: normalized.decedentName,
     dateOfBirth: params.dateOfBirth,
     dateOfDeath: params.dateOfDeath,
     timeOfDeath: params.timeOfDeath,
-    placeOfDeath: params.placeOfDeath,
+    placeOfDeath: normalized.placeOfDeath,
     weight: params.weight,
-    nextOfKinName: params.nextOfKinName,
+    nextOfKinName: normalized.nextOfKinName,
     nextOfKinPhone: params.nextOfKinPhone,
     nextOfKinEmail: params.nextOfKinEmail ?? null,
     nextOfKinRelationship: params.nextOfKinRelationship ?? null,
-    nextOfKinRelationshipOther: params.nextOfKinRelationshipOther ?? null,
+    nextOfKinRelationshipOther: normalized.nextOfKinRelationshipOther,
     tagNumber: null,
     paymentStatus: 'awaiting_payment',
     pickupStatus: 'awaiting_pickup',
@@ -529,7 +542,17 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
     }
   }
 
-  return { patch, errors };
+  // SOLIS-wide ALL-CAPS data standard (2026-09): normalized here, after
+  // validation/allowlisting and before the patch is ever returned to a
+  // caller — this is the one PATCH /api/cases/[caseId] chokepoint every
+  // case-update path (Case Detail edits, pickup/return/shipping updates,
+  // and Jotform reconciliation's "Apply" route, which sends its patch
+  // through this exact route) already funnels through, so none of them
+  // need their own normalization logic. `fieldValues` is intentionally
+  // NOT normalized here — its per-key uppercase-ness depends on the
+  // case's own workflowSnapshot, which this function has no access to;
+  // see applyCaseUpdateToWixData below, which does.
+  return { patch: normalizeCaseTextFields(patch), errors };
 }
 
 /**
@@ -573,7 +596,16 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.vaStepsState !== undefined) next.vaStepsState = patch.vaStepsState;
   if (patch.vaPublishChoice !== undefined) next.vaPublishChoice = patch.vaPublishChoice;
   if (patch.checklistState !== undefined) next.checklistState = patch.checklistState;
-  if (patch.fieldValues !== undefined) next.fieldValues = patch.fieldValues;
+  if (patch.fieldValues !== undefined) {
+    // SOLIS-wide ALL-CAPS data standard (2026-09): fieldValues' per-key
+    // uppercase-ness is data-driven (workflowSnapshot.intake[].uppercase),
+    // never a fixed field-name allowlist — this is the one place a valid,
+    // already-persisted workflowSnapshot is actually available for an
+    // update patch (buildWixCaseData handles the creation-time case
+    // directly, where the snapshot is a required constructor param).
+    const snapshot = isValidWorkflowSnapshot(existing.workflowSnapshot) ? existing.workflowSnapshot : null;
+    next.fieldValues = normalizeCaseFieldValues(patch.fieldValues, snapshot);
+  }
   if (patch.daysWaitingInStage !== undefined) next.daysWaitingInStage = patch.daysWaitingInStage;
   if (patch.isStalled !== undefined) next.isStalled = patch.isStalled;
   if (patch.stalledReason !== undefined) next.stalledReason = patch.stalledReason;

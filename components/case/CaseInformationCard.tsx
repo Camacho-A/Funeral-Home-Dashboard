@@ -418,6 +418,7 @@ export function CaseInformationCard({
           <EditableField
             label="Relationship (describe)"
             value={nextOfKinRelationshipOther ?? ''}
+            uppercase
             onSave={(v) => onUpdateCaseInfo({ nextOfKinRelationshipOther: v.trim().length > 0 ? v.trim() : null })}
           />
         )}
@@ -498,6 +499,7 @@ export function CaseInformationCard({
                 <EditableField
                   label="Pickup note (optional)"
                   value={pickupNote ?? ''}
+                  uppercase
                   onSave={(v) => onUpdateCaseInfo({ pickupNote: v.trim().length > 0 ? v.trim() : null })}
                 />
               </>

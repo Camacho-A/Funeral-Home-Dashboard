@@ -31,7 +31,8 @@ describe('cashAdvanceService', () => {
     );
     const items = await listCashAdvanceItems(ORG, CASE, 'mock');
     expect(items).toHaveLength(2);
-    const obit = items.find((i) => i.description === 'Obituary notice')!;
+    // SOLIS ALL-CAPS data standard (2026-09): description is normalized on creation.
+    const obit = items.find((i) => i.description === 'OBITUARY NOTICE')!;
     expect(obit.hasMarkup).toBe(true);
     expect(obit.isEstimated).toBe(true);
     expect(sumCashAdvances(items)).toBe(32500);

@@ -71,6 +71,7 @@ describe('GET /api/cases/[caseId]/appointments', () => {
     const response = await getRequest(TEST_CASE_ID, DEFAULT_ORGANIZATION_ID);
     const body = await response.json();
     expect(body.appointments).toHaveLength(1);
-    expect(body.appointments[0].title).toBe('Org A viewing');
+    // SOLIS ALL-CAPS data standard (2026-09): title is normalized on creation.
+    expect(body.appointments[0].title).toBe('ORG A VIEWING');
   });
 });

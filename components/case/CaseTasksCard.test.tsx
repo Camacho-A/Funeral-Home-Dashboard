@@ -36,7 +36,9 @@ describe('CaseTasksCard — empty state and completion UX (Phase 17)', () => {
     fireEvent.change(input, { target: { value: 'Confirm cemetery slot' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    expect(onAddTask).toHaveBeenCalledWith('Confirm cemetery slot');
+    // SOLIS ALL-CAPS data standard (2026-09): the composer uppercases
+    // as-you-type (UX only — the server normalizes authoritatively).
+    expect(onAddTask).toHaveBeenCalledWith('CONFIRM CEMETERY SLOT');
     expect(input).toHaveValue('');
   });
 });

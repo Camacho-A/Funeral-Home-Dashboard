@@ -106,7 +106,9 @@ describe('AppointmentDialog', () => {
 
     await waitFor(() =>
       expect(appointmentsClient.createAppointment).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', appointmentType: 'viewing', title: 'Family Meeting' }),
+        // SOLIS ALL-CAPS data standard (2026-09): the dialog uppercases
+        // as-you-type (UX only — the server normalizes authoritatively).
+        expect.objectContaining({ organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', appointmentType: 'viewing', title: 'FAMILY MEETING' }),
       ),
     );
     await waitFor(() => expect(onClose).toHaveBeenCalled());

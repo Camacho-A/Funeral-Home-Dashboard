@@ -12,11 +12,12 @@ vi.mock('next/font/google', () => ({
 const { metadata } = await import('./layout');
 
 describe('root layout metadata', () => {
-  /** Solis rename (2026-09): the browser-tab title is the single point of
+  /** SOLIS branding (2026-09): the browser-tab title is the single point of
       control for the entire app's page title (staff and Family Portal
       alike — the Family Portal layout carries no override). Must read
-      "Solis", never the retired "Beacon" branding. */
-  it('title is Solis', () => {
-    expect(metadata.title).toBe('Solis');
+      "SOLIS", never the retired "Beacon" branding or the lowercase-tail
+      "Solis". */
+  it('title is SOLIS', () => {
+    expect(metadata.title).toBe('SOLIS');
   });
 });

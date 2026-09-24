@@ -79,7 +79,7 @@ export function OrganizationProfileStep({
     <div>
       <div className={styles.title}>Organization Profile</div>
       <div className={styles.description}>
-        Basic information for the new organization — used across Solis and on family-facing documents.
+        Basic information for the new organization — used across SOLIS and on family-facing documents.
       </div>
 
       <div className={styles.fields}>

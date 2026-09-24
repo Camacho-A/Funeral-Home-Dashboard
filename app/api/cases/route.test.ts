@@ -603,7 +603,8 @@ describe('POST /api/cases — nextOfKinRelationship (Manors launch-prep)', () =>
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.case.nextOfKinRelationship).toBe('other');
-    expect(body.case.nextOfKinRelationshipOther).toBe('family friend');
+    // SOLIS ALL-CAPS data standard (2026-09): normalized on creation.
+    expect(body.case.nextOfKinRelationshipOther).toBe('FAMILY FRIEND');
   });
 
   it('rejects an unrecognized NOK relationship value with 400 — never silently drops or coerces it', async () => {
@@ -710,7 +711,8 @@ describe('POST /api/cases — creation', () => {
     const body = await response.json();
 
     expect(response.status).toBe(201);
-    expect(body.case.decedentName).toBe('Test Decedent');
+    // SOLIS ALL-CAPS data standard (2026-09): normalized on creation.
+    expect(body.case.decedentName).toBe('TEST DECEDENT');
     expect(body.case.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
     expect(body.case.workflowTemplateId).toBe('workflow-template-standard-cremation');
     expect(body.case.rawStage).toBe(0);

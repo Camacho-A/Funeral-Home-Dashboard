@@ -414,7 +414,8 @@ describe('listAppointments / listAppointmentsForCase / cross-tenant isolation', 
     );
     const orgAResults = await listAppointmentsForCase(DEFAULT_ORGANIZATION_ID, sharedCaseId, 'mock');
     expect(orgAResults).toHaveLength(1);
-    expect(orgAResults[0].title).toBe('Org A viewing');
+    // SOLIS ALL-CAPS data standard (2026-09): title is normalized on creation.
+    expect(orgAResults[0].title).toBe('ORG A VIEWING');
   });
 
   it('filters by date range', async () => {
@@ -432,7 +433,8 @@ describe('listAppointments / listAppointmentsForCase / cross-tenant isolation', 
     expect(results).toHaveLength(0);
     const septemberResults = await listAppointments(DEFAULT_ORGANIZATION_ID, { from: '2026-08-15T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z' }, 'mock');
     expect(septemberResults).toHaveLength(1);
-    expect(septemberResults[0].title).toBe('September');
+    // SOLIS ALL-CAPS data standard (2026-09): title is normalized on creation.
+    expect(septemberResults[0].title).toBe('SEPTEMBER');
   });
 });
 

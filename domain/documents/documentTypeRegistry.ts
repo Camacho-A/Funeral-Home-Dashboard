@@ -57,6 +57,17 @@ export const DOCUMENT_TYPES = {
   INTERNAL_CHECKLIST: { key: 'internal.checklist', category: 'internal_form' as DocumentTemplateCategory, displayName: 'Internal Checklist' },
 
   OBITUARY: { key: 'obituary', category: 'miscellaneous' as DocumentTemplateCategory, displayName: 'Obituary' },
+
+  /** Manors Jotform integration (case-first architecture, 2026-09). The
+      original, populated Smart PDF Form retrieved from Jotform for a
+      matched external-form submission — never generated from a
+      DocumentTemplate (origin: 'uploaded', not 'generated' — see
+      services/externalFormPdfService.ts). `external_form.*` rather than
+      `intake.*` deliberately — "intake" implied Jotform was the
+      case-intake system, which the case-first redesign rejected; a case
+      always exists first, a submission only ever attaches to it. */
+  EXTERNAL_FORM_VITAL_STATISTICS: { key: 'external_form.vital_statistics', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Vital Statistics Information Sheet' },
+  EXTERNAL_FORM_ARRANGEMENT_FORMS: { key: 'external_form.arrangement_forms', category: 'authorization' as DocumentTemplateCategory, displayName: 'Arrangement Forms' },
 } as const;
 
 export type DocumentTypeDefinition = (typeof DOCUMENT_TYPES)[keyof typeof DOCUMENT_TYPES];

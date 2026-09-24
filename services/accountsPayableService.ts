@@ -16,6 +16,7 @@ import { applyBilledDelta } from './purchaseOrderService';
 import { withAggregateLease, commitLeasedWrite, vendorBillLeaseKey } from './aggregateLeaseService';
 import { recordVendorBillCreated, recordVendorBillVoided, recordBillPaymentRecorded, type ActivityContext } from './activityService';
 import { vendorBillFixtures, vendorBillLineItemFixtures, billPaymentFixtures } from './__mocks__/procurementFixtures';
+import { normalizeVendorBillTextFields, normalizeExpenseDescription } from '../domain/accounting/textNormalization';
 
 /**
  * Phase 36 (Procurement & Accounts Payable). Sole writer of `vendorBills`,
@@ -267,7 +268,9 @@ export async function createVendorBill(input: CreateVendorBillInput, ctx: Activi
       billedUnitCostCents: null,
       varianceCents: null,
       expenseAccountNumber: e.accountNumber,
-      expenseDescription: e.description ?? null,
+      // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+      // normalization point for a bill's staff-entered expense-line text.
+      expenseDescription: normalizeExpenseDescription(e.description ?? null),
       lineAmountCents: e.amountCents,
       createdAt: nowIso,
     });
@@ -299,7 +302,9 @@ export async function createVendorBill(input: CreateVendorBillInput, ctx: Activi
     amountPaidCents: 0,
     netVarianceCents: posting.netVarianceCents,
     journalEntryId: null,
-    notes: input.notes ?? null,
+    // SOLIS-wide ALL-CAPS data standard (2026-09): the sole authoritative
+    // normalization point for a newly created bill's staff-entered notes.
+    notes: normalizeVendorBillTextFields({ notes: input.notes ?? null }).notes,
     createdByStaffProfileId: input.createdByStaffProfileId ?? null,
     createdAt: nowIso,
     updatedAt: nowIso,

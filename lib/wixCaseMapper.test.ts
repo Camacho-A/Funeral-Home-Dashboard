@@ -313,7 +313,10 @@ describe('validateAndPickCaseUpdate', () => {
       checklistState: { 0: true },
     });
     expect(errors).toEqual([]);
-    expect(patch).toEqual({ decedentName: 'Renamed', isVeteran: true, checklistState: { 0: true } });
+    // SOLIS ALL-CAPS data standard (2026-09): decedentName is normalized
+    // before the patch is ever returned — see the dedicated describe block
+    // below for exhaustive normalization coverage.
+    expect(patch).toEqual({ decedentName: 'RENAMED', isVeteran: true, checklistState: { 0: true } });
   });
 
   it('silently drops immutable/unknown fields even when present in the body', () => {
@@ -330,7 +333,7 @@ describe('validateAndPickCaseUpdate', () => {
       caseNumber: 'B2026-999',
     });
     expect(errors).toEqual([]);
-    expect(patch).toEqual({ decedentName: 'Renamed' });
+    expect(patch).toEqual({ decedentName: 'RENAMED' });
     expect(patch).not.toHaveProperty('caseNumber');
   });
 
@@ -487,5 +490,127 @@ describe('applyCaseUpdateToWixData', () => {
     expect(result.returnMethod).toBe('shipping');
     expect(result.pickupStatus).toBe('released');
     expect(result.pickupReleasedTo).toBe('Karen Ellison');
+  });
+});
+
+describe('SOLIS ALL-CAPS data standard (2026-09)', () => {
+  const createParams = {
+    beaconCaseId: 'new-case-2',
+    organizationId: 'managed-cremations',
+    caseNumber: 'B2026-002',
+    caseType: 'cremation',
+    workflowTemplateId: 'workflow-template-standard-cremation',
+    workflowTemplateVersion: 1,
+    workflowSnapshot: validItem.workflowSnapshot,
+    intakeOwnerId: 'staff-dana',
+    createdBy: 'staff-dana',
+    assignedStaffId: 'staff-dana',
+    decedentName: 'john michael smith',
+    dateOfBirth: '01/01/1950',
+    dateOfDeath: '07/20/2026',
+    timeOfDeath: '10:00',
+    placeOfDeath: 'broward health medical center',
+    weight: '160 lb',
+    nextOfKinName: 'jane smith',
+    nextOfKinPhone: '555-0000',
+    nextOfKinRelationshipOther: 'family friend',
+    fieldValues: {},
+    createdAt: '2026-07-23T00:00:00.000Z',
+  };
+
+  it('buildWixCaseData uppercases every allowlisted field on creation, leaving excluded fields untouched', () => {
+    const data = buildWixCaseData(createParams);
+    expect(data.decedentName).toBe('JOHN MICHAEL SMITH');
+    expect(data.placeOfDeath).toBe('BROWARD HEALTH MEDICAL CENTER');
+    expect(data.nextOfKinName).toBe('JANE SMITH');
+    expect(data.nextOfKinRelationshipOther).toBe('FAMILY FRIEND');
+    // Excluded: dates/times/phone/weight/enums untouched.
+    expect(data.dateOfBirth).toBe('01/01/1950');
+    expect(data.dateOfDeath).toBe('07/20/2026');
+    expect(data.timeOfDeath).toBe('10:00');
+    expect(data.nextOfKinPhone).toBe('555-0000');
+    expect(data.weight).toBe('160 lb');
+    expect(data.paymentStatus).toBe('awaiting_payment');
+    expect(data.pickupStatus).toBe('awaiting_pickup');
+  });
+
+  it('POST /api/cases cannot bypass normalization — a raw lowercase body still persists uppercase via buildWixCaseData', () => {
+    // Simulates a direct API caller bypassing the New Case UI entirely —
+    // app/api/cases/route.ts's POST handler passes body fields straight
+    // into buildWixCaseData with no normalization of its own.
+    const data = buildWixCaseData({ ...createParams, decedentName: 'forged lowercase name' });
+    expect(data.decedentName).toBe('FORGED LOWERCASE NAME');
+  });
+
+  it('validateAndPickCaseUpdate uppercases allowlisted fields and leaves enum/id/date fields untouched', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      decedentName: 'jane doe',
+      placeOfDeath: 'city general hospital',
+      pickupReleasedTo: 'robert ellison',
+      shippingCarrier: 'ups',
+      pickupNote: 'family will pick up friday afternoon.',
+      stalledReason: 'awaiting documents',
+      nextOfKinEmail: 'Jane.Doe@Example.com',
+      paymentStatus: 'paid_in_full',
+      returnMethod: 'pickup',
+      dateOfBirth: '01/01/1950',
+    });
+    expect(errors).toEqual([]);
+    expect(patch.decedentName).toBe('JANE DOE');
+    expect(patch.placeOfDeath).toBe('CITY GENERAL HOSPITAL');
+    expect(patch.pickupReleasedTo).toBe('ROBERT ELLISON');
+    expect(patch.shippingCarrier).toBe('UPS');
+    expect(patch.pickupNote).toBe('FAMILY WILL PICK UP FRIDAY AFTERNOON.');
+    expect(patch.stalledReason).toBe('AWAITING DOCUMENTS');
+    // Excluded: email, enum literals, dates.
+    expect(patch.nextOfKinEmail).toBe('Jane.Doe@Example.com');
+    expect(patch.paymentStatus).toBe('paid_in_full');
+    expect(patch.returnMethod).toBe('pickup');
+    expect(patch.dateOfBirth).toBe('01/01/1950');
+  });
+
+  it('PATCH /api/cases/[caseId] cannot bypass normalization — a raw lowercase patch still persists uppercase via validateAndPickCaseUpdate', () => {
+    const { patch } = validateAndPickCaseUpdate({ nextOfKinName: 'forged lowercase name' });
+    expect(patch.nextOfKinName).toBe('FORGED LOWERCASE NAME');
+  });
+
+  it('is idempotent — an already-uppercase patch is unchanged', () => {
+    const { patch } = validateAndPickCaseUpdate({ decedentName: 'JANE DOE' });
+    expect(patch.decedentName).toBe('JANE DOE');
+  });
+
+  it('applyCaseUpdateToWixData normalizes fieldValues only for keys the case\'s own workflowSnapshot flags uppercase', () => {
+    const snapshotWithUppercaseField = {
+      workflowTemplateId: 'wf-1',
+      workflowTemplateVersion: 1,
+      stages: [],
+      intake: {
+        sections: [
+          {
+            key: 'section',
+            label: 'Section',
+            fields: [
+              { key: 'hospice-contact', label: 'Hospice contact', checklistItemIndex: 0, uppercase: true },
+              { key: 'notes', label: 'Notes', checklistItemIndex: 1, uppercase: false },
+            ],
+          },
+        ],
+      },
+    };
+    const existing = { ...validItem, workflowSnapshot: snapshotWithUppercaseField };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 0: 'jane smith', 1: 'do not shout this' } });
+    expect(result.fieldValues).toEqual({ 0: 'JANE SMITH', 1: 'do not shout this' });
+  });
+
+  it('never touches Jotform-sourced rawPayload/original submission data — this module only ever sees a Case patch', () => {
+    // Structural assertion, not a runtime one: normalizeCaseTextFields
+    // operates purely on the Case patch shape it's given — Jotform's
+    // reconciliation apply route (app/api/external-form-submissions/
+    // [submissionId]/review/route.ts) builds that Case patch and sends it
+    // through PATCH /api/cases/[caseId] exactly like a manual edit; the
+    // submission's own rawPayload is never passed to this function at all.
+    const { patch } = validateAndPickCaseUpdate({ nextOfKinName: 'John Smith' });
+    expect(patch).not.toHaveProperty('rawPayload');
+    expect(patch.nextOfKinName).toBe('JOHN SMITH');
   });
 });

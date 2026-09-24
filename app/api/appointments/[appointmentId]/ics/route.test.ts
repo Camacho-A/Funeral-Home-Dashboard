@@ -70,8 +70,10 @@ describe('GET /api/appointments/[appointmentId]/ics', () => {
     const body = await response.text();
     expect(body).toContain('BEGIN:VCALENDAR');
     expect(body).toContain(`UID:beacon-appointment-${appointment.id}@beacon.app`);
-    expect(body).toContain('SUMMARY:Viewing');
-    expect(body).toContain('DESCRIPTION:Internal staff note');
+    // SOLIS ALL-CAPS data standard (2026-09): title/notes are normalized on
+    // creation (services/schedulingService.ts#createAppointment).
+    expect(body).toContain('SUMMARY:VIEWING');
+    expect(body).toContain('DESCRIPTION:INTERNAL STAFF NOTE');
     expect(body).toContain('STATUS:CONFIRMED');
   });
 

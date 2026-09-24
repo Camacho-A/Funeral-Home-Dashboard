@@ -36,4 +36,5 @@ export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {
   system: 'System',
   financial: 'Financial',
   procurement: 'Procurement',
+  external_form: 'External Forms',
 };
