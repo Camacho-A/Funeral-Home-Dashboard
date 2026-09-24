@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { formatTimestamp } from '@/utils/format';
 import { ReconciliationModal } from '@/components/externalForms/ReconciliationModal';
+import { ImportHistoricalSubmissionModal } from '@/components/externalForms/ImportHistoricalSubmissionModal';
 import type { CaseFormLinkStatus } from '@/types/caseFormLink';
 import styles from './CaseFormsSection.module.css';
 
@@ -47,6 +48,7 @@ export function CaseFormsSection({ caseId }: { caseId: string }) {
   const generateLink = useGenerateFormLink(organizationId, caseId);
   const [copiedConfigId, setCopiedConfigId] = useState<string | null>(null);
   const [reviewingSubmissionId, setReviewingSubmissionId] = useState<string | null>(null);
+  const [importingConfig, setImportingConfig] = useState<{ id: string; label: string } | null>(null);
 
   if (formsQuery.isPending) return null;
   const forms = formsQuery.data ?? [];
@@ -94,6 +96,11 @@ export function CaseFormsSection({ caseId }: { caseId: string }) {
                 {row.status === 'received' ? 'Review Submission' : 'View Submission'}
               </Button>
             )}
+            {(row.status === 'not_sent' || row.status === 'sent') && (
+              <Button variant="ghost" onClick={() => setImportingConfig({ id: row.config.id, label: row.config.label })}>
+                Import Existing Submission
+              </Button>
+            )}
           </div>
         </div>
       ))}
@@ -103,6 +110,15 @@ export function CaseFormsSection({ caseId }: { caseId: string }) {
           submissionId={reviewingSubmissionId}
           caseId={caseId}
           onClose={() => setReviewingSubmissionId(null)}
+        />
+      )}
+
+      {importingConfig && (
+        <ImportHistoricalSubmissionModal
+          caseId={caseId}
+          formConfigId={importingConfig.id}
+          formLabel={importingConfig.label}
+          onClose={() => setImportingConfig(null)}
         />
       )}
     </div>

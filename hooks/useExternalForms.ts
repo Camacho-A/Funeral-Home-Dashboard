@@ -6,6 +6,8 @@ import {
   linkSubmissionToCase,
   fetchReconciliation,
   applyReconciliation,
+  previewHistoricalImport,
+  importHistoricalSubmission,
 } from '@/lib/externalFormsClient';
 
 /** Manors Jotform integration (case-first architecture, 2026-09). */
@@ -59,6 +61,25 @@ export function useApplyReconciliation(organizationId: string, caseId: string) {
   return useMutation({
     mutationFn: (params: { submissionId: string; fieldsToApply: string[] }) =>
       applyReconciliation(organizationId, params.submissionId, caseId, params.fieldsToApply),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) }),
+  });
+}
+
+/** Historical-submission ingestion (2026-09) — on-demand lookup triggered
+    by user input (a pasted Jotform submission id), not a cacheable
+    mount-time query. */
+export function usePreviewHistoricalImport(organizationId: string, caseId: string) {
+  return useMutation({
+    mutationFn: (params: { formConfigId: string; externalSubmissionId: string }) =>
+      previewHistoricalImport(organizationId, caseId, params.formConfigId, params.externalSubmissionId),
+  });
+}
+
+export function useImportHistoricalSubmission(organizationId: string, caseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { formConfigId: string; externalSubmissionId: string }) =>
+      importHistoricalSubmission(organizationId, caseId, params.formConfigId, params.externalSubmissionId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) }),
   });
 }

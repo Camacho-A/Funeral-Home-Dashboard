@@ -81,3 +81,36 @@ export async function applyReconciliation(
   });
   await parseJsonOrThrow(response);
 }
+
+export type HistoricalImportPreview = { formLabel: string; submittedAt: string | null; matchesConfig: boolean };
+
+/** Historical-submission ingestion (2026-09) — safe-metadata-only lookup,
+    never answers/PII, used by the import-confirmation UI before committing. */
+export async function previewHistoricalImport(
+  organizationId: string,
+  caseId: string,
+  formConfigId: string,
+  externalSubmissionId: string,
+): Promise<HistoricalImportPreview> {
+  const params = new URLSearchParams({ organizationId, externalSubmissionId });
+  const response = await fetch(
+    `/api/cases/${encodeURIComponent(caseId)}/forms/${encodeURIComponent(formConfigId)}/import-submission?${params.toString()}`,
+  );
+  const body = await parseJsonOrThrow(response);
+  return body as unknown as HistoricalImportPreview;
+}
+
+export async function importHistoricalSubmission(
+  organizationId: string,
+  caseId: string,
+  formConfigId: string,
+  externalSubmissionId: string,
+): Promise<{ alreadyImported: boolean }> {
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/forms/${encodeURIComponent(formConfigId)}/import-submission`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId, externalSubmissionId }),
+  });
+  const body = await parseJsonOrThrow(response);
+  return { alreadyImported: Boolean(body.alreadyImported) };
+}

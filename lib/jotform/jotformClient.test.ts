@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchSubmissionPdf, JotformClientError } from './jotformClient';
+import { fetchSubmissionPdf, fetchSubmissionAnswers, JotformClientError } from './jotformClient';
 
 const FORM_ID = '261945978664175';
 const SUBMISSION_ID = 'synthetic-submission-id';
@@ -90,5 +90,112 @@ describe('fetchSubmissionPdf — response validation', () => {
       expect((error as JotformClientError).category).toBe('network_error');
       expect((error as JotformClientError).message).not.toContain('ECONNRESET');
     }
+  });
+});
+
+describe('fetchSubmissionAnswers — historical-submission ingestion (2026-09)', () => {
+  it('calls the Submission API endpoint with the APIKEY header, never the key in the URL', async () => {
+    process.env.JOTFORM_API_KEY = 'test-key-never-logged';
+    let capturedUrl = '';
+    let capturedHeaders: HeadersInit | undefined;
+    stubFetch(async (url, init) => {
+      capturedUrl = String(url);
+      capturedHeaders = init?.headers;
+      return new Response(
+        JSON.stringify({ content: { form_id: FORM_ID, created_at: '2026-08-01 12:00:00', answers: {} } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    await fetchSubmissionAnswers(SUBMISSION_ID);
+
+    expect(capturedUrl).toBe(`https://api.jotform.com/submission/${SUBMISSION_ID}`);
+    expect(capturedUrl).not.toContain('test-key-never-logged');
+    expect((capturedHeaders as Record<string, string>).APIKEY).toBe('test-key-never-logged');
+  });
+
+  it('extracts formId, submittedAt, and qid-keyed answers, and nothing else', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: {
+              form_id: FORM_ID,
+              created_at: '2026-08-01 12:00:00',
+              answers: {
+                '174': { name: 'nameof', answer: { first: 'Mary', last: 'Smith' } },
+                '175': { name: 'releaseRelationship', answer: 'Daughter' },
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    const result = await fetchSubmissionAnswers(SUBMISSION_ID);
+    expect(result.formId).toBe(FORM_ID);
+    expect(result.submittedAt).toBe('2026-08-01 12:00:00');
+    expect(result.answers['174']).toEqual({ answer: { first: 'Mary', last: 'Smith' } });
+    expect(result.answers['175']).toEqual({ answer: 'Daughter' });
+  });
+
+  it('throws missing_api_key when JOTFORM_API_KEY is not configured', async () => {
+    stubFetch(async () => new Response('{}', { status: 200 }));
+    await expect(fetchSubmissionAnswers(SUBMISSION_ID)).rejects.toMatchObject({ category: 'missing_api_key' });
+  });
+
+  it('rejects a non-2xx HTTP status', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(async () => new Response('not found', { status: 404 }));
+    await expect(fetchSubmissionAnswers(SUBMISSION_ID)).rejects.toMatchObject({ category: 'http_error' });
+  });
+
+  it('rejects a non-JSON response', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(async () => new Response('not json', { status: 200 }));
+    await expect(fetchSubmissionAnswers(SUBMISSION_ID)).rejects.toMatchObject({ category: 'invalid_content_type' });
+  });
+
+  it('rejects a response missing form_id/answers', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(async () => new Response(JSON.stringify({ content: {} }), { status: 200 }));
+    await expect(fetchSubmissionAnswers(SUBMISSION_ID)).rejects.toMatchObject({ category: 'invalid_submission_response' });
+  });
+
+  it('wraps a network failure as network_error, never leaking the raw error', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(async () => {
+      throw new Error('ECONNRESET at socket internals with sensitive stack trace');
+    });
+    try {
+      await fetchSubmissionAnswers(SUBMISSION_ID);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(JotformClientError);
+      expect((error as JotformClientError).category).toBe('network_error');
+      expect((error as JotformClientError).message).not.toContain('ECONNRESET');
+    }
+  });
+
+  it('never includes the raw response body in its own return shape beyond formId/submittedAt/answers', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: {
+              form_id: FORM_ID,
+              created_at: '2026-08-01 12:00:00',
+              answers: { '7': { answer: 'synthetic-ssn-000-00-0000' } },
+              some_other_sensitive_field: 'should never leak through',
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const result = await fetchSubmissionAnswers(SUBMISSION_ID);
+    expect(Object.keys(result)).toEqual(['formId', 'submittedAt', 'answers']);
+    expect(JSON.stringify(result)).not.toContain('should never leak through');
   });
 });

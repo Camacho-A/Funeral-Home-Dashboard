@@ -19,6 +19,7 @@ const INTEGRATION_FILES = [
   'app/api/external-form-submissions/[submissionId]/review/route.ts',
   'app/api/cases/[caseId]/forms/route.ts',
   'app/api/cases/[caseId]/forms/[formConfigId]/generate-link/route.ts',
+  'app/api/cases/[caseId]/forms/[formConfigId]/import-submission/route.ts',
   'services/externalFormSubmissionService.ts',
   'services/caseFormLinkService.ts',
   'services/externalFormConfigService.ts',
