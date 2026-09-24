@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { caseFormLinkFixtures, externalFormSubmissionFixtures } from '@/services/__mocks__/externalFormFixtures';
+import { caseFormLinkFixtures, externalFormSubmissionFixtures, externalFormConfigFixtures } from '@/services/__mocks__/externalFormFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 
 vi.mock('@/lib/jotform/jotformClient', async () => {
@@ -12,7 +12,11 @@ vi.mock('@/services/documentService', async () => {
 });
 
 const VITAL_STATISTICS_FORM_ID = '262605621454050';
+const VITAL_LINK_QID = '44';
+const VITAL_AUTH_QID = '45';
 const ARRANGEMENT_FORMS_FORM_ID = '261945978664175';
+const ARRANGEMENT_LINK_QID = '274';
+const ARRANGEMENT_AUTH_QID = '275';
 const TEST_SECRET = 'test-shared-secret';
 
 /** Built as an explicit `application/x-www-form-urlencoded` body rather
@@ -33,43 +37,53 @@ function webhookRequest(fields: Record<string, string>, headers: Record<string, 
   });
 }
 
-/** Jotform pre-production hardening (2026-09): `solisWebhookAuth` now
-    travels inside the same `rawRequest` JSON blob `solisLinkToken` and
-    every other hidden field does — never an HTTP header. `extra` merges
-    in whatever else a test needs in the same blob (link token, mapped
-    qid answers). `authValue: null` (never `undefined` — a default
+/** Jotform hidden-field identifier correction (2026-09): every hidden
+    field is now located strictly by qid — `{qid}_{anyName}` — never by a
+    fixed field name. `authValue: null` (never `undefined` — a default
     parameter value would silently reactivate on an explicit `undefined`
-    argument) means "omit the field entirely." */
-function rawRequestWithAuth(extra: Record<string, unknown> = {}, authValue: string | null = TEST_SECRET) {
+    argument) means "omit the auth field entirely." The name portion
+    after the qid is deliberately arbitrary/unrealistic in most tests
+    (`soliswebhookauth`) to make clear the parser never inspects it. */
+function withAuth(authQid: string, extra: Record<string, unknown> = {}, authValue: string | null = TEST_SECRET) {
   const body: Record<string, unknown> = { ...extra };
-  if (authValue !== null) body.solisWebhookAuth = authValue;
+  if (authValue !== null) body[`${authQid}_soliswebhookauth`] = authValue;
   return JSON.stringify(body);
+}
+
+/** A qid-prefixed link-token entry to merge into a `withAuth(...)` extra
+    object — the name portion is deliberately generic, never assumed to
+    be `solisLinkToken` on the wire. */
+function linkTokenEntry(linkQid: string, token: string): Record<string, unknown> {
+  return { [`${linkQid}_solislinktoken`]: token };
 }
 
 let caseFormLinkLengthBefore: number;
 let submissionLengthBefore: number;
 let activityLengthBefore: number;
+let configLengthBefore: number;
 
 beforeEach(() => {
   process.env.JOTFORM_WEBHOOK_SHARED_SECRET = TEST_SECRET;
   caseFormLinkLengthBefore = caseFormLinkFixtures.length;
   submissionLengthBefore = externalFormSubmissionFixtures.length;
   activityLengthBefore = activityEventFixtures.length;
+  configLengthBefore = externalFormConfigFixtures.length;
 });
 afterEach(() => {
   delete process.env.JOTFORM_WEBHOOK_SHARED_SECRET;
   caseFormLinkFixtures.length = caseFormLinkLengthBefore;
   externalFormSubmissionFixtures.length = submissionLengthBefore;
   activityEventFixtures.length = activityLengthBefore;
+  externalFormConfigFixtures.length = configLengthBefore;
   vi.clearAllMocks();
 });
 
-describe('POST /api/webhooks/jotform — verification (solisWebhookAuth, body field)', () => {
+describe('POST /api/webhooks/jotform — verification (solisWebhookAuth, qid-driven)', () => {
   it('rejects a request with no shared secret configured (fail-closed), even with a correct-looking auth value present', async () => {
     delete process.env.JOTFORM_WEBHOOK_SHARED_SECRET;
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: rawRequestWithAuth() }),
+      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: withAuth(ARRANGEMENT_AUTH_QID) }),
     );
     expect(response.status).toBe(401);
   });
@@ -77,7 +91,7 @@ describe('POST /api/webhooks/jotform — verification (solisWebhookAuth, body fi
   it('rejects a request missing the solisWebhookAuth field even when a secret is configured', async () => {
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: rawRequestWithAuth({}, null) }),
+      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: withAuth(ARRANGEMENT_AUTH_QID, {}, null) }),
     );
     expect(response.status).toBe(401);
   });
@@ -85,15 +99,50 @@ describe('POST /api/webhooks/jotform — verification (solisWebhookAuth, body fi
   it('rejects a request with the wrong solisWebhookAuth value', async () => {
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: rawRequestWithAuth({}, 'wrong-value') }),
+      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: withAuth(ARRANGEMENT_AUTH_QID, {}, 'wrong-value') }),
     );
     expect(response.status).toBe(401);
   });
 
-  it('accepts a request with the correct solisWebhookAuth value', async () => {
+  it('accepts a request with the correct solisWebhookAuth value at the correct qid', async () => {
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-auth-ok', rawRequest: rawRequestWithAuth() }),
+      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-auth-ok', rawRequest: withAuth(VITAL_AUTH_QID) }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('a correct secret value present at the WRONG qid never authenticates', async () => {
+    // The value is objectively correct, but posted under Arrangement
+    // Forms' auth qid (275) while submitting to Vital Statistics (which
+    // trusts qid 45) — must never authenticate.
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-wrong-qid', rawRequest: withAuth(ARRANGEMENT_AUTH_QID) }),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it('casing differences in the internal field name are irrelevant — only the configured qid matters', async () => {
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({
+        formID: VITAL_STATISTICS_FORM_ID,
+        submissionID: 'sub-casing',
+        rawRequest: JSON.stringify({ [`${VITAL_AUTH_QID}_SolisWebhookAuth`]: TEST_SECRET }),
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('an auto-generated placeholder internal name (e.g. input45) is irrelevant — only the configured qid matters', async () => {
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({
+        formID: VITAL_STATISTICS_FORM_ID,
+        submissionID: 'sub-autogen-name',
+        rawRequest: JSON.stringify({ [`${VITAL_AUTH_QID}_input45`]: TEST_SECRET }),
+      }),
     );
     expect(response.status).toBe(200);
   });
@@ -101,19 +150,26 @@ describe('POST /api/webhooks/jotform — verification (solisWebhookAuth, body fi
   it('never includes the configured secret or the received auth value in an error response body', async () => {
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: rawRequestWithAuth({}, 'wrong-value') }),
+      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: 'x', rawRequest: withAuth(ARRANGEMENT_AUTH_QID, {}, 'wrong-value') }),
     );
     const body = await response.json();
     expect(JSON.stringify(body)).not.toContain(TEST_SECRET);
     expect(JSON.stringify(body)).not.toContain('wrong-value');
   });
 
-  it('auth is checked before malformed-body detection — an unauthenticated caller cannot distinguish malformed from wrong-secret', async () => {
+  it('an unrelated qid present elsewhere in the payload never influences which qid is trusted as the auth field', async () => {
+    // A decoy entry at Arrangement's auth qid with the WRONG secret must
+    // have zero effect on Vital Statistics' own resolution, which only
+    // ever consults its own trusted config's webhookAuthFieldQid (45).
     const { POST } = await import('./route');
-    // Missing formID/submissionID entirely AND wrong auth — must be 401
-    // (auth failure), never 400 (malformed), proving auth runs first.
-    const response = await POST(webhookRequest({ somethingElse: 'x', rawRequest: rawRequestWithAuth({}, 'wrong-value') }));
-    expect(response.status).toBe(401);
+    const response = await POST(
+      webhookRequest({
+        formID: VITAL_STATISTICS_FORM_ID,
+        submissionID: 'sub-decoy-qid',
+        rawRequest: withAuth(VITAL_AUTH_QID, { [`${ARRANGEMENT_AUTH_QID}_soliswebhookauth`]: 'wrong-value' }),
+      }),
+    );
+    expect(response.status).toBe(200);
   });
 });
 
@@ -121,7 +177,7 @@ describe('POST /api/webhooks/jotform — body size limits', () => {
   it('rejects an oversized payload via a Content-Length precheck before any parsing', async () => {
     const { POST } = await import('./route');
     const oversizedRequest = webhookRequest(
-      { formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-oversized', rawRequest: rawRequestWithAuth() },
+      { formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-oversized', rawRequest: withAuth(VITAL_AUTH_QID) },
       { 'Content-Length': String(10 * 1024 * 1024) },
     );
     const response = await POST(oversizedRequest);
@@ -132,31 +188,61 @@ describe('POST /api/webhooks/jotform — body size limits', () => {
     const { POST } = await import('./route');
     const hugeValue = 'x'.repeat(3 * 1024 * 1024);
     const response = await POST(
-      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-huge', rawRequest: rawRequestWithAuth({ bloat: hugeValue }) }),
+      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-huge', rawRequest: withAuth(VITAL_AUTH_QID, { bloat: hugeValue }) }),
     );
     expect(response.status).toBe(413);
   });
 });
 
-describe('POST /api/webhooks/jotform — malformed / unknown', () => {
-  it('rejects a malformed payload missing formID/submissionID (once authenticated)', async () => {
+describe('POST /api/webhooks/jotform — malformed / unknown / disabled', () => {
+  it('rejects a malformed payload missing formID/submissionID, regardless of auth value (parsing happens before config/auth resolution)', async () => {
     const { POST } = await import('./route');
-    const response = await POST(webhookRequest({ somethingElse: 'x', rawRequest: rawRequestWithAuth() }));
+    const response = await POST(webhookRequest({ somethingElse: 'x', rawRequest: withAuth(VITAL_AUTH_QID) }));
     expect(response.status).toBe(400);
   });
 
-  it('acknowledges (200) but does nothing for an unknown/unallowlisted form id', async () => {
+  it('a malformed body is rejected 400 even with a WRONG auth value — an unauthenticated caller cannot use response shape to probe validity', async () => {
+    const { POST } = await import('./route');
+    const response = await POST(webhookRequest({ somethingElse: 'x', rawRequest: withAuth(VITAL_AUTH_QID, {}, 'wrong-value') }));
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects (404) an unknown/unallowlisted form id — no auth-field guessing, no submission row created', async () => {
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: 'unknown-form-id-999', submissionID: 'sub-1', rawRequest: rawRequestWithAuth() }),
+      webhookRequest({ formID: 'unknown-form-id-999', submissionID: 'sub-1', rawRequest: withAuth(VITAL_AUTH_QID) }),
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(404);
+    expect(externalFormSubmissionFixtures.length).toBe(submissionLengthBefore);
+  });
+
+  it('rejects (404) a disabled form config exactly like an unknown one — no auth-field guessing, no submission row created', async () => {
+    externalFormConfigFixtures.push({
+      id: 'extform-config-disabled-test',
+      organizationId: 'managed-cremations',
+      provider: 'jotform',
+      externalFormId: 'disabled-form-id-123',
+      label: 'Disabled Test Form',
+      audience: 'staff',
+      fieldMap: '{}',
+      linkTokenFieldName: 'solisLinkToken',
+      linkTokenFieldQid: '1',
+      webhookAuthFieldQid: '2',
+      isEnabled: false,
+      createdAt: '2026-09-24T00:00:00.000Z',
+      updatedAt: '2026-09-24T00:00:00.000Z',
+    });
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({ formID: 'disabled-form-id-123', submissionID: 'sub-disabled', rawRequest: withAuth('2') }),
+    );
+    expect(response.status).toBe(404);
     expect(externalFormSubmissionFixtures.length).toBe(submissionLengthBefore);
   });
 });
 
 describe('POST /api/webhooks/jotform — matched submission', () => {
-  it('resolves the case via the opaque token, stores the submission as matched, and marks the CaseFormLink received', async () => {
+  it('resolves the case via the opaque token (extracted by its trusted qid), stores the submission as matched, and marks the CaseFormLink received', async () => {
     const { generateLinkForSending } = await import('@/services/caseFormLinkService');
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const { rawToken } = await generateLinkForSending('managed-cremations', 'case-webhook-1', 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
@@ -166,7 +252,7 @@ describe('POST /api/webhooks/jotform — matched submission', () => {
       webhookRequest({
         formID: ARRANGEMENT_FORMS_FORM_ID,
         submissionID: 'sub-matched-1',
-        rawRequest: rawRequestWithAuth({ q1_caseNo: 'B2026-034', solisLinkToken: rawToken }),
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, { q1_caseNo: 'B2026-034', ...linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken) }),
       }),
     );
 
@@ -176,6 +262,44 @@ describe('POST /api/webhooks/jotform — matched submission', () => {
     const link = caseFormLinkFixtures.find((l) => l.caseId === 'case-webhook-1');
     expect(link?.status).toBe('received');
     expect(link?.submissionId).toBe(submission?.id);
+  });
+
+  it('a link token present at the WRONG qid never links — the submission lands unmatched', async () => {
+    const { generateLinkForSending } = await import('@/services/caseFormLinkService');
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const { rawToken } = await generateLinkForSending('managed-cremations', 'case-webhook-wrong-link-qid', 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({
+        formID: ARRANGEMENT_FORMS_FORM_ID,
+        submissionID: 'sub-wrong-link-qid',
+        // Token posted under Vital Statistics' link-token qid (44), not
+        // Arrangement Forms' own (274) — must never resolve.
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(VITAL_LINK_QID, rawToken)),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'sub-wrong-link-qid');
+    expect(submission?.status).toBe('unmatched');
+  });
+
+  it('the link token\'s internal field name is irrelevant — only its qid is consulted', async () => {
+    const { generateLinkForSending } = await import('@/services/caseFormLinkService');
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const { rawToken } = await generateLinkForSending('managed-cremations', 'case-webhook-name-irrelevant', 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({
+        formID: ARRANGEMENT_FORMS_FORM_ID,
+        submissionID: 'sub-name-irrelevant',
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, { [`${ARRANGEMENT_LINK_QID}_input274`]: rawToken }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'sub-name-irrelevant');
+    expect(submission?.status).toBe('matched');
   });
 
   it('never creates a case and never touches caseSequences for a matched submission', async () => {
@@ -190,7 +314,7 @@ describe('POST /api/webhooks/jotform — matched submission', () => {
       webhookRequest({
         formID: ARRANGEMENT_FORMS_FORM_ID,
         submissionID: 'sub-matched-2',
-        rawRequest: rawRequestWithAuth({ solisLinkToken: rawToken }),
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken)),
       }),
     );
 
@@ -202,7 +326,7 @@ describe('POST /api/webhooks/jotform — unmatched submission', () => {
   it('stores the submission as unmatched when no token is present', async () => {
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-no-token', rawRequest: rawRequestWithAuth() }),
+      webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: 'sub-no-token', rawRequest: withAuth(VITAL_AUTH_QID) }),
     );
     expect(response.status).toBe(200);
     const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'sub-no-token');
@@ -216,7 +340,7 @@ describe('POST /api/webhooks/jotform — unmatched submission', () => {
       webhookRequest({
         formID: VITAL_STATISTICS_FORM_ID,
         submissionID: 'sub-bad-token',
-        rawRequest: rawRequestWithAuth({ solisLinkToken: 'never-issued-token-xyz' }),
+        rawRequest: withAuth(VITAL_AUTH_QID, linkTokenEntry(VITAL_LINK_QID, 'never-issued-token-xyz')),
       }),
     );
     // A garbage/invalid link token is authenticated-but-unmatched — 200,
@@ -228,7 +352,7 @@ describe('POST /api/webhooks/jotform — unmatched submission', () => {
 });
 
 describe('POST /api/webhooks/jotform — solisLinkToken / solisWebhookAuth independence', () => {
-  it('regenerating a CaseFormLink\'s link token does not require or affect the webhook auth value', async () => {
+  it("regenerating a CaseFormLink's link token does not require or affect the webhook auth value", async () => {
     const { generateLinkForSending } = await import('@/services/caseFormLinkService');
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const first = await generateLinkForSending('managed-cremations', 'case-webhook-regen', 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
@@ -243,7 +367,7 @@ describe('POST /api/webhooks/jotform — solisLinkToken / solisWebhookAuth indep
       webhookRequest({
         formID: ARRANGEMENT_FORMS_FORM_ID,
         submissionID: 'sub-stale-link-token',
-        rawRequest: rawRequestWithAuth({ solisLinkToken: first.rawToken }),
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(ARRANGEMENT_LINK_QID, first.rawToken)),
       }),
     );
     expect(response.status).toBe(200);
@@ -261,7 +385,7 @@ describe('POST /api/webhooks/jotform — solisLinkToken / solisWebhookAuth indep
       webhookRequest({
         formID: ARRANGEMENT_FORMS_FORM_ID,
         submissionID: 'sub-valid-link-no-auth',
-        rawRequest: rawRequestWithAuth({ solisLinkToken: rawToken }, null),
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken), null),
       }),
     );
     expect(response.status).toBe(401);
@@ -280,7 +404,7 @@ describe('POST /api/webhooks/jotform — data minimization', () => {
       webhookRequest({
         formID: ARRANGEMENT_FORMS_FORM_ID,
         submissionID: 'sub-minimization-1',
-        rawRequest: rawRequestWithAuth({ solisLinkToken: rawToken, q1_caseNo: 'B2026-034' }),
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, { ...linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken), q1_caseNo: 'B2026-034' }),
       }),
     );
 
@@ -298,7 +422,7 @@ describe('POST /api/webhooks/jotform — idempotency', () => {
     const { generateLinkForSending } = await import('@/services/caseFormLinkService');
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const { rawToken } = await generateLinkForSending('managed-cremations', 'case-webhook-3', 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
-    const rawRequest = rawRequestWithAuth({ solisLinkToken: rawToken });
+    const rawRequest = withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken));
 
     const { POST } = await import('./route');
     const { upload } = await import('@/services/documentService');

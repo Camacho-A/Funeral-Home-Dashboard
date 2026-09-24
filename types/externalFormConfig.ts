@@ -26,13 +26,42 @@ export type ExternalFormConfig = {
       Jotform's `{qid}_{name}` convention) -> Solis field name. Never
       parsed/trusted as executable logic, only as a lookup table. */
   fieldMap: string;
-  /** The logical hidden-field name Solis expects the provider form to
-      carry the opaque link token under (see types/caseFormLink.ts) —
-      e.g. 'solisLinkToken'. Purely descriptive until the live form
-      actually has this field; nothing breaks if it doesn't yet — a
-      submission simply arrives with no resolvable token and lands in
-      the Unmatched Forms queue (see externalFormSubmissionService.ts). */
+  /**
+   * Jotform hidden-field identifier correction (2026-09): a live audit of
+   * both real Manors Jotforms found that Jotform's internal `name`
+   * property for a hidden field is NOT reliably derived from the
+   * requested display name — it can be lowercased (`solislinktoken`) or
+   * an unrelated auto-generated placeholder (`input274`). `qid` (Jotform's
+   * own stable numeric question identifier) is the only identifier
+   * confirmed stable, matching this integration's own
+   * domain/externalForms/fieldMapping.ts precedent (`FieldMapEntry.qid`).
+   * Three distinct, non-interchangeable roles now exist on this type:
+   *
+   * - `linkTokenFieldName` (below): the LOGICAL/OUTBOUND field name used
+   *   only to build the Jotform URL-prefill link
+   *   (domain/externalForms/prefillUrl.ts appends it as a bare,
+   *   non-qid-prefixed query parameter). Retained because prefill
+   *   generation still genuinely needs it — NOT authoritative for
+   *   anything inbound.
+   * - `linkTokenFieldQid`: the AUTHORITATIVE inbound identifier the
+   *   webhook parser uses to locate the `solisLinkToken` hidden field in
+   *   a delivered submission.
+   * - `webhookAuthFieldQid`: the AUTHORITATIVE inbound identifier the
+   *   webhook parser uses to locate the `solisWebhookAuth` hidden field.
+   *
+   * Inbound parsing (domain/externalForms/parseWebhookPayload.ts) trusts
+   * ONLY `linkTokenFieldQid`/`webhookAuthFieldQid`, resolved server-side
+   * from this stored config — never any name found in the request itself.
+   */
   linkTokenFieldName: string;
+  /** Authoritative qid for the `solisLinkToken` hidden field, as a string
+      (matching FieldMapEntry.qid's existing string convention) — see the
+      comment above `fieldMap` for the full three-way distinction. */
+  linkTokenFieldQid: string;
+  /** Authoritative qid for the `solisWebhookAuth` hidden field — see the
+      comment above `fieldMap` for the full three-way distinction. Never
+      sourced from the request; always read from this trusted config row. */
+  webhookAuthFieldQid: string;
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;

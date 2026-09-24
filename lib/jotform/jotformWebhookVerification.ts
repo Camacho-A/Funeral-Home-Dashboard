@@ -15,11 +15,18 @@ import { timingSafeEqual } from 'crypto';
  * unverified/likely-different outbound payload shape).
  *
  * The corrected mechanism: a shared secret carried as a hidden FORM
- * FIELD (`solisWebhookAuth`, see domain/externalForms/parseWebhookPayload.ts's
- * `extractWebhookAuthValue`) rather than an HTTP header — this works on
+ * FIELD (`solisWebhookAuth`) rather than an HTTP header — this works on
  * the classic Webhooks integration Jotform's own support documentation
  * recommends exactly this pattern as its standard workaround for webhook
  * authenticity, independent of this integration's own design.
+ *
+ * Jotform hidden-field identifier correction (2026-09): the caller
+ * (app/api/webhooks/jotform/route.ts) now resolves `solisWebhookAuth`'s
+ * value via domain/externalForms/parseWebhookPayload.ts's
+ * `extractHiddenFieldByQid`, keyed by the trusted, server-side-resolved
+ * `ExternalFormConfig.webhookAuthFieldQid` — never by field name. This
+ * module itself is unaffected: it only ever compares an already-extracted
+ * string against the configured secret.
  *
  * Deliberately a *shared secret*, not a payload-signing HMAC — simpler,
  * and sufficient as a stopgap specifically because it is fail-closed by
@@ -46,7 +53,8 @@ function timingSafeStringEqual(a: string, b: string): boolean {
 
 /**
  * `providedAuthValue` is the value already extracted from the request
- * body by `parseWebhookPayload.ts#extractWebhookAuthValue` — this
+ * body by `parseWebhookPayload.ts#extractHiddenFieldByQid`, keyed by the
+ * caller's trusted `ExternalFormConfig.webhookAuthFieldQid` — this
  * function never touches a `Request`/`Headers` object itself, and never
  * logs either its input or the configured secret in any branch.
  */

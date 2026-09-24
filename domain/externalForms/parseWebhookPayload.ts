@@ -5,72 +5,48 @@
  * `formID`, `submissionID`, and `rawRequest` (a JSON-stringified blob of
  * every answer, including hidden fields) — confirmed from documentation,
  * but NOT independently verified against a real live delivery (no
- * webhook was configured during this integration's research pass, by
- * design). `rawRequest`'s own key convention (`q{qid}_{name}` for a
- * simple field, `q{qid}_{name}[{subfield}]` for a compound one) mirrors
- * the URL-prefill convention this integration already verified — this is
- * the best-grounded assumption available without a real payload to
- * inspect, and is isolated to this one module specifically so it can be
- * corrected in one place once a real delivery can be examined.
+ * webhook has been configured/exercised yet, by design). `rawRequest`'s
+ * own key convention (`q{qid}_{name}` for a simple field,
+ * `q{qid}_{name}[{subfield}]` for a compound one) mirrors the URL-prefill
+ * convention this integration already verified — this is the
+ * best-grounded assumption available without a real payload to inspect.
+ *
+ * Jotform hidden-field identifier correction (2026-09): a live audit of
+ * both real Manors Jotforms found that a hidden field's internal `name`
+ * is NOT reliably derived from its requested display name (confirmed:
+ * lowercased on some fields, an unrelated auto-generated placeholder
+ * like `input274` on others). Every hidden-field lookup in this module is
+ * therefore qid-driven — the qid comes from the caller's own trusted,
+ * server-side `ExternalFormConfig` (never from anything in the request
+ * itself) — and NEVER by name, case-insensitive name, fuzzy match, or
+ * `ssoPrefillKey`. See `extractHiddenFieldByQid` below.
+ *
+ * The real inbound serialization shape for a *hidden* field specifically
+ * (as opposed to a normal visible question, which this integration has
+ * directly observed via the prefill-URL mechanism) remains UNVERIFIED.
+ * `extractHiddenFieldByQid` therefore checks the two qid-keyed shapes
+ * this parser architecture already supports — never a name-based guess —
+ * and this uncertainty is deliberately left explicit here rather than
+ * papered over. The first real synthetic webhook delivery configured
+ * against a live form remains the authoritative verification of which
+ * shape Jotform actually sends.
  */
 import type { JotformAnswerMap } from './extractMappedFields';
-
-/**
- * Jotform pre-production hardening (2026-09). The hidden field carrying
- * SOLIS's webhook-authenticity shared secret — deliberately distinct from
- * `ExternalFormConfig.linkTokenFieldName` (`solisLinkToken`), which
- * identifies a specific Case/form slot, never authenticates the request
- * itself. A fixed, single field name (not per-org configurable) since
- * this secret is a single shared value across every SOLIS-configured
- * Jotform form, not a per-case value — see
- * lib/jotform/jotformWebhookVerification.ts for the comparison itself.
- */
-export const WEBHOOK_AUTH_FIELD_NAME = 'solisWebhookAuth';
-
-/**
- * Deliberately independent of `parseJotformWebhookBody` below — this must
- * succeed (or safely fail) even for an otherwise-malformed body (missing
- * formID/submissionID), so that webhook authentication is checked before,
- * and regardless of, whether the rest of the payload parses — an
- * unauthenticated caller must never be able to distinguish "malformed"
- * from "wrong secret" by response shape alone. Looks in two places,
- * mirroring solisLinkToken's own two-shape tolerance (a hidden field may
- * arrive as a bare top-level form field, or nested inside the
- * `rawRequest` JSON blob) — NOT independently verified against a real
- * Jotform delivery (no live webhook has been configured); isolated here
- * for easy correction once a real payload can be examined. Never a fuzzy
- * match — only this exact field name, in these two exact shapes.
- */
-export function extractWebhookAuthValue(fields: Record<string, unknown>): string | null {
-  if (typeof fields[WEBHOOK_AUTH_FIELD_NAME] === 'string' && fields[WEBHOOK_AUTH_FIELD_NAME] !== '') {
-    return fields[WEBHOOK_AUTH_FIELD_NAME] as string;
-  }
-  if (typeof fields.rawRequest === 'string') {
-    try {
-      const parsed = JSON.parse(fields.rawRequest);
-      const value = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>)[WEBHOOK_AUTH_FIELD_NAME] : undefined;
-      if (typeof value === 'string' && value !== '') return value;
-    } catch {
-      // Malformed rawRequest — the auth value simply wasn't found; the
-      // caller (verifyJotformWebhook) treats this identically to "missing".
-    }
-  }
-  return null;
-}
 
 export type ParsedJotformWebhook = {
   formId: string;
   submissionId: string;
+  /** qid-keyed answers, parsed from any `{qid}_{name}`-prefixed key in
+      `rawRequest` — used for both reconciliation-mapped fields
+      (fieldMapping.ts) and, via `extractHiddenFieldByQid`, for the two
+      trusted hidden fields (solisLinkToken/solisWebhookAuth). */
   answers: JotformAnswerMap;
-  /** The raw hidden-field lookup — separate from `answers` since the
-      link token field won't appear in any FieldMapEntry (it's not a
-      reconciliation-mapped field). May also incidentally contain
-      `solisWebhookAuth` if present in this shape — never a persistence
-      concern, since nothing ever serializes this Map wholesale; it is
-      only ever read via a single targeted `.get(name)` lookup (link
-      token here, webhook-auth via `extractWebhookAuthValue` above,
-      checked independently and earlier in the request lifecycle). */
-  rawFieldsByName: Map<string, string>;
+  /** The raw parsed `rawRequest` blob, kept alongside `answers` so
+      `extractHiddenFieldByQid` can also check a bare-qid-keyed entry
+      (e.g. `{"44": "value"}` or `{"44": {"answer": "value"}}`) — a second
+      qid-keyed shape this integration has not ruled out, distinct from
+      (and never a substitute for) any name-based lookup. */
+  rawRequest: Record<string, unknown>;
 };
 
 const QID_PREFIX_PATTERN = /^q?(\d+)_(.+)$/;
@@ -101,33 +77,58 @@ export function parseJotformWebhookBody(fields: Record<string, unknown>): Parsed
   }
 
   const answers: JotformAnswerMap = {};
-  const rawFieldsByName = new Map<string, string>();
 
   for (const [key, value] of Object.entries(rawRequest)) {
     const normalized = normalizeRawRequestEntry(key, value);
-
-    if (!normalized) {
-      // No qid-prefix — a hidden field (like the link token) may be
-      // keyed by its bare name alone rather than `{qid}_{name}`. Not
-      // independently verified against a real Jotform delivery (no
-      // webhook was configured during this integration's research
-      // pass) — handled here defensively so either shape resolves
-      // correctly once we can confirm which one Jotform actually sends.
-      if (typeof value === 'string') rawFieldsByName.set(key, value);
-      continue;
-    }
+    if (!normalized) continue; // No qid-prefix on this key — never captured by name.
 
     const { qid, value: rawValue } = normalized;
     if (typeof rawValue === 'string') {
       answers[qid] = { answer: rawValue };
-      rawFieldsByName.set(normalized.name, rawValue);
     } else if (rawValue && typeof rawValue === 'object') {
-      const subObject = rawValue as Record<string, string>;
-      answers[qid] = { answer: subObject };
-      // A hidden field is always a plain string, never compound — no
-      // rawFieldsByName entry needed for the object case.
+      answers[qid] = { answer: rawValue as Record<string, string> };
     }
   }
 
-  return { formId, submissionId, answers, rawFieldsByName };
+  return { formId, submissionId, answers, rawRequest };
+}
+
+/**
+ * Extracts a hidden field's plain string value by its known, TRUSTED qid
+ * — this qid must always come from a server-side-resolved
+ * `ExternalFormConfig` row (`linkTokenFieldQid`/`webhookAuthFieldQid`),
+ * never from anything in the incoming request. No name, case-insensitive
+ * name, fuzzy match, or `ssoPrefillKey` fallback exists anywhere in this
+ * function — an absent/mismatched qid simply returns null.
+ *
+ * Checks two qid-keyed shapes this parser architecture already supports
+ * (see the module doc comment for why both remain plausible pending a
+ * verified live delivery):
+ *   1. `{qid}_{name}`-prefixed key in `rawRequest`, already normalized
+ *      into `parsed.answers[qid]` by `parseJotformWebhookBody`.
+ *   2. A bare `{qid: value}` or `{qid: {answer: value}}` entry directly
+ *      in `parsed.rawRequest`.
+ * A hidden hidden field (link token / webhook auth) is always a plain
+ * string — a compound/object answer at the given qid is treated as "not
+ * found" rather than guessed at.
+ */
+export function extractHiddenFieldByQid(
+  parsed: Pick<ParsedJotformWebhook, 'answers' | 'rawRequest'>,
+  qid: string,
+): string | null {
+  const fromAnswers = parsed.answers[qid];
+  if (fromAnswers && typeof fromAnswers.answer === 'string' && fromAnswers.answer !== '') {
+    return fromAnswers.answer;
+  }
+
+  const rawEntry = parsed.rawRequest[qid];
+  if (typeof rawEntry === 'string' && rawEntry !== '') {
+    return rawEntry;
+  }
+  if (rawEntry && typeof rawEntry === 'object' && !Array.isArray(rawEntry)) {
+    const value = (rawEntry as Record<string, unknown>).answer;
+    if (typeof value === 'string' && value !== '') return value;
+  }
+
+  return null;
 }

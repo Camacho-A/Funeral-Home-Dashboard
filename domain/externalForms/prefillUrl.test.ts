@@ -11,6 +11,8 @@ const VITAL_STATISTICS_CONFIG: ExternalFormConfig = {
   audience: 'family',
   fieldMap: '{}',
   linkTokenFieldName: 'solisLinkToken',
+  linkTokenFieldQid: '44',
+  webhookAuthFieldQid: '45',
   isEnabled: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -22,6 +24,8 @@ const ARRANGEMENT_FORMS_CONFIG: ExternalFormConfig = {
   externalFormId: '261945978664175',
   label: 'Arrangement Forms',
   audience: 'staff',
+  linkTokenFieldQid: '274',
+  webhookAuthFieldQid: '275',
 };
 
 const SAMPLE_VALUES = {

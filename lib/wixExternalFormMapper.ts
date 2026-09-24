@@ -22,6 +22,8 @@ export type WixExternalFormConfigItem = {
   audience?: unknown;
   fieldMap?: unknown;
   linkTokenFieldName?: unknown;
+  linkTokenFieldQid?: unknown;
+  webhookAuthFieldQid?: unknown;
   isEnabled?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -40,6 +42,8 @@ export function mapWixExternalFormConfigItem(id: string, item: WixExternalFormCo
     !(VALID_AUDIENCES as string[]).includes(item.audience) ||
     typeof item.fieldMap !== 'string' ||
     typeof item.linkTokenFieldName !== 'string' ||
+    typeof item.linkTokenFieldQid !== 'string' ||
+    typeof item.webhookAuthFieldQid !== 'string' ||
     typeof item.isEnabled !== 'boolean' ||
     typeof item.createdAt !== 'string' ||
     typeof item.updatedAt !== 'string'
@@ -55,6 +59,8 @@ export function mapWixExternalFormConfigItem(id: string, item: WixExternalFormCo
     audience: item.audience as ExternalFormAudience,
     fieldMap: item.fieldMap,
     linkTokenFieldName: item.linkTokenFieldName,
+    linkTokenFieldQid: item.linkTokenFieldQid,
+    webhookAuthFieldQid: item.webhookAuthFieldQid,
     isEnabled: item.isEnabled,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
