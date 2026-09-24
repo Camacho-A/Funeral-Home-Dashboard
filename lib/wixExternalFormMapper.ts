@@ -152,6 +152,7 @@ export type WixExternalFormSubmissionItem = {
   documentId?: unknown;
   pdfStatus?: unknown;
   pdfFailureReason?: unknown;
+  createdCaseId?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -192,6 +193,10 @@ export function mapWixExternalFormSubmissionItem(id: string, item: WixExternalFo
     documentId: typeof item.documentId === 'string' ? item.documentId : null,
     pdfStatus: item.pdfStatus as ExternalFormPdfStatus,
     pdfFailureReason: typeof item.pdfFailureReason === 'string' ? item.pdfFailureReason : null,
+    // Optional/defaulted, like caseFormLinkId/reviewedAt above — this
+    // field is newly added and won't exist yet on rows persisted before
+    // its live schema addition.
+    createdCaseId: typeof item.createdCaseId === 'string' ? item.createdCaseId : null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
@@ -213,6 +218,7 @@ export function applyExternalFormSubmissionUpdateToWixData(
   if (patch.documentId !== undefined) next.documentId = patch.documentId;
   if (patch.pdfStatus !== undefined) next.pdfStatus = patch.pdfStatus;
   if (patch.pdfFailureReason !== undefined) next.pdfFailureReason = patch.pdfFailureReason;
+  if (patch.createdCaseId !== undefined) next.createdCaseId = patch.createdCaseId;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

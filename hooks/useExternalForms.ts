@@ -8,6 +8,9 @@ import {
   applyReconciliation,
   previewHistoricalImport,
   importHistoricalSubmission,
+  fetchExternalFormConfigs,
+  previewHistoricalCase,
+  createHistoricalCase,
 } from '@/lib/externalFormsClient';
 
 /** Manors Jotform integration (case-first architecture, 2026-09). */
@@ -81,5 +84,30 @@ export function useImportHistoricalSubmission(organizationId: string, caseId: st
     mutationFn: (params: { formConfigId: string; externalSubmissionId: string }) =>
       importHistoricalSubmission(organizationId, caseId, params.formConfigId, params.externalSubmissionId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) }),
+  });
+}
+
+/** Historical CASE creation (2026-09) — no existing case to scope to, so
+    this reads the organization's configs directly rather than via
+    useCaseForms. */
+export function useExternalFormConfigs(organizationId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['externalFormConfigs', organizationId],
+    queryFn: () => fetchExternalFormConfigs(organizationId),
+    enabled: enabled && Boolean(organizationId),
+  });
+}
+
+export function usePreviewHistoricalCase(organizationId: string) {
+  return useMutation({
+    mutationFn: (params: { formConfigId: string; externalSubmissionId: string }) =>
+      previewHistoricalCase(organizationId, params.formConfigId, params.externalSubmissionId),
+  });
+}
+
+export function useCreateHistoricalCase(organizationId: string) {
+  return useMutation({
+    mutationFn: (params: { formConfigId: string; externalSubmissionId: string; nextOfKinName: string; nextOfKinPhone: string }) =>
+      createHistoricalCase(organizationId, params.formConfigId, params.externalSubmissionId, params.nextOfKinName, params.nextOfKinPhone),
   });
 }

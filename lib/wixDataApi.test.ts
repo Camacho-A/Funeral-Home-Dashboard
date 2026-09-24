@@ -6,6 +6,7 @@ import {
   updateWixDataItem,
   deleteWixDataItem,
   incrementWixDataField,
+  conditionalPatchWixDataItem,
   WixDataApiError,
 } from './wixDataApi';
 
@@ -284,6 +285,54 @@ describe('incrementWixDataField', () => {
     await expect(incrementWixDataField('caseSequences', 'no-such-row', 'nextSequence', 1)).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe('conditionalPatchWixDataItem', () => {
+  it('PATCHes the item with a SET_FIELD modification and the given condition', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ dataItem: { id: 'sub-1', dataCollectionId: 'externalFormSubmissions', data: { createdCaseId: 'CLAIMING:token-1' } } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await conditionalPatchWixDataItem(
+      'externalFormSubmissions',
+      'sub-1',
+      'createdCaseId',
+      'CLAIMING:token-1',
+      { filter: { createdCaseId: { $eq: null } } },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.wixapis.com/wix-data/v2/items/sub-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          dataCollectionId: 'externalFormSubmissions',
+          patch: {
+            dataItemId: 'sub-1',
+            fieldModifications: [{ fieldPath: 'createdCaseId', action: 'SET_FIELD', setFieldOptions: { value: 'CLAIMING:token-1' } }],
+          },
+          condition: { filter: { createdCaseId: { $eq: null } } },
+        }),
+      }),
+    );
+    expect(result).toEqual({ applied: true, dataItem: { id: 'sub-1', dataCollectionId: 'externalFormSubmissions', data: { createdCaseId: 'CLAIMING:token-1' } } });
+  });
+
+  it('returns {applied: false} — never throws — when the condition is not met', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({}) }));
+
+    const result = await conditionalPatchWixDataItem('externalFormSubmissions', 'sub-1', 'createdCaseId', 'x', { filter: {} });
+    expect(result).toEqual({ applied: false });
+  });
+
+  it('returns {applied: false} for any non-ok response, not just a specific status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
+
+    const result = await conditionalPatchWixDataItem('externalFormSubmissions', 'sub-1', 'createdCaseId', 'x', { filter: {} });
+    expect(result).toEqual({ applied: false });
   });
 });
 

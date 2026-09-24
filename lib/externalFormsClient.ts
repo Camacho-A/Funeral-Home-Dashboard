@@ -114,3 +114,61 @@ export async function importHistoricalSubmission(
   const body = await parseJsonOrThrow(response);
   return { alreadyImported: Boolean(body.alreadyImported) };
 }
+
+export type MinimalExternalFormConfig = { id: string; label: string; audience: 'family' | 'staff' };
+
+export async function fetchExternalFormConfigs(organizationId: string): Promise<MinimalExternalFormConfig[]> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(`/api/external-form-configs?${params.toString()}`);
+  const body = await parseJsonOrThrow(response);
+  return (body.configs as MinimalExternalFormConfig[]) ?? [];
+}
+
+export type HistoricalCasePreview = {
+  formLabel: string;
+  submittedAt: string | null;
+  matchesConfig: boolean;
+  alreadyAssociated: boolean;
+  existingCaseId: string | null;
+  decedentName?: string;
+  dateOfBirth?: string;
+  dateOfDeath?: string;
+  placeOfDeath?: string;
+  informantName?: string;
+  informantRelationship?: string;
+  informantPhone?: string;
+};
+
+/** Historical case creation (2026-09) — safe-preview-only, never mutates.
+    Informant fields are reference-only; see the route's own doc comment
+    for why they must never be treated as Next of Kin. */
+export async function previewHistoricalCase(
+  organizationId: string,
+  formConfigId: string,
+  externalSubmissionId: string,
+): Promise<HistoricalCasePreview> {
+  const params = new URLSearchParams({ organizationId, formConfigId, externalSubmissionId });
+  const response = await fetch(`/api/cases/historical-jotform-import?${params.toString()}`);
+  const body = await parseJsonOrThrow(response);
+  return body as unknown as HistoricalCasePreview;
+}
+
+export async function createHistoricalCase(
+  organizationId: string,
+  formConfigId: string,
+  externalSubmissionId: string,
+  nextOfKinName: string,
+  nextOfKinPhone: string,
+): Promise<{ alreadyImported: boolean; caseId: string | null; caseNumber: string | null }> {
+  const response = await fetch('/api/cases/historical-jotform-import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId, formConfigId, externalSubmissionId, nextOfKinName, nextOfKinPhone }),
+  });
+  const body = await parseJsonOrThrow(response);
+  return {
+    alreadyImported: Boolean(body.alreadyImported),
+    caseId: typeof body.caseId === 'string' ? body.caseId : null,
+    caseNumber: typeof body.caseNumber === 'string' ? body.caseNumber : null,
+  };
+}

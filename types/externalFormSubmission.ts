@@ -55,6 +55,23 @@ export type ExternalFormSubmission = {
   documentId: string | null;
   pdfStatus: ExternalFormPdfStatus;
   pdfFailureReason: string | null; // sanitized — never a raw provider error body
+  /**
+   * Historical-case-creation (2026-09). Null until this submission is
+   * used to create a NEW Solis case (as opposed to being linked to an
+   * already-existing one — see caseFormLinkId above, which is what the
+   * "existing case" import path uses instead). This is the crash-recovery
+   * checkpoint for that workflow: once a real case id is persisted here,
+   * a retry must never attempt to create a second case for the same
+   * submission, only resume linking.
+   *
+   * Also doubles as a compare-and-swap claim/fence during case creation
+   * itself, via a reserved, non-UUID-shaped sentinel prefix
+   * (`CLAIMING:<token>`, see services/externalFormSubmissionService.ts's
+   * claimForCaseCreation) — never a bare case id while a creation attempt
+   * is in flight. Application code must treat any value starting with
+   * `CLAIMING:` as "not yet a real case," never as `caseId`.
+   */
+  createdCaseId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -66,4 +83,17 @@ export type ExternalFormSubmission = {
     key PDF storage keys off (see externalFormPdfService.ts). */
 export function externalFormSubmissionId(organizationId: string, provider: string, externalSubmissionId: string): string {
   return `${organizationId}-${provider}-${externalSubmissionId}`;
+}
+
+/** Historical-case-creation (2026-09) — see `createdCaseId`'s own comment
+    above. A real case id is always a bare `crypto.randomUUID()` value;
+    this prefix is chosen so a claim token can never collide with one. */
+const CASE_CREATION_CLAIM_PREFIX = 'CLAIMING:';
+
+export function buildCaseCreationClaimToken(token: string): string {
+  return `${CASE_CREATION_CLAIM_PREFIX}${token}`;
+}
+
+export function isCaseCreationClaimToken(value: string | null): boolean {
+  return typeof value === 'string' && value.startsWith(CASE_CREATION_CLAIM_PREFIX);
 }

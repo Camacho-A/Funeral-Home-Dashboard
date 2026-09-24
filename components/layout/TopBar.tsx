@@ -58,9 +58,11 @@ import styles from './TopBar.module.css';
  */
 export function TopBar({
   onNewCaseClick,
+  onImportHistoricalCaseClick,
   authAdapterMode,
 }: {
   onNewCaseClick?: () => void;
+  onImportHistoricalCaseClick?: () => void;
   authAdapterMode?: AuthAdapterMode;
 }) {
   const { query, setQuery } = useCaseSearch();
@@ -75,6 +77,11 @@ export function TopBar({
       <SearchInput value={query} onChange={setQuery} />
       <div className={styles.spacer} />
       <Button onClick={onNewCaseClick}>+ New Case</Button>
+      {permissions.includes('case.create') && (
+        <button type="button" className={styles.signOutButton} onClick={onImportHistoricalCaseClick}>
+          Import Existing Jotform Case
+        </button>
+      )}
       {authAdapterMode === 'identity' && <OrganizationSwitcher />}
       {authAdapterMode === 'identity' && (
         <a href="/settings/security" className={styles.signOutButton}>

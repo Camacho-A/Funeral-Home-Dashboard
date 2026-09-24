@@ -93,3 +93,85 @@ describe('markLinked / markReviewed / pdf status transitions', () => {
     expect(reloaded?.status).toBe(submission.status); // submission status itself is untouched by a PDF failure
   });
 });
+
+describe('claimForCaseCreation / revertCaseCreationClaim / markCaseCreated — historical case creation (2026-09)', () => {
+  it('claims a fresh (createdCaseId: null) submission and returns a unique claim token', async () => {
+    const { receive, claimForCaseCreation } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'claim-1' }, 'mock');
+    const result = await claimForCaseCreation(submission.id, 'mock');
+    expect(result.claimed).toBe(true);
+    if (result.claimed) {
+      expect(result.claimToken).toMatch(/^CLAIMING:/);
+    }
+  });
+
+  it('a second claim attempt on an already-claimed submission never succeeds, and reports stillClaiming', async () => {
+    const { receive, claimForCaseCreation } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'claim-2' }, 'mock');
+    const first = await claimForCaseCreation(submission.id, 'mock');
+    expect(first.claimed).toBe(true);
+
+    const second = await claimForCaseCreation(submission.id, 'mock');
+    expect(second.claimed).toBe(false);
+    if (!second.claimed) {
+      expect(second.stillClaiming).toBe(true);
+      expect(second.existingCaseId).toBeNull();
+    }
+  });
+
+  it('concurrent claim attempts on the SAME submission: exactly one wins, never both', async () => {
+    const { receive, claimForCaseCreation } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'claim-concurrent' }, 'mock');
+
+    const [a, b] = await Promise.all([claimForCaseCreation(submission.id, 'mock'), claimForCaseCreation(submission.id, 'mock')]);
+    const claimedCount = [a, b].filter((r) => r.claimed).length;
+    expect(claimedCount).toBe(1);
+  });
+
+  it('a claim attempt on a submission that already has a real case id reports the existing case id, never re-claims', async () => {
+    const { receive, markCaseCreated, claimForCaseCreation } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'claim-existing-case' }, 'mock');
+    await markCaseCreated(submission.id, 'real-case-id-1', 'mock');
+
+    const result = await claimForCaseCreation(submission.id, 'mock');
+    expect(result.claimed).toBe(false);
+    if (!result.claimed) {
+      expect(result.existingCaseId).toBe('real-case-id-1');
+      expect(result.stillClaiming).toBe(false);
+    }
+  });
+
+  it('revertCaseCreationClaim clears a claim only if the token still matches, enabling a clean retry', async () => {
+    const { receive, claimForCaseCreation, revertCaseCreationClaim, getById } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'claim-revert' }, 'mock');
+    const claim = await claimForCaseCreation(submission.id, 'mock');
+    expect(claim.claimed).toBe(true);
+    if (!claim.claimed) return;
+
+    await revertCaseCreationClaim(submission.id, claim.claimToken, 'mock');
+    const reloaded = await getById(submission.id, 'mock');
+    expect(reloaded?.createdCaseId).toBeNull();
+
+    // A retry can now claim cleanly.
+    const retryClaim = await claimForCaseCreation(submission.id, 'mock');
+    expect(retryClaim.claimed).toBe(true);
+  });
+
+  it('revertCaseCreationClaim never clobbers a DIFFERENT (concurrently-set) claim token', async () => {
+    const { receive, claimForCaseCreation, revertCaseCreationClaim, getById } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'claim-revert-defensive' }, 'mock');
+    await claimForCaseCreation(submission.id, 'mock');
+
+    // A stale/wrong token must never clear someone else's real claim.
+    await revertCaseCreationClaim(submission.id, 'CLAIMING:not-the-real-token', 'mock');
+    const reloaded = await getById(submission.id, 'mock');
+    expect(reloaded?.createdCaseId).not.toBeNull();
+  });
+
+  it('markCaseCreated persists a real case id, distinguishable from a claim token', async () => {
+    const { receive, markCaseCreated } = await import('./externalFormSubmissionService');
+    const { submission } = await receive({ ...BASE_PARAMS, externalSubmissionId: 'mark-created' }, 'mock');
+    const updated = await markCaseCreated(submission.id, 'real-case-id-2', 'mock');
+    expect(updated?.createdCaseId).toBe('real-case-id-2');
+  });
+});

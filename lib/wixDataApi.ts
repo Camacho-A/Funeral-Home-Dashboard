@@ -242,6 +242,71 @@ export async function deleteWixDataItem(dataCollectionId: string, wixItemId: str
 }
 
 /**
+ * Historical Jotform case-creation (2026-09). A compare-and-swap style
+ * conditional patch: sets one field to `value` ONLY if the item currently
+ * matches `condition.filter` — Wix's own documented `PatchDataItem`
+ * `condition` parameter ("the item is only updated if the condition is
+ * met," per the Update/Patch Data Item REST reference). Used as the
+ * fencing primitive that lets two concurrent requests for the same
+ * historical-import submission race safely: only one can ever observe its
+ * own conditional write take effect.
+ *
+ * LIVE-VERIFIED (2026-09) against the real Wix project, mirroring
+ * `incrementWixDataField`'s own ADR-018 verification standard: a
+ * synthetic disposable row, reset between rounds, was hit with two
+ * genuinely concurrent conditional patches (`Promise.all`, not
+ * sequential) attempting to claim it from `null`, across 8 rounds —
+ * exactly one claimant won every round, with no consistent
+ * first-caller-wins bias (both request orderings won at different
+ * rounds), and the losing claimant's write never applied.
+ *
+ * IMPORTANT, also discovered only by this live pass: `condition.filter`
+ * does NOT accept `$isEmpty` — Wix rejects it outright (`WDE0076`, a hard
+ * validation error on every call, not "condition not met"). `$eq: null`
+ * is the operator that actually works — confirmed both for "field is
+ * currently unset" and, separately, that a second conditional write
+ * against an already-non-null field is correctly rejected
+ * (`WDE0193: Update condition not met`, HTTP 428) without applying.
+ * Every caller of this function must use `{ $eq: null }` (or `{ $eq:
+ * <exact current value> }`), never `$isEmpty`.
+ *
+ * Returns `{applied: false}` — never throws — for a non-2xx response
+ * (both the "condition not met" case and any genuine failure), since
+ * distinguishing them isn't needed: the caller always re-reads the
+ * item's current state afterward rather than trusting the response shape
+ * alone (see services/externalFormSubmissionService.ts#claimForCaseCreation).
+ */
+export async function conditionalPatchWixDataItem<Item = Record<string, unknown>>(
+  dataCollectionId: string,
+  wixItemId: string,
+  fieldPath: string,
+  value: unknown,
+  condition: { filter: Record<string, unknown> },
+): Promise<{ applied: true; dataItem: WixDataItem<Item> } | { applied: false }> {
+  const { apiKey, siteId } = getWixServerConfig();
+
+  const response = await fetch(`https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}`, {
+    method: 'PATCH',
+    headers: wixDataHeaders(apiKey, siteId),
+    body: JSON.stringify({
+      dataCollectionId,
+      patch: {
+        dataItemId: wixItemId,
+        fieldModifications: [{ fieldPath, action: 'SET_FIELD', setFieldOptions: { value } }],
+      },
+      condition,
+    }),
+  });
+
+  if (!response.ok) {
+    return { applied: false };
+  }
+
+  const body = await response.json();
+  return { applied: true, dataItem: body.dataItem };
+}
+
+/**
  * Phase 16B (Case Number Generation). Atomically increments a numeric
  * field on an existing item via Wix's `patchDataItem` INCREMENT_FIELD
  * action — the "concurrency-safe mechanism" this feature's uniqueness

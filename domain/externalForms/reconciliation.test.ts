@@ -31,6 +31,16 @@ describe('classifyReconciliationRow', () => {
     expect(row.eligibleForBulkApply).toBe(false);
   });
 
+  it('Informant fields (2026-09) classify as review_only, never eligible for bulk apply — Informant is never treated as Next of Kin', () => {
+    const name = classifyReconciliationRow('informantName', null, 'Pat Rivera');
+    const phone = classifyReconciliationRow('informantPhone', null, '(555) 200-3000');
+    const relationship = classifyReconciliationRow('informantRelationship', null, 'Spouse');
+    for (const row of [name, phone, relationship]) {
+      expect(row.state).toBe('review_only');
+      expect(row.eligibleForBulkApply).toBe(false);
+    }
+  });
+
   it('treats an incoming empty value as match (nothing to apply)', () => {
     const row = classifyReconciliationRow('nextOfKinEmail', 'existing@example.com', null);
     expect(row.state).toBe('match');

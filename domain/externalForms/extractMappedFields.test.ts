@@ -70,6 +70,38 @@ describe('extractMappedFields — Arrangement Forms', () => {
     }
   });
 
+  it('Informant fields (2026-09 historical-case-creation audit) map correctly, review-only — informantName/informantPhone/informantRelationship', () => {
+    const answers = {
+      '122': { answer: { first: 'Pat', last: 'Rivera' } },
+      '224': { answer: { full: '(555) 200-3000' } },
+      '225': { answer: 'Spouse' },
+    };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.informantName).toBe('Pat Rivera');
+    expect(result.informantPhone).toBe('(555) 200-3000');
+    expect(result.informantRelationship).toBe('Spouse');
+  });
+
+  it('Informant relationship is never remapped through NOK_RELATIONSHIP_VALUE_MAP — raw Jotform option text is preserved as-is', () => {
+    const answers = { '225': { answer: 'Mother' } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    // NOK_RELATIONSHIP_VALUE_MAP would remap "Mother" -> "parent"; Informant
+    // has no such remapping, so the raw text must survive unchanged.
+    expect(result.informantRelationship).toBe('Mother');
+  });
+
+  it('Informant fields never populate nextOfKinName/nextOfKinPhone/nextOfKinRelationship — no code path conflates the two', () => {
+    const answers = {
+      '122': { answer: { first: 'Pat', last: 'Rivera' } },
+      '224': { answer: { full: '(555) 200-3000' } },
+      '225': { answer: 'Spouse' },
+    };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.nextOfKinName).toBeUndefined();
+    expect(result.nextOfKinPhone).toBeUndefined();
+    expect(result.nextOfKinRelationship).toBeUndefined();
+  });
+
   it('data minimization (2026-09): a synthetic SSN/signature-like answer is never surfaced in mappedFields, even when present in the raw answer map — because no FieldMapEntry references those qids at all', () => {
     // Synthetic fixture only — these qids are illustrative stand-ins for
     // the real (excluded) SSN/signature question ids, never real values.

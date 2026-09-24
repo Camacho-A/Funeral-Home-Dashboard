@@ -39,7 +39,7 @@ function combineNameParts(entries: FieldMapEntry[], field: MappedSolisField, ans
   return [firstValue, lastValue].filter(Boolean).join(' ');
 }
 
-const COMPOUND_NAME_FIELDS: MappedSolisField[] = ['decedentName', 'nextOfKinName', 'pickupReleasedTo'];
+const COMPOUND_NAME_FIELDS: MappedSolisField[] = ['decedentName', 'nextOfKinName', 'pickupReleasedTo', 'informantName'];
 
 export function extractMappedFields(fieldMap: FieldMapEntry[], answers: JotformAnswerMap): Partial<Record<MappedSolisField, string>> {
   const result: Partial<Record<MappedSolisField, string>> = {};

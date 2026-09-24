@@ -1,5 +1,6 @@
+import crypto from 'crypto';
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
+import { queryWixDataItems, insertWixDataItem, updateWixDataItem, conditionalPatchWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import {
   mapWixExternalFormSubmissionItem,
   buildWixExternalFormSubmissionData,
@@ -7,7 +8,11 @@ import {
   type WixExternalFormSubmissionItem,
 } from '../lib/wixExternalFormMapper';
 import type { ExternalFormSubmission } from '../types/externalFormSubmission';
-import { externalFormSubmissionId as buildSubmissionId } from '../types/externalFormSubmission';
+import {
+  externalFormSubmissionId as buildSubmissionId,
+  buildCaseCreationClaimToken,
+  isCaseCreationClaimToken,
+} from '../types/externalFormSubmission';
 import { externalFormSubmissionFixtures } from './__mocks__/externalFormFixtures';
 
 /**
@@ -83,6 +88,7 @@ export async function receive(params: ReceiveSubmissionParams, dataAdapterMode: 
     documentId: null,
     pdfStatus: params.pdfStatus,
     pdfFailureReason: null,
+    createdCaseId: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -155,4 +161,111 @@ export async function updatePdfFailed(id: string, sanitizedReason: string, dataA
 
 export async function updatePdfPending(id: string, dataAdapterMode: DataAdapterMode): Promise<ExternalFormSubmission | null> {
   return persistUpdate(id, { pdfStatus: 'pending', pdfFailureReason: null }, dataAdapterMode);
+}
+
+export type CaseCreationClaimResult =
+  | { claimed: true; claimToken: string }
+  | { claimed: false; existingCaseId: string | null; stillClaiming: boolean };
+
+/**
+ * Historical-case-creation (2026-09). Attempts to claim the right to
+ * create a NEW Solis case for this submission — a compare-and-swap style
+ * fence against `createdCaseId`, closing the race window a plain "read
+ * createdCaseId, see it's null, proceed" check would leave open under two
+ * concurrent requests. Live-verified against the real Wix project (see
+ * lib/wixDataApi.ts#conditionalPatchWixDataItem's own doc comment for the
+ * full account, including the `$eq: null` vs. `$isEmpty` finding this
+ * function's filter reflects).
+ *
+ * Only ever call this after `receive()` has already resolved the row and
+ * its `status` is confirmed `'unmatched'` — this function assumes the row
+ * already exists (see the historical-import route's own resolution
+ * order).
+ *
+ * Returns `{claimed: true, claimToken}` if this call won the race — the
+ * caller may proceed to create a case, and must pass `claimToken` back to
+ * `revertCaseCreationClaim` if that creation attempt fails. Returns
+ * `{claimed: false, ...}` otherwise: `existingCaseId` is the real case id
+ * if one already exists (resume linking with it, never create a new
+ * one), or `null` with `stillClaiming: true` if another request's claim
+ * is currently in flight (report "still being processed" — never an
+ * error, never a second case).
+ */
+export async function claimForCaseCreation(id: string, dataAdapterMode: DataAdapterMode): Promise<CaseCreationClaimResult> {
+  const claimToken = buildCaseCreationClaimToken(crypto.randomUUID());
+
+  if (dataAdapterMode === 'mock') {
+    // Fully synchronous check-and-set — no await between the read and the
+    // write, so this is race-free within a single Node process the same
+    // way every other mock-mode "concurrency" primitive in this codebase
+    // is (see receive()'s own insert-or-return mock-mode branch).
+    const index = externalFormSubmissionFixtures.findIndex((s) => s.id === id);
+    if (index === -1) throw new Error(`No ExternalFormSubmission found for id "${id}".`);
+    const current = externalFormSubmissionFixtures[index];
+    if (current.createdCaseId === null) {
+      externalFormSubmissionFixtures[index] = { ...current, createdCaseId: claimToken, updatedAt: nowIso() };
+      return { claimed: true, claimToken };
+    }
+    if (isCaseCreationClaimToken(current.createdCaseId)) {
+      return { claimed: false, existingCaseId: null, stillClaiming: true };
+    }
+    return { claimed: false, existingCaseId: current.createdCaseId, stillClaiming: false };
+  }
+
+  const result = await conditionalPatchWixDataItem<WixExternalFormSubmissionItem>(
+    'externalFormSubmissions',
+    id,
+    'createdCaseId',
+    claimToken,
+    // Live-verified (2026-09): Wix's condition.filter rejects $isEmpty
+    // outright (WDE0076, a hard validation error, not "condition not
+    // met") — $eq: null is the operator that actually works, confirmed
+    // empirically against the real Wix project (a synthetic disposable
+    // row, 8 concurrent-claim rounds, exactly one winner every round).
+    { filter: { createdCaseId: { $eq: null } } },
+  );
+  if (result.applied) return { claimed: true, claimToken };
+
+  // Lost the race (or the field wasn't actually empty) — re-read the
+  // current, authoritative value rather than trusting the failure alone.
+  const reread = await queryWixDataItems<WixExternalFormSubmissionItem>('externalFormSubmissions', {
+    filter: { _id: id },
+    paging: { limit: 1 },
+  });
+  const currentValue = reread.dataItems[0]?.data.createdCaseId;
+  if (typeof currentValue !== 'string') {
+    return { claimed: false, existingCaseId: null, stillClaiming: true };
+  }
+  if (isCaseCreationClaimToken(currentValue)) {
+    return { claimed: false, existingCaseId: null, stillClaiming: true };
+  }
+  return { claimed: false, existingCaseId: currentValue, stillClaiming: false };
+}
+
+/**
+ * Reverts a claim only if it still matches the exact token this caller
+ * itself set — never a blind unconditional clear, so this can never
+ * clobber a different, concurrently-claimed value. Only ever called after
+ * a case-creation ATTEMPT fails, so a future retry can claim again
+ * cleanly rather than being permanently stuck.
+ */
+export async function revertCaseCreationClaim(id: string, claimToken: string, dataAdapterMode: DataAdapterMode): Promise<void> {
+  if (dataAdapterMode === 'mock') {
+    const index = externalFormSubmissionFixtures.findIndex((s) => s.id === id);
+    if (index === -1) return;
+    if (externalFormSubmissionFixtures[index].createdCaseId === claimToken) {
+      externalFormSubmissionFixtures[index] = { ...externalFormSubmissionFixtures[index], createdCaseId: null, updatedAt: nowIso() };
+    }
+    return;
+  }
+  await conditionalPatchWixDataItem('externalFormSubmissions', id, 'createdCaseId', null, {
+    filter: { createdCaseId: { $eq: claimToken } },
+  });
+}
+
+/** Persists the real, newly-created case id — the crash-recovery
+    checkpoint. Called immediately after case creation succeeds, before
+    anything else (linking, PDF preservation) is attempted. */
+export async function markCaseCreated(id: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<ExternalFormSubmission | null> {
+  return persistUpdate(id, { createdCaseId: caseId }, dataAdapterMode);
 }

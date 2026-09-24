@@ -5,6 +5,7 @@ import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NewCaseModal } from '@/components/modals/NewCaseModal';
+import { ImportHistoricalCaseModal } from '@/components/modals/ImportHistoricalCaseModal';
 import styles from './AppShell.module.css';
 
 /**
@@ -25,17 +26,23 @@ export function AppShell({
   authAdapterMode?: AuthAdapterMode;
 }) {
   const [isNewCaseModalOpen, setNewCaseModalOpen] = useState(false);
+  const [isImportHistoricalCaseModalOpen, setImportHistoricalCaseModalOpen] = useState(false);
 
   return (
     <div className={styles.shell}>
       <Sidebar authAdapterMode={authAdapterMode} />
       <div className={styles.mainColumn}>
-        <TopBar onNewCaseClick={() => setNewCaseModalOpen(true)} authAdapterMode={authAdapterMode} />
+        <TopBar
+          onNewCaseClick={() => setNewCaseModalOpen(true)}
+          onImportHistoricalCaseClick={() => setImportHistoricalCaseModalOpen(true)}
+          authAdapterMode={authAdapterMode}
+        />
         <main id="main-content" className={styles.content}>
           {children}
         </main>
       </div>
       <NewCaseModal open={isNewCaseModalOpen} onClose={() => setNewCaseModalOpen(false)} />
+      <ImportHistoricalCaseModal open={isImportHistoricalCaseModalOpen} onClose={() => setImportHistoricalCaseModalOpen(false)} />
     </div>
   );
 }

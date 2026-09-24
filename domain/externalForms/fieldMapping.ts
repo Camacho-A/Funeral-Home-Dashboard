@@ -32,7 +32,19 @@ export type MappedSolisField =
   | 'nextOfKinPhone'
   | 'nextOfKinEmail'
   | 'pickupReleasedTo'
-  | 'pickupReleaseRelationship'; // submission/review-only — no existing Case field; see FIELD_MAP_ARRANGEMENT_FORMS' own comment
+  | 'pickupReleaseRelationship' // submission/review-only — no existing Case field; see FIELD_MAP_ARRANGEMENT_FORMS' own comment
+  // Informant/Legal-NOK block (2026-09 historical-case-creation audit):
+  // deliberately review-only, same as pickupReleaseRelationship above.
+  // Informant is a DISTINCT concept from Solis's own nextOfKin* Case
+  // fields — this form's own section header ("INFORMANT (LEGAL NEXT OF
+  // KIN)") conflates the two, but no code path in this codebase may ever
+  // treat them as interchangeable. These three exist so Informant data is
+  // visible for staff review (reconciliation's "Also submitted" section,
+  // and the historical-case-creation preview) — never auto-applied to
+  // nextOfKinName/nextOfKinPhone/nextOfKinRelationship.
+  | 'informantName'
+  | 'informantPhone'
+  | 'informantRelationship';
 
 export type FieldMapEntry = {
   qid: string;
@@ -102,6 +114,17 @@ export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   // comment) — the reconciliation UI surfaces it as read-only context
   // alongside pickupReleasedTo, never as an "Apply"-able row.
   { qid: '175', jotformName: 'relationship175', solisField: 'pickupReleaseRelationship' },
+  // Informant / "10. INFORMANT (LEGAL NEXT OF KIN)" block (qids 122/224/225,
+  // confirmed via a read-only form-metadata audit, 2026-09). Review-only —
+  // see MappedSolisField's own comment: this must NEVER auto-populate
+  // nextOfKinName/nextOfKinPhone/nextOfKinRelationship. informantRelationship
+  // intentionally carries no valueMap (unlike nextOfKinRelationship's
+  // NOK_RELATIONSHIP_VALUE_MAP) — there is no Case enum destination to
+  // conform to; the raw Jotform option text is shown as-is.
+  { qid: '122', jotformName: 'name122', solisField: 'informantName', subfield: 'first' },
+  { qid: '122', jotformName: 'name122', solisField: 'informantName', subfield: 'last' },
+  { qid: '224', jotformName: 'phoneNumber224', solisField: 'informantPhone', subfield: 'full' },
+  { qid: '225', jotformName: 'informantsRelationship', solisField: 'informantRelationship' },
 ];
 
 export function fieldMapForForm(provider: string, externalFormId: string): FieldMapEntry[] {
