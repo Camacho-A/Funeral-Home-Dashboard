@@ -20,29 +20,32 @@ import styles from './CaseNumberingPanel.module.css';
  * own doc comment for the full design and why this is a separate route
  * from the general-purpose case-sequence mechanism.
  *
- * Authorization is enforced entirely server-side (`organization.manage`)
- * — this panel renders for anyone who navigates here and simply shows
- * whatever the API returns, including an error message for a
- * non-administrator. Hiding the action is a UX nicety, never the
- * security boundary.
+ * Authorization is enforced entirely server-side (`caseNumber.manage` for
+ * normal content, `user.manageRoles` for the migration control below) —
+ * hiding either section here is a UX nicety, never the security boundary;
+ * every underlying API independently re-checks and fails closed.
+ *
+ * RBAC bootstrap fix (2026-09): the Administrator-only "Enable Case
+ * Numbering Access" migration control (`user.manageRoles`) is rendered
+ * from a state that is INDEPENDENT of `eligibilityQuery` (the normal
+ * `caseNumber.manage`-gated content below) — deliberately, since before
+ * the migration runs, `caseNumber.manage` doesn't exist live yet and
+ * `eligibilityQuery` 403s. An earlier version of this component
+ * early-returned on that 403 before ever reaching the migration control,
+ * which meant Administrator had no way to reach the very control that
+ * fixes the underlying gap. See TopBar.tsx's matching nav-link fix.
  */
 export function CaseNumberingPanel() {
   const { organizationId } = useOrganization();
+  const permissionsQuery = useMyPermissions(organizationId);
+  const canManageCaseNumber = Boolean(permissionsQuery.data?.permissions.includes('caseNumber.manage'));
+  const canSeeMigrationAction = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
+
   const eligibilityQuery = useManorsCutoverEligibility(organizationId);
   const cutover = useExecuteManorsCutover(organizationId);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<{ nextSequence: number } | null>(null);
 
-  // Manors RBAC production migration (2026-09) — a separate, narrower
-  // one-time backfill from the cutover action above (see
-  // app/api/organization/rbac/seed-case-number-manage/route.ts). Gated
-  // client-side on `user.manageRoles` (the same permission the route
-  // enforces server-side) so this never even renders for Funeral Director
-  // or any other role — a UX nicety on top of the real, server-side
-  // authorization boundary, exactly like every other permission-gated
-  // link in this codebase (see TopBar.tsx's own comment).
-  const permissionsQuery = useMyPermissions(organizationId);
-  const canSeeMigrationAction = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
   const migrationStatusQuery = useManorsCaseNumberManageMigrationStatus(canSeeMigrationAction ? organizationId : '');
   const migration = useExecuteManorsCaseNumberManageMigration(organizationId);
   const [migrationConfirmOpen, setMigrationConfirmOpen] = useState(false);
@@ -58,17 +61,18 @@ export function CaseNumberingPanel() {
     setMigrationConfirmOpen(false);
   }
 
-  if (eligibilityQuery.isPending) {
+  if (permissionsQuery.isPending) {
     return <p>Loading case numbering…</p>;
   }
-  if (eligibilityQuery.isError) {
-    return <p className={styles.error}>{(eligibilityQuery.error as Error).message}</p>;
+
+  // Neither the normal permission nor the bootstrap permission — nothing
+  // in this panel applies to this caller (e.g. Manager/Office Staff/
+  // Accounting/Read Only/Dispatch reaching this page by direct URL, not
+  // through the nav link). No protected data is fetched or shown; the
+  // underlying APIs still independently 403 regardless of this message.
+  if (!canManageCaseNumber && !canSeeMigrationAction) {
+    return <p className={styles.description}>You don&apos;t have access to Case Numbering.</p>;
   }
-
-  const data = eligibilityQuery.data;
-  if (!data) return null;
-
-  const currentCaseNumber = data.currentNextSequence !== null ? formatCaseNumber(data.year, data.currentNextSequence) : null;
 
   const migrationData = migrationStatusQuery.data;
   const showMigrationAction = canSeeMigrationAction && migrationData?.applicable && migrationData?.needsMigration;
@@ -101,6 +105,48 @@ export function CaseNumberingPanel() {
         </div>
       </Modal>
 
+      {!canManageCaseNumber && (
+        <p className={styles.description}>Case Numbering access must be enabled before this section is available.</p>
+      )}
+
+      {canManageCaseNumber && <NormalCaseNumberingContent eligibilityQuery={eligibilityQuery} cutover={cutover} result={result} confirmOpen={confirmOpen} setConfirmOpen={setConfirmOpen} handleConfirm={handleConfirm} />}
+    </div>
+  );
+}
+
+/** The pre-existing "current sequence + one-time cutover" content,
+    factored out so its own loading/error/data states never affect
+    whether the migration control above renders — it is only ever mounted
+    once the caller is confirmed to hold `caseNumber.manage`. */
+function NormalCaseNumberingContent({
+  eligibilityQuery,
+  cutover,
+  result,
+  confirmOpen,
+  setConfirmOpen,
+  handleConfirm,
+}: {
+  eligibilityQuery: ReturnType<typeof useManorsCutoverEligibility>;
+  cutover: ReturnType<typeof useExecuteManorsCutover>;
+  result: { nextSequence: number } | null;
+  confirmOpen: boolean;
+  setConfirmOpen: (open: boolean) => void;
+  handleConfirm: () => Promise<void>;
+}) {
+  if (eligibilityQuery.isPending) {
+    return <p>Loading case numbering…</p>;
+  }
+  if (eligibilityQuery.isError) {
+    return <p className={styles.error}>{(eligibilityQuery.error as Error).message}</p>;
+  }
+
+  const data = eligibilityQuery.data;
+  if (!data) return null;
+
+  const currentCaseNumber = data.currentNextSequence !== null ? formatCaseNumber(data.year, data.currentNextSequence) : null;
+
+  return (
+    <>
       <div className={styles.section}>
         <div className={styles.sectionTitle}>{data.year} Case Numbering</div>
         <div className={styles.currentNumber}>Next Case Number: {currentCaseNumber ?? '—'}</div>
@@ -153,6 +199,6 @@ export function CaseNumberingPanel() {
           </Button>
         </div>
       </Modal>
-    </div>
+    </>
   );
 }

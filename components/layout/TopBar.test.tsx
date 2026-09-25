@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TopBar } from './TopBar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { SessionProvider } from '@/hooks/useSession';
+import { defaultRoleDefinition, type DefaultRoleKey } from '@/domain/rbac/defaultRoles';
 
 /**
  * Manors go-live fix (real session identity). TopBar's avatar/signed-in
@@ -108,6 +109,54 @@ describe('TopBar — Case Numbering navigation visibility (2026-09 RBAC restrict
       ok: true,
       status: 200,
       json: async () => ({ organization: null, permissions: ['organization.manage'], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
+  });
+});
+
+describe('TopBar — Case Numbering RBAC bootstrap fix (2026-09): nav visible on caseNumber.manage OR user.manageRoles', () => {
+  it('A: shows the link for Administrator holding user.manageRoles alone, before caseNumber.manage is seeded live — the migration bootstrap path', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ organization: null, permissions: ['user.manageRoles'], count: 0, organizations: [] }),
+      }),
+    );
+    renderTopBar();
+    expect(await screen.findByText('Case Numbering')).toBeInTheDocument();
+  });
+
+  it('F: shows the link for Funeral Director via caseNumber.manage alone (no user.manageRoles needed)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ organization: null, permissions: ['caseNumber.manage'], count: 0, organizations: [] }),
+      }),
+    );
+    renderTopBar();
+    expect(await screen.findByText('Case Numbering')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['manager' as DefaultRoleKey],
+    ['officeStaff' as DefaultRoleKey],
+    ['accounting' as DefaultRoleKey],
+    ['readOnly' as DefaultRoleKey],
+    ['dispatch' as DefaultRoleKey],
+  ])('I-M: %s (real permission set, holding neither caseNumber.manage nor user.manageRoles) sees no nav link', async (roleKey) => {
+    const permissions = defaultRoleDefinition(roleKey).permissions.filter((p) => p !== 'caseNumber.manage' && p !== 'user.manageRoles');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions, count: 0, organizations: [] }),
     });
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar();

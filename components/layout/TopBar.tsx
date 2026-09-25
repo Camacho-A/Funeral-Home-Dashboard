@@ -55,6 +55,16 @@ import styles from './TopBar.module.css';
  *      organization's `enabledModules` (see domain/organization/
  *      moduleVisibility.ts) — hidden by default, reachable directly by
  *      URL, RBAC-enforced exactly as before.
+ *
+ * Case Numbering RBAC bootstrap fix (2026-09): the nav link renders on
+ * `caseNumber.manage` OR `user.manageRoles`, not `caseNumber.manage`
+ * alone. `user.manageRoles` is Administrator's bootstrap path to the
+ * one-time "Enable Case Numbering Access" migration control
+ * (`CaseNumberingPanel.tsx`) that grants `caseNumber.manage` itself —
+ * gating the link on `caseNumber.manage` only, before that permission
+ * exists live, left Administrator with no discoverable path to the page
+ * that runs the migration. Neither permission is granted by this OR —
+ * purely visibility, exactly like every other link here.
  */
 export function TopBar({
   onNewCaseClick,
@@ -143,7 +153,7 @@ export function TopBar({
           Calendar
         </a>
       )}
-      {permissions.includes('caseNumber.manage') && (
+      {(permissions.includes('caseNumber.manage') || permissions.includes('user.manageRoles')) && (
         <a href="/settings/case-numbering" className={styles.signOutButton}>
           Case Numbering
         </a>
