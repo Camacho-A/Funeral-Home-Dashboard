@@ -11,6 +11,7 @@ import * as externalFormConfigService from '@/services/externalFormConfigService
 import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
+import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { fetchSubmissionAnswers, JotformClientError } from '@/lib/jotform/jotformClient';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import { deriveHistoricalCaseNumber, type HistoricalCaseNumberResult } from '@/domain/externalForms/historicalCaseNumber';
@@ -380,6 +381,12 @@ export async function POST(request: Request) {
 
   const link = await caseFormLinkService.linkExistingSubmission(organizationId, caseId, config.provider, config.id, submission.id, dataAdapterMode);
   const updatedSubmission = await externalFormSubmissionService.markLinked(submission.id, link.id, dataAdapterMode);
+  // Manors workflow reconciliation (2026-09): a historical Arrangement
+  // Form is, by definition, already-completed prerequisite data — this
+  // recomputes rawStage from ground truth (this link + whatever payment
+  // state already exists) rather than leaving the case frozen at
+  // rawStage 0 until someone manually advances it.
+  await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
 
   const activityCtx = {
     organizationId,

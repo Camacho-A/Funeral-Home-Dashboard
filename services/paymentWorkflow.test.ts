@@ -7,8 +7,10 @@ import { caseOrderFixtures, caseOrderLineItemFixtures, caseOrderAuditFixtures } 
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
 import { seedChartOfAccounts } from './chartOfAccountsService';
 import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from './__mocks__/ledgerFixtures';
+import { caseFormLinkFixtures, ARRANGEMENT_FORMS_FORM_CONFIG_ID } from './__mocks__/externalFormFixtures';
 import type { ActivityContext } from './activityService';
 import type { PaymentRecord } from '../types/payment';
+import type { CaseFormLink } from '../types/caseFormLink';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Mock-mode coverage for
@@ -54,7 +56,7 @@ describe('markCasePaidIfVerified — mock mode', () => {
     expect(caseFixtures[index].checklistState[checklistIndex as number]).toBe(true);
   });
 
-  it('never touches rawStage — a payment event never auto-advances the workflow stage', async () => {
+  it('Manors workflow reconciliation (2026-09): rawStage only advances via reconcileCaseWorkflow when every prerequisite is genuinely complete — this fixture case is not, so it does not move', async () => {
     const { index, original } = withKnownCase();
     const stageBefore = original.rawStage;
 
@@ -92,6 +94,48 @@ describe('markCasePaidIfVerified — mock mode', () => {
     // restoreIndex/original still point at the real record — confirm it
     // was never touched despite a matching caseId.
     expect(caseFixtures.find((c) => c.id === original.id)?.paymentStatus).toBe(original.paymentStatus);
+  });
+
+  describe('Manors workflow reconciliation (2026-09): a verified payment triggers reconcileCaseWorkflow', () => {
+    afterEach(() => {
+      caseFormLinkFixtures.length = 0;
+    });
+
+    it('4/5: once payment brings the balance to 0, rawStage advances to the first genuinely incomplete stage — reusing reconcileCaseWorkflow, not a bespoke advance', async () => {
+      const { index, original } = withKnownCase();
+      // Fully satisfy First Call & Payment's data-entry items directly on
+      // the fixture (belt-and-suspenders across both the hasField and
+      // checkbox variants of that combined 11-item stage — see
+      // workflowReconciliationService.test.ts's identical helper/comment).
+      caseFixtures[index] = {
+        ...original,
+        rawStage: 0,
+        fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
+        checklistState: { 9: true, 10: true },
+      };
+      const link: CaseFormLink = {
+        id: `link-payment-recon-${original.id}`,
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: original.id,
+        provider: 'jotform',
+        formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID,
+        linkTokenHash: 'hash',
+        status: 'received',
+        sentAt: '2026-01-01T00:00:00.000Z',
+        submissionId: `sub-payment-recon-${original.id}`,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      caseFormLinkFixtures.push(link);
+
+      // No active CaseOrder for this fixture case, so markCasePaidIfVerified
+      // takes its unconditional "one verified payment means paid" path —
+      // item 8 ("Payment collected") flips true here, completing the stage.
+      await markCasePaidIfVerified(DEFAULT_ORGANIZATION_ID, original.id, 'mock');
+
+      expect(caseFixtures[index].paymentStatus).toBe('paid_in_full');
+      expect(caseFixtures[index].rawStage).toBe(3); // EDRS & Doctor / Cause of Death
+    });
   });
 });
 

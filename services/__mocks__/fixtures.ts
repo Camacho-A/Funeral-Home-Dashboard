@@ -308,6 +308,7 @@ export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw, index) => ({
   isVeteran: false,
   vaStepsState: {},
   vaPublishChoice: null,
+  vaNotificationResponsibility: null,
   checklistState: {},
   fieldValues: raw.seedFields ?? {},
   daysWaitingInStage: raw.daysWaiting,

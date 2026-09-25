@@ -4,6 +4,12 @@
   margin-bottom: var(--space-6);
 }
 
+.supportingText {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-6) 0;
+}
+
 .error {
   font-size: var(--font-size-12-5);
   color: var(--color-danger-text);

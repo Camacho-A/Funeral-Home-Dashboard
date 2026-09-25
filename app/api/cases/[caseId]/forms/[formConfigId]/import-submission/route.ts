@@ -14,6 +14,7 @@ import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { fetchSubmissionAnswers, JotformClientError } from '@/lib/jotform/jotformClient';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
+import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import type { Case } from '@/types/case';
 
 /**
@@ -219,6 +220,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   }
 
   const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode);
+
+  // Manors workflow reconciliation (2026-09): same reasoning as the
+  // historical-import route — this case's Arrangement Form is now a
+  // completed prerequisite.
+  await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
 
   return NextResponse.json({ link, submission: updatedSubmission, pdf: pdfResult, alreadyImported: false });
 }

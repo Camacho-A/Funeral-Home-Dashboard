@@ -1,4 +1,4 @@
-import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice } from '../types/case';
+import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
@@ -108,6 +108,7 @@ export type WixCaseItem = {
   isVeteran?: unknown;
   vaStepsState?: unknown;
   vaPublishChoice?: unknown;
+  vaNotificationResponsibility?: unknown;
   daysWaitingInStage?: unknown;
   isStalled?: unknown;
   stalledReason?: unknown;
@@ -175,6 +176,8 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   const assignedStaffId = typeof item.caseHandlerId === 'string' ? item.caseHandlerId : null;
   const vaPublishChoice: VaPublishChoice | null =
     item.vaPublishChoice === 'publish' || item.vaPublishChoice === 'private' ? item.vaPublishChoice : null;
+  const vaNotificationResponsibility: VaNotificationResponsibility | null =
+    item.vaNotificationResponsibility === 'manors' || item.vaNotificationResponsibility === 'family' ? item.vaNotificationResponsibility : null;
   const stalledReason = typeof item.stalledReason === 'string' ? item.stalledReason : null;
   const tagNumber = typeof item.tagNumber === 'string' ? item.tagNumber : null;
   const nextOfKinEmail = typeof item.nextOfKinEmail === 'string' ? item.nextOfKinEmail : null;
@@ -234,6 +237,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     isVeteran: item.isVeteran,
     vaStepsState: isPlainObject(item.vaStepsState) ? (item.vaStepsState as Record<number, boolean>) : {},
     vaPublishChoice,
+    vaNotificationResponsibility,
     checklistState: item.checklistState as Record<number, boolean>,
     fieldValues: item.fieldValues as Record<number, string>,
     daysWaitingInStage: typeof item.daysWaitingInStage === 'number' ? item.daysWaitingInStage : 0,
@@ -381,6 +385,7 @@ export function buildWixCaseData(params: {
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
+    vaNotificationResponsibility: null,
     daysWaitingInStage: 0,
     isStalled: false,
     stalledReason: null,
@@ -541,6 +546,13 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
       errors.push('vaPublishChoice');
     }
   }
+  if ('vaNotificationResponsibility' in b) {
+    if (b.vaNotificationResponsibility === null || b.vaNotificationResponsibility === 'manors' || b.vaNotificationResponsibility === 'family') {
+      patch.vaNotificationResponsibility = b.vaNotificationResponsibility;
+    } else {
+      errors.push('vaNotificationResponsibility');
+    }
+  }
 
   // SOLIS-wide ALL-CAPS data standard (2026-09): normalized here, after
   // validation/allowlisting and before the patch is ever returned to a
@@ -595,6 +607,7 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.isVeteran !== undefined) next.isVeteran = patch.isVeteran;
   if (patch.vaStepsState !== undefined) next.vaStepsState = patch.vaStepsState;
   if (patch.vaPublishChoice !== undefined) next.vaPublishChoice = patch.vaPublishChoice;
+  if (patch.vaNotificationResponsibility !== undefined) next.vaNotificationResponsibility = patch.vaNotificationResponsibility;
   if (patch.checklistState !== undefined) next.checklistState = patch.checklistState;
   if (patch.fieldValues !== undefined) {
     // SOLIS-wide ALL-CAPS data standard (2026-09): fieldValues' per-key

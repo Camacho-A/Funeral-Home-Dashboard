@@ -137,4 +137,29 @@ describe('preservePdfForSubmission', () => {
     expect(uploadParams.fileName).toBe('Vital Statistics Information Sheet.pdf');
     expect(uploadParams.documentTypeKey).toBe('external_form.vital_statistics');
   });
+
+  it('31: Arrangement Forms and Vital Statistics PDFs coexist on the same case — each gets its own CaseDocument, neither overwrites the other', async () => {
+    const { fetchSubmissionPdf } = await import('../lib/jotform/jotformClient');
+    const { upload } = await import('./documentService');
+    vi.mocked(fetchSubmissionPdf).mockResolvedValue(Buffer.from('%PDF-1.4 synthetic'));
+    vi.mocked(upload).mockResolvedValueOnce({ id: 'doc-arrangement' } as never).mockResolvedValueOnce({ id: 'doc-vital' } as never);
+
+    const arrangementSubmission = makeSubmission({ id: 'sub-arrangement', externalSubmissionId: 'ext-sub-arrangement', externalFormId: '261945978664175' });
+    const vitalSubmission = makeSubmission({ id: 'sub-vital', externalSubmissionId: 'ext-sub-vital', externalFormId: '262605621454050' });
+    externalFormSubmissionFixtures.push(arrangementSubmission, vitalSubmission);
+
+    const { preservePdfForSubmission } = await import('./externalFormPdfService');
+    const arrangementResult = await preservePdfForSubmission(arrangementSubmission, 'case-shared', CTX, 'mock');
+    const vitalResult = await preservePdfForSubmission(vitalSubmission, 'case-shared', CTX, 'mock');
+
+    expect(arrangementResult).toEqual({ outcome: 'stored', documentId: 'doc-arrangement' });
+    expect(vitalResult).toEqual({ outcome: 'stored', documentId: 'doc-vital' });
+    expect(upload).toHaveBeenCalledTimes(2);
+
+    const updatedArrangement = externalFormSubmissionFixtures.find((s) => s.id === 'sub-arrangement');
+    const updatedVital = externalFormSubmissionFixtures.find((s) => s.id === 'sub-vital');
+    expect(updatedArrangement?.documentId).toBe('doc-arrangement');
+    expect(updatedVital?.documentId).toBe('doc-vital');
+    expect(updatedArrangement?.documentId).not.toBe(updatedVital?.documentId);
+  });
 });

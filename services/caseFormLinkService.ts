@@ -27,6 +27,10 @@ function deterministicLinkId(organizationId: string, caseId: string, formConfigI
   return `${organizationId}-${caseId}-${formConfigId}`;
 }
 
+export async function getById(id: string, dataAdapterMode: DataAdapterMode): Promise<CaseFormLink | null> {
+  return getByIdRaw(id, dataAdapterMode);
+}
+
 async function getByIdRaw(id: string, dataAdapterMode: DataAdapterMode): Promise<CaseFormLink | null> {
   if (dataAdapterMode === 'mock') {
     return caseFormLinkFixtures.find((l) => l.id === id) ?? null;

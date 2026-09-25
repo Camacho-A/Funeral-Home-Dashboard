@@ -8,6 +8,7 @@ import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
+import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). The
@@ -69,6 +70,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   }
 
   const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, b.caseId, activityCtx, dataAdapterMode);
+
+  // Manors workflow reconciliation (2026-09): same reasoning as the other
+  // form-link call sites.
+  await reconcileCaseWorkflow(organizationId, b.caseId, dataAdapterMode);
 
   return NextResponse.json({ link, submission: updatedSubmission, pdf: pdfResult });
 }

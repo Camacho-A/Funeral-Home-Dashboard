@@ -339,6 +339,115 @@ describe('recalculateOrder', () => {
     expect(result?.order.total).toBe(89_000 + 29_000);
     expect(result?.order.balanceDue).toBe(89_000 + 29_000 - 50_000);
   });
+
+  describe('Manors Additional Items & Services (2026-09) — adding a line item after the order is already fully PAID', () => {
+    async function fullyPayOrder(caseId: string, orderId: string, amount: number) {
+      const payment: PaymentRecord = {
+        id: `pay-${caseId}`,
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId,
+        caseOrderId: orderId,
+        provider: 'clover',
+        providerCheckoutId: `checkout-${caseId}`,
+        providerPaymentId: `provider-payment-${caseId}`,
+        idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-${caseId}`,
+        checkoutUrl: null,
+        status: 'succeeded',
+        amount,
+        currency: 'usd',
+        purpose: 'Full payment',
+        cardBrand: null,
+        cardLast4: null,
+        receiptReference: null,
+        failureCode: null,
+        failureMessage: null,
+        createdAt: NOW,
+        paidAt: NOW,
+        updatedAt: NOW,
+        initiatedByStaffProfileId: null,
+        depositedInBankDepositId: null,
+      };
+      paymentRecordFixtures.push(payment);
+      return payment;
+    }
+
+    it('21/24/25: adding an additional service (extra death certificate) after PAID preserves the original payment and correctly reopens the balance', async () => {
+      const { order: v1 } = await seedInitialOrder('case-additional-1');
+      expect(v1.total).toBe(89_000);
+      await fullyPayOrder('case-additional-1', v1.id, 89_000);
+
+      const { recalculateOrder, refreshBalanceForCase } = await import('./pricingService');
+      const refreshed = await refreshBalanceForCase(DEFAULT_ORGANIZATION_ID, 'case-additional-1', 'mock');
+      expect(refreshed?.balanceDue).toBe(0); // confirmed fully paid before the addition
+
+      const result = await recalculateOrder(
+        {
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          caseId: 'case-additional-1',
+          selections: { weightTier: 'under_200', extraDeathCertificateQuantity: 2, mailCremated: false },
+          performedBy: 'Sam Rivera',
+          idFactory,
+          now: '2026-07-22T00:00:00.000Z',
+        },
+        'mock',
+      );
+
+      // New charge correctly changes the outstanding balance/payment state
+      // (extraDeathCertificateQuantity: 2 adds a flat 5_000 — matching the
+      // exact delta the pre-existing "creates a new version..." test above
+      // already establishes for this same selection).
+      expect(result?.order.total).toBe(89_000 + 5_000);
+      expect(result?.order.balanceDue).toBe(5_000); // reopened, not silently 0
+
+      // The prior payment record is never rewritten or erased.
+      const preservedPayment = paymentRecordFixtures.find((p) => p.id === `pay-case-additional-1`);
+      expect(preservedPayment?.amount).toBe(89_000);
+      expect(preservedPayment?.status).toBe('succeeded');
+    });
+
+    it('22: adding additional merchandise (an urn transfer) after PAID also correctly reopens the balance', async () => {
+      const { order: v1 } = await seedInitialOrder('case-additional-2');
+      await fullyPayOrder('case-additional-2', v1.id, v1.total);
+
+      const { recalculateOrder } = await import('./pricingService');
+      const result = await recalculateOrder(
+        {
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          caseId: 'case-additional-2',
+          selections: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, urnTransfer: true },
+          performedBy: 'Sam Rivera',
+          idFactory,
+          now: '2026-07-22T00:00:00.000Z',
+        },
+        'mock',
+      );
+
+      expect((result?.order.total ?? 0) > v1.total).toBe(true);
+      expect((result?.order.balanceDue ?? 0) > 0).toBe(true);
+    });
+
+    it('26: no duplicate active Case Order is ever created by adding an item — exactly one active version at a time', async () => {
+      const { order: v1 } = await seedInitialOrder('case-additional-3');
+      await fullyPayOrder('case-additional-3', v1.id, v1.total);
+
+      const { recalculateOrder, listCaseOrderVersions } = await import('./pricingService');
+      await recalculateOrder(
+        {
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          caseId: 'case-additional-3',
+          selections: { weightTier: 'under_200', extraDeathCertificateQuantity: 1, mailCremated: false },
+          performedBy: 'Sam Rivera',
+          idFactory,
+          now: '2026-07-22T00:00:00.000Z',
+        },
+        'mock',
+      );
+
+      const versions = await listCaseOrderVersions(DEFAULT_ORGANIZATION_ID, 'case-additional-3', 'mock');
+      const activeVersions = versions.filter((v) => v.status === 'active');
+      expect(activeVersions).toHaveLength(1);
+    });
+  });
 });
 
 describe('getPaidAmountForCase', () => {

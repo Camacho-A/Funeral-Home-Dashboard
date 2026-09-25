@@ -51,6 +51,18 @@ export type NextOfKinRelationship =
 
 export type PaymentStatus = 'awaiting_payment' | 'paid_in_full';
 export type VaPublishChoice = 'publish' | 'private';
+/** Manors VA notification responsibility (2026-09). A SEPARATE fact from
+    `isVeteran` — "did the decedent serve" vs. "who is handling notifying
+    the VA" are two independent questions, and conflating them was the
+    exact bug this type exists to prevent. `null` means undecided — never
+    inferred/defaulted to `'manors'` (see `domain/cases/veteran.ts`'s
+    `isVaComplete`, which fails safely: undecided is treated the same as
+    "not yet complete," identical to `'manors'` with its steps unfinished,
+    never silently treated as `'family'`-equivalent). `'family'` means the
+    internal VA Notification checklist (`VA_STEPS`) does not apply — Manors
+    staff are never required to complete it, and the case is never flagged
+    as needing attention for it. */
+export type VaNotificationResponsibility = 'manors' | 'family';
 /** Manors launch-prep. Whether cremated remains are still with the
     provider or have been released to the family — the answer staff need
     at a glance, distinct from the free-text case log. Mirrors
@@ -133,6 +145,11 @@ export type Case = {
   isVeteran: boolean;
   vaStepsState: Record<number, boolean>;
   vaPublishChoice: VaPublishChoice | null;
+  /** Who is handling VA notification for this veteran — see
+      `VaNotificationResponsibility`'s own comment. Only meaningful when
+      `isVeteran` is true; `null` (undecided) for every non-veteran case
+      and for a veteran case where the decision hasn't been made yet. */
+  vaNotificationResponsibility: VaNotificationResponsibility | null;
   checklistState: Record<number, boolean>;
   fieldValues: Record<number, string>;
   /** Manors launch-prep. Structured pickup/release tracking — the answer

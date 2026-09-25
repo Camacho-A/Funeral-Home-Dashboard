@@ -210,6 +210,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     vaAllStepsDone: VA_STEPS.every((_, index) => vaSteps[index]?.done ?? false),
     vaCallbackDone: isVaCallbackDone(case_),
     vaPublishChoice: case_.vaPublishChoice,
+    vaNotificationResponsibility: case_.vaNotificationResponsibility,
     vaComplete: isVaComplete(case_),
 
     checklist: viewedChecklist,

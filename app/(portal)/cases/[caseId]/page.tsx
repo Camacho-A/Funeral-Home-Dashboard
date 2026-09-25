@@ -237,8 +237,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             vaSteps={viewModel.vaSteps}
             vaCallbackDone={viewModel.vaCallbackDone}
             vaPublishChoice={viewModel.vaPublishChoice}
+            vaNotificationResponsibility={viewModel.vaNotificationResponsibility}
             onToggleVaStep={(index, newDone) => mutations.toggleVaStep(case_, index, newDone)}
             onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
+            onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
           />
 
           <CaseFormsSection caseId={caseId} />

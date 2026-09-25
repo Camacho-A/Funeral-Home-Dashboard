@@ -5,6 +5,7 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
 import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
 import { postPaymentTransaction } from './financialTransactionService';
+import { reconcileCaseWorkflow } from './workflowReconciliationService';
 import type { ActivityContext } from './activityService';
 
 /**
@@ -16,10 +17,20 @@ import type { ActivityContext } from './activityService';
  *
  * Per Phase 19B's own instruction: marks Case.paymentStatus paid and the
  * "Payment collected" checklist item (if the case's own workflowSnapshot
- * has one — see domain/cases/paymentChecklist.ts) done. Never touches
- * `rawStage` — the workflow stage is never auto-advanced by a payment
- * event, only by whatever explicit stage-transition action already
- * exists (see domain/cases/transitions.ts).
+ * has one — see domain/cases/paymentChecklist.ts) done.
+ *
+ * Manors workflow reconciliation (2026-09) correction: this used to never
+ * touch `rawStage` at all — the workflow stage only ever advanced via the
+ * separate manual "Advance to next stage" action. That meant a case whose
+ * every other prerequisite was already genuinely complete (e.g. its
+ * Arrangement Form already linked) stayed stuck at its current stage
+ * after payment, requiring a manual advance even though nothing was
+ * actually left to do. Once the balance genuinely reaches 0 below, this
+ * now also calls `workflowReconciliationService#reconcileCaseWorkflow` —
+ * which independently recomputes the correct stage from every
+ * prerequisite, never blindly advances, and never regresses a
+ * further-along case. `domain/cases/transitions.ts#advanceToNextStage`
+ * remains the separate, unconditional manual action.
  *
  * Idempotent by construction: setting paymentStatus to 'paid_in_full' and
  * checklistState[index] to true again for an already-paid case is a
@@ -95,6 +106,7 @@ export async function markCasePaidIfVerified(
       checklistState:
         checklistIndex === null ? case_.checklistState : { ...case_.checklistState, [checklistIndex]: true },
     };
+    await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
     return;
   }
 
@@ -115,4 +127,5 @@ export async function markCasePaidIfVerified(
   });
 
   await updateWixDataItem<WixCaseItem>('cases', existingItem.id, mergedData);
+  await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
 }

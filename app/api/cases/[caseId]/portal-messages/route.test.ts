@@ -51,6 +51,7 @@ beforeEach(() => {
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
+    vaNotificationResponsibility: null,
     checklistState: {},
     fieldValues: {},
     pickupStatus: 'awaiting_pickup',

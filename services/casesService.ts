@@ -262,6 +262,7 @@ export async function create(
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
+    vaNotificationResponsibility: null,
     tagNumber: null,
     checklistState: {},
     fieldValues: normalizeCaseFieldValues(input.fieldValues ?? {}, workflowSnapshot) ?? {},

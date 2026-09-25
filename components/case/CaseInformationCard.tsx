@@ -4,7 +4,7 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
-import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice } from '@/types/case';
+import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
 import {
   formatDateInput,
@@ -290,8 +290,10 @@ export function CaseInformationCard({
   vaSteps,
   vaCallbackDone,
   vaPublishChoice,
+  vaNotificationResponsibility,
   onToggleVaStep,
   onSetVaPublishChoice,
+  onSetVaNotificationResponsibility,
 }: {
   dateOfBirth: string;
   dateOfDeath: string;
@@ -339,8 +341,10 @@ export function CaseInformationCard({
   vaSteps: VaStepViewModel[];
   vaCallbackDone: boolean;
   vaPublishChoice: VaPublishChoice | null;
+  vaNotificationResponsibility: VaNotificationResponsibility | null;
   onToggleVaStep: (index: number, newDone: boolean) => void;
   onSetVaPublishChoice: (choice: VaPublishChoice) => void;
+  onSetVaNotificationResponsibility: (responsibility: VaNotificationResponsibility) => void;
 }) {
   return (
     <div className={styles.card}>
@@ -573,8 +577,10 @@ export function CaseInformationCard({
           vaSteps={vaSteps}
           vaCallbackDone={vaCallbackDone}
           vaPublishChoice={vaPublishChoice}
+          vaNotificationResponsibility={vaNotificationResponsibility}
           onToggleStep={onToggleVaStep}
           onSetPublishChoice={onSetVaPublishChoice}
+          onSetVaNotificationResponsibility={onSetVaNotificationResponsibility}
         />
       )}
     </div>

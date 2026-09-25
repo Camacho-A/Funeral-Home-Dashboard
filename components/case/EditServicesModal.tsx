@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { ServicesAndChargesSelector } from '@/components/case/ServicesAndChargesSelector';
 import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
+import { useOrganization } from '@/hooks/useOrganization';
 import { selectionsFromLineItems } from '@/domain/pricing/calculateOrder';
+import { additionalItemsLabel, isManorsOrganization, ADDITIONAL_ITEMS_SUPPORTING_TEXT } from '@/domain/organization/caseOrderTerminology';
 import type { CaseOrder, CaseOrderLineItem, ServiceSelections } from '@/types/caseOrder';
 import styles from './EditServicesModal.module.css';
 
@@ -43,6 +45,7 @@ export function EditServicesModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const { organizationId } = useOrganization();
   const { data: catalog = [] } = useServiceCatalog();
   const createOrder = useCreateCaseOrder(caseId);
   const editOrder = useEditCaseOrder(caseId);
@@ -66,9 +69,14 @@ export function EditServicesModal({
     );
   }
 
+  const title = order ? additionalItemsLabel(organizationId) : 'Set Up Services & Charges';
+
   return (
-    <Modal open={open} onClose={onClose} title={order ? 'Edit Services' : 'Set Up Services & Charges'}>
-      <div className={styles.header}>{order ? 'Edit Services' : 'Set Up Services & Charges'}</div>
+    <Modal open={open} onClose={onClose} title={title}>
+      <div className={styles.header}>{title}</div>
+      {order && isManorsOrganization(organizationId) && (
+        <p className={styles.supportingText}>{ADDITIONAL_ITEMS_SUPPORTING_TEXT}</p>
+      )}
 
       <ServicesAndChargesSelector catalog={catalog} selections={selections} onChange={setSelections} />
 

@@ -71,3 +71,17 @@
   background: var(--color-surface-card);
   color: var(--color-text-primary);
 }
+
+.stepsSection {
+  margin-top: var(--space-4);
+  padding-top: var(--space-5);
+  box-shadow: inset 0 1px 0 var(--color-border-subtle);
+}
+
+.familyNote {
+  margin-top: var(--space-4);
+  padding-top: var(--space-5);
+  box-shadow: inset 0 1px 0 var(--color-border-subtle);
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+}

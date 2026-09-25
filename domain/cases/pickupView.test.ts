@@ -40,6 +40,7 @@ const FULL_CASE: Case = {
   isVeteran: false,
   vaStepsState: {},
   vaPublishChoice: null,
+    vaNotificationResponsibility: null,
   checklistState: {},
   fieldValues: {},
   daysWaitingInStage: 0,

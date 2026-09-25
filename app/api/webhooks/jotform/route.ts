@@ -9,6 +9,7 @@ import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionReceived, recordExternalFormSubmissionUnmatched } from '@/services/activityService';
+import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -154,6 +155,12 @@ export async function POST(request: Request) {
     // submission itself (pdfStatus: 'failed') and retried later, never
     // surfaced as a webhook failure to Jotform.
     await preservePdfForSubmission(submission, resolvedLink.caseId, activityCtx, dataAdapterMode);
+
+    // Manors workflow reconciliation (2026-09): a normally-received
+    // submission is exactly the same "Arrangement Form now linked" fact
+    // the historical-import path produces — reuses the identical
+    // reconciliation call so both paths can never diverge in meaning.
+    await reconcileCaseWorkflow(config.organizationId, resolvedLink.caseId, dataAdapterMode);
   } else {
     try {
       await recordExternalFormSubmissionUnmatched(activityCtx, submission.id, config.label, dataAdapterMode);

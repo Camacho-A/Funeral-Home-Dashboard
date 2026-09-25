@@ -11,7 +11,7 @@
  * happens on click. This keeps domain/ free of React and presentation
  * concerns, per docs/adr/ADR-004-domain-layer.md.
  */
-import type { PaymentStatus, VaPublishChoice } from './case';
+import type { PaymentStatus, VaPublishChoice, VaNotificationResponsibility } from './case';
 
 export type BadgeVariant = 'neutral' | 'brand' | 'danger' | 'success';
 
@@ -123,7 +123,10 @@ export type CaseViewModel = {
       knowledge (see domain/cases/veteran.ts's isVaCallbackDone). */
   vaCallbackDone: boolean;
   vaPublishChoice: VaPublishChoice | null;
-  vaComplete: boolean; // all steps done AND a publish choice made
+  /** VA responsibility correction (2026-09) — independent of isVeteran; see
+      types/case.ts#VaNotificationResponsibility's own comment. */
+  vaNotificationResponsibility: VaNotificationResponsibility | null;
+  vaComplete: boolean; // all steps done AND a publish choice made (or responsibility is 'family' — see isVaComplete)
 
   /** The checklist for the case's *current* stage, unless a past stage is
       being viewed read-only (see viewingDisplayStage in

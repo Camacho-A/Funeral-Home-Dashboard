@@ -17,6 +17,7 @@ import {
   caseOrderBalanceStatusLabel,
   caseOrderBalanceStatusVariant,
 } from '@/domain/cases/paymentDisplay';
+import { additionalItemsLabel } from '@/domain/organization/caseOrderTerminology';
 import styles from './CaseOrderCard.module.css';
 
 /**
@@ -191,7 +192,7 @@ export function CaseOrderCard({
           <div className={styles.actions}>
             {canEditCaseOrder && (
               <Button variant="secondary" onClick={() => setEditOpen(true)}>
-                Edit Services
+                {additionalItemsLabel(organizationId)}
               </Button>
             )}
             {canRecordPayment && (

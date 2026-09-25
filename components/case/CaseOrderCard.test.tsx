@@ -275,11 +275,11 @@ describe('CaseOrderCard — Record Payment (manual)', () => {
   });
 });
 
-describe('CaseOrderCard — Edit Services / Set Up Services & Charges', () => {
-  it('opens EditServicesModal prefilled from the current order\'s selections when editing', async () => {
+describe('CaseOrderCard — Additional Items & Services / Set Up Services & Charges', () => {
+  it('opens EditServicesModal prefilled from the current order\'s selections when editing (Manors label: "Additional Items & Services")', async () => {
     renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
     await screen.findByText('Direct Cremation');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Services' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Additional Items & Services' }));
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     // Prefilled from LINE_ITEMS: the 201–250 lb radio should be checked.
@@ -288,7 +288,7 @@ describe('CaseOrderCard — Edit Services / Set Up Services & Charges', () => {
     expect(checkedRadio).toBeDefined();
   });
 
-  it('opens a "Set Up Services & Charges" modal (create path) when there is no order yet', async () => {
+  it('opens a "Set Up Services & Charges" modal (create path) when there is no order yet — never relabeled, even for Manors', async () => {
     renderCard({ order: { order: null, lineItems: [], auditEntries: [] } });
     await screen.findByText('No case order yet.');
     fireEvent.click(screen.getByRole('button', { name: 'Set Up Services & Charges' }));
@@ -298,11 +298,34 @@ describe('CaseOrderCard — Edit Services / Set Up Services & Charges', () => {
   it('saving from the modal closes it', async () => {
     renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
     await screen.findByText('Direct Cremation');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Services' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Additional Items & Services' }));
     await screen.findByRole('dialog');
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('19: shows "Additional Items & Services" for Manors, with the supporting text, on an existing order', async () => {
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    await screen.findByText('Direct Cremation');
+    fireEvent.click(screen.getByRole('button', { name: 'Additional Items & Services' }));
+    expect(await screen.findByRole('dialog', { name: 'Additional Items & Services' })).toBeInTheDocument();
+    expect(screen.getByText('Add items or services the family requests after the original arrangements.')).toBeInTheDocument();
+  });
+
+  it('C2/C1 scope: a non-Manors organization keeps the plain "Edit Services" label — this is Manors-specific terminology, not a platform-wide rename', async () => {
+    stubFetch({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OrganizationProvider organizationId="some-other-funeral-home">
+          <CaseOrderCard caseId="case-1" caseName="Robert Ellison" caseNumber="B2026-001" />
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Direct Cremation');
+    expect(screen.getByRole('button', { name: 'Edit Services' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Additional Items & Services' })).not.toBeInTheDocument();
   });
 });
 
@@ -318,7 +341,7 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     expect(screen.queryByText('Direct Cremation')).not.toBeInTheDocument();
   });
 
-  it('shows line items (operational add-ons) for caseOrder.read alone — no financial totals, no Edit Services, no payment actions', async () => {
+  it('shows line items (operational add-ons) for caseOrder.read alone — no financial totals, no Additional Items & Services, no payment actions', async () => {
     // The exact "normal employee without payment access" case: officeStaff
     // holds caseOrder.read but neither caseOrder.update nor any payment.*
     // key — must still see what's on the order, just not touch pricing or
@@ -330,19 +353,19 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     });
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit Services' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Additional Items & Services' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
   });
 
-  it('additionally shows "Edit Services" for caseOrder.read + caseOrder.update — additional case charges must stay addable without financial access', async () => {
+  it('additionally shows "Additional Items & Services" for caseOrder.read + caseOrder.update — additional case charges must stay addable without financial access', async () => {
     renderCard({
       order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
       payments: [],
       permissions: ['caseOrder.read', 'caseOrder.update'],
     });
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit Services' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Additional Items & Services' })).toBeInTheDocument();
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
   });
@@ -355,7 +378,7 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     });
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
     expect(screen.getAllByText('Balance due').length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button', { name: 'Edit Services' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Additional Items & Services' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
   });
@@ -367,7 +390,7 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
       permissions: ['caseOrder.read', 'caseOrder.update', 'payment.read', 'payment.collect'],
     });
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit Services' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Additional Items & Services' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Collect Balance with Clover' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
   });

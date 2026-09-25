@@ -490,6 +490,32 @@ describe('PATCH /api/cases/[caseId]', () => {
       expect(mergedData.decedentName).toBe(EXISTING_WIX_CASE_DATA.decedentName);
     });
 
+    it('VA responsibility correction (2026-09): accepts vaNotificationResponsibility independently of isVeteran, and rejects an invalid value', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { vaNotificationResponsibility: 'family' } });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.vaNotificationResponsibility).toBe('family');
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ vaNotificationResponsibility: 'family' }));
+      // isVeteran was never part of this patch — confirms the two facts
+      // are updated independently, never coupled.
+      expect(body.case.isVeteran).toBe(EXISTING_WIX_CASE_DATA.isVeteran);
+    });
+
+    it('rejects an invalid vaNotificationResponsibility value', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { vaNotificationResponsibility: 'internal' } });
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toMatch(/vaNotificationResponsibility/);
+    });
+
+    it('accepts vaNotificationResponsibility: null (reverting to undecided)', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { vaNotificationResponsibility: null } });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.case.vaNotificationResponsibility).toBeNull();
+    });
+
     it('edits nextOfKinEmail, trimming surrounding whitespace before saving (Manors launch-prep)', async () => {
       const response = await patchRequest('1042', {
         organizationId: DEFAULT_ORGANIZATION_ID,

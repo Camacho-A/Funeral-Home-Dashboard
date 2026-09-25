@@ -35,8 +35,10 @@ const baseProps = {
   vaSteps: [],
   vaCallbackDone: false,
   vaPublishChoice: null,
+  vaNotificationResponsibility: null,
   onToggleVaStep: vi.fn(),
   onSetVaPublishChoice: vi.fn(),
+  onSetVaNotificationResponsibility: vi.fn(),
 };
 
 describe('CaseInformationCard — click-to-edit fields (Phase 17)', () => {

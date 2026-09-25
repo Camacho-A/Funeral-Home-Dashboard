@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Case, CaseUpdate, VaPublishChoice } from '@/types/case';
+import type { Case, CaseUpdate, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { useOrganization } from './useOrganization';
 
@@ -63,6 +63,12 @@ export function useCaseMutations(caseId: string) {
 
     setVaPublishChoice(choice: VaPublishChoice) {
       updateCase.mutate({ vaPublishChoice: choice });
+    },
+
+    /** VA responsibility correction (2026-09) — independent of
+        setVeteranFlag; never implies/changes isVeteran. */
+    setVaNotificationResponsibility(responsibility: VaNotificationResponsibility) {
+      updateCase.mutate({ vaNotificationResponsibility: responsibility });
     },
   };
 }
