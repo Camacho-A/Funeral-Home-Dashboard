@@ -99,6 +99,37 @@ describe('GET /api/cases/historical-jotform-import — safe preview', () => {
     expect(body).not.toHaveProperty('rawRequest');
   });
 
+  it('W: preview displays the preserved historical case number, normalized to B{year}-{seq}', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-035' }, '198': { answer: '2026-035' }, '87': { answer: { first: 'Jordan', last: 'Blake' } } }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+
+    const { GET } = await import('./route');
+    const response = await GET(getRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'preview-case-number' }));
+    const body = await response.json();
+
+    expect(body.historicalCaseNumber).toBe('B2026-035');
+    expect(body.historicalCaseNumberBlockedReason).toBeNull();
+    expect(body.historicalDuplicateCaseId).toBeNull();
+  });
+
+  it('surfaces a blocked reason in preview when qid 1 is missing, without failing the request', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'Jordan', last: 'Blake' } } }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+
+    const { GET } = await import('./route');
+    const response = await GET(getRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'preview-missing-number' }));
+    expect(response.status).toBe(200); // preview never fails the request itself
+    const body = await response.json();
+    expect(body.historicalCaseNumber).toBeNull();
+    expect(typeof body.historicalCaseNumberBlockedReason).toBe('string');
+  });
+
   it('flags matchesConfig false for a submission belonging to the wrong form, without creating any record', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
     (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(VITAL_FORM_ID));
@@ -186,7 +217,7 @@ describe('POST /api/cases/historical-jotform-import — successful creation', ()
   it('creates a case via the normal POST /api/cases loopback, links the submission, preserves the PDF, and never predicts the case number', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
     (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
-      stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'Jordan', last: 'Blake' } } }),
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'Jordan', last: 'Blake' } } }),
     );
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const { upload } = await import('@/services/documentService');
@@ -215,11 +246,105 @@ describe('POST /api/cases/historical-jotform-import — successful creation', ()
     expect(sentBody.decedentName).toBe('Jordan Blake');
     expect(sentBody.nextOfKinName).toBe('Jamie Doe');
     expect(sentBody.nextOfKinPhone).toBe('(555) 123-4567');
+    // Historical case-number preservation (2026-09): a signed authorization
+    // is minted and forwarded, never a plain client-suppliable number.
+    expect(typeof sentBody.historicalCaseNumberAuthorization).toBe('string');
+    expect(sentBody.historicalCaseNumberAuthorization.length).toBeGreaterThan(0);
+    expect(sentBody.caseNumber).toBeUndefined(); // never a raw number field
+  });
+
+  it('L: blocks (422) with no /api/cases call when the historical case number is malformed', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: 'not-a-case-number' }, '87': { answer: { first: 'A', last: 'B' } } }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const fetchSpy = stubCaseCreation();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      postRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'malformed-number', nextOfKinName: 'Jamie Doe', nextOfKinPhone: '5551234567' }),
+    );
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body.historicalCaseNumberBlocked).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('L2: blocks (422) with no /api/cases call when qid 1 is missing entirely', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const fetchSpy = stubCaseCreation();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      postRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'no-case-number', nextOfKinName: 'Jamie Doe', nextOfKinPhone: '5551234567' }),
+    );
+    expect(response.status).toBe(422);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('K: blocks (422) when qid 1 and qid 198 disagree', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, {
+        '1': { answer: '2026-950' },
+        '198': { answer: '2026-951' },
+        '87': { answer: { first: 'A', last: 'B' } },
+      }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const fetchSpy = stubCaseCreation();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      postRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'disagreement-1', nextOfKinName: 'Jamie Doe', nextOfKinPhone: '5551234567' }),
+    );
+    expect(response.status).toBe(422);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('N: blocks (409) and never calls /api/cases when a Case already exists with the historical number', async () => {
+    const { caseFixtures } = await import('@/services/__mocks__/fixtures');
+    const lengthBefore = caseFixtures.length;
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: 'duplicate-historical-case',
+      organizationId: ORG,
+      caseNumber: 'B2026-950',
+    });
+    try {
+      const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+      (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+        stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }),
+      );
+      const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+      const fetchSpy = stubCaseCreation();
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const { POST } = await import('./route');
+      const response = await POST(
+        postRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'duplicate-number-1', nextOfKinName: 'Jamie Doe', nextOfKinPhone: '5551234567' }),
+      );
+      expect(response.status).toBe(409);
+      const body = await response.json();
+      expect(body.historicalDuplicate).toBe(true);
+      expect(body.existingCaseId).toBe('duplicate-historical-case');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      caseFixtures.length = lengthBefore;
+    }
   });
 
   it('persists createdCaseId immediately after case creation, before linking', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     vi.stubGlobal('fetch', stubCaseCreation('new-case-id-2', 'B2026-998'));
 
@@ -235,7 +360,7 @@ describe('POST /api/cases/historical-jotform-import — successful creation', ()
 
   it('never applies reconciliation fields automatically — the only fetch is to /api/cases, never to a review/apply endpoint', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const fetchSpy = stubCaseCreation();
     vi.stubGlobal('fetch', fetchSpy);
@@ -252,6 +377,7 @@ describe('POST /api/cases/historical-jotform-import — successful creation', ()
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
     (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
       stubJotformSubmission(ARRANGEMENT_FORM_ID, {
+        '1': { answer: '2026-950' },
         '87': { answer: { first: 'A', last: 'B' } },
         '900': { answer: 'synthetic-ssn-000-00-0000' },
       }),
@@ -272,7 +398,7 @@ describe('POST /api/cases/historical-jotform-import — successful creation', ()
 describe('POST /api/cases/historical-jotform-import — idempotency and crash recovery', () => {
   it('a second POST for an already-completed submission returns alreadyImported, creates no second case', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const fetchSpy = stubCaseCreation('new-case-id-3', 'B2026-997');
     vi.stubGlobal('fetch', fetchSpy);
@@ -294,7 +420,7 @@ describe('POST /api/cases/historical-jotform-import — idempotency and crash re
 
   it('sequential double-click protection: two immediate sequential POSTs never create two cases', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const fetchSpy = stubCaseCreation();
     vi.stubGlobal('fetch', fetchSpy);
@@ -309,7 +435,7 @@ describe('POST /api/cases/historical-jotform-import — idempotency and crash re
 
   it('concurrent same-submission requests: exactly one case-creation attempt ever happens', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const fetchSpy = stubCaseCreation();
     vi.stubGlobal('fetch', fetchSpy);
@@ -330,7 +456,7 @@ describe('POST /api/cases/historical-jotform-import — idempotency and crash re
     const { receive } = await import('@/services/externalFormSubmissionService');
     const { markCaseCreated } = await import('@/services/externalFormSubmissionService');
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
 
     // Simulate a prior crash: the submission was claimed and a case was
@@ -385,7 +511,7 @@ describe('POST /api/cases/historical-jotform-import — idempotency and crash re
     const { fetchSubmissionPdf } = await import('@/lib/jotform/jotformClient');
     (fetchSubmissionPdf as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('pdf-fetch-failed'));
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const fetchSpy = stubCaseCreation();
     vi.stubGlobal('fetch', fetchSpy);
@@ -435,7 +561,7 @@ describe('POST /api/cases/historical-jotform-import — mutual exclusivity with 
 
   it('a submission this route already used to create a case is refused by the "link to existing case" importer too', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
-    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '87': { answer: { first: 'A', last: 'B' } } }));
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(stubJotformSubmission(ARRANGEMENT_FORM_ID, { '1': { answer: '2026-950' }, '87': { answer: { first: 'A', last: 'B' } } }));
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const { caseFixtures } = await import('@/services/__mocks__/fixtures');
     const otherRealCaseId = caseFixtures.find((c) => c.organizationId === ORG)!.id;

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -8,6 +9,7 @@ import {
   initializeCaseSequence,
   CaseSequenceAlreadyInitializedError,
 } from '@/lib/wixCaseNumberSequence';
+import { recordCaseSequenceInitialized } from '@/services/activityService';
 
 /**
  * Manors launch-prep — P0 automatic case numbering. The administrator-
@@ -91,9 +93,38 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Audit trail (2026-09) — read the pre-change state ONLY for the audit
+    // record (never used for any forward-only/CAS decision, which
+    // initializeCaseSequence already owns entirely). Read before the
+    // mutation so a failed/rejected call below never has a "previous
+    // value" to falsely attach to a successful-event record.
+    const previousState = await getCaseSequenceState(organizationId, b.year as number);
+
     const result = await initializeCaseSequence(organizationId, b.year as number, b.nextSequence as number, {
       forceOverwrite: b.forceOverwrite === true,
     });
+
+    // Recorded only after the mutation above has actually succeeded — a
+    // rejected/failed validation (caught below) never reaches this line,
+    // so a failure can never be misrecorded as a successful cutover.
+    try {
+      await recordCaseSequenceInitialized(
+        {
+          organizationId,
+          actorIdentityId: authResult.context.userId,
+          actorMembershipId: null,
+          actorRoleKey: authResult.context.role,
+          correlationId: crypto.randomUUID(),
+        },
+        b.year as number,
+        previousState?.nextSequence ?? null,
+        result.nextSequence,
+        mode,
+      );
+    } catch (auditError) {
+      console.error('Failed to record case.sequence.initialized activity event:', auditError instanceof Error ? auditError.message : auditError);
+    }
+
     return NextResponse.json({ organizationId, year: b.year, nextSequence: result.nextSequence });
   } catch (error) {
     if (error instanceof CaseSequenceAlreadyInitializedError) {

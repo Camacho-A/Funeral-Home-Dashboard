@@ -3,14 +3,18 @@ import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canCreateCase } from '@/services/authorizationPolicyService';
-import { getDataAdapterMode } from '@/lib/env';
+import { getDataAdapterMode, type DataAdapterMode } from '@/lib/env';
+import { queryWixDataItems } from '@/lib/wixDataApi';
+import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
 import * as externalFormConfigService from '@/services/externalFormConfigService';
 import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { fetchSubmissionAnswers, JotformClientError } from '@/lib/jotform/jotformClient';
-import { extractMappedFields } from '@/domain/externalForms/extractMappedFields';
-import { fieldMapForForm } from '@/domain/externalForms/fieldMapping';
+import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
+import { deriveHistoricalCaseNumber, type HistoricalCaseNumberResult } from '@/domain/externalForms/historicalCaseNumber';
+import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { externalFormSubmissionId, isCaseCreationClaimToken } from '@/types/externalFormSubmission';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
 
@@ -63,12 +67,44 @@ type MappedPreview = {
   informantName?: string;
   informantRelationship?: string;
   informantPhone?: string;
+  /** Phase A.2 (2026-09) — the raw submitted answer to qid 276, surfaced
+      for staff review/audit only, exactly like the Informant fields
+      above. Never itself applied to a Case field. */
+  informantIsNextOfKin?: string;
 };
 
 function sanitizedFetchErrorMessage(error: unknown): string {
   return error instanceof JotformClientError
     ? `Failed to retrieve the Jotform submission (${error.category}).`
     : 'Failed to retrieve the Jotform submission.';
+}
+
+/** Historical case-number preservation (2026-09) — a dedicated,
+    read-only "does a Case already exist with this number" lookup,
+    mirroring the exact dual-mode query shape already established by
+    app/api/cases/[caseId]/forms/[formConfigId]/import-submission/route.ts's
+    own `loadCase` helper. */
+async function findCaseByCaseNumber(organizationId: string, caseNumber: string, dataAdapterMode: DataAdapterMode) {
+  if (dataAdapterMode === 'mock') {
+    return caseFixtures.find((c) => c.organizationId === organizationId && c.caseNumber === caseNumber) ?? null;
+  }
+  const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { organizationId, caseNumber }, paging: { limit: 1 } });
+  return response.dataItems[0] ? mapWixCaseItem(response.dataItems[0].data) : null;
+}
+
+/** Turns a non-'ok' HistoricalCaseNumberResult into a staff-facing
+    message. Any non-'ok' status blocks this route's case creation
+    entirely — this route exists specifically to preserve a legitimate
+    historical number, so falling back to a fresh production number here
+    would silently reproduce the exact bug this checkpoint fixes. */
+function describeHistoricalCaseNumberBlock(result: Exclude<HistoricalCaseNumberResult, { status: 'ok' }>): string {
+  if (result.status === 'missing') {
+    return 'This submission has no historical Manors case number (qid 1) — cannot safely preserve a case number for this import.';
+  }
+  if (result.status === 'malformed') {
+    return `The historical case number on this submission ("${result.raw}") is not in the expected YYYY-NNN format.`;
+  }
+  return `The Case No. fields on this submission disagree (${result.primary} vs ${result.secondary}) — this requires manual review before import.`;
 }
 
 function previewFromMappedFields(mapped: Partial<Record<string, string>>): MappedPreview {
@@ -80,6 +116,7 @@ function previewFromMappedFields(mapped: Partial<Record<string, string>>): Mappe
     informantName: mapped.informantName,
     informantRelationship: mapped.informantRelationship,
     informantPhone: mapped.informantPhone,
+    informantIsNextOfKin: mapped.informantIsNextOfKin,
   };
 }
 
@@ -120,7 +157,7 @@ export async function GET(request: Request) {
   }
 
   const matchesConfig = jotformSubmission.formId === config.externalFormId;
-  const mapped = matchesConfig ? extractMappedFields(fieldMapForForm(config.provider, config.externalFormId), jotformSubmission.answers) : {};
+  const mapped = matchesConfig ? extractMappedFieldsForForm(config.provider, config.externalFormId, jotformSubmission.answers) : {};
 
   // Read-only lookup — never inserts. Purely informational, so the UI can
   // warn "already imported" before the staff member fills anything in.
@@ -129,12 +166,32 @@ export async function GET(request: Request) {
   const alreadyAssociated = Boolean(existing && existing.status !== 'unmatched');
   const existingCaseId = existing && typeof existing.createdCaseId === 'string' && !isCaseCreationClaimToken(existing.createdCaseId) ? existing.createdCaseId : null;
 
+  // Historical case-number preservation (2026-09) — read-only preview of
+  // what POST would do: derive the number, and check (non-authoritatively;
+  // POST re-checks right before insert) whether a Case already uses it.
+  let historicalCaseNumber: string | null = null;
+  let historicalCaseNumberBlockedReason: string | null = null;
+  let historicalDuplicateCaseId: string | null = null;
+  if (matchesConfig) {
+    const historicalResult = deriveHistoricalCaseNumber(jotformSubmission.answers);
+    if (historicalResult.status === 'ok') {
+      historicalCaseNumber = historicalResult.caseNumber;
+      const duplicate = await findCaseByCaseNumber(resolvedOrganizationId, historicalCaseNumber, dataAdapterMode);
+      if (duplicate) historicalDuplicateCaseId = duplicate.id;
+    } else {
+      historicalCaseNumberBlockedReason = describeHistoricalCaseNumberBlock(historicalResult);
+    }
+  }
+
   return NextResponse.json({
     formLabel: config.label,
     submittedAt: jotformSubmission.submittedAt,
     matchesConfig,
     alreadyAssociated,
     existingCaseId,
+    historicalCaseNumber,
+    historicalCaseNumberBlockedReason,
+    historicalDuplicateCaseId,
     ...previewFromMappedFields(mapped),
   });
 }
@@ -192,8 +249,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This Jotform submission does not belong to the selected form.' }, { status: 400 });
   }
 
-  const fieldMap = fieldMapForForm(config.provider, config.externalFormId);
-  const mappedFields = extractMappedFields(fieldMap, jotformSubmission.answers);
+  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, jotformSubmission.answers);
 
   // Claim the submission itself — shared with the "link to existing case"
   // importer via the same deterministic id.
@@ -239,8 +295,50 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'This submission is already being processed. Please try again shortly.' }, { status: 409 });
       }
     } else {
+      // Historical case-number preservation (2026-09) — derived and
+      // validated ONLY here, right before a case is actually about to be
+      // created (never for an idempotent/already-linked retry, which
+      // never reaches this branch at all). Any non-'ok' status, or an
+      // already-existing Case with this number, reverts the just-taken
+      // claim and blocks — this route exists specifically to preserve a
+      // legitimate historical number, so silently falling back to a
+      // fresh production number would reproduce the exact bug this fixes.
+      const historicalResult = deriveHistoricalCaseNumber(jotformSubmission.answers);
+      if (historicalResult.status !== 'ok') {
+        await externalFormSubmissionService.revertCaseCreationClaim(submission.id, claim.claimToken, dataAdapterMode);
+        return NextResponse.json(
+          { error: describeHistoricalCaseNumberBlock(historicalResult), historicalCaseNumberBlocked: true },
+          { status: 422 },
+        );
+      }
+      const historicalCaseNumber = historicalResult.caseNumber;
+
+      const existingCaseForNumber = await findCaseByCaseNumber(organizationId, historicalCaseNumber, dataAdapterMode);
+      if (existingCaseForNumber) {
+        await externalFormSubmissionService.revertCaseCreationClaim(submission.id, claim.claimToken, dataAdapterMode);
+        return NextResponse.json(
+          {
+            error: 'A Case with this historical case number already exists. Open the existing case and use the existing-submission linking workflow.',
+            historicalDuplicate: true,
+            existingCaseId: existingCaseForNumber.id,
+          },
+          { status: 409 },
+        );
+      }
+
       try {
         const origin = new URL(request.url).origin;
+        // Mints a fresh, short-lived, server-signed authorization right
+        // before this internal call — see
+        // lib/auth/historicalCaseNumberAuthorization.ts. POST /api/cases
+        // verifies it and, only if valid, preserves historicalCaseNumber
+        // instead of calling reserveNextCaseNumber.
+        const historicalCaseNumberAuthorization = await createHistoricalCaseNumberAuthorization({
+          organizationId,
+          externalFormId: config.externalFormId,
+          externalSubmissionId,
+          caseNumber: historicalCaseNumber,
+        });
         const caseResponse = await fetch(`${origin}/api/cases`, {
           method: 'POST',
           headers: {
@@ -256,6 +354,7 @@ export async function POST(request: Request) {
             placeOfDeath: mappedFields.placeOfDeath,
             nextOfKinName,
             nextOfKinPhone,
+            historicalCaseNumberAuthorization,
           }),
         });
         if (!caseResponse.ok) {

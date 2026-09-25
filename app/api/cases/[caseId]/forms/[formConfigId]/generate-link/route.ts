@@ -73,6 +73,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       nextOfKinName: theCase.nextOfKinName,
       nextOfKinPhone: theCase.nextOfKinPhone,
       nextOfKinEmail: theCase.nextOfKinEmail,
+      nextOfKinRelationship: theCase.nextOfKinRelationship,
     },
     rawToken,
   );

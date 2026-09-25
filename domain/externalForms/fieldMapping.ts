@@ -44,7 +44,17 @@ export type MappedSolisField =
   // nextOfKinName/nextOfKinPhone/nextOfKinRelationship.
   | 'informantName'
   | 'informantPhone'
-  | 'informantRelationship';
+  | 'informantRelationship'
+  // Arrangement Forms NOK branch (Phase A.2, 2026-09): the raw submitted
+  // answer to qid 276 ("Is the Informant named above also the decedent's
+  // Next of Kin?") — 'Yes' | 'No' | any other raw string Jotform ever
+  // sends. Review/audit-only, exactly like informantName/Phone/
+  // Relationship above — never itself applied to a Case field (there is
+  // no Case column for it). It is the one thing that authorizes deriving
+  // nextOfKinName/nextOfKinPhone/nextOfKinRelationship from the Informant
+  // fields — see arrangementNokDerivation.ts, the only code path allowed
+  // to make that derivation.
+  | 'informantIsNextOfKin';
 
 export type FieldMapEntry = {
   qid: string;
@@ -72,6 +82,64 @@ export const NOK_RELATIONSHIP_VALUE_MAP: Record<string, NextOfKinRelationship> =
   Daughter: 'daughter',
   Mother: 'parent',
   Father: 'parent',
+};
+
+/** Arrangement Forms — form 261945978664175, canonical form id, named here
+    once so every file that needs to gate behavior on "is this Arrangement
+    Forms specifically" (arrangementNokDerivation.ts, prefillUrl.ts) shares
+    one source of truth rather than repeating the raw literal. */
+export const ARRANGEMENT_FORMS_EXTERNAL_FORM_ID = '261945978664175';
+
+/** Vital Statistics — form 262605621454050, canonical form id, named for
+    the same reason as ARRANGEMENT_FORMS_EXTERNAL_FORM_ID above (2026-09
+    outbound-prefill fix: prefillUrl.ts's "common" decedent-info block was
+    previously hardcoded to this form's own qids — 3/10/6/22/24/39 — and
+    executed unconditionally for every form, including Arrangement Forms,
+    where those same qid numbers either don't exist or belong to an
+    unrelated field. See prefillUrl.ts's own comment.) */
+export const VITAL_STATISTICS_EXTERNAL_FORM_ID = '262605621454050';
+
+/** Arrangement Forms NOK-branch relationship dropdowns (Phase A.2,
+    2026-09) — qid 225 (Informant's Relationship to Deceased) and qid 279
+    (Next of Kin Relationship to Deceased) were both confirmed, via a
+    direct read-only Jotform API audit, to carry the EXACT SAME option
+    list: "Spouse|Mother|Father|Son|Daughter|Sister|Brother|Grandson|
+    Granddaughter|Other". This is deliberately a SEPARATE constant from
+    NOK_RELATIONSHIP_VALUE_MAP above (Vital Statistics' own qid 38
+    dropdown) rather than an extension of it — the two forms' dropdowns
+    are confirmed identical only by coincidence today; keeping them
+    independent means a future divergence in either form's option list
+    can never silently affect the other. Every option maps to an exact,
+    real NextOfKinRelationship enum value — no fuzzy matching. */
+export const ARRANGEMENT_NOK_RELATIONSHIP_VALUE_MAP: Record<string, NextOfKinRelationship> = {
+  Spouse: 'spouse',
+  Mother: 'parent',
+  Father: 'parent',
+  Son: 'son',
+  Daughter: 'daughter',
+  Sister: 'sister',
+  Brother: 'brother',
+  Grandson: 'grandchild',
+  Granddaughter: 'grandchild',
+  Other: 'other',
+};
+
+/** The inverse of ARRANGEMENT_NOK_RELATIONSHIP_VALUE_MAP, used only for
+    SOLIS -> Jotform prefill (domain/externalForms/prefillUrl.ts) —
+    deliberately a STRICT SUBSET, not a full inverse. 'parent' and
+    'grandchild' are each produced by two different Jotform options
+    (Mother/Father, Grandson/Granddaughter) — reversing either would mean
+    guessing which one, which this integration's own "no fuzzy matching"
+    principle forbids. Those two enum values are simply never prefilled;
+    every other listed value reverses unambiguously to exactly one
+    Jotform option. */
+export const ARRANGEMENT_NOK_RELATIONSHIP_REVERSE_MAP: Partial<Record<NextOfKinRelationship, string>> = {
+  spouse: 'Spouse',
+  son: 'Son',
+  daughter: 'Daughter',
+  sister: 'Sister',
+  brother: 'Brother',
+  other: 'Other',
 };
 
 /** Vital Statistics — form 262605621454050. Every qid below is confirmed
@@ -125,11 +193,20 @@ export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   { qid: '122', jotformName: 'name122', solisField: 'informantName', subfield: 'last' },
   { qid: '224', jotformName: 'phoneNumber224', solisField: 'informantPhone', subfield: 'full' },
   { qid: '225', jotformName: 'informantsRelationship', solisField: 'informantRelationship' },
+  // qids 276-279 (the Yes/No NOK branch question + its 3 dedicated NOK
+  // fields, added to the live Jotform in Phase A, 2026-09) are
+  // DELIBERATELY ABSENT from this array. They cannot be handled by a
+  // plain FieldMapEntry — qid 276's answer decides whether
+  // nextOfKinName/Phone/Relationship come from the Informant fields above
+  // or from qids 277-279, and a stale value in 277-279 must have zero
+  // effect whenever 276=Yes. See arrangementNokDerivation.ts, the only
+  // place this conditional derivation happens, reading these 4 qids
+  // directly from the raw answer map.
 ];
 
 export function fieldMapForForm(provider: string, externalFormId: string): FieldMapEntry[] {
   if (provider !== 'jotform') return [];
   if (externalFormId === '262605621454050') return FIELD_MAP_VITAL_STATISTICS;
-  if (externalFormId === '261945978664175') return FIELD_MAP_ARRANGEMENT_FORMS;
+  if (externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return FIELD_MAP_ARRANGEMENT_FORMS;
   return [];
 }

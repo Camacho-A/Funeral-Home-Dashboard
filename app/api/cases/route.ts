@@ -6,6 +6,7 @@ import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
 import { orgLocalYear } from '@/domain/cases/caseNumber';
+import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { isValidEmail } from '@/utils/inputMask';
 import { isValidReturnMethod } from '@/domain/cases/returnMethod';
@@ -211,6 +212,16 @@ export async function POST(request: Request) {
   if ('fieldValues' in b && (typeof b.fieldValues !== 'object' || b.fieldValues === null || Array.isArray(b.fieldValues))) {
     return NextResponse.json({ case: null, error: 'Invalid field(s): fieldValues' }, { status: 400 });
   }
+  // Historical Arrangement import (2026-09) — narrow migration exception
+  // only. This is NEVER a general client-editable case-number field: it
+  // must be a valid, signed, short-lived authorization minted by
+  // app/api/cases/historical-jotform-import/route.ts's own server code
+  // right after it fetched and validated a real Jotform submission — see
+  // lib/auth/historicalCaseNumberAuthorization.ts's own comment for why a
+  // bare permission-gated case-number field alone isn't sufficient.
+  if ('historicalCaseNumberAuthorization' in b && typeof b.historicalCaseNumberAuthorization !== 'string') {
+    return NextResponse.json({ case: null, error: 'Invalid field(s): historicalCaseNumberAuthorization' }, { status: 400 });
+  }
 
   // Manors launch-prep: NOK email is optional, but must be a reasonably-
   // formatted address if provided at all — trimmed; an empty string after
@@ -311,12 +322,51 @@ export async function POST(request: Request) {
     const createdBy = callerProfile.id;
     const intakeOwnerId = callerProfile.id;
     const assignedStaffId = typeof b.assignedStaffId === 'string' ? b.assignedStaffId : createdBy;
-    // Manors launch-prep — P0: the case-number year is the organization's
-    // own LOCAL calendar year, never the server's/UTC's, so a case created
-    // just after local midnight on Jan 1 gets the new year's prefix — see
-    // domain/cases/caseNumber.ts#orgLocalYear.
-    const organization = await getOrganization(organizationId, 'wix');
-    const caseNumber = await reserveNextCaseNumber(organizationId, orgLocalYear(createdAt, organization?.timezone));
+
+    let caseNumber: string;
+    if (typeof b.historicalCaseNumberAuthorization === 'string') {
+      // Historical Arrangement import (2026-09) — the ONLY path that ever
+      // skips reserveNextCaseNumber. Anything invalid/expired/mismatched
+      // is rejected outright; this never silently falls back to normal
+      // allocation, which would substitute a different, unannounced
+      // case number than the one staff expects.
+      const authPayload = await verifyHistoricalCaseNumberAuthorization(b.historicalCaseNumberAuthorization);
+      if (!authPayload || authPayload.organizationId !== organizationId) {
+        return NextResponse.json(
+          { case: null, error: 'Invalid or expired historical case-number authorization.' },
+          { status: 403 },
+        );
+      }
+
+      // Authoritative, final duplicate check — never create a second Case
+      // sharing a preserved historical number, regardless of any earlier
+      // check the historical-import route itself already ran.
+      const existingWithNumber = await queryWixDataItems<WixCaseItem>('cases', {
+        filter: { organizationId, caseNumber: authPayload.caseNumber },
+        paging: { limit: 1 },
+      });
+      if (existingWithNumber.dataItems.length > 0) {
+        const existingCase = mapWixCaseItem(existingWithNumber.dataItems[0].data);
+        return NextResponse.json(
+          {
+            case: null,
+            error: 'A Case with this historical case number already exists.',
+            historicalDuplicate: true,
+            existingCaseId: existingCase?.id ?? null,
+          },
+          { status: 409 },
+        );
+      }
+
+      caseNumber = authPayload.caseNumber;
+    } else {
+      // Manors launch-prep — P0: the case-number year is the organization's
+      // own LOCAL calendar year, never the server's/UTC's, so a case created
+      // just after local midnight on Jan 1 gets the new year's prefix — see
+      // domain/cases/caseNumber.ts#orgLocalYear.
+      const organization = await getOrganization(organizationId, 'wix');
+      caseNumber = await reserveNextCaseNumber(organizationId, orgLocalYear(createdAt, organization?.timezone));
+    }
 
     const data = buildWixCaseData({
       beaconCaseId,

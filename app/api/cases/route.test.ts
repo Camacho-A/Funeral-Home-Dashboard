@@ -3,6 +3,7 @@ import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 import { orgLocalYear } from '@/domain/cases/caseNumber';
+import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -897,6 +898,113 @@ describe('POST /api/cases — creation', () => {
 
     expect(response.status).toBe(503);
     expect(body.error).not.toMatch(/test-key/);
+  });
+});
+
+describe('POST /api/cases — historical case-number authorization (2026-09)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('U: a valid historical authorization skips reserveNextCaseNumber and uses the preserved number', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-1',
+      caseNumber: 'B2026-035',
+    });
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.caseNumber).toBe('B2026-035');
+    expect(mockReserveNextCaseNumber).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid/malformed authorization and never falls back to normal allocation', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: 'not-a-real-token' }));
+    expect(response.status).toBe(403);
+    expect(mockReserveNextCaseNumber).not.toHaveBeenCalled();
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects an authorization minted for a different organization', async () => {
+    mockEnabledTemplate();
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: 'a-different-org',
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-1',
+      caseNumber: 'B2026-035',
+    });
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    expect(response.status).toBe(403);
+    expect(mockReserveNextCaseNumber).not.toHaveBeenCalled();
+  });
+
+  it('rejects an expired authorization', async () => {
+    mockEnabledTemplate();
+    const now = 1_800_000_000;
+    const token = await createHistoricalCaseNumberAuthorization(
+      { organizationId: DEFAULT_ORGANIZATION_ID, externalFormId: '261945978664175', externalSubmissionId: 'sub-synthetic-1', caseNumber: 'B2026-035' },
+      now,
+    );
+    vi.spyOn(Date, 'now').mockReturnValue((now + 10 * 60) * 1000); // 10 minutes later, past the 5-min window
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    expect(response.status).toBe(403);
+    vi.restoreAllMocks();
+  });
+
+  it('N: rejects when a Case already exists with the preserved historical number, never creating a duplicate', async () => {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_ITEM] });
+      if (collectionId === 'workflowTemplateVersions') return Promise.resolve({ dataItems: [WORKFLOW_TEMPLATE_VERSION_ITEM] });
+      if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: [CALLER_STAFF_PROFILE_ITEM] });
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+      if (collectionId === 'cases') {
+        return Promise.resolve({
+          dataItems: [{ id: 'existing-case-1', dataCollectionId: 'cases', data: { organizationId: DEFAULT_ORGANIZATION_ID, caseNumber: 'B2026-035' } }],
+        });
+      }
+      return Promise.resolve({ dataItems: [] });
+    });
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-1',
+      caseNumber: 'B2026-035',
+    });
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.historicalDuplicate).toBe(true);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('V: normal creation (no historical authorization) still calls reserveNextCaseNumber, unchanged', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+    expect(mockReserveNextCaseNumber).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a non-string historicalCaseNumberAuthorization body field', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: 12345 }));
+    expect(response.status).toBe(400);
   });
 });
 

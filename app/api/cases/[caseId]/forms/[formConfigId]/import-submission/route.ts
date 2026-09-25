@@ -12,8 +12,7 @@ import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { fetchSubmissionAnswers, JotformClientError } from '@/lib/jotform/jotformClient';
-import { extractMappedFields } from '@/domain/externalForms/extractMappedFields';
-import { fieldMapForForm } from '@/domain/externalForms/fieldMapping';
+import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
 import type { Case } from '@/types/case';
 
@@ -182,8 +181,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'This Jotform submission does not belong to the selected form.' }, { status: 400 });
   }
 
-  const fieldMap = fieldMapForForm(config.provider, config.externalFormId);
-  const mappedFields = extractMappedFields(fieldMap, jotformSubmission.answers);
+  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, jotformSubmission.answers);
 
   const { submission } = await externalFormSubmissionService.receive(
     {

@@ -205,13 +205,103 @@ describe('POST /api/organization/case-sequence — wix mode', () => {
   });
 
   it('initializes a fresh sequence when none exists yet', async () => {
-    mockInsertWixDataItem.mockResolvedValue({ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 } });
+    mockInsertWixDataItem.mockImplementation((collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: collectionId, data }),
+    );
 
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.nextSequence).toBe(185);
     expect(mockInsertWixDataItem).toHaveBeenCalledWith('caseSequences', { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 }, `${DEFAULT_ORGANIZATION_ID}-2026`);
+  });
+
+  it('audit (2026-09): a first-time seed records case.sequence.initialized with a null previous value', async () => {
+    mockInsertWixDataItem.mockImplementation((collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: collectionId, data }),
+    );
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 });
+    expect(response.status).toBe(200);
+
+    const activityCall = mockInsertWixDataItem.mock.calls.find((call) => call[0] === 'activityEvents');
+    expect(activityCall).toBeTruthy();
+    const eventData = activityCall![1] as Record<string, unknown>;
+    expect(eventData.eventType).toBe('case.sequence.initialized');
+    expect(eventData.category).toBe('administration');
+    expect(eventData.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+    expect(eventData.resourceId).toBe(`${DEFAULT_ORGANIZATION_ID}-2026`);
+    expect(eventData.previousValue).toBeNull();
+    expect(JSON.parse(eventData.newValue as string)).toEqual({ nextSequence: 185 });
+    expect(eventData.severity).toBe('warning');
+  });
+
+  it('audit (2026-09): a forceOverwrite cutover records the real previous nextSequence, not null', async () => {
+    const { WixDataApiError } = await import('@/lib/wixDataApi');
+    mockInsertWixDataItem.mockImplementation((collectionId: string, data: Record<string, unknown>, itemId: string) => {
+      if (collectionId === 'caseSequences') return Promise.reject(new WixDataApiError('conflict', 409));
+      return Promise.resolve({ id: itemId, dataCollectionId: collectionId, data });
+    });
+    mockUpdateWixDataItem.mockImplementation((collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: collectionId, data }),
+    );
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 34 } }] });
+      return Promise.resolve({ dataItems: [] });
+    });
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 36, forceOverwrite: true });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.nextSequence).toBe(36);
+
+    const activityCall = mockInsertWixDataItem.mock.calls.find((call) => call[0] === 'activityEvents');
+    expect(activityCall).toBeTruthy();
+    const eventData = activityCall![1] as Record<string, unknown>;
+    expect(JSON.parse(eventData.previousValue as string)).toEqual({ nextSequence: 34 });
+    expect(JSON.parse(eventData.newValue as string)).toEqual({ nextSequence: 36 });
+    expect(eventData.description).toContain('34');
+    expect(eventData.description).toContain('36');
+  });
+
+  it('audit (2026-09): a rejected 409 (already initialized, no forceOverwrite) never records a successful cutover event', async () => {
+    const { WixDataApiError } = await import('@/lib/wixDataApi');
+    mockInsertWixDataItem.mockImplementation((collectionId: string) => {
+      if (collectionId === 'caseSequences') return Promise.reject(new WixDataApiError('conflict', 409));
+      return Promise.reject(new Error('should not insert activityEvents on a rejected cutover'));
+    });
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 17 } }] });
+      return Promise.resolve({ dataItems: [] });
+    });
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 });
+    expect(response.status).toBe(409);
+    const activityCall = mockInsertWixDataItem.mock.calls.find((call) => call[0] === 'activityEvents');
+    expect(activityCall).toBeUndefined();
+  });
+
+  it('audit (2026-09): a rejected backward-move never records a successful cutover event', async () => {
+    const { WixDataApiError } = await import('@/lib/wixDataApi');
+    mockInsertWixDataItem.mockImplementation((collectionId: string) => {
+      if (collectionId === 'caseSequences') return Promise.reject(new WixDataApiError('conflict', 409));
+      return Promise.reject(new Error('should not insert activityEvents on a rejected cutover'));
+    });
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 188 } }] });
+      return Promise.resolve({ dataItems: [] });
+    });
+
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 5, forceOverwrite: true });
+    expect(response.status).toBe(400);
+    const activityCall = mockInsertWixDataItem.mock.calls.find((call) => call[0] === 'activityEvents');
+    expect(activityCall).toBeUndefined();
   });
 
   it('returns 409 with the current value when already initialized and forceOverwrite is not set', async () => {

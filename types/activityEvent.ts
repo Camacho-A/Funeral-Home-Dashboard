@@ -202,6 +202,16 @@ export const ACTIVITY_EVENT_TYPES = {
   /** Reserved — `onboardingAuditEntries` keeps its own writer. */
   ORGANIZATION_CREATED: 'organization.created',
   ORGANIZATION_UPDATED: 'organization.updated',
+  /** Manors Jotform integration — historical case-number preservation
+      (2026-09). The one-time administrator cutover of a
+      `caseSequences` row's `nextSequence` (both first-time seeding and a
+      later forward `forceOverwrite`) — deliberately its own type rather
+      than reusing ORGANIZATION_UPDATED above, since that one is reserved
+      for a structurally different writer/domain (org profile settings).
+      Uses the `'administration'` category. See
+      `app/api/organization/case-sequence/route.ts`'s POST handler, the
+      sole emitter. */
+  CASE_SEQUENCE_INITIALIZED: 'case.sequence.initialized',
 
   /** Reserved — no reminder/automation engine exists in Solis at all yet. */
   SYSTEM_REMINDER_TRIGGERED: 'system.reminder.triggered',

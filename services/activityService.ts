@@ -2454,3 +2454,37 @@ export function recordExternalFormFieldsApplied(ctx: ActivityContext, caseId: st
     dataAdapterMode,
   );
 }
+
+/** Manors Jotform integration — historical case-number preservation
+    (2026-09). The sole emitter is app/api/organization/case-sequence/
+    route.ts's POST handler, called only after initializeCaseSequence has
+    already succeeded — see that route's own comment for why a rejected/
+    failed call can never reach this. `previousNextSequence` is null when
+    no caseSequences row existed yet for this organization+year (a
+    first-time seed rather than a forward overwrite of a live sequence). */
+export function recordCaseSequenceInitialized(
+  ctx: ActivityContext,
+  year: number,
+  previousNextSequence: number | null,
+  newNextSequence: number,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SEQUENCE_INITIALIZED,
+      resourceType: 'caseSequence',
+      resourceId: `${ctx.organizationId}-${year}`,
+      previousValue: previousNextSequence === null ? null : JSON.stringify({ nextSequence: previousNextSequence }),
+      newValue: JSON.stringify({ nextSequence: newNextSequence }),
+      description:
+        previousNextSequence === null
+          ? `Case number sequence for ${year} initialized — next case number will be ${newNextSequence}`
+          : `Case number sequence for ${year} moved from ${previousNextSequence} to ${newNextSequence} — next case number will be ${newNextSequence}`,
+      metadata: JSON.stringify({ year }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}

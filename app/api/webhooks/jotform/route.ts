@@ -3,8 +3,7 @@ import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { verifyJotformWebhook } from '@/lib/jotform/jotformWebhookVerification';
 import { parseJotformWebhookBody, extractHiddenFieldByQid } from '@/domain/externalForms/parseWebhookPayload';
-import { extractMappedFields } from '@/domain/externalForms/extractMappedFields';
-import { fieldMapForForm } from '@/domain/externalForms/fieldMapping';
+import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import * as externalFormConfigService from '@/services/externalFormConfigService';
 import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
@@ -110,8 +109,7 @@ export async function POST(request: Request) {
   const rawLinkToken = extractHiddenFieldByQid(parsed, config.linkTokenFieldQid);
   const resolvedLink = rawLinkToken ? await caseFormLinkService.resolveByRawToken(rawLinkToken, dataAdapterMode) : null;
 
-  const fieldMap = fieldMapForForm(config.provider, config.externalFormId);
-  const mappedFields = extractMappedFields(fieldMap, parsed.answers);
+  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, parsed.answers);
 
   const correlationId = crypto.randomUUID();
   const activityCtx = {

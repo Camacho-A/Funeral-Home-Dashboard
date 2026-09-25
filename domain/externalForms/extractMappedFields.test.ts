@@ -117,3 +117,86 @@ describe('extractMappedFields — Arrangement Forms', () => {
     expect(result.pickupReleasedTo).toBe('Mary Smith');
   });
 });
+
+describe('extractMappedFields — compound date extraction (2026-09 historical-import fix, synthetic fixtures only)', () => {
+  it('A: a valid compound DOB (qid 8, Arrangement) is combined into MM/DD/YYYY', () => {
+    const answers = { '8': { answer: { month: '10', day: '26', year: '1945', datetime: '1945-10-26 00:00:00' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.dateOfBirth).toBe('10/26/1945');
+  });
+
+  it('B: a valid compound DOD (qid 10, Arrangement) is combined into MM/DD/YYYY', () => {
+    const answers = { '10': { answer: { month: '9', day: '3', year: '2026', datetime: '2026-09-03 00:00:00' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.dateOfDeath).toBe('09/03/2026');
+  });
+
+  it('C: an invalid calendar date (day=32) is rejected, never silently rolled over', () => {
+    const answers = { '8': { answer: { month: '1', day: '32', year: '2000' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.dateOfBirth).toBeUndefined();
+  });
+
+  it('C2: Feb 30 (a real-looking but impossible date) is rejected', () => {
+    const answers = { '8': { answer: { month: '2', day: '30', year: '2000' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.dateOfBirth).toBeUndefined();
+  });
+
+  it('D: an incomplete compound date (missing year) is rejected, never guessed', () => {
+    const answers = { '8': { answer: { month: '10', day: '26' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.dateOfBirth).toBeUndefined();
+  });
+
+  it('E: a genuinely plain-string date answer still works (legacy/unconfirmed-shape fallback preserved)', () => {
+    const answers = { '6': { answer: '08/15/2026' } };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.dateOfDeath).toBe('08/15/2026');
+  });
+
+  it('a non-numeric compound date component is rejected', () => {
+    const answers = { '8': { answer: { month: 'October', day: '26', year: '1945' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.dateOfBirth).toBeUndefined();
+  });
+
+  it('the same combiner correctly handles Vital Statistics compound dates too (qid 10 = DOB there)', () => {
+    const answers = { '10': { answer: { month: '3', day: '7', year: '1960' } } };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.dateOfBirth).toBe('03/07/1960');
+  });
+});
+
+describe('extractMappedFields — compound Place of Death extraction (2026-09 historical-import fix, synthetic fixtures only)', () => {
+  it('F: prefers addr_line1 when non-empty', () => {
+    const answers = { '97': { answer: { addr_line1: 'BROWARD HEALTH MEDICAL CENTER', city: 'Fort Lauderdale', state: 'FL' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.placeOfDeath).toBe('BROWARD HEALTH MEDICAL CENTER');
+  });
+
+  it('G: falls back to city + state when addr_line1 is blank', () => {
+    const answers = { '97': { answer: { addr_line1: '', city: 'Fort Lauderdale', state: 'FL' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.placeOfDeath).toBe('Fort Lauderdale, FL');
+  });
+
+  it('H: an entirely empty compound address yields no placeOfDeath, never a full mailing address', () => {
+    const answers = { '97': { answer: { addr_line1: '', addr_line2: '', city: '', state: '', postal: '', country: '' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.placeOfDeath).toBeUndefined();
+  });
+
+  it('never emits a full multi-line address — only addr_line1 or city/state, never postal/country', () => {
+    const answers = { '97': { answer: { addr_line1: 'ST. MARY\'S HOSPITAL', city: 'Fort Lauderdale', state: 'FL', postal: '33311', country: 'United States' } } };
+    const result = extractMappedFields(FIELD_MAP_ARRANGEMENT_FORMS, answers);
+    expect(result.placeOfDeath).toBe('ST. MARY\'S HOSPITAL');
+    expect(result.placeOfDeath).not.toContain('33311');
+  });
+
+  it('a genuinely plain-string placeOfDeath answer still works (Vital Statistics, unconfirmed shape, fallback preserved)', () => {
+    const answers = { '30': { answer: 'ST. MARY\'S HOSPITAL' } };
+    const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
+    expect(result.placeOfDeath).toBe('ST. MARY\'S HOSPITAL');
+  });
+});

@@ -130,6 +130,13 @@ export type HistoricalCasePreview = {
   matchesConfig: boolean;
   alreadyAssociated: boolean;
   existingCaseId: string | null;
+  /** Historical case-number preservation (2026-09) — the legitimate
+      Manors number (qid 1, normalized to B{year}-{seq}) that will be
+      preserved onto the new Case, or null if it couldn't be derived
+      (see historicalCaseNumberBlockedReason). */
+  historicalCaseNumber: string | null;
+  historicalCaseNumberBlockedReason: string | null;
+  historicalDuplicateCaseId: string | null;
   decedentName?: string;
   dateOfBirth?: string;
   dateOfDeath?: string;
@@ -137,6 +144,7 @@ export type HistoricalCasePreview = {
   informantName?: string;
   informantRelationship?: string;
   informantPhone?: string;
+  informantIsNextOfKin?: string;
 };
 
 /** Historical case creation (2026-09) — safe-preview-only, never mutates.

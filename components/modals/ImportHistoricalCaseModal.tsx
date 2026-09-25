@@ -74,6 +74,9 @@ export function ImportHistoricalCaseModal({ open, onClose }: { open: boolean; on
   const canCreate =
     Boolean(previewData?.matchesConfig) &&
     !previewData?.alreadyAssociated &&
+    Boolean(previewData?.historicalCaseNumber) &&
+    !previewData?.historicalCaseNumberBlockedReason &&
+    !previewData?.historicalDuplicateCaseId &&
     nextOfKinName.trim().length > 0 &&
     nextOfKinPhone.trim().length > 0 &&
     !result;
@@ -85,7 +88,10 @@ export function ImportHistoricalCaseModal({ open, onClose }: { open: boolean; on
         for the rare situation where a decedent was never entered into Solis before the Jotform integration went
         live.
       </p>
-      <p className={styles.warning}>This will create a NEW Solis case and consume the next normal production case number.</p>
+      <p className={styles.warning}>
+        This will create a NEW Solis case. If this submission has its own legitimate Manors case number, that number is
+        preserved — no normal production case number is consumed.
+      </p>
 
       <label className={styles.label}>
         Form
@@ -129,8 +135,19 @@ export function ImportHistoricalCaseModal({ open, onClose }: { open: boolean; on
 
           {previewData.matchesConfig && !previewData.alreadyAssociated && (
             <>
+              {previewData.historicalCaseNumberBlockedReason && (
+                <p className={styles.warningText}>{previewData.historicalCaseNumberBlockedReason}</p>
+              )}
+              {previewData.historicalDuplicateCaseId && (
+                <p className={styles.warningText}>
+                  A Case already exists with this historical case number. Open the existing case and use the
+                  existing-submission linking workflow instead.
+                </p>
+              )}
+
               <div className={styles.section}>
                 <div className={styles.sectionTitle}>Prefilled from Jotform</div>
+                <div>Case Number: {previewData.historicalCaseNumber ?? '—'}</div>
                 <div>Decedent Name: {previewData.decedentName ?? '—'}</div>
                 <div>Date of Birth: {previewData.dateOfBirth ?? '—'}</div>
                 <div>Date of Death: {previewData.dateOfDeath ?? '—'}</div>
@@ -146,6 +163,7 @@ export function ImportHistoricalCaseModal({ open, onClose }: { open: boolean; on
                 <div>Name: {previewData.informantName ?? '—'}</div>
                 <div>Relationship: {previewData.informantRelationship ?? '—'}</div>
                 <div>Phone: {previewData.informantPhone ?? '—'}</div>
+                <div>Is also Next of Kin?: {previewData.informantIsNextOfKin ?? '—'}</div>
               </div>
 
               <div className={styles.section}>
