@@ -1,0 +1,60 @@
+.section {
+  margin-bottom: var(--space-6);
+}
+
+.sectionTitle {
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.currentNumber {
+  font-size: var(--font-size-lg, 1.25rem);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+}
+
+.description {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.cutoverBox {
+  background: var(--color-surface-subtle, #f3f4f6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.warningText {
+  color: var(--color-warning-text, #92400e);
+  font-weight: 600;
+  margin-bottom: var(--space-4);
+}
+
+.error {
+  color: var(--color-danger-text, #b91c1c);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-5);
+}
+
+.success {
+  color: var(--color-success-text, #15803d);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-5);
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+}

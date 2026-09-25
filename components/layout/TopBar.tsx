@@ -143,6 +143,11 @@ export function TopBar({
           Calendar
         </a>
       )}
+      {permissions.includes('organization.manage') && (
+        <a href="/settings/case-numbering" className={styles.signOutButton}>
+          Case Numbering
+        </a>
+      )}
       <NotificationBell />
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
