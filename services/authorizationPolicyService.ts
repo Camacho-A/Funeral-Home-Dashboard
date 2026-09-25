@@ -225,6 +225,17 @@ export function canManageOrganization(params: ResolvePermissionsParams, dataAdap
   return hasPermission(params, dataAdapterMode, 'organization.manage');
 }
 
+/** Manors go-live case-number cutover (2026-09). Gates every
+    user-accessible endpoint that can initialize/change case numbering —
+    `GET`/`POST /api/organization/case-sequence` (general-purpose) and
+    `/api/organization/case-sequence/manors-go-live-cutover` (the narrow
+    one-time Manors action) both use this, not `canManageOrganization` —
+    Funeral Director holds this permission without gaining the broader
+    organization-management authority that key implies. */
+export function canManageCaseNumbering(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'caseNumber.manage');
+}
+
 /** Manors go-live hardening. Gates `GET /api/rbac/members` (the team
     roster) — previously ungated (any authenticated org member could
     read it). See `user.read`'s own catalog comment for why this is the

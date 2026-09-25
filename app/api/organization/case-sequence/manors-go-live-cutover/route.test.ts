@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import {
+  mockDefaultUser,
+  mockMultiOrgUser,
+  mockManagerUser,
+  mockOfficeStaffUser,
+  mockAccountingUser,
+  mockReadOnlyUser,
+  mockDispatchUser,
+} from '@/services/__mocks__/authFixtures';
+import { defaultRoleDefinition, type DefaultRoleKey } from '@/domain/rbac/defaultRoles';
 
 /**
  * Manors go-live case-number cutover (2026-09). `DEFAULT_ORGANIZATION_ID`
@@ -72,7 +81,7 @@ function postRequest(body: unknown, headers: Record<string, string> = SAME_ORIGI
 }
 
 const ROLE_ITEM = { id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'Administrator', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } };
-const ROLE_PERMISSION_ITEM = { id: 'rp-org-manage', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp-org-manage', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } };
+const ROLE_PERMISSION_ITEM = { id: 'rp-org-manage', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp-org-manage', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } };
 
 function caseSequenceRow(organizationId: string, year: number, nextSequence: number) {
   return { id: `${organizationId}-${year}`, dataCollectionId: 'caseSequences', data: { organizationId, year, nextSequence } };
@@ -312,6 +321,61 @@ describe('POST /api/organization/case-sequence/manors-go-live-cutover', () => {
     seedState({ sequenceRow: caseSequenceRow(DEFAULT_ORGANIZATION_ID, 2026, 5) });
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
     expect(response.status).toBe(409);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
+/** Manors RBAC restriction (2026-09): each named non-administrator,
+    non-Funeral-Director Manors role must be individually proven 403 on
+    this narrow Manors-only cutover route too — direct API access, not
+    just nav-link visibility. Seeds the caller's REAL other permissions
+    (every DEFAULT_ROLE_DEFINITIONS grant for that role except
+    caseNumber.manage) so a pass proves "this role's real permission set
+    still lacks caseNumber.manage," not merely "empty is denied." */
+const NON_AUTHORIZED_MANORS_ROLES: Array<{ roleKey: DefaultRoleKey; user: typeof mockManagerUser }> = [
+  { roleKey: 'manager', user: mockManagerUser },
+  { roleKey: 'officeStaff', user: mockOfficeStaffUser },
+  { roleKey: 'accounting', user: mockAccountingUser },
+  { roleKey: 'readOnly', user: mockReadOnlyUser },
+  { roleKey: 'dispatch', user: mockDispatchUser },
+];
+
+function seedRoleWithoutCaseNumberManage(roleKey: DefaultRoleKey) {
+  const grants = defaultRoleDefinition(roleKey).permissions.filter((p) => p !== 'caseNumber.manage');
+  mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+    if (collectionId === 'roles') {
+      return Promise.resolve({
+        dataItems: [
+          { id: `role-${roleKey}`, dataCollectionId: 'roles', data: { beaconRoleId: `role-${roleKey}`, key: roleKey, name: roleKey, description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } },
+        ],
+      });
+    }
+    if (collectionId === 'rolePermissions') {
+      return Promise.resolve({
+        dataItems: grants.map((permissionKey, i) => ({
+          id: `rp-${roleKey}-${i}`,
+          dataCollectionId: 'rolePermissions',
+          data: { beaconRolePermissionId: `rp-${roleKey}-${i}`, roleId: `role-${roleKey}`, permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+        })),
+      });
+    }
+    return Promise.resolve({ dataItems: [] });
+  });
+}
+
+describe('GET/POST /api/organization/case-sequence/manors-go-live-cutover — Manors RBAC restriction (2026-09), per non-authorized role', () => {
+  it.each(NON_AUTHORIZED_MANORS_ROLES)('GET returns 403 for $roleKey (holds its real other permissions, never caseNumber.manage)', async ({ roleKey, user }) => {
+    mockSession = { user };
+    seedRoleWithoutCaseNumberManage(roleKey);
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(403);
+  });
+
+  it.each(NON_AUTHORIZED_MANORS_ROLES)('POST returns 403 for $roleKey (holds its real other permissions, never caseNumber.manage)', async ({ roleKey, user }) => {
+    mockSession = { user };
+    seedRoleWithoutCaseNumberManage(roleKey);
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
+    expect(response.status).toBe(403);
     expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 });

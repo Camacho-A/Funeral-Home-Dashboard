@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TopBar } from './TopBar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
@@ -67,5 +67,52 @@ describe('TopBar — real session identity (Manors go-live fix)', () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText('PR')).toBeInTheDocument();
+  });
+});
+
+describe('TopBar — Case Numbering navigation visibility (2026-09 RBAC restriction)', () => {
+  it('shows the Case Numbering link when the caller effectively holds caseNumber.manage (Administrator/Funeral Director)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ organization: null, permissions: ['caseNumber.manage'], count: 0, organizations: [] }),
+      }),
+    );
+    renderTopBar();
+    // findByText waits for useMyPermissions' async fetch to resolve and the
+    // component to re-render — a synchronous getByText/queryByText here
+    // would pass vacuously before the query settles.
+    expect(await screen.findByText('Case Numbering')).toBeInTheDocument();
+  });
+
+  it('hides the Case Numbering link for every other role (no caseNumber.manage)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar();
+    // Wait for the actual permissions fetch to have resolved (not just a
+    // synchronous vacuous pass before react-query settles), then flush the
+    // resulting re-render before asserting absence.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
+  });
+
+  it('does not show Case Numbering merely from holding organization.manage — the two are no longer the same gate', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: ['organization.manage'], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
   });
 });

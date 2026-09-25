@@ -78,6 +78,7 @@ const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'audit.read',
   'audit.export',
   'organization.manage',
+  'caseNumber.manage',
   'user.read',
   'user.invite',
   'user.remove',
@@ -215,6 +216,10 @@ export const DEFAULT_ROLE_DEFINITIONS: readonly DefaultRoleDefinition[] = [
       'inventory.manage',
       'procurement.read',
       'procurement.manage',
+      // Manors go-live case-number cutover (2026-09): Funeral Director
+      // needs Case Numbering access without gaining the broad
+      // 'organization.manage' this role has never held.
+      'caseNumber.manage',
       // Manors go-live hardening: 'accounting.view'/'accounting.report'
       // formalize the limited financial VISIBILITY this role is intended
       // to have — confirmed live in production audit — never

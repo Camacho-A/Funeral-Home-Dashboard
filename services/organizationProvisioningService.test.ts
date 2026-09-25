@@ -572,7 +572,7 @@ describe('RBAC provisioning integration (security-correction round, 2026-07-29)'
     await assignInitialAdministrator(organization.id, 'new-owner-user', idFactory, 'mock');
 
     const permissions = await resolvePermissionKeysForRole('administrator', organization.id, 'mock');
-    expect(permissions.size).toBe(68); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read
+    expect(permissions.size).toBe(69); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage
     expect(permissions.has('organization.manage')).toBe(true);
   });
 

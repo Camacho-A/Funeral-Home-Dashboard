@@ -143,7 +143,7 @@ export function TopBar({
           Calendar
         </a>
       )}
-      {permissions.includes('organization.manage') && (
+      {permissions.includes('caseNumber.manage') && (
         <a href="/settings/case-numbering" className={styles.signOutButton}>
           Case Numbering
         </a>

@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import {
+  mockDefaultUser,
+  mockMultiOrgUser,
+  mockManagerUser,
+  mockOfficeStaffUser,
+  mockAccountingUser,
+  mockReadOnlyUser,
+  mockDispatchUser,
+} from '@/services/__mocks__/authFixtures';
+import { defaultRoleDefinition, type DefaultRoleKey } from '@/domain/rbac/defaultRoles';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({
@@ -75,7 +84,7 @@ function seedAdministratorOrganizationManage() {
     if (collectionId === 'rolePermissions') {
       return Promise.resolve({
         dataItems: [
-          { id: 'rp-org-manage', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp-org-manage', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } },
+          { id: 'rp-org-manage', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp-org-manage', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } },
         ],
       });
     }
@@ -122,6 +131,67 @@ describe('GET /api/organization/case-sequence — authorization', () => {
   });
 });
 
+/** Manors RBAC restriction (2026-09): each named non-administrator,
+    non-Funeral-Director Manors role must be individually proven 403 on
+    the general-purpose case-sequence route, direct API access (not just
+    nav-link visibility). Seeds the caller's REAL other permissions (every
+    DEFAULT_ROLE_DEFINITIONS grant for that role except caseNumber.manage,
+    which none of these five ever hold) so a pass here proves "this role,
+    with its real permission set, still lacks caseNumber.manage" — not
+    merely "an empty permission set is denied." */
+const NON_AUTHORIZED_MANORS_ROLES: Array<{ roleKey: DefaultRoleKey; user: typeof mockManagerUser }> = [
+  { roleKey: 'manager', user: mockManagerUser },
+  { roleKey: 'officeStaff', user: mockOfficeStaffUser },
+  { roleKey: 'accounting', user: mockAccountingUser },
+  { roleKey: 'readOnly', user: mockReadOnlyUser },
+  { roleKey: 'dispatch', user: mockDispatchUser },
+];
+
+function seedRoleWithoutCaseNumberManage(roleKey: DefaultRoleKey) {
+  const grants = defaultRoleDefinition(roleKey).permissions.filter((p) => p !== 'caseNumber.manage');
+  mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+    if (collectionId === 'roles') {
+      return Promise.resolve({
+        dataItems: [
+          { id: `role-${roleKey}`, dataCollectionId: 'roles', data: { beaconRoleId: `role-${roleKey}`, key: roleKey, name: roleKey, description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } },
+        ],
+      });
+    }
+    if (collectionId === 'rolePermissions') {
+      return Promise.resolve({
+        dataItems: grants.map((permissionKey, i) => ({
+          id: `rp-${roleKey}-${i}`,
+          dataCollectionId: 'rolePermissions',
+          data: { beaconRolePermissionId: `rp-${roleKey}-${i}`, roleId: `role-${roleKey}`, permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
+        })),
+      });
+    }
+    return Promise.resolve({ dataItems: [] });
+  });
+}
+
+describe('GET/POST /api/organization/case-sequence — Manors RBAC restriction (2026-09), per non-authorized role', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it.each(NON_AUTHORIZED_MANORS_ROLES)('GET returns 403 for $roleKey (holds its real other permissions, never caseNumber.manage)', async ({ roleKey, user }) => {
+    mockSession = { user };
+    seedRoleWithoutCaseNumberManage(roleKey);
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID, 2026);
+    expect(response.status).toBe(403);
+  });
+
+  it.each(NON_AUTHORIZED_MANORS_ROLES)('POST returns 403 for $roleKey (holds its real other permissions, never caseNumber.manage)', async ({ roleKey, user }) => {
+    mockSession = { user };
+    seedRoleWithoutCaseNumberManage(roleKey);
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 });
+    expect(response.status).toBe(403);
+  });
+});
+
 describe('GET /api/organization/case-sequence — wix mode', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';
@@ -143,7 +213,7 @@ describe('GET /api/organization/case-sequence — wix mode', () => {
         return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'Administrator', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
       }
       if (collectionId === 'rolePermissions') {
-        return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+        return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
       }
       if (collectionId === 'caseSequences') {
         return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 185 } }] });
@@ -247,7 +317,7 @@ describe('POST /api/organization/case-sequence — wix mode', () => {
     );
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
-      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
       if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 34 } }] });
       return Promise.resolve({ dataItems: [] });
     });
@@ -274,7 +344,7 @@ describe('POST /api/organization/case-sequence — wix mode', () => {
     });
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
-      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
       if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 17 } }] });
       return Promise.resolve({ dataItems: [] });
     });
@@ -293,7 +363,7 @@ describe('POST /api/organization/case-sequence — wix mode', () => {
     });
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
-      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
       if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 188 } }] });
       return Promise.resolve({ dataItems: [] });
     });
@@ -309,7 +379,7 @@ describe('POST /api/organization/case-sequence — wix mode', () => {
     mockInsertWixDataItem.mockRejectedValue(new WixDataApiError('conflict', 409));
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
-      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
       if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 17 } }] });
       return Promise.resolve({ dataItems: [] });
     });
@@ -325,7 +395,7 @@ describe('POST /api/organization/case-sequence — wix mode', () => {
     mockInsertWixDataItem.mockRejectedValue(new WixDataApiError('conflict', 409));
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'roles') return Promise.resolve({ dataItems: [{ id: 'role-administrator', dataCollectionId: 'roles', data: { beaconRoleId: 'role-administrator', key: 'administrator', name: 'x', description: 'x', organizationId: null, isSystemDefault: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } }] });
-      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'organization.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: [{ id: 'rp', dataCollectionId: 'rolePermissions', data: { beaconRolePermissionId: 'rp', roleId: 'role-administrator', permissionKey: 'caseNumber.manage', createdAt: '2026-01-01T00:00:00.000Z' } }] });
       if (collectionId === 'caseSequences') return Promise.resolve({ dataItems: [{ id: `${DEFAULT_ORGANIZATION_ID}-2026`, dataCollectionId: 'caseSequences', data: { organizationId: DEFAULT_ORGANIZATION_ID, year: 2026, nextSequence: 188 } }] });
       return Promise.resolve({ dataItems: [] });
     });

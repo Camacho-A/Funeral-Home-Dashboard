@@ -347,4 +347,86 @@ describe('defaultRoles', () => {
       expect(() => defaultRoleDefinition('bogus')).toThrow();
     });
   });
+
+  describe('Manors go-live: caseNumber.manage matrix (2026-09)', () => {
+    it('is granted to exactly administrator and funeralDirector — no other role', () => {
+      const granted = DEFAULT_ROLE_KEYS.filter((key) => defaultRoleDefinition(key).permissions.includes('caseNumber.manage'));
+      expect(granted.sort()).toEqual(['administrator', 'funeralDirector']);
+    });
+
+    it('manager does NOT hold caseNumber.manage', () => {
+      expect(defaultRoleDefinition('manager').permissions.includes('caseNumber.manage')).toBe(false);
+    });
+
+    it('officeStaff does NOT hold caseNumber.manage', () => {
+      expect(defaultRoleDefinition('officeStaff').permissions.includes('caseNumber.manage')).toBe(false);
+    });
+
+    it('accounting does NOT hold caseNumber.manage', () => {
+      expect(defaultRoleDefinition('accounting').permissions.includes('caseNumber.manage')).toBe(false);
+    });
+
+    it('readOnly does NOT hold caseNumber.manage', () => {
+      expect(defaultRoleDefinition('readOnly').permissions.includes('caseNumber.manage')).toBe(false);
+    });
+
+    it('dispatch does NOT hold caseNumber.manage', () => {
+      expect(defaultRoleDefinition('dispatch').permissions.includes('caseNumber.manage')).toBe(false);
+    });
+
+    it('arranger does NOT hold caseNumber.manage', () => {
+      expect(defaultRoleDefinition('arranger').permissions.includes('caseNumber.manage')).toBe(false);
+    });
+
+    it('funeralDirector gains caseNumber.manage but NOT organization.manage — narrower, not a broadened role', () => {
+      const funeralDirector = defaultRoleDefinition('funeralDirector');
+      expect(funeralDirector.permissions.includes('caseNumber.manage')).toBe(true);
+      expect(funeralDirector.permissions.includes('organization.manage')).toBe(false);
+    });
+
+    it("funeralDirector's every other permission is unchanged from before this checkpoint (unrelated RBAC preserved)", () => {
+      const funeralDirector = defaultRoleDefinition('funeralDirector');
+      const withoutNewGrant = funeralDirector.permissions.filter((p) => p !== 'caseNumber.manage');
+      expect(withoutNewGrant).toEqual([
+        'case.read',
+        'case.create',
+        'case.update',
+        'case.reassign',
+        'caseOrder.read',
+        'caseOrder.update',
+        'workflow.read',
+        'payment.read',
+        'payment.collect',
+        'serviceCatalog.read',
+        'document.generate',
+        'document.view',
+        'document.upload',
+        'document.archive',
+        'document.template.read',
+        'signature.request',
+        'signature.read',
+        'signature.cancel',
+        'schedule.read',
+        'schedule.create',
+        'schedule.edit',
+        'schedule.cancel',
+        'task.assign',
+        'notification.read',
+        'notification.send',
+        'portal.message',
+        'report.view',
+        'report.operational',
+        'report.staff',
+        'audit.read',
+        'merchandise.read',
+        'inventory.read',
+        'inventory.manage',
+        'procurement.read',
+        'procurement.manage',
+        'accounting.view',
+        'accounting.report',
+        'ap.read',
+      ]);
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import type { AuthenticatedUser } from '../../types/auth';
-import type { Organization, OrganizationMembership } from '../../types/organization';
+import type { Organization, OrganizationMembership, OrganizationRole } from '../../types/organization';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './organizationIds';
 import { staffFixtures } from './fixtures';
 
@@ -56,11 +56,61 @@ export const mockInactiveMembershipUser: AuthenticatedUser = {
   source: 'mock',
 };
 
+/**
+ * Manors RBAC restriction (2026-09) — one mock user per non-administrator
+ * Manors DefaultRoleKey (manager/officeStaff/accounting/readOnly/dispatch),
+ * so a route test can assert "this specific named role is denied" against
+ * a real `requireAuthorizedOrganization`-resolved role, rather than only a
+ * generic non-admin user. Belongs to DEFAULT_ORGANIZATION_ID only — no
+ * test needs these cross-org.
+ */
+export const mockManagerUser: AuthenticatedUser = {
+  id: 'mock-user-manager',
+  email: 'manager@managedcremations.test',
+  displayName: 'Manager Test User',
+  source: 'mock',
+};
+export const mockOfficeStaffUser: AuthenticatedUser = {
+  id: 'mock-user-office-staff',
+  email: 'office-staff@managedcremations.test',
+  displayName: 'Office Staff Test User',
+  source: 'mock',
+};
+export const mockAccountingUser: AuthenticatedUser = {
+  id: 'mock-user-accounting',
+  email: 'accounting@managedcremations.test',
+  displayName: 'Accounting Test User',
+  source: 'mock',
+};
+export const mockReadOnlyUser: AuthenticatedUser = {
+  id: 'mock-user-read-only',
+  email: 'read-only@managedcremations.test',
+  displayName: 'Read Only Test User',
+  source: 'mock',
+};
+export const mockDispatchUser: AuthenticatedUser = {
+  id: 'mock-user-dispatch',
+  email: 'dispatch@managedcremations.test',
+  displayName: 'Dispatch Test User',
+  source: 'mock',
+};
+
 export const mockMembershipFixtures: OrganizationMembership[] = [
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockMultiOrgUser.id, role: 'staff', isActive: true },
   { organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockMultiOrgUser.id, role: 'caseManager', isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockInactiveMembershipUser.id, role: 'staff', isActive: false },
+  // These 4 use real RBAC DefaultRoleKey strings, not legacy OrganizationRole
+  // literals — `AuthorizationContext.role` is passed straight through to
+  // `resolveRoleForKey` as an opaque roleKey (see
+  // services/permissionService.ts), so any string that matches a real
+  // 'roles' collection key resolves correctly; the cast only widens what
+  // TypeScript will accept for this mock-only fixture's `role` field.
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockManagerUser.id, role: 'manager' as OrganizationRole, isActive: true },
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockOfficeStaffUser.id, role: 'officeStaff' as OrganizationRole, isActive: true },
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockAccountingUser.id, role: 'accounting' as OrganizationRole, isActive: true },
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockReadOnlyUser.id, role: 'readOnly', isActive: true },
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockDispatchUser.id, role: 'dispatch' as OrganizationRole, isActive: true },
 ];
 
 /**

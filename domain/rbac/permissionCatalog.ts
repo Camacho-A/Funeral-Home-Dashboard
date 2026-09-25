@@ -144,6 +144,15 @@ export const PERMISSION_KEYS = [
 
   'organization.manage',
 
+  /** Manors go-live case-number cutover (2026-09). Deliberately its own
+      key, not folded into the broad `organization.manage` — the Case
+      Numbering settings page/API needs to be reachable by Funeral
+      Director without also handing that role every other
+      organization-management capability `organization.manage` gates.
+      See `app/(portal)/settings/case-numbering/page.tsx` and
+      `app/api/organization/case-sequence/manors-go-live-cutover/route.ts`. */
+  'caseNumber.manage',
+
   /** Manors go-live hardening. Viewing the organization's own team roster
       (names/emails/roles/status) was, until now, gated by nothing —
       `GET /api/rbac/members` allowed any authenticated org member to read
@@ -335,6 +344,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'audit.export': 'Export activity and audit log data',
 
   'organization.manage': "Manage the organization's own profile and settings",
+  'caseNumber.manage': 'View and manage the organization\'s case-numbering sequence (e.g. one-time migration cutovers)',
 
   'user.read': "View the organization's team membership (names, emails, roles, and status)",
   'user.invite': 'Invite a new user to the organization',

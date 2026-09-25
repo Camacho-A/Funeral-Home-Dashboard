@@ -77,7 +77,7 @@ describe('permissionService', () => {
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       expect(permissions.has('organization.manage')).toBe(true);
       expect(permissions.has('case.delete')).toBe(true);
-      expect(permissions.size).toBe(68); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read
+      expect(permissions.size).toBe(69); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage
     });
 
     it('resolves readOnly to only read/view permissions', async () => {
@@ -223,15 +223,15 @@ describe('permissionService', () => {
       return fetchMock;
     }
 
-    it("resolves Administrator's full real 68-permission set across two pages (50 + 18) — the exact shape of the live incident, including organization.manage, which was silently dropped by the unpaginated read", async () => {
+    it("resolves Administrator's full real 69-permission set across two pages (50 + 19) — the exact shape of the live incident, including organization.manage, which was silently dropped by the unpaginated read", async () => {
       const page1 = PERMISSION_KEYS.slice(0, 50);
       const page2 = PERMISSION_KEYS.slice(50);
-      expect(page2.length).toBe(18);
+      expect(page2.length).toBe(19);
       stubWixRbacFetch({ roleKey: 'administrator', grantPages: [page1, page2] });
 
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'wix');
 
-      expect(permissions.size).toBe(68);
+      expect(permissions.size).toBe(69);
       expect(permissions.has('organization.manage')).toBe(true);
       for (const key of PERMISSION_KEYS) expect(permissions.has(key)).toBe(true);
     });
@@ -294,11 +294,11 @@ describe('permissionService', () => {
     it('paginates fully even for a role with grants spread across three pages', async () => {
       const page1 = PERMISSION_KEYS.slice(0, 25);
       const page2 = PERMISSION_KEYS.slice(25, 50);
-      const page3 = PERMISSION_KEYS.slice(50, 68);
+      const page3 = PERMISSION_KEYS.slice(50);
       stubWixRbacFetch({ roleKey: 'administrator', grantPages: [page1, page2, page3] });
 
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'wix');
-      expect(permissions.size).toBe(68);
+      expect(permissions.size).toBe(PERMISSION_KEYS.length);
     });
   });
 

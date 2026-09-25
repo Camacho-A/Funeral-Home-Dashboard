@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { canManageOrganization } from '@/services/authorizationPolicyService';
+import { canManageCaseNumbering } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode, type DataAdapterMode } from '@/lib/env';
 import { getCaseSequenceState, initializeCaseSequence } from '@/lib/wixCaseNumberSequence';
 import { formatCaseNumber } from '@/domain/cases/caseNumber';
@@ -118,7 +118,7 @@ export async function GET(request: Request) {
   const { organizationId: resolvedOrganizationId } = authResult.context;
 
   const mode = getDataAdapterMode();
-  if (!(await canManageOrganization({ identityId: authResult.context.userId, organizationId: resolvedOrganizationId, roleKey: authResult.context.role }, mode))) {
+  if (!(await canManageCaseNumbering({ identityId: authResult.context.userId, organizationId: resolvedOrganizationId, roleKey: authResult.context.role }, mode))) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
@@ -159,7 +159,7 @@ export async function POST(request: Request) {
   const { organizationId } = authResult.context;
 
   const mode = getDataAdapterMode();
-  if (!(await canManageOrganization({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, mode))) {
+  if (!(await canManageCaseNumbering({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, mode))) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 

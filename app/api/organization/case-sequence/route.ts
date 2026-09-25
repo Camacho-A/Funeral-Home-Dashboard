@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { canManageOrganization } from '@/services/authorizationPolicyService';
+import { canManageCaseNumbering } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
 import {
   getCaseSequenceState,
@@ -22,11 +22,12 @@ import { recordCaseSequenceInitialized } from '@/services/activityService';
  * bootstrap-at-1 path — this route is never required for normal annual
  * rollover, only for the one-time transitional seed.
  *
- * Gated by the existing `organization.manage` permission (administrator
- * only, among default roles) — no new permission key, matching every
- * other Manors-launch-prep permission decision. Wix-only: mock-mode
- * organizations have no real external case-number history to skip past,
- * so this route is a 400 outside `DATA_ADAPTER=wix`.
+ * Gated by `caseNumber.manage` (2026-09 — previously `organization.manage`;
+ * narrowed so Funeral Director can hold access to case numbering without
+ * the broader organization-management authority that key implies. See
+ * `services/authorizationPolicyService.ts#canManageCaseNumbering`).
+ * Wix-only: mock-mode organizations have no real external case-number
+ * history to skip past, so this route is a 400 outside `DATA_ADAPTER=wix`.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
   const { organizationId: authorizedOrgId } = authResult.context;
 
   const mode = getDataAdapterMode();
-  if (!(await canManageOrganization({ identityId: authResult.context.userId, organizationId: authorizedOrgId, roleKey: authResult.context.role }, mode))) {
+  if (!(await canManageCaseNumbering({ identityId: authResult.context.userId, organizationId: authorizedOrgId, roleKey: authResult.context.role }, mode))) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
   const { organizationId } = authResult.context;
 
   const mode = getDataAdapterMode();
-  if (!(await canManageOrganization({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, mode))) {
+  if (!(await canManageCaseNumbering({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, mode))) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
