@@ -33,7 +33,16 @@ export type OrganizationRoleAuditAction =
       entirely (reverting to pure base-role behavior). */
   | 'override_granted'
   | 'override_revoked'
-  | 'override_removed';
+  | 'override_removed'
+  /** Manors RBAC production migration (2026-09) —
+      `services/roleService.ts#seedManorsCaseNumberManagePermission`. A
+      platform-default role (never itself editable via `updateRole`) was
+      granted one specific permission directly, to backfill a
+      newly-introduced permission key into an already-active
+      organization's live data — distinct from `override_granted`, which
+      concerns `organizationRolePermissionOverrides`, not `rolePermissions`
+      itself. */
+  | 'permission_seeded';
 
 export type OrganizationRoleAuditEntry = {
   id: string;

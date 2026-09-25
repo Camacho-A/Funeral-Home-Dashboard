@@ -64,6 +64,12 @@ export const mockInactiveMembershipUser: AuthenticatedUser = {
  * generic non-admin user. Belongs to DEFAULT_ORGANIZATION_ID only — no
  * test needs these cross-org.
  */
+export const mockFuneralDirectorUser: AuthenticatedUser = {
+  id: 'mock-user-funeral-director',
+  email: 'funeral-director@managedcremations.test',
+  displayName: 'Funeral Director Test User',
+  source: 'mock',
+};
 export const mockManagerUser: AuthenticatedUser = {
   id: 'mock-user-manager',
   email: 'manager@managedcremations.test',
@@ -100,6 +106,7 @@ export const mockMembershipFixtures: OrganizationMembership[] = [
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockMultiOrgUser.id, role: 'staff', isActive: true },
   { organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockMultiOrgUser.id, role: 'caseManager', isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockInactiveMembershipUser.id, role: 'staff', isActive: false },
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockFuneralDirectorUser.id, role: 'funeralDirector' as OrganizationRole, isActive: true },
   // These 4 use real RBAC DefaultRoleKey strings, not legacy OrganizationRole
   // literals — `AuthorizationContext.role` is passed straight through to
   // `resolveRoleForKey` as an opaque roleKey (see

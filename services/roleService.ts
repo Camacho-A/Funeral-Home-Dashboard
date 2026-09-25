@@ -332,6 +332,134 @@ export async function seedDefaultRoles(
   return { enablements, isNew };
 }
 
+// ---------------------------------------------------------------------------
+// Manors RBAC production migration (2026-09). `caseNumber.manage` was added
+// to the platform's permission catalog and to the Administrator/Funeral
+// Director role DEFINITIONS in code (domain/rbac/defaultRoles.ts), but
+// managed-cremations is an already-active organization — its live
+// `rolePermissions` data was written once, at onboarding time
+// (`seedPlatformDefaultRoles`, called only from
+// `organizationProvisioningService.ts#startOnboarding`), and is never
+// re-synced from the code-level definitions afterward. This backfills
+// exactly the two grants that gap leaves missing, reusing the same
+// `insertRolePermissionIdempotent` primitive `seedPlatformDefaultRoles`
+// itself uses — never a rerun of that broader function (which would issue
+// an idempotent-but-real Wix call for every permission of every one of the
+// 8 platform-default roles, far more surface than this one-time backfill
+// needs) and never `updateRole` (which refuses to act on platform-default
+// roles at all — "Platform default roles remain immutable").
+// ---------------------------------------------------------------------------
+
+const MANORS_CASE_NUMBER_MANAGE_PERMISSION: PermissionKey = 'caseNumber.manage';
+const MANORS_CASE_NUMBER_MANAGE_ROLE_KEYS = ['administrator', 'funeralDirector'] as const;
+type ManorsCaseNumberManageRoleKey = (typeof MANORS_CASE_NUMBER_MANAGE_ROLE_KEYS)[number];
+
+async function resolveCaseNumberManageGrantStatus(
+  roleKey: ManorsCaseNumberManageRoleKey,
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ role: Role; alreadyGranted: boolean }> {
+  const role = await resolveRoleForKey(roleKey, organizationId, dataAdapterMode);
+  if (!role) {
+    throw new RoleServiceError(`Platform default role '${roleKey}' was not found — cannot seed '${MANORS_CASE_NUMBER_MANAGE_PERMISSION}'.`);
+  }
+  const grants = await listRolePermissions(role.id, dataAdapterMode);
+  return { role, alreadyGranted: grants.some((rp) => rp.permissionKey === MANORS_CASE_NUMBER_MANAGE_PERMISSION) };
+}
+
+export type ManorsCaseNumberManageMigrationStatus = {
+  organizationId: string;
+  permissionKey: PermissionKey;
+  administratorGranted: boolean;
+  funeralDirectorGranted: boolean;
+};
+
+/** Read-only — never mutates anything. Used both to decide whether the
+    Settings > Case Numbering "Enable Case Numbering Access" action should
+    render at all, and as the POST handler's own immediate pre-mutation
+    check (never trusts an earlier GET). */
+export async function getManorsCaseNumberManageMigrationStatus(
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ManorsCaseNumberManageMigrationStatus> {
+  const [administrator, funeralDirector] = await Promise.all([
+    resolveCaseNumberManageGrantStatus('administrator', organizationId, dataAdapterMode),
+    resolveCaseNumberManageGrantStatus('funeralDirector', organizationId, dataAdapterMode),
+  ]);
+  return {
+    organizationId,
+    permissionKey: MANORS_CASE_NUMBER_MANAGE_PERMISSION,
+    administratorGranted: administrator.alreadyGranted,
+    funeralDirectorGranted: funeralDirector.alreadyGranted,
+  };
+}
+
+export type ManorsCaseNumberManageMigrationResult = ManorsCaseNumberManageMigrationStatus & {
+  administratorNewlyGranted: boolean;
+  funeralDirectorNewlyGranted: boolean;
+};
+
+/**
+ * The one-time production RBAC migration itself. Hardcoded to exactly one
+ * permission and exactly two role keys — never accepts either from a
+ * caller (see app/api/organization/rbac/seed-case-number-manage/route.ts,
+ * which also hardcodes the organization). For each of Administrator and
+ * Funeral Director: if the grant already exists, this is a strict no-op
+ * (no insert, no audit entry) — running the migration any number of times
+ * produces the same final state as running it once. If missing, inserts
+ * exactly one `rolePermissions` row (the same deterministic id
+ * `seedPlatformDefaultRoles` would have used, so this is byte-for-byte
+ * indistinguishable from having been seeded correctly at onboarding time)
+ * and records exactly one `permission_seeded` audit entry. Touches no
+ * other permission, no other role, no `organizationRolePermissionOverrides`
+ * row, and no other collection.
+ */
+export async function seedManorsCaseNumberManagePermission(
+  params: { organizationId: string; actorIdentityId: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ManorsCaseNumberManageMigrationResult> {
+  const now = nowIso();
+  const newlyGranted: Record<ManorsCaseNumberManageRoleKey, boolean> = { administrator: false, funeralDirector: false };
+
+  for (const roleKey of MANORS_CASE_NUMBER_MANAGE_ROLE_KEYS) {
+    const status = await resolveCaseNumberManageGrantStatus(roleKey, params.organizationId, dataAdapterMode);
+    if (status.alreadyGranted) continue;
+
+    await insertRolePermissionIdempotent(
+      {
+        id: defaultRolePermissionFixtureId(roleKey, MANORS_CASE_NUMBER_MANAGE_PERMISSION),
+        roleId: status.role.id,
+        permissionKey: MANORS_CASE_NUMBER_MANAGE_PERMISSION,
+        createdAt: now,
+      },
+      dataAdapterMode,
+    );
+    await insertAuditEntry(
+      {
+        id: `manors-rbac-migration-${roleKey}-caseNumber-manage`,
+        organizationId: params.organizationId,
+        actorIdentityId: params.actorIdentityId,
+        action: auditAction('permission_seeded'),
+        roleId: status.role.id,
+        targetIdentityId: null,
+        previousRoleKey: null,
+        permissionKey: MANORS_CASE_NUMBER_MANAGE_PERMISSION,
+      },
+      dataAdapterMode,
+    );
+    newlyGranted[roleKey] = true;
+  }
+
+  return {
+    organizationId: params.organizationId,
+    permissionKey: MANORS_CASE_NUMBER_MANAGE_PERMISSION,
+    administratorGranted: true,
+    funeralDirectorGranted: true,
+    administratorNewlyGranted: newlyGranted.administrator,
+    funeralDirectorNewlyGranted: newlyGranted.funeralDirector,
+  };
+}
+
 /** Every role (platform default + custom) currently enabled for one
     organization — the Organization Roles Page's own data source. */
 export async function listRolesForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<Role[]> {
