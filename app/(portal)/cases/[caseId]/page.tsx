@@ -17,6 +17,7 @@ import { CaseHeader } from '@/components/case/CaseHeader';
 import { StageStepper, type StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
 import { CaseFormsSection } from '@/components/case/CaseFormsSection';
+import { CaseWorkflowRepairPanel } from '@/components/case/CaseWorkflowRepairPanel';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
 import { BillingCard } from '@/components/case/BillingCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
@@ -242,6 +243,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
             onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
           />
+
+          <CaseWorkflowRepairPanel caseId={caseId} />
 
           <CaseFormsSection caseId={caseId} />
 

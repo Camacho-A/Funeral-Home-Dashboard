@@ -1,0 +1,31 @@
+.panel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface-subtle, #f3f4f6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.label {
+  color: var(--color-text-secondary);
+}
+
+.error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+}
+
+.success {
+  color: var(--color-success-text);
+  font-size: var(--font-size-sm);
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}

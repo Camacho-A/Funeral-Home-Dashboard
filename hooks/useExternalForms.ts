@@ -11,6 +11,7 @@ import {
   fetchExternalFormConfigs,
   previewHistoricalCase,
   createHistoricalCase,
+  retryFormPdf,
 } from '@/lib/externalFormsClient';
 
 /** Manors Jotform integration (case-first architecture, 2026-09). */
@@ -56,6 +57,22 @@ export function useReconciliation(organizationId: string, submissionId: string, 
     queryKey: reconciliationKey(organizationId, submissionId, caseId),
     queryFn: () => fetchReconciliation(organizationId, submissionId, caseId),
     enabled: enabled && Boolean(organizationId) && Boolean(submissionId) && Boolean(caseId),
+  });
+}
+
+/** Case repair UI (2026-09) — "Retry Jotform PDF." Reuses the already-
+    deployed retry-pdf endpoint; the submission id always comes from an
+    existing CaseFormRow, never user-entered. Refreshes both Forms (so the
+    row's pdfStatus/documentId reflect the outcome) and Documents (so a
+    newly-stored PDF appears immediately) on success. */
+export function useRetryFormPdf(organizationId: string, caseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (submissionId: string) => retryFormPdf(organizationId, submissionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) });
+      queryClient.invalidateQueries({ queryKey: ['caseDocuments', organizationId, caseId] });
+    },
   });
 }
 

@@ -5,7 +5,7 @@
  */
 import type { ExternalFormConfig } from '@/types/externalFormConfig';
 import type { CaseFormLinkStatus } from '@/types/caseFormLink';
-import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
+import type { ExternalFormSubmission, ExternalFormPdfStatus } from '@/types/externalFormSubmission';
 import type { ReconciliationRow } from '@/domain/externalForms/reconciliation';
 
 async function parseJsonOrThrow(response: Response): Promise<Record<string, unknown>> {
@@ -22,6 +22,10 @@ export type CaseFormRow = {
   status: CaseFormLinkStatus;
   sentAt: string | null;
   submissionId: string | null;
+  /** Case repair UI (2026-09) — null until a submission is linked. See
+      CaseFormsSection.tsx's own retry-visibility logic. */
+  pdfStatus: ExternalFormPdfStatus | null;
+  documentId: string | null;
 };
 
 export async function fetchCaseForms(organizationId: string, caseId: string): Promise<CaseFormRow[]> {
@@ -29,6 +33,19 @@ export async function fetchCaseForms(organizationId: string, caseId: string): Pr
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/forms?${params.toString()}`);
   const body = await parseJsonOrThrow(response);
   return (body.forms as CaseFormRow[]) ?? [];
+}
+
+/** Case repair UI (2026-09) — client wrapper around the already-deployed
+    `POST /api/external-form-submissions/[submissionId]/retry-pdf`. The
+    submission id is always resolved from an existing CaseFormRow
+    (fetchCaseForms), never entered by a user. */
+export async function retryFormPdf(organizationId: string, submissionId: string): Promise<{ submissionId: string; caseId: string; pdf: { outcome: string; documentId: string | null } }> {
+  const response = await fetch(`/api/external-form-submissions/${encodeURIComponent(submissionId)}/retry-pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId }),
+  });
+  return parseJsonOrThrow(response) as never;
 }
 
 export async function generateFormLink(organizationId: string, caseId: string, formConfigId: string): Promise<{ prefillUrl: string }> {
