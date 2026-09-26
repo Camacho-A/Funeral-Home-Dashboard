@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Work_Sans } from 'next/font/google';
+import localFont from 'next/font/local';
 import '@/styles/globals.css';
 import { Providers } from './providers';
 
@@ -9,9 +9,23 @@ import { Providers } from './providers';
 // runtime and matches App Router convention, while producing the same
 // rendered typeface. The exposed CSS variable feeds --font-sans in
 // styles/tokens.css.
-const workSans = Work_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+//
+// Uses next/font/local against the @fontsource/work-sans package's static
+// files, rather than next/font/google, because next/font/google fetches
+// font CSS from Google's live API at build time — a build-time network
+// dependency with a known, currently-open Next.js bug (vercel/next.js#99114)
+// where Google Fonts occasionally returns an extensionless font-file URL
+// that crashes the loader ("Cannot read properties of null (reading '1')").
+// next/font/local has no such dependency: the font files are vendored in
+// node_modules and never fetched over the network during a build.
+const workSans = localFont({
+  src: [
+    { path: '../node_modules/@fontsource/work-sans/files/work-sans-latin-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: '../node_modules/@fontsource/work-sans/files/work-sans-latin-500-normal.woff2', weight: '500', style: 'normal' },
+    { path: '../node_modules/@fontsource/work-sans/files/work-sans-latin-600-normal.woff2', weight: '600', style: 'normal' },
+    { path: '../node_modules/@fontsource/work-sans/files/work-sans-latin-700-normal.woff2', weight: '700', style: 'normal' },
+    { path: '../node_modules/@fontsource/work-sans/files/work-sans-latin-800-normal.woff2', weight: '800', style: 'normal' },
+  ],
   variable: '--font-work-sans',
   display: 'swap',
 });
