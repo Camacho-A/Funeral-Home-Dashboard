@@ -27,7 +27,6 @@ import { listAppointmentsForCase } from './scheduling/appointmentReads';
 import { resolveMergeContext, mergeTemplate, type MergeSourceData } from '../domain/documents/mergeEngine';
 import { puppeteerDocumentRenderer } from '../lib/puppeteerDocumentRenderer';
 import { vercelBlobStorageProvider } from '../lib/vercelBlob/vercelBlobStorageProvider';
-import { isVercelBlobConfigured } from '../lib/vercelBlob/vercelBlobConfig';
 import type { DocumentRenderer } from '../lib/documentRenderer';
 import type { DocumentStorageProvider } from '../lib/documentStorageProvider';
 import {
@@ -592,9 +591,14 @@ export type BlobConnectivityCheckResult =
   | { configured: true; upload: 'failed'; delete: 'skipped'; errorCategory: string }
   | { configured: true; upload: 'success'; delete: 'failed'; errorCategory: string };
 
-function sanitizeBlobErrorCategory(error: unknown): string {
-  const message = error instanceof Error ? error.message : '';
-  return message.includes('BLOB_READ_WRITE_TOKEN') ? 'not_configured' : 'storage_provider_error';
+/** The installed @vercel/blob SDK throws this exact, distinct message from
+    its own `resolveBlobAuth` only when NEITHER an explicit token, NOR OIDC
+    (VERCEL_OIDC_TOKEN + BLOB_STORE_ID), NOR BLOB_READ_WRITE_TOKEN resolves
+    — i.e., genuinely no credentials exist anywhere. Any other failure
+    means credentials WERE found (OIDC or static) but something else went
+    wrong (network, permissions, store mismatch, etc.). */
+function isNoCredentialsFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('No blob credentials found');
 }
 
 /**
@@ -604,25 +608,31 @@ function sanitizeBlobErrorCategory(error: unknown): string {
  * boundary below (only this file may import the concrete storage provider)
  * is preserved rather than bypassed by the diagnostic route. Remove
  * alongside that route once the connectivity check has served its purpose.
+ *
+ * `configured` is determined by actually attempting the upload, never by
+ * inspecting environment variables beforehand — under Vercel Blob's OIDC
+ * authentication (see vercelBlobConfig.ts), the absence of
+ * BLOB_READ_WRITE_TOKEN is expected and does not mean storage is
+ * unavailable; only the SDK's own "no credentials found anywhere" failure
+ * means that.
  */
 export async function checkBlobConnectivity(): Promise<BlobConnectivityCheckResult> {
-  if (!isVercelBlobConfigured()) {
-    return { configured: false };
-  }
-
   const key = `_diagnostics/blob-connectivity-check-${Date.now()}.txt`;
   let storageKey: string;
   try {
     const uploaded = await documentStorageProvider.uploadFile(key, Buffer.from('SOLIS BLOB CONNECTIVITY TEST', 'utf8'), 'text/plain');
     storageKey = uploaded.storageKey;
   } catch (error) {
-    return { configured: true, upload: 'failed', delete: 'skipped', errorCategory: sanitizeBlobErrorCategory(error) };
+    if (isNoCredentialsFoundError(error)) {
+      return { configured: false };
+    }
+    return { configured: true, upload: 'failed', delete: 'skipped', errorCategory: 'storage_provider_error' };
   }
 
   try {
     await documentStorageProvider.deleteFile(storageKey);
-  } catch (error) {
-    return { configured: true, upload: 'success', delete: 'failed', errorCategory: sanitizeBlobErrorCategory(error) };
+  } catch {
+    return { configured: true, upload: 'success', delete: 'failed', errorCategory: 'storage_provider_error' };
   }
 
   return { configured: true, upload: 'success', delete: 'success' };

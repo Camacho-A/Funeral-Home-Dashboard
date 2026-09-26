@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { getVercelBlobToken, isVercelBlobConfigured } from './vercelBlobConfig';
+import { resolveStaticBlobToken } from './vercelBlobConfig';
 
 const ORIGINAL_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
@@ -11,24 +11,14 @@ afterEach(() => {
   }
 });
 
-describe('vercelBlobConfig', () => {
-  it('isVercelBlobConfigured is false when the token is unset', () => {
+describe('vercelBlobConfig (OIDC-aware, 2026-09)', () => {
+  it('resolveStaticBlobToken returns undefined, never throws, when the legacy token is unset', () => {
     delete process.env.BLOB_READ_WRITE_TOKEN;
-    expect(isVercelBlobConfigured()).toBe(false);
+    expect(resolveStaticBlobToken()).toBeUndefined();
   });
 
-  it('isVercelBlobConfigured is true once the token is set', () => {
+  it('resolveStaticBlobToken returns the configured legacy token when set', () => {
     process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_test_token';
-    expect(isVercelBlobConfigured()).toBe(true);
-  });
-
-  it('getVercelBlobToken throws a clear error naming the missing env var, never a generic failure', () => {
-    delete process.env.BLOB_READ_WRITE_TOKEN;
-    expect(() => getVercelBlobToken()).toThrow(/BLOB_READ_WRITE_TOKEN/);
-  });
-
-  it('getVercelBlobToken returns the configured value', () => {
-    process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_test_token';
-    expect(getVercelBlobToken()).toBe('vercel_blob_rw_test_token');
+    expect(resolveStaticBlobToken()).toBe('vercel_blob_rw_test_token');
   });
 });
