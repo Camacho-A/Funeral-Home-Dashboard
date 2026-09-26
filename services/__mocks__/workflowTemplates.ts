@@ -38,19 +38,33 @@ function toDisplayStage(rawStage: number): number {
 // and 1 both display as "First Call & Payment".
 const RAW_STAGE_COUNT = 8;
 
+// Manual-checklist-item fix (2026-09): every one of these is a plain
+// checkbox confirmation, never a free-text box — there is no field on
+// Case Detail for a value to ever be typed into, and no code path (normal
+// intake or historical import) ever populates a fieldValues index for
+// any of them. "Payment collected" was already correctly excluded;
+// "Credit card payment collected by phone" and "Payment receipt sent"
+// were incorrectly left as hasField: true, making them permanently
+// unsatisfiable via any real data path. A named set (rather than
+// special-casing only PAYMENT_CONFIRMATION_LABEL) makes this exclusion
+// legible as "these three are manual," not an accretion of one-off
+// checks. Business behavior is unchanged: checklistState[8]
+// (markCasePaidIfVerified) and every other checklist item are untouched;
+// "Payment receipt sent" and "Credit card payment collected by phone"
+// remain manual, never auto-completed by this change.
+const MANUAL_ONLY_CHECKLIST_LABELS = new Set<string>([
+  PAYMENT_CONFIRMATION_LABEL,
+  'Credit card payment collected by phone',
+  'Payment receipt sent — confirms cleared to dispatch',
+]);
+
 function buildChecklistItems(rawStage: number): ChecklistItemTemplate[] {
   const labels = getChecklistLabels(rawStage);
   const stageHasFields = isFirstCallStage(rawStage);
   return labels.map((label, index) => ({
     index,
     label,
-    // Phase 19A (Secure Payment Architecture): "Payment collected" is a
-    // permanent exception to "every First Call & Payment item is a
-    // data-entry field" — it's always a plain checkbox confirmation, never
-    // a free-text box, so there is no field on Case Detail for a payment
-    // value to ever be typed into. See domain/cases/checklist.ts's own
-    // comment on isFirstCallStage.
-    hasField: stageHasFields && label !== PAYMENT_CONFIRMATION_LABEL,
+    hasField: stageHasFields && !MANUAL_ONLY_CHECKLIST_LABELS.has(label),
     isPasswordField: PASSWORD_FIELD_PATTERN.test(label),
     externalFormIntegrationId: label === 'Jotform application completed' ? JOTFORM_INTEGRATION_ID : null,
   }));

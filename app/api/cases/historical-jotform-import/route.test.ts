@@ -253,6 +253,72 @@ describe('POST /api/cases/historical-jotform-import — successful creation', ()
     expect(sentBody.caseNumber).toBeUndefined(); // never a raw number field
   });
 
+  it('missing-import fieldValues fix (2026-09): sends fieldValues[0,1,2,4,7] derived from the SAME final values sent for the Case, and omits [3]/[5]/[6] entirely rather than fabricating them', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, {
+        '1': { answer: '2026-950' },
+        '87': { answer: { first: 'Jordan', last: 'Blake' } },
+        '8': { answer: '01/02/1950' },
+        '10': { answer: '08/01/2026' },
+        '97': { answer: 'St. Mary\'s Hospital' },
+      }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const fetchSpy = stubCaseCreation('new-case-id-fv', 'B2026-950');
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    await POST(
+      postRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'fieldvalues-1', nextOfKinName: 'Jamie Doe', nextOfKinPhone: '(555) 123-4567' }),
+    );
+
+    const sentBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(sentBody.fieldValues[0]).toBe('Jordan Blake');
+    expect(sentBody.fieldValues[1]).toBe('St. Mary\'s Hospital');
+    expect(sentBody.fieldValues[2]).toBe('01/02/1950');
+    expect(sentBody.fieldValues[4]).toBe('08/01/2026');
+    expect(sentBody.fieldValues[7]).toBe('Jamie Doe — (555) 123-4567');
+
+    // Weight / Time of death / dcContact: genuinely unavailable from this
+    // import — must be absent, never fabricated as empty/placeholder values.
+    expect(sentBody.fieldValues).not.toHaveProperty('3');
+    expect(sentBody.fieldValues).not.toHaveProperty('5');
+    expect(sentBody.fieldValues).not.toHaveProperty('6');
+  });
+
+  it('missing-import fieldValues fix: fieldValues[7] always uses the SAME final NOK values sent to Case creation, never a separately-derived mappedFields NOK value', async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(
+      // qid 276 = 'Yes' would derive NOK from the Informant block (qids
+      // 122/224/225) via arrangementNokDerivation — deliberately supplied
+      // here with a DIFFERENT name than the staff-typed nextOfKinName, to
+      // prove the route never lets that derived value leak into
+      // fieldValues[7] instead of the actual value sent for the Case.
+      stubJotformSubmission(ARRANGEMENT_FORM_ID, {
+        '1': { answer: '2026-950' },
+        '87': { answer: { first: 'A', last: 'B' } },
+        '276': { answer: 'Yes' },
+        '122': { answer: { first: 'Informant', last: 'Person' } },
+        '224': { answer: { full: '(555) 999-0000' } },
+      }),
+    );
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const fetchSpy = stubCaseCreation();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    await POST(
+      postRequest({ organizationId: ORG, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, externalSubmissionId: 'nok-consistency-1', nextOfKinName: 'Staff Typed Name', nextOfKinPhone: '(555) 111-2222' }),
+    );
+
+    const sentBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(sentBody.nextOfKinName).toBe('Staff Typed Name');
+    expect(sentBody.nextOfKinPhone).toBe('(555) 111-2222');
+    expect(sentBody.fieldValues[7]).toBe('Staff Typed Name — (555) 111-2222');
+    expect(sentBody.fieldValues[7]).not.toContain('Informant');
+  });
+
   it('L: blocks (422) with no /api/cases call when the historical case number is malformed', async () => {
     const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
     (fetchSubmissionAnswers as ReturnType<typeof vi.fn>).mockResolvedValue(

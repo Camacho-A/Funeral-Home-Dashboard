@@ -7,12 +7,16 @@ import { getDataAdapterMode, type DataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
+import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import * as externalFormConfigService from '@/services/externalFormConfigService';
 import * as caseFormLinkService from '@/services/caseFormLinkService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { fetchSubmissionAnswers, JotformClientError } from '@/lib/jotform/jotformClient';
+import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
+import { latestTemplateVersion } from '@/domain/workflow/snapshot';
+import { buildIntakeFieldValues } from '@/domain/workflow/resolveIntake';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import { deriveHistoricalCaseNumber, type HistoricalCaseNumberResult } from '@/domain/externalForms/historicalCaseNumber';
 import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
@@ -91,6 +95,23 @@ async function findCaseByCaseNumber(organizationId: string, caseNumber: string, 
   }
   const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { organizationId, caseNumber }, paging: { limit: 1 } });
   return response.dataItems[0] ? mapWixCaseItem(response.dataItems[0].data) : null;
+}
+
+/** Missing-import fieldValues fix (2026-09). Resolves the organization's
+    enabled workflow template's intake shape — the SAME source normal
+    NewCaseModal-driven case creation reads — purely to construct
+    `fieldValues` via the SAME `buildIntakeFieldValues` normal intake uses,
+    never a second, independent field-index map. Read-only; does not
+    affect POST /api/cases' own, separate workflow-template resolution for
+    the actual Case row (workflowTemplateId/Version/workflowSnapshot). */
+async function resolveEnabledIntake(organizationId: string, dataAdapterMode: DataAdapterMode) {
+  if (dataAdapterMode === 'mock') {
+    const template = workflowTemplateFixtures.find((t) => t.organizationId === organizationId && t.isEnabled);
+    return template ? latestTemplateVersion(template).intake : null;
+  }
+  const templates = await fetchWixWorkflowTemplates(organizationId);
+  const template = templates.find((t) => t.isEnabled);
+  return template ? latestTemplateVersion(template).intake : null;
 }
 
 /** Turns a non-'ok' HistoricalCaseNumberResult into a staff-facing
@@ -340,6 +361,25 @@ export async function POST(request: Request) {
           externalSubmissionId,
           caseNumber: historicalCaseNumber,
         });
+
+        // Missing-import fieldValues fix (2026-09): `draft` is built from
+        // the EXACT SAME final values sent to Case creation below — never
+        // an independent re-read of mappedFields for nextOfKinName/Phone,
+        // which would risk Case.nextOfKinName diverging from
+        // fieldValues[7]. Weight/timeOfDeath/dcContact are deliberately
+        // absent — genuinely unavailable from this import, and must stay
+        // absent (incomplete) rather than be fabricated.
+        const intake = await resolveEnabledIntake(organizationId, dataAdapterMode);
+        const draft: Record<string, string> = {
+          decedentName: mappedFields.decedentName ?? '',
+          placeOfDeath: mappedFields.placeOfDeath ?? '',
+          dateOfBirth: mappedFields.dateOfBirth ?? '',
+          dateOfDeath: mappedFields.dateOfDeath ?? '',
+          nextOfKinName,
+          nextOfKinPhone,
+        };
+        const fieldValues = intake ? buildIntakeFieldValues(intake, draft) : {};
+
         const caseResponse = await fetch(`${origin}/api/cases`, {
           method: 'POST',
           headers: {
@@ -355,6 +395,7 @@ export async function POST(request: Request) {
             placeOfDeath: mappedFields.placeOfDeath,
             nextOfKinName,
             nextOfKinPhone,
+            fieldValues,
             historicalCaseNumberAuthorization,
           }),
         });
