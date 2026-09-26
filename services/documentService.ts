@@ -27,6 +27,7 @@ import { listAppointmentsForCase } from './scheduling/appointmentReads';
 import { resolveMergeContext, mergeTemplate, type MergeSourceData } from '../domain/documents/mergeEngine';
 import { puppeteerDocumentRenderer } from '../lib/puppeteerDocumentRenderer';
 import { vercelBlobStorageProvider } from '../lib/vercelBlob/vercelBlobStorageProvider';
+import { isVercelBlobConfigured } from '../lib/vercelBlob/vercelBlobConfig';
 import type { DocumentRenderer } from '../lib/documentRenderer';
 import type { DocumentStorageProvider } from '../lib/documentStorageProvider';
 import {
@@ -583,6 +584,48 @@ export async function renderAndStorePdf(
     for `CaseDocument`s but for an `OrgDocument` storage key. */
 export async function downloadOrgDocumentBytes(storageKey: string): Promise<{ buffer: Buffer; contentType: string }> {
   return documentStorageProvider.downloadFile(storageKey);
+}
+
+export type BlobConnectivityCheckResult =
+  | { configured: false }
+  | { configured: true; upload: 'success'; delete: 'success' }
+  | { configured: true; upload: 'failed'; delete: 'skipped'; errorCategory: string }
+  | { configured: true; upload: 'success'; delete: 'failed'; errorCategory: string };
+
+function sanitizeBlobErrorCategory(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  return message.includes('BLOB_READ_WRITE_TOKEN') ? 'not_configured' : 'storage_provider_error';
+}
+
+/**
+ * TEMPORARY diagnostic (2026-09) — see app/api/diagnostics/blob-connectivity.
+ * Exercises this module's own `documentStorageProvider` (never a second
+ * storage path) with a synthetic, non-case object, so the structural
+ * boundary below (only this file may import the concrete storage provider)
+ * is preserved rather than bypassed by the diagnostic route. Remove
+ * alongside that route once the connectivity check has served its purpose.
+ */
+export async function checkBlobConnectivity(): Promise<BlobConnectivityCheckResult> {
+  if (!isVercelBlobConfigured()) {
+    return { configured: false };
+  }
+
+  const key = `_diagnostics/blob-connectivity-check-${Date.now()}.txt`;
+  let storageKey: string;
+  try {
+    const uploaded = await documentStorageProvider.uploadFile(key, Buffer.from('SOLIS BLOB CONNECTIVITY TEST', 'utf8'), 'text/plain');
+    storageKey = uploaded.storageKey;
+  } catch (error) {
+    return { configured: true, upload: 'failed', delete: 'skipped', errorCategory: sanitizeBlobErrorCategory(error) };
+  }
+
+  try {
+    await documentStorageProvider.deleteFile(storageKey);
+  } catch (error) {
+    return { configured: true, upload: 'success', delete: 'failed', errorCategory: sanitizeBlobErrorCategory(error) };
+  }
+
+  return { configured: true, upload: 'success', delete: 'success' };
 }
 
 export async function upload(

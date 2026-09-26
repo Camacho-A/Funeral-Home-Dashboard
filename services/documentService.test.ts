@@ -17,8 +17,12 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
     deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
   },
 }));
+const mockIsVercelBlobConfigured = vi.fn();
+vi.mock('../lib/vercelBlob/vercelBlobConfig', () => ({
+  isVercelBlobConfigured: () => mockIsVercelBlobConfigured(),
+}));
 
-const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, DocumentServiceError } = await import('./documentService');
+const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, checkBlobConnectivity, DocumentServiceError } = await import('./documentService');
 const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { documentTemplateFixtures } = await import('./__mocks__/documentFixtures');
@@ -377,5 +381,66 @@ describe('DocumentService orchestration boundary (structural)', () => {
     });
 
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('checkBlobConnectivity (temporary Blob connectivity diagnostic, 2026-09)', () => {
+  beforeEach(() => {
+    mockIsVercelBlobConfigured.mockReset();
+    mockUploadFile.mockReset();
+    mockDeleteFile.mockReset();
+  });
+
+  it('returns configured: false and never calls uploadFile when BLOB_READ_WRITE_TOKEN is absent', async () => {
+    mockIsVercelBlobConfigured.mockReturnValue(false);
+    const result = await checkBlobConnectivity();
+    expect(result).toEqual({ configured: false });
+    expect(mockUploadFile).not.toHaveBeenCalled();
+  });
+
+  it('uploads a server-generated diagnostics key with fixed content, then deletes it, on success', async () => {
+    mockIsVercelBlobConfigured.mockReturnValue(true);
+    mockUploadFile.mockResolvedValue({ storageKey: '_diagnostics/blob-connectivity-check-mock.txt' });
+    mockDeleteFile.mockResolvedValue(undefined);
+
+    const result = await checkBlobConnectivity();
+    expect(result).toEqual({ configured: true, upload: 'success', delete: 'success' });
+
+    expect(mockUploadFile).toHaveBeenCalledTimes(1);
+    const [key, contents, contentType] = mockUploadFile.mock.calls[0];
+    expect(key).toMatch(/^_diagnostics\/blob-connectivity-check-\d+\.txt$/);
+    expect(Buffer.isBuffer(contents)).toBe(true);
+    expect(contents.toString('utf8')).toBe('SOLIS BLOB CONNECTIVITY TEST');
+    expect(contentType).toBe('text/plain');
+
+    expect(mockDeleteFile).toHaveBeenCalledWith('_diagnostics/blob-connectivity-check-mock.txt');
+  });
+
+  it('categorizes a missing-token upload failure as not_configured, never leaking the raw message', async () => {
+    mockIsVercelBlobConfigured.mockReturnValue(true);
+    mockUploadFile.mockRejectedValue(new Error('Document storage is not configured: BLOB_READ_WRITE_TOKEN is not set.'));
+
+    const result = await checkBlobConnectivity();
+    expect(result).toEqual({ configured: true, upload: 'failed', delete: 'skipped', errorCategory: 'not_configured' });
+    expect(JSON.stringify(result)).not.toContain('BLOB_READ_WRITE_TOKEN is not set');
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+  });
+
+  it('categorizes any other upload failure as storage_provider_error, never leaking the raw message', async () => {
+    mockIsVercelBlobConfigured.mockReturnValue(true);
+    mockUploadFile.mockRejectedValue(new Error('connect ETIMEDOUT 1.2.3.4:443'));
+
+    const result = await checkBlobConnectivity();
+    expect(result).toEqual({ configured: true, upload: 'failed', delete: 'skipped', errorCategory: 'storage_provider_error' });
+    expect(JSON.stringify(result)).not.toContain('1.2.3.4');
+  });
+
+  it('reports upload success but delete failure when cleanup fails, sanitized', async () => {
+    mockIsVercelBlobConfigured.mockReturnValue(true);
+    mockUploadFile.mockResolvedValue({ storageKey: '_diagnostics/blob-connectivity-check-mock.txt' });
+    mockDeleteFile.mockRejectedValue(new Error('some transient storage error'));
+
+    const result = await checkBlobConnectivity();
+    expect(result).toEqual({ configured: true, upload: 'success', delete: 'failed', errorCategory: 'storage_provider_error' });
   });
 });
