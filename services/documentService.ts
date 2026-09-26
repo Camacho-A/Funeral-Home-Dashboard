@@ -585,59 +585,6 @@ export async function downloadOrgDocumentBytes(storageKey: string): Promise<{ bu
   return documentStorageProvider.downloadFile(storageKey);
 }
 
-export type BlobConnectivityCheckResult =
-  | { configured: false }
-  | { configured: true; upload: 'success'; delete: 'success' }
-  | { configured: true; upload: 'failed'; delete: 'skipped'; errorCategory: string }
-  | { configured: true; upload: 'success'; delete: 'failed'; errorCategory: string };
-
-/** The installed @vercel/blob SDK throws this exact, distinct message from
-    its own `resolveBlobAuth` only when NEITHER an explicit token, NOR OIDC
-    (VERCEL_OIDC_TOKEN + BLOB_STORE_ID), NOR BLOB_READ_WRITE_TOKEN resolves
-    — i.e., genuinely no credentials exist anywhere. Any other failure
-    means credentials WERE found (OIDC or static) but something else went
-    wrong (network, permissions, store mismatch, etc.). */
-function isNoCredentialsFoundError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('No blob credentials found');
-}
-
-/**
- * TEMPORARY diagnostic (2026-09) — see app/api/diagnostics/blob-connectivity.
- * Exercises this module's own `documentStorageProvider` (never a second
- * storage path) with a synthetic, non-case object, so the structural
- * boundary below (only this file may import the concrete storage provider)
- * is preserved rather than bypassed by the diagnostic route. Remove
- * alongside that route once the connectivity check has served its purpose.
- *
- * `configured` is determined by actually attempting the upload, never by
- * inspecting environment variables beforehand — under Vercel Blob's OIDC
- * authentication (see vercelBlobConfig.ts), the absence of
- * BLOB_READ_WRITE_TOKEN is expected and does not mean storage is
- * unavailable; only the SDK's own "no credentials found anywhere" failure
- * means that.
- */
-export async function checkBlobConnectivity(): Promise<BlobConnectivityCheckResult> {
-  const key = `_diagnostics/blob-connectivity-check-${Date.now()}.txt`;
-  let storageKey: string;
-  try {
-    const uploaded = await documentStorageProvider.uploadFile(key, Buffer.from('SOLIS BLOB CONNECTIVITY TEST', 'utf8'), 'text/plain');
-    storageKey = uploaded.storageKey;
-  } catch (error) {
-    if (isNoCredentialsFoundError(error)) {
-      return { configured: false };
-    }
-    return { configured: true, upload: 'failed', delete: 'skipped', errorCategory: 'storage_provider_error' };
-  }
-
-  try {
-    await documentStorageProvider.deleteFile(storageKey);
-  } catch {
-    return { configured: true, upload: 'success', delete: 'failed', errorCategory: 'storage_provider_error' };
-  }
-
-  return { configured: true, upload: 'success', delete: 'success' };
-}
-
 export async function upload(
   params: NewUploadedDocumentInput & { idFactory: () => string; now?: string },
   fileBuffer: Buffer,

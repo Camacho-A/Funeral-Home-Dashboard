@@ -17,7 +17,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
     deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
   },
 }));
-const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, checkBlobConnectivity, DocumentServiceError } = await import('./documentService');
+const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, DocumentServiceError } = await import('./documentService');
 const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { documentTemplateFixtures } = await import('./__mocks__/documentFixtures');
@@ -376,56 +376,5 @@ describe('DocumentService orchestration boundary (structural)', () => {
     });
 
     expect(offenders).toEqual([]);
-  });
-});
-
-describe('checkBlobConnectivity (temporary Blob connectivity diagnostic, 2026-09, OIDC-aware)', () => {
-  beforeEach(() => {
-    mockUploadFile.mockReset();
-    mockDeleteFile.mockReset();
-  });
-
-  it('uploads a server-generated diagnostics key with fixed content, then deletes it, on success — never checks env vars up front', async () => {
-    mockUploadFile.mockResolvedValue({ storageKey: '_diagnostics/blob-connectivity-check-mock.txt' });
-    mockDeleteFile.mockResolvedValue(undefined);
-
-    const result = await checkBlobConnectivity();
-    expect(result).toEqual({ configured: true, upload: 'success', delete: 'success' });
-
-    expect(mockUploadFile).toHaveBeenCalledTimes(1);
-    const [key, contents, contentType] = mockUploadFile.mock.calls[0];
-    expect(key).toMatch(/^_diagnostics\/blob-connectivity-check-\d+\.txt$/);
-    expect(Buffer.isBuffer(contents)).toBe(true);
-    expect(contents.toString('utf8')).toBe('SOLIS BLOB CONNECTIVITY TEST');
-    expect(contentType).toBe('text/plain');
-
-    expect(mockDeleteFile).toHaveBeenCalledWith('_diagnostics/blob-connectivity-check-mock.txt');
-  });
-
-  it('reports configured: false only for the SDK\'s exact "no credentials found anywhere" failure — neither token nor OIDC available', async () => {
-    mockUploadFile.mockRejectedValue(
-      new Error('Vercel Blob: No blob credentials found. Pass a `token` option, set `BLOB_READ_WRITE_TOKEN`, or use `oidcToken` (or `VERCEL_OIDC_TOKEN`) with `storeId` or `BLOB_STORE_ID`.'),
-    );
-
-    const result = await checkBlobConnectivity();
-    expect(result).toEqual({ configured: false });
-    expect(mockDeleteFile).not.toHaveBeenCalled();
-  });
-
-  it('a different upload failure (credentials WERE found, something else went wrong) reports configured: true, upload: failed, sanitized', async () => {
-    mockUploadFile.mockRejectedValue(new Error('connect ETIMEDOUT 1.2.3.4:443'));
-
-    const result = await checkBlobConnectivity();
-    expect(result).toEqual({ configured: true, upload: 'failed', delete: 'skipped', errorCategory: 'storage_provider_error' });
-    expect(JSON.stringify(result)).not.toContain('1.2.3.4');
-  });
-
-  it('reports upload success but delete failure when cleanup fails, sanitized', async () => {
-    mockUploadFile.mockResolvedValue({ storageKey: '_diagnostics/blob-connectivity-check-mock.txt' });
-    mockDeleteFile.mockRejectedValue(new Error('some transient storage error'));
-
-    const result = await checkBlobConnectivity();
-    expect(result).toEqual({ configured: true, upload: 'success', delete: 'failed', errorCategory: 'storage_provider_error' });
-    expect(JSON.stringify(result)).not.toContain('some transient storage error');
   });
 });
