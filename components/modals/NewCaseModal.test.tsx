@@ -1029,6 +1029,13 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     expect(contactsSection.fields.some((f) => f.key === 'dcContact')).toBe(true);
     expect(contactsSection.fields.some((f) => f.key === 'certifierName')).toBe(false);
   });
+
+  it('6. the New Case form never shows the legacy Hospice/physician wording — consistent Certifier terminology with the Case checklist', async () => {
+    const { container } = await renderModalWithFields();
+    expect(container.textContent).not.toContain('Hospice');
+    expect(screen.getByText('Certifier — name')).toBeInTheDocument();
+    expect(screen.getByText('Certifier — phone number')).toBeInTheDocument();
+  });
 });
 
 describe('NewCaseModal — initial case note', () => {

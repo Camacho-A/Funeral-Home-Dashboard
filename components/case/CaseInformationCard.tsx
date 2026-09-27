@@ -542,6 +542,10 @@ export function CaseInformationCard({
           valueClassName={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}
           trailingBadge={weightOver200 ? <span className={styles.notifyBadge}>Notify crematory</span> : null}
         />
+      </div>
+
+      <div className={styles.sectionHeading}>Next of kin / primary contact</div>
+      <div className={styles.grid}>
         <EditableField
           label="Next of kin"
           value={nextOfKinName}
@@ -588,6 +592,9 @@ export function CaseInformationCard({
       </div>
 
       <div className={styles.sectionHeading}>Certifier information</div>
+      <div className={styles.sectionHelperText}>
+        Medical certifier responsible for signing the death certificate — never the family contact above.
+      </div>
       <div className={styles.grid}>
         <EditableField
           label="Certifier name"

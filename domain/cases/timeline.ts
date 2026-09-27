@@ -3,6 +3,7 @@ import type { ChecklistItemViewModel, TimelineEntryViewModel } from '../../types
 import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
 import { lowerFirst } from '../../utils/string';
 import { findStageByDisplayStage } from '../workflow/resolveStages';
+import { presentedChecklistItemLabel } from './legacyCertifierPresentation';
 
 const REMOVAL_TEAM_PATTERN = /removal team|dispatch texted/i;
 const FUNERAL_DIRECTOR_PATTERN = /permit signed/i;
@@ -43,7 +44,10 @@ export function buildTimeline(
   const entries: Array<{ who: string; what: string }> = [];
 
   for (let displayStage = 0; displayStage < currentDisplayStage; displayStage++) {
-    const labels = findStageByDisplayStage(snapshot, displayStage)?.checklist.items.map((item) => item.label) ?? [];
+    const labels =
+      findStageByDisplayStage(snapshot, displayStage)?.checklist.items.map((item) =>
+        presentedChecklistItemLabel(item.label, case_.organizationId),
+      ) ?? [];
     labels.forEach((label) =>
       entries.push({ who: actorFor(label, ownerName), what: lowerFirst(label) }),
     );

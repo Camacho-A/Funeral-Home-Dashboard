@@ -21,6 +21,7 @@ import {
   VA_STEPS,
 } from './veteran';
 import { buildTimeline } from './timeline';
+import { applyLegacyCertifierPresentation } from './legacyCertifierPresentation';
 import { initialsFromName } from '../../utils/string';
 
 export type CaseViewModelContext = {
@@ -88,7 +89,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // and the terminal checklist item's overridden label/done state, so the
   // two can never drift apart into competing signals.
   const remainsReturnComplete = isTerminalReturnRequirementComplete(case_);
-  const currentChecklist = resolveChecklist(currentStageItems, case_);
+  const currentChecklist = applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, case_), case_, false);
   // The immutable workflowSnapshot still carries its original "Family
   // picked up ashes" item text (never rewritten — see this project's
   // append-only-snapshot discipline); when the case is actually sitting at
@@ -159,10 +160,14 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // clickable.
   const viewedChecklist =
     viewingDisplayStage != null
-      ? resolveChecklist(
-          findStageByDisplayStage(snapshot, viewingDisplayStage)?.checklist.items ?? [],
+      ? applyLegacyCertifierPresentation(
+          resolveChecklist(
+            findStageByDisplayStage(snapshot, viewingDisplayStage)?.checklist.items ?? [],
+            case_,
+            { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+          ),
           case_,
-          { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+          viewingDisplayStage < effectiveDisplayStage,
         )
       : effectiveCurrentChecklist;
 

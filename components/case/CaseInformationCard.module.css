@@ -30,6 +30,16 @@
   margin-bottom: var(--space-5);
 }
 
+/* Structured Certifier data (2026-09, ADR-041): a short context line under
+   a section heading — currently only Certifier information's, to make
+   explicit it's the medical certifier, never the family/NOK contact. */
+.sectionHelperText {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  margin-top: calc(-1 * var(--space-4));
+  margin-bottom: var(--space-5);
+}
+
 .fieldLabel {
   color: var(--color-text-secondary);
   font-size: var(--font-size-11-5);

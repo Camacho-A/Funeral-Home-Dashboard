@@ -282,3 +282,107 @@ describe('buildCaseViewModel — organization isolation / generalization', () =>
     expect(vm.stageLabels).toHaveLength(7); // still Managed Cremations' own 7, not 3
   });
 });
+
+/**
+ * Structured Certifier data — Case checklist terminology consistency
+ * (2026-09, ADR-041 follow-up). `baseCase()` above resolves the *latest*
+ * template version (v5, since its own live activation), so it already
+ * exercises the "new Case" path here; a v1 snapshot is built explicitly for
+ * the legacy-presentation-compatibility tests.
+ */
+describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR-041)', () => {
+  it('1/2. a new v5 Case\'s checklist shows "Certifier Information", never the legacy Hospice/physician wording', () => {
+    const case_ = baseCase({ rawStage: 0 });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    const item = vm.checklist[6];
+    expect(item.label).toBe('Certifier Information');
+    expect(vm.checklist.some((i) => i.label.includes('Hospice'))).toBe(false);
+  });
+
+  it('3. a new v5 Case\'s Certifier Information item requires Name + Phone (via requiredCaseFields, unaffected by this compat layer)', () => {
+    const complete = buildCaseViewModel(
+      baseCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' }),
+      { staffList: [] },
+    );
+    expect(complete.checklist[6].done).toBe(true);
+
+    const incomplete = buildCaseViewModel(baseCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER' }), { staffList: [] });
+    expect(incomplete.checklist[6].done).toBe(false);
+  });
+
+  it('an already-past First Call & Payment stage (v5) still reports "Certifier Information" as the completed item\'s label in the timeline', () => {
+    const case_ = baseCase({ rawStage: 2, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.timeline.some((entry) => entry.what.toLowerCase().includes('certifier information'))).toBe(true);
+    expect(vm.timeline.some((entry) => entry.what.toLowerCase().includes('hospice'))).toBe(false);
+  });
+
+  describe('legacy (v1) Case presentation compatibility', () => {
+    function legacyCase(overrides: Partial<Case> = {}): Case {
+      const template = standardCremationWorkflowTemplateFixture;
+      const v1 = template.versions[0];
+      return baseCase({
+        workflowTemplateVersion: v1.version,
+        workflowSnapshot: buildCaseWorkflowSnapshot(template, v1),
+        ...overrides,
+      });
+    }
+
+    it('8. a legacy v1 Case\'s checklist displays "Certifier Information" via the compatibility layer', () => {
+      const case_ = legacyCase({ rawStage: 0 });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist[6].label).toBe('Certifier Information');
+    });
+
+    it('2. a legacy v1 Case\'s checklist never shows the raw persisted Hospice/physician wording', () => {
+      const case_ = legacyCase({ rawStage: 0 });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist.some((i) => i.label.includes('Hospice'))).toBe(false);
+    });
+
+    it('9. the persisted workflowSnapshot itself is never modified — the raw stored label is still the legacy wording', () => {
+      const case_ = legacyCase({ rawStage: 0 });
+      buildCaseViewModel(case_, { staffList: [] }); // build once; assert the source snapshot afterward
+      const rawItem = findStageByRawStage(case_.workflowSnapshot!, 0)?.checklist.items[6];
+      expect(rawItem?.label).toBe('Hospice or physician who will sign the DC — name & phone number');
+    });
+
+    it('a legacy Case with no structured certifier data preserves its exact historical done/locked state (pure relabel, no completion-rule change)', () => {
+      const case_ = legacyCase({ rawStage: 0, fieldValues: { 6: 'Dr. Choi — 555-0100' } });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      // The old free-text fieldValues[6] entry still drives completion,
+      // exactly as it always has — never silently reinterpreted.
+      expect(vm.checklist[6].label).toBe('Certifier Information');
+      expect(vm.checklist[6].done).toBe(true);
+      expect(vm.checklist[6].hasField).toBe(true);
+    });
+
+    it('10. B2026-034-style legacy Case: the compatibility behavior requires no data migration — same generic function, no per-case special-casing', () => {
+      const case_ = legacyCase({ rawStage: 3, fieldValues: { 6: 'Dr. Choi — 555-0100' } });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      // rawStage 3 (past First Call & Payment) — the timeline's past-stage
+      // entries relabel too, with zero snapshot mutation.
+      expect(vm.timeline.some((entry) => entry.what.toLowerCase().includes('certifier information'))).toBe(true);
+      const rawItem = findStageByRawStage(case_.workflowSnapshot!, 0)?.checklist.items[6];
+      expect(rawItem?.label).toBe('Hospice or physician who will sign the DC — name & phone number');
+    });
+
+    it('once a legacy Case gains structured certifier data (via Case Detail, independent of template version), completion follows the new Name+Phone rule', () => {
+      const case_ = legacyCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist[6].done).toBe(true);
+      expect(vm.checklist[6].isDerived).toBe(true);
+    });
+  });
+
+  it('7. NOK/primary-contact fields remain entirely separate from Certifier Information — distinct Case properties, never conflated', () => {
+    const case_ = baseCase({
+      nextOfKinName: 'KAREN ELLISON',
+      nextOfKinPhone: '555-0100',
+      certifierName: 'DR. JANE FOSTER',
+      certifierPhone: '555-0199',
+    });
+    expect(case_.nextOfKinName).not.toBe(case_.certifierName);
+    expect(case_.nextOfKinPhone).not.toBe(case_.certifierPhone);
+  });
+});

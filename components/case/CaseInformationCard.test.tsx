@@ -728,6 +728,16 @@ describe('CaseInformationCard — Certifier Information (2026-09, ADR-041)', () 
     expect(screen.getByText('Certifier fax')).toBeInTheDocument();
   });
 
+  it('7. is presented as a distinct section from Next of kin, with helper text clarifying it is never the family contact', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
+    expect(screen.getByText('Certifier information')).toBeInTheDocument();
+    expect(screen.getByText(/medical certifier responsible for signing the death certificate/i)).toBeInTheDocument();
+    // The two group headings are genuinely distinct DOM nodes, never a
+    // single combined "Next of kin & Certifier" heading.
+    expect(screen.getByText('Next of kin / primary contact')).not.toBe(screen.getByText('Certifier information'));
+  });
+
   it('shows a placeholder when every certifier field is null', () => {
     render(
       <CaseInformationCard
