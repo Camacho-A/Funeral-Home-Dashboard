@@ -2488,37 +2488,3 @@ export function recordCaseSequenceInitialized(
     dataAdapterMode,
   );
 }
-
-/** B2026-034 incident recovery (2026-09). Sole emitter: the one-time,
-    admin-only recovery endpoint's POST handler — called after both a
-    successful and a failed restoration attempt (never on a 409
-    precondition-not-met response, since that path performed no write at
-    all). `newValue` carries only the sanitized outcome and case number —
-    never a restored field value, matching this event type's own registry
-    comment. */
-export function recordCaseIncidentRecovery(
-  ctx: ActivityContext,
-  caseId: string,
-  caseNumber: string,
-  outcome: 'succeeded' | 'failed',
-  dataAdapterMode: DataAdapterMode,
-): Promise<ActivityEvent> {
-  return record(
-    envelope(ctx, {
-      caseId,
-      category: 'administration',
-      eventType: ACTIVITY_EVENT_TYPES.CASE_INCIDENT_RECOVERY_PERFORMED,
-      resourceType: 'case',
-      resourceId: caseId,
-      previousValue: null,
-      newValue: JSON.stringify({ caseNumber, outcome }),
-      description:
-        outcome === 'succeeded'
-          ? `Incident recovery completed for case ${caseNumber} — Case record restored from its last-known-good pre-incident state.`
-          : `Incident recovery attempted for case ${caseNumber} but did not complete successfully.`,
-      metadata: null,
-      severity: outcome === 'succeeded' ? 'warning' : 'critical',
-    }),
-    dataAdapterMode,
-  );
-}

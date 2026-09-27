@@ -213,16 +213,6 @@ export const ACTIVITY_EVENT_TYPES = {
       sole emitter. */
   CASE_SEQUENCE_INITIALIZED: 'case.sequence.initialized',
 
-  /** B2026-034 incident recovery (2026-09). A one-time, admin-only, hard-
-      scoped restoration of a single Case row after a destructive Wix Data
-      update accidentally replaced its `data` object rather than merging
-      into it — see app/api/admin/incident-recovery/b2026-034/route.ts, the
-      sole emitter. Uses the `'administration'` category, mirroring
-      CASE_SEQUENCE_INITIALIZED immediately above. `previousValue`/
-      `newValue` never carry restored Case data or PII — only a sanitized
-      outcome ('succeeded'/'failed') and the case number. */
-  CASE_INCIDENT_RECOVERY_PERFORMED: 'case.incident_recovery.performed',
-
   /** Reserved — no reminder/automation engine exists in Solis at all yet. */
   SYSTEM_REMINDER_TRIGGERED: 'system.reminder.triggered',
   SYSTEM_WORKFLOW_AUTOMATION_EXECUTED: 'system.workflow_automation.executed',

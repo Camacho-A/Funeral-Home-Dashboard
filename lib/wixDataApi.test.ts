@@ -5,7 +5,6 @@ import {
   insertWixDataItem,
   updateWixDataItem,
   deleteWixDataItem,
-  getWixDataItemById,
   incrementWixDataField,
   conditionalPatchWixDataItem,
   WixDataApiError,
@@ -232,35 +231,6 @@ describe('updateWixDataItem', () => {
   it('throws a clean error naming the collection and status on failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
     await expect(updateWixDataItem('cases', 'no-such-id', {})).rejects.toThrow(/cases.*404/);
-  });
-});
-
-describe('getWixDataItemById — B2026-034 incident recovery (2026-09)', () => {
-  it('GETs the item-scoped URL, mirroring update/deleteWixDataItem\'s own URL construction', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ dataItem: { id: 'case-1', dataCollectionId: 'cases', data: { fieldValues: {} } } }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const result = await getWixDataItemById('cases', 'case-1');
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://www.wixapis.com/wix-data/v2/items/case-1?dataCollectionId=cases',
-      expect.objectContaining({ method: 'GET' }),
-    );
-    expect(result).toEqual({ id: 'case-1', dataCollectionId: 'cases', data: { fieldValues: {} } });
-  });
-
-  it('returns null (never throws) on a 404 — "not found" is a valid outcome', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }));
-    await expect(getWixDataItemById('cases', 'missing')).resolves.toBeNull();
-  });
-
-  it('throws a clean WixDataApiError naming the collection and status on a genuine failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
-    await expect(getWixDataItemById('cases', 'x')).rejects.toThrow(/cases.*500/);
-    await expect(getWixDataItemById('cases', 'x')).rejects.toMatchObject({ status: 500 });
   });
 });
 

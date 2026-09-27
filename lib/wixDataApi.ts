@@ -222,49 +222,6 @@ export async function updateWixDataItem<Item = Record<string, unknown>>(
   return body.dataItem;
 }
 
-/**
- * B2026-034 incident recovery (2026-09). A direct "Get Data Item by known
- * Wix system id" read — added because the damaged Case row left behind by
- * the incident (see app/api/admin/incident-recovery/b2026-034/route.ts) no
- * longer carries `beaconCaseId`/`organizationId`/any other `data` field a
- * `queryWixDataItems` filter could match on, only `fieldValues` and
- * `workflowSnapshot` survived. Every other read in this codebase locates a
- * row via a `data`-field filter (see queryWixDataItems's callers); this is
- * the one case where only the Wix-assigned `_id` itself is known to still
- * be reliable, so it's fetched directly via Wix's own single-item GET
- * endpoint — the same URL construction updateWixDataItem/deleteWixDataItem
- * already use, just with the read verb. Returns null on 404 rather than
- * throwing, mirroring queryWixDataItems's callers' own "not found is a
- * valid outcome" handling.
- */
-export async function getWixDataItemById<Item = Record<string, unknown>>(
-  dataCollectionId: string,
-  wixItemId: string,
-): Promise<WixDataItem<Item> | null> {
-  const { apiKey, siteId } = getWixServerConfig();
-
-  const response = await fetch(
-    `https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}?dataCollectionId=${encodeURIComponent(dataCollectionId)}`,
-    {
-      method: 'GET',
-      headers: wixDataHeaders(apiKey, siteId),
-    },
-  );
-
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new WixDataApiError(
-      `Wix Data get-by-id failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
-      response.status,
-    );
-  }
-
-  const body = await response.json();
-  return body.dataItem;
-}
-
 export async function deleteWixDataItem(dataCollectionId: string, wixItemId: string): Promise<void> {
   const { apiKey, siteId } = getWixServerConfig();
 
