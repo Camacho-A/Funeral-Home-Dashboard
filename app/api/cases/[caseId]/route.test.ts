@@ -917,6 +917,17 @@ describe('Dispatch (pickup-only) authorization — GET and PATCH /api/cases/[cas
     expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 
+  it('PATCH rejects an attempt to change Weight specifically (case field editing, 2026-09) — pickup-only staff cannot edit ordinary Case information', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { weight: '210 lb', fieldValues: { 3: '210 lb' } },
+    });
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
   it('PATCH rejects a mixed patch (one pickup field + one non-pickup field) entirely, with 403, before any write', async () => {
     mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
 

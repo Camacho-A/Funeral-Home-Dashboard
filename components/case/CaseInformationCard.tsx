@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
@@ -89,6 +89,8 @@ function EditableField({
   kind = 'text',
   uppercase = false,
   crossFieldValidate,
+  valueClassName,
+  trailingBadge,
 }: {
   label: string;
   value: string;
@@ -100,6 +102,14 @@ function EditableField({
       field's own format validity can't express. Called with the value
       already expanded to a 4-digit year. */
   crossFieldValidate?: (value: string) => string | null;
+  /** Case field editing (2026-09). Extra class appended to the displayed
+      (non-editing) value button — e.g. Weight's bold/over-limit color —
+      without a second, bespoke click-to-edit implementation. */
+  valueClassName?: string;
+  /** Case field editing (2026-09). Inline content rendered next to the
+      displayed value only (never shown while editing) — e.g. Weight's
+      "Notify crematory" badge. */
+  trailingBadge?: ReactNode;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -248,9 +258,12 @@ function EditableField({
           )}
         </>
       ) : (
-        <button type="button" className={styles.editableValue} onClick={startEditing}>
-          {displayValue || '—'}
-        </button>
+        <div className={styles.editableValueRow}>
+          <button type="button" className={`${styles.editableValue} ${valueClassName ?? ''}`} onClick={startEditing}>
+            {displayValue || '—'}
+          </button>
+          {trailingBadge}
+        </div>
       )}
     </div>
   );
@@ -284,6 +297,7 @@ export function CaseInformationCard({
   staffOptions,
   onReassignOwner,
   onUpdateCaseInfo,
+  onSaveWeight,
   isVeteran,
   veteranFlagLocked,
   onToggleVeteran,
@@ -335,6 +349,12 @@ export function CaseInformationCard({
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
   onUpdateCaseInfo: (patch: CaseUpdate) => void;
+  /** Case field editing / field-backed checklist sync (2026-09). Distinct
+      from onUpdateCaseInfo — saving Weight must also keep the First Call &
+      Payment checklist's field-backed Weight item in sync (fieldValues),
+      which requires the case's own workflowSnapshot; see
+      hooks/useCaseMutations.ts#setWeight, this prop's intended wiring. */
+  onSaveWeight: (value: string) => void;
   isVeteran: boolean;
   veteranFlagLocked: boolean;
   onToggleVeteran: (newValue: boolean) => void;
@@ -376,13 +396,13 @@ export function CaseInformationCard({
           uppercase
           onSave={(v) => onUpdateCaseInfo({ placeOfDeath: v })}
         />
-        <div>
-          <div className={styles.fieldLabel}>Weight</div>
-          <div className={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}>
-            {weight}
-            {weightOver200 && <span className={styles.notifyBadge}>Notify crematory</span>}
-          </div>
-        </div>
+        <EditableField
+          label="Weight"
+          value={weight}
+          onSave={(v) => onSaveWeight(v)}
+          valueClassName={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}
+          trailingBadge={weightOver200 ? <span className={styles.notifyBadge}>Notify crematory</span> : null}
+        />
         <EditableField
           label="Next of kin"
           value={nextOfKinName}

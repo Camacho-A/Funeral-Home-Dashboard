@@ -76,3 +76,35 @@ export function buildStructuredCaseFields(
   }
   return result;
 }
+
+/**
+ * The inverse lookup of buildStructuredCaseFields: given a structured Case
+ * field name (e.g. 'weight'), finds the intake field that maps to it and
+ * returns its checklistItemIndex — the fieldValues key that field's
+ * checklist item reads its "done" state from (domain/workflow/
+ * resolveChecklist.ts's isFieldDone). Returns null when no intake field
+ * maps to that Case field, or when the matching field has no
+ * checklistItemIndex — either way, there is no fieldValues key to keep in
+ * sync for it.
+ *
+ * Exists so that editing a structured Case field which is *also* a
+ * field-backed checklist item (Weight today; Time of Death and the
+ * Hospice/physician contact are the same shape, added to this pattern in a
+ * later step) can write both Case.<field> and the corresponding
+ * fieldValues[index] from one place, instead of the checklist item
+ * silently staying "incomplete" after a save that only touched the
+ * structured property. Never assumes a fixed index (e.g. weight isn't
+ * hardcoded to 3 anywhere) — this always resolves against the case's own
+ * workflowSnapshot.intake, so it stays correct for any organization's
+ * template shape.
+ */
+export function findChecklistIndexForCaseField(intake: IntakeTemplate, caseField: string): number | null {
+  for (const section of intake.sections) {
+    for (const field of section.fields) {
+      if (field.mapsToCaseField === caseField && field.checklistItemIndex !== undefined) {
+        return field.checklistItemIndex;
+      }
+    }
+  }
+  return null;
+}

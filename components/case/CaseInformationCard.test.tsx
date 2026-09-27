@@ -29,6 +29,7 @@ const baseProps = {
   ownerStaffId: 'staff-dana',
   staffOptions: [{ id: 'staff-dana', name: 'Dana' }],
   onReassignOwner: vi.fn(),
+  onSaveWeight: vi.fn(),
   isVeteran: false,
   veteranFlagLocked: false,
   onToggleVeteran: vi.fn(),
@@ -596,5 +597,83 @@ describe('CaseInformationCard — Return method (conditional shipping/tracking, 
     render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
     fireEvent.change(screen.getByDisplayValue('Not yet shipped'), { target: { value: 'delivered' } });
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingDeliveryStatus: 'delivered' });
+  });
+});
+
+/**
+ * Case field editing (2026-09): Weight becomes click-to-edit, same pattern
+ * as every other EditableField above, but saves through the dedicated
+ * onSaveWeight prop (not onUpdateCaseInfo) — see
+ * hooks/useCaseMutations.ts#setWeight for why (keeping the field-backed
+ * checklist item's fieldValues[index] in sync in the same save).
+ */
+describe('CaseInformationCard — Weight editing (2026-09)', () => {
+  it('shows Weight as plain text until clicked, then as an input', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    const value = screen.getByRole('button', { name: '178 lb' });
+    expect(screen.queryByDisplayValue('178 lb')).not.toBeInTheDocument();
+    fireEvent.click(value);
+    expect(screen.getByDisplayValue('178 lb')).toBeInTheDocument();
+  });
+
+  it('saves through onSaveWeight (never onUpdateCaseInfo) on Enter', () => {
+    const onSaveWeight = vi.fn();
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} onSaveWeight={onSaveWeight} />);
+    fireEvent.click(screen.getByRole('button', { name: '178 lb' }));
+    const input = screen.getByDisplayValue('178 lb');
+    fireEvent.change(input, { target: { value: '210 lb' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSaveWeight).toHaveBeenCalledTimes(1);
+    expect(onSaveWeight).toHaveBeenCalledWith('210 lb');
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('saves on blur too', () => {
+    const onSaveWeight = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveWeight={onSaveWeight} />);
+    fireEvent.click(screen.getByRole('button', { name: '178 lb' }));
+    const input = screen.getByDisplayValue('178 lb');
+    fireEvent.change(input, { target: { value: '165 lb' } });
+    fireEvent.blur(input);
+    expect(onSaveWeight).toHaveBeenCalledWith('165 lb');
+  });
+
+  it('does not call onSaveWeight if the value is unchanged', () => {
+    const onSaveWeight = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveWeight={onSaveWeight} />);
+    fireEvent.click(screen.getByRole('button', { name: '178 lb' }));
+    fireEvent.keyDown(screen.getByDisplayValue('178 lb'), { key: 'Enter' });
+    expect(onSaveWeight).not.toHaveBeenCalled();
+  });
+
+  it('Escape reverts without saving', () => {
+    const onSaveWeight = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveWeight={onSaveWeight} />);
+    fireEvent.click(screen.getByRole('button', { name: '178 lb' }));
+    const input = screen.getByDisplayValue('178 lb');
+    fireEvent.change(input, { target: { value: '999 lb' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onSaveWeight).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '178 lb' })).toBeInTheDocument();
+  });
+
+  it('shows the "Notify crematory" badge alongside the value when weightOver200 is true', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '178 lb' })).toBeInTheDocument();
+    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+  });
+
+  it('does not show the badge when weightOver200 is false', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Notify crematory')).not.toBeInTheDocument();
+  });
+
+  it('the badge is not shown while editing (reappears once editing ends without a value change)', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} onSaveWeight={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '178 lb' }));
+    expect(screen.queryByText('Notify crematory')).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByDisplayValue('178 lb'), { key: 'Escape' });
+    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
   });
 });

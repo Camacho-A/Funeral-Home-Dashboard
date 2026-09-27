@@ -491,6 +491,37 @@ describe('applyCaseUpdateToWixData', () => {
     expect(result.pickupStatus).toBe('released');
     expect(result.pickupReleasedTo).toBe('Karen Ellison');
   });
+
+  /**
+   * Case field editing / field-backed checklist sync (2026-09). A combined
+   * {weight, fieldValues} patch (hooks/useCaseMutations.ts#setWeight's own
+   * shape) is exactly the class of update the B2026-034 incident showed
+   * can go wrong if a caller ever sends Wix a bare partial object instead
+   * of routing through this merge function — this proves the full record
+   * survives a real combined-field save, not just a single-field one.
+   */
+  it('a combined weight+fieldValues patch preserves every other field on the record (Wix full-replace safety)', () => {
+    const existing = { ...validItem, fieldValues: { 0: 'Robert Ellison', 1: "St. Mary's Hospital" } };
+    const result = applyCaseUpdateToWixData(existing, { weight: '210 lb', fieldValues: { 0: 'Robert Ellison', 1: "St. Mary's Hospital", 3: '210 lb' } });
+
+    expect(result.weight).toBe('210 lb');
+    expect(result.fieldValues).toEqual({ 0: 'Robert Ellison', 1: "St. Mary's Hospital", 3: '210 lb' });
+    // Every other field from the existing record survives untouched —
+    // never silently dropped the way a bare partial-object PUT would.
+    expect(result.organizationId).toBe(existing.organizationId);
+    expect(result.caseNumber).toBe(existing.caseNumber);
+    expect(result.decedentName).toBe(existing.decedentName);
+    expect(result.nextOfKinName).toBe(existing.nextOfKinName);
+    expect(result.nextOfKinPhone).toBe(existing.nextOfKinPhone);
+    expect(result.paymentStatus).toBe(existing.paymentStatus);
+    expect(result.isVeteran).toBe(existing.isVeteran);
+    expect(result.checklistState).toEqual(existing.checklistState);
+    expect(result.currentStage).toBe(existing.currentStage);
+    expect(result.workflowSnapshot).toBe(existing.workflowSnapshot);
+    expect(result.workflowTemplateId).toBe(existing.workflowTemplateId);
+    expect(result.createdAt).toBe(existing.createdAt);
+    expect(result.createdBy).toBe(existing.createdBy);
+  });
 });
 
 describe('SOLIS ALL-CAPS data standard (2026-09)', () => {

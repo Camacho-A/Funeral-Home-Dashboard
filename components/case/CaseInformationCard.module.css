@@ -55,6 +55,14 @@
   border-bottom-color: var(--color-border);
 }
 
+/* Case field editing (2026-09): lets a trailing badge (e.g. Weight's
+   "Notify crematory") sit next to the click-to-edit value without
+   affecting the button's own click target. */
+.editableValueRow {
+  display: flex;
+  align-items: center;
+}
+
 .fieldError {
   font-size: var(--font-size-12-5);
   color: var(--color-danger-text);

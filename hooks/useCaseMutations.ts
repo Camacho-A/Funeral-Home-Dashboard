@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case, CaseUpdate, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import { casesService } from '@/services/casesService';
+import { findChecklistIndexForCaseField } from '@/domain/workflow/resolveIntake';
 import { useOrganization } from './useOrganization';
 
 /**
@@ -50,6 +51,36 @@ export function useCaseMutations(caseId: string) {
      * differently-named mutator per field.
      */
     updateCaseInfo(patch: CaseUpdate) {
+      updateCase.mutate(patch);
+    },
+
+    /**
+     * Case field editing / field-backed checklist sync (2026-09). Weight is
+     * both a structured Case property (shown in CaseInformationCard) and a
+     * field-backed First Call & Payment checklist item — editing only
+     * Case.weight (the way updateCaseInfo's other structured fields work)
+     * would leave that checklist item permanently "incomplete", since
+     * resolveChecklist.ts's isFieldDone reads fieldValues[index], never
+     * Case.weight directly. This writes both in the same patch, so the
+     * checklist recognizes completion immediately without a second save —
+     * and without ever touching checklistState or rawStage/currentStage
+     * directly, which stay driven by the existing field-backed completion
+     * logic exactly as they already are for every other field-backed item.
+     *
+     * The index is resolved from the case's own workflowSnapshot.intake
+     * (findChecklistIndexForCaseField) rather than assumed — this is not a
+     * Weight-specific special case, it works the same way for any
+     * structured Case field an intake template maps to a checklist index
+     * (Time of Death and the Hospice/physician contact fit this same
+     * shape; wiring them through the UI is a deliberately separate,
+     * later step, not a limitation of this function).
+     */
+    setWeight(case_: Case, value: string) {
+      const patch: CaseUpdate = { weight: value };
+      const index = case_.workflowSnapshot ? findChecklistIndexForCaseField(case_.workflowSnapshot.intake, 'weight') : null;
+      if (index !== null) {
+        patch.fieldValues = { ...case_.fieldValues, [index]: value };
+      }
       updateCase.mutate(patch);
     },
 

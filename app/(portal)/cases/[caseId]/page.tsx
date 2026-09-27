@@ -232,6 +232,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             staffOptions={staffOptions}
             onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
             onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
+            onSaveWeight={(value) => mutations.setWeight(case_, value)}
             isVeteran={viewModel.isVeteran}
             veteranFlagLocked={viewModel.veteranFlagLocked}
             onToggleVeteran={(newValue) => mutations.setVeteranFlag(newValue)}
