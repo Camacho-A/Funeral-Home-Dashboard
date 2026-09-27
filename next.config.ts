@@ -19,14 +19,33 @@ const nextConfig: NextConfig = {
   // executablePath()` resolves to a path that doesn't exist in Production.
   // `serverExternalPackages` is the current (Next.js 15, stable — not the
   // deprecated `experimental.serverComponentsExternalPackages`) top-level
-  // config key for exactly this: it excludes a package from bundling and
-  // lets Vercel's own output file tracing include it — and everything it
-  // references — as-is from node_modules, which is the officially
-  // documented fix for this exact `@sparticuz/chromium` + `puppeteer-core`
-  // pairing on Vercel. No outputFileTracingIncludes glob is needed on top
-  // of this — the package's own bin/ files are already reachable from its
-  // own (now unbundled) source, which file tracing follows automatically.
+  // config key for exactly this: it excludes the package from bundling, so
+  // its own build/*.js files resolve and trace correctly as ordinary
+  // node_modules requires (confirmed directly in a real `next build`'s
+  // generated .next/server/.../route.js.nft.json — every @sparticuz/chromium
+  // *.js file is traced correctly).
   serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+  // Item #1 follow-up fix (2026-09) — proven necessary by an actual
+  // Production failure after the serverExternalPackages-only fix above:
+  // "The input directory .../node_modules/@sparticuz/chromium/bin does
+  // not exist." serverExternalPackages only keeps the package's *JS
+  // module graph* un-bundled/traceable — it does nothing for the
+  // `bin/*.br` Chromium binary assets, which chromium.executablePath()
+  // locates via a computed `fs.existsSync`/`path.join(__dirname, '..',
+  // 'bin', ...)` call, not a `require`/`import` statement. Next's file
+  // tracer (@vercel/nft) only discovers files reachable through the
+  // static module graph, so it has no way to know this directory is
+  // needed — confirmed directly: a real build's trace for this route
+  // included every @sparticuz/chromium *.js file but none of bin/'s 4
+  // files. outputFileTracingIncludes is Next's own documented mechanism
+  // for exactly this class of gap ("manually including traced files if
+  // some were not detected on a per-page basis"). Scoped to only this
+  // one route — no other route launches Chromium — and to only the bin/
+  // directory specifically (not the whole package, which the JS tracing
+  // above already covers correctly on its own).
+  outputFileTracingIncludes: {
+    '/api/cases/[caseId]/billing/statement': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+  },
 };
 
 export default nextConfig;

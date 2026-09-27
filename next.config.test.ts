@@ -14,4 +14,24 @@ describe('next.config.ts — Vercel Chromium configuration (item #1)', () => {
     expect(nextConfig.serverExternalPackages).toContain('@sparticuz/chromium');
     expect(nextConfig.serverExternalPackages).toContain('puppeteer-core');
   });
+
+  /**
+   * Item #1 follow-up (2026-09). serverExternalPackages alone left the
+   * Chromium binary assets (node_modules/@sparticuz/chromium/bin/*.br)
+   * out of the deployed function — they're loaded via a computed
+   * fs path, not a require/import, so Next's static file tracer can't
+   * discover them on its own. Proven in a real Production failure:
+   * "The input directory .../node_modules/@sparticuz/chromium/bin does
+   * not exist." This asserts the route-scoped outputFileTracingIncludes
+   * fix stays in place, keyed by the App Router route's normalized path
+   * (dynamic segment brackets preserved, no app/ prefix, no page/route
+   * suffix — confirmed via direct .next build trace inspection).
+   */
+  it('includes @sparticuz/chromium/bin assets for the Statement route via outputFileTracingIncludes', () => {
+    const includes = nextConfig.outputFileTracingIncludes;
+    expect(includes).toBeDefined();
+    const statementRouteGlobs = includes?.['/api/cases/[caseId]/billing/statement'];
+    expect(statementRouteGlobs).toBeDefined();
+    expect(statementRouteGlobs).toContain('./node_modules/@sparticuz/chromium/bin/**/*');
+  });
 });
