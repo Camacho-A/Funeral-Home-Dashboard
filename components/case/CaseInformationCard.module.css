@@ -69,6 +69,40 @@
   margin-top: var(--space-2);
 }
 
+/* Time of Death 12-hour entry (2026-09): the hour/minute/AM-PM selects
+   plus Save/Cancel, laid out in one row while editing. */
+.timeEditRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.timeColon {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}
+
+.timeSaveButton,
+.timeCancelButton {
+  font-family: inherit;
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-card);
+  color: var(--color-text-primary);
+}
+
+.timeSaveButton {
+  border-color: var(--color-brand);
+  background: var(--color-brand);
+  color: var(--color-surface-card);
+}
+
 .paymentSelect {
   margin-top: var(--space-2);
   font-weight: var(--font-weight-medium);

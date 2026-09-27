@@ -15,6 +15,9 @@ import {
   expandTwoDigitYearInDateInput,
   getDateOfBirthDeathOrderError,
   getDateOfDeathFutureError,
+  splitMilitaryTimeToTwelveHourParts,
+  combineTwelveHourTimeParts,
+  formatMilitaryTimeToTwelveHour,
 } from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
 import styles from './CaseInformationCard.module.css';
@@ -269,6 +272,115 @@ function EditableField({
   );
 }
 
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+/**
+ * Time of Death 12-hour entry (2026-09). A separate, purpose-built
+ * click-to-edit field rather than a new EditableField `kind` — the
+ * canonical persisted value is still strict 24-hour "HH:mm" (unchanged;
+ * isValidMilitaryTime still governs it end to end), but staff enter/see it
+ * as three plain, closed-option controls (hour 1-12, minute 00-59, AM/PM),
+ * which structurally can never produce an invalid or "guessed" time the
+ * way free-text entry could. No blur-based commit here — there's no
+ * single element to blur from across three <select>s — so committing is
+ * an explicit Save action instead, matching this component's own
+ * documented "explicit save if the component already supports it"
+ * convention. combineTwelveHourTimeParts (utils/inputMask.ts) does the
+ * actual 12-hour -> 24-hour normalization; this component only collects
+ * the three parts and displays the friendly 12-hour form when idle.
+ *
+ * Mirrors EditableField's own pendingValue echo-until-confirmed
+ * mechanism so a just-saved time doesn't flicker back to the pre-edit
+ * value while the mutation is still in flight.
+ */
+function TwelveHourTimeField({ label, value, onSave }: { label: string; value: string; onSave: (newValue: string) => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [hour, setHour] = useState('');
+  const [minute, setMinute] = useState('');
+  const [period, setPeriod] = useState<'' | 'AM' | 'PM'>('');
+  const [pendingValue, setPendingValue] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingValue !== null && value === pendingValue) setPendingValue(null);
+  }, [value, pendingValue]);
+
+  const displayValue = pendingValue ?? value;
+
+  function startEditing() {
+    const parts = splitMilitaryTimeToTwelveHourParts(displayValue);
+    setHour(parts.hour);
+    setMinute(parts.minute);
+    setPeriod(parts.period);
+    setIsEditing(true);
+  }
+
+  function commit() {
+    const normalized = combineTwelveHourTimeParts(hour, minute, period);
+    setIsEditing(false);
+    if (normalized !== null && normalized !== displayValue) {
+      setPendingValue(normalized);
+      onSave(normalized);
+    }
+  }
+
+  function cancel() {
+    setIsEditing(false);
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  }
+
+  return (
+    <div>
+      <div className={styles.fieldLabel}>{label}</div>
+      {isEditing ? (
+        <div className={styles.timeEditRow} onKeyDown={handleKeyDown}>
+          <SelectField aria-label="Hour" value={hour} onChange={(e) => setHour(e.target.value)}>
+            <option value="">--</option>
+            {HOUR_OPTIONS.map((h) => (
+              <option key={h} value={h}>
+                {h}
+              </option>
+            ))}
+          </SelectField>
+          <span className={styles.timeColon}>:</span>
+          <SelectField aria-label="Minute" value={minute} onChange={(e) => setMinute(e.target.value)}>
+            <option value="">--</option>
+            {MINUTE_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField aria-label="AM or PM" value={period} onChange={(e) => setPeriod(e.target.value as '' | 'AM' | 'PM')}>
+            <option value="">--</option>
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </SelectField>
+          <button type="button" className={styles.timeSaveButton} onClick={commit} aria-label="Save time of death">
+            Save
+          </button>
+          <button type="button" className={styles.timeCancelButton} onClick={cancel} aria-label="Cancel editing time of death">
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button type="button" className={styles.editableValue} onClick={startEditing}>
+          {formatMilitaryTimeToTwelveHour(displayValue) || '—'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function CaseInformationCard({
   dateOfBirth,
   dateOfDeath,
@@ -389,10 +501,9 @@ export function CaseInformationCard({
           onSave={(v) => onUpdateCaseInfo({ dateOfDeath: v })}
           crossFieldValidate={(v) => getDateOfDeathFutureError(v) ?? getDateOfBirthDeathOrderError(dateOfBirth, v)}
         />
-        <EditableField
+        <TwelveHourTimeField
           label="Time of death"
           value={timeOfDeath}
-          kind="time"
           onSave={(v) => onSaveTimeOfDeath(v)}
         />
         <EditableField

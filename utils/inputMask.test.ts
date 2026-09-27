@@ -13,6 +13,9 @@ import {
   getValidationError,
   formatMilitaryTimeInput,
   isValidMilitaryTime,
+  splitMilitaryTimeToTwelveHourParts,
+  combineTwelveHourTimeParts,
+  formatMilitaryTimeToTwelveHour,
   expandTwoDigitYear,
   expandTwoDigitYearInDateInput,
   isValidCalendarDateAllowingTwoDigitYear,
@@ -462,5 +465,87 @@ describe('isValidMilitaryTime (Solis go-live — Time of Death 24-hour input)', 
   it('rejects non-time garbage', () => {
     expect(isValidMilitaryTime('not a time')).toBe(false);
     expect(isValidMilitaryTime('14:30:00')).toBe(false);
+  });
+});
+
+describe('combineTwelveHourTimeParts (Time of Death 12-hour entry, 2026-09)', () => {
+  it('1. 8:35 AM -> 08:35', () => {
+    expect(combineTwelveHourTimeParts('8', '35', 'AM')).toBe('08:35');
+  });
+
+  it('2. 8:35 PM -> 20:35', () => {
+    expect(combineTwelveHourTimeParts('8', '35', 'PM')).toBe('20:35');
+  });
+
+  it('3. 12:15 AM -> 00:15', () => {
+    expect(combineTwelveHourTimeParts('12', '15', 'AM')).toBe('00:15');
+  });
+
+  it('4. 12:15 PM -> 12:15', () => {
+    expect(combineTwelveHourTimeParts('12', '15', 'PM')).toBe('12:15');
+  });
+
+  it('5. 1:00 PM -> 13:00', () => {
+    expect(combineTwelveHourTimeParts('1', '00', 'PM')).toBe('13:00');
+  });
+
+  it('6. 11:59 PM -> 23:59', () => {
+    expect(combineTwelveHourTimeParts('11', '59', 'PM')).toBe('23:59');
+  });
+
+  it('also covers every other boundary from the requested mapping table', () => {
+    expect(combineTwelveHourTimeParts('1', '00', 'AM')).toBe('01:00');
+    expect(combineTwelveHourTimeParts('9', '05', 'AM')).toBe('09:05');
+    expect(combineTwelveHourTimeParts('12', '00', 'AM')).toBe('00:00');
+    expect(combineTwelveHourTimeParts('12', '30', 'AM')).toBe('00:30');
+    expect(combineTwelveHourTimeParts('12', '00', 'PM')).toBe('12:00');
+    expect(combineTwelveHourTimeParts('12', '30', 'PM')).toBe('12:30');
+  });
+
+  it('7. rejects an invalid hour rather than guessing', () => {
+    expect(combineTwelveHourTimeParts('0', '00', 'AM')).toBeNull();
+    expect(combineTwelveHourTimeParts('13', '00', 'PM')).toBeNull();
+    expect(combineTwelveHourTimeParts('', '00', 'AM')).toBeNull();
+  });
+
+  it('8. rejects an invalid minute rather than guessing', () => {
+    expect(combineTwelveHourTimeParts('8', '60', 'AM')).toBeNull();
+    expect(combineTwelveHourTimeParts('8', '-1', 'AM')).toBeNull();
+    expect(combineTwelveHourTimeParts('8', '', 'AM')).toBeNull();
+    expect(combineTwelveHourTimeParts('8', '5', 'AM')).toBeNull(); // must be 2 digits, not guessed as '05'
+  });
+
+  it('9. missing/unset AM-PM is handled safely (rejected, never guessed)', () => {
+    expect(combineTwelveHourTimeParts('8', '35', '')).toBeNull();
+    expect(combineTwelveHourTimeParts('8', '35', 'am')).toBeNull(); // exact 'AM'/'PM' only, no case-insensitive guessing
+  });
+});
+
+describe('splitMilitaryTimeToTwelveHourParts / formatMilitaryTimeToTwelveHour (Time of Death 12-hour entry, 2026-09)', () => {
+  it('10. an existing stored 20:35 displays as 8:35 PM', () => {
+    expect(formatMilitaryTimeToTwelveHour('20:35')).toBe('8:35 PM');
+    expect(splitMilitaryTimeToTwelveHourParts('20:35')).toEqual({ hour: '8', minute: '35', period: 'PM' });
+  });
+
+  it('midnight (00:xx) displays as 12:xx AM', () => {
+    expect(formatMilitaryTimeToTwelveHour('00:15')).toBe('12:15 AM');
+    expect(splitMilitaryTimeToTwelveHourParts('00:00')).toEqual({ hour: '12', minute: '00', period: 'AM' });
+  });
+
+  it('noon (12:xx) displays as 12:xx PM', () => {
+    expect(formatMilitaryTimeToTwelveHour('12:00')).toBe('12:00 PM');
+    expect(splitMilitaryTimeToTwelveHourParts('12:30')).toEqual({ hour: '12', minute: '30', period: 'PM' });
+  });
+
+  it('an empty value produces empty parts and an empty display string — never a fabricated time', () => {
+    expect(formatMilitaryTimeToTwelveHour('')).toBe('');
+    expect(splitMilitaryTimeToTwelveHourParts('')).toEqual({ hour: '', minute: '', period: '' });
+  });
+
+  it('round-trips through combineTwelveHourTimeParts back to the exact original canonical value', () => {
+    for (const canonical of ['00:00', '00:30', '08:35', '12:00', '12:30', '13:00', '20:35', '23:59']) {
+      const parts = splitMilitaryTimeToTwelveHourParts(canonical);
+      expect(combineTwelveHourTimeParts(parts.hour, parts.minute, parts.period)).toBe(canonical);
+    }
   });
 });

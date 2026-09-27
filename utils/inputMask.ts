@@ -269,6 +269,76 @@ export function isValidMilitaryTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+/**
+ * Time of Death 12-hour entry (2026-09). The persisted/canonical value is
+ * unchanged — still strict 24-hour "HH:mm" (isValidMilitaryTime above,
+ * unchanged, still governs it) — only how staff *enter* and *see* it
+ * changes. These three functions are pure, free of any UI framework, and
+ * deliberately reject rather than guess: a caller with an incomplete or
+ * out-of-range selection gets `null`/an empty parts object back, never a
+ * best-effort fabricated time.
+ *
+ * NewCaseModal.tsx's own intake-time "Time of death" field is unaffected —
+ * that's a separate input surface (case-creation, not Case Detail editing)
+ * and continues to use formatMilitaryTimeInput/isValidMilitaryTime exactly
+ * as before; this session's change is scoped to Case Detail only.
+ */
+
+export type TwelveHourTimeParts = { hour: string; minute: string; period: '' | 'AM' | 'PM' };
+
+/**
+ * Decomposes a canonical 24-hour "HH:mm" value into 12-hour edit parts —
+ * hour is "1".."12" (no leading zero — a <select> option value, not a
+ * display string), minute is "00".."59", period is 'AM'|'PM'. An empty or
+ * invalid input returns all-empty parts (never throws) — the editor then
+ * simply starts with nothing selected, matching how EditableField already
+ * treats an empty existing value.
+ */
+export function splitMilitaryTimeToTwelveHourParts(value: string): TwelveHourTimeParts {
+  if (!isValidMilitaryTime(value) || value === '') return { hour: '', minute: '', period: '' };
+  const [hourStr, minuteStr] = value.split(':');
+  const hour24 = Number(hourStr);
+  const period: 'AM' | 'PM' = hour24 < 12 ? 'AM' : 'PM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return { hour: String(hour12), minute: minuteStr, period };
+}
+
+/**
+ * The inverse of splitMilitaryTimeToTwelveHourParts: combines a 12-hour
+ * hour/minute/period selection back into canonical 24-hour "HH:mm".
+ * Rejects rather than guesses — returns `null` if hour isn't a whole
+ * number 1-12, minute isn't a whole number 00-59, or period isn't exactly
+ * 'AM'/'PM' (an unset "--" selection included). Examples: (8, '35', 'AM')
+ * -> '08:35'; (8, '35', 'PM') -> '20:35'; (12, '15', 'AM') -> '00:15';
+ * (12, '15', 'PM') -> '12:15'; (1, '00', 'PM') -> '13:00'.
+ */
+export function combineTwelveHourTimeParts(hour: string, minute: string, period: string): string | null {
+  if (!/^\d{1,2}$/.test(hour)) return null;
+  const hourNum = Number(hour);
+  if (hourNum < 1 || hourNum > 12) return null;
+
+  if (!/^\d{2}$/.test(minute)) return null;
+  const minuteNum = Number(minute);
+  if (minuteNum < 0 || minuteNum > 59) return null;
+
+  if (period !== 'AM' && period !== 'PM') return null;
+
+  const hour24 = period === 'AM' ? (hourNum === 12 ? 0 : hourNum) : hourNum === 12 ? 12 : hourNum + 12;
+  return `${String(hour24).padStart(2, '0')}:${String(minuteNum).padStart(2, '0')}`;
+}
+
+/**
+ * Friendly "h:mm AM/PM" display of a canonical 24-hour "HH:mm" value —
+ * display-only, never the persisted value. An empty or invalid input
+ * returns an empty string (the caller's own "—" placeholder convention
+ * applies on top of this, matching EditableField's existing pattern).
+ */
+export function formatMilitaryTimeToTwelveHour(value: string): string {
+  const parts = splitMilitaryTimeToTwelveHourParts(value);
+  if (parts.hour === '') return '';
+  return `${parts.hour}:${parts.minute} ${parts.period}`;
+}
+
 export function getValidationError(
   validationType:
     | 'none'

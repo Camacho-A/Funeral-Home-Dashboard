@@ -44,27 +44,33 @@ const baseProps = {
 };
 
 describe('CaseInformationCard — click-to-edit fields (Phase 17)', () => {
+  // Generic EditableField behaviors (click-to-edit toggle, commit-on-Enter,
+  // unchanged-value skip, Escape-revert) use Location as the vehicle field
+  // rather than Time of Death — Time of Death moved to its own dedicated
+  // 12-hour TwelveHourTimeField component (2026-09) with a different
+  // interaction shape (no single text input to click/blur), covered in its
+  // own describe block below.
   it('shows a field as plain text until clicked, then as an input', () => {
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
 
-    const value = screen.getByRole('button', { name: '14:30' });
-    expect(screen.queryByDisplayValue('14:30')).not.toBeInTheDocument();
+    const value = screen.getByRole('button', { name: "ST. MARY'S HOSPITAL" });
+    expect(screen.queryByDisplayValue("ST. MARY'S HOSPITAL")).not.toBeInTheDocument();
 
     fireEvent.click(value);
-    expect(screen.getByDisplayValue('14:30')).toBeInTheDocument();
+    expect(screen.getByDisplayValue("ST. MARY'S HOSPITAL")).toBeInTheDocument();
   });
 
-  it('commits a plain-text field on Enter (Time of death saves through onSaveTimeOfDeath, not onUpdateCaseInfo)', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+  it('commits a plain-text field on Enter', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '15:00' } });
+    fireEvent.click(screen.getByRole('button', { name: "ST. MARY'S HOSPITAL" }));
+    const input = screen.getByDisplayValue("ST. MARY'S HOSPITAL");
+    fireEvent.change(input, { target: { value: 'general hospital' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(onSaveTimeOfDeath).toHaveBeenCalledTimes(1);
-    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('15:00');
+    expect(onUpdateCaseInfo).toHaveBeenCalledTimes(1);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ placeOfDeath: 'GENERAL HOSPITAL' });
   });
 
   it('commits on blur too', () => {
@@ -79,27 +85,27 @@ describe('CaseInformationCard — click-to-edit fields (Phase 17)', () => {
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinPhone: '555-0199' });
   });
 
-  it('does not call onSaveTimeOfDeath if the value is unchanged', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+  it('does not call onUpdateCaseInfo if the value is unchanged', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    fireEvent.blur(screen.getByDisplayValue('14:30'));
+    fireEvent.click(screen.getByRole('button', { name: "ST. MARY'S HOSPITAL" }));
+    fireEvent.blur(screen.getByDisplayValue("ST. MARY'S HOSPITAL"));
 
-    expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
   });
 
   it('cancels and reverts on Escape without saving', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '99:99 garbage' } });
+    fireEvent.click(screen.getByRole('button', { name: "ST. MARY'S HOSPITAL" }));
+    const input = screen.getByDisplayValue("ST. MARY'S HOSPITAL");
+    fireEvent.change(input, { target: { value: 'garbage value' } });
     fireEvent.keyDown(input, { key: 'Escape' });
 
-    expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '14:30' })).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: "ST. MARY'S HOSPITAL" })).toBeInTheDocument();
   });
 
   it('uppercases location and next-of-kin name as the user types, matching the New Case form', () => {
@@ -246,105 +252,130 @@ describe('CaseInformationCard — DOB/DOD cross-field validation (Solis go-live 
   });
 });
 
-describe('CaseInformationCard — Time of Death 24-hour input (Solis go-live checkpoint)', () => {
-  it('auto-inserts ":" as digits are typed and commits the masked value on Enter (through onSaveTimeOfDeath)', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+describe('CaseInformationCard — Time of Death 12-hour entry (2026-09)', () => {
+  function openTimeEditor() {
+    fireEvent.click(screen.getByRole('button', { name: '2:30 PM' }));
+  }
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '1545' } });
-    expect(input).toHaveValue('15:45');
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('15:45');
+  it('10. displays the stored 24-hour value (14:30) as the friendly 12-hour form (2:30 PM)', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '2:30 PM' })).toBeInTheDocument();
+    expect(screen.queryByText('14:30')).not.toBeInTheDocument();
   });
 
-  it('masks midnight correctly', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
-
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '0000' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('00:00');
+  it('10. an existing stored 20:35 (backward compatibility with already-saved values) displays as 8:35 PM', () => {
+    render(<CaseInformationCard {...baseProps} timeOfDeath="20:35" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '8:35 PM' })).toBeInTheDocument();
   });
 
-  it('commits the masked value on blur too', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
-
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '1115' } });
-    fireEvent.blur(input);
-
-    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('11:15');
+  it('clicking the value reveals hour/minute/AM-PM selects pre-populated from the stored value', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    openTimeEditor();
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toHaveValue('2');
+    expect(screen.getByRole('combobox', { name: 'Minute' })).toHaveValue('30');
+    expect(screen.getByRole('combobox', { name: 'AM or PM' })).toHaveValue('PM');
   });
 
-  it('never introduces AM/PM — typed letters are stripped, not interpreted', () => {
+  it('11/12/13. saving via the Save button fires exactly one onSaveTimeOfDeath call with the normalized 24-hour value', () => {
     const onSaveTimeOfDeath = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    openTimeEditor();
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '1115pm' } });
-
-    expect(input).toHaveValue('11:15');
-  });
-
-  it('blocks Enter on an out-of-range hour and shows an inline error, preserving the typed text', () => {
-    const onSaveTimeOfDeath = vi.fn();
-    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
-
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '2500' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hour' }), { target: { value: '8' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Minute' }), { target: { value: '35' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'AM or PM' }), { target: { value: 'PM' } });
+    // No selection change alone has saved anything yet.
     expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
-    expect(input).toHaveValue('25:00'); // preserved for correction, not cleared
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save time of death' }));
+
+    expect(onSaveTimeOfDeath).toHaveBeenCalledTimes(1);
+    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('20:35');
   });
 
-  it('rejects an incomplete value on Enter', () => {
+  it('Enter also commits (same single-call guarantee)', () => {
     const onSaveTimeOfDeath = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    openTimeEditor();
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '930' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hour' }), { target: { value: '12' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Minute' }), { target: { value: '15' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'AM or PM' }), { target: { value: 'AM' } });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Minute' }), { key: 'Enter' });
 
-    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
+    expect(onSaveTimeOfDeath).toHaveBeenCalledTimes(1);
+    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('00:15');
+  });
+
+  it('does not save if the selection is unchanged from the current value', () => {
+    const onSaveTimeOfDeath = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    openTimeEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Save time of death' }));
     expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
   });
 
-  it('reverts an out-of-range minute on blur rather than saving it', () => {
+  it('does not save an incomplete selection (missing AM/PM) — rejects rather than guessing', () => {
     const onSaveTimeOfDeath = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
-
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '1275' } });
-    fireEvent.blur(input);
-
+    openTimeEditor();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hour' }), { target: { value: '8' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Minute' }), { target: { value: '35' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'AM or PM' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save time of death' }));
     expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '14:30' })).toBeInTheDocument();
   });
 
-  it('accepts direct 24-hour input with no AM/PM marker needed', () => {
+  it('Cancel reverts without saving', () => {
     const onSaveTimeOfDeath = vi.fn();
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    openTimeEditor();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hour' }), { target: { value: '11' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Minute' }), { target: { value: '59' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'AM or PM' }), { target: { value: 'PM' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel editing time of death' }));
 
-    fireEvent.click(screen.getByRole('button', { name: '14:30' }));
-    const input = screen.getByDisplayValue('14:30');
-    fireEvent.change(input, { target: { value: '2115' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '2:30 PM' })).toBeInTheDocument();
+  });
 
-    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('21:15');
+  it('Escape also cancels without saving', () => {
+    const onSaveTimeOfDeath = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    openTimeEditor();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hour' }), { target: { value: '11' } });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Hour' }), { key: 'Escape' });
+
+    expect(onSaveTimeOfDeath).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '2:30 PM' })).toBeInTheDocument();
+  });
+
+  it('never calls onUpdateCaseInfo — Time of Death always saves through the dedicated onSaveTimeOfDeath path', () => {
+    const onUpdateCaseInfo = vi.fn();
+    const onSaveTimeOfDeath = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    openTimeEditor();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hour' }), { target: { value: '8' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Minute' }), { target: { value: '35' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'AM or PM' }), { target: { value: 'PM' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save time of death' }));
+
+    expect(onSaveTimeOfDeath).toHaveBeenCalledWith('20:35');
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('midnight (12:00 AM) round-trips to 00:00 and displays correctly afterward', () => {
+    const onSaveTimeOfDeath = vi.fn();
+    const { rerender } = render(<CaseInformationCard {...baseProps} timeOfDeath="00:00" onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
+    expect(screen.getByRole('button', { name: '12:00 AM' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '12:00 AM' }));
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toHaveValue('12');
+    expect(screen.getByRole('combobox', { name: 'AM or PM' })).toHaveValue('AM');
+
+    // Re-rendering with the same stored value (as a settled mutation
+    // response would) keeps showing the correct 12-hour form.
+    rerender(<CaseInformationCard {...baseProps} timeOfDeath="00:00" onUpdateCaseInfo={vi.fn()} onSaveTimeOfDeath={onSaveTimeOfDeath} />);
   });
 });
 
