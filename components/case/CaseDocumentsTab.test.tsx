@@ -18,6 +18,11 @@ vi.mock('@/lib/identityAuthClient', async () => {
   return { ...actual, fetchMyPermissions: vi.fn() };
 });
 
+const mockPrintStoredDocument = vi.fn();
+vi.mock('@/utils/print', () => ({
+  printStoredDocument: (...args: unknown[]) => mockPrintStoredDocument(...args),
+}));
+
 // Both dialogs read the org-wide template list on mount even before the
 // user opens them (GenerateDocumentDialog's own useDocumentTemplates call),
 // so it's stubbed empty here to keep this file focused on the tab itself.
@@ -59,7 +64,7 @@ function renderTab() {
   return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
-        <CaseDocumentsTab caseId="case-1" />
+        <CaseDocumentsTab caseId="case-1" caseName="Jane Doe" caseNumber="B2026-001" />
       </OrganizationProvider>
     </QueryClientProvider>,
   );
@@ -204,5 +209,62 @@ describe('CaseDocumentsTab — archive flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate Document' }));
 
     expect(await screen.findByRole('dialog', { name: 'Generate Document' })).toBeInTheDocument();
+  });
+});
+
+describe('item #2 — Documents tab Print (replaces the removed Overview DocumentsCard print)', () => {
+  it('12: offers a Print action for a downloadable document, using the real authorized download route — never a synthetic placeholder', async () => {
+    mockPrintStoredDocument.mockResolvedValue(undefined);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Cremation Authorization.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    await waitFor(() => expect(mockPrintStoredDocument).toHaveBeenCalledTimes(1));
+  });
+
+  it('passes the same authorized download URL the Download link itself uses, plus the file/case identity', async () => {
+    mockPrintStoredDocument.mockResolvedValue(undefined);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Cremation Authorization.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    const downloadLink = screen.getByRole('link', { name: 'Download' }) as HTMLAnchorElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+    await waitFor(() => expect(mockPrintStoredDocument).toHaveBeenCalledTimes(1));
+    expect(mockPrintStoredDocument).toHaveBeenCalledWith(downloadLink.getAttribute('href'), 'Cremation Authorization.pdf', 'Jane Doe', 'B2026-001');
+  });
+
+  it("does not offer Print for a status that also lacks Download (e.g. 'pending')", async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'pending.pdf', status: 'pending' })]);
+    renderTab();
+
+    await screen.findByText('pending.pdf');
+    expect(screen.queryByRole('button', { name: 'Print' })).not.toBeInTheDocument();
+  });
+
+  it('shows an inline error, scoped to that one document, when printing fails — never a misleading success or a placeholder page', async () => {
+    mockPrintStoredDocument.mockRejectedValue(new Error("Couldn't retrieve the document to print (status 404)."));
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Cremation Authorization.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/retrieve the document to print/);
+  });
+
+  it('13: does not offer a bulk "Print All" action — real per-document authorized fetches aren\'t safely batchable, so none is faked', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-1', fileName: 'one.pdf' }),
+      makeDocument({ id: 'doc-2', fileName: 'two.pdf' }),
+    ]);
+    renderTab();
+
+    await screen.findByText('one.pdf');
+    expect(screen.queryByRole('button', { name: /print all/i })).not.toBeInTheDocument();
   });
 });

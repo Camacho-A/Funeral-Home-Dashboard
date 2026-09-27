@@ -6,13 +6,11 @@ import { useResetMainContentScrollOnChange } from '@/hooks/useResetMainContentSc
 import { useCaseViewModel } from '@/hooks/useCaseViewModel';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { useCaseLog } from '@/hooks/useCaseLog';
-import { useCaseDocuments } from '@/hooks/useCaseDocuments';
 import { useCaseTasks } from '@/hooks/useCaseTasks';
 import { useStaff } from '@/hooks/useStaff';
-import { useSession } from '@/hooks/useSession';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
-import { printFile, printTextLog } from '@/utils/print';
-import { formatDaysAgo, formatTimestamp } from '@/utils/format';
+import { printTextLog } from '@/utils/print';
+import { formatTimestamp } from '@/utils/format';
 import { CaseHeader } from '@/components/case/CaseHeader';
 import { StageStepper, type StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
@@ -23,19 +21,13 @@ import { BillingCard } from '@/components/case/BillingCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
 import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCard';
-import { ActivityLogCard } from '@/components/case/ActivityLogCard';
 import { CaseActivityTab } from '@/components/case/CaseActivityTab';
 import { CaseDocumentsTab } from '@/components/case/CaseDocumentsTab';
 import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
-import { DocumentsCard, type DocumentRowItem } from '@/components/case/DocumentsCard';
 import styles from './page.module.css';
 
 type CaseDetailTab = 'overview' | 'activity' | 'documents' | 'schedule' | 'portal';
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
 
 /**
  * Case Detail page (Frontend Engineering Plan, Phase 6) — the orchestration
@@ -60,11 +52,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   const { data: case_, isPending } = useCase(caseId);
   const { data: staffList = [] } = useStaff();
-  const session = useSession();
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
-  const documents = useCaseDocuments(caseId);
   const caseTasks = useCaseTasks(caseId);
 
   if (isPending) return <p className={styles.loading}>Loading case…</p>;
@@ -94,29 +84,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   // the Print callback below, so print output never disagrees with what's
   // actually on screen.
   const logEntries = [...(caseLog.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const uploadedDocuments = documents.data ?? [];
   const caseLinkedTasks = caseTasks.data ?? [];
-
-  const documentRows: DocumentRowItem[] = [
-    ...viewModel.requiredDocuments.map((doc) => ({
-      id: `required-${doc.label}`,
-      name: doc.label,
-      status: capitalize(doc.status),
-      onPrint: () => printFile(undefined, doc.label, viewModel.decedentName, viewModel.caseNumber),
-    })),
-    ...uploadedDocuments.map((doc) => ({
-      id: doc.id,
-      name: doc.fileName,
-      // The prototype always shows "Uploaded" for a user-added document,
-      // regardless of the persisted status enum (which tracks lifecycle
-      // state like "active"/"superseded" for the compliance service, not
-      // display text) — matched here rather than surfacing the raw enum.
-      status: 'Uploaded',
-      meta: `${doc.uploadedBy} · ${formatTimestamp(doc.uploadedAt)}`,
-      onPrint: () => printFile(documents.getFile(doc.id), doc.fileName, viewModel.decedentName, viewModel.caseNumber),
-      onRemove: () => documents.remove(doc.id),
-    })),
-  ];
 
   const caseTaskItems: CaseTaskItem[] = caseLinkedTasks.map((task) => ({
     id: task.id,
@@ -196,8 +164,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         </button>
       </div>
 
-      {activeTab === 'activity' && <CaseActivityTab caseId={caseId} />}
-      {activeTab === 'documents' && <CaseDocumentsTab caseId={caseId} />}
+      {activeTab === 'activity' && (
+        <CaseActivityTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
+      )}
+      {activeTab === 'documents' && (
+        <CaseDocumentsTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
+      )}
       {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
       {activeTab === 'portal' && <CaseFamilyPortalTab caseId={caseId} />}
 
@@ -295,32 +267,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                 assigneeStaffId: defaultAssigneeForCase(case_, staffList),
               })
             }
-          />
-        </div>
-
-        <div className={styles.column}>
-          <ActivityLogCard
-            timeline={viewModel.timeline}
-            onPrint={() =>
-              printTextLog('Activity Log', viewModel.decedentName, viewModel.caseNumber, viewModel.timeline, (entry) => {
-                return `<div style="margin-bottom:10px"><span style="font-weight:600">${entry.who}</span> ${entry.what}<div style="font-size:12px;color:#888">${formatDaysAgo(entry.daysAgo)}</div></div>`;
-              })
-            }
-          />
-
-          <DocumentsCard
-            documents={documentRows}
-            onUploadFiles={(files) => {
-              files.forEach((file) =>
-                documents.upload({
-                  input: { fileName: file.name, uploadedBy: session.displayName },
-                  file,
-                }),
-              );
-            }}
-            onPrintAll={() => {
-              documentRows.forEach((doc, index) => setTimeout(() => doc.onPrint(), index * 400));
-            }}
           />
         </div>
       </div>

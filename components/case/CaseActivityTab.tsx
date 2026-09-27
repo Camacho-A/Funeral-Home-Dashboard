@@ -7,18 +7,29 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
+import { printTextLog } from '@/utils/print';
 import { activitySeverityVariant, activityActorLabel } from '@/domain/activity/activityDisplay';
 import { ActivityEventDiff } from '@/components/activity/ActivityEventDiff';
+import type { ActivityEvent } from '@/types/activityEvent';
 import styles from './CaseActivityTab.module.css';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The Case Detail
  * page's "Activity" tab — a real, persisted timeline backed by
- * `GET /api/cases/[caseId]/activity`, standing alongside (not replacing)
- * the Overview tab's existing `ActivityLogCard`, which stays exactly as
- * it was per ADR-028 §8's rollback-safety decision.
+ * `GET /api/cases/[caseId]/activity`.
+ *
+ * Item #2 correction (2026-09): the Overview tab's old `ActivityLogCard`
+ * (checklist-derived, zero real persistence) has been removed — this tab
+ * is now the *only* Activity surface, and its own "Print" action (added
+ * here) is what replaces ActivityLogCard's Print button, per that item's
+ * explicit "add Print option to the tabs instead". Prints exactly the
+ * persisted `ActivityEvent` rows currently loaded/visible in this list —
+ * never the old buildTimeline/checklist-derived data — using the same
+ * `activityActorLabel()` (35e4c1c) every row already renders with, so a
+ * system event prints "System" and a human event prints its friendly role
+ * label, never a raw `officeStaff` key.
  */
-export function CaseActivityTab({ caseId }: { caseId: string }) {
+export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: string; caseName: string; caseNumber: string }) {
   const { organizationId } = useOrganization();
   const query = useCaseActivity(caseId, organizationId);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -32,8 +43,19 @@ export function CaseActivityTab({ caseId }: { caseId: string }) {
     return <EmptyState message="No activity recorded for this case yet." />;
   }
 
+  function handlePrint() {
+    printTextLog('Case Activity', caseName, caseNumber, events, (event: ActivityEvent) => {
+      return `<div style="margin-bottom:12px"><div>${event.description}</div><div style="font-size:12px;color:#888">${activityActorLabel(event)} · ${formatTimestamp(event.createdAt)}</div></div>`;
+    });
+  }
+
   return (
     <div className={styles.card}>
+      <div className={styles.header}>
+        <Button variant="secondary" onClick={handlePrint}>
+          Print
+        </Button>
+      </div>
       <div className={styles.list}>
         {events.map((event) => {
           const hasDetail = event.previousValue !== null || event.newValue !== null;

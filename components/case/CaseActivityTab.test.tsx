@@ -12,6 +12,11 @@ vi.mock('@/lib/activityClient', async () => {
   return { ...actual, fetchCaseActivity: vi.fn() };
 });
 
+const mockPrintTextLog = vi.fn();
+vi.mock('@/utils/print', () => ({
+  printTextLog: (...args: unknown[]) => mockPrintTextLog(...args),
+}));
+
 function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
   return {
     id: 'event-1',
@@ -42,7 +47,7 @@ function renderTab() {
   return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
-        <CaseActivityTab caseId="case-1" />
+        <CaseActivityTab caseId="case-1" caseName="Jane Doe" caseNumber="B2026-001" />
       </OrganizationProvider>
     </QueryClientProvider>,
   );
@@ -154,5 +159,66 @@ describe('CaseActivityTab', () => {
     expect(await screen.findByText('Second event')).toBeInTheDocument();
     expect(screen.getByText('First event')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  describe('item #2 — Activity tab Print (replaces the removed Overview ActivityLogCard print)', () => {
+    it('7: offers a Print action', async () => {
+      vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({
+        events: [makeEvent({ description: 'Case updated' })],
+        nextCursor: null,
+      });
+      renderTab();
+      await screen.findByText('Case updated');
+      expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    });
+
+    it('8: Print uses the real persisted ActivityEvent rows currently loaded — not buildTimeline/checklist-derived data', async () => {
+      const events = [
+        makeEvent({ id: 'event-1', description: 'Case updated', createdAt: '2026-08-01T00:00:00.000Z' }),
+        makeEvent({ id: 'event-2', description: 'Payment recorded', isSystemGenerated: true, actorRoleKey: null, actorIdentityId: null, createdAt: '2026-08-02T00:00:00.000Z' }),
+      ];
+      vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({ events, nextCursor: null });
+      renderTab();
+      await screen.findByText('Case updated');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+      expect(mockPrintTextLog).toHaveBeenCalledTimes(1);
+      const [title, caseName, caseNumber, printedEvents] = mockPrintTextLog.mock.calls[0];
+      expect(title).toBe('Case Activity');
+      expect(caseName).toBe('Jane Doe');
+      expect(caseNumber).toBe('B2026-001');
+      // The exact array reference passed to printTextLog is the same
+      // `events` this component derived from useCaseActivity's pages —
+      // never a separately-built buildTimeline `{who, what, daysAgo}` shape.
+      expect(printedEvents).toEqual(events);
+      expect(printedEvents[0]).not.toHaveProperty('who');
+      expect(printedEvents[0]).not.toHaveProperty('what');
+      expect(printedEvents[0]).not.toHaveProperty('daysAgo');
+    });
+
+    it('preserves 35e4c1c actor formatting in the printed row: system -> "System", human role -> friendly label, never raw officeStaff', async () => {
+      const events = [
+        makeEvent({ id: 'event-1', description: 'Payment recorded', isSystemGenerated: true, actorRoleKey: null, actorIdentityId: null, createdAt: '2026-08-01T00:00:00.000Z' }),
+        makeEvent({ id: 'event-2', description: 'Updated case information', isSystemGenerated: false, actorRoleKey: 'officeStaff', createdAt: '2026-08-02T00:00:00.000Z' }),
+      ];
+      vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({ events, nextCursor: null });
+      renderTab();
+      await screen.findByText('Payment recorded');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+      const [, , , , renderEntry] = mockPrintTextLog.mock.calls[0];
+      const systemRow = renderEntry(events[0]);
+      const humanRow = renderEntry(events[1]);
+
+      expect(systemRow).toContain('System');
+      expect(systemRow).toContain('Payment recorded');
+      expect(systemRow).not.toContain('Office');
+
+      expect(humanRow).toContain('Office Staff');
+      expect(humanRow).not.toContain('officeStaff');
+      expect(humanRow).not.toMatch(/>\s*System\s*</);
+    });
   });
 });

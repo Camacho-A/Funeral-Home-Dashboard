@@ -17,17 +17,29 @@ import type { CaseDocument } from '@/types/caseDocument';
 import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
 import { SignatureStatusPanel } from './SignatureStatusPanel';
+import { printStoredDocument } from '@/utils/print';
 import styles from './CaseDocumentsTab.module.css';
 
 /**
  * Phase 25 (Document Generation & Template Management). The Case Detail
  * page's real, persisted Documents tab — a new tab alongside "Overview"
- * and "Activity" (Phase 24). The Overview tab's existing `DocumentsCard`
- * (mock-only, never wired to a real backend) is left completely
- * untouched, matching Phase 24's own `ActivityLogCard` rollback-safety
- * precedent exactly.
+ * and "Activity" (Phase 24).
+ *
+ * Item #2 correction (2026-09): the Overview tab's old `DocumentsCard`
+ * (mock-only, never wired to a real backend) has been removed — this tab
+ * is now the *only* real Documents surface. Its per-document "Print"
+ * action (added here) replaces DocumentsCard's Print/Print All, per that
+ * item's explicit "add Print option to the tabs instead" — it fetches the
+ * real document through the exact same authorized
+ * `GET .../documents/[documentId]/download` route "Download" already
+ * uses (session-cookie-gated, re-checks `document.view`, never a Blob/
+ * signed URL server-side), then prints the fetched bytes via the existing
+ * `printFile`-based `printStoredDocument` — never a synthetic placeholder.
+ * "Print All" is deliberately NOT offered — see this component's own
+ * report for why a real multi-document bulk print isn't safely supportable
+ * with today's per-document-fetch architecture.
  */
-export function CaseDocumentsTab({ caseId }: { caseId: string }) {
+export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: string; caseName: string; caseNumber: string }) {
   const { organizationId } = useOrganization();
   const documentsQuery = useCaseDocumentLibrary(organizationId, caseId);
   const myPermissionsQuery = useMyPermissions(organizationId);
@@ -40,6 +52,20 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
   const [archivingDoc, setArchivingDoc] = useState<CaseDocument | null>(null);
   const [requestingSignatureFor, setRequestingSignatureFor] = useState<CaseDocument | null>(null);
   const [expandedSignatureId, setExpandedSignatureId] = useState<string | null>(null);
+  const [printingDocId, setPrintingDocId] = useState<string | null>(null);
+  const [printError, setPrintError] = useState<{ docId: string; message: string } | null>(null);
+
+  async function handlePrint(doc: CaseDocument) {
+    setPrintError(null);
+    setPrintingDocId(doc.id);
+    try {
+      await printStoredDocument(buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id), doc.fileName, caseName, caseNumber);
+    } catch (error) {
+      setPrintError({ docId: doc.id, message: error instanceof Error ? error.message : 'Failed to print this document.' });
+    } finally {
+      setPrintingDocId(null);
+    }
+  }
 
   if (documentsQuery.isPending) {
     return <p className={styles.loading}>Loading documents…</p>;
@@ -131,6 +157,11 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
                           Download
                         </a>
                       )}
+                      {canDownload && (
+                        <Button variant="secondary" onClick={() => handlePrint(doc)} disabled={printingDocId === doc.id}>
+                          {printingDocId === doc.id ? 'Preparing…' : 'Print'}
+                        </Button>
+                      )}
                       {canRegenerate && (
                         <Button
                           variant="secondary"
@@ -154,6 +185,11 @@ export function CaseDocumentsTab({ caseId }: { caseId: string }) {
                       )}
                     </div>
                   </div>
+                  {printError && printError.docId === doc.id && (
+                    <div className={styles.errorText} role="alert">
+                      {printError.message}
+                    </div>
+                  )}
                   {canReadSignature && doc.status === 'active' && (
                     <>
                       <button type="button" className={styles.signatureToggle} onClick={() => setExpandedSignatureId(isSignatureExpanded ? null : doc.id)}>
