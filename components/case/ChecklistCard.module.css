@@ -73,9 +73,15 @@
   color: var(--color-text-primary);
 }
 
+/* Case Overview layout (2026-09): this card is now full-width — capping
+   at max-width (instead of the old width: calc(100% - 28px), which
+   stretched a single text input the whole width of what's now a much
+   wider card) keeps a checklist field a normal, comfortable text-entry
+   size regardless of how wide the card itself is. */
 .fieldInput {
   margin: var(--space-3) 0 var(--space-1) 28px;
-  width: calc(100% - 28px);
+  width: 100%;
+  max-width: 420px;
 }
 
 /* Checklist Time Display (2026-09): the hour/minute/AM-PM selects, laid
@@ -87,6 +93,7 @@
   gap: var(--space-3);
   margin: var(--space-3) 0 var(--space-1) 28px;
   flex-wrap: wrap;
+  max-width: 420px;
 }
 
 .timeColon {

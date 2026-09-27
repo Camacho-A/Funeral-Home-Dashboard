@@ -11,9 +11,17 @@
   margin-bottom: var(--space-7);
 }
 
+/* Case Overview layout (2026-09): this card is now full-width (see
+   page.module.css's .overview) instead of sharing a fixed 1fr/1fr split
+   with a second column — auto-fill lets each field group reflow into as
+   many ~200-260px columns as actually fit the available width, rather
+   than either two columns stretched edge-to-edge (too wide for a short
+   date/phone value) or staying pinned at two regardless of how much room
+   there now is. A row that doesn't fill all the way just leaves blank
+   space at the end rather than stretching its last field wider. */
 .grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
   gap: var(--space-7);
   font-size: var(--font-size-13);
 }

@@ -174,8 +174,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       {activeTab === 'portal' && <CaseFamilyPortalTab caseId={caseId} />}
 
       {activeTab === 'overview' && (
-      <div className={styles.columns}>
-        <div className={styles.column}>
+      <div className={styles.overview}>
           <CaseInformationCard
             dateOfBirth={viewModel.dateOfBirth}
             dateOfDeath={viewModel.dateOfDeath}
@@ -242,33 +241,34 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}
           />
 
-          <CaseLogCard
-            entries={logEntries}
-            authorName={viewModel.effectiveOwnerName}
-            onAddEntry={(input, options) => caseLog.addEntry(input, options)}
-            onPrint={() =>
-              printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
-                const headline =
-                  entry.type === 'contact'
-                    ? `<div style="font-weight:600">Called ${entry.contactedWho} — spoke with ${entry.contactedSpoke}</div>`
-                    : '';
-                const body = entry.type === 'contact' ? entry.contactSummary : entry.text;
-                return `<div style="margin-bottom:12px">${headline}${body ? `<div>${body}</div>` : ''}<div style="font-size:12px;color:#888">${entry.author} · ${formatTimestamp(entry.createdAt)}</div></div>`;
-              })
-            }
-          />
+          <div className={styles.overviewPair}>
+            <CaseLogCard
+              entries={logEntries}
+              authorName={viewModel.effectiveOwnerName}
+              onAddEntry={(input, options) => caseLog.addEntry(input, options)}
+              onPrint={() =>
+                printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
+                  const headline =
+                    entry.type === 'contact'
+                      ? `<div style="font-weight:600">Called ${entry.contactedWho} — spoke with ${entry.contactedSpoke}</div>`
+                      : '';
+                  const body = entry.type === 'contact' ? entry.contactSummary : entry.text;
+                  return `<div style="margin-bottom:12px">${headline}${body ? `<div>${body}</div>` : ''}<div style="font-size:12px;color:#888">${entry.author} · ${formatTimestamp(entry.createdAt)}</div></div>`;
+                })
+              }
+            />
 
-          <CaseTasksCard
-            tasks={caseTaskItems}
-            onToggleTask={(taskId, newDone) => caseTasks.toggleTask({ taskId, isDone: newDone })}
-            onAddTask={(text) =>
-              caseTasks.addTask({
-                text,
-                assigneeStaffId: defaultAssigneeForCase(case_, staffList),
-              })
-            }
-          />
-        </div>
+            <CaseTasksCard
+              tasks={caseTaskItems}
+              onToggleTask={(taskId, newDone) => caseTasks.toggleTask({ taskId, isDone: newDone })}
+              onAddTask={(text) =>
+                caseTasks.addTask({
+                  text,
+                  assigneeStaffId: defaultAssigneeForCase(case_, staffList),
+                })
+              }
+            />
+          </div>
       </div>
       )}
     </div>

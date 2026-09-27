@@ -31,15 +31,39 @@
   color: var(--color-text-muted);
 }
 
-.columns {
+/* Case Overview layout (2026-09) — after the old right-hand column's two
+   cards (ActivityLogCard/DocumentsCard, see fdf3fd3) were removed, the
+   remaining cards no longer need to be squeezed into a fixed 1fr/1fr
+   split just to fill a second column that no longer exists. Overview is
+   now one full-width stack, so Case Information, Workflow Repair, Forms,
+   Case Order, Billing, and the Checklist can each use the page's actual
+   available width — each card's own internal layout (not this file)
+   decides how it spends that width (see e.g. CaseInformationCard.module.css's
+   .grid and ChecklistCard.module.css's field-input max-width). */
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+/* Case Log and Tasks are both compact, secondary/supporting cards —
+   forcing either one full-width would just stretch a short list and a
+   composer row across the whole page with mostly empty space, so they
+   stay paired side by side (at whatever the two together use of the full
+   page width, not squeezed against a second column of unrelated cards
+   the way they were before). Stacks under 860px — see the page-level
+   @media rule below — so neither ever gets so narrow its own row content
+   (e.g. the Note/Contact tabs, the composer input + button) has to wrap
+   awkwardly. */
+.overviewPair {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-10);
   align-items: start;
 }
 
-.column {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
+@media (max-width: 860px) {
+  .overviewPair {
+    grid-template-columns: 1fr;
+  }
 }

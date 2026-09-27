@@ -80,3 +80,68 @@ describe('Case Detail page — Overview tab structure (item #2, 2026-09)', () =>
     expect(SOURCE).toMatch(/<BillingCard caseId=\{caseId\} \/>/);
   });
 });
+
+const CSS_SOURCE = fs.readFileSync(path.join(__dirname, 'page.module.css'), 'utf-8');
+
+describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
+  it('3/4/5/6/7/8/9: every Overview card remains present in the page source', () => {
+    expect(SOURCE).toMatch(/<CaseInformationCard/);
+    expect(SOURCE).toMatch(/<CaseWorkflowRepairPanel caseId=\{caseId\} \/>/);
+    expect(SOURCE).toMatch(/<ChecklistCard/);
+    expect(SOURCE).toMatch(/<CaseLogCard/);
+    expect(SOURCE).toMatch(/<CaseTasksCard/);
+    expect(SOURCE).toMatch(/<CaseFormsSection caseId=\{caseId\} \/>/);
+    expect(SOURCE).toMatch(/<CaseOrderCard caseId=\{caseId\}/);
+    expect(SOURCE).toMatch(/<BillingCard caseId=\{caseId\} \/>/);
+  });
+
+  it("10: Overview no longer wraps everything in the old fixed two-column '.columns'/'.column' layout", () => {
+    expect(SOURCE).not.toMatch(/styles\.columns/);
+    expect(SOURCE).not.toMatch(/styles\.column\}/);
+    expect(CSS_SOURCE).not.toMatch(/\.columns\s*\{/);
+    expect(CSS_SOURCE).not.toMatch(/\.column\s*\{/);
+  });
+
+  it('11: the primary operational cards are direct children of the new full-width .overview container, not nested inside a half-width column', () => {
+    // Everything from CaseInformationCard through ChecklistCard sits
+    // directly under styles.overview — only Case Log/Tasks (a deliberate,
+    // narrower pairing — see the CSS's own comment) are nested one level
+    // deeper, inside styles.overviewPair.
+    const overviewOpenIndex = SOURCE.indexOf('className={styles.overview}');
+    const infoCardIndex = SOURCE.indexOf('<CaseInformationCard');
+    const checklistIndex = SOURCE.indexOf('<ChecklistCard');
+    const pairOpenIndex = SOURCE.indexOf('className={styles.overviewPair}');
+    expect(overviewOpenIndex).toBeGreaterThan(-1);
+    expect(pairOpenIndex).toBeGreaterThan(-1);
+    expect(overviewOpenIndex).toBeLessThan(infoCardIndex);
+    expect(infoCardIndex).toBeLessThan(checklistIndex);
+    expect(checklistIndex).toBeLessThan(pairOpenIndex);
+
+    expect(CSS_SOURCE).toMatch(/\.overview\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/);
+  });
+
+  it('12: no empty right-column placeholder remains where ActivityLogCard/DocumentsCard used to be', () => {
+    // The old layout closed with two sibling `styles.column` divs (left:
+    // everything; right: ActivityLogCard + DocumentsCard). Confirm there
+    // is exactly one top-level overview wrapper now, not a second,
+    // now-empty column div.
+    const columnDivMatches = SOURCE.match(/className=\{styles\.column\}/g) ?? [];
+    expect(columnDivMatches).toHaveLength(0);
+  });
+
+  it('13: narrower widths stack the Case Log / Tasks pair cleanly via an explicit @media rule (no app-wide redesign)', () => {
+    expect(CSS_SOURCE).toMatch(/@media \(max-width:\s*860px\)\s*\{\s*\.overviewPair\s*\{\s*grid-template-columns:\s*1fr;/);
+  });
+
+  it('14: the new layout rules use only relative/fr sizing (no fixed pixel widths that could force horizontal overflow)', () => {
+    const overviewBlock = CSS_SOURCE.match(/\.overview\s*\{[^}]*\}/)?.[0] ?? '';
+    const overviewPairBlock = CSS_SOURCE.match(/\.overviewPair\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(overviewBlock).not.toMatch(/\d+px/);
+    expect(overviewPairBlock).not.toMatch(/\d+px/);
+  });
+
+  it("does not reintroduce a fixed 1fr 1fr split for the whole Overview — only the smaller Case Log/Tasks pair keeps a 2-column grid, and it's scoped to .overviewPair", () => {
+    const oneFrOneFrOccurrences = CSS_SOURCE.match(/grid-template-columns:\s*1fr 1fr;/g) ?? [];
+    expect(oneFrOneFrOccurrences).toHaveLength(1); // only inside .overviewPair
+  });
+});
