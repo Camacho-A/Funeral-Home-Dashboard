@@ -407,6 +407,16 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         timeOfDeath: structuredFields.timeOfDeath || undefined,
         placeOfDeath: structuredFields.placeOfDeath || undefined,
         weight: structuredFields.weight || undefined,
+        // Structured Certifier data (2026-09, ADR-041). buildStructuredCaseFields
+        // already resolves these from the intake's mapsToCaseField the same
+        // way it resolves timeOfDeath/placeOfDeath/weight above — this was
+        // previously computed and silently dropped, never reaching
+        // createCase at all. certifierLicenseNumber/certifierFax are
+        // optional and never block submission (see canSubmit above).
+        certifierName: structuredFields.certifierName || undefined,
+        certifierPhone: structuredFields.certifierPhone || undefined,
+        certifierLicenseNumber: structuredFields.certifierLicenseNumber || undefined,
+        certifierFax: structuredFields.certifierFax || undefined,
         assignedStaffId: assignedStaffId ?? undefined,
         fieldValues: buildIntakeFieldValues(effectiveIntake, draft),
         returnMethod,

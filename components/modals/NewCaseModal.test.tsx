@@ -9,6 +9,7 @@ import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates
 import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseLogService } from '@/services/caseLogService';
+import { resolveChecklist } from '@/domain/workflow/resolveChecklist';
 import type { WorkflowTemplate } from '@/types/workflowTemplate';
 
 /**
@@ -798,6 +799,235 @@ describe('NewCaseModal — Time of Death 12-hour entry (2026-09, ADR-041)', () =
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
     const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
     expect(caseFixtures.find((c) => c.id === newCaseId)?.timeOfDeath).toBe('11:30');
+  });
+});
+
+/**
+ * Structured Certifier data — New Case persistence fix (2026-09, ADR-041).
+ * Root cause: handleSubmit's createCase.mutateAsync payload was a
+ * hand-written object literal that never read
+ * structuredFields.certifierName/certifierPhone/certifierLicenseNumber/
+ * certifierFax — even though buildStructuredCaseFields (already called for
+ * decedentName/placeOfDeath/weight/etc.) computed them correctly from the
+ * v5 intake's mapsToCaseField. Values typed into the New Case modal's
+ * Certifier fields were silently discarded on submit. Fixed by forwarding
+ * them the same way as timeOfDeath/placeOfDeath/weight — these tests
+ * exercise the complete path (typed input -> intakeInputs indices 5-8,
+ * per this file's own index comment -> createCase payload -> created
+ * Case), never a re-parse of buildStructuredCaseFields' own logic.
+ */
+describe('NewCaseModal — Certifier fields persist on New Case creation (2026-09, ADR-041 fix)', () => {
+  it('1. Certifier Name entered is included on the created case', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fireEvent.change(intakeInputs(container)[5], { target: { value: 'dr. jane foster' } }); // certifierName
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.certifierName).toBe('DR. JANE FOSTER');
+  });
+
+  it('2. Certifier Phone entered is included on the created case', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fireEvent.change(intakeInputs(container)[6], { target: { value: '555-0199' } }); // certifierPhone
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.certifierPhone).toBe('555-0199');
+  });
+
+  it('3. Certifier License Number entered is included on the created case', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fireEvent.change(intakeInputs(container)[7], { target: { value: 'md-4471' } }); // certifierLicenseNumber
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.certifierLicenseNumber).toBe('MD-4471');
+  });
+
+  it('4. Certifier Fax entered is included on the created case', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fireEvent.change(intakeInputs(container)[8], { target: { value: '555-0188' } }); // certifierFax
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.certifierFax).toBe('555-0188');
+  });
+
+  it('5. all four Certifier fields entered together survive submission', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
+    fireEvent.change(inputs[6], { target: { value: '555-0199' } });
+    fireEvent.change(inputs[7], { target: { value: 'md-4471' } });
+    fireEvent.change(inputs[8], { target: { value: '555-0188' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId);
+    expect(created?.certifierName).toBe('DR. JANE FOSTER');
+    expect(created?.certifierPhone).toBe('555-0199');
+    expect(created?.certifierLicenseNumber).toBe('MD-4471');
+    expect(created?.certifierFax).toBe('555-0188');
+  });
+
+  it('6. Certifier License Number left blank does not prevent case creation', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
+    fireEvent.change(inputs[6], { target: { value: '555-0199' } });
+    // certifierLicenseNumber (inputs[7]) intentionally left blank.
+
+    const createButton = screen.getByRole('button', { name: 'Create case' });
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.certifierLicenseNumber).toBeNull();
+  });
+
+  it('7. Certifier Fax left blank does not prevent case creation', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
+    fireEvent.change(inputs[6], { target: { value: '555-0199' } });
+    // certifierFax (inputs[8]) intentionally left blank.
+
+    const createButton = screen.getByRole('button', { name: 'Create case' });
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.certifierFax).toBeNull();
+  });
+
+  it('8. every Certifier field left blank creates the case with all four null (optional at intake)', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    const createButton = screen.getByRole('button', { name: 'Create case' });
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId);
+    expect(created?.certifierName).toBeNull();
+    expect(created?.certifierPhone).toBeNull();
+    expect(created?.certifierLicenseNumber).toBeNull();
+    expect(created?.certifierFax).toBeNull();
+  });
+
+  describe('Name/Phone checklist completion semantics remain unchanged (requiredCaseFields)', () => {
+    it('9. Name only -> Certifier Information checklist item is incomplete', async () => {
+      const { container } = await renderModalWithFields();
+      fillRequiredFields(container);
+      fireEvent.change(intakeInputs(container)[5], { target: { value: 'dr. jane foster' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+      await waitFor(() => expect(pushMock).toHaveBeenCalled());
+      const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+      const created = caseFixtures.find((c) => c.id === newCaseId)!;
+      const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
+      const resolved = resolveChecklist(items, created);
+      expect(resolved[6].label).toBe('Certifier Information');
+      expect(resolved[6].done).toBe(false);
+    });
+
+    it('10. Phone only -> Certifier Information checklist item is incomplete', async () => {
+      const { container } = await renderModalWithFields();
+      fillRequiredFields(container);
+      fireEvent.change(intakeInputs(container)[6], { target: { value: '555-0199' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+      await waitFor(() => expect(pushMock).toHaveBeenCalled());
+      const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+      const created = caseFixtures.find((c) => c.id === newCaseId)!;
+      const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
+      expect(resolveChecklist(items, created)[6].done).toBe(false);
+    });
+
+    it('11. Name + Phone -> Certifier Information checklist item is complete', async () => {
+      const { container } = await renderModalWithFields();
+      fillRequiredFields(container);
+      const inputs = intakeInputs(container);
+      fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
+      fireEvent.change(inputs[6], { target: { value: '555-0199' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+      await waitFor(() => expect(pushMock).toHaveBeenCalled());
+      const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+      const created = caseFixtures.find((c) => c.id === newCaseId)!;
+      const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
+      expect(resolveChecklist(items, created)[6].done).toBe(true);
+    });
+  });
+
+  it('12. every other structured New Case field still submits correctly alongside Certifier fields', async () => {
+    const { container } = await renderModalWithFields();
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[0], { target: { value: 'robert ellison' } }); // decedentName
+    fireEvent.change(inputs[2], { target: { value: '03141951' } }); // dateOfBirth
+    fireEvent.change(inputs[4], { target: { value: '07092026' } }); // dateOfDeath
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — hour' }), { target: { value: '2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — minute' }), { target: { value: '30' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — AM or PM' }), { target: { value: 'PM' } });
+    fireEvent.change(inputs[1], { target: { value: "st. mary's hospital" } }); // placeOfDeath
+    fireEvent.change(inputs[3], { target: { value: '178 lb' } }); // weight
+    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } }); // certifierName
+    fireEvent.change(inputs[6], { target: { value: '555-0199' } }); // certifierPhone
+    fireEvent.change(inputs[9], { target: { value: 'karen ellison' } }); // nextOfKinName
+    fireEvent.change(inputs[10], { target: { value: '555-0100' } }); // nextOfKinPhone
+    fireEvent.change(screen.getByDisplayValue('Undecided'), { target: { value: 'pickup' } }); // returnMethod
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId)!;
+
+    expect(created.decedentName).toBe('ROBERT ELLISON');
+    expect(created.dateOfBirth).toBe('03/14/1951');
+    expect(created.dateOfDeath).toBe('07/09/2026');
+    expect(created.timeOfDeath).toBe('14:30');
+    expect(created.placeOfDeath).toBe("ST. MARY'S HOSPITAL");
+    expect(created.weight).toBe('178 lb');
+    expect(created.nextOfKinName).toBe('KAREN ELLISON');
+    expect(created.nextOfKinPhone).toBe('555-0100');
+    expect(created.assignedStaffId).toBe(staffFixtures[0].id);
+    expect(created.returnMethod).toBe('pickup');
+    expect(created.certifierName).toBe('DR. JANE FOSTER');
+    expect(created.certifierPhone).toBe('555-0199');
+    // No unrelated fieldValues lost — decedentName/placeOfDeath/dateOfBirth/
+    // weight/dateOfDeath/timeOfDeath (indices 0-5) and the combined NOK
+    // "Family contact" entry (index 7) all still populate fieldValues,
+    // exactly as before this fix — certifier fields (no checklistItemIndex)
+    // never contribute a fieldValues key at all.
+    expect(created.fieldValues[0]).toBe('ROBERT ELLISON');
+    expect(created.fieldValues[1]).toBe("ST. MARY'S HOSPITAL");
+    expect(created.fieldValues[2]).toBe('03/14/1951');
+    expect(created.fieldValues[3]).toBe('178 lb');
+    expect(created.fieldValues[4]).toBe('07/09/2026');
+    expect(created.fieldValues[5]).toBe('14:30');
+    expect(created.fieldValues[7]).toBe('KAREN ELLISON — 555-0100');
+    expect(created.fieldValues[6]).toBeUndefined(); // Certifier Information — never fieldValues-backed
+  });
+
+  it('an existing (pre-v5) case\'s frozen workflowSnapshot is unaffected by this fix — no certifier fields, dcContact-era shape intact', () => {
+    const existing = caseFixtures[0];
+    const intake = existing.workflowSnapshot!.intake;
+    const contactsSection = intake.sections.find((s) => s.key === 'contacts')!;
+    expect(contactsSection.fields.some((f) => f.key === 'dcContact')).toBe(true);
+    expect(contactsSection.fields.some((f) => f.key === 'certifierName')).toBe(false);
   });
 });
 
