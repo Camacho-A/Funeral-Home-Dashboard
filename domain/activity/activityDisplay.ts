@@ -1,5 +1,7 @@
 import type { ActivityEventCategory, ActivitySeverity } from '@/types/activityEvent';
 import type { BadgeVariant } from '@/components/ui/Badge';
+import { resolveRoleKeyAlias } from '@/domain/rbac/legacyRoleAliases';
+import { isDefaultRoleKey, defaultRoleDefinition } from '@/domain/rbac/defaultRoles';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). Which ActivitySeverity
@@ -19,6 +21,34 @@ export function activitySeverityVariant(severity: ActivitySeverity): BadgeVarian
   if (severity === 'critical') return 'danger';
   if (severity === 'warning') return 'brand';
   return 'neutral';
+}
+
+/**
+ * Item #16 (Case Activity actor attribution). The single, authoritative
+ * answer to "who should this event's actor line say performed it?" —
+ * shared by every Activity surface so no second, competing formatter can
+ * exist. `isSystemGenerated` is the ONLY signal ever consulted to decide
+ * "System" — never inferred from a missing/null `actorRoleKey`, an
+ * "Office"-sounding role, or the event's own description text, per the
+ * business rule that a human action must never be silently relabeled
+ * System just because some other field looks automatic.
+ *
+ * For a genuinely human event, the raw `actorRoleKey` (e.g. `officeStaff`)
+ * is resolved through the *existing* role vocabulary — first
+ * `legacyRoleAliases.ts` (so a pre-Phase-22 role string like `staff` or
+ * `caseManager` still resolves), then `defaultRoles.ts`'s own friendly
+ * `name` (e.g. `officeStaff` -> "Office Staff") — the same catalog
+ * `TeamMemberList.tsx` already uses, never a second role-label system. A
+ * custom, org-defined role key that isn't in that catalog falls back to
+ * the raw key itself (exactly `TeamMemberList.tsx`'s own `?? member.role`
+ * fallback), rather than inventing a label for a role this function has no
+ * definition for.
+ */
+export function activityActorLabel(event: { isSystemGenerated: boolean; actorRoleKey: string | null }): string {
+  if (event.isSystemGenerated) return 'System';
+  if (!event.actorRoleKey) return 'Unknown';
+  const resolvedKey = resolveRoleKeyAlias(event.actorRoleKey);
+  return isDefaultRoleKey(resolvedKey) ? defaultRoleDefinition(resolvedKey).name : event.actorRoleKey;
 }
 
 export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {

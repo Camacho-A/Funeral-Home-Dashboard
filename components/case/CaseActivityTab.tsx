@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
-import { activitySeverityVariant } from '@/domain/activity/activityDisplay';
+import { activitySeverityVariant, activityActorLabel } from '@/domain/activity/activityDisplay';
 import { ActivityEventDiff } from '@/components/activity/ActivityEventDiff';
 import styles from './CaseActivityTab.module.css';
 
@@ -38,7 +38,7 @@ export function CaseActivityTab({ caseId }: { caseId: string }) {
         {events.map((event) => {
           const hasDetail = event.previousValue !== null || event.newValue !== null;
           const isExpanded = expandedId === event.id;
-          const actorLabel = event.isSystemGenerated ? 'System' : (event.actorRoleKey ?? 'Unknown');
+          const actorLabel = activityActorLabel(event);
 
           return (
             <div key={event.id} className={styles.entry}>

@@ -67,7 +67,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
               await markCasePaidIfVerified(organizationId, caseId, dataAdapterMode, {
                 paymentId,
                 amountCents: updated.amount,
-                ctx: { organizationId, actorIdentityId: authResult.context.userId, actorMembershipId: null, actorRoleKey: authResult.context.role, correlationId: paymentId, isSystemGenerated: true },
+                // Item #16 correction: this is a server-side Clover reconciliation,
+                // not a deliberate action by whichever staff member's polling GET
+                // happened to trigger it — actorIdentityId/actorRoleKey stay null,
+                // matching every other isSystemGenerated:true ctx in this codebase
+                // (webhooks, signature/appointment/calendar automation), and the
+                // ActivityEvent type's own "actorIdentityId null only when
+                // isSystemGenerated is true" invariant.
+                ctx: { organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: paymentId, isSystemGenerated: true },
                 idFactory: () => crypto.randomUUID(),
               });
             }

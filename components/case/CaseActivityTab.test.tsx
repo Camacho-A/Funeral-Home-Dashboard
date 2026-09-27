@@ -59,17 +59,18 @@ describe('CaseActivityTab', () => {
     expect(await screen.findByText('No activity recorded for this case yet.')).toBeInTheDocument();
   });
 
-  it('renders each event\'s description and actor/timestamp', async () => {
+  it('renders each event\'s description and actor/timestamp, using the friendly role label rather than the raw internal key', async () => {
     vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({
       events: [makeEvent({ description: 'Stage changed to Service Scheduled' })],
       nextCursor: null,
     });
     renderTab();
     expect(await screen.findByText('Stage changed to Service Scheduled')).toBeInTheDocument();
-    expect(screen.getByText(/administrator/)).toBeInTheDocument();
+    expect(screen.getByText(/Administrator/)).toBeInTheDocument();
+    expect(screen.queryByText('administrator')).not.toBeInTheDocument();
   });
 
-  it('labels a system-generated event as "System" rather than a role key', async () => {
+  it('item #16 — 1: labels an explicitly system-generated event as "System" rather than a role key', async () => {
     vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({
       events: [makeEvent({ isSystemGenerated: true, actorRoleKey: null, actorIdentityId: null, description: 'Payment recorded' })],
       nextCursor: null,
@@ -77,6 +78,34 @@ describe('CaseActivityTab', () => {
     renderTab();
     await screen.findByText('Payment recorded');
     expect(screen.getByText(/System/)).toBeInTheDocument();
+  });
+
+  it('item #16 — 2/3: a real Office Staff human action shows "Office Staff", not "System" and not raw "officeStaff"', async () => {
+    vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          isSystemGenerated: false,
+          actorRoleKey: 'officeStaff',
+          description: 'Updated case information',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderTab();
+    await screen.findByText('Updated case information');
+    expect(screen.getByText(/Office Staff/)).toBeInTheDocument();
+    expect(screen.queryByText(/^System$/)).not.toBeInTheDocument();
+    expect(screen.queryByText('officeStaff')).not.toBeInTheDocument();
+  });
+
+  it('item #16 — 6: missing actor information is not assumed to be System', async () => {
+    vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({
+      events: [makeEvent({ isSystemGenerated: false, actorRoleKey: null, description: 'Case updated' })],
+      nextCursor: null,
+    });
+    renderTab();
+    await screen.findByText('Case updated');
+    expect(screen.getByText(/Unknown/)).toBeInTheDocument();
   });
 
   it('expands a row with before/after values on click, and collapses it again', async () => {

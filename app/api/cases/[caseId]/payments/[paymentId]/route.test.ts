@@ -16,6 +16,11 @@ vi.mock('@/lib/clover/cloverProvider', () => ({
   },
 }));
 
+let mockMarkCasePaidIfVerified = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/services/paymentWorkflow', () => ({
+  markCasePaidIfVerified: (...args: unknown[]) => mockMarkCasePaidIfVerified(...args),
+}));
+
 let mockQueryWixDataItems = vi.fn();
 let mockUpdateWixDataItem = vi.fn();
 vi.mock('@/lib/wixDataApi', async () => {
@@ -70,6 +75,7 @@ beforeEach(() => {
   process.env.DATA_ADAPTER = 'mock';
   mockSession = { user: mockDefaultUser };
   mockGetPaymentStatus = vi.fn().mockResolvedValue(null);
+  mockMarkCasePaidIfVerified = vi.fn().mockResolvedValue(undefined);
   paymentRecordFixtures.length = 0;
   paymentRecordFixtures.push({ ...SEED });
 });
@@ -207,6 +213,28 @@ describe('GET .../payments/[paymentId] — wix-mode reconciliation fallback', ()
 
     expect(response.status).toBe(200);
     expect(body.payment.status).toBe('pending');
+  });
+
+  it('item #16: reconciliation-driven markCasePaidIfVerified never carries the polling session\'s own identity/role — it is genuinely system-generated, not attributable to whichever staff member happened to poll', async () => {
+    mockGetPaymentStatus = vi.fn().mockResolvedValue({
+      providerCheckoutId: 'checkout-1',
+      providerPaymentId: 'pay-1',
+      status: 'succeeded',
+      cardBrand: 'visa',
+      cardLast4: '4242',
+      receiptReference: 'pay-1',
+      failureCode: null,
+      failureMessage: null,
+    });
+
+    await requestFor('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID);
+
+    expect(mockMarkCasePaidIfVerified).toHaveBeenCalledTimes(1);
+    const [, , , financialPosting] = mockMarkCasePaidIfVerified.mock.calls[0];
+    expect(financialPosting.ctx.isSystemGenerated).toBe(true);
+    expect(financialPosting.ctx.actorIdentityId).toBeNull();
+    expect(financialPosting.ctx.actorMembershipId).toBeNull();
+    expect(financialPosting.ctx.actorRoleKey).toBeNull();
   });
 
   it('does not attempt reconciliation for an already-terminal status', async () => {
