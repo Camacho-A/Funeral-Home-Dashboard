@@ -5,3 +5,11 @@
   margin-bottom: var(--space-12);
   align-items: start;
 }
+
+/* Manors go-live cleanup (2026-09): Financial Summary's own row, now that
+   the redundant lower Attention card is gone — full dashboard width on
+   desktop rather than sharing a two-column grid, so the reclaimed space
+   goes somewhere intentional instead of shrinking to fit a column. */
+.financialSummarySection {
+  margin-bottom: var(--space-12);
+}

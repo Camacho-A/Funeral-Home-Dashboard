@@ -17,7 +17,7 @@ import { AllCasesList } from '@/components/dashboard/AllCasesList';
 import { StageFilteredPanel } from '@/components/dashboard/StageFilteredPanel';
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel';
 import { FinancialSummaryPanel } from '@/components/dashboard/FinancialSummaryPanel';
-import { AttentionPanel } from '@/components/dashboard/AttentionPanel';
+import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './page.module.css';
 
 /**
@@ -32,7 +32,7 @@ import styles from './page.module.css';
  */
 export default function DashboardPage() {
   const { organizationId } = useOrganization();
-  const { data: dashboardData } = useDashboardData(organizationId);
+  const { data: dashboardData, isLoading: isDashboardLoading, isError: isDashboardError } = useDashboardData(organizationId);
   const { query: searchQuery } = useCaseSearch();
   const [stageFilter, setStageFilter] = useState<number | null>(null);
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
@@ -130,10 +130,30 @@ export default function DashboardPage() {
         />
       )}
 
-      {(dashboardData?.financial || dashboardData?.attention) && (
-        <div className={styles.stageOverviewGrid}>
-          {dashboardData.financial && <FinancialSummaryPanel data={dashboardData.financial} />}
-          {dashboardData.attention && <AttentionPanel data={dashboardData.attention} />}
+      {/* Manors go-live cleanup (2026-09): the dashboard's own "Attention"
+          section (org-wide overdue cases/tasks/signatures/failed payments —
+          services/dashboardService.ts's DashboardAttentionSection) was
+          removed from this page for feeling redundant next to
+          NeedsAttentionPanel above (per-case, Case.isStalled-driven) — a
+          purely presentational call, not a claim the two concepts are the
+          same. AttentionPanel/dashboardData.attention/getDashboard's
+          attention computation are all untouched and still reachable via
+          the /api/dashboard response; nothing here deletes that logic.
+          Financial Summary now gets the freed row to itself, full width,
+          with an explicit loading/error placeholder so a role that DOES
+          have financial visibility never sees a bare gap while the
+          dashboard query is in flight — a role that lacks it (financial
+          resolves to null, never an error) sees nothing at all, exactly as
+          before. */}
+      {(isDashboardLoading || isDashboardError || dashboardData?.financial) && (
+        <div className={styles.financialSummarySection}>
+          {isDashboardLoading && <EmptyState message="Loading financial summary…" />}
+          {!isDashboardLoading && isDashboardError && (
+            <EmptyState message="Unable to load the financial summary right now." />
+          )}
+          {!isDashboardLoading && !isDashboardError && dashboardData?.financial && (
+            <FinancialSummaryPanel data={dashboardData.financial} />
+          )}
         </div>
       )}
 
