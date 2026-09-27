@@ -30,6 +30,19 @@
   color: var(--color-text-muted);
 }
 
+/* Manors go-live improvement (2026-09): case number prefix, visually
+   secondary to the activity description itself — a bullet separator (via
+   ::after) keeps it on the same line without adding row height. */
+.caseNumber {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.caseNumber::after {
+  content: ' \2022 ';
+}
+
 .when {
   flex-shrink: 0;
   color: var(--color-text-faint);

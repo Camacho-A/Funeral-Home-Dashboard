@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationActivity } from '@/hooks/useActivity';
+import { useCases } from '@/hooks/useCases';
 import styles from './RecentActivityPanel.module.css';
 
 function timeAgo(createdAt: string): string {
@@ -22,14 +23,34 @@ function timeAgo(createdAt: string): string {
  * source `AuditCenterPanel` uses), gated by the same `audit.read`
  * permission — not a new, parallel audit system, and not ungated
  * regardless of role as the static version was.
+ *
+ * Manors go-live improvement (2026-09): each case-related entry also shows
+ * its Case Number, so staff don't have to guess which case an activity
+ * line belongs to. Resolved from `useCases()` — the exact same query
+ * (`['cases', organizationId, {}]`) the Dashboard page itself already
+ * fires for `allCases`/`NeedsAttentionPanel`, so React Query's own
+ * identical-key dedup means this never becomes a second network request,
+ * and definitely never one request per activity row. `Case.caseNumber` is
+ * read directly, never reconstructed from `caseId`/dates/sequence — and
+ * since `useCases()` is itself already scoped to the caller's authorized
+ * organization (see that hook), a stale/missing/other-org caseId simply
+ * fails the Map lookup and renders with no Case Number at all, never a
+ * placeholder, never the raw id.
  */
 export function RecentActivityPanel() {
   const { organizationId } = useOrganization();
   const permissionsQuery = useMyPermissions(organizationId);
   const canReadAudit = (permissionsQuery.data?.permissions ?? []).includes('audit.read');
   const activityQuery = useOrganizationActivity(organizationId, {}, canReadAudit);
+  const casesQuery = useCases();
 
   const entries = useMemo(() => (activityQuery.data?.pages ?? []).flatMap((page) => page.events).slice(0, 8), [activityQuery.data]);
+
+  const caseNumberById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of casesQuery.data ?? []) map.set(c.id, c.caseNumber);
+    return map;
+  }, [casesQuery.data]);
 
   if (!canReadAudit) return null;
 
@@ -38,14 +59,18 @@ export function RecentActivityPanel() {
       <div className={styles.title}>Recent activity</div>
       <div className={styles.list}>
         {entries.length === 0 && <div className={styles.row}>No recent activity.</div>}
-        {entries.map((entry) => (
-          <div key={entry.id} className={styles.row}>
-            <div>
-              <span className={styles.what}>{entry.description}</span>
+        {entries.map((entry) => {
+          const caseNumber = entry.caseId ? caseNumberById.get(entry.caseId) : undefined;
+          return (
+            <div key={entry.id} className={styles.row}>
+              <div>
+                {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
+                <span className={styles.what}>{entry.description}</span>
+              </div>
+              <div className={styles.when}>{timeAgo(entry.createdAt)}</div>
             </div>
-            <div className={styles.when}>{timeAgo(entry.createdAt)}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
