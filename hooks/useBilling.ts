@@ -8,6 +8,7 @@ import {
   fetchPriceLists,
   generatePriceList,
 } from '@/lib/billingClient';
+import { caseDocumentsKey } from './useCaseDocumentLibrary';
 
 /**
  * Phase 39 (Family Billing & FTC Compliance). Query/mutation hooks for the
@@ -16,7 +17,6 @@ import {
 const statementPreviewKey = (caseId: string) => ['billingStatementPreview', caseId];
 const cashAdvancesKey = (caseId: string) => ['billingCashAdvances', caseId];
 const priceListsKey = (organizationId: string) => ['billingPriceLists', organizationId];
-const caseDocumentsPrefix = (caseId: string) => ['caseDocuments', caseId];
 
 export function useStatementPreview(organizationId: string, caseId: string) {
   return useQuery({
@@ -64,7 +64,14 @@ export function useGenerateStatement(organizationId: string, caseId: string) {
     mutationFn: (input: { existingDocumentId?: string; requiredPurchaseExplanations?: string | null }) =>
       generateStatement({ organizationId, caseId, ...input }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: caseDocumentsPrefix(caseId) });
+      // Item #1 fix (2026-09): this used to invalidate the obsolete
+      // ['caseDocuments', caseId] key (a stale reference to the removed
+      // Overview DocumentsCard's mock-only cache), which never matched
+      // the real Documents tab's own query key at all — so a newly
+      // generated Statement never appeared there without a manual
+      // reload. Reusing useCaseDocumentLibrary's own key builder
+      // guarantees this can never drift out of sync with it again.
+      qc.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) });
     },
   });
 }

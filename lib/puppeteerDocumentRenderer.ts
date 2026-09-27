@@ -25,7 +25,13 @@ import type { DocumentRenderer } from './documentRenderer';
  * `lib/clover/cloverConfig.ts`'s "fail clearly" convention.
  */
 
-async function resolveLaunchOptions(): Promise<{ executablePath: string; args: string[] }> {
+/** Exported for testing only — lets a test exercise the serverless
+    (`@sparticuz/chromium`) branch's actual option-resolution logic (env
+    var detection, which fields `chromium.executablePath()`/`chromium.args`
+    feed into) without launching a real Linux-only Chromium binary on a
+    non-Linux dev/CI machine, which would fail for environmental reasons
+    unrelated to whether this code is correct. */
+export async function resolveLaunchOptions(): Promise<{ executablePath: string; args: string[] }> {
   const explicitPath = process.env.PUPPETEER_EXECUTABLE_PATH;
   if (explicitPath) {
     return { executablePath: explicitPath, args: [] };

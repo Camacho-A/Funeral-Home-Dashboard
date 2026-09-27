@@ -7,6 +7,17 @@ import { generateStatement, BillingDocumentServiceError } from '@/services/billi
 import { getDataAdapterMode } from '@/lib/env';
 
 /**
+ * Item #1 fix (2026-09): a real PDF render (headless Chromium launch +
+ * page render + PDF + Vercel Blob upload) can genuinely take longer than
+ * a short default function timeout, especially on a cold start — this is
+ * the one route in this codebase that does all of that synchronously in
+ * one request. Scoped to this route only (not a global timeout increase);
+ * see next.config.ts's serverExternalPackages for the companion fix that
+ * makes the Chromium binary itself deployable at all.
+ */
+export const maxDuration = 60;
+
+/**
  * Phase 39 (Family Billing & FTC Compliance). Generates (or regenerates) the
  * FTC Statement of Funeral Goods and Services Selected for a case, from its
  * authoritative CaseOrder. System-rendered — no template. Reuses
@@ -55,7 +66,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     );
     return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
+    // BillingDocumentServiceError is a real, staff-actionable precondition
+    // (today: "no active order") — its message is already written for a
+    // staff reader and safe to return as-is.
     if (error instanceof BillingDocumentServiceError) return NextResponse.json({ error: error.message }, { status: 422 });
-    throw error;
+
+    // Item #1 fix (2026-09): anything else here is a renderer/storage
+    // failure (e.g. a Chromium launch error, whose own message can
+    // legitimately contain the executable path it tried to launch, or a
+    // Blob-storage error) — this branch used to rethrow and fall through
+    // to Next.js's own unhandled-error response. Log the real message
+    // server-side only (bounded, no stack trace, no case/family data —
+    // this route never had PII in scope to begin with) and return a
+    // single fixed, sanitized message to the client.
+    console.error('Statement PDF generation failed:', error instanceof Error ? error.message : String(error));
+    return NextResponse.json({ error: 'Statement PDF could not be generated. Please try again.' }, { status: 500 });
   }
 }

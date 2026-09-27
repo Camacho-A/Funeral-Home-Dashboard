@@ -9,7 +9,11 @@ import { fetchCaseDocuments, generateCaseDocument, uploadCaseDocument, archiveCa
  * mock-only `DocumentsCard`, kept for rollback safety per this phase's own
  * decision, mirroring Phase 24's `ActivityLogCard` precedent exactly).
  */
-const caseDocumentsKey = (organizationId: string, caseId: string) => ['caseDocumentLibrary', organizationId, caseId];
+/** Exported so any other mutation that changes this case's document list —
+    e.g. useBilling.ts's Statement generation — invalidates the exact same
+    cache entry the real Documents tab reads, rather than a second,
+    independently-typed key that can drift out of sync with this one. */
+export const caseDocumentsKey = (organizationId: string, caseId: string) => ['caseDocumentLibrary', organizationId, caseId];
 
 export function useCaseDocumentLibrary(organizationId: string, caseId: string) {
   return useQuery({

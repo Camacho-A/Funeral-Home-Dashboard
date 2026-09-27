@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { formatCents } from '@/domain/billing/renderUtil';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useStatementPreview, useCashAdvances, useCreateCashAdvance, useDeleteCashAdvance, useGenerateStatement } from '@/hooks/useBilling';
+import { useCaseDocumentLibrary } from '@/hooks/useCaseDocumentLibrary';
+import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { Button } from '@/components/ui/Button';
 
 /**
@@ -13,6 +15,15 @@ import { Button } from '@/components/ui/Button';
  * arrangements" and the authoritative AR "balance due" as clearly-distinct
  * figures (cash advances are display-only, never in AR). Generated Statements
  * appear in the case's existing Documents tab (they are CaseDocuments).
+ *
+ * Item #1 fix (2026-09): reads the same real CaseDocument library the
+ * Documents tab does (useCaseDocumentLibrary — never the old, removed,
+ * mock-only DocumentsCard/useCaseDocuments) to find this case's current
+ * *active* Statement, if any, and passes its id as `existingDocumentId` —
+ * the backend already supersedes the prior document and increments the
+ * version whenever that's provided; only omitting it (the prior behavior)
+ * caused every click to silently create a second, competing "active"
+ * Statement instead of replacing the first.
  */
 function dollarsToCents(input: string): number | null {
   const n = Number(input);
@@ -27,6 +38,11 @@ export function BillingCard({ caseId }: { caseId: string }) {
   const createCa = useCreateCashAdvance(organizationId, caseId);
   const deleteCa = useDeleteCashAdvance(organizationId, caseId);
   const generate = useGenerateStatement(organizationId, caseId);
+  const documents = useCaseDocumentLibrary(organizationId, caseId);
+  const activeStatement =
+    documents.data?.find(
+      (d) => d.documentTypeKey === DOCUMENT_TYPES.FINANCIAL_STATEMENT_GOODS_SERVICES.key && d.status === 'active',
+    ) ?? null;
 
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -114,8 +130,8 @@ export function BillingCard({ caseId }: { caseId: string }) {
             </div>
 
             <div>
-              <Button onClick={() => generate.mutate({})} disabled={generate.isPending}>
-                {generate.isPending ? 'Generating…' : 'Generate Statement PDF'}
+              <Button onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
+                {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
               </Button>
               {generate.isError && <span style={{ color: '#a00', marginLeft: '0.5rem' }}>{(generate.error as Error).message}</span>}
               {generate.isSuccess && <span style={{ color: '#0a0', marginLeft: '0.5rem' }}>Generated — see the Documents tab.</span>}
