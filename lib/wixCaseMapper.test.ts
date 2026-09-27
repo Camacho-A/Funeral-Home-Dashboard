@@ -522,6 +522,29 @@ describe('applyCaseUpdateToWixData', () => {
     expect(result.createdAt).toBe(existing.createdAt);
     expect(result.createdBy).toBe(existing.createdBy);
   });
+
+  /** Time of Death (2026-09) — same combined-field shape as Weight's own
+      test above (hooks/useCaseMutations.ts#setTimeOfDeath's patch),
+      proving the Wix full-replace safety generalizes to a second field
+      without any change to this merge function. */
+  it('a combined timeOfDeath+fieldValues patch preserves every other field on the record (Wix full-replace safety)', () => {
+    const existing = { ...validItem, fieldValues: { 0: 'Robert Ellison', 3: '178 lb' } };
+    const result = applyCaseUpdateToWixData(existing, { timeOfDeath: '15:45', fieldValues: { 0: 'Robert Ellison', 3: '178 lb', 5: '15:45' } });
+
+    expect(result.timeOfDeath).toBe('15:45');
+    expect(result.fieldValues).toEqual({ 0: 'Robert Ellison', 3: '178 lb', 5: '15:45' });
+    expect(result.organizationId).toBe(existing.organizationId);
+    expect(result.caseNumber).toBe(existing.caseNumber);
+    expect(result.decedentName).toBe(existing.decedentName);
+    expect(result.weight).toBe(existing.weight);
+    expect(result.nextOfKinName).toBe(existing.nextOfKinName);
+    expect(result.paymentStatus).toBe(existing.paymentStatus);
+    expect(result.checklistState).toEqual(existing.checklistState);
+    expect(result.currentStage).toBe(existing.currentStage);
+    expect(result.workflowSnapshot).toBe(existing.workflowSnapshot);
+    expect(result.createdAt).toBe(existing.createdAt);
+    expect(result.createdBy).toBe(existing.createdBy);
+  });
 });
 
 describe('SOLIS ALL-CAPS data standard (2026-09)', () => {

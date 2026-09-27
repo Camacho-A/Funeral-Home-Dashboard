@@ -147,3 +147,93 @@ describe('useCaseMutations#setWeight — normal Case update architecture, no bes
     expect(patch).toEqual({ weight: '210 lb' });
   });
 });
+
+/**
+ * Time of Death (2026-09) — the second caller of buildStructuredIntakeFieldPatch
+ * (the shared helper setWeight already established), proving the same
+ * generic sync mechanism works unmodified for a different structured Case
+ * field/checklist index (5, not hardcoded — resolved from the real
+ * fixture's own workflowSnapshot.intake, per resolveIntake.test.ts's own
+ * fixture-mirroring assertion for 'timeOfDeath').
+ */
+describe('useCaseMutations#setTimeOfDeath — reuses the Weight architecture, no new mechanism', () => {
+  it('1/2. calls the real casesService.update with Case.timeOfDeath set', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ fieldValues: {} });
+
+    act(() => {
+      result.current.setTimeOfDeath(case_, '15:45');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, calledCaseId, patch, mode] = vi.mocked(casesService.update).mock.calls[0];
+    expect(calledCaseId).toBe(CASE_ID);
+    expect(mode).toBe('mock');
+    expect(patch.timeOfDeath).toBe('15:45');
+  });
+
+  it('3/4. also sets fieldValues[5] (derived from the intake, not hardcoded) without disturbing other indices', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ fieldValues: { 0: 'JANE DOE', 3: '210 lb' } });
+
+    act(() => {
+      result.current.setTimeOfDeath(case_, '15:45');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch.fieldValues).toEqual({ 0: 'JANE DOE', 3: '210 lb', 5: '15:45' });
+  });
+
+  it('7. never includes checklistState in the patch — completion is derived, not manually set', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ checklistState: { 8: true } });
+
+    act(() => {
+      result.current.setTimeOfDeath(case_, '15:45');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch.checklistState).toBeUndefined();
+  });
+
+  it('8. never includes rawStage in the patch — the workflow stage is never manually forced', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ rawStage: 0 });
+
+    act(() => {
+      result.current.setTimeOfDeath(case_, '15:45');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch.rawStage).toBeUndefined();
+  });
+
+  it('the patch never carries any other structured Case field — the server\'s own full-record merge preserves them', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase();
+
+    act(() => {
+      result.current.setTimeOfDeath(case_, '15:45');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(Object.keys(patch).sort()).toEqual(['fieldValues', 'timeOfDeath']);
+  });
+
+  it('falls back to a timeOfDeath-only patch if the case has no workflowSnapshot', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ workflowSnapshot: null });
+
+    act(() => {
+      result.current.setTimeOfDeath(case_, '15:45');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ timeOfDeath: '15:45' });
+  });
+});

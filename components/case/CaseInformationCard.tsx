@@ -298,6 +298,7 @@ export function CaseInformationCard({
   onReassignOwner,
   onUpdateCaseInfo,
   onSaveWeight,
+  onSaveTimeOfDeath,
   isVeteran,
   veteranFlagLocked,
   onToggleVeteran,
@@ -355,6 +356,10 @@ export function CaseInformationCard({
       which requires the case's own workflowSnapshot; see
       hooks/useCaseMutations.ts#setWeight, this prop's intended wiring. */
   onSaveWeight: (value: string) => void;
+  /** Case field editing / field-backed checklist sync (2026-09). Same
+      shape/reason as onSaveWeight — see
+      hooks/useCaseMutations.ts#setTimeOfDeath. */
+  onSaveTimeOfDeath: (value: string) => void;
   isVeteran: boolean;
   veteranFlagLocked: boolean;
   onToggleVeteran: (newValue: boolean) => void;
@@ -388,7 +393,7 @@ export function CaseInformationCard({
           label="Time of death"
           value={timeOfDeath}
           kind="time"
-          onSave={(v) => onUpdateCaseInfo({ timeOfDeath: v })}
+          onSave={(v) => onSaveTimeOfDeath(v)}
         />
         <EditableField
           label="Location"

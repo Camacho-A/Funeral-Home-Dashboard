@@ -121,3 +121,25 @@ describe('resolveChecklist — Weight (checklistItemIndex 3) field-backed comple
     expect(items[3].done).toBe(false);
   });
 });
+
+describe('resolveChecklist — Time of Death (checklistItemIndex 5) field-backed completion (2026-09)', () => {
+  it('index 5 is labeled Time of death in the real template — confirms the test targets the right item', () => {
+    expect(RAW_STAGE_0_ITEMS[5].label).toBe('Time of death');
+    expect(RAW_STAGE_0_ITEMS[5].hasField).toBe(true);
+  });
+
+  it('6. Time of Death becomes done once fieldValues[5] has a non-empty value, through the existing generic field-backed logic', () => {
+    const before = resolveChecklist(
+      RAW_STAGE_0_ITEMS,
+      baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '210 lb', 4: '08/15/2026' } }),
+    );
+    expect(before[5].done).toBe(false);
+
+    const after = resolveChecklist(
+      RAW_STAGE_0_ITEMS,
+      baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '210 lb', 4: '08/15/2026', 5: '15:45' } }),
+    );
+    expect(after[5].done).toBe(true);
+    expect(after[5].fieldValue).toBe('15:45');
+  });
+});

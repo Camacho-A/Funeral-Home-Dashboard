@@ -13,6 +13,28 @@ import { useOrganization } from './useOrganization';
  * `Case` only where a patch needs to spread an existing map
  * (checklistState/fieldValues/vaStepsState) rather than replace it outright.
  */
+
+/**
+ * Builds the combined `{ [caseField]: value, fieldValues }` patch shared by
+ * every structured-Case-field-that's-also-a-field-backed-checklist-item
+ * mutator (setWeight, setTimeOfDeath, ...) — see setWeight's own comment
+ * for why both must be written in the same patch. A plain function
+ * (rather than a `this`-using object method) so it stays a safe, ordinary
+ * call regardless of how a caller invokes the returned mutations object.
+ */
+function buildStructuredIntakeFieldPatch<K extends keyof CaseUpdate & string>(
+  case_: Case,
+  caseField: K,
+  value: string,
+): CaseUpdate {
+  const patch: CaseUpdate = { [caseField]: value } as CaseUpdate;
+  const index = case_.workflowSnapshot ? findChecklistIndexForCaseField(case_.workflowSnapshot.intake, caseField) : null;
+  if (index !== null) {
+    patch.fieldValues = { ...case_.fieldValues, [index]: value };
+  }
+  return patch;
+}
+
 export function useCaseMutations(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
@@ -55,33 +77,33 @@ export function useCaseMutations(caseId: string) {
     },
 
     /**
-     * Case field editing / field-backed checklist sync (2026-09). Weight is
-     * both a structured Case property (shown in CaseInformationCard) and a
-     * field-backed First Call & Payment checklist item — editing only
-     * Case.weight (the way updateCaseInfo's other structured fields work)
-     * would leave that checklist item permanently "incomplete", since
-     * resolveChecklist.ts's isFieldDone reads fieldValues[index], never
-     * Case.weight directly. This writes both in the same patch, so the
+     * Case field editing / field-backed checklist sync (2026-09). Weight,
+     * and now Time of Death, are both structured Case properties (shown in
+     * CaseInformationCard) that are *also* field-backed First Call &
+     * Payment checklist items — editing only Case.<field> (the way
+     * updateCaseInfo's other structured fields work) would leave that
+     * checklist item permanently "incomplete", since resolveChecklist.ts's
+     * isFieldDone reads fieldValues[index], never the structured Case
+     * property directly. This writes both in the same patch, so the
      * checklist recognizes completion immediately without a second save —
      * and without ever touching checklistState or rawStage/currentStage
      * directly, which stay driven by the existing field-backed completion
      * logic exactly as they already are for every other field-backed item.
      *
      * The index is resolved from the case's own workflowSnapshot.intake
-     * (findChecklistIndexForCaseField) rather than assumed — this is not a
-     * Weight-specific special case, it works the same way for any
-     * structured Case field an intake template maps to a checklist index
-     * (Time of Death and the Hospice/physician contact fit this same
-     * shape; wiring them through the UI is a deliberately separate,
-     * later step, not a limitation of this function).
+     * (findChecklistIndexForCaseField) rather than assumed — this is a
+     * generic mechanism, not a per-field special case; it works the same
+     * way for any structured Case field an intake template maps to a
+     * checklist index (the Hospice/physician contact fits this same shape;
+     * wiring it through the UI is a deliberately separate, later step, not
+     * a limitation of this function).
      */
     setWeight(case_: Case, value: string) {
-      const patch: CaseUpdate = { weight: value };
-      const index = case_.workflowSnapshot ? findChecklistIndexForCaseField(case_.workflowSnapshot.intake, 'weight') : null;
-      if (index !== null) {
-        patch.fieldValues = { ...case_.fieldValues, [index]: value };
-      }
-      updateCase.mutate(patch);
+      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'weight', value));
+    },
+
+    setTimeOfDeath(case_: Case, value: string) {
+      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'timeOfDeath', value));
     },
 
     setVeteranFlag(newValue: boolean) {
