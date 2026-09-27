@@ -22,6 +22,7 @@ import { pricingClient } from '@/services/pricingClient';
 import { paymentsClient } from '@/services/paymentsClient';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
+import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
 import {
   formatDateInput,
   getValidationError,
@@ -32,7 +33,7 @@ import {
   splitMilitaryTimeToTwelveHourParts,
   combineTwelveHourTimeParts,
 } from '@/utils/inputMask';
-import type { Case, ReturnMethod } from '@/types/case';
+import type { Case, NextOfKinRelationship, ReturnMethod } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import type { ServiceSelections } from '@/types/caseOrder';
 import styles from './NewCaseModal.module.css';
@@ -214,6 +215,15 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // data mutation this pass deliberately avoids.
   const [nextOfKinEmailInput, setNextOfKinEmailInput] = useState('');
   const [nextOfKinEmailError, setNextOfKinEmailError] = useState<string | null>(null);
+  // Manors go-live correction (2026-09): Relationship to Decedent, same
+  // fixed-field reasoning as nextOfKinEmailInput above — reuses the exact
+  // Case.nextOfKinRelationship/nextOfKinRelationshipOther model and
+  // options CaseInformationCard.tsx already edits post-creation
+  // (domain/cases/nextOfKinRelationship.ts), never a second relationship
+  // system, and never a live Wix template edit to add it as an intake
+  // field.
+  const [nextOfKinRelationshipInput, setNextOfKinRelationshipInput] = useState<NextOfKinRelationship | ''>('');
+  const [nextOfKinRelationshipOtherInput, setNextOfKinRelationshipOtherInput] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -289,6 +299,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setServicesSelections({ weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false });
     setNextOfKinEmailInput('');
     setNextOfKinEmailError(null);
+    setNextOfKinRelationshipInput('');
+    setNextOfKinRelationshipOtherInput('');
     setTimeParts({});
     setAssignedStaffId(session.staffId);
     setReturnMethod('undecided');
@@ -318,6 +330,27 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // next-of-kin field at all (e.g. a bare-bones custom template).
   const nextOfKinSectionIndex = resolvedSections.findIndex(({ fields }) =>
     fields.some((field) => field.mapsToCaseField === 'nextOfKinName' || field.mapsToCaseField === 'nextOfKinPhone'),
+  );
+
+  // Manors go-live correction (2026-09). Production Workflow v5's real
+  // "Contacts" intake section mixes Next of Kin fields together with the
+  // 4 structured Certifier fields in one flat, single-labeled section —
+  // exactly why the earlier reorganization (commit 6dc98a7) only reached
+  // Case Detail's CaseInformationCard.tsx, which is hand-built and
+  // template-independent, and never reached this modal, which renders
+  // section labels directly from the intake template's own
+  // `section.label` (persisted in the live Wix workflowTemplateVersions
+  // row). Splitting that one section into two clearly-labeled visual
+  // groups here is presentation-only: it reads the same
+  // ResolvedIntakeField objects the generic renderer already produces
+  // (still driven by `mapsToCaseField`/`key`, never hardcoded values),
+  // and does not touch the persisted intake/template data at all — see
+  // this modal's own generic per-section render loop below, where this
+  // index is checked before falling back to the ordinary single-heading
+  // rendering (still used for any other organization's differently-shaped
+  // template, e.g. FALLBACK_INTAKE or secondOrgWorkflowTemplateFixture).
+  const contactsSplitIndex = resolvedSections.findIndex(
+    ({ fields }) => fields.some((f) => f.key === 'certifierName') && fields.some((f) => f.key === 'nextOfKinName'),
   );
 
   const structuredFields = buildStructuredCaseFields(effectiveIntake, draft);
@@ -398,6 +431,9 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         nextOfKinName: structuredFields.nextOfKinName ?? '',
         nextOfKinPhone: structuredFields.nextOfKinPhone ?? '',
         nextOfKinEmail: nextOfKinEmailTrimmed || undefined,
+        nextOfKinRelationship: nextOfKinRelationshipInput || undefined,
+        nextOfKinRelationshipOther:
+          nextOfKinRelationshipInput === 'other' ? nextOfKinRelationshipOtherInput.trim() || undefined : undefined,
         // Solis go-live checkpoint: expanded defensively here too (not
         // just on blur) — a click on Create Case immediately after typing
         // a two-digit year, before any blur has fired, must never submit
@@ -467,34 +503,89 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // via the Create Case button below.
   const noteSaveFailed = Boolean(createdCase) && addNote.isError;
 
+  function renderNextOfKinEmailFields(): ReactNode {
+    return (
+      <div>
+        <div className={styles.fieldLabel}>Next of kin — email (optional)</div>
+        <TextField
+          type="email"
+          value={nextOfKinEmailInput}
+          onChange={(e) => {
+            setNextOfKinEmailInput(e.target.value);
+            setNextOfKinEmailError(null);
+          }}
+          onBlur={() => {
+            const trimmed = nextOfKinEmailInput.trim();
+            setNextOfKinEmailInput(trimmed);
+            setNextOfKinEmailError(trimmed !== '' && !isValidEmail(trimmed) ? 'Enter a valid email address.' : null);
+          }}
+          placeholder="name@example.com"
+          aria-label="Next of kin — email (optional)"
+        />
+        {nextOfKinEmailError && (
+          <div className={styles.fieldError} role="alert">
+            {nextOfKinEmailError}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderNextOfKinEmailField(): ReactNode {
     return (
       <div className={styles.group}>
-        <div className={styles.groupFields}>
-          <div>
-            <div className={styles.fieldLabel}>Next of kin — email (optional)</div>
-            <TextField
-              type="email"
-              value={nextOfKinEmailInput}
-              onChange={(e) => {
-                setNextOfKinEmailInput(e.target.value);
-                setNextOfKinEmailError(null);
-              }}
-              onBlur={() => {
-                const trimmed = nextOfKinEmailInput.trim();
-                setNextOfKinEmailInput(trimmed);
-                setNextOfKinEmailError(trimmed !== '' && !isValidEmail(trimmed) ? 'Enter a valid email address.' : null);
-              }}
-              placeholder="name@example.com"
-              aria-label="Next of kin — email (optional)"
-            />
-            {nextOfKinEmailError && (
-              <div className={styles.fieldError} role="alert">
-                {nextOfKinEmailError}
-              </div>
-            )}
-          </div>
+        <div className={styles.groupFields}>{renderNextOfKinEmailFields()}</div>
+      </div>
+    );
+  }
+
+  /**
+   * Manors go-live correction (2026-09). "Relationship to Decedent" —
+   * NewCaseInput already supported nextOfKinRelationship/
+   * nextOfKinRelationshipOther (types/case.ts), but this modal never
+   * rendered a control for either. Fixed field, exactly like
+   * renderNextOfKinEmailFields above and for the same reason: adding it as
+   * a real intake field would mean editing Production Workflow v5's
+   * persisted `intake` JSON, which this correction explicitly must not do.
+   * Reuses CaseInformationCard's own relationship model/options
+   * (domain/cases/nextOfKinRelationship.ts) — never a second list.
+   */
+  function renderNextOfKinRelationshipFields(): ReactNode {
+    return (
+      <>
+        <div>
+          <div className={styles.fieldLabel}>Relationship to decedent</div>
+          <SelectField
+            value={nextOfKinRelationshipInput}
+            onChange={(e) => setNextOfKinRelationshipInput(e.target.value as NextOfKinRelationship | '')}
+            aria-label="Relationship to decedent"
+          >
+            <option value="">—</option>
+            {NEXT_OF_KIN_RELATIONSHIP_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </SelectField>
         </div>
+        {nextOfKinRelationshipInput === 'other' && (
+          <div>
+            <div className={styles.fieldLabel}>Relationship (describe)</div>
+            <TextField
+              value={nextOfKinRelationshipOtherInput}
+              onChange={(e) => setNextOfKinRelationshipOtherInput(e.target.value.toUpperCase())}
+              aria-label="Relationship (describe)"
+            />
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderNextOfKinRelationshipField(): ReactNode {
+    return (
+      <div className={styles.group}>
+        <div className={styles.groupFields}>{renderNextOfKinRelationshipFields()}</div>
       </div>
     );
   }
@@ -738,20 +829,56 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
           </div>
 
           {resolvedSections.map(({ section, fields }, index) => {
+            // Manors go-live correction (2026-09): the one section mixing
+            // NOK and Certifier fields (contactsSplitIndex, see its own
+            // comment above) renders as two distinct visual groups instead
+            // of the generic single-heading branch below — Certifier
+            // fields must never appear grouped under Next of Kin, and vice
+            // versa.
+            if (index === contactsSplitIndex) {
+              const nokFields = fields.filter(
+                (field) => field.mapsToCaseField === 'nextOfKinName' || field.mapsToCaseField === 'nextOfKinPhone',
+              );
+              const certifierFields = fields.filter((field) => field.key.startsWith('certifier'));
+              return (
+                <Fragment key={section.key}>
+                  <div className={styles.group}>
+                    <div className={styles.groupLabel}>Next of Kin / Primary Contact</div>
+                    <div className={styles.groupFields}>
+                      {nokFields.map((field) => renderIntakeField(field))}
+                      {renderNextOfKinRelationshipFields()}
+                      {renderNextOfKinEmailFields()}
+                    </div>
+                  </div>
+                  <div className={styles.group}>
+                    <div className={styles.groupLabel}>Certifier Information</div>
+                    <div className={styles.groupHelperText}>
+                      Medical certifier responsible for signing the death certificate.
+                    </div>
+                    <div className={styles.groupFields}>{certifierFields.map((field) => renderIntakeField(field))}</div>
+                  </div>
+                </Fragment>
+              );
+            }
+
             // A section made up entirely of fieldType 'payment' fields
             // renders no visible fields at all (renderIntakeField returns
             // null for 'payment' — see its own comment) — skip the section
             // header too, rather than showing an empty-looking labeled box.
             const visibleFields = fields.filter((field) => field.fieldType !== 'payment');
-            // Manors launch-prep: place the fixed NOK-email field (below)
-            // right after the section holding this org's own next-of-kin
-            // fields — see nextOfKinSectionIndex's own comment above —
-            // rather than always dead-last, so it reads as part of that
-            // grouping instead of landing after whatever section happens to
-            // be configured last (e.g. a 'payment' section, which would
-            // otherwise leave it stranded under an empty-looking label).
-            const showNextOfKinEmailHere =
+            // Manors launch-prep: place the fixed NOK-email/relationship
+            // fields (below) right after the section holding this org's
+            // own next-of-kin fields — see nextOfKinSectionIndex's own
+            // comment above — rather than always dead-last, so they read
+            // as part of that grouping instead of landing after whatever
+            // section happens to be configured last (e.g. a 'payment'
+            // section, which would otherwise leave them stranded under an
+            // empty-looking label). Never fires for contactsSplitIndex's
+            // own section — that one is fully handled by the branch above,
+            // which already includes both fixed fields.
+            const showNextOfKinFixedFieldsHere =
               templatesLoaded &&
+              contactsSplitIndex === -1 &&
               (index === nextOfKinSectionIndex ||
                 (nextOfKinSectionIndex === -1 && index === resolvedSections.length - 1));
             return (
@@ -762,10 +889,12 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                     <div className={styles.groupFields}>{fields.map((field) => renderIntakeField(field))}</div>
                   </div>
                 )}
-                {showNextOfKinEmailHere && renderNextOfKinEmailField()}
+                {showNextOfKinFixedFieldsHere && renderNextOfKinRelationshipField()}
+                {showNextOfKinFixedFieldsHere && renderNextOfKinEmailField()}
               </Fragment>
             );
           })}
+          {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinRelationshipField()}
           {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinEmailField()}
 
           {/* Phase 19C (Service Catalog, Case Order & Pricing Engine):

@@ -20,6 +20,7 @@ import {
   formatMilitaryTimeToTwelveHour,
 } from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
+import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
 import styles from './CaseInformationCard.module.css';
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -45,27 +46,6 @@ const SHIPPING_DELIVERY_STATUS_LABEL: Record<ShippingDeliveryStatus, string> = {
   shipped: 'Shipped',
   delivered: 'Delivered',
 };
-
-/** Manors launch-prep. Display labels for the NOK-relationship dropdown —
-    same small closed-enum convention as PICKUP_STATUS_LABEL above. */
-const NEXT_OF_KIN_RELATIONSHIP_LABEL: Record<NextOfKinRelationship, string> = {
-  spouse: 'Spouse',
-  domestic_partner: 'Domestic Partner',
-  son: 'Son',
-  daughter: 'Daughter',
-  parent: 'Parent',
-  brother: 'Brother',
-  sister: 'Sister',
-  grandchild: 'Grandchild',
-  grandparent: 'Grandparent',
-  niece: 'Niece',
-  nephew: 'Nephew',
-  other_relative: 'Other Relative',
-  friend: 'Friend',
-  legal_representative: 'Legal Representative',
-  other: 'Other',
-};
-const NEXT_OF_KIN_RELATIONSHIP_OPTIONS = Object.entries(NEXT_OF_KIN_RELATIONSHIP_LABEL) as [NextOfKinRelationship, string][];
 
 export type StaffOption = { id: string; name: string };
 
@@ -593,7 +573,7 @@ export function CaseInformationCard({
 
       <div className={styles.sectionHeading}>Certifier information</div>
       <div className={styles.sectionHelperText}>
-        Medical certifier responsible for signing the death certificate — never the family contact above.
+        Medical certifier responsible for signing the death certificate.
       </div>
       <div className={styles.grid}>
         <EditableField

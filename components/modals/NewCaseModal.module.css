@@ -45,6 +45,16 @@
   gap: var(--space-5);
 }
 
+/* Manors go-live correction (2026-09): short context line under the
+   Certifier Information group heading, matching CaseInformationCard's own
+   .sectionHelperText treatment. */
+.groupHelperText {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  margin-top: calc(-1 * var(--space-3));
+  margin-bottom: var(--space-5);
+}
+
 .fieldLabel {
   font-size: var(--font-size-12-5);
   font-weight: var(--font-weight-medium);

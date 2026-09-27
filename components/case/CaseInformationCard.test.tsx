@@ -738,6 +738,12 @@ describe('CaseInformationCard — Certifier Information (2026-09, ADR-041)', () 
     expect(screen.getByText('Next of kin / primary contact')).not.toBe(screen.getByText('Certifier information'));
   });
 
+  it('the Certifier helper text is exactly "Medical certifier responsible for signing the death certificate." — no trailing NOK-contrast clause', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Medical certifier responsible for signing the death certificate.')).toBeInTheDocument();
+    expect(screen.queryByText(/never the family contact above/i)).not.toBeInTheDocument();
+  });
+
   it('shows a placeholder when every certifier field is null', () => {
     render(
       <CaseInformationCard

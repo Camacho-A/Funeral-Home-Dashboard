@@ -269,18 +269,31 @@ describe('NewCaseModal — Assigned Staff (Manors go-live fix)', () => {
 /**
  * Phase 16A (New Case UX Polish). Intake fields render in this fixed order
  * (services/__mocks__/workflowTemplates.ts's Managed Cremations template).
- * Structured Certifier data (2026-09, ADR-041) changed this twice over:
- * Time of Death moved from a text <input> to three <select>s (so it drops
- * out of this <input>-only collection entirely, leaving a gap at the old
- * index 5), and the single dcContact field was replaced by four certifier
- * fields. Current order: 0 decedentName, 1 placeOfDeath, 2 dateOfBirth,
- * 3 weight, 4 dateOfDeath, [Time of death — not an <input>], 5 certifierName,
- * 6 certifierPhone, 7 certifierLicenseNumber, 8 certifierFax,
- * 9 nextOfKinName, 10 nextOfKinPhone — 11 total. The old Payment field
- * (Phase 19B) contributed zero inputs and is now fully retired (Phase 19C's
- * Services &amp; Charges section replaces it — see the describe block
- * below); Services &amp; Charges' own <input>s always render *after* these
- * 11, so positional indices 0-10 stay stable. None of these fields have a
+ * Structured Certifier data (2026-09, ADR-041) changed this twice over,
+ * and the Manors go-live correction (2026-09) changed it a third time:
+ * Time of Death moved from a text <input> to three <select>s (dropping
+ * out of this <input>-only collection entirely), the single dcContact
+ * field was replaced by four certifier fields, and — per the correction —
+ * the merged "Contacts" intake section now renders as two distinct
+ * visual groups, "Next of Kin / Primary Contact" first, "Certifier
+ * Information" second (NewCaseModal.tsx's own contactsSplitIndex), so NOK
+ * fields now come *before* Certifier fields in DOM order, the reverse of
+ * the template's own raw field order. "Relationship to decedent" (a
+ * <select>, not an <input>) and its conditional "Relationship (describe)"
+ * text field sit between NOK Phone and the fixed Email field — the
+ * "describe" field only exists in the DOM when "Other" is selected, so it
+ * is deliberately never assigned a fixed index below.
+ *
+ * Current order: 0 decedentName, 1 placeOfDeath, 2 dateOfBirth, 3 weight,
+ * 4 dateOfDeath, [Time of death — not an <input>], 5 nextOfKinName,
+ * 6 nextOfKinPhone, [Relationship to decedent — not an <input>],
+ * [Relationship (describe) — conditional, "Other" only], 7 Next of kin —
+ * email, 8 certifierName, 9 certifierPhone, 10 certifierLicenseNumber,
+ * 11 certifierFax — 12 total (when "Other" is not selected). The old
+ * Payment field (Phase 19B) contributed zero inputs and is now fully
+ * retired (Phase 19C's Services &amp; Charges section replaces it — see
+ * the describe block below); Services &amp; Charges' own <input>s always
+ * render *after* these 12. None of these fields have a
  * <label htmlFor>/aria-label association with their visible text (the
  * label is a plain sibling <div>), so tests below select by this fixed
  * position rather than by accessible name.
@@ -296,23 +309,23 @@ describe('NewCaseModal — uppercase transform on free-text fields', () => {
 
     fireEvent.change(inputs[0], { target: { value: 'robert ellison' } });
     fireEvent.change(inputs[1], { target: { value: "st. mary's hospital" } });
-    fireEvent.change(inputs[5], { target: { value: 'dr. linda choi' } });
-    fireEvent.change(inputs[9], { target: { value: 'karen ellison' } });
+    fireEvent.change(inputs[8], { target: { value: 'dr. linda choi' } }); // certifierName
+    fireEvent.change(inputs[5], { target: { value: 'karen ellison' } }); // nextOfKinName
 
     expect(inputs[0]).toHaveValue('ROBERT ELLISON');
     expect(inputs[1]).toHaveValue("ST. MARY'S HOSPITAL");
-    expect(inputs[5]).toHaveValue('DR. LINDA CHOI');
-    expect(inputs[9]).toHaveValue('KAREN ELLISON');
+    expect(inputs[8]).toHaveValue('DR. LINDA CHOI');
+    expect(inputs[5]).toHaveValue('KAREN ELLISON');
   });
 
   it('does not uppercase the phone or weight fields', async () => {
     const { container } = await renderModalWithFields();
     const inputs = intakeInputs(container);
 
-    fireEvent.change(inputs[10], { target: { value: '555-abc-1234' } }); // nextOfKinPhone
+    fireEvent.change(inputs[6], { target: { value: '555-abc-1234' } }); // nextOfKinPhone
     fireEvent.change(inputs[3], { target: { value: '165 lb' } }); // weight
 
-    expect(inputs[10]).toHaveValue('555-abc-1234');
+    expect(inputs[6]).toHaveValue('555-abc-1234');
     expect(inputs[3]).toHaveValue('165 lb');
   });
 
@@ -320,19 +333,19 @@ describe('NewCaseModal — uppercase transform on free-text fields', () => {
     const { container } = await renderModalWithFields();
     const inputs = intakeInputs(container);
 
-    fireEvent.change(inputs[6], { target: { value: '555-abc-1234' } }); // certifierPhone
-    fireEvent.change(inputs[8], { target: { value: '555-def-5678' } }); // certifierFax
+    fireEvent.change(inputs[9], { target: { value: '555-abc-1234' } }); // certifierPhone
+    fireEvent.change(inputs[11], { target: { value: '555-def-5678' } }); // certifierFax
 
-    expect(inputs[6]).toHaveValue('555-abc-1234');
-    expect(inputs[8]).toHaveValue('555-def-5678');
+    expect(inputs[9]).toHaveValue('555-abc-1234');
+    expect(inputs[11]).toHaveValue('555-def-5678');
   });
 
   it('uppercases certifierLicenseNumber, matching the tagNumber-style code precedent', async () => {
     const { container } = await renderModalWithFields();
     const inputs = intakeInputs(container);
 
-    fireEvent.change(inputs[7], { target: { value: 'md-4471' } }); // certifierLicenseNumber
-    expect(inputs[7]).toHaveValue('MD-4471');
+    fireEvent.change(inputs[10], { target: { value: 'md-4471' } }); // certifierLicenseNumber
+    expect(inputs[10]).toHaveValue('MD-4471');
   });
 });
 
@@ -580,11 +593,15 @@ describe('NewCaseModal — Next of kin email (Manors launch-prep)', () => {
     // nokPhoneLabel in document order.
     expect(nokPhoneLabel.compareDocumentPosition(nokEmailLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    // And nothing else with a field label sits between them — the very
-    // next field-label element after NOK phone's is NOK email's.
+    // Manors go-live correction (2026-09): the only field-label allowed
+    // between NOK phone and NOK email is now "Relationship to decedent"
+    // (also a fixed field grouped with Next of Kin) — anything else
+    // sitting between them would mean a Certifier (or other) field
+    // leaked into this group.
     const allLabels = Array.from(document.querySelectorAll('[class*="fieldLabel"]')).map((el) => el.textContent);
     const phoneIndex = allLabels.indexOf('Next of kin — phone number');
-    expect(allLabels[phoneIndex + 1]).toBe('Next of kin — email (optional)');
+    expect(allLabels[phoneIndex + 1]).toBe('Relationship to decedent');
+    expect(allLabels[phoneIndex + 2]).toBe('Next of kin — email (optional)');
   });
 });
 
@@ -664,8 +681,8 @@ describe('NewCaseModal — Create Case & Collect with Clover (Phase 19C)', () =>
 function fillRequiredFields(container: HTMLElement) {
   const inputs = intakeInputs(container);
   fireEvent.change(inputs[0], { target: { value: 'Test Decedent' } });
-  fireEvent.change(inputs[9], { target: { value: 'Test NOK' } }); // nextOfKinName
-  fireEvent.change(inputs[10], { target: { value: '555-0000' } }); // nextOfKinPhone
+  fireEvent.change(inputs[5], { target: { value: 'Test NOK' } }); // nextOfKinName
+  fireEvent.change(inputs[6], { target: { value: '555-0000' } }); // nextOfKinPhone
 }
 
 describe('NewCaseModal — calendar date and expiry validation', () => {
@@ -820,7 +837,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
   it('1. Certifier Name entered is included on the created case', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
-    fireEvent.change(intakeInputs(container)[5], { target: { value: 'dr. jane foster' } }); // certifierName
+    fireEvent.change(intakeInputs(container)[8], { target: { value: 'dr. jane foster' } }); // certifierName
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -831,7 +848,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
   it('2. Certifier Phone entered is included on the created case', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
-    fireEvent.change(intakeInputs(container)[6], { target: { value: '555-0199' } }); // certifierPhone
+    fireEvent.change(intakeInputs(container)[9], { target: { value: '555-0199' } }); // certifierPhone
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -842,7 +859,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
   it('3. Certifier License Number entered is included on the created case', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
-    fireEvent.change(intakeInputs(container)[7], { target: { value: 'md-4471' } }); // certifierLicenseNumber
+    fireEvent.change(intakeInputs(container)[10], { target: { value: 'md-4471' } }); // certifierLicenseNumber
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -853,7 +870,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
   it('4. Certifier Fax entered is included on the created case', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
-    fireEvent.change(intakeInputs(container)[8], { target: { value: '555-0188' } }); // certifierFax
+    fireEvent.change(intakeInputs(container)[11], { target: { value: '555-0188' } }); // certifierFax
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -865,10 +882,10 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const inputs = intakeInputs(container);
-    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
-    fireEvent.change(inputs[6], { target: { value: '555-0199' } });
-    fireEvent.change(inputs[7], { target: { value: 'md-4471' } });
-    fireEvent.change(inputs[8], { target: { value: '555-0188' } });
+    fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } });
+    fireEvent.change(inputs[9], { target: { value: '555-0199' } });
+    fireEvent.change(inputs[10], { target: { value: 'md-4471' } });
+    fireEvent.change(inputs[11], { target: { value: '555-0188' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -884,9 +901,9 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const inputs = intakeInputs(container);
-    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
-    fireEvent.change(inputs[6], { target: { value: '555-0199' } });
-    // certifierLicenseNumber (inputs[7]) intentionally left blank.
+    fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } });
+    fireEvent.change(inputs[9], { target: { value: '555-0199' } });
+    // certifierLicenseNumber (inputs[10]) intentionally left blank.
 
     const createButton = screen.getByRole('button', { name: 'Create case' });
     expect(createButton).not.toBeDisabled();
@@ -900,9 +917,9 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const inputs = intakeInputs(container);
-    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
-    fireEvent.change(inputs[6], { target: { value: '555-0199' } });
-    // certifierFax (inputs[8]) intentionally left blank.
+    fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } });
+    fireEvent.change(inputs[9], { target: { value: '555-0199' } });
+    // certifierFax (inputs[11]) intentionally left blank.
 
     const createButton = screen.getByRole('button', { name: 'Create case' });
     expect(createButton).not.toBeDisabled();
@@ -932,7 +949,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     it('9. Name only -> Certifier Information checklist item is incomplete', async () => {
       const { container } = await renderModalWithFields();
       fillRequiredFields(container);
-      fireEvent.change(intakeInputs(container)[5], { target: { value: 'dr. jane foster' } });
+      fireEvent.change(intakeInputs(container)[8], { target: { value: 'dr. jane foster' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
       await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -947,7 +964,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     it('10. Phone only -> Certifier Information checklist item is incomplete', async () => {
       const { container } = await renderModalWithFields();
       fillRequiredFields(container);
-      fireEvent.change(intakeInputs(container)[6], { target: { value: '555-0199' } });
+      fireEvent.change(intakeInputs(container)[9], { target: { value: '555-0199' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
       await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -961,8 +978,8 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
       const { container } = await renderModalWithFields();
       fillRequiredFields(container);
       const inputs = intakeInputs(container);
-      fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } });
-      fireEvent.change(inputs[6], { target: { value: '555-0199' } });
+      fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } });
+      fireEvent.change(inputs[9], { target: { value: '555-0199' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
       await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -984,10 +1001,10 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — AM or PM' }), { target: { value: 'PM' } });
     fireEvent.change(inputs[1], { target: { value: "st. mary's hospital" } }); // placeOfDeath
     fireEvent.change(inputs[3], { target: { value: '178 lb' } }); // weight
-    fireEvent.change(inputs[5], { target: { value: 'dr. jane foster' } }); // certifierName
-    fireEvent.change(inputs[6], { target: { value: '555-0199' } }); // certifierPhone
-    fireEvent.change(inputs[9], { target: { value: 'karen ellison' } }); // nextOfKinName
-    fireEvent.change(inputs[10], { target: { value: '555-0100' } }); // nextOfKinPhone
+    fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } }); // certifierName
+    fireEvent.change(inputs[9], { target: { value: '555-0199' } }); // certifierPhone
+    fireEvent.change(inputs[5], { target: { value: 'karen ellison' } }); // nextOfKinName
+    fireEvent.change(inputs[6], { target: { value: '555-0100' } }); // nextOfKinPhone
     fireEvent.change(screen.getByDisplayValue('Undecided'), { target: { value: 'pickup' } }); // returnMethod
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
@@ -1035,6 +1052,172 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
     expect(container.textContent).not.toContain('Hospice');
     expect(screen.getByText('Certifier — name')).toBeInTheDocument();
     expect(screen.getByText('Certifier — phone number')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Manors go-live correction (2026-09). Production Workflow v5's real
+ * "Contacts" intake section mixes Next of Kin and Certifier fields
+ * together under one label — this is why the earlier reorganization
+ * (commit 6dc98a7) only reached Case Detail's CaseInformationCard.tsx (a
+ * hand-built, template-independent component) and never reached this
+ * modal, which renders section labels straight from the intake
+ * template's own `section.label`. NewCaseModal.tsx's `contactsSplitIndex`
+ * now detects that one section (by field `key`, never by value) and
+ * renders it as two distinct visual groups instead — presentation-only,
+ * the persisted v5 template/intake content is never read via any
+ * different path and never rewritten.
+ */
+describe('NewCaseModal — Next of Kin / Certifier contact section organization (2026-09)', () => {
+  it('1. renders a "Next of Kin / Primary Contact" heading', async () => {
+    await renderModalWithFields();
+    expect(screen.getByText('Next of Kin / Primary Contact')).toBeInTheDocument();
+  });
+
+  it('2/3/4. NOK Name, NOK Phone, and Relationship to decedent all appear within the Next of Kin / Primary Contact visual group', async () => {
+    await renderModalWithFields();
+    const group = screen.getByText('Next of Kin / Primary Contact').parentElement!;
+    const scoped = within(group);
+    expect(scoped.getByText('Next of kin — name')).toBeInTheDocument();
+    expect(scoped.getByText('Next of kin — phone number')).toBeInTheDocument();
+    expect(scoped.getByText('Relationship to decedent')).toBeInTheDocument();
+  });
+
+  it('5. Relationship (describe) only appears once "Other" is selected, and appears within the same Next of Kin group', async () => {
+    await renderModalWithFields();
+    expect(screen.queryByText('Relationship (describe)')).not.toBeInTheDocument();
+
+    const relationshipSelect = screen.getByRole('combobox', { name: 'Relationship to decedent' });
+    fireEvent.change(relationshipSelect, { target: { value: 'other' } });
+
+    const group = screen.getByText('Next of Kin / Primary Contact').parentElement!;
+    expect(within(group).getByText('Relationship (describe)')).toBeInTheDocument();
+  });
+
+  it('6. separately renders a "Certifier Information" heading', async () => {
+    await renderModalWithFields();
+    expect(screen.getByText('Certifier Information')).toBeInTheDocument();
+  });
+
+  it('7/8/9/10. Certifier Name, Phone, License Number, and Fax all appear within the Certifier Information visual group', async () => {
+    await renderModalWithFields();
+    const group = screen.getByText('Certifier Information').parentElement!;
+    const scoped = within(group);
+    expect(scoped.getByText('Certifier — name')).toBeInTheDocument();
+    expect(scoped.getByText('Certifier — phone number')).toBeInTheDocument();
+    expect(scoped.getByText('Certifier — license number')).toBeInTheDocument();
+    expect(scoped.getByText('Certifier — fax number')).toBeInTheDocument();
+  });
+
+  it('11. the Certifier helper text is exactly "Medical certifier responsible for signing the death certificate."', async () => {
+    await renderModalWithFields();
+    expect(screen.getByText('Medical certifier responsible for signing the death certificate.')).toBeInTheDocument();
+  });
+
+  it('12. the old helper text containing "never the family contact above" does not render', async () => {
+    await renderModalWithFields();
+    expect(screen.queryByText(/never the family contact above/i)).not.toBeInTheDocument();
+  });
+
+  it('13. Certifier fields are not visually grouped under the Next of Kin / Primary Contact heading', async () => {
+    await renderModalWithFields();
+    const nokGroup = screen.getByText('Next of Kin / Primary Contact').parentElement!;
+    const scoped = within(nokGroup);
+    expect(scoped.queryByText('Certifier — name')).not.toBeInTheDocument();
+    expect(scoped.queryByText('Certifier — phone number')).not.toBeInTheDocument();
+    expect(scoped.queryByText('Certifier — license number')).not.toBeInTheDocument();
+    expect(scoped.queryByText('Certifier — fax number')).not.toBeInTheDocument();
+  });
+
+  it('14. NOK fields are not visually grouped under Certifier Information', async () => {
+    await renderModalWithFields();
+    const certifierGroup = screen.getByText('Certifier Information').parentElement!;
+    const scoped = within(certifierGroup);
+    expect(scoped.queryByText('Next of kin — name')).not.toBeInTheDocument();
+    expect(scoped.queryByText('Next of kin — phone number')).not.toBeInTheDocument();
+    expect(scoped.queryByText('Relationship to decedent')).not.toBeInTheDocument();
+  });
+
+  it('15. submission persists NOK Name, Phone, Relationship, and Relationship Other', async () => {
+    const { container } = await renderModalWithFields();
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[0], { target: { value: 'Robert Ellison' } }); // decedentName
+    fireEvent.change(inputs[5], { target: { value: 'karen ellison' } }); // nextOfKinName
+    fireEvent.change(inputs[6], { target: { value: '555-0100' } }); // nextOfKinPhone
+    fireEvent.change(screen.getByRole('combobox', { name: 'Relationship to decedent' }), { target: { value: 'other' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Relationship (describe)' }), { target: { value: 'family friend' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId)!;
+
+    expect(created.nextOfKinName).toBe('KAREN ELLISON');
+    expect(created.nextOfKinPhone).toBe('555-0100');
+    expect(created.nextOfKinRelationship).toBe('other');
+    expect(created.nextOfKinRelationshipOther).toBe('FAMILY FRIEND');
+  });
+
+  it('a Relationship other than "Other" persists without a Relationship Other value', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Relationship to decedent' }), { target: { value: 'spouse' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId)!;
+
+    expect(created.nextOfKinRelationship).toBe('spouse');
+    expect(created.nextOfKinRelationshipOther).toBeNull();
+  });
+
+  it('leaving Relationship unset persists null, never a guessed value', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId)!;
+
+    expect(created.nextOfKinRelationship).toBeNull();
+    expect(created.nextOfKinRelationshipOther).toBeNull();
+  });
+
+  it('16. submission persists all four Certifier fields', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } }); // certifierName
+    fireEvent.change(inputs[9], { target: { value: '555-0199' } }); // certifierPhone
+    fireEvent.change(inputs[10], { target: { value: 'md-4471' } }); // certifierLicenseNumber
+    fireEvent.change(inputs[11], { target: { value: '555-0188' } }); // certifierFax
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId)!;
+
+    expect(created.certifierName).toBe('DR. JANE FOSTER');
+    expect(created.certifierPhone).toBe('555-0199');
+    expect(created.certifierLicenseNumber).toBe('MD-4471');
+    expect(created.certifierFax).toBe('555-0188');
+  });
+
+  it('17. Certifier checklist completion remains Name + Phone only, unaffected by the visual reorganization', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const inputs = intakeInputs(container);
+    fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } }); // certifierName
+    fireEvent.change(inputs[10], { target: { value: 'md-4471' } }); // certifierLicenseNumber — deliberately no phone
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const created = caseFixtures.find((c) => c.id === newCaseId)!;
+    const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
+    expect(resolveChecklist(items, created)[6].done).toBe(false); // Name only — still incomplete
   });
 });
 
