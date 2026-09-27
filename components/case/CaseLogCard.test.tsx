@@ -45,6 +45,14 @@ describe('CaseLogCard — note editor autofocus and shortcut (Phase 17)', () => 
     expect(textarea).toHaveFocus();
   });
 
+  it('item #9: focuses the note textarea with preventScroll so a fresh Case Detail mount never drags the page scroll down to this below-the-fold card', () => {
+    const textareaProto = window.HTMLTextAreaElement.prototype;
+    const focusSpy = vi.spyOn(textareaProto, 'focus');
+    renderCard({ entries: [ENTRY] });
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    focusSpy.mockRestore();
+  });
+
   it('saves the note on Ctrl+Enter without clicking "Add entry"', () => {
     const onAddEntry = vi.fn();
     renderCard({ onAddEntry });

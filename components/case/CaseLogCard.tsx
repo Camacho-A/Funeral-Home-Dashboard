@@ -60,9 +60,13 @@ export function CaseLogCard({
   const entryRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Autofocus the note editor whenever it's the active tab — including on
-  // first mount, since "note" is the default tab (Phase 17).
+  // first mount, since "note" is the default tab (Phase 17). `preventScroll`
+  // (item #9, 2026-09) stops the browser's default focus behavior from
+  // dragging the whole page's scroll position down to this textarea on
+  // every fresh Case Detail mount — this card sits well below the fold —
+  // while still focusing it (cursor ready to type) exactly as before.
   useEffect(() => {
-    if (logType === 'note') noteInputRef.current?.focus();
+    if (logType === 'note') noteInputRef.current?.focus({ preventScroll: true });
   }, [logType]);
 
   // Once a just-saved entry actually shows up in the (newest-first) list

@@ -65,4 +65,45 @@ describe('useResetMainContentScrollOnChange (Solis go-live checkpoint — Case D
     document.body.removeChild(mainContent);
     document.body.removeChild(otherContainer);
   });
+
+  describe('item #9 correction — the real scroll owner is the window, not #main-content', () => {
+    it('also resets window scroll on mount, since live-browser verification showed #main-content never actually overflows', () => {
+      const windowScrollSpy = vi.fn();
+      vi.stubGlobal('scrollTo', windowScrollSpy);
+
+      render(<TestHarness scrollKey="case-1" />);
+
+      expect(windowScrollSpy).toHaveBeenCalledWith(0, 0);
+      vi.unstubAllGlobals();
+    });
+
+    it('resets window scroll again when the key changes (Case A -> Case B), not on an unrelated re-render', () => {
+      const windowScrollSpy = vi.fn();
+      vi.stubGlobal('scrollTo', windowScrollSpy);
+
+      const { rerender } = render(<TestHarness scrollKey="case-a" />);
+      expect(windowScrollSpy).toHaveBeenCalledTimes(1);
+
+      rerender(<TestHarness scrollKey="case-a" />);
+      expect(windowScrollSpy).toHaveBeenCalledTimes(1); // unchanged key — no extra reset (e.g. a data refetch)
+
+      rerender(<TestHarness scrollKey="case-b" />);
+      expect(windowScrollSpy).toHaveBeenCalledTimes(2); // key changed — resets again
+
+      vi.unstubAllGlobals();
+    });
+
+    it('never resets window scroll when the URL already carries a hash — preserves an explicit anchor/deep-link', () => {
+      const windowScrollSpy = vi.fn();
+      vi.stubGlobal('scrollTo', windowScrollSpy);
+      window.history.pushState(null, '', '#some-anchor');
+
+      render(<TestHarness scrollKey="case-1" />);
+
+      expect(windowScrollSpy).not.toHaveBeenCalled();
+
+      window.history.pushState(null, '', window.location.pathname);
+      vi.unstubAllGlobals();
+    });
+  });
 });

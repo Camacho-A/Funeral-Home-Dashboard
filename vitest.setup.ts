@@ -9,3 +9,10 @@ import { cleanup } from '@testing-library/react';
 afterEach(() => {
   cleanup();
 });
+
+// jsdom's own window.scrollTo logs a noisy "Not implemented" console error
+// on every call instead of silently no-op'ing (Case Detail scroll-reset,
+// item #9, is the first hook to call it during a render). Individual tests
+// that need to assert scrollTo was called still override this via
+// vi.stubGlobal('scrollTo', ...), which takes precedence per-test.
+window.scrollTo = () => {};
