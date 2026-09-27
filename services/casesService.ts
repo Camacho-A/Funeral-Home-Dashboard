@@ -190,6 +190,10 @@ export async function create(
         nextOfKinEmail: input.nextOfKinEmail,
         nextOfKinRelationship: input.nextOfKinRelationship,
         nextOfKinRelationshipOther: input.nextOfKinRelationshipOther,
+        certifierName: input.certifierName,
+        certifierPhone: input.certifierPhone,
+        certifierLicenseNumber: input.certifierLicenseNumber,
+        certifierFax: input.certifierFax,
         dateOfBirth: input.dateOfBirth,
         dateOfDeath: input.dateOfDeath,
         timeOfDeath: input.timeOfDeath,
@@ -240,6 +244,8 @@ export async function create(
     placeOfDeath: input.placeOfDeath ?? '—',
     nextOfKinName: input.nextOfKinName,
     nextOfKinRelationshipOther: input.nextOfKinRelationshipOther?.trim() || null,
+    certifierName: input.certifierName?.trim() || null,
+    certifierLicenseNumber: input.certifierLicenseNumber?.trim() || null,
   });
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
@@ -258,6 +264,10 @@ export async function create(
     nextOfKinEmail: input.nextOfKinEmail?.trim() || null,
     nextOfKinRelationship: input.nextOfKinRelationship ?? null,
     nextOfKinRelationshipOther: normalized.nextOfKinRelationshipOther as string | null,
+    certifierName: normalized.certifierName as string | null,
+    certifierPhone: input.certifierPhone?.trim() || null,
+    certifierLicenseNumber: normalized.certifierLicenseNumber as string | null,
+    certifierFax: input.certifierFax?.trim() || null,
     paymentStatus: 'awaiting_payment',
     isVeteran: false,
     vaStepsState: {},

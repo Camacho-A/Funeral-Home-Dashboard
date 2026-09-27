@@ -3,7 +3,7 @@ import { reconcileCaseWorkflow, computeFirstIncompleteRawStage } from './workflo
 import { caseFixtures, DEFAULT_ORGANIZATION_ID } from './__mocks__/fixtures';
 import { caseFormLinkFixtures, ARRANGEMENT_FORMS_FORM_CONFIG_ID, VITAL_STATISTICS_FORM_CONFIG_ID } from './__mocks__/externalFormFixtures';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
-import { buildCaseWorkflowSnapshot, latestTemplateVersion } from '../domain/workflow/snapshot';
+import { buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
 import type { Case } from '../types/case';
 import type { CaseFormLink } from '../types/caseFormLink';
 
@@ -14,7 +14,17 @@ import type { CaseFormLink } from '../types/caseFormLink';
  * (implicitly, via paymentWorkflow.test.ts), 5, 6, 7, 8, 9.
  */
 
-const SNAPSHOT_VERSION = latestTemplateVersion(standardCremationWorkflowTemplateFixture);
+// Structured Certifier data (2026-09, ADR-041): explicitly pinned to
+// versions[0] (v1), never `latestTemplateVersion` — this suite tests
+// generic stage/checklist reconciliation against the dcContact-era 11-item
+// First Call & Payment shape specifically (see `satisfyFirstCallStage`
+// below, which populates fieldValues[6] for the legacy contact field).
+// Resolving "latest" would silently switch these cases onto v5's
+// Certifier Information item (index 6, requiredCaseFields-driven,
+// completed via structured Case fields, not fieldValues), capping every
+// stage-advancement test at rawStage 0 — the same class of bug already
+// caught and fixed in services/__mocks__/fixtures.ts.
+const SNAPSHOT_VERSION = standardCremationWorkflowTemplateFixture.versions[0];
 
 /** A case sitting at rawStage 0 with a real 8-stage Managed Cremations
     snapshot and otherwise-default (empty) checklistState/fieldValues —
@@ -38,6 +48,10 @@ function buildTestCase(overrides: Partial<Case> = {}): Case {
     nextOfKinEmail: null,
     nextOfKinRelationship: null,
     nextOfKinRelationshipOther: null,
+    certifierName: null,
+    certifierPhone: null,
+    certifierLicenseNumber: null,
+    certifierFax: null,
     tagNumber: null,
     paymentStatus: 'awaiting_payment',
     pickupStatus: 'awaiting_pickup',

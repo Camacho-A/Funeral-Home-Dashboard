@@ -393,6 +393,14 @@ export function CaseInformationCard({
   nextOfKinEmail,
   nextOfKinRelationship,
   nextOfKinRelationshipOther,
+  certifierName,
+  certifierPhone,
+  certifierLicenseNumber,
+  certifierFax,
+  onSaveCertifierName,
+  onSaveCertifierPhone,
+  onSaveCertifierLicenseNumber,
+  onSaveCertifierFax,
   tagNumber,
   paymentStatus,
   pickupStatus,
@@ -437,6 +445,21 @@ export function CaseInformationCard({
   nextOfKinRelationship: NextOfKinRelationship | null;
   /** Only meaningful when nextOfKinRelationship === 'other'. */
   nextOfKinRelationshipOther: string | null;
+  /** Structured Certifier data (2026-09, ADR-041). Replaces the legacy
+      free-text "Hospice/physician who will sign DC" intake concept for
+      cases created under workflow template v5+ — null for any case whose
+      workflowSnapshot predates this (including B2026-034, frozen at v3).
+      Name/Phone drive the Certifier Information checklist item's
+      completion (requiredCaseFields); License/Fax are optional and never
+      block it. */
+  certifierName: string | null;
+  certifierPhone: string | null;
+  certifierLicenseNumber: string | null;
+  certifierFax: string | null;
+  onSaveCertifierName: (value: string | null) => void;
+  onSaveCertifierPhone: (value: string | null) => void;
+  onSaveCertifierLicenseNumber: (value: string | null) => void;
+  onSaveCertifierFax: (value: string | null) => void;
   /** Manors launch-prep. Operational chain-of-custody tag — null until
       staff assign one. */
   tagNumber: string | null;
@@ -562,6 +585,35 @@ export function CaseInformationCard({
             onSave={(v) => onUpdateCaseInfo({ nextOfKinRelationshipOther: v.trim().length > 0 ? v.trim() : null })}
           />
         )}
+      </div>
+
+      <div className={styles.sectionHeading}>Certifier information</div>
+      <div className={styles.grid}>
+        <EditableField
+          label="Certifier name"
+          value={certifierName ?? ''}
+          uppercase
+          onSave={(v) => onSaveCertifierName(v.trim().length > 0 ? v.trim() : null)}
+        />
+        <EditableField
+          label="Certifier phone"
+          value={certifierPhone ?? ''}
+          onSave={(v) => onSaveCertifierPhone(v.trim().length > 0 ? v.trim() : null)}
+        />
+        <EditableField
+          label="Certifier license #"
+          value={certifierLicenseNumber ?? ''}
+          uppercase
+          onSave={(v) => onSaveCertifierLicenseNumber(v.trim().length > 0 ? v.trim() : null)}
+        />
+        <EditableField
+          label="Certifier fax"
+          value={certifierFax ?? ''}
+          onSave={(v) => onSaveCertifierFax(v.trim().length > 0 ? v.trim() : null)}
+        />
+      </div>
+
+      <div className={styles.grid}>
         <EditableField
           label="Tag #"
           value={tagNumber ?? ''}

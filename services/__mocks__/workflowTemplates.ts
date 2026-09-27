@@ -234,6 +234,131 @@ const standardCremationIntake: IntakeTemplate = {
   ],
 };
 
+/**
+ * Structured Certifier data (2026-09, ADR-041) — version 5. Append-only:
+ * version 1 (standardCremationStages/standardCremationIntake) above is
+ * completely untouched, so every existing case's frozen workflowSnapshot
+ * (built at creation time from whichever version was latest then) keeps
+ * resolving exactly as it always has. This version only changes two things
+ * from v1, both scoped to raw stages 0/1's combined 11-item First-Call-
+ * and-Payment checklist (the only place indices 5/6 mean "Time of death"/
+ * "Certifier"):
+ *  - index 5 ("Time of death") gains valueKind: 'time', so ChecklistCard
+ *    renders a 12-hour editor for it from template metadata, not a label
+ *    match.
+ *  - index 6 ("Hospice or physician who will sign the DC") is replaced
+ *    with a generic, non-field-backed "Certifier Information" item whose
+ *    completion is computed from structured Case data
+ *    (requiredCaseFields), matching the terminal return-of-remains item's
+ *    existing isDerived precedent instead of inventing a new UI concept.
+ * Every other raw stage (2-7) is byte-for-byte the same output as v1's
+ * buildChecklistItems, since indices 5/6 don't appear in their (much
+ * shorter) item lists.
+ */
+function buildChecklistItemsV5(rawStage: number): ChecklistItemTemplate[] {
+  return buildChecklistItems(rawStage).map((item) => {
+    if (rawStage > 1) return item;
+    if (item.index === 5) {
+      return { ...item, valueKind: 'time' };
+    }
+    if (item.index === 6) {
+      return {
+        index: 6,
+        label: 'Certifier Information',
+        hasField: false,
+        isPasswordField: false,
+        externalFormIntegrationId: null,
+        requiredCaseFields: ['certifierName', 'certifierPhone'],
+      };
+    }
+    return item;
+  });
+}
+
+const standardCremationStagesV5: StageTemplate[] = Array.from(
+  { length: RAW_STAGE_COUNT },
+  (_, rawStage) => {
+    const displayStage = toDisplayStage(rawStage);
+    return {
+      rawStage,
+      displayStage,
+      label: STAGES[displayStage],
+      isAttentionStage: isBottleneckStage(displayStage),
+      slaTargetDays: getSlaTargetDays(displayStage),
+      checklist: { items: buildChecklistItemsV5(rawStage) },
+    };
+  },
+);
+
+/**
+ * Replaces the single dcContact free-text field with four structured
+ * Certifier fields — none given a checklistItemIndex (so
+ * buildIntakeFieldValues/findChecklistIndexForCaseField never populate a
+ * fieldValues entry for them; the Certifier Information checklist item's
+ * completion is driven entirely by requiredCaseFields above, never by
+ * fieldValues) and none marked required at intake level (matching
+ * dcContact's own prior non-required posture — Name/Phone are required
+ * for *checklist completion*, not for New Case *submission*, exactly the
+ * distinction this phase's design settled on). certifierPhone/
+ * certifierFax use fieldType: 'phone' — the closest existing type, since
+ * no 'fax' fieldType exists and no phone/fax masking convention exists
+ * anywhere in SOLIS to invent one for (nextOfKinPhone is unmasked too).
+ * decedent and payment sections are unchanged from v1.
+ */
+const standardCremationIntakeV5: IntakeTemplate = {
+  sections: [
+    standardCremationIntake.sections[0],
+    {
+      key: 'contacts',
+      label: 'Contacts',
+      fields: [
+        {
+          key: 'certifierName',
+          label: 'Certifier — name',
+          mapsToCaseField: 'certifierName',
+          fieldType: 'text',
+          uppercase: true,
+        },
+        {
+          key: 'certifierPhone',
+          label: 'Certifier — phone number',
+          mapsToCaseField: 'certifierPhone',
+          fieldType: 'phone',
+        },
+        {
+          key: 'certifierLicenseNumber',
+          label: 'Certifier — license number',
+          mapsToCaseField: 'certifierLicenseNumber',
+          fieldType: 'text',
+          uppercase: true,
+        },
+        {
+          key: 'certifierFax',
+          label: 'Certifier — fax number',
+          mapsToCaseField: 'certifierFax',
+          fieldType: 'phone',
+        },
+        {
+          key: 'nextOfKinName',
+          label: 'Next of kin — name',
+          checklistItemIndex: 7,
+          mapsToCaseField: 'nextOfKinName',
+          fieldType: 'text',
+          uppercase: true,
+        },
+        {
+          key: 'nextOfKinPhone',
+          label: 'Next of kin — phone number',
+          checklistItemIndex: 7,
+          mapsToCaseField: 'nextOfKinPhone',
+          fieldType: 'phone',
+        },
+      ],
+    },
+    standardCremationIntake.sections[2],
+  ],
+};
+
 export const STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID = 'workflow-template-standard-cremation';
 
 export const standardCremationWorkflowTemplateFixture: WorkflowTemplate = {
@@ -249,6 +374,13 @@ export const standardCremationWorkflowTemplateFixture: WorkflowTemplate = {
       stages: standardCremationStages,
       intake: standardCremationIntake,
       createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    {
+      version: 5,
+      caseTypes: ['cremation'],
+      stages: standardCremationStagesV5,
+      intake: standardCremationIntakeV5,
+      createdAt: '2026-09-26T00:00:00.000Z',
     },
   ],
 };

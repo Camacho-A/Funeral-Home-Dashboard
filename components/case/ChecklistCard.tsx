@@ -1,6 +1,8 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
+import { SelectField } from '@/components/ui/SelectField';
+import { splitMilitaryTimeToTwelveHourParts, combineTwelveHourTimeParts } from '@/utils/inputMask';
 import type { ChecklistItemViewModel } from '@/types/caseViewModel';
 import styles from './ChecklistCard.module.css';
 
@@ -105,6 +107,129 @@ function ChecklistFieldInput({
   );
 }
 
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+type TwelveHourParts = { hour: string; minute: string; period: '' | 'AM' | 'PM' };
+
+/**
+ * Checklist Time Display (2026-09, ADR-041). A field-backed item whose
+ * template metadata sets `valueKind: 'time'` (Time of Death today, driven
+ * declaratively — not a label match) renders three closed-option selects
+ * instead of ChecklistFieldInput's free-text box, mirroring
+ * CaseInformationCard's TwelveHourTimeField reasoning: the canonical
+ * persisted value is still strict 24-hour "HH:mm".
+ *
+ * Preserves the exact save-race fix ChecklistFieldInput established above
+ * (commit only on a real "done editing" signal, never per-keystroke/
+ * per-selection) — but three separate <select>s have no single element to
+ * blur from, so "done editing" is instead "focus left the whole group"
+ * (checked via the container's onBlur + e.relatedTarget), plus Enter/
+ * Escape via the same container's onKeyDown. Moving focus *between* the
+ * three selects (e.g. hour -> minute) is not a commit and must not reset
+ * the in-progress selection — isEditing gates startEditing() to fire only
+ * on the first focus into the group, never on every intra-group focus
+ * change.
+ */
+function ChecklistTimeInput({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: string;
+  disabled: boolean;
+  onCommit: (newValue: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftParts, setDraftParts] = useState<TwelveHourParts>(() => splitMilitaryTimeToTwelveHourParts(value));
+  const [pendingValue, setPendingValue] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingValue !== null && value === pendingValue) setPendingValue(null);
+  }, [value, pendingValue]);
+
+  const displayValue = pendingValue ?? value;
+  const shownParts = isEditing ? draftParts : splitMilitaryTimeToTwelveHourParts(displayValue);
+
+  function handleGroupFocus() {
+    if (!isEditing) {
+      setDraftParts(splitMilitaryTimeToTwelveHourParts(displayValue));
+      setIsEditing(true);
+    }
+  }
+
+  function commitIfComplete() {
+    const combined = combineTwelveHourTimeParts(draftParts.hour, draftParts.minute, draftParts.period);
+    if (combined !== null && combined !== displayValue) {
+      setPendingValue(combined);
+      onCommit(combined);
+    }
+  }
+
+  function handleGroupBlur(e: FocusEvent<HTMLDivElement>) {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setIsEditing(false);
+    commitIfComplete();
+  }
+
+  function handleGroupKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitIfComplete();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setDraftParts(splitMilitaryTimeToTwelveHourParts(displayValue));
+      setIsEditing(false);
+    }
+  }
+
+  return (
+    <div
+      className={styles.timeFieldGroup}
+      onFocus={handleGroupFocus}
+      onBlur={handleGroupBlur}
+      onKeyDown={handleGroupKeyDown}
+    >
+      <SelectField
+        aria-label="Hour"
+        value={shownParts.hour}
+        disabled={disabled}
+        onChange={(e) => setDraftParts((prev) => ({ ...prev, hour: e.target.value }))}
+      >
+        <option value="">--</option>
+        {HOUR_OPTIONS.map((h) => (
+          <option key={h} value={h}>
+            {h}
+          </option>
+        ))}
+      </SelectField>
+      <span className={styles.timeColon}>:</span>
+      <SelectField
+        aria-label="Minute"
+        value={shownParts.minute}
+        disabled={disabled}
+        onChange={(e) => setDraftParts((prev) => ({ ...prev, minute: e.target.value }))}
+      >
+        <option value="">--</option>
+        {MINUTE_OPTIONS.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </SelectField>
+      <SelectField
+        aria-label="AM or PM"
+        value={shownParts.period}
+        disabled={disabled}
+        onChange={(e) => setDraftParts((prev) => ({ ...prev, period: e.target.value as '' | 'AM' | 'PM' }))}
+      >
+        <option value="">--</option>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </SelectField>
+    </div>
+  );
+}
+
 export function ChecklistCard({
   checklist,
   viewingStageLabel,
@@ -163,7 +288,14 @@ export function ChecklistCard({
                 />
                 <span className={`${styles.itemLabel} ${labelClass}`}>{item.label}</span>
               </div>
-              {item.hasField && (
+              {item.hasField && item.valueKind === 'time' && (
+                <ChecklistTimeInput
+                  value={item.fieldValue}
+                  disabled={readOnly || item.locked}
+                  onCommit={(newValue) => onFieldChange(item.index, newValue)}
+                />
+              )}
+              {item.hasField && item.valueKind !== 'time' && (
                 <ChecklistFieldInput
                   value={item.fieldValue}
                   isPassword={item.fieldIsPassword}

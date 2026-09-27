@@ -14,6 +14,14 @@ const baseProps = {
   nextOfKinEmail: null,
   nextOfKinRelationship: null,
   nextOfKinRelationshipOther: null,
+  certifierName: null,
+  certifierPhone: null,
+  certifierLicenseNumber: null,
+  certifierFax: null,
+  onSaveCertifierName: vi.fn(),
+  onSaveCertifierPhone: vi.fn(),
+  onSaveCertifierLicenseNumber: vi.fn(),
+  onSaveCertifierFax: vi.fn(),
   tagNumber: null,
   paymentStatus: 'awaiting_payment' as const,
   pickupStatus: 'awaiting_pickup' as const,
@@ -707,5 +715,128 @@ describe('CaseInformationCard — Weight editing (2026-09)', () => {
     expect(screen.queryByText('Notify crematory')).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByDisplayValue('178 lb'), { key: 'Escape' });
     expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+  });
+});
+
+describe('CaseInformationCard — Certifier Information (2026-09, ADR-041)', () => {
+  it('renders a grouped "Certifier information" section with all four fields', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Certifier information')).toBeInTheDocument();
+    expect(screen.getByText('Certifier name')).toBeInTheDocument();
+    expect(screen.getByText('Certifier phone')).toBeInTheDocument();
+    expect(screen.getByText('Certifier license #')).toBeInTheDocument();
+    expect(screen.getByText('Certifier fax')).toBeInTheDocument();
+  });
+
+  it('shows a placeholder when every certifier field is null', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        certifierName={null}
+        certifierPhone={null}
+        certifierLicenseNumber={null}
+        certifierFax={null}
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    const nameField = within(screen.getByText('Certifier name').parentElement!);
+    expect(nameField.getByRole('button', { name: '—' })).toBeInTheDocument();
+  });
+
+  it('saves a trimmed, uppercased Certifier name via onSaveCertifierName — never onUpdateCaseInfo', () => {
+    const onSaveCertifierName = vi.fn();
+    const onUpdateCaseInfo = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        certifierName={null}
+        onUpdateCaseInfo={onUpdateCaseInfo}
+        onSaveCertifierName={onSaveCertifierName}
+      />,
+    );
+    const nameField = within(screen.getByText('Certifier name').parentElement!);
+    fireEvent.click(nameField.getByRole('button', { name: '—' }));
+    const input = nameField.getByDisplayValue('');
+    fireEvent.change(input, { target: { value: ' dr. jane foster ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSaveCertifierName).toHaveBeenCalledWith('DR. JANE FOSTER');
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('clearing Certifier name saves null, not an empty string', () => {
+    const onSaveCertifierName = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        certifierName="DR. JANE FOSTER"
+        onUpdateCaseInfo={vi.fn()}
+        onSaveCertifierName={onSaveCertifierName}
+      />,
+    );
+    const nameField = within(screen.getByText('Certifier name').parentElement!);
+    fireEvent.click(nameField.getByRole('button', { name: 'DR. JANE FOSTER' }));
+    const input = nameField.getByDisplayValue('DR. JANE FOSTER');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSaveCertifierName).toHaveBeenCalledWith(null);
+  });
+
+  it('Certifier phone is saved without uppercasing (matches NOK phone\'s unmasked convention)', () => {
+    const onSaveCertifierPhone = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        certifierPhone={null}
+        onUpdateCaseInfo={vi.fn()}
+        onSaveCertifierPhone={onSaveCertifierPhone}
+      />,
+    );
+    const phoneField = within(screen.getByText('Certifier phone').parentElement!);
+    fireEvent.click(phoneField.getByRole('button', { name: '—' }));
+    const input = phoneField.getByDisplayValue('');
+    fireEvent.change(input, { target: { value: '555-0199' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSaveCertifierPhone).toHaveBeenCalledWith('555-0199');
+  });
+
+  it('Certifier license # is uppercased, matching the tagNumber precedent', () => {
+    const onSaveCertifierLicenseNumber = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        certifierLicenseNumber={null}
+        onUpdateCaseInfo={vi.fn()}
+        onSaveCertifierLicenseNumber={onSaveCertifierLicenseNumber}
+      />,
+    );
+    const licenseField = within(screen.getByText('Certifier license #').parentElement!);
+    fireEvent.click(licenseField.getByRole('button', { name: '—' }));
+    const input = licenseField.getByDisplayValue('');
+    fireEvent.change(input, { target: { value: 'md-4471' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSaveCertifierLicenseNumber).toHaveBeenCalledWith('MD-4471');
+  });
+
+  it('Certifier fax is saved without uppercasing', () => {
+    const onSaveCertifierFax = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        certifierFax={null}
+        onUpdateCaseInfo={vi.fn()}
+        onSaveCertifierFax={onSaveCertifierFax}
+      />,
+    );
+    const faxField = within(screen.getByText('Certifier fax').parentElement!);
+    fireEvent.click(faxField.getByRole('button', { name: '—' }));
+    const input = faxField.getByDisplayValue('');
+    fireEvent.change(input, { target: { value: '555-0188' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSaveCertifierFax).toHaveBeenCalledWith('555-0188');
   });
 });

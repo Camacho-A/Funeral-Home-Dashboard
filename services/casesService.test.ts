@@ -127,10 +127,16 @@ describe('casesService.create — workflow template snapshot (Phase 11)', () => 
       template,
     );
 
+    // Structured Certifier data (2026-09, ADR-041) added version 5 —
+    // new-case creation always resolves the *latest* version (by design;
+    // see services/casesService.ts's own comment on why this differs from
+    // fixtures.ts's deliberately-pinned-to-v1 seed cases), so this asserts
+    // against the fixture's actual last entry rather than a hardcoded "1".
+    const latestVersion = template.versions[template.versions.length - 1];
     expect(newCase.workflowTemplateId).toBe(template.id);
-    expect(newCase.workflowTemplateVersion).toBe(1);
+    expect(newCase.workflowTemplateVersion).toBe(latestVersion.version);
     expect(newCase.caseType).toBe('cremation');
-    expect(newCase.workflowSnapshot?.stages.length).toBe(template.versions[0].stages.length);
+    expect(newCase.workflowSnapshot?.stages.length).toBe(latestVersion.stages.length);
   });
 
   it("editing the live template fixture's stages after creation does not change an existing case's snapshot", async () => {
@@ -147,8 +153,13 @@ describe('casesService.create — workflow template snapshot (Phase 11)', () => 
 
     // Mutate the *live* template fixture directly, simulating a future
     // template edit (no editor exists yet, but the fixture is still a
-    // plain mutable array in memory).
-    const liveStages = template.versions[0].stages;
+    // plain mutable array in memory). Mutates whichever version is
+    // actually *latest* (the one the case above was created against) —
+    // versions[0] (v1) has its own independent stages array since
+    // Structured Certifier data (2026-09, ADR-041) added version 5, so
+    // mutating v1 specifically would no longer touch what this case's
+    // snapshot was built from at all.
+    const liveStages = template.versions[template.versions.length - 1].stages;
     const removed = liveStages.pop();
     liveStages[0] = { ...liveStages[0], label: 'MUTATED LABEL' };
 

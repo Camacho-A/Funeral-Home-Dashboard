@@ -237,3 +237,96 @@ describe('useCaseMutations#setTimeOfDeath — reuses the Weight architecture, no
     expect(patch).toEqual({ timeOfDeath: '15:45' });
   });
 });
+
+/**
+ * Structured Certifier data (2026-09, ADR-041) — setCertifierName/Phone/
+ * LicenseNumber/Fax. Unlike Weight/Time of Death, the intake template
+ * (even in v5) deliberately gives none of these four fields a
+ * checklistItemIndex — so buildStructuredIntakeFieldPatch always resolves
+ * `index === null` for them, regardless of which workflowSnapshot version
+ * the case carries. These tests prove that's exactly what happens (a
+ * plain `{ certifierX: value }` patch, never a fieldValues write), through
+ * the same real update path every other Case edit uses.
+ */
+describe('useCaseMutations#setCertifierName/Phone/LicenseNumber/Fax — no fieldValues sync, by design', () => {
+  it('30. setCertifierName calls casesService.update with a certifierName-only patch (no fieldValues key)', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase();
+
+    act(() => {
+      result.current.setCertifierName(case_, 'DR. JANE FOSTER');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, calledCaseId, patch, mode] = vi.mocked(casesService.update).mock.calls[0];
+    expect(calledCaseId).toBe(CASE_ID);
+    expect(mode).toBe('mock');
+    expect(patch).toEqual({ certifierName: 'DR. JANE FOSTER' });
+  });
+
+  it('31. setCertifierPhone calls casesService.update with a certifierPhone-only patch', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase();
+
+    act(() => {
+      result.current.setCertifierPhone(case_, '555-0199');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ certifierPhone: '555-0199' });
+  });
+
+  it('32. setCertifierLicenseNumber calls casesService.update with a certifierLicenseNumber-only patch', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase();
+
+    act(() => {
+      result.current.setCertifierLicenseNumber(case_, 'MD-4471');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ certifierLicenseNumber: 'MD-4471' });
+  });
+
+  it('33. setCertifierFax calls casesService.update with a certifierFax-only patch', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase();
+
+    act(() => {
+      result.current.setCertifierFax(case_, '555-0188');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ certifierFax: '555-0188' });
+  });
+
+  it('34. accepts null (clearing the field back to unset) rather than only a string', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase();
+
+    act(() => {
+      result.current.setCertifierFax(case_, null);
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ certifierFax: null });
+  });
+
+  it('35. never writes fieldValues even when the case has other fieldValues entries already set', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ fieldValues: { 0: 'JANE DOE', 3: '210 lb' } });
+
+    act(() => {
+      result.current.setCertifierName(case_, 'DR. JANE FOSTER');
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch.fieldValues).toBeUndefined();
+    expect(Object.keys(patch).sort()).toEqual(['certifierName']);
+  });
+});

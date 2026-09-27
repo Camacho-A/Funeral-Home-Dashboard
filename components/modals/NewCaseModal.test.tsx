@@ -113,14 +113,17 @@ function renderModal() {
 
 /** Renders the modal and waits for the workflow template's intake fields
     (fetched asynchronously) to actually appear before returning. Waits for
-    the full known count (9), not just "> 0" — Services & Charges' own
-    catalog-driven <input>s (Phase 19C) are fetched by a separate query
-    that can resolve before or after the intake fields', so a lower
-    threshold could false-positive on those alone while intake fields are
-    still loading. */
+    the full known count (11, since Structured Certifier data (2026-09,
+    ADR-041) replaced the single dcContact field with four certifier
+    fields, and Time of Death moved from a text <input> to three <select>s
+    — see intakeInputs' own updated comment), not just "> 0" — Services &
+    Charges' own catalog-driven <input>s (Phase 19C) are fetched by a
+    separate query that can resolve before or after the intake fields', so
+    a lower threshold could false-positive on those alone while intake
+    fields are still loading. */
 async function renderModalWithFields() {
   const result = renderModal();
-  await waitFor(() => expect(intakeInputs(result.container).length).toBeGreaterThanOrEqual(9));
+  await waitFor(() => expect(intakeInputs(result.container).length).toBeGreaterThanOrEqual(11));
   return result;
 }
 
@@ -244,7 +247,7 @@ describe('NewCaseModal — Assigned Staff (Manors go-live fix)', () => {
   it('a caller with case.reassign can pick a different active staff member, and that selection is what the case is created with', async () => {
     stubFetchWithPermissions(['case.reassign']);
     const { container } = renderModal();
-    await waitFor(() => expect(intakeInputs(container).length).toBeGreaterThanOrEqual(9));
+    await waitFor(() => expect(intakeInputs(container).length).toBeGreaterThanOrEqual(11));
     fillRequiredFields(container);
 
     const assignedField = within(screen.getByText('Assigned Staff').parentElement!);
@@ -264,48 +267,72 @@ describe('NewCaseModal — Assigned Staff (Manors go-live fix)', () => {
 
 /**
  * Phase 16A (New Case UX Polish). Intake fields render in this fixed order
- * (services/__mocks__/workflowTemplates.ts's Managed Cremations template):
- * 0 decedentName, 1 placeOfDeath, 2 dateOfBirth, 3 weight, 4 dateOfDeath,
- * 5 timeOfDeath, 6 dcContact, 7 nextOfKinName, 8 nextOfKinPhone — 9 total.
- * The old Payment field (Phase 19B) contributed zero inputs and is now
- * fully retired (Phase 19C's Services &amp; Charges section replaces it —
- * see the describe block below); Services &amp; Charges' own <input>s
- * always render *after* these 9, so positional indices 0-8 stay stable.
- * None of these fields have a <label htmlFor>/aria-label association with
- * their visible text (the label is a plain sibling <div>), so tests below
- * select by this fixed position rather than by accessible name.
+ * (services/__mocks__/workflowTemplates.ts's Managed Cremations template).
+ * Structured Certifier data (2026-09, ADR-041) changed this twice over:
+ * Time of Death moved from a text <input> to three <select>s (so it drops
+ * out of this <input>-only collection entirely, leaving a gap at the old
+ * index 5), and the single dcContact field was replaced by four certifier
+ * fields. Current order: 0 decedentName, 1 placeOfDeath, 2 dateOfBirth,
+ * 3 weight, 4 dateOfDeath, [Time of death — not an <input>], 5 certifierName,
+ * 6 certifierPhone, 7 certifierLicenseNumber, 8 certifierFax,
+ * 9 nextOfKinName, 10 nextOfKinPhone — 11 total. The old Payment field
+ * (Phase 19B) contributed zero inputs and is now fully retired (Phase 19C's
+ * Services &amp; Charges section replaces it — see the describe block
+ * below); Services &amp; Charges' own <input>s always render *after* these
+ * 11, so positional indices 0-10 stay stable. None of these fields have a
+ * <label htmlFor>/aria-label association with their visible text (the
+ * label is a plain sibling <div>), so tests below select by this fixed
+ * position rather than by accessible name.
  */
 function intakeInputs(container: HTMLElement) {
   return container.querySelectorAll('input');
 }
 
 describe('NewCaseModal — uppercase transform on free-text fields', () => {
-  it('uppercases decedentName, placeOfDeath, dcContact, and nextOfKinName as the user types', async () => {
+  it('uppercases decedentName, placeOfDeath, certifierName, and nextOfKinName as the user types', async () => {
     const { container } = await renderModalWithFields();
     const inputs = intakeInputs(container);
 
     fireEvent.change(inputs[0], { target: { value: 'robert ellison' } });
     fireEvent.change(inputs[1], { target: { value: "st. mary's hospital" } });
-    fireEvent.change(inputs[6], { target: { value: 'dr. linda choi' } });
-    fireEvent.change(inputs[7], { target: { value: 'karen ellison' } });
+    fireEvent.change(inputs[5], { target: { value: 'dr. linda choi' } });
+    fireEvent.change(inputs[9], { target: { value: 'karen ellison' } });
 
     expect(inputs[0]).toHaveValue('ROBERT ELLISON');
     expect(inputs[1]).toHaveValue("ST. MARY'S HOSPITAL");
-    expect(inputs[6]).toHaveValue('DR. LINDA CHOI');
-    expect(inputs[7]).toHaveValue('KAREN ELLISON');
+    expect(inputs[5]).toHaveValue('DR. LINDA CHOI');
+    expect(inputs[9]).toHaveValue('KAREN ELLISON');
   });
 
   it('does not uppercase the phone or weight fields', async () => {
     const { container } = await renderModalWithFields();
     const inputs = intakeInputs(container);
 
-    fireEvent.change(inputs[8], { target: { value: '555-abc-1234' } }); // nextOfKinPhone
+    fireEvent.change(inputs[10], { target: { value: '555-abc-1234' } }); // nextOfKinPhone
     fireEvent.change(inputs[3], { target: { value: '165 lb' } }); // weight
 
-    expect(inputs[8]).toHaveValue('555-abc-1234');
+    expect(inputs[10]).toHaveValue('555-abc-1234');
     expect(inputs[3]).toHaveValue('165 lb');
   });
 
+  it('does not uppercase certifierPhone/certifierFax (2026-09, ADR-041)', async () => {
+    const { container } = await renderModalWithFields();
+    const inputs = intakeInputs(container);
+
+    fireEvent.change(inputs[6], { target: { value: '555-abc-1234' } }); // certifierPhone
+    fireEvent.change(inputs[8], { target: { value: '555-def-5678' } }); // certifierFax
+
+    expect(inputs[6]).toHaveValue('555-abc-1234');
+    expect(inputs[8]).toHaveValue('555-def-5678');
+  });
+
+  it('uppercases certifierLicenseNumber, matching the tagNumber-style code precedent', async () => {
+    const { container } = await renderModalWithFields();
+    const inputs = intakeInputs(container);
+
+    fireEvent.change(inputs[7], { target: { value: 'md-4471' } }); // certifierLicenseNumber
+    expect(inputs[7]).toHaveValue('MD-4471');
+  });
 });
 
 describe('NewCaseModal — MM/DD/YYYY date mask', () => {
@@ -636,8 +663,8 @@ describe('NewCaseModal — Create Case & Collect with Clover (Phase 19C)', () =>
 function fillRequiredFields(container: HTMLElement) {
   const inputs = intakeInputs(container);
   fireEvent.change(inputs[0], { target: { value: 'Test Decedent' } });
-  fireEvent.change(inputs[7], { target: { value: 'Test NOK' } });
-  fireEvent.change(inputs[8], { target: { value: '555-0000' } });
+  fireEvent.change(inputs[9], { target: { value: 'Test NOK' } }); // nextOfKinName
+  fireEvent.change(inputs[10], { target: { value: '555-0000' } }); // nextOfKinPhone
 }
 
 describe('NewCaseModal — calendar date and expiry validation', () => {
@@ -682,97 +709,38 @@ describe('NewCaseModal — calendar date and expiry validation', () => {
   // anything typed into it.
 });
 
-describe('NewCaseModal — Time of Death 24-hour input (Solis go-live checkpoint)', () => {
-  it('auto-inserts ":" as digits are typed, never auto-populated with the current time', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    expect(timeOfDeath).toHaveValue('');
-
-    fireEvent.change(timeOfDeath, { target: { value: '0930' } });
-    expect(timeOfDeath).toHaveValue('09:30');
+/**
+ * Time of Death — New Case 12-hour entry (2026-09, ADR-041). Replaces the
+ * old 24-hour masked-text-input tests above — the field is now three
+ * always-visible <select>s (hour/minute/AM-PM), reusing
+ * splitMilitaryTimeToTwelveHourParts/combineTwelveHourTimeParts from
+ * utils/inputMask.ts (the same utilities CaseInformationCard's
+ * TwelveHourTimeField already established, commit 73015be) — no duplicate
+ * parsing logic, and no Save/Cancel shell (this modal has one overall
+ * submit action).
+ */
+describe('NewCaseModal — Time of Death 12-hour entry (2026-09, ADR-041)', () => {
+  it('renders three always-visible selects (Hour/Minute/AM-PM), never a masked text input', async () => {
+    await renderModalWithFields();
+    expect(screen.getByRole('combobox', { name: 'Time of death — hour' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Time of death — minute' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Time of death — AM or PM' })).toBeInTheDocument();
   });
 
-  it('masks each of the spec examples correctly', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '1430' } });
-    expect(timeOfDeath).toHaveValue('14:30');
-
-    fireEvent.change(timeOfDeath, { target: { value: '2305' } });
-    expect(timeOfDeath).toHaveValue('23:05');
-
-    fireEvent.change(timeOfDeath, { target: { value: '0005' } });
-    expect(timeOfDeath).toHaveValue('00:05');
+  it('starts blank — never auto-populated with the current time', async () => {
+    await renderModalWithFields();
+    expect(screen.getByRole('combobox', { name: 'Time of death — hour' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Time of death — minute' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Time of death — AM or PM' })).toHaveValue('');
   });
 
-  it('never introduces AM/PM — typed letters are stripped, not interpreted', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '0930pm' } });
-    expect(timeOfDeath).toHaveValue('09:30');
-  });
-
-  it('flags an out-of-range hour (25:00) with an inline error and blocks submission', async () => {
+  it('combines all three selections into canonical 24-hour HH:mm on the created case', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
-    const timeOfDeath = intakeInputs(container)[5];
 
-    fireEvent.change(timeOfDeath, { target: { value: '2500' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(timeOfDeath).toHaveValue('25:00'); // preserved for correction, not silently cleared
-    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
-  });
-
-  it('flags an out-of-range minute (12:75) with an inline error', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '1275' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
-  });
-
-  it('flags an incomplete value on blur', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '093' } });
-    fireEvent.blur(timeOfDeath);
-
-    expect(timeOfDeath).toHaveValue('09:3');
-    expect(screen.getByText(/enter a valid time/i)).toBeInTheDocument();
-  });
-
-  it('remains easy to correct — backspacing and retyping produces a clean value', async () => {
-    const { container } = await renderModalWithFields();
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '0930' } });
-    expect(timeOfDeath).toHaveValue('09:30');
-
-    fireEvent.change(timeOfDeath, { target: { value: '093' } });
-    expect(timeOfDeath).toHaveValue('09:3');
-
-    fireEvent.change(timeOfDeath, { target: { value: '1430' } });
-    expect(timeOfDeath).toHaveValue('14:30');
-  });
-
-  it('persists the typed HH:MM value on the created case', async () => {
-    const { container } = await renderModalWithFields();
-    fillRequiredFields(container);
-    const timeOfDeath = intakeInputs(container)[5];
-
-    fireEvent.change(timeOfDeath, { target: { value: '1430' } });
-    fireEvent.blur(timeOfDeath);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — hour' }), { target: { value: '2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — minute' }), { target: { value: '30' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — AM or PM' }), { target: { value: 'PM' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
@@ -780,6 +748,56 @@ describe('NewCaseModal — Time of Death 24-hour input (Solis go-live checkpoint
     const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
     const createdCase = caseFixtures.find((c) => c.id === newCaseId);
     expect(createdCase?.timeOfDeath).toBe('14:30');
+  });
+
+  it('midnight (12:00 AM) and noon (12:00 PM) both round-trip correctly', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — hour' }), { target: { value: '12' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — minute' }), { target: { value: '00' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — AM or PM' }), { target: { value: 'AM' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.timeOfDeath).toBe('00:00');
+  });
+
+  it('an incomplete selection (only hour + minute chosen) never blocks case creation — Time of Death is optional', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — hour' }), { target: { value: '2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — minute' }), { target: { value: '30' } });
+    // AM/PM deliberately left unselected — combineTwelveHourTimeParts
+    // rejects the incomplete combination, so timeOfDeath stays unset
+    // rather than persisting a guessed value (creation defaults an unset
+    // timeOfDeath to '—', matching every other omitted-at-intake field).
+
+    const createButton = screen.getByRole('button', { name: 'Create case' });
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.timeOfDeath).toBe('—');
+  });
+
+  it('changing an already-complete selection recombines correctly (remains easy to correct)', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — hour' }), { target: { value: '9' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — minute' }), { target: { value: '30' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — AM or PM' }), { target: { value: 'AM' } });
+    // Correct the hour after the full combination was already valid.
+    fireEvent.change(screen.getByRole('combobox', { name: 'Time of death — hour' }), { target: { value: '11' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    expect(caseFixtures.find((c) => c.id === newCaseId)?.timeOfDeath).toBe('11:30');
   });
 });
 
@@ -1059,7 +1077,7 @@ describe('NewCaseModal — backward compatibility (Phase 19)', () => {
         catalog: serviceCatalogFixtures,
       }),
     });
-    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(9 + SERVICES_AND_CHARGES_INPUT_COUNT));
+    await waitFor(() => expect(container.querySelectorAll('input').length).toBe(11 + SERVICES_AND_CHARGES_INPUT_COUNT));
   });
 });
 

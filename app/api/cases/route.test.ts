@@ -622,6 +622,74 @@ describe('POST /api/cases — nextOfKinRelationship (Manors launch-prep)', () =>
   });
 });
 
+describe('POST /api/cases — Certifier fields (2026-09, ADR-041)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  it('creates the case without any certifier fields — optional, all default to null', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.certifierName).toBeNull();
+    expect(body.case.certifierPhone).toBeNull();
+    expect(body.case.certifierLicenseNumber).toBeNull();
+    expect(body.case.certifierFax).toBeNull();
+  });
+
+  it('creates the case with all four certifier fields, trimmed and normalized', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(
+      postRequest({
+        ...VALID_CREATE_BODY,
+        certifierName: '  dr. jane foster  ',
+        certifierPhone: '555-0199',
+        certifierLicenseNumber: '  md-4471  ',
+        certifierFax: '555-0188',
+      }),
+    );
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    // SOLIS ALL-CAPS data standard (2026-09): certifierName/
+    // certifierLicenseNumber are name/code fields, normalized on creation;
+    // certifierPhone/certifierFax are excluded, matching nextOfKinPhone.
+    expect(body.case.certifierName).toBe('DR. JANE FOSTER');
+    expect(body.case.certifierPhone).toBe('555-0199');
+    expect(body.case.certifierLicenseNumber).toBe('MD-4471');
+    expect(body.case.certifierFax).toBe('555-0188');
+  });
+
+  it('an empty string for any certifier field is treated as omitted (null), not an empty string', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, certifierName: '   ' }));
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.case.certifierName).toBeNull();
+  });
+
+  it('rejects a non-string certifier field with 400 — never silently drops or coerces it', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, certifierPhone: 12345 }));
+    expect(response.status).toBe(400);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/cases — returnMethod (conditional shipping/tracking, 2026-09)', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';

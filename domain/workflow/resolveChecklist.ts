@@ -30,12 +30,27 @@ export function resolveChecklist(
   const fieldValueAt = (index: number) => (case_.fieldValues[index] ?? '').toString().trim();
   const isFieldDone = (index: number) => fieldValueAt(index).length > 0;
 
+  // Structured Certifier data (2026-09, ADR-041): an item with
+  // requiredCaseFields is done once every listed Case field is a non-empty
+  // string, computed directly against structured Case data — bypassing
+  // hasField/fieldValues entirely for that one item. Generic (any future
+  // multi-required-field item reuses this unchanged), never a hardcoded
+  // label match.
+  const isRequiredCaseFieldsDone = (item: ChecklistItemTemplate) =>
+    (item.requiredCaseFields ?? []).every((field) => {
+      const value = case_[field as keyof Case];
+      return typeof value === 'string' && value.trim().length > 0;
+    });
+  const isItemDone = (item: ChecklistItemTemplate, index: number): boolean =>
+    item.requiredCaseFields
+      ? isRequiredCaseFieldsDone(item)
+      : item.hasField
+        ? isFieldDone(index)
+        : isManuallyDone(index);
+
   return items.map((item, index) => {
-    const done = isPastStage || (item.hasField ? isFieldDone(index) : isManuallyDone(index));
-    const priorDone =
-      index === 0
-        ? true
-        : isPastStage || (item.hasField ? isFieldDone(index - 1) : isManuallyDone(index - 1));
+    const done = isPastStage || isItemDone(item, index);
+    const priorDone = index === 0 ? true : isPastStage || isItemDone(items[index - 1], index - 1);
     const locked = !isPastStage && index > 0 && !priorDone;
 
     return {
@@ -46,7 +61,8 @@ export function resolveChecklist(
       hasField: item.hasField,
       fieldValue: item.hasField ? (case_.fieldValues[index] ?? '') : '',
       fieldIsPassword: Boolean(item.isPasswordField),
-      isDerived: false,
+      isDerived: Boolean(item.requiredCaseFields),
+      valueKind: item.valueKind,
     };
   });
 }

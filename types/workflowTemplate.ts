@@ -35,6 +35,23 @@ export type ChecklistItemTemplate = {
       resolution (domain/workflow/resolveChecklist.ts) never branches on
       this or on any provider name. */
   externalFormIntegrationId?: string | null;
+  /** Structured Certifier data (2026-09, ADR-041). When present, this
+      item's completion is computed directly from these Case fields (every
+      listed field must be a non-empty string) instead of from
+      fieldValues/checklistState — the generic mechanism behind the
+      "Certifier Information" item, not hardcoded to that one item. An item
+      with this set should also set hasField: false (no inline checklist
+      textbox — the real edit surface is Case Information) and is rendered
+      isDerived: true (checkbox toggle disabled), mirroring the existing
+      terminal return-of-remains item's own isDerived precedent
+      (domain/cases/viewModel.ts). */
+  requiredCaseFields?: string[];
+  /** Declarative rendering hint for a field-backed item (hasField: true)
+      whose canonical value is a 24-hour HH:mm string but should be edited/
+      displayed as 12-hour AM/PM (e.g. Time of Death) — lets
+      ChecklistCard.tsx pick the right editor from template metadata
+      instead of string-matching the item's label. */
+  valueKind?: 'time';
 };
 
 export type ChecklistTemplate = {

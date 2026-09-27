@@ -5,7 +5,7 @@ import type { CaseLogEntry } from '../../types/caseLogEntry';
 import type { CaseDocument } from '../../types/document';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './workflowTemplates';
-import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
+import { buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
 import { formatCaseNumber } from '../../domain/cases/caseNumber';
 
 /**
@@ -256,7 +256,18 @@ const RAW_SEED_CASES: RawSeedCase[] = [
   },
 ];
 
-const standardCremationV1 = latestTemplateVersion(standardCremationWorkflowTemplateFixture);
+/**
+ * Structured Certifier data (2026-09, ADR-041): deliberately NOT
+ * latestTemplateVersion(standardCremationWorkflowTemplateFixture) — these
+ * seed cases represent already-existing cases, frozen at whatever version
+ * was live when they were (fictionally) created, and must never silently
+ * shift onto a newer template version's shape just because one gets
+ * appended later (that would mean an "existing case" acquiring the new
+ * Certifier fields/checklist item it was never actually created with —
+ * exactly the frozen-workflowSnapshot violation this project forbids).
+ * Pinned explicitly to the template's first version by array position.
+ */
+const standardCremationV1 = standardCremationWorkflowTemplateFixture.versions[0];
 
 /**
  * Phase 11 migration (see docs/TEMPLATE_VERSIONING.md's migration notes):
@@ -293,6 +304,10 @@ export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw, index) => ({
   nextOfKinEmail: null,
   nextOfKinRelationship: null,
   nextOfKinRelationshipOther: null,
+  certifierName: null,
+  certifierPhone: null,
+  certifierLicenseNumber: null,
+  certifierFax: null,
   tagNumber: null,
   paymentStatus: toPaymentStatus(raw.paymentStatus),
   pickupStatus: 'awaiting_pickup',

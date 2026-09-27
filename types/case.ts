@@ -135,6 +135,25 @@ export type Case = {
       free-text description, same "detail field only shown for one
       specific selection" pattern as `pickupReleasedTo`/etc. below. */
   nextOfKinRelationshipOther: string | null;
+  /**
+   * Structured Certifier data (2026-09, ADR-041). Replaces the legacy
+   * "Hospice/physician who will sign DC" concept for cases created against
+   * workflow-template-standard-cremation version 5 and later — that legacy
+   * concept lived only inside an anonymous fieldValues index (never a
+   * structured Case property at all; see the intake's own dcContact field
+   * for the pre-v5 shape, still honored unchanged for every existing
+   * case). All four fields are nullable — unset until staff enter them,
+   * editable any time afterward, exactly like nextOfKinEmail/tagNumber's
+   * own "optional, capture when known" convention. certifierLicenseNumber
+   * in particular is deliberately never required for anything (see the
+   * First Call checklist's Certifier Information item, which completes on
+   * name+phone alone) — Manors often doesn't receive the license number
+   * until after arrangements are already made.
+   */
+  certifierName: string | null;
+  certifierPhone: string | null;
+  certifierLicenseNumber: string | null;
+  certifierFax: string | null;
   /** Manors launch-prep. Operational tag/ID affixed to the remains for
       chain-of-custody tracking — distinct from `caseNumber` (Solis's own
       permanent record identifier). Null until staff assign one; editable
@@ -245,6 +264,7 @@ export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOf
       Case,
       | 'dateOfBirth' | 'dateOfDeath' | 'timeOfDeath' | 'placeOfDeath' | 'weight' | 'assignedStaffId'
       | 'nextOfKinEmail' | 'nextOfKinRelationship' | 'nextOfKinRelationshipOther'
+      | 'certifierName' | 'certifierPhone' | 'certifierLicenseNumber' | 'certifierFax'
       /** Optional at intake — a family may not have decided yet. Omitted
           defaults to `'undecided'`, never `'pickup'` (see `ReturnMethod`'s
           own comment). No shipping-detail field is ever accepted here —

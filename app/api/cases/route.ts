@@ -258,6 +258,39 @@ export async function POST(request: Request) {
     nextOfKinRelationshipOther = b.nextOfKinRelationshipOther.trim() || null;
   }
 
+  // Structured Certifier data (2026-09, ADR-041) — all four optional at
+  // creation, plain trimmed nullable strings with no format validation at
+  // this layer, matching nextOfKinRelationshipOther/nextOfKinPhone's own
+  // posture exactly (no phone-masking convention exists anywhere in SOLIS).
+  let certifierName: string | null = null;
+  if ('certifierName' in b) {
+    if (typeof b.certifierName !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): certifierName' }, { status: 400 });
+    }
+    certifierName = b.certifierName.trim() || null;
+  }
+  let certifierPhone: string | null = null;
+  if ('certifierPhone' in b) {
+    if (typeof b.certifierPhone !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): certifierPhone' }, { status: 400 });
+    }
+    certifierPhone = b.certifierPhone.trim() || null;
+  }
+  let certifierLicenseNumber: string | null = null;
+  if ('certifierLicenseNumber' in b) {
+    if (typeof b.certifierLicenseNumber !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): certifierLicenseNumber' }, { status: 400 });
+    }
+    certifierLicenseNumber = b.certifierLicenseNumber.trim() || null;
+  }
+  let certifierFax: string | null = null;
+  if ('certifierFax' in b) {
+    if (typeof b.certifierFax !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): certifierFax' }, { status: 400 });
+    }
+    certifierFax = b.certifierFax.trim() || null;
+  }
+
   // Conditional shipping/tracking (2026-09): optional at intake — a family
   // may not have decided yet. Omitted (or explicitly null/undefined)
   // defaults to 'undecided' in buildWixCaseData below, never 'pickup'. No
@@ -390,6 +423,10 @@ export async function POST(request: Request) {
       nextOfKinEmail,
       nextOfKinRelationship,
       nextOfKinRelationshipOther,
+      certifierName,
+      certifierPhone,
+      certifierLicenseNumber,
+      certifierFax,
       fieldValues: (b.fieldValues as Record<number, string>) ?? {},
       createdAt,
       returnMethod,

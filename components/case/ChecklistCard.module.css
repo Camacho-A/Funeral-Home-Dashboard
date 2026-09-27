@@ -77,3 +77,19 @@
   margin: var(--space-3) 0 var(--space-1) 28px;
   width: calc(100% - 28px);
 }
+
+/* Checklist Time Display (2026-09): the hour/minute/AM-PM selects, laid
+   out in one row, indented to match .fieldInput's alignment under its
+   checkbox/label row. */
+.timeFieldGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-1) 28px;
+  flex-wrap: wrap;
+}
+
+.timeColon {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}

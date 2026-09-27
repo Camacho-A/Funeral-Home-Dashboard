@@ -34,6 +34,14 @@ const UPPERCASE_STRING_FIELDS = [
   // interoperability problem was ever identified with uppercasing them.
   'tagNumber',
   'shippingTrackingNumber',
+  // Structured Certifier data (2026-09, ADR-041). certifierName is a name
+  // field — same treatment as decedentName/nextOfKinName. certifierLicenseNumber
+  // is a physical/identifier code, not prose — same treatment as
+  // tagNumber/shippingTrackingNumber immediately above. certifierPhone/
+  // certifierFax are deliberately NOT here — phone/fax numbers are never
+  // uppercased anywhere in this codebase (nextOfKinPhone isn't either).
+  'certifierName',
+  'certifierLicenseNumber',
 ] as const;
 
 type UppercaseCaseTextField = (typeof UPPERCASE_STRING_FIELDS)[number];

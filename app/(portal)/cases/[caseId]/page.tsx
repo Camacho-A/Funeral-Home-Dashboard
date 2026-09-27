@@ -216,6 +216,14 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             nextOfKinEmail={case_.nextOfKinEmail}
             nextOfKinRelationship={case_.nextOfKinRelationship}
             nextOfKinRelationshipOther={case_.nextOfKinRelationshipOther}
+            certifierName={case_.certifierName}
+            certifierPhone={case_.certifierPhone}
+            certifierLicenseNumber={case_.certifierLicenseNumber}
+            certifierFax={case_.certifierFax}
+            onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
+            onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
+            onSaveCertifierLicenseNumber={(value) => mutations.setCertifierLicenseNumber(case_, value)}
+            onSaveCertifierFax={(value) => mutations.setCertifierFax(case_, value)}
             tagNumber={case_.tagNumber}
             paymentStatus={viewModel.paymentStatus}
             pickupStatus={case_.pickupStatus}

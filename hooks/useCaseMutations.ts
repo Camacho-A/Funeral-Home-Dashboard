@@ -25,12 +25,17 @@ import { useOrganization } from './useOrganization';
 function buildStructuredIntakeFieldPatch<K extends keyof CaseUpdate & string>(
   case_: Case,
   caseField: K,
-  value: string,
+  value: string | null,
 ): CaseUpdate {
   const patch: CaseUpdate = { [caseField]: value } as CaseUpdate;
   const index = case_.workflowSnapshot ? findChecklistIndexForCaseField(case_.workflowSnapshot.intake, caseField) : null;
   if (index !== null) {
-    patch.fieldValues = { ...case_.fieldValues, [index]: value };
+    // Weight/Time of Death (the only callers with a real checklistItemIndex
+    // today) always pass a non-null string — the `?? ''` only matters for a
+    // hypothetical future nullable field-backed item, never for the
+    // Certifier fields below (which deliberately have no checklistItemIndex
+    // at all, so this branch never runs for them regardless of value).
+    patch.fieldValues = { ...case_.fieldValues, [index]: value ?? '' };
   }
   return patch;
 }
@@ -104,6 +109,33 @@ export function useCaseMutations(caseId: string) {
 
     setTimeOfDeath(case_: Case, value: string) {
       updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'timeOfDeath', value));
+    },
+
+    /**
+     * Structured Certifier data (2026-09, ADR-041). Unlike Weight/Time of
+     * Death, the v5 intake template deliberately gives none of the four
+     * certifier fields a checklistItemIndex — buildStructuredIntakeFieldPatch
+     * still handles that correctly with zero changes (findChecklistIndexForCaseField
+     * resolves null, so the returned patch is just `{ certifierX: value }`,
+     * never touching fieldValues). The "Certifier Information" checklist
+     * item's own completion comes from requiredCaseFields
+     * (domain/workflow/resolveChecklist.ts), reading these structured
+     * fields directly.
+     */
+    setCertifierName(case_: Case, value: string | null) {
+      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierName', value));
+    },
+
+    setCertifierPhone(case_: Case, value: string | null) {
+      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierPhone', value));
+    },
+
+    setCertifierLicenseNumber(case_: Case, value: string | null) {
+      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierLicenseNumber', value));
+    },
+
+    setCertifierFax(case_: Case, value: string | null) {
+      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierFax', value));
     },
 
     setVeteranFlag(newValue: boolean) {

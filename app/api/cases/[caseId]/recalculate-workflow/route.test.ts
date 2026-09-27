@@ -4,7 +4,7 @@ import { mockDefaultUser, mockReadOnlyUser } from '@/services/__mocks__/authFixt
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { caseFormLinkFixtures, ARRANGEMENT_FORMS_FORM_CONFIG_ID } from '@/services/__mocks__/externalFormFixtures';
 import { standardCremationWorkflowTemplateFixture } from '@/services/__mocks__/workflowTemplates';
-import { buildCaseWorkflowSnapshot, latestTemplateVersion } from '@/domain/workflow/snapshot';
+import { buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import type { Case } from '@/types/case';
 import type { CaseFormLink } from '@/types/caseFormLink';
 
@@ -33,7 +33,12 @@ function postRequest(caseId: string, body: unknown, headers: Record<string, stri
   });
 }
 
-const SNAPSHOT_VERSION = latestTemplateVersion(standardCremationWorkflowTemplateFixture);
+// Structured Certifier data (2026-09, ADR-041): explicitly pinned to
+// versions[0] (v1), never `latestTemplateVersion` — see
+// services/workflowReconciliationService.test.ts's identical fix for why
+// (this route delegates straight to that service's reconciliation logic
+// against the same dcContact-era 11-item First Call & Payment shape).
+const SNAPSHOT_VERSION = standardCremationWorkflowTemplateFixture.versions[0];
 
 function seedTestCase(): Case {
   const case_: Case = {
@@ -53,6 +58,10 @@ function seedTestCase(): Case {
     nextOfKinEmail: null,
     nextOfKinRelationship: null,
     nextOfKinRelationshipOther: null,
+    certifierName: null,
+    certifierPhone: null,
+    certifierLicenseNumber: null,
+    certifierFax: null,
     tagNumber: null,
     paymentStatus: 'paid_in_full',
     pickupStatus: 'awaiting_pickup',

@@ -33,6 +33,10 @@ function baseCase(overrides: Partial<Case>): Case {
     nextOfKinEmail: null,
     nextOfKinRelationship: null,
     nextOfKinRelationshipOther: null,
+    certifierName: null,
+    certifierPhone: null,
+    certifierLicenseNumber: null,
+    certifierFax: null,
     tagNumber: null,
     paymentStatus: 'awaiting_payment',
     isVeteran: false,
@@ -141,5 +145,114 @@ describe('resolveChecklist — Time of Death (checklistItemIndex 5) field-backed
     );
     expect(after[5].done).toBe(true);
     expect(after[5].fieldValue).toBe('15:45');
+  });
+
+  it('the v1 template\'s Time of Death has no valueKind — v1 is never retroactively modified by v5', () => {
+    expect(RAW_STAGE_0_ITEMS[5].valueKind).toBeUndefined();
+  });
+});
+
+/**
+ * Structured Certifier data (2026-09, ADR-041) — the generic
+ * requiredCaseFields-driven completion mechanism, exercised against the
+ * real v5 template (never a hand-authored item list), proving it reads
+ * structured Case fields directly and completely bypasses
+ * fieldValues/checklistState for this one item — the same "generic, not
+ * label-hardcoded" mechanism any future multi-required-field item reuses.
+ */
+const V5_TEMPLATE_VERSION = standardCremationWorkflowTemplateFixture.versions.find((v) => v.version === 5)!;
+const V5_RAW_STAGE_0_ITEMS = V5_TEMPLATE_VERSION.stages.find((s) => s.rawStage === 0)!.checklist.items;
+
+describe('resolveChecklist — Certifier Information (requiredCaseFields) generic multi-field completion (2026-09, ADR-041)', () => {
+  it('36. index 6 in the v5 template is "Certifier Information", hasField:false, requiredCaseFields: [certifierName, certifierPhone]', () => {
+    expect(V5_RAW_STAGE_0_ITEMS[6].label).toBe('Certifier Information');
+    expect(V5_RAW_STAGE_0_ITEMS[6].hasField).toBe(false);
+    expect(V5_RAW_STAGE_0_ITEMS[6].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+  });
+
+  it('37. not done when both required Case fields are null', () => {
+    const case_ = baseCase({ certifierName: null, certifierPhone: null });
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_);
+    expect(items[6].done).toBe(false);
+  });
+
+  it('not done when only one of the two required fields is set — never "any one populated"', () => {
+    const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: null });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(false);
+
+    const flipped = baseCase({ certifierName: null, certifierPhone: '555-0199' });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, flipped)[6].done).toBe(false);
+  });
+
+  it('38. done once both certifierName and certifierPhone are non-empty strings', () => {
+    const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_);
+    expect(items[6].done).toBe(true);
+  });
+
+  it('a whitespace-only required field does not count as done (matches isFieldDone\'s own trim check)', () => {
+    const case_ = baseCase({ certifierName: '   ', certifierPhone: '555-0199' });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(false);
+  });
+
+  it('certifierLicenseNumber/certifierFax being null never blocks completion — only Name/Phone are required', () => {
+    const case_ = baseCase({
+      certifierName: 'DR. JANE FOSTER',
+      certifierPhone: '555-0199',
+      certifierLicenseNumber: null,
+      certifierFax: null,
+    });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(true);
+  });
+
+  it('isDerived is true for Certifier Information, matching the terminal return-of-remains item\'s existing precedent', () => {
+    const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].isDerived).toBe(true);
+  });
+
+  it('isDerived is false for every other (non-requiredCaseFields) item', () => {
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, baseCase({}));
+    expect(items[0].isDerived).toBe(false);
+    expect(items[5].isDerived).toBe(false);
+  });
+
+  it('checklistState/fieldValues have zero effect on Certifier Information — completion reads structured Case fields only', () => {
+    const case_ = baseCase({
+      certifierName: null,
+      certifierPhone: null,
+      checklistState: { 6: true },
+      fieldValues: { 6: 'something' },
+    });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(false);
+  });
+
+  it('completing Certifier Information unlocks the next item (Family contact, index 7)', () => {
+    const notDone = resolveChecklist(
+      V5_RAW_STAGE_0_ITEMS,
+      baseCase({ certifierName: null, certifierPhone: null, fieldValues: { 7: 'KAREN — 555-0100' } }),
+    );
+    expect(notDone[7].locked).toBe(true);
+
+    const done = resolveChecklist(
+      V5_RAW_STAGE_0_ITEMS,
+      baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199', fieldValues: { 7: 'KAREN — 555-0100' } }),
+    );
+    expect(done[7].locked).toBe(false);
+  });
+
+  it('a prior undone field-backed item (index 5, Time of death) still locks Certifier Information, exactly like any other item pair', () => {
+    const case_ = baseCase({ fieldValues: {}, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].locked).toBe(true);
+  });
+
+  it('valueKind is undefined for a normal item', () => {
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, baseCase({}));
+    expect(items[0].valueKind).toBeUndefined();
+  });
+
+  it('valueKind is "time" for Time of Death in the v5 template — driven by declarative metadata, not a label match', () => {
+    expect(V5_RAW_STAGE_0_ITEMS[5].valueKind).toBe('time');
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, baseCase({}));
+    expect(items[5].valueKind).toBe('time');
   });
 });

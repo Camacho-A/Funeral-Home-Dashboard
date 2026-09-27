@@ -93,6 +93,10 @@ export type WixCaseItem = {
   nextOfKinEmail?: unknown;
   nextOfKinRelationship?: unknown;
   nextOfKinRelationshipOther?: unknown;
+  certifierName?: unknown;
+  certifierPhone?: unknown;
+  certifierLicenseNumber?: unknown;
+  certifierFax?: unknown;
   tagNumber?: unknown;
   paymentStatus?: unknown;
   pickupStatus?: unknown;
@@ -183,6 +187,14 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   const nextOfKinEmail = typeof item.nextOfKinEmail === 'string' ? item.nextOfKinEmail : null;
   const nextOfKinRelationship = isValidNextOfKinRelationship(item.nextOfKinRelationship) ? item.nextOfKinRelationship : null;
   const nextOfKinRelationshipOther = typeof item.nextOfKinRelationshipOther === 'string' ? item.nextOfKinRelationshipOther : null;
+  // Structured Certifier data (2026-09, ADR-041) — additive fields; a
+  // pre-v5 row has none of these at all, which must resolve to null
+  // (unset), never fail mapping entirely, matching nextOfKinEmail's own
+  // "optional, capture when known" precedent immediately above.
+  const certifierName = typeof item.certifierName === 'string' ? item.certifierName : null;
+  const certifierPhone = typeof item.certifierPhone === 'string' ? item.certifierPhone : null;
+  const certifierLicenseNumber = typeof item.certifierLicenseNumber === 'string' ? item.certifierLicenseNumber : null;
+  const certifierFax = typeof item.certifierFax === 'string' ? item.certifierFax : null;
   // Additive field — a pre-Manors-launch-prep row has no pickupStatus at
   // all, which must resolve to the same safe default a brand-new case
   // gets ('awaiting_pickup'), never null/undefined.
@@ -222,6 +234,10 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     nextOfKinEmail,
     nextOfKinRelationship,
     nextOfKinRelationshipOther,
+    certifierName,
+    certifierPhone,
+    certifierLicenseNumber,
+    certifierFax,
     tagNumber,
     paymentStatus: item.paymentStatus as PaymentStatus,
     pickupStatus,
@@ -328,6 +344,10 @@ export function buildWixCaseData(params: {
   nextOfKinEmail?: string | null;
   nextOfKinRelationship?: NextOfKinRelationship | null;
   nextOfKinRelationshipOther?: string | null;
+  certifierName?: string | null;
+  certifierPhone?: string | null;
+  certifierLicenseNumber?: string | null;
+  certifierFax?: string | null;
   fieldValues: Record<number, string>;
   createdAt: string;
   /** Optional at creation — a family may not have decided yet. Omitted
@@ -344,6 +364,8 @@ export function buildWixCaseData(params: {
     placeOfDeath: params.placeOfDeath,
     nextOfKinName: params.nextOfKinName,
     nextOfKinRelationshipOther: params.nextOfKinRelationshipOther ?? null,
+    certifierName: params.certifierName ?? null,
+    certifierLicenseNumber: params.certifierLicenseNumber ?? null,
   });
 
   return {
@@ -370,6 +392,10 @@ export function buildWixCaseData(params: {
     nextOfKinEmail: params.nextOfKinEmail ?? null,
     nextOfKinRelationship: params.nextOfKinRelationship ?? null,
     nextOfKinRelationshipOther: normalized.nextOfKinRelationshipOther,
+    certifierName: normalized.certifierName,
+    certifierPhone: params.certifierPhone ?? null,
+    certifierLicenseNumber: normalized.certifierLicenseNumber,
+    certifierFax: params.certifierFax ?? null,
     tagNumber: null,
     paymentStatus: 'awaiting_payment',
     pickupStatus: 'awaiting_pickup',
@@ -485,6 +511,10 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   stringField('nextOfKinPhone');
   nullableEmailField('nextOfKinEmail');
   nullableStringField('nextOfKinRelationshipOther');
+  nullableStringField('certifierName');
+  nullableStringField('certifierPhone');
+  nullableStringField('certifierLicenseNumber');
+  nullableStringField('certifierFax');
   nullableStringField('tagNumber');
   nullableStringField('pickupReleasedTo');
   nullableStringField('pickupReleasedAt');
@@ -590,6 +620,10 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.nextOfKinEmail !== undefined) next.nextOfKinEmail = patch.nextOfKinEmail;
   if (patch.nextOfKinRelationship !== undefined) next.nextOfKinRelationship = patch.nextOfKinRelationship;
   if (patch.nextOfKinRelationshipOther !== undefined) next.nextOfKinRelationshipOther = patch.nextOfKinRelationshipOther;
+  if (patch.certifierName !== undefined) next.certifierName = patch.certifierName;
+  if (patch.certifierPhone !== undefined) next.certifierPhone = patch.certifierPhone;
+  if (patch.certifierLicenseNumber !== undefined) next.certifierLicenseNumber = patch.certifierLicenseNumber;
+  if (patch.certifierFax !== undefined) next.certifierFax = patch.certifierFax;
   if (patch.tagNumber !== undefined) next.tagNumber = patch.tagNumber;
   if (patch.pickupStatus !== undefined) next.pickupStatus = patch.pickupStatus;
   if (patch.pickupReleasedTo !== undefined) next.pickupReleasedTo = patch.pickupReleasedTo;

@@ -106,6 +106,28 @@ describe('mapWixCaseItem', () => {
     expect(result?.nextOfKinRelationshipOther).toBe('family friend');
   });
 
+  it('10. maps every certifier field to null for a pre-existing row that has no such fields at all (frozen at v1-v4, ADR-041)', () => {
+    const result = mapWixCaseItem(validItem);
+    expect(result?.certifierName).toBeNull();
+    expect(result?.certifierPhone).toBeNull();
+    expect(result?.certifierLicenseNumber).toBeNull();
+    expect(result?.certifierFax).toBeNull();
+  });
+
+  it('11. maps real certifier field values through unchanged', () => {
+    const result = mapWixCaseItem({
+      ...validItem,
+      certifierName: 'Dr. Jane Foster',
+      certifierPhone: '555-0199',
+      certifierLicenseNumber: 'MD-4471',
+      certifierFax: '555-0188',
+    });
+    expect(result?.certifierName).toBe('Dr. Jane Foster');
+    expect(result?.certifierPhone).toBe('555-0199');
+    expect(result?.certifierLicenseNumber).toBe('MD-4471');
+    expect(result?.certifierFax).toBe('555-0188');
+  });
+
   it('allows null for optional identity fields (assignedStaffId, createdBy, intakeOwnerId, stalledReason)', () => {
     const result = mapWixCaseItem({
       ...validItem,
@@ -303,6 +325,33 @@ describe('buildWixCaseData', () => {
     expect(mapped?.shippingCarrier).toBeNull();
     expect(mapped?.shippingTrackingNumber).toBeNull();
   });
+
+  it('12. defaults every certifier field to null when not provided at all (2026-09, ADR-041)', () => {
+    const data = buildWixCaseData(params);
+    const mapped = mapWixCaseItem(data);
+    expect(mapped?.certifierName).toBeNull();
+    expect(mapped?.certifierPhone).toBeNull();
+    expect(mapped?.certifierLicenseNumber).toBeNull();
+    expect(mapped?.certifierFax).toBeNull();
+  });
+
+  it('13. carries explicitly-provided certifier fields through to the built item, round-trippable through mapWixCaseItem', () => {
+    const data = buildWixCaseData({
+      ...params,
+      certifierName: 'Dr. Jane Foster',
+      certifierPhone: '555-0199',
+      certifierLicenseNumber: 'MD-4471',
+      certifierFax: '555-0188',
+    });
+    const mapped = mapWixCaseItem(data);
+    // ALL-CAPS: certifierName/certifierLicenseNumber are normalized on the
+    // way in (buildWixCaseData), same as decedentName/tagNumber; phone/fax
+    // are excluded, matching nextOfKinPhone's own unmasked convention.
+    expect(mapped?.certifierName).toBe('DR. JANE FOSTER');
+    expect(mapped?.certifierPhone).toBe('555-0199');
+    expect(mapped?.certifierLicenseNumber).toBe('MD-4471');
+    expect(mapped?.certifierFax).toBe('555-0188');
+  });
 });
 
 describe('validateAndPickCaseUpdate', () => {
@@ -442,6 +491,46 @@ describe('validateAndPickCaseUpdate — nextOfKinEmail (Manors launch-prep)', ()
   });
 });
 
+describe('validateAndPickCaseUpdate — Certifier fields (2026-09, ADR-041)', () => {
+  it('14. accepts and picks all four certifier fields', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      certifierName: 'Dr. Jane Foster',
+      certifierPhone: '555-0199',
+      certifierLicenseNumber: 'MD-4471',
+      certifierFax: '555-0188',
+    });
+    expect(errors).toEqual([]);
+    expect(patch.certifierPhone).toBe('555-0199');
+    expect(patch.certifierLicenseNumber).toBe('MD-4471');
+    expect(patch.certifierFax).toBe('555-0188');
+    // ALL-CAPS: certifierName is a name field, normalized like decedentName.
+    expect(patch.certifierName).toBe('DR. JANE FOSTER');
+  });
+
+  it('15. accepts an explicit null on each certifier field, to clear it', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      certifierName: null,
+      certifierPhone: null,
+      certifierLicenseNumber: null,
+      certifierFax: null,
+    });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({
+      certifierName: null,
+      certifierPhone: null,
+      certifierLicenseNumber: null,
+      certifierFax: null,
+    });
+  });
+
+  it('16. rejects a non-string, non-null value for any certifier field', () => {
+    expect(validateAndPickCaseUpdate({ certifierName: 12345 }).errors).toContain('certifierName');
+    expect(validateAndPickCaseUpdate({ certifierPhone: 12345 }).errors).toContain('certifierPhone');
+    expect(validateAndPickCaseUpdate({ certifierLicenseNumber: 12345 }).errors).toContain('certifierLicenseNumber');
+    expect(validateAndPickCaseUpdate({ certifierFax: 12345 }).errors).toContain('certifierFax');
+  });
+});
+
 describe('applyCaseUpdateToWixData', () => {
   it('merges a patch onto the existing data, preserving every untouched field', () => {
     const existing = { ...validItem };
@@ -545,6 +634,35 @@ describe('applyCaseUpdateToWixData', () => {
     expect(result.createdAt).toBe(existing.createdAt);
     expect(result.createdBy).toBe(existing.createdBy);
   });
+
+  it('17. a certifier-field patch preserves every other field on the record (Wix full-replace safety)', () => {
+    const existing = { ...validItem };
+    const result = applyCaseUpdateToWixData(existing, {
+      certifierName: 'DR. JANE FOSTER',
+      certifierPhone: '555-0199',
+      certifierLicenseNumber: 'MD-4471',
+      certifierFax: '555-0188',
+    });
+
+    expect(result.certifierName).toBe('DR. JANE FOSTER');
+    expect(result.certifierPhone).toBe('555-0199');
+    expect(result.certifierLicenseNumber).toBe('MD-4471');
+    expect(result.certifierFax).toBe('555-0188');
+    expect(result.organizationId).toBe(existing.organizationId);
+    expect(result.decedentName).toBe(existing.decedentName);
+    expect(result.nextOfKinName).toBe(existing.nextOfKinName);
+    expect(result.fieldValues).toEqual(existing.fieldValues);
+    expect(result.workflowSnapshot).toBe(existing.workflowSnapshot);
+  });
+
+  it('18. a certifier field can be cleared back to null without touching the other three', () => {
+    const existing = { ...validItem, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199', certifierLicenseNumber: 'MD-4471', certifierFax: '555-0188' };
+    const result = applyCaseUpdateToWixData(existing, { certifierFax: null });
+    expect(result.certifierFax).toBeNull();
+    expect(result.certifierName).toBe('DR. JANE FOSTER');
+    expect(result.certifierPhone).toBe('555-0199');
+    expect(result.certifierLicenseNumber).toBe('MD-4471');
+  });
 });
 
 describe('SOLIS ALL-CAPS data standard (2026-09)', () => {
@@ -626,6 +744,19 @@ describe('SOLIS ALL-CAPS data standard (2026-09)', () => {
   it('PATCH /api/cases/[caseId] cannot bypass normalization — a raw lowercase patch still persists uppercase via validateAndPickCaseUpdate', () => {
     const { patch } = validateAndPickCaseUpdate({ nextOfKinName: 'forged lowercase name' });
     expect(patch.nextOfKinName).toBe('FORGED LOWERCASE NAME');
+  });
+
+  it('19. certifierName/certifierLicenseNumber are uppercased; certifierPhone/certifierFax are excluded (2026-09, ADR-041)', () => {
+    const { patch } = validateAndPickCaseUpdate({
+      certifierName: 'dr. jane foster',
+      certifierLicenseNumber: 'md-4471',
+      certifierPhone: '555-0199',
+      certifierFax: '555-0188',
+    });
+    expect(patch.certifierName).toBe('DR. JANE FOSTER');
+    expect(patch.certifierLicenseNumber).toBe('MD-4471');
+    expect(patch.certifierPhone).toBe('555-0199');
+    expect(patch.certifierFax).toBe('555-0188');
   });
 
   it('is idempotent — an already-uppercase patch is unchanged', () => {

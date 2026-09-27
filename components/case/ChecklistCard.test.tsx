@@ -229,3 +229,129 @@ describe('ChecklistCard — field-backed textbox save-race fix (2026-09)', () =>
     expect(onFieldChange).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Checklist Time Display (2026-09, ADR-041). A field-backed item whose
+ * template metadata sets valueKind: 'time' renders three closed-option
+ * selects instead of the plain text input above — driven by declarative
+ * metadata, never a label match. Preserves the exact save-race discipline
+ * (commit only on a real "done editing" signal), adapted for three
+ * separate <select>s that have no single element to blur from.
+ */
+describe('ChecklistCard — Time of Death 12-hour display (valueKind: "time", 2026-09)', () => {
+  function timeItem(overrides: Partial<ChecklistItemViewModel> = {}) {
+    return item({ index: 5, label: 'Time of death', hasField: true, valueKind: 'time', fieldValue: '', ...overrides });
+  }
+
+  it('renders three selects (Hour/Minute/AM-PM) instead of the plain text input', () => {
+    renderChecklist([timeItem()]);
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Minute' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'AM or PM' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Enter value to complete this step…')).not.toBeInTheDocument();
+  });
+
+  it('shows the correct 12-hour parts for an existing 24-hour value when not being edited', () => {
+    renderChecklist([timeItem({ fieldValue: '15:45' })]);
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toHaveValue('3');
+    expect(screen.getByRole('combobox', { name: 'Minute' })).toHaveValue('45');
+    expect(screen.getByRole('combobox', { name: 'AM or PM' })).toHaveValue('PM');
+  });
+
+  it('selecting all three parts, then moving focus out of the group, commits exactly once with canonical HH:mm', () => {
+    const { onFieldChange } = renderChecklist([timeItem()]);
+    const hour = screen.getByRole('combobox', { name: 'Hour' });
+    const minute = screen.getByRole('combobox', { name: 'Minute' });
+    const period = screen.getByRole('combobox', { name: 'AM or PM' });
+
+    fireEvent.focus(hour);
+    fireEvent.change(hour, { target: { value: '3' } });
+    fireEvent.change(minute, { target: { value: '45' } });
+    fireEvent.change(period, { target: { value: 'PM' } });
+    expect(onFieldChange).not.toHaveBeenCalled();
+
+    fireEvent.blur(period, { relatedTarget: document.body });
+    expect(onFieldChange).toHaveBeenCalledTimes(1);
+    expect(onFieldChange).toHaveBeenCalledWith(5, '15:45');
+  });
+
+  it('moving focus BETWEEN the three selects (still inside the group) does not commit and does not discard the in-progress selection', () => {
+    const { onFieldChange } = renderChecklist([timeItem()]);
+    const hour = screen.getByRole('combobox', { name: 'Hour' });
+    const minute = screen.getByRole('combobox', { name: 'Minute' });
+    const period = screen.getByRole('combobox', { name: 'AM or PM' });
+
+    fireEvent.focus(hour);
+    fireEvent.change(hour, { target: { value: '3' } });
+    // Focus moves to a sibling select still inside the same group — must
+    // not re-sync from the (still-empty) canonical value and wipe out the
+    // hour just picked.
+    fireEvent.blur(hour, { relatedTarget: minute });
+    fireEvent.focus(minute);
+    expect(hour).toHaveValue('3');
+    expect(onFieldChange).not.toHaveBeenCalled();
+
+    fireEvent.change(minute, { target: { value: '45' } });
+    fireEvent.blur(minute, { relatedTarget: period });
+    fireEvent.focus(period);
+    fireEvent.change(period, { target: { value: 'PM' } });
+    fireEvent.blur(period, { relatedTarget: document.body });
+
+    expect(onFieldChange).toHaveBeenCalledTimes(1);
+    expect(onFieldChange).toHaveBeenCalledWith(5, '15:45');
+  });
+
+  it('Enter commits without needing to blur the group', () => {
+    const { onFieldChange } = renderChecklist([timeItem()]);
+    const hour = screen.getByRole('combobox', { name: 'Hour' });
+    const minute = screen.getByRole('combobox', { name: 'Minute' });
+    const period = screen.getByRole('combobox', { name: 'AM or PM' });
+
+    fireEvent.focus(hour);
+    fireEvent.change(hour, { target: { value: '8' } });
+    fireEvent.change(minute, { target: { value: '30' } });
+    fireEvent.change(period, { target: { value: 'PM' } });
+    fireEvent.keyDown(period, { key: 'Enter' });
+
+    expect(onFieldChange).toHaveBeenCalledTimes(1);
+    expect(onFieldChange).toHaveBeenCalledWith(5, '20:30');
+  });
+
+  it('an incomplete selection (only hour + minute, no AM/PM) never commits, even on blur out of the group', () => {
+    const { onFieldChange } = renderChecklist([timeItem()]);
+    const hour = screen.getByRole('combobox', { name: 'Hour' });
+    const minute = screen.getByRole('combobox', { name: 'Minute' });
+
+    fireEvent.focus(hour);
+    fireEvent.change(hour, { target: { value: '8' } });
+    fireEvent.change(minute, { target: { value: '30' } });
+    fireEvent.blur(minute, { relatedTarget: document.body });
+
+    expect(onFieldChange).not.toHaveBeenCalled();
+  });
+
+  it('Escape reverts the in-progress selection to the last saved value', () => {
+    const { onFieldChange } = renderChecklist([timeItem({ fieldValue: '15:45' })]);
+    const hour = screen.getByRole('combobox', { name: 'Hour' });
+
+    fireEvent.focus(hour);
+    fireEvent.change(hour, { target: { value: '9' } });
+    fireEvent.keyDown(hour, { key: 'Escape' });
+
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toHaveValue('3');
+    fireEvent.blur(hour, { relatedTarget: document.body });
+    expect(onFieldChange).not.toHaveBeenCalled();
+  });
+
+  it('a locked time item disables all three selects', () => {
+    renderChecklist([timeItem({ locked: true })]);
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Minute' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'AM or PM' })).toBeDisabled();
+  });
+
+  it('viewingStageLabel (past-stage read-only mode) disables all three selects', () => {
+    renderChecklist([timeItem({ fieldValue: '15:45' })], { viewingStageLabel: 'First Call & Payment' });
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toBeDisabled();
+  });
+});

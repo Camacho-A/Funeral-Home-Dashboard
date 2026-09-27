@@ -31,6 +31,11 @@ export type ChecklistItemViewModel = {
       ChecklistCard renders it read-only, never toggleable, so it can never
       become a second, contradicting completion signal. */
   isDerived: boolean;
+  /** Structured Certifier data (2026-09, ADR-041). Mirrors
+      ChecklistItemTemplate.valueKind — a field-backed item whose canonical
+      value is 24-hour HH:mm but should render/edit as 12-hour AM/PM (e.g.
+      Time of Death). Undefined for every other item. */
+  valueKind?: 'time';
 };
 
 export type VaStepViewModel = {

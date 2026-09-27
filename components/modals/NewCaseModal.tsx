@@ -24,12 +24,13 @@ import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/work
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
 import {
   formatDateInput,
-  formatMilitaryTimeInput,
   getValidationError,
   isValidEmail,
   expandTwoDigitYearInDateInput,
   getDateOfBirthDeathOrderError,
   getDateOfDeathFutureError,
+  splitMilitaryTimeToTwelveHourParts,
+  combineTwelveHourTimeParts,
 } from '@/utils/inputMask';
 import type { Case, ReturnMethod } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
@@ -92,6 +93,11 @@ import styles from './NewCaseModal.module.css';
  * feature, saved via caseLogService, untouched by this phase.
  */
 const NOTES_KEY = 'notes';
+
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+type TwelveHourParts = { hour: string; minute: string; period: '' | 'AM' | 'PM' };
 
 const FALLBACK_INTAKE: IntakeTemplate = {
   sections: [
@@ -166,6 +172,18 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [revealedFields, setRevealedFields] = useState<Record<string, boolean>>({});
+  // Time of Death — New Case 12-hour entry (2026-09, ADR-041). Mirrors
+  // CaseInformationCard's TwelveHourTimeField reasoning (structurally can't
+  // produce an invalid/guessed time), but always-visible/commits-per-select
+  // rather than an explicit Save shell, since this modal has one overall
+  // submit action. Keyed by field.key so any future second time field works
+  // the same way with zero extra code. The canonical draft[field.key] value
+  // stays the single source of truth for validation/submission — this only
+  // tracks the three intermediate parts until they combine into a valid
+  // HH:mm (combineTwelveHourTimeParts rejects an incomplete combination
+  // rather than guessing, so draft is cleared, not left stale, until all
+  // three are chosen).
+  const [timeParts, setTimeParts] = useState<Record<string, TwelveHourParts>>({});
 
   // Set only once a case has actually been created — distinguishes "not
   // submitted yet" from "case exists, but its note failed to save," so a
@@ -224,15 +242,20 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     let value = rawValue;
     if (field.fieldType === 'date') {
       value = formatDateInput(rawValue);
-    } else if (field.fieldType === 'time') {
-      // Solis go-live checkpoint: live 24-hour masking as the user types
-      // ("0930" -> "09:30"), replacing the old blur-time free-text parse —
-      // see utils/inputMask.ts#formatMilitaryTimeInput's own comment.
-      value = formatMilitaryTimeInput(rawValue);
     } else if (field.uppercase) {
       value = rawValue.toUpperCase();
     }
     setDraftValue(field.key, value);
+  }
+
+  /** Time of Death — New Case 12-hour entry (2026-09, ADR-041). See
+      `timeParts` state's own comment above. */
+  function updateTimePart(field: ResolvedIntakeField, patch: Partial<TwelveHourParts>) {
+    const current = timeParts[field.key] ?? splitMilitaryTimeToTwelveHourParts(draft[field.key] ?? field.defaultValue);
+    const next: TwelveHourParts = { ...current, ...patch };
+    setTimeParts((prev) => ({ ...prev, [field.key]: next }));
+    const combined = combineTwelveHourTimeParts(next.hour, next.minute, next.period);
+    setDraftValue(field.key, combined ?? '');
   }
 
   function markTouched(key: string) {
@@ -266,6 +289,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     setServicesSelections({ weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false });
     setNextOfKinEmailInput('');
     setNextOfKinEmailError(null);
+    setTimeParts({});
     setAssignedStaffId(session.staffId);
     setReturnMethod('undecided');
     setSubmitError(null);
@@ -514,6 +538,54 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
           onChange={() => setDraftValue(field.key, value === 'true' ? '' : 'true')}
           aria-label={field.label}
         />
+      );
+    } else if (field.fieldType === 'time') {
+      // Time of Death — New Case 12-hour entry (2026-09, ADR-041). Three
+      // closed-option selects (hour 1-12, minute 00-59, AM/PM) instead of
+      // free-text 24-hour masking — canonical HH:mm is still what's stored
+      // in draft/submitted, via combineTwelveHourTimeParts. See
+      // `timeParts`/updateTimePart's own comments above.
+      const parts = timeParts[field.key] ?? splitMilitaryTimeToTwelveHourParts(value);
+      control = (
+        <div className={styles.timeSelectRow}>
+          <SelectField
+            aria-label={`${field.label} — hour`}
+            value={parts.hour}
+            onChange={(e) => updateTimePart(field, { hour: e.target.value })}
+            onBlur={() => handleFieldBlur(field)}
+          >
+            <option value="">--</option>
+            {HOUR_OPTIONS.map((h) => (
+              <option key={h} value={h}>
+                {h}
+              </option>
+            ))}
+          </SelectField>
+          <span className={styles.timeColon}>:</span>
+          <SelectField
+            aria-label={`${field.label} — minute`}
+            value={parts.minute}
+            onChange={(e) => updateTimePart(field, { minute: e.target.value })}
+            onBlur={() => handleFieldBlur(field)}
+          >
+            <option value="">--</option>
+            {MINUTE_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            aria-label={`${field.label} — AM or PM`}
+            value={parts.period}
+            onChange={(e) => updateTimePart(field, { period: e.target.value as '' | 'AM' | 'PM' })}
+            onBlur={() => handleFieldBlur(field)}
+          >
+            <option value="">--</option>
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </SelectField>
+        </div>
       );
     } else if (field.multiline) {
       control = (
