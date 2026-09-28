@@ -779,7 +779,13 @@ export function recordDocumentDownloaded(ctx: ActivityContext, caseId: string, d
 /** A regeneration's own event, distinct from `recordDocumentGenerated` —
     `supersedesId` names the document row this new one replaces (that
     row's own status flips to 'superseded', never edited otherwise — see
-    this phase's Invariants). */
+    this phase's Invariants). The supersession relationship is preserved
+    structurally in `previousValue` (internal audit trail/document
+    lineage — never removed) but deliberately excluded from `description`
+    (Task #4 follow-up, 2026-09): a document's internal UUID is not
+    staff-facing information and was leaking directly into Dashboard →
+    Recent Activity. The Documents tab remains the place staff see
+    document versions/status; this event only needs to say what happened. */
 export function recordDocumentRegenerated(
   ctx: ActivityContext,
   caseId: string,
@@ -797,7 +803,7 @@ export function recordDocumentRegenerated(
       resourceId: documentId,
       previousValue: JSON.stringify({ supersedesId }),
       newValue: JSON.stringify({ templateVersion }),
-      description: `Document regenerated (supersedes ${supersedesId})`,
+      description: 'Document regenerated',
       metadata: null,
       severity: 'info',
     }),

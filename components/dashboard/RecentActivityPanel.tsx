@@ -3,6 +3,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationActivity } from '@/hooks/useActivity';
 import { useCases } from '@/hooks/useCases';
+import { resolveActivityDisplayDescription } from '@/domain/activity/activityDisplay';
 import styles from './RecentActivityPanel.module.css';
 
 function timeAgo(createdAt: string): string {
@@ -65,7 +66,7 @@ export function RecentActivityPanel() {
             <div key={entry.id} className={styles.row}>
               <div className={styles.rowMain}>
                 {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
-                <span className={styles.what}>{entry.description}</span>
+                <span className={styles.what}>{resolveActivityDisplayDescription(entry)}</span>
               </div>
               <div className={styles.when}>{timeAgo(entry.createdAt)}</div>
             </div>

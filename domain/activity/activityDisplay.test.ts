@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityActorLabel } from './activityDisplay';
+import { activityActorLabel, resolveActivityDisplayDescription } from './activityDisplay';
 
 describe('activityActorLabel (item #16 — Case Activity actor attribution)', () => {
   it('1. displays "System" for an explicitly system-generated event', () => {
@@ -34,5 +34,52 @@ describe('activityActorLabel (item #16 — Case Activity actor attribution)', ()
 
   it('12. an unrecognized/custom role key falls back to the raw key rather than a raw-lookup crash or a fabricated label', () => {
     expect(activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'custom-vendor-role' })).toBe('custom-vendor-role');
+  });
+});
+
+/**
+ * Task #4 follow-up (2026-09) — Dashboard → Recent Activity was exposing a
+ * document's internal UUID via document.regenerated's persisted
+ * description ("Document regenerated (supersedes <uuid>)"). This function
+ * is the presentation-layer safety net for already-persisted (legacy)
+ * rows — services/activityService.ts#recordDocumentRegenerated no longer
+ * writes the UUID into new events at all (see its own test coverage), but
+ * historical Production rows cannot be rewritten, so any row of this
+ * event type must render safely regardless of what its own description
+ * happens to contain.
+ */
+describe('resolveActivityDisplayDescription (Task #4 follow-up, 2026-09)', () => {
+  it('1/2/3. a document.regenerated event always displays "Document regenerated", with no UUID present, regardless of its persisted description', () => {
+    const clean = resolveActivityDisplayDescription({ eventType: 'document.regenerated', description: 'Document regenerated' });
+    expect(clean).toBe('Document regenerated');
+
+    // 3. a legacy row exactly matching what staff saw in Production.
+    const legacy = resolveActivityDisplayDescription({
+      eventType: 'document.regenerated',
+      description: 'Document regenerated (supersedes 1d13e80e-4e3b-4c1e-8052-2503785baec5)',
+    });
+    expect(legacy).toBe('Document regenerated');
+    expect(legacy).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    expect(legacy).not.toContain('supersedes');
+  });
+
+  it('9. an ordinary event type is never rewritten — its own persisted description passes through unchanged', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'case.created', description: 'Case B2026-050 created for Jane Doe' })).toBe(
+      'Case B2026-050 created for Jane Doe',
+    );
+    expect(resolveActivityDisplayDescription({ eventType: 'payment.recorded', description: 'Payment recorded for $150.00' })).toBe(
+      'Payment recorded for $150.00',
+    );
+  });
+
+  it('does not use a generic UUID-stripping rule — an unrelated event type whose description happens to contain a UUID-shaped string is left untouched', () => {
+    const description = 'Signature requested from Jane Doe (jane@example.com)';
+    expect(resolveActivityDisplayDescription({ eventType: 'signature.requested', description })).toBe(description);
+  });
+
+  it('an unrecognized/future event type falls back to its own persisted description rather than throwing', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'some.future.event.type', description: 'Something happened' })).toBe(
+      'Something happened',
+    );
   });
 });

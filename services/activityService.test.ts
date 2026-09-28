@@ -303,6 +303,12 @@ describe('typed builder helpers — each produces the correct category/eventType
 
     const regenerated = await recordDocumentRegenerated(ctx(), 'case-1', 'doc-3', 'doc-2', 4, 'mock');
     expect(regenerated.eventType).toBe('document.regenerated');
+    // Task #4 follow-up (2026-09): the supersedesId is a document's
+    // internal UUID and must never appear in the staff-facing
+    // description — the structured relationship still lives in
+    // previousValue, exactly as before, for internal auditability.
+    expect(regenerated.description).toBe('Document regenerated');
+    expect(regenerated.description).not.toContain('doc-2');
     expect(JSON.parse(regenerated.previousValue!)).toEqual({ supersedesId: 'doc-2' });
     expect(JSON.parse(regenerated.newValue!)).toEqual({ templateVersion: 4 });
 

@@ -347,3 +347,134 @@ describe('RecentActivityPanel — Case Number / activity description spacing (Ta
     expect(within(rows[1] as HTMLElement).getByText('Task completed: Call family')).toBeInTheDocument();
   });
 });
+
+/**
+ * Task #4 follow-up (2026-09) — a document's internal UUID was leaking
+ * into this panel via document.regenerated's description text
+ * ("Document regenerated (supersedes <uuid>)"). Covers both a clean
+ * future event and a legacy row that still has the UUID baked into its
+ * persisted description (see domain/activity/activityDisplay.ts).
+ */
+describe('RecentActivityPanel — no internal ids in Recent Activity (Task #4 follow-up, 2026-09)', () => {
+  it('1/2. a document.regenerated event displays "Document regenerated" with no UUID present', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-doc-regen',
+          caseId: case_.id,
+          eventType: 'document.regenerated',
+          description: 'Document regenerated',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Document regenerated')).toBeInTheDocument();
+    expect(screen.queryByText(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/supersedes/i)).not.toBeInTheDocument();
+  });
+
+  it('3. a legacy document.regenerated row with the UUID already baked into its persisted description displays safely', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-doc-regen-legacy',
+          caseId: case_.id,
+          eventType: 'document.regenerated',
+          description: 'Document regenerated (supersedes 1d13e80e-4e3b-4c1e-8052-2503785baec5)',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Document regenerated')).toBeInTheDocument();
+    expect(screen.queryByText(/1d13e80e-4e3b-4c1e-8052-2503785baec5/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/supersedes/i)).not.toBeInTheDocument();
+  });
+
+  it('6/7. Case Number still renders and the timestamp is unchanged alongside the safe document.regenerated text', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-doc-regen-meta',
+          caseId: case_.id,
+          eventType: 'document.regenerated',
+          description: 'Document regenerated (supersedes 1d13e80e-4e3b-4c1e-8052-2503785baec5)',
+          createdAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText(case_.caseNumber)).toBeInTheDocument();
+    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+  });
+
+  it('7. Task #4 layout separation remains intact for a document.regenerated row (case number + gap + description, no merged text node)', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-doc-regen-layout',
+          caseId: case_.id,
+          eventType: 'document.regenerated',
+          description: 'Document regenerated (supersedes 1d13e80e-4e3b-4c1e-8052-2503785baec5)',
+        }),
+      ],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(case_.caseNumber);
+
+    const caseNumberEl = container.querySelector('[class*="caseNumber"]')!;
+    const whatEl = container.querySelector('[class*="what"]')!;
+    expect(whatEl.textContent).toBe('Document regenerated');
+    const rowMain = caseNumberEl.parentElement!;
+    expect(rowMain).toBe(whatEl.parentElement);
+    expect(rowMain.className).toMatch(/rowMain/);
+  });
+
+  it('9. an ordinary, non-document.regenerated activity description is completely unaffected', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-ordinary', description: 'Payment recorded for $150.00' })],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText('Payment recorded for $150.00')).toBeInTheDocument();
+  });
+
+  it('10/11. no duplicate rows are introduced, and no Blob URL/storage key is ever exposed for a document.regenerated entry', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-doc-regen-dup',
+          caseId: case_.id,
+          eventType: 'document.regenerated',
+          description: 'Document regenerated (supersedes 1d13e80e-4e3b-4c1e-8052-2503785baec5)',
+        }),
+      ],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText('Document regenerated');
+
+    const rows = Array.from(container.querySelector('[class*="list"]')!.children);
+    expect(rows).toHaveLength(1);
+    expect(screen.getAllByText('Document regenerated')).toHaveLength(1);
+    expect(screen.queryByText(/blob\.vercel-storage\.com/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^https?:\/\//)).not.toBeInTheDocument();
+  });
+});

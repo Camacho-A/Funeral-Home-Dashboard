@@ -1,4 +1,4 @@
-import type { ActivityEventCategory, ActivitySeverity } from '@/types/activityEvent';
+import type { ActivityEvent, ActivityEventCategory, ActivityEventType, ActivitySeverity } from '@/types/activityEvent';
 import type { BadgeVariant } from '@/components/ui/Badge';
 import { resolveRoleKeyAlias } from '@/domain/rbac/legacyRoleAliases';
 import { isDefaultRoleKey, defaultRoleDefinition } from '@/domain/rbac/defaultRoles';
@@ -49,6 +49,36 @@ export function activityActorLabel(event: { isSystemGenerated: boolean; actorRol
   if (!event.actorRoleKey) return 'Unknown';
   const resolvedKey = resolveRoleKeyAlias(event.actorRoleKey);
   return isDefaultRoleKey(resolvedKey) ? defaultRoleDefinition(resolvedKey).name : event.actorRoleKey;
+}
+
+/**
+ * Task #4 follow-up (2026-09). Before this fix, `document.regenerated`
+ * events persisted their internal supersededId directly in `description`
+ * ("Document regenerated (supersedes 1d13e80e-...)") — a document's own
+ * UUID is not staff-facing information, and it leaked straight into
+ * Dashboard → Recent Activity. `services/activityService.ts#recordDocumentRegenerated`
+ * no longer writes the UUID into new events' `description` (the
+ * structured relationship still lives in `previousValue`, untouched, for
+ * internal audit/document-lineage purposes), but historical rows already
+ * persisted with the old text cannot be rewritten (no Production data
+ * migration) — this is the presentation-layer safety net that makes
+ * those legacy rows display safely too, without ever touching the
+ * underlying record. A small, explicit, event-type-keyed allowlist —
+ * deliberately never a generic "strip anything UUID-shaped" regex, which
+ * could damage legitimate staff-facing text elsewhere. Event types not
+ * listed here render their own persisted `description` unchanged.
+ */
+const CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE: Partial<Record<ActivityEventType, string>> = {
+  'document.regenerated': 'Document regenerated',
+};
+
+export function resolveActivityDisplayDescription(event: Pick<ActivityEvent, 'eventType' | 'description'>): string {
+  // ActivityEvent.eventType is persisted/read back as a plain `string`
+  // (see its own field comment — never assumed to still match the
+  // current ActivityEventType union). The cast is read-only/safe here: an
+  // event type outside the union simply finds no match below and falls
+  // through to the event's own persisted description, unchanged.
+  return CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE[event.eventType as ActivityEventType] ?? event.description;
 }
 
 export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {
