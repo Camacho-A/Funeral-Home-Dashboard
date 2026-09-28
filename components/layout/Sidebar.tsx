@@ -42,13 +42,35 @@ import styles from './Sidebar.module.css';
  * permission instead — held by administrator/manager/accounting by
  * default, not by funeralDirector/arranger/officeStaff/readOnly. Still
  * reachable by URL with `accounting.*` RBAC fully enforced regardless.
+ *
+ * Item #5 (2026-09, navigation cleanup): "Settings" now hides itself when
+ * the viewer has no reason to be there, rather than always appearing as a
+ * potentially-empty destination — mirroring the Accounting link's own
+ * precedent immediately above (a *visibility* decision only; every
+ * `/settings/*` route still enforces its own authorization exactly as
+ * before, reachable directly by URL regardless of nav visibility). The
+ * check covers the same conditions app/(portal)/settings/SettingsHub.tsx
+ * uses to decide which of its cards to show (Team/Roles need
+ * `authAdapterMode === 'identity'`; Security is available to any
+ * identity-mode session unconditionally; Case Numbering and Import
+ * Existing Jotform are org-agnostic, permission-only) — Settings is
+ * shown if any one of them would be. This intentionally does NOT account
+ * for Workflow Templates (the pre-existing, ungated `/settings` landing
+ * content) or the pre-existing Audit/Templates/Resources/etc. links,
+ * which were out of this item's scope and are unaffected either way.
  */
 export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode }) {
   const { organizationId } = useOrganization();
   const { data: organization } = useOrganizationRecord();
   const organizationName = organization?.name ?? organizationId;
   const permissionsQuery = useMyPermissions(organizationId);
-  const canViewAccounting = (permissionsQuery.data?.permissions ?? []).includes('accounting.view');
+  const permissions = permissionsQuery.data?.permissions ?? [];
+  const canViewAccounting = permissions.includes('accounting.view');
+  const canSeeSettings =
+    authAdapterMode === 'identity' || // Security is always available to any identity-mode session
+    permissions.includes('caseNumber.manage') ||
+    permissions.includes('user.manageRoles') ||
+    permissions.includes('case.create');
   const activeStaffCountQuery = useActiveStaffCount(organizationId, authAdapterMode === 'identity');
 
   return (
@@ -66,7 +88,7 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
         {authAdapterMode === 'identity' && canViewAccounting && (
           <SidebarNavItem href="/accounting" label="Accounting" />
         )}
-        <SidebarNavItem href="/settings" label="Settings" />
+        {canSeeSettings && <SidebarNavItem href="/settings" label="Settings" />}
       </div>
 
       <div className={styles.footer}>

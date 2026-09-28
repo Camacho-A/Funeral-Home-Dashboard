@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TopBar } from './TopBar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { SessionProvider } from '@/hooks/useSession';
-import { defaultRoleDefinition, type DefaultRoleKey } from '@/domain/rbac/defaultRoles';
 
 /**
  * Manors go-live fix (real session identity). TopBar's avatar/signed-in
@@ -71,97 +70,27 @@ describe('TopBar — real session identity (Manors go-live fix)', () => {
   });
 });
 
-describe('TopBar — Case Numbering navigation visibility (2026-09 RBAC restriction)', () => {
-  it('shows the Case Numbering link when the caller effectively holds caseNumber.manage (Administrator/Funeral Director)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ organization: null, permissions: ['caseNumber.manage'], count: 0, organizations: [] }),
+describe('TopBar — item #5 (2026-09, navigation cleanup): admin tools no longer render here', () => {
+  it("2/3/4/5: Import Existing Jotform, Security, Roles, and Case Numbering are not offered here — even for a caller with every relevant permission — they've moved to Settings", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        organization: null,
+        permissions: ['case.create', 'user.manageRoles', 'user.invite', 'caseNumber.manage'],
+        count: 0,
+        organizations: [],
       }),
-    );
-    renderTopBar();
-    // findByText waits for useMyPermissions' async fetch to resolve and the
-    // component to re-render — a synchronous getByText/queryByText here
-    // would pass vacuously before the query settles.
-    expect(await screen.findByText('Case Numbering')).toBeInTheDocument();
-  });
-
-  it('hides the Case Numbering link for every other role (no caseNumber.manage)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    renderTopBar();
-    // Wait for the actual permissions fetch to have resolved (not just a
-    // synchronous vacuous pass before react-query settles), then flush the
-    // resulting re-render before asserting absence.
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await act(async () => {});
-    expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
-  });
-
-  it('does not show Case Numbering merely from holding organization.manage — the two are no longer the same gate', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ organization: null, permissions: ['organization.manage'], count: 0, organizations: [] }),
     });
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await act(async () => {});
-    expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
-  });
-});
 
-describe('TopBar — Case Numbering RBAC bootstrap fix (2026-09): nav visible on caseNumber.manage OR user.manageRoles', () => {
-  it('A: shows the link for Administrator holding user.manageRoles alone, before caseNumber.manage is seeded live — the migration bootstrap path', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ organization: null, permissions: ['user.manageRoles'], count: 0, organizations: [] }),
-      }),
-    );
-    renderTopBar();
-    expect(await screen.findByText('Case Numbering')).toBeInTheDocument();
-  });
-
-  it('F: shows the link for Funeral Director via caseNumber.manage alone (no user.manageRoles needed)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ organization: null, permissions: ['caseNumber.manage'], count: 0, organizations: [] }),
-      }),
-    );
-    renderTopBar();
-    expect(await screen.findByText('Case Numbering')).toBeInTheDocument();
-  });
-
-  it.each([
-    ['manager' as DefaultRoleKey],
-    ['officeStaff' as DefaultRoleKey],
-    ['accounting' as DefaultRoleKey],
-    ['readOnly' as DefaultRoleKey],
-    ['dispatch' as DefaultRoleKey],
-  ])('I-M: %s (real permission set, holding neither caseNumber.manage nor user.manageRoles) sees no nav link', async (roleKey) => {
-    const permissions = defaultRoleDefinition(roleKey).permissions.filter((p) => p !== 'caseNumber.manage' && p !== 'user.manageRoles');
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ organization: null, permissions, count: 0, organizations: [] }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    renderTopBar();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await act(async () => {});
+    expect(screen.queryByText('Import Existing Jotform Case')).not.toBeInTheDocument();
+    expect(screen.queryByText('Security')).not.toBeInTheDocument();
+    expect(screen.queryByText('Roles')).not.toBeInTheDocument();
+    expect(screen.queryByText('Team')).not.toBeInTheDocument();
     expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
   });
 });

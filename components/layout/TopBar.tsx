@@ -40,15 +40,13 @@ import styles from './TopBar.module.css';
  * Phase 21 (Identity, Authentication & Session Management): `authAdapterMode`
  * is server-resolved by app/(portal)/layout.tsx and threaded down through
  * AppShell, the same trusted-server-value pattern OrganizationProvider's
- * dataAdapterMode already established — the "Security" link (Change
- * Password / Manage Sessions) only renders for `'identity'` sessions,
- * since it's the only mode with anything there to manage.
+ * dataAdapterMode already established.
  *
  * Manors launch-prep: two independent visibility mechanisms, layered on
  * top of the existing `authAdapterMode` gate, neither of which changes
  * what any route/API actually authorizes server-side —
- *   1. Roles/Team/Audit/Templates are additionally gated on the viewer's
- *      own permissions (via useMyPermissions) — previously every staff
+ *   1. Audit/Templates are additionally gated on the viewer's own
+ *      permissions (via useMyPermissions) — previously every staff
  *      member saw these links regardless of whether they could use them.
  *   2. Resources/Merchandise/Inventory/Suppliers/Purchase Orders/Accounts
  *      Payable/Calendar Integrations are additionally gated on the
@@ -56,23 +54,19 @@ import styles from './TopBar.module.css';
  *      moduleVisibility.ts) — hidden by default, reachable directly by
  *      URL, RBAC-enforced exactly as before.
  *
- * Case Numbering RBAC bootstrap fix (2026-09): the nav link renders on
- * `caseNumber.manage` OR `user.manageRoles`, not `caseNumber.manage`
- * alone. `user.manageRoles` is Administrator's bootstrap path to the
- * one-time "Enable Case Numbering Access" migration control
- * (`CaseNumberingPanel.tsx`) that grants `caseNumber.manage` itself —
- * gating the link on `caseNumber.manage` only, before that permission
- * exists live, left Administrator with no discoverable path to the page
- * that runs the migration. Neither permission is granted by this OR —
- * purely visibility, exactly like every other link here.
+ * Item #5 (2026-09, navigation cleanup): Import Existing Jotform Case,
+ * Security, Roles, and Case Numbering no longer have their own top-level
+ * entries here — they're organized under the Sidebar's "Settings"
+ * destination instead (see app/(portal)/settings/SettingsHub.tsx). Nothing
+ * about their own routes/permissions/business logic changed — only where
+ * staff discover them from. Audit/Templates/Resources/Merchandise/etc.
+ * below are untouched; they weren't part of this item's scope.
  */
 export function TopBar({
   onNewCaseClick,
-  onImportHistoricalCaseClick,
   authAdapterMode,
 }: {
   onNewCaseClick?: () => void;
-  onImportHistoricalCaseClick?: () => void;
   authAdapterMode?: AuthAdapterMode;
 }) {
   const { query, setQuery } = useCaseSearch();
@@ -87,27 +81,7 @@ export function TopBar({
       <SearchInput value={query} onChange={setQuery} />
       <div className={styles.spacer} />
       <Button onClick={onNewCaseClick}>+ New Case</Button>
-      {permissions.includes('case.create') && (
-        <button type="button" className={styles.signOutButton} onClick={onImportHistoricalCaseClick}>
-          Import Existing Jotform Case
-        </button>
-      )}
       {authAdapterMode === 'identity' && <OrganizationSwitcher />}
-      {authAdapterMode === 'identity' && (
-        <a href="/settings/security" className={styles.signOutButton}>
-          Security
-        </a>
-      )}
-      {authAdapterMode === 'identity' && permissions.includes('user.manageRoles') && (
-        <a href="/settings/roles" className={styles.signOutButton}>
-          Roles
-        </a>
-      )}
-      {authAdapterMode === 'identity' && permissions.includes('user.invite') && (
-        <a href="/settings/team" className={styles.signOutButton}>
-          Team
-        </a>
-      )}
       {authAdapterMode === 'identity' && permissions.includes('audit.read') && (
         <a href="/settings/audit" className={styles.signOutButton}>
           Audit
@@ -151,11 +125,6 @@ export function TopBar({
       {isModuleEnabled(organization, 'calendarIntegrations') && (
         <a href="/settings/calendar-integrations" className={styles.signOutButton}>
           Calendar
-        </a>
-      )}
-      {(permissions.includes('caseNumber.manage') || permissions.includes('user.manageRoles')) && (
-        <a href="/settings/case-numbering" className={styles.signOutButton}>
-          Case Numbering
         </a>
       )}
       <NotificationBell />

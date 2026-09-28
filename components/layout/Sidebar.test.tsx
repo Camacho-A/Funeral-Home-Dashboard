@@ -85,3 +85,45 @@ describe('Sidebar "N staff online"', () => {
     expect(screen.queryByText(/staff online/)).not.toBeInTheDocument();
   });
 });
+
+describe('Sidebar — Settings visibility (item #5, 2026-09 navigation cleanup)', () => {
+  it('1: shows Settings for an identity-mode session (Security is always available there)', async () => {
+    mockPermissions([]);
+    renderSidebar('identity');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(await screen.findByText('Settings')).toBeInTheDocument();
+  });
+
+  it('shows Settings in mock mode for a caller holding caseNumber.manage', async () => {
+    mockPermissions(['caseNumber.manage']);
+    renderSidebar('mock');
+    expect(await screen.findByText('Settings')).toBeInTheDocument();
+  });
+
+  it('shows Settings in mock mode for a caller holding case.create (Import Existing Jotform)', async () => {
+    mockPermissions(['case.create']);
+    renderSidebar('mock');
+    expect(await screen.findByText('Settings')).toBeInTheDocument();
+  });
+
+  it('shows Settings in mock mode for a caller holding user.manageRoles', async () => {
+    mockPermissions(['user.manageRoles']);
+    renderSidebar('mock');
+    expect(await screen.findByText('Settings')).toBeInTheDocument();
+  });
+
+  it('8: hides Settings for a mock-mode caller with none of the relevant permissions — never an empty destination', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+  });
+
+  it('hides Settings when authAdapterMode is omitted and the caller has none of the relevant permissions', async () => {
+    mockPermissions([]);
+    renderSidebar(undefined);
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+  });
+});
+

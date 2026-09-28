@@ -5,7 +5,6 @@ import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NewCaseModal } from '@/components/modals/NewCaseModal';
-import { ImportHistoricalCaseModal } from '@/components/modals/ImportHistoricalCaseModal';
 import styles from './AppShell.module.css';
 
 /**
@@ -17,6 +16,12 @@ import styles from './AppShell.module.css';
  * button lives in the persistent TopBar, not any one page, so the modal it
  * opens has to live at this same shared-chrome level rather than in a
  * specific route. Became a Client Component for this reason.
+ *
+ * Item #5 (2026-09, navigation cleanup): the Import Historical Case modal
+ * used to be owned here too (triggered from a TopBar button) — it's now
+ * triggered from the Settings hub instead (app/(portal)/settings/
+ * SettingsHub.tsx), which owns its own open/close state directly, since
+ * only that one page needs it.
  */
 export function AppShell({
   children,
@@ -26,23 +31,17 @@ export function AppShell({
   authAdapterMode?: AuthAdapterMode;
 }) {
   const [isNewCaseModalOpen, setNewCaseModalOpen] = useState(false);
-  const [isImportHistoricalCaseModalOpen, setImportHistoricalCaseModalOpen] = useState(false);
 
   return (
     <div className={styles.shell}>
       <Sidebar authAdapterMode={authAdapterMode} />
       <div className={styles.mainColumn}>
-        <TopBar
-          onNewCaseClick={() => setNewCaseModalOpen(true)}
-          onImportHistoricalCaseClick={() => setImportHistoricalCaseModalOpen(true)}
-          authAdapterMode={authAdapterMode}
-        />
+        <TopBar onNewCaseClick={() => setNewCaseModalOpen(true)} authAdapterMode={authAdapterMode} />
         <main id="main-content" className={styles.content}>
           {children}
         </main>
       </div>
       <NewCaseModal open={isNewCaseModalOpen} onClose={() => setNewCaseModalOpen(false)} />
-      <ImportHistoricalCaseModal open={isImportHistoricalCaseModalOpen} onClose={() => setImportHistoricalCaseModalOpen(false)} />
     </div>
   );
 }

@@ -1,0 +1,72 @@
+.title {
+  font-size: var(--font-size-26);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-tight);
+  margin-bottom: var(--space-12);
+}
+
+.loading {
+  padding: var(--space-10) var(--space-3);
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: var(--space-8);
+  align-items: start;
+}
+
+.section {
+  margin-bottom: var(--space-12);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-15, 15px);
+  font-weight: 700;
+  margin: 0 0 var(--space-3, 12px);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4, 16px);
+}
+
+.areaLink,
+.areaButton {
+  display: block;
+  width: 100%;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.areaCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  height: 100%;
+  transition: border-color 0.15s ease;
+}
+
+.areaCard:hover {
+  border-color: var(--color-brand);
+}
+
+.areaLabel {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.areaDescription {
+  font-size: 12.5px;
+  color: var(--color-text-muted, #6b7280);
+}
