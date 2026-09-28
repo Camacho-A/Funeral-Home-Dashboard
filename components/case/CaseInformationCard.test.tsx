@@ -632,6 +632,20 @@ describe('CaseInformationCard — Return method (conditional shipping/tracking, 
     expect(screen.getByRole('button', { name: '9400111899223197428019' })).toBeInTheDocument();
   });
 
+  it('item #15 (2026-09): Date shipped — a representative non-DOB/DOD date field — reuses the same fast-entry mask (auto-slashes, two-digit-year expansion)', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    const dateShippedField = screen.getByText('Date shipped').parentElement!;
+    fireEvent.click(within(dateShippedField).getByRole('button'));
+    const input = within(dateShippedField).getByDisplayValue('');
+
+    fireEvent.change(input, { target: { value: '020290' } });
+    expect(input).toHaveValue('02/02/90'); // live mask, not yet expanded
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingDateShipped: '02/02/1990' });
+  });
+
   it('setting shipping status to Delivered updates through onUpdateCaseInfo', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);

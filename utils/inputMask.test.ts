@@ -549,3 +549,47 @@ describe('splitMilitaryTimeToTwelveHourParts / formatMilitaryTimeToTwelveHour (T
     }
   });
 });
+
+/**
+ * Handwritten item #15 (2026-09) — audit confirmed this feature is already
+ * fully implemented (formatDateInput/expandTwoDigitYear/
+ * expandTwoDigitYearInDateInput above, already exercised via
+ * NewCaseModal.tsx and CaseInformationCard.tsx). These tests add no new
+ * behavior — they pin the exact literal examples from the item's own
+ * spec, as a permanent, explicit trace that this requirement is satisfied,
+ * alongside the pre-existing equivalent coverage above.
+ */
+describe('SOLIS cleanup item #15 (2026-09) — fast date entry, literal spec examples', () => {
+  it('8-digit MMDDYYYY: "02021990" formats live to "02/02/1990" (no year expansion needed — already 4 digits)', () => {
+    expect(formatDateInput('02021990')).toBe('02/02/1990');
+  });
+
+  it('6-digit MMDDYY: "020290" formats live to "02/02/90", then expands on commit to "02/02/1990"', () => {
+    const live = formatDateInput('020290');
+    expect(live).toBe('02/02/90');
+    expect(expandTwoDigitYearInDateInput(live)).toBe('02/02/1990');
+  });
+
+  it('manually-typed "02/02/1990" (with slashes already present) remains valid and unchanged', () => {
+    expect(formatDateInput('02/02/1990')).toBe('02/02/1990');
+    expect(isValidCalendarDate('02/02/1990')).toBe(true);
+  });
+
+  it('DOB historical two-digit year: "020250" expands to 02/02/1950, never 02/02/2050 — the pivot rule never depends on today\'s date', () => {
+    const live = formatDateInput('020250');
+    expect(live).toBe('02/02/50');
+    expect(expandTwoDigitYearInDateInput(live)).toBe('02/02/1950');
+  });
+
+  it('the full commit pipeline rejects an impossible date entered via fast digit typing', () => {
+    // 13/40/1990 — month 13 and day 40 are both out of range.
+    expect(isValidCalendarDate(formatDateInput('13401990'))).toBe(false);
+    // 02/30/1990 — February never has 30 days.
+    expect(isValidCalendarDate(formatDateInput('02301990'))).toBe(false);
+  });
+
+  it('leap-year Feb 29 accepted via fast digit typing; non-leap-year Feb 29 rejected', () => {
+    expect(isValidCalendarDate(formatDateInput('02292024'))).toBe(true); // 2024 is a leap year
+    expect(isValidCalendarDate(formatDateInput('02292023'))).toBe(false); // 2023 is not
+  });
+});
