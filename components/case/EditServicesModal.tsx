@@ -7,9 +7,9 @@ import { ServicesAndChargesSelector } from '@/components/case/ServicesAndCharges
 import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
 import { useOrganization } from '@/hooks/useOrganization';
-import { selectionsFromLineItems } from '@/domain/pricing/calculateOrder';
+import { selectionsFromLineItems, customItemSelectionsFromLineItems } from '@/domain/pricing/calculateOrder';
 import { additionalItemsLabel, isManorsOrganization, ADDITIONAL_ITEMS_SUPPORTING_TEXT } from '@/domain/organization/caseOrderTerminology';
-import type { CaseOrder, CaseOrderLineItem, ServiceSelections } from '@/types/caseOrder';
+import type { CaseOrder, CaseOrderLineItem, ServiceSelections, CustomLineItemSelection } from '@/types/caseOrder';
 import styles from './EditServicesModal.module.css';
 
 const DEFAULT_SELECTIONS: ServiceSelections = {
@@ -52,11 +52,20 @@ export function EditServicesModal({
 
   const initialSelections = order ? selectionsFromLineItems(lineItems) : DEFAULT_SELECTIONS;
   const [selections, setSelections] = useState<ServiceSelections>(initialSelections);
+  // SOLIS cleanup item #11 (2026-09). Custom items round-trip through the
+  // same order-selections model as services/merchandise — seeded from this
+  // case's own current line items, never a permanent catalog.
+  const [customItems, setCustomItems] = useState<CustomLineItemSelection[]>(
+    order ? customItemSelectionsFromLineItems(lineItems) : [],
+  );
 
   // Re-seed the draft from the current order every time the modal opens —
   // never carry a stale draft from a previous open across into a fresh one.
   useEffect(() => {
-    if (open) setSelections(order ? selectionsFromLineItems(lineItems) : DEFAULT_SELECTIONS);
+    if (open) {
+      setSelections(order ? selectionsFromLineItems(lineItems) : DEFAULT_SELECTIONS);
+      setCustomItems(order ? customItemSelectionsFromLineItems(lineItems) : []);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -64,7 +73,7 @@ export function EditServicesModal({
 
   function handleSave() {
     mutation.mutate(
-      { selections },
+      { selections, customItems },
       { onSuccess: onClose },
     );
   }
@@ -78,7 +87,12 @@ export function EditServicesModal({
         <p className={styles.supportingText}>{ADDITIONAL_ITEMS_SUPPORTING_TEXT}</p>
       )}
 
-      <ServicesAndChargesSelector catalog={catalog} selections={selections} onChange={setSelections} />
+      <ServicesAndChargesSelector
+        catalog={catalog}
+        selections={selections}
+        onChange={setSelections}
+        {...(order ? { customItems, onChangeCustomItems: setCustomItems } : {})}
+      />
 
       {mutation.isError && (
         <div className={styles.error} role="alert">

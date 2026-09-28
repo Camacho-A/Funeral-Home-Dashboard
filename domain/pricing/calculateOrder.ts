@@ -1,5 +1,5 @@
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
-import type { ServiceSelections, WeightTier, MerchandiseSelection, CaseOrderLineKind } from '../../types/caseOrder';
+import type { ServiceSelections, WeightTier, MerchandiseSelection, CaseOrderLineKind, CustomLineItemSelection, CaseOrderLineItem } from '../../types/caseOrder';
 import type { MerchandiseProduct } from '../../types/merchandiseProduct';
 import { getMerchandiseCategoryDefinition } from '../merchandise/merchandiseCategoryRegistry';
 import { SERVICE_CODES } from './serviceCodes';
@@ -396,4 +396,104 @@ export function sumLineTotalsByKind(
     else service += item.lineTotal;
   }
   return { service, merchandise };
+}
+
+// ---------------------------------------------------------------------------
+// SOLIS cleanup item #11 (2026-09). Additional Items & Services custom
+// item — a case-specific, staff-entered one-off charge (description +
+// price), never backed by a ServiceCatalog/MerchandiseProduct row. Pure and
+// shareable exactly like the service/merchandise paths above; no catalog
+// fetch, no variant resolution, no async needed at all, since there is
+// nothing to look up — the staff-entered value IS the line.
+// ---------------------------------------------------------------------------
+
+/** Sanity ceiling on a single custom item's description — guards against a
+    tampered/malformed submission, not a real staff-entered value (mirrors
+    every other MAX_* ceiling in this module). */
+export const MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH = 200;
+
+/** Sanity ceiling on how many custom items one order can carry — a real
+    one-off-request list is never in the hundreds. */
+export const MAX_CUSTOM_ITEMS_PER_ORDER = 50;
+
+/** Custom items sort after every merchandise line (MERCHANDISE_SORT_BASE +
+    up to 999*10) — they read as an appendix of one-off family requests at
+    the bottom of an itemized order/Statement, in the order staff entered
+    them (no alphabetical/catalog-driven re-sort — there is no catalog to
+    sort by). */
+export const CUSTOM_ITEM_SORT_BASE = 200000;
+
+/**
+ * Clamps/normalizes raw (possibly attacker-controlled) custom-item
+ * selection input — called server-side before pricing, exactly like
+ * `normalizeSelections`/`normalizeMerchandiseSelections`. Silently drops an
+ * entry with a blank/whitespace-only description or a malformed
+ * (non-integer, negative, NaN, non-finite) amount — never throws, matching
+ * this module's own "an invalid/attacker-controlled entry is silently
+ * omitted" convention. Never aggregates/merges entries by content (unlike
+ * merchandise's per-identity aggregation) — two coincidentally-identical
+ * custom items (e.g. two separate $75 keepsakes) are two separate,
+ * legitimate lines, never collapsed into one.
+ *
+ * The description is trimmed and ALL-CAPS-normalized here — this is the
+ * value's actual point of origin (freshly staff-entered, not copied from an
+ * already-normalized catalog row the way a service/merchandise line's
+ * description is), so the SOLIS-wide ALL-CAPS data standard applies at this
+ * exact boundary, mirroring domain/merchandise/textNormalization.ts's own
+ * "normalize at the moment of capture, never re-normalize a snapshot" rule.
+ */
+export function normalizeCustomItemSelections(raw: unknown): CustomLineItemSelection[] {
+  if (!Array.isArray(raw)) return [];
+  const result: CustomLineItemSelection[] = [];
+  for (const entry of raw) {
+    if (result.length >= MAX_CUSTOM_ITEMS_PER_ORDER) break;
+    if (typeof entry !== 'object' || entry === null) continue;
+    const row = entry as Record<string, unknown>;
+    const rawDescription = typeof row.description === 'string' ? row.description.trim() : '';
+    if (rawDescription.length === 0) continue;
+    const description = rawDescription.slice(0, MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH).toUpperCase();
+    const rawAmount = row.amountCents;
+    if (typeof rawAmount !== 'number' || !Number.isInteger(rawAmount) || rawAmount < 0) continue;
+    const id = typeof row.id === 'string' && row.id.length > 0 ? row.id : `custom-${result.length}`;
+    result.push({ id, description, amountCents: rawAmount });
+  }
+  return result;
+}
+
+/**
+ * Builds custom line items straight from staff-entered selections — no
+ * catalog/product fetch, unlike every other line-building function in this
+ * module, since there is nothing to resolve. `serviceCode` carries a
+ * synthetic, unique `custom:{id}` value purely so the field is never blank
+ * (it plays no role in FTC classification for this kind — see
+ * services/billingDocumentService.ts, which classifies by `lineKind`, not
+ * `serviceCode`, for anything other than a catalog-backed `'service'` line).
+ */
+export function calculateCustomLineItems(selections: CustomLineItemSelection[]): CalculatedLineItem[] {
+  return selections.map((selection, index) => ({
+    lineKind: 'custom' as const,
+    serviceCode: `custom:${selection.id}`,
+    description: selection.description,
+    quantity: 1,
+    unitPrice: selection.amountCents,
+    lineTotal: selection.amountCents,
+    sortOrder: CUSTOM_ITEM_SORT_BASE + index * 10,
+    metadata: null,
+  }));
+}
+
+/**
+ * Reconstructs the custom-item selections a previously-persisted CaseOrder's
+ * line items represent — the custom-item counterpart to
+ * `selectionsFromLineItems`/`merchandiseSelectionsFromLineItems`, so an edit
+ * that doesn't touch custom items at all carries them forward unchanged.
+ * Unlike those two, this needs the line item's own persisted `id` (a custom
+ * item has no other natural identity — no catalog serviceCode/SKU to key
+ * off), so it's typed against the real persisted `CaseOrderLineItem`, not
+ * the pure `CalculatedLineItem` shape those two accept.
+ */
+export function customItemSelectionsFromLineItems(lineItems: CaseOrderLineItem[]): CustomLineItemSelection[] {
+  return lineItems
+    .filter((item) => item.lineKind === 'custom')
+    .map((item) => ({ id: item.id, description: item.description, amountCents: item.unitPrice }));
 }

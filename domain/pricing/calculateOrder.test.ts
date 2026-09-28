@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
+import type { CaseOrderLineItem } from '../../types/caseOrder';
 import {
   MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY,
   MAX_KEEPSAKE_TRANSFER_QUANTITY,
+  MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH,
+  MAX_CUSTOM_ITEMS_PER_ORDER,
   calculateAdjustment,
   calculateBalance,
   calculateOrderTotals,
+  calculateCustomLineItems,
+  customItemSelectionsFromLineItems,
   isValidWeightTier,
   normalizeSelections,
+  normalizeCustomItemSelections,
   weightTierServiceCode,
 } from './calculateOrder';
 
@@ -356,5 +362,139 @@ describe('isValidWeightTier / weightTierServiceCode', () => {
   it('maps the two surcharge tiers to their service codes', () => {
     expect(weightTierServiceCode('201_250')).toBe('WEIGHT_SURCHARGE_201_250');
     expect(weightTierServiceCode('251_300')).toBe('WEIGHT_SURCHARGE_251_300');
+  });
+});
+
+/**
+ * SOLIS cleanup item #11 (2026-09). Additional Items & Services custom
+ * item — case-specific, staff-entered one-off charges (description +
+ * price), never a ServiceCatalog/MerchandiseProduct write.
+ */
+describe('normalizeCustomItemSelections', () => {
+  it('6/7: rejects a blank or whitespace-only description', () => {
+    expect(normalizeCustomItemSelections([{ description: '', amountCents: 7500 }])).toEqual([]);
+    expect(normalizeCustomItemSelections([{ description: '   ', amountCents: 7500 }])).toEqual([]);
+  });
+
+  it('8/9: rejects a malformed/NaN/non-integer price, never producing a float-cents entry', () => {
+    expect(normalizeCustomItemSelections([{ description: 'Special item', amountCents: 'abc' }])).toEqual([]);
+    expect(normalizeCustomItemSelections([{ description: 'Special item', amountCents: NaN }])).toEqual([]);
+    expect(normalizeCustomItemSelections([{ description: 'Special item', amountCents: 75.5 }])).toEqual([]);
+  });
+
+  it('rejects a negative price', () => {
+    expect(normalizeCustomItemSelections([{ description: 'Special item', amountCents: -100 }])).toEqual([]);
+  });
+
+  it('accepts a zero price ($0.00 is allowed — no existing rule requires > $0.00)', () => {
+    const result = normalizeCustomItemSelections([{ description: 'Goodwill gesture', amountCents: 0 }]);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(0);
+  });
+
+  it('trims and ALL-CAPS-normalizes the description at this exact capture boundary (SOLIS-wide ALL-CAPS standard)', () => {
+    const result = normalizeCustomItemSelections([{ description: '  Additional keepsake requested by family  ', amountCents: 7500 }]);
+    expect(result[0].description).toBe('ADDITIONAL KEEPSAKE REQUESTED BY FAMILY');
+  });
+
+  it('caps an absurdly long description rather than storing it unbounded', () => {
+    const longDescription = 'A'.repeat(500);
+    const result = normalizeCustomItemSelections([{ description: longDescription, amountCents: 100 }]);
+    expect(result[0].description).toHaveLength(MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH);
+  });
+
+  it('never aggregates/merges two structurally-identical entries — each is its own legitimate line', () => {
+    const result = normalizeCustomItemSelections([
+      { description: 'Additional keepsake', amountCents: 7500 },
+      { description: 'Additional keepsake', amountCents: 7500 },
+    ]);
+    expect(result).toHaveLength(2);
+  });
+
+  it('caps the number of custom items per order (sanity ceiling, not a real staff scenario)', () => {
+    const raw = Array.from({ length: MAX_CUSTOM_ITEMS_PER_ORDER + 10 }, (_, i) => ({ description: `Item ${i}`, amountCents: 100 }));
+    expect(normalizeCustomItemSelections(raw)).toHaveLength(MAX_CUSTOM_ITEMS_PER_ORDER);
+  });
+
+  it('preserves a caller-provided id, or synthesizes one when absent', () => {
+    const withId = normalizeCustomItemSelections([{ id: 'client-1', description: 'Item', amountCents: 100 }]);
+    expect(withId[0].id).toBe('client-1');
+    const withoutId = normalizeCustomItemSelections([{ description: 'Item', amountCents: 100 }]);
+    expect(withoutId[0].id.length > 0).toBe(true);
+  });
+
+  it('returns an empty array for non-array input', () => {
+    expect(normalizeCustomItemSelections(null)).toEqual([]);
+    expect(normalizeCustomItemSelections(undefined)).toEqual([]);
+    expect(normalizeCustomItemSelections('not an array')).toEqual([]);
+  });
+});
+
+describe('calculateCustomLineItems', () => {
+  it('2/3: builds a normal line item for each selection — quantity 1, unitPrice/lineTotal equal to the entered amount', () => {
+    const lines = calculateCustomLineItems([{ id: 'c1', description: 'ADDITIONAL KEEPSAKE REQUESTED BY FAMILY', amountCents: 7500 }]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].lineKind).toBe('custom');
+    expect(lines[0].description).toBe('ADDITIONAL KEEPSAKE REQUESTED BY FAMILY');
+    expect(lines[0].quantity).toBe(1);
+    expect(lines[0].unitPrice).toBe(7500);
+    expect(lines[0].lineTotal).toBe(7500);
+    expect(lines[0].metadata).toBeNull();
+  });
+
+  it('sorts custom items after the merchandise sort range, in submission order', () => {
+    const lines = calculateCustomLineItems([
+      { id: 'c1', description: 'First', amountCents: 100 },
+      { id: 'c2', description: 'Second', amountCents: 200 },
+    ]);
+    expect(lines[0].sortOrder).toBeLessThan(lines[1].sortOrder);
+    expect(lines[0].sortOrder).toBeGreaterThanOrEqual(200000);
+  });
+
+  it('never uses floating-point arithmetic — every line total is an exact integer', () => {
+    const lines = calculateCustomLineItems([{ id: 'c1', description: 'Item', amountCents: 7550 }]);
+    expect(Number.isInteger(lines[0].lineTotal)).toBe(true);
+  });
+});
+
+describe('customItemSelectionsFromLineItems', () => {
+  function customLine(overrides: Partial<CaseOrderLineItem>): CaseOrderLineItem {
+    return {
+      id: 'line-1',
+      organizationId: 'org-1',
+      caseOrderId: 'order-1',
+      lineKind: 'custom',
+      serviceCode: 'custom:line-1',
+      description: 'ADDITIONAL KEEPSAKE',
+      quantity: 1,
+      unitPrice: 7500,
+      lineTotal: 7500,
+      sortOrder: 200000,
+      metadata: null,
+      createdAt: NOW,
+      ...overrides,
+    };
+  }
+
+  it('10: reconstructs a selection per persisted custom line, keyed by its own real id', () => {
+    const result = customItemSelectionsFromLineItems([customLine({})]);
+    expect(result).toEqual([{ id: 'line-1', description: 'ADDITIONAL KEEPSAKE', amountCents: 7500 }]);
+  });
+
+  it('ignores non-custom lines entirely', () => {
+    const serviceLine = customLine({ id: 'line-2', lineKind: 'service', serviceCode: 'DIRECT_CREMATION' });
+    const result = customItemSelectionsFromLineItems([serviceLine]);
+    expect(result).toEqual([]);
+  });
+
+  it('reconstructs multiple custom lines independently', () => {
+    const result = customItemSelectionsFromLineItems([
+      customLine({ id: 'line-1', description: 'FIRST', unitPrice: 100, lineTotal: 100 }),
+      customLine({ id: 'line-2', description: 'SECOND', unitPrice: 200, lineTotal: 200 }),
+    ]);
+    expect(result).toEqual([
+      { id: 'line-1', description: 'FIRST', amountCents: 100 },
+      { id: 'line-2', description: 'SECOND', amountCents: 200 },
+    ]);
   });
 });

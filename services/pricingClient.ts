@@ -1,6 +1,6 @@
 import type { OrganizationContext } from '../types/organization';
 import type { ServiceCatalogItem } from '../types/serviceCatalog';
-import type { CaseOrder, CaseOrderLineItem, ServiceSelections } from '../types/caseOrder';
+import type { CaseOrder, CaseOrderLineItem, ServiceSelections, CustomLineItemSelection } from '../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../types/caseOrderAudit';
 
 /**
@@ -31,15 +31,25 @@ export async function getCaseOrder(context: OrganizationContext, caseId: string)
   return response.json();
 }
 
+/** SOLIS cleanup item #11 (2026-09): `customItems`, when provided, nests
+    inside `selections` on the wire — the server's own extraction reads it
+    from that same object (see services/pricingService.ts's
+    extractCustomItemSelections), exactly like `merchandise` already does. */
+function buildSelectionsBody(input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[] }) {
+  return input.customItems !== undefined
+    ? { ...input.selections, customItems: input.customItems }
+    : input.selections;
+}
+
 export async function createCaseOrder(
   context: OrganizationContext,
   caseId: string,
-  input: { selections: ServiceSelections },
+  input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[] },
 ): Promise<CaseOrderResult> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId: context.organizationId, ...input }),
+    body: JSON.stringify({ organizationId: context.organizationId, selections: buildSelectionsBody(input) }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
@@ -51,12 +61,12 @@ export async function createCaseOrder(
 export async function editCaseOrder(
   context: OrganizationContext,
   caseId: string,
-  input: { selections: ServiceSelections },
+  input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[] },
 ): Promise<CaseOrderResult> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/order`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId: context.organizationId, ...input }),
+    body: JSON.stringify({ organizationId: context.organizationId, selections: buildSelectionsBody(input) }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);

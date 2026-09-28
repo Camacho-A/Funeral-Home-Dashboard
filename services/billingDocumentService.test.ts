@@ -114,6 +114,43 @@ describe('billingDocumentService.generateStatement', () => {
     const after = caseOrderFixtures.find((o) => o.caseId === CASE)!.balanceDue;
     expect(after).toBe(before); // AR untouched by cash advances
   });
+
+  /** SOLIS cleanup item #11 (2026-09). A custom Additional Items & Services
+      line appears on the Statement using its own entered description and
+      price, exactly like any other goods/services line — including for
+      Manors (DEFAULT_ORGANIZATION_ID), whose Cash Advance section is
+      suppressed but whose custom items are unaffected by that rule
+      entirely (a different, unrelated line kind). */
+  it('15/16: a custom item appears on the Statement model as a normal goods/services line, and the total reconciles', async () => {
+    await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: CASE,
+        selections: {
+          services: { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false },
+          merchandise: [],
+          customItems: [{ id: 'c1', description: 'Special memorial item', amountCents: 7500 }],
+        },
+        performedBy: 'staff-1',
+        idFactory,
+      },
+      'mock',
+    );
+
+    const model = await previewStatementModel(CASE, ctx, 'mock');
+
+    const customLine = model.lineItems.find((l) => l.description === 'SPECIAL MEMORIAL ITEM');
+    expect(customLine).toBeTruthy();
+    expect(customLine?.lineTotalCents).toBe(7500);
+    expect(customLine?.ftcClass).toBe('goods_and_services');
+    expect(model.goodsAndServicesTotalCents).toBe(89000 + 7500);
+    expect(model.authoritativeArBalanceDueCents).toBe(89000 + 7500);
+    expect(model.ftcStatementTotalCents).toBe(89000 + 7500); // no cash advances involved
+
+    const { document, model: rendered } = await generateStatement({ caseId: CASE, idFactory }, ctx, 'mock');
+    expect(document.status).toBe('active');
+    expect(rendered.ftcStatementTotalCents).toBe(89000 + 7500);
+  });
 });
 
 describe('billingDocumentService.generateGeneralPriceList', () => {

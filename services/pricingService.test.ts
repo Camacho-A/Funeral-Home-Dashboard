@@ -815,3 +815,247 @@ describe('Manors launch-prep — additional case charges: quantity edits, remova
     expect(await getAccountBalance(DEFAULT_ORGANIZATION_ID, serviceRevenue!.id, 'mock')).toBe(-order.total);
   });
 });
+
+describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custom item', () => {
+  const BASE_SELECTIONS = { weightTier: 'under_200' as const, extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false };
+
+  it('2/3/9/10: a custom item is persisted to this case\'s CaseOrder as a normal line item', async () => {
+    const { createCaseOrder } = await import('./pricingService');
+    const { order, lineItems } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-1',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake requested by family', amountCents: 7500 }] },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    expect(order.total).toBe(89_000 + 7_500);
+    const customLine = lineItems.find((li) => li.lineKind === 'custom');
+    expect(customLine).toBeDefined();
+    expect(customLine?.description).toBe('ADDITIONAL KEEPSAKE REQUESTED BY FAMILY');
+    expect(customLine?.lineTotal).toBe(7_500);
+    expect(customLine?.caseOrderId).toBe(order.id);
+  });
+
+  it('4: does not create or modify any ServiceCatalog row', async () => {
+    const before = serviceCatalogFixtures.map((c) => ({ ...c }));
+    const { createCaseOrder } = await import('./pricingService');
+    await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-2',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Special memorial item', amountCents: 12500 }] },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    expect(serviceCatalogFixtures).toEqual(before);
+  });
+
+  it('5: a custom item added to one case never appears as a line item on another case\'s order', async () => {
+    const { createCaseOrder } = await import('./pricingService');
+    await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-3a',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Special memorial item', amountCents: 12500 }] },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    const { lineItems: otherCaseLines } = await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-3b', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    expect(otherCaseLines.some((li) => li.description.includes('SPECIAL MEMORIAL ITEM'))).toBe(false);
+  });
+
+  it('6/7/8: a blank description, whitespace-only description, or malformed price is silently dropped, never persisted', async () => {
+    const { createCaseOrder } = await import('./pricingService');
+    const { order, lineItems } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-4',
+        selections: {
+          ...BASE_SELECTIONS,
+          customItems: [
+            { id: 'blank', description: '', amountCents: 100 },
+            { id: 'whitespace', description: '   ', amountCents: 100 },
+            { id: 'bad-price', description: 'Bad price item', amountCents: 'not-a-number' },
+            { id: 'negative-price', description: 'Negative price item', amountCents: -500 },
+          ],
+        },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    expect(lineItems.filter((li) => li.lineKind === 'custom')).toHaveLength(0);
+    expect(order.total).toBe(89_000);
+  });
+
+  it('11/12: recalculateOrder correctly increases the authoritative total and reopens the balance', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-5', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    const result = await recalculateOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-5',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
+        performedBy: 'Sam Rivera',
+        idFactory,
+        now: '2026-07-21T00:00:00.000Z',
+      },
+      'mock',
+    );
+    expect(result?.order.total).toBe(89_000 + 7_500);
+    expect(result?.order.balanceDue).toBe(89_000 + 7_500);
+    expect(result?.auditEntries.map((e) => e.action)).toEqual(['custom_item_added']);
+  });
+
+  it('17/18: removing a custom item through the normal edit workflow recalculates totals correctly', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-6',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    // Submitting without the item (omitted from the array) removes it —
+    // exactly like merchandise's removal-by-omission.
+    const result = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-6', selections: { ...BASE_SELECTIONS, customItems: [] }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      'mock',
+    );
+    expect(result?.order.total).toBe(89_000);
+    expect(result?.lineItems.some((li) => li.lineKind === 'custom')).toBe(false);
+    expect(result?.auditEntries.map((e) => e.action)).toEqual(['custom_item_removed']);
+  });
+
+  it('a service-only edit carries an existing custom item forward unchanged (never silently dropped)', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-7',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    const result = await recalculateOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-7', selections: { ...BASE_SELECTIONS, extraDeathCertificateQuantity: 1 }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      'mock',
+    );
+    expect(result?.order.total).toBe(89_000 + 2_500 + 7_500);
+    expect(result?.lineItems.some((li) => li.lineKind === 'custom')).toBe(true);
+  });
+
+  it('13/14: a fully-paid order receiving a later custom charge preserves the original payment and correctly reopens the balance', async () => {
+    const { createCaseOrder, recalculateOrder, refreshBalanceForCase } = await import('./pricingService');
+    const { order: v1 } = await createCaseOrder(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-8', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      'mock',
+    );
+    expect(v1.total).toBe(89_000);
+    const payment: PaymentRecord = {
+      id: 'pay-case-custom-8',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: 'case-custom-8',
+      caseOrderId: v1.id,
+      provider: 'clover',
+      providerCheckoutId: 'checkout-case-custom-8',
+      providerPaymentId: 'provider-payment-case-custom-8',
+      idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-case-custom-8`,
+      checkoutUrl: null,
+      status: 'succeeded',
+      amount: 89_000,
+      currency: 'usd',
+      purpose: 'Full payment',
+      cardBrand: null,
+      cardLast4: null,
+      receiptReference: null,
+      failureCode: null,
+      failureMessage: null,
+      createdAt: NOW,
+      paidAt: NOW,
+      updatedAt: NOW,
+      initiatedByStaffProfileId: null,
+      depositedInBankDepositId: null,
+    };
+    paymentRecordFixtures.push(payment);
+    const refreshed = await refreshBalanceForCase(DEFAULT_ORGANIZATION_ID, 'case-custom-8', 'mock');
+    expect(refreshed?.balanceDue).toBe(0);
+
+    const result = await recalculateOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-8',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Special item', amountCents: 7500 }] },
+        performedBy: 'Sam Rivera',
+        idFactory,
+        now: '2026-07-22T00:00:00.000Z',
+      },
+      'mock',
+    );
+
+    // Matches the exact worked example: order total $1,275 (=$1,200+$75),
+    // paid $1,200, balance due $75 — generalized to this fixture's own
+    // $890 base total.
+    expect(result?.order.total).toBe(89_000 + 7_500);
+    expect(result?.order.balanceDue).toBe(7_500);
+    const preservedPayment = paymentRecordFixtures.find((p) => p.id === 'pay-case-custom-8');
+    expect(preservedPayment?.amount).toBe(89_000);
+    expect(preservedPayment?.status).toBe('succeeded');
+  });
+
+  it('a no-op recalculation (custom items carried forward via their own real persisted id, matching the real edit-modal flow) records no audit entry — never a duplicate line', async () => {
+    const { createCaseOrder, recalculateOrder } = await import('./pricingService');
+    const { lineItems: initialLineItems } = await createCaseOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-9',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
+        performedBy: 'Jordan Ellis',
+        idFactory,
+        now: NOW,
+      },
+      'mock',
+    );
+    // The real EditServicesModal seeds its draft from customItemSelectionsFromLineItems(lineItems)
+    // — i.e. the item's own REAL persisted id, never the client's original
+    // submission id (which the server never persists) — so a genuine no-op
+    // resubmits that same real id, exactly as done here.
+    const persistedCustomLine = initialLineItems.find((li) => li.lineKind === 'custom')!;
+    const result = await recalculateOrder(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-custom-9',
+        selections: { ...BASE_SELECTIONS, customItems: [{ id: persistedCustomLine.id, description: 'ADDITIONAL KEEPSAKE', amountCents: 7500 }] },
+        performedBy: 'Sam Rivera',
+        idFactory,
+      },
+      'mock',
+    );
+    expect(result?.order.version).toBe(1);
+    expect(result?.auditEntries).toEqual([]);
+  });
+});

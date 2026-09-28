@@ -64,9 +64,15 @@ export type CaseOrder = {
  * RESERVED kinds — not emitted this phase (tax/discount calculation is
  * deferred; weight-surcharge lines stay `'service'` to preserve historical
  * immutability), reserved so a future feature never has to re-classify
- * history.
+ * history. `'custom'` (2026-09, Additional Items & Services custom item) is
+ * a case-specific, staff-entered one-off charge — never backed by a
+ * ServiceCatalog/MerchandiseProduct row, so it carries no serviceCode
+ * lookup of its own (see domain/pricing/calculateOrder.ts's
+ * calculateCustomLineItems). Like the reserved kinds above, it routes to
+ * FTC_CLASS.GOODS_AND_SERVICES by default (services/billingDocumentService.ts's
+ * classification only special-cases 'merchandise'/'service').
  */
-export type CaseOrderLineKind = 'service' | 'merchandise' | 'surcharge' | 'adjustment' | 'tax' | 'discount';
+export type CaseOrderLineKind = 'service' | 'merchandise' | 'surcharge' | 'adjustment' | 'tax' | 'discount' | 'custom';
 
 export type CaseOrderLineItem = {
   id: string;
@@ -156,13 +162,42 @@ export type MerchandiseSelection = {
 };
 
 /**
+ * SOLIS cleanup item #11 (2026-09, Additional Items & Services custom
+ * item). A case-specific, one-off charge staff type in directly — never a
+ * dollar amount resolved against a catalog row, unlike every other
+ * selection in this file. `id` has no persisted meaning of its own (a
+ * fresh id is minted client-side via `crypto.randomUUID()` for a brand-new
+ * item, purely so the browser can track/remove an item within one edit
+ * session before it's saved); on save the server always mints its own real
+ * `CaseOrderLineItem.id`, exactly like every other line kind. Round-tripped
+ * across an edit via `domain/pricing/calculateOrder.ts`'s
+ * `customItemSelectionsFromLineItems`, which reads the *current* order's
+ * own persisted line-item ids — carrying an unedited item forward, or
+ * dropping one the staff removed, by presence/absence, mirroring how
+ * merchandise selections are reconstructed by identity.
+ */
+export type CustomLineItemSelection = {
+  id: string;
+  /** Trimmed, non-blank, ALL-CAPS-normalized server-side at the same
+      persistence boundary every other staff-entered Case prose field uses
+      (see domain/pricing/calculateOrder.ts's normalizeCustomItemSelections). */
+  description: string;
+  /** Integer cents — never a float dollar amount, matching every other
+      money field in this codebase. */
+  amountCents: number;
+};
+
+/**
  * The complete structured input to `domain/pricing/calculateOrder.ts` — the
- * existing service selections (unchanged) plus the new merchandise list.
- * OrderSelections are reconstructed from persisted line items on every
- * recalculation (`selectionsFromLineItems`) so they never diverge from the
- * authoritative CaseOrder; they are inputs, not stored state.
+ * existing service selections (unchanged) plus the merchandise list plus
+ * (2026-09) case-specific custom items. OrderSelections are reconstructed
+ * from persisted line items on every recalculation (`selectionsFromLineItems`/
+ * `merchandiseSelectionsFromLineItems`/`customItemSelectionsFromLineItems`)
+ * so they never diverge from the authoritative CaseOrder; they are inputs,
+ * not stored state.
  */
 export type OrderSelections = {
   services: ServiceSelections;
   merchandise: MerchandiseSelection[];
+  customItems: CustomLineItemSelection[];
 };

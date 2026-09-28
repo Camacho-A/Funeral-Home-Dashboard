@@ -1,6 +1,6 @@
 import type { CaseOrderLineItem, CaseOrderLineKind } from '../types/caseOrder';
 
-const VALID_LINE_KINDS: readonly CaseOrderLineKind[] = ['service', 'merchandise', 'surcharge', 'adjustment', 'tax', 'discount'];
+const VALID_LINE_KINDS: readonly CaseOrderLineKind[] = ['service', 'merchandise', 'surcharge', 'adjustment', 'tax', 'discount', 'custom'];
 
 function isLineKind(value: unknown): value is CaseOrderLineKind {
   return typeof value === 'string' && (VALID_LINE_KINDS as readonly string[]).includes(value);

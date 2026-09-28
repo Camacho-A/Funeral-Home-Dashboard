@@ -1,6 +1,7 @@
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
-import type { ServiceSelections, MerchandiseSelection } from '../../types/caseOrder';
+import type { ServiceSelections, MerchandiseSelection, CustomLineItemSelection } from '../../types/caseOrder';
 import type { MerchandiseProduct } from '../../types/merchandiseProduct';
+import { formatCentsAsCurrency } from '../../utils/format';
 import { SERVICE_CODES } from './serviceCodes';
 import { weightTierLabel, weightTierServiceCode } from './calculateOrder';
 
@@ -165,6 +166,70 @@ export function diffMerchandiseSelections(
       amountDeltaCents: delta,
       description: `${verb}: ${qtyDelta} × ${name}, ${formatSignedWholeDollars(delta)}`,
     });
+  }
+
+  return entries;
+}
+
+/** Signed, cents-precise dollar display — "+$75.50"/"-$75.00" — distinct
+    from `formatSignedWholeDollars` above (which rounds, correct only for
+    Manor's whole-dollar catalog prices). A staff-entered custom item price
+    is never assumed whole-dollar, so its audit description must never
+    round it. */
+function formatSignedDollarsAndCents(cents: number): string {
+  const formatted = formatCentsAsCurrency(Math.abs(cents), 'usd');
+  if (cents > 0) return `+${formatted}`;
+  if (cents < 0) return `-${formatted}`;
+  return formatted;
+}
+
+/**
+ * SOLIS cleanup item #11 (2026-09). The custom-item counterpart to
+ * `diffMerchandiseSelections` — one audit row per added/removed/changed
+ * custom item, keyed by the selection's own `id` (a custom item has no
+ * catalog identity to key off, unlike merchandise's `(productId,
+ * locationId)`). A changed row covers either the description or the price
+ * changing for the same id (editing an already-added item before it's
+ * removed and re-added).
+ */
+export function diffCustomItemSelections(
+  previous: CustomLineItemSelection[],
+  next: CustomLineItemSelection[],
+): SelectionDiffEntry[] {
+  const prevById = new Map(previous.map((s) => [s.id, s]));
+  const nextById = new Map(next.map((s) => [s.id, s]));
+  const allIds = new Set([...prevById.keys(), ...nextById.keys()]);
+  const entries: SelectionDiffEntry[] = [];
+
+  for (const id of allIds) {
+    const prev = prevById.get(id);
+    const nxt = nextById.get(id);
+    if (prev && !nxt) {
+      entries.push({
+        action: 'custom_item_removed',
+        previousValue: prev.description,
+        newValue: null,
+        amountDeltaCents: -prev.amountCents,
+        description: `Removed: ${prev.description}, ${formatSignedDollarsAndCents(-prev.amountCents)}`,
+      });
+    } else if (!prev && nxt) {
+      entries.push({
+        action: 'custom_item_added',
+        previousValue: null,
+        newValue: nxt.description,
+        amountDeltaCents: nxt.amountCents,
+        description: `Added: ${nxt.description}, ${formatSignedDollarsAndCents(nxt.amountCents)}`,
+      });
+    } else if (prev && nxt && (prev.description !== nxt.description || prev.amountCents !== nxt.amountCents)) {
+      const delta = nxt.amountCents - prev.amountCents;
+      entries.push({
+        action: 'custom_item_changed',
+        previousValue: prev.description,
+        newValue: nxt.description,
+        amountDeltaCents: delta,
+        description: `Changed: ${prev.description} → ${nxt.description}, ${formatSignedDollarsAndCents(delta)}`,
+      });
+    }
   }
 
   return entries;

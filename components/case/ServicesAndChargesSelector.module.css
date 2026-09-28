@@ -103,6 +103,44 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.customItemHint {
+  font-size: var(--font-size-12);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.customItemRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--font-size-13);
+}
+
+.customItemAmount {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.customItemRemove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-danger-text, #a00);
+}
+
+.customItemForm {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.customItemPriceInput {
+  max-width: 96px;
+}
+
 .summary {
   background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ServiceSelections } from '@/types/caseOrder';
+import type { ServiceSelections, CustomLineItemSelection } from '@/types/caseOrder';
 import { pricingClient } from '@/services/pricingClient';
 import { useOrganization } from './useOrganization';
 
@@ -24,7 +24,7 @@ export function useCreateCaseOrder(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { selections: ServiceSelections }) =>
+    mutationFn: (input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[] }) =>
       pricingClient.createCaseOrder(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });
@@ -36,7 +36,7 @@ export function useEditCaseOrder(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { selections: ServiceSelections }) =>
+    mutationFn: (input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[] }) =>
       pricingClient.editCaseOrder(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });

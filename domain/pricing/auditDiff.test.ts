@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
-import { diffSelections } from './auditDiff';
+import { diffSelections, diffCustomItemSelections } from './auditDiff';
 
 const NOW = '2026-07-20T00:00:00.000Z';
 
@@ -106,5 +106,48 @@ describe('diffSelections', () => {
       'death_certificate_quantity_changed',
       'mail_cremated_remains_added',
     ]);
+  });
+});
+
+describe('diffCustomItemSelections (SOLIS cleanup item #11, 2026-09)', () => {
+  it('produces no entries when nothing changed', () => {
+    const items = [{ id: 'c1', description: 'ADDITIONAL KEEPSAKE', amountCents: 7500 }];
+    expect(diffCustomItemSelections(items, [...items])).toEqual([]);
+  });
+
+  it('records an added custom item, cents-precise (never rounded to whole dollars)', () => {
+    const entries = diffCustomItemSelections([], [{ id: 'c1', description: 'ADDITIONAL KEEPSAKE', amountCents: 7550 }]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe('custom_item_added');
+    expect(entries[0].amountDeltaCents).toBe(7550);
+    expect(entries[0].description).toBe('Added: ADDITIONAL KEEPSAKE, +$75.50');
+  });
+
+  it('17/18: records a removed custom item and its negative delta', () => {
+    const entries = diffCustomItemSelections([{ id: 'c1', description: 'ADDITIONAL KEEPSAKE', amountCents: 7500 }], []);
+    expect(entries[0].action).toBe('custom_item_removed');
+    expect(entries[0].amountDeltaCents).toBe(-7500);
+    expect(entries[0].description).toBe('Removed: ADDITIONAL KEEPSAKE, -$75.00');
+  });
+
+  it('records a changed custom item (same id, different description/price)', () => {
+    const entries = diffCustomItemSelections(
+      [{ id: 'c1', description: 'ADDITIONAL KEEPSAKE', amountCents: 7500 }],
+      [{ id: 'c1', description: 'ADDITIONAL KEEPSAKE (LARGE)', amountCents: 9000 }],
+    );
+    expect(entries[0].action).toBe('custom_item_changed');
+    expect(entries[0].amountDeltaCents).toBe(1500);
+  });
+
+  it('diffs multiple custom items independently, by id', () => {
+    const entries = diffCustomItemSelections(
+      [{ id: 'c1', description: 'FIRST', amountCents: 100 }],
+      [
+        { id: 'c1', description: 'FIRST', amountCents: 100 },
+        { id: 'c2', description: 'SECOND', amountCents: 200 },
+      ],
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe('custom_item_added');
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   calculateOrderTotals,
@@ -7,12 +8,19 @@ import {
   weightTierServiceCode,
   MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY,
   MAX_KEEPSAKE_TRANSFER_QUANTITY,
+  MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH,
 } from '@/domain/pricing/calculateOrder';
 import { SERVICE_CODES } from '@/domain/pricing/serviceCodes';
 import { formatCentsAsCurrency } from '@/utils/format';
 import type { ServiceCatalogItem } from '@/types/serviceCatalog';
-import type { ServiceSelections, WeightTier } from '@/types/caseOrder';
+import type { ServiceSelections, WeightTier, CustomLineItemSelection } from '@/types/caseOrder';
 import styles from './ServicesAndChargesSelector.module.css';
+
+function dollarsToCents(input: string): number | null {
+  const n = Number(input);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
 
 const SURCHARGE_TIERS: WeightTier[] = ['201_250', '251_300'];
 
@@ -61,14 +69,49 @@ export function ServicesAndChargesSelector({
   catalog,
   selections,
   onChange,
+  customItems,
+  onChangeCustomItems,
 }: {
   catalog: ServiceCatalogItem[];
   selections: ServiceSelections;
   onChange: (next: ServiceSelections) => void;
+  /** SOLIS cleanup item #11 (2026-09). Case-specific, one-off charges —
+      never a ServiceCatalog/MerchandiseProduct write, see
+      domain/pricing/calculateOrder.ts's own comment. Omitted entirely
+      (undefined) for the first-time "Set Up Services & Charges" flow
+      (NewCaseModal) — a custom item is an ADDITIONAL Items & Services
+      concept, only offered once a real Case Order/decedent already exists
+      to attach it to. */
+  customItems?: CustomLineItemSelection[];
+  onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
 }) {
   const baseService = catalog.find((item) => item.category === 'base');
 
   const preview = calculateOrderTotals(catalog, selections);
+  const customItemsTotal = (customItems ?? []).reduce((sum, item) => sum + item.amountCents, 0);
+  const combinedTotal = preview.total + customItemsTotal;
+
+  const [draftDescription, setDraftDescription] = useState('');
+  const [draftAmount, setDraftAmount] = useState('');
+  // A blank price is a missing required field, never an implicit $0.00 —
+  // `dollarsToCents('')` would otherwise coerce to 0 via `Number('')`.
+  const draftAmountCents = draftAmount.trim() === '' ? null : dollarsToCents(draftAmount);
+
+  function addCustomItem() {
+    const description = draftDescription.trim();
+    if (!description || draftAmountCents === null || !onChangeCustomItems) return;
+    onChangeCustomItems([
+      ...(customItems ?? []),
+      { id: crypto.randomUUID(), description, amountCents: draftAmountCents },
+    ]);
+    setDraftDescription('');
+    setDraftAmount('');
+  }
+
+  function removeCustomItem(id: string) {
+    if (!onChangeCustomItems) return;
+    onChangeCustomItems((customItems ?? []).filter((item) => item.id !== id));
+  }
 
   function setWeightTier(tier: WeightTier) {
     onChange({ ...selections, weightTier: tier });
@@ -212,6 +255,56 @@ export function ServicesAndChargesSelector({
         })}
       </fieldset>
 
+      {onChangeCustomItems && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>Custom Item</legend>
+          <p className={styles.customItemHint}>
+            For a one-off family request not in the list above. Added only to this case&rsquo;s order — never a permanent price-list item.
+          </p>
+
+          {(customItems ?? []).map((item) => (
+            <div key={item.id} className={styles.customItemRow}>
+              <span>{item.description}</span>
+              <span className={styles.customItemAmount}>
+                <span>{formatCentsAsCurrency(item.amountCents, 'usd')}</span>
+                <button
+                  type="button"
+                  onClick={() => removeCustomItem(item.id)}
+                  aria-label={`Remove ${item.description}`}
+                  className={styles.customItemRemove}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          ))}
+
+          <div className={styles.customItemForm}>
+            <input
+              aria-label="Custom item description"
+              placeholder="Description"
+              value={draftDescription}
+              onChange={(e) => setDraftDescription(e.target.value.slice(0, MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH))}
+            />
+            <input
+              aria-label="Custom item price (dollars)"
+              placeholder="Price"
+              inputMode="decimal"
+              value={draftAmount}
+              onChange={(e) => setDraftAmount(e.target.value)}
+              className={styles.customItemPriceInput}
+            />
+            <Button
+              variant="secondary"
+              onClick={addCustomItem}
+              disabled={!draftDescription.trim() || draftAmountCents === null}
+            >
+              Add Custom Item
+            </Button>
+          </div>
+        </fieldset>
+      )}
+
       <div className={styles.summary}>
         <div className={styles.summaryTitle}>Live Itemized Summary</div>
         {preview.lineItems.map((item) => (
@@ -223,9 +316,15 @@ export function ServicesAndChargesSelector({
             <span>{formatCentsAsCurrency(item.lineTotal, 'usd')}</span>
           </div>
         ))}
+        {(customItems ?? []).map((item) => (
+          <div key={item.id} className={styles.summaryRow}>
+            <span>{item.description}</span>
+            <span>{formatCentsAsCurrency(item.amountCents, 'usd')}</span>
+          </div>
+        ))}
         <div className={styles.summaryTotalRow}>
           <span>Total</span>
-          <span>{formatCentsAsCurrency(preview.total, 'usd')}</span>
+          <span>{formatCentsAsCurrency(combinedTotal, 'usd')}</span>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ import {
   type WixCaseOrderAuditItem,
 } from '../lib/wixCaseOrderAuditMapper';
 import type { ServiceCatalogItem } from '../types/serviceCatalog';
-import type { CaseOrder, CaseOrderLineItem, ServiceSelections, MerchandiseSelection } from '../types/caseOrder';
+import type { CaseOrder, CaseOrderLineItem, ServiceSelections, MerchandiseSelection, CustomLineItemSelection } from '../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../types/caseOrderAudit';
 import type { MerchandiseProduct } from '../types/merchandiseProduct';
 import {
@@ -30,8 +30,11 @@ import {
   calculateOrderTotals,
   normalizeSelections,
   normalizeMerchandiseSelections,
+  normalizeCustomItemSelections,
   selectionsFromLineItems,
   merchandiseSelectionsFromLineItems,
+  customItemSelectionsFromLineItems,
+  calculateCustomLineItems,
   sumLineTotalsByKind,
   MERCHANDISE_SORT_BASE,
   type CalculatedLineItem,
@@ -39,7 +42,7 @@ import {
 } from '../domain/pricing/calculateOrder';
 import { getMerchandiseCategoryDefinition } from '../domain/merchandise/merchandiseCategoryRegistry';
 import { resolveVariantEconomics } from '../domain/merchandise/variantEconomics';
-import { diffSelections, diffMerchandiseSelections } from '../domain/pricing/auditDiff';
+import { diffSelections, diffMerchandiseSelections, diffCustomItemSelections } from '../domain/pricing/auditDiff';
 import { listActiveProductsForOrganization, getVariantById } from './merchandiseService';
 import { listPaymentRecordsForCase } from './paymentsService';
 import { mapWixCaseWriteOffItem, type WixCaseWriteOffItem } from '../lib/wixCaseWriteOffMapper';
@@ -489,7 +492,7 @@ async function computeOrderWithVariants(
   organizationId: string,
   catalog: ServiceCatalogItem[],
   products: MerchandiseProduct[],
-  orderSelections: { services: ServiceSelections; merchandise: MerchandiseSelection[] },
+  orderSelections: { services: ServiceSelections; merchandise: MerchandiseSelection[]; customItems: CustomLineItemSelection[] },
   dataAdapterMode: DataAdapterMode,
 ): Promise<CalculatedOrderTotals> {
   const serviceLines = calculateOrderTotals(catalog, orderSelections.services).lineItems;
@@ -528,7 +531,9 @@ async function computeOrderWithVariants(
   });
   merchLines.forEach((line, i) => { line.sortOrder = MERCHANDISE_SORT_BASE + i * 10; });
 
-  const lineItems = [...serviceLines, ...merchLines];
+  const customLines = calculateCustomLineItems(orderSelections.customItems);
+
+  const lineItems = [...serviceLines, ...merchLines, ...customLines];
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
   const discountTotal = 0;
   const taxTotal = 0;
@@ -561,6 +566,16 @@ function extractMerchandiseSelections(raw: unknown, currentLineItems: CaseOrderL
   return [];
 }
 
+/** SOLIS cleanup item #11 (2026-09) — the custom-item half — carries the
+    current custom items forward when the caller doesn't provide a
+    `customItems` array, exactly mirroring `extractMerchandiseSelections`. */
+function extractCustomItemSelections(raw: unknown, currentLineItems: CaseOrderLineItem[] | null): CustomLineItemSelection[] {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  if ('customItems' in obj) return normalizeCustomItemSelections(obj.customItems);
+  if (currentLineItems) return customItemSelectionsFromLineItems(currentLineItems);
+  return [];
+}
+
 /**
  * Creates a case's first CaseOrder (version 1) from staff-submitted
  * selections — never a submitted total. Always re-fetches the catalog and
@@ -585,6 +600,7 @@ export async function createCaseOrder(
   const orderSelections = {
     services: extractServiceSelections(params.selections, null),
     merchandise: extractMerchandiseSelections(params.selections, null),
+    customItems: extractCustomItemSelections(params.selections, null),
   };
   const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, orderSelections, dataAdapterMode);
 
@@ -608,6 +624,7 @@ export async function createCaseOrder(
   const split = sumLineTotalsByKind(calculated.lineItems);
   const serviceCount = calculated.lineItems.filter((li) => li.lineKind === 'service').length;
   const merchandiseCount = calculated.lineItems.filter((li) => li.lineKind === 'merchandise').length;
+  const customCount = calculated.lineItems.filter((li) => li.lineKind === 'custom').length;
 
   const auditEntry: CaseOrderAuditEntry = {
     id: params.idFactory(),
@@ -618,7 +635,7 @@ export async function createCaseOrder(
     previousValue: null,
     newValue: null,
     amountDeltaCents: calculated.total,
-    description: `Case order created — ${serviceCount} service${serviceCount === 1 ? '' : 's'}${merchandiseCount > 0 ? `, ${merchandiseCount} merchandise item${merchandiseCount === 1 ? '' : 's'}` : ''}`,
+    description: `Case order created — ${serviceCount} service${serviceCount === 1 ? '' : 's'}${merchandiseCount > 0 ? `, ${merchandiseCount} merchandise item${merchandiseCount === 1 ? '' : 's'}` : ''}${customCount > 0 ? `, ${customCount} custom item${customCount === 1 ? '' : 's'}` : ''}`,
     performedBy: params.performedBy,
     createdAt: nowIso,
   };
@@ -663,22 +680,25 @@ export async function recalculateOrder(
   const products = await getMerchandiseCatalogForPricing(params.organizationId, dataAdapterMode);
   const currentLineItems = await listLineItemsForOrder(params.organizationId, current.id, dataAdapterMode);
 
-  // Reconstruct BOTH dimensions from the current order, then apply only what
-  // the caller changed — a service-only edit carries merchandise forward
-  // unchanged, and a merchandise-only edit carries services forward.
+  // Reconstruct ALL THREE dimensions from the current order, then apply
+  // only what the caller changed — a service-only edit carries merchandise
+  // and custom items forward unchanged, and so on for each other dimension.
   const previousServices = selectionsFromLineItems(currentLineItems);
   const previousMerchandise = merchandiseSelectionsFromLineItems(currentLineItems);
+  const previousCustomItems = customItemSelectionsFromLineItems(currentLineItems);
   const nextServices = extractServiceSelections(params.selections, currentLineItems);
   const nextMerchandise = extractMerchandiseSelections(params.selections, currentLineItems);
+  const nextCustomItems = extractCustomItemSelections(params.selections, currentLineItems);
 
   const serviceDiff = diffSelections(catalog, previousServices, nextServices);
   const merchandiseDiff = diffMerchandiseSelections(products, previousMerchandise, nextMerchandise);
-  const diffEntries = [...serviceDiff, ...merchandiseDiff];
+  const customItemDiff = diffCustomItemSelections(previousCustomItems, nextCustomItems);
+  const diffEntries = [...serviceDiff, ...merchandiseDiff, ...customItemDiff];
   if (diffEntries.length === 0) {
     return { order: current, lineItems: currentLineItems, auditEntries: [] };
   }
 
-  const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, { services: nextServices, merchandise: nextMerchandise }, dataAdapterMode);
+  const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, { services: nextServices, merchandise: nextMerchandise, customItems: nextCustomItems }, dataAdapterMode);
   const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
 
   const newOrderId = params.idFactory();
