@@ -10,7 +10,10 @@ export type AllCasesListItem = {
       "display the Case Number in all case lists and tables." */
   caseNumber: string;
   decedentName: string;
-  ownerInitials: string;
+  /** Item #7 (2026-09, decedent avatar fix): the decedent's own initials —
+      never the assigned staff owner's. See domain/cases/viewModel.ts's
+      resolveDecedentInitials. */
+  decedentInitials: string;
   rowSummaryText: string;
   rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
   isOverdue: boolean;
@@ -37,7 +40,7 @@ export function AllCasesList({
       <div className={styles.card}>
         {cases.map((c) => (
           <Link key={c.id} href={`/cases/${c.id}`} className={styles.row}>
-            <div className={styles.avatar}>{c.ownerInitials}</div>
+            <div className={styles.avatar}>{c.decedentInitials}</div>
             <div className={styles.main}>
               <div>
                 <div className={styles.name}>

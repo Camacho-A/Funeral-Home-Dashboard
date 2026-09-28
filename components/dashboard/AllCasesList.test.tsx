@@ -6,7 +6,7 @@ const item: AllCasesListItem = {
   id: '1042',
   caseNumber: 'B2026-001',
   decedentName: 'Robert Ellison',
-  ownerInitials: 'DA',
+  decedentInitials: 'RE',
   rowSummaryText: 'Awaiting doctor signature',
   rowSummaryVariant: 'neutral',
   isOverdue: false,
@@ -24,5 +24,13 @@ describe('AllCasesList — Case Number displayed in the case list (Phase 16B)', 
     render(<AllCasesList cases={[item]} searchQuery="" />);
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', '/cases/1042');
+  });
+});
+
+describe('AllCasesList — decedent avatar (item #7, 2026-09)', () => {
+  it("4. a named case's row avatar shows the decedent's initials, never \"?\"", () => {
+    render(<AllCasesList cases={[item]} searchQuery="" />);
+    expect(screen.getByText('RE')).toBeInTheDocument();
+    expect(screen.queryByText('?')).not.toBeInTheDocument();
   });
 });

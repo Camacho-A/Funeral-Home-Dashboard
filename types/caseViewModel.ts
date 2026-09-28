@@ -67,6 +67,14 @@ export type CaseViewModel = {
       docs/adr/ADR-018-case-number-generation.md. */
   caseNumber: string;
   decedentName: string;
+  /** Item #7 (2026-09, decedent avatar fix): first-name-initial + last-name-
+      initial derived from `decedentName` via the shared `initialsFromName`
+      helper (same one item #6 corrected for employee avatars) — never the
+      case owner/assigned staff, case number, NOK, or certifier. Falls back
+      to "?" only when `decedentName` itself is blank (a genuinely unnamed
+      case), matching `ownerInitials`' own established "?" convention for
+      its own, separate unresolved case. */
+  decedentInitials: string;
   dateOfBirth: string;
   dateOfDeath: string;
   timeOfDeath: string;

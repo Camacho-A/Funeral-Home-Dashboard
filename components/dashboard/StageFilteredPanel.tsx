@@ -9,7 +9,10 @@ export type StageFilteredCase = {
   /** Phase 16B (Case Number Generation) — see AllCasesList's identical field. */
   caseNumber: string;
   decedentName: string;
-  ownerInitials: string;
+  /** Item #7 (2026-09, decedent avatar fix): the decedent's own initials —
+      never the assigned staff owner's. See domain/cases/viewModel.ts's
+      resolveDecedentInitials. */
+  decedentInitials: string;
   rowSummaryText: string;
   rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
   isStalled: boolean;
@@ -57,7 +60,7 @@ export function StageFilteredPanel({
               aria-label={`Select ${c.decedentName}`}
             />
             <Link href={`/cases/${c.id}`} className={styles.avatar}>
-              {c.ownerInitials}
+              {c.decedentInitials}
             </Link>
             <Link href={`/cases/${c.id}`} className={styles.main}>
               <div className={styles.name}>

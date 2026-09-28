@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCaseViewModel } from './viewModel';
 import type { Case } from '../../types/case';
+import type { StaffProfile } from '../../types/staffProfile';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../workflow/snapshot';
 import { findStageByRawStage } from '../workflow/resolveStages';
 import {
@@ -384,5 +385,98 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
     });
     expect(case_.nextOfKinName).not.toBe(case_.certifierName);
     expect(case_.nextOfKinPhone).not.toBe(case_.certifierPhone);
+  });
+});
+
+/**
+ * Item #7 (2026-09, decedent avatar fix). `decedentInitials` is derived from
+ * `Case.decedentName` via the same corrected `initialsFromName` helper item
+ * #6 fixed for employee avatars — never from the assigned staff owner,
+ * case number, NOK, or certifier. See resolveDecedentInitials in
+ * ./viewModel.ts.
+ */
+describe('buildCaseViewModel — decedentInitials (item #7, 2026-09)', () => {
+  const assignedStaff: StaffProfile = {
+    id: 'staff-1',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    identityId: 'identity-1',
+    membershipId: null,
+    displayName: 'Priya Nair',
+    role: 'funeral_director',
+    isActive: true,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  };
+
+  it('1. "John Smith" -> "JS"', () => {
+    const case_ = baseCase({ decedentName: 'John Smith' });
+    expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).toBe('JS');
+  });
+
+  it('2. "Maria Rodriguez" -> "MR"', () => {
+    const case_ = baseCase({ decedentName: 'Maria Rodriguez' });
+    expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).toBe('MR');
+  });
+
+  it('3. does not use the first two letters of the first name (e.g. never "JO" for "John Smith")', () => {
+    const case_ = baseCase({ decedentName: 'John Smith' });
+    expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).not.toBe('JO');
+  });
+
+  it('4. a named case does not display "?" as its avatar', () => {
+    const case_ = baseCase({ decedentName: 'Robert Williams' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.decedentInitials).toBe('RW');
+    expect(vm.decedentInitials).not.toBe('?');
+  });
+
+  it('5. first-name-only case -> first initial', () => {
+    const case_ = baseCase({ decedentName: 'John' });
+    expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).toBe('J');
+  });
+
+  it('6. last-name-only case (a single trailing name) -> that name\'s own initial', () => {
+    const case_ = baseCase({ decedentName: 'Smith' });
+    expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).toBe('S');
+  });
+
+  it('7. a completely unnamed case safely falls back to "?", never "undefined"/"NaN"/blank', () => {
+    const case_ = baseCase({ decedentName: '' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.decedentInitials).toBe('?');
+    expect(vm.decedentInitials).not.toContain('undefined');
+    expect(vm.decedentInitials).not.toContain('NaN');
+  });
+
+  it('8. the visible Case name remains exactly the persisted decedentName ("First Last"), unmodified', () => {
+    const case_ = baseCase({ decedentName: 'Robert Williams' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.decedentName).toBe('Robert Williams');
+  });
+
+  it('9. the case number is never used for decedent initials', () => {
+    const case_ = baseCase({ decedentName: 'John Smith', caseNumber: 'B2026-999' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.decedentInitials).toBe('JS');
+    expect(vm.decedentInitials).not.toContain('9');
+  });
+
+  it('10. the NOK name is never used for decedent initials', () => {
+    const case_ = baseCase({ decedentName: 'John Smith', nextOfKinName: 'Angelica Camacho' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.decedentInitials).toBe('JS');
+    expect(vm.decedentInitials).not.toBe('AC');
+  });
+
+  it('11. the assigned staff owner is never used for decedent initials', () => {
+    const case_ = baseCase({ decedentName: 'John Smith', assignedStaffId: assignedStaff.id });
+    const vm = buildCaseViewModel(case_, { staffList: [assignedStaff] });
+    expect(vm.ownerInitials).toBe('PN'); // the owner's own, separate, correctly-computed initials
+    expect(vm.decedentInitials).toBe('JS'); // unaffected by who owns the case
+  });
+
+  it('13. reuses the shared initialsFromName helper rather than a duplicate algorithm — proven by identical edge-case behavior (middle name ignored, exactly like item #6)', () => {
+    const case_ = baseCase({ decedentName: 'Angelica Maria Camacho' });
+    expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).toBe('AC');
   });
 });

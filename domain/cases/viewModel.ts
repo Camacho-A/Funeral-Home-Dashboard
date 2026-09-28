@@ -39,6 +39,16 @@ function resolveOwner(case_: Case, staffList: StaffProfile[]): { name: string; i
   return { name, initials };
 }
 
+/** Item #7 (2026-09, decedent avatar fix). Derives the case avatar's
+    initials from the decedent's own name — never the assigned staff owner
+    (that's `resolveOwner` above, a deliberately separate concept). Falls
+    back to "?" only when `decedentName` is itself blank (a genuinely
+    unnamed/incomplete case), mirroring `resolveOwner`'s own "?" convention
+    for its own, unrelated unresolved case. */
+function resolveDecedentInitials(decedentName: string): string {
+  return decedentName.trim() === '' ? '?' : initialsFromName(decedentName);
+}
+
 /**
  * Auto-required documents by stage — ported from design/support.js's
  * buildCase(). Uses raw stage thresholds directly, matching the source
@@ -175,6 +185,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     id: case_.id,
     caseNumber: case_.caseNumber,
     decedentName: case_.decedentName,
+    decedentInitials: resolveDecedentInitials(case_.decedentName),
     dateOfBirth: case_.dateOfBirth,
     dateOfDeath: case_.dateOfDeath,
     timeOfDeath: case_.timeOfDeath,
