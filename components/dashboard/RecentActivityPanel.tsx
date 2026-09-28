@@ -63,7 +63,7 @@ export function RecentActivityPanel() {
           const caseNumber = entry.caseId ? caseNumberById.get(entry.caseId) : undefined;
           return (
             <div key={entry.id} className={styles.row}>
-              <div>
+              <div className={styles.rowMain}>
                 {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
                 <span className={styles.what}>{entry.description}</span>
               </div>

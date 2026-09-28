@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecentActivityPanel } from './RecentActivityPanel';
 import { OrganizationProvider } from '@/hooks/useOrganization';
@@ -194,5 +194,156 @@ describe('RecentActivityPanel — Case Number display (2026-09)', () => {
     for (const c of caseFixtures) {
       expect(screen.queryByText(c.caseNumber)).not.toBeInTheDocument();
     }
+  });
+});
+
+/**
+ * Task #4 (2026-09) — Case Number and activity description are visually
+ * too close together; separate them with real layout spacing (never
+ * literal repeated spaces in the text itself). Structural-layout
+ * assertions only — no pixel-specific checks.
+ */
+describe('RecentActivityPanel — Case Number / activity description spacing (Task #4, 2026-09)', () => {
+  it('1/2. renders both the Case Number and the activity description', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-1', caseId: case_.id, description: 'Case updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+
+    expect(await screen.findByText(case_.caseNumber)).toBeInTheDocument();
+    expect(screen.getByText('Case updated')).toBeInTheDocument();
+    void container;
+  });
+
+  it('3. Case Number and activity description are separate elements, not merged into one text node', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-2', caseId: case_.id, description: 'Case updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(case_.caseNumber);
+
+    const caseNumberEl = container.querySelector('[class*="caseNumber"]')!;
+    const whatEl = container.querySelector('[class*="what"]')!;
+    expect(caseNumberEl).not.toBe(whatEl);
+    expect(caseNumberEl.textContent).toBe(case_.caseNumber); // never merged with the description text
+    expect(whatEl.textContent).toBe('Case updated');
+    // No literal repeated-space hack anywhere in the text content — real
+    // layout spacing (a `gap` on their shared flex parent, see
+    // RecentActivityPanel.module.css's .rowMain) provides the separation
+    // instead. Both elements share the same immediate parent, which
+    // carries the layout class responsible for that spacing.
+    const rowMain = caseNumberEl.parentElement!;
+    expect(rowMain).toBe(whatEl.parentElement);
+    expect(rowMain.className).toMatch(/rowMain/);
+    expect(caseNumberEl.textContent).not.toMatch(/\s{2,}/);
+  });
+
+  it('4. the Case Number appears before the activity description in DOM order', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-3', caseId: case_.id, description: 'Case updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(case_.caseNumber);
+
+    const caseNumberEl = container.querySelector('[class*="caseNumber"]')!;
+    const whatEl = container.querySelector('[class*="what"]')!;
+    expect(caseNumberEl.compareDocumentPosition(whatEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('5. no duplicate Case Number is introduced', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-4', caseId: case_.id, description: 'Case updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(case_.caseNumber);
+
+    expect(container.querySelectorAll('[class*="caseNumber"]')).toHaveLength(1);
+    // The case number text itself appears exactly once — no stray copy
+    // baked into generated content anywhere in the row.
+    expect(screen.getAllByText(case_.caseNumber)).toHaveLength(1);
+  });
+
+  it('6. the activity description text is exactly what was provided — unchanged by the layout change', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-5', caseId: case_.id, description: 'Payment recorded for $150.00' })],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText('Payment recorded for $150.00')).toBeInTheDocument();
+  });
+
+  it('7. the existing timestamp ("time ago" text) remains present and unchanged', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-6', caseId: case_.id, createdAt: new Date(Date.now() - 5 * 60_000).toISOString() })],
+      nextCursor: null,
+    });
+    renderPanel();
+    await screen.findByText(case_.caseNumber);
+    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+  });
+
+  it('8. actor/attribution content is unaffected — this row never rendered actor text before, and still does not (Task #10 territory, untouched)', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-7', caseId: case_.id, actorIdentityId: 'identity-someone', description: 'Case updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(case_.caseNumber);
+    expect(container.querySelectorAll('[class*="row"]').length).toBeGreaterThan(0);
+    expect(screen.queryByText('identity-someone')).not.toBeInTheDocument();
+  });
+
+  it('9. no case-level navigation/link was added or removed — this row remains a plain (non-link) row, as before', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-spacing-8', caseId: case_.id, description: 'Case updated' })],
+      nextCursor: null,
+    });
+    renderPanel();
+    await screen.findByText(case_.caseNumber);
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('10. multiple rows retain correct Case Number ↔ description association after the layout change', async () => {
+    mockPermissions(['audit.read']);
+    const [caseA, caseB] = caseFixtures;
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({ id: 'event-multi-a', caseId: caseA.id, description: 'Payment recorded' }),
+        makeEvent({ id: 'event-multi-b', caseId: caseB.id, description: 'Task completed: Call family' }),
+      ],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(caseA.caseNumber);
+
+    // Direct children of the list container are exactly the row divs —
+    // avoids a `[class*="row"]` substring match also picking up the
+    // nested `.rowMain` wrapper.
+    const rows = Array.from(container.querySelector('[class*="list"]')!.children);
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0] as HTMLElement).getByText(caseA.caseNumber)).toBeInTheDocument();
+    expect(within(rows[0] as HTMLElement).getByText('Payment recorded')).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText(caseB.caseNumber)).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText('Task completed: Call family')).toBeInTheDocument();
   });
 });
