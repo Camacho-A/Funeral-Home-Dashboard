@@ -26,16 +26,20 @@ function moneyCell(cents: number): string {
   return `<td style="text-align:right; white-space:nowrap;">${formatCents(cents)}</td>`;
 }
 
-/** Item #2 (2026-09). A clean, professional business-identity header: an
-    optional logo, then name/address/phone/fax/email — each contact line
-    included only when the provider actually has a value for it (so an
-    organization with no fax/email/logo configured renders exactly as
+/** Item #2 (2026-09; enlarged/centered 2026-09 follow-up). A clean,
+    professional business-identity header: an optional logo — large and
+    horizontally centered, the dominant branding element — then a
+    centered name/address/phone/fax/email block beneath it, each contact
+    line included only when the provider actually has a value for it (so
+    an organization with no fax/email/logo configured renders exactly as
     before this change). The logo is constrained by `height` only
     (`width: auto`) so its real aspect ratio is always preserved, never
-    stretched to a fixed box. */
+    stretched to a fixed box; centering comes from the header's own
+    `text-align:center` plus `margin:0 auto` on the (block-level) image,
+    not from inserted whitespace. */
 function renderProviderHeader(provider: BillingStatementModel['provider']): string {
   const logoHtml = provider.logoDataUri
-    ? `<img src="${escapeHtml(provider.logoDataUri)}" alt="${escapeHtml(provider.name)} logo" style="height:56px; width:auto; display:block; margin-bottom:6px;" />`
+    ? `<img src="${escapeHtml(provider.logoDataUri)}" alt="${escapeHtml(provider.name)} logo" style="height:120px; width:auto; display:block; margin:0 auto 14px;" />`
     : '';
   const addressHtml = provider.addressLine
     .split('\n')
@@ -49,7 +53,7 @@ function renderProviderHeader(provider: BillingStatementModel['provider']): stri
     .filter((line): line is string => line !== null)
     .join('<br/>');
 
-  return `<header>
+  return `<header style="text-align:center;">
     ${logoHtml}
     <p style="margin:0; font-size:1.05em; font-weight:bold; letter-spacing:0.3px;">${escapeHtml(provider.name)}</p>
     <p style="margin:2px 0 0;">${addressHtml}</p>
