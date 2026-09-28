@@ -5,8 +5,10 @@ import { CaseDocumentsTab } from './CaseDocumentsTab';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as caseDocumentsClient from '@/lib/caseDocumentsClient';
 import * as identityAuthClient from '@/lib/identityAuthClient';
+import { organizationsService } from '@/services/organizationsService';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { CaseDocument } from '@/types/caseDocument';
+import type { Organization } from '@/types/organization';
 
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
@@ -16,6 +18,23 @@ vi.mock('@/lib/caseDocumentsClient', async () => {
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');
   return { ...actual, fetchMyPermissions: vi.fn() };
+});
+
+// Handwritten item #4 (2026-09): CaseDocumentsTab now also reads
+// useOrganizationRecord() to resolve the Signature Requests capability —
+// mocked here so every test resolves deterministically instead of
+// attempting a real fetch. Defaults to the real Manors organization id
+// (matching renderTab()'s own default organizationId), which the
+// Signature Requests capability override always resolves to disabled —
+// harmless for every pre-existing test below, none of which asserts on
+// Request Signature/signature-related UI.
+vi.mock('@/services/organizationsService', async () => {
+  const actual = await vi.importActual<typeof import('@/services/organizationsService')>('@/services/organizationsService');
+  const mockGet = vi.fn();
+  // useOrganizationRecord() calls the `organizationsService` namespace
+  // object's own `.get` method, not the standalone `get` export — both
+  // must point at the same mock function for the hook to actually see it.
+  return { ...actual, get: mockGet, organizationsService: { ...actual.organizationsService, get: mockGet } };
 });
 
 const mockPrintStoredDocument = vi.fn();
@@ -59,11 +78,11 @@ function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
   };
 }
 
-function renderTab() {
+function renderTab(organizationId: string = DEFAULT_ORGANIZATION_ID) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+      <OrganizationProvider organizationId={organizationId}>
         <CaseDocumentsTab caseId="case-1" caseName="Jane Doe" caseNumber="B2026-001" />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -74,8 +93,13 @@ function mockPermissions(permissions: string[]) {
   vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey: 'administrator', permissions });
 }
 
+function mockOrganization(overrides: Partial<Organization> & { id: string }) {
+  vi.mocked(organizationsService.get).mockResolvedValue({ name: 'Test Org', isActive: true, ...overrides });
+}
+
 beforeEach(() => {
-  mockPermissions(['document.view', 'document.generate', 'document.upload', 'document.archive']);
+  mockPermissions(['document.view', 'document.generate', 'document.upload', 'document.archive', 'signature.request', 'signature.read', 'signature.cancel']);
+  mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
 });
 
 afterEach(() => {
@@ -266,5 +290,63 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
 
     await screen.findByText('one.pdf');
     expect(screen.queryByRole('button', { name: /print all/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('CaseDocumentsTab — Signature Requests organization capability (handwritten item #4, 2026-09)', () => {
+  it('1/2: Request Signature does NOT render for managed-cremations (Manors — Signature Requests disabled)', async () => {
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Request Signature' })).not.toBeInTheDocument());
+  });
+
+  it('4: another organization with the capability absent (default) retains Request Signature', async () => {
+    mockOrganization({ id: 'org-other-signature-test' });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ organizationId: 'org-other-signature-test' })]);
+    renderTab('org-other-signature-test');
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(await screen.findByRole('button', { name: 'Request Signature' })).toBeInTheDocument();
+  });
+
+  it('5: another organization with the capability explicitly enabled retains Request Signature', async () => {
+    mockOrganization({ id: 'org-other-signature-test-2', signatureRequestsEnabled: true });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ organizationId: 'org-other-signature-test-2' })]);
+    renderTab('org-other-signature-test-2');
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(await screen.findByRole('button', { name: 'Request Signature' })).toBeInTheDocument();
+  });
+
+  it('3/12/13/14: all other Documents actions (Download, Print, Regenerate, Archive) and document viewing remain available for Manors', async () => {
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-generated', fileName: 'Statement of Funeral Goods and Services Selected.pdf', origin: 'generated' }),
+    ]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Statement of Funeral Goods and Services Selected.pdf');
+    expect(screen.getByRole('link', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Request Signature' })).not.toBeInTheDocument());
+  });
+
+  it('no disabled/placeholder Request Signature button is left behind for Manors — the action is either fully available or fully absent', async () => {
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    await waitFor(() => {
+      const disabledSignatureButtons = screen.queryAllByRole('button', { name: /signature/i }).filter((btn) => (btn as HTMLButtonElement).disabled);
+      expect(disabledSignatureButtons).toHaveLength(0);
+    });
   });
 });

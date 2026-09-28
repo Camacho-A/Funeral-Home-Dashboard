@@ -440,9 +440,13 @@ describe('listAppointments / listAppointmentsForCase / cross-tenant isolation', 
 
 describe('createWitnessSignatureRequest', () => {
   it('reuses the existing signatureService rather than a parallel signing mechanism', async () => {
+    // SECOND_MOCK_ORGANIZATION_ID, not DEFAULT_ORGANIZATION_ID (the real
+    // Manors id) — item #4 (2026-09) disabled Signature Requests for
+    // Manors, and createWitnessSignatureRequest is a thin wrapper over the
+    // now-gated createSignatureRequest.
     caseFixtures.push({
       id: 'case-witness-1',
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
       caseNumber: 'B2026-900',
       decedentName: 'Robert Ellison',
       dateOfBirth: '04/12/1951',
@@ -494,11 +498,11 @@ describe('createWitnessSignatureRequest', () => {
     const { createTemplate } = await import('./documentTemplatesService');
     const { generate } = await import('./documentService');
     const template = await createTemplate(
-      { organizationId: DEFAULT_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>{{case.decedent.fullName}}</p>', idFactory },
-      ctx(),
+      { organizationId: SECOND_MOCK_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>{{case.decedent.fullName}}</p>', idFactory },
+      ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }),
       'mock',
     );
-    const doc = await generate({ caseId: 'case-witness-1', templateId: template.id, idFactory }, ctx(), 'mock');
+    const doc = await generate({ caseId: 'case-witness-1', templateId: template.id, idFactory }, ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock');
 
     const appointment = await createAppointment(
       {
@@ -510,13 +514,26 @@ describe('createWitnessSignatureRequest', () => {
         timezone: 'America/New_York',
         idFactory,
       },
-      ctx(),
+      ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }),
       'mock',
     );
 
-    const request = await createWitnessSignatureRequest(appointment, doc.id, 'Jane Witness', 'jane.witness@example.com', ctx(), 'mock');
+    const request = await createWitnessSignatureRequest(appointment, doc.id, 'Jane Witness', 'jane.witness@example.com', ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock');
     expect(request.signerRole).toBe('witness');
     expect(signatureRequestFixtures.some((r) => r.id === request.id)).toBe(true);
+  });
+
+  it('handwritten item #4 (2026-09): is blocked for managed-cremations, exactly like the staff-facing dialog\'s create call — one centralized check covers both callers', async () => {
+    await expect(
+      createWitnessSignatureRequest(
+        { id: 'appt-witness-manors', caseId: 'case-witness-manors' } as never,
+        'irrelevant-doc-id',
+        'Jane Witness',
+        'jane.witness@example.com',
+        ctx({ organizationId: DEFAULT_ORGANIZATION_ID }),
+        'mock',
+      ),
+    ).rejects.toThrow(/not enabled for this organization/i);
   });
 
   afterEach(() => {

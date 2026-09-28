@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #4 (2026-09): DEFAULT_ORGANIZATION_ID (the real Manor's
+// Cremation organization id, managed-cremations) now has Signature
+// Requests disabled — this file's create/list mechanics are generic, so
+// they run against a second organization instead.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { mockDefaultUser, mockMultiOrgUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { caseDocumentFixtures, documentTemplateFixtures, signatureRequestFixtures, signatureRecordFixtures } from '@/services/__mocks__/documentFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
@@ -58,9 +63,13 @@ beforeEach(() => {
   documentTemplateFixtures.length = 0;
   signatureRequestFixtures.length = 0;
   signatureRecordFixtures.length = 0;
+  // mockDefaultUser's only built-in membership is for the real Manors
+  // organization (now Signature Requests-disabled) — grant it
+  // administrator in this file's test organization too.
+  mockMembershipFixtures.push({ organizationId: TEST_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
   caseFixtures.push({
     id: TEST_CASE_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseNumber: 'B2026-776',
     decedentName: 'Robert Ellison',
     dateOfBirth: '04/12/1951',
@@ -117,15 +126,17 @@ afterEach(() => {
   signatureRecordFixtures.length = 0;
   activityEventFixtures.length = 0;
   caseFixtures.length = caseFixtures.filter((c) => c.id !== TEST_CASE_ID).length;
+  const index = mockMembershipFixtures.findIndex((m) => m.organizationId === TEST_ORGANIZATION_ID && m.userId === mockDefaultUser.id);
+  if (index !== -1) mockMembershipFixtures.splice(index, 1);
 });
 
 async function seedDocument() {
   const template = await createTemplate(
-    { organizationId: DEFAULT_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>{{case.decedent.fullName}}</p>', idFactory },
-    { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: 'seed', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'seed-corr' },
+    { organizationId: TEST_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>{{case.decedent.fullName}}</p>', idFactory },
+    { organizationId: TEST_ORGANIZATION_ID, actorIdentityId: 'seed', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'seed-corr' },
     'mock',
   );
-  return generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: 'seed', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'seed-corr' }, 'mock');
+  return generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, { organizationId: TEST_ORGANIZATION_ID, actorIdentityId: 'seed', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'seed-corr' }, 'mock');
 }
 
 describe('GET /api/cases/[caseId]/documents/[documentId]/signature-requests', () => {
@@ -142,18 +153,18 @@ describe('GET /api/cases/[caseId]/documents/[documentId]/signature-requests', ()
     // but OrganizationMembership.role's own type is still the narrower,
     // pre-Phase-22 five-value OrganizationRole enum — this cast is the same
     // shape every route test testing a non-legacy role tier needs.
-    mockMembershipFixtures.push({ organizationId: DEFAULT_ORGANIZATION_ID, userId: accountingUser.id, role: 'accounting', isActive: true } as never);
+    mockMembershipFixtures.push({ organizationId: TEST_ORGANIZATION_ID, userId: accountingUser.id, role: 'accounting', isActive: true } as never);
     mockSession = { user: accountingUser };
 
-    expect((await listRequest(TEST_CASE_ID, doc.id, DEFAULT_ORGANIZATION_ID)).status).toBe(403);
+    expect((await listRequest(TEST_CASE_ID, doc.id, TEST_ORGANIZATION_ID)).status).toBe(403);
     mockMembershipFixtures.pop();
   });
 
   it('lists requests and records for the document', async () => {
     const doc = await seedDocument();
-    await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
 
-    const response = await listRequest(TEST_CASE_ID, doc.id, DEFAULT_ORGANIZATION_ID);
+    const response = await listRequest(TEST_CASE_ID, doc.id, TEST_ORGANIZATION_ID);
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.requests).toHaveLength(1);
@@ -171,17 +182,17 @@ describe('POST /api/cases/[caseId]/documents/[documentId]/signature-requests', (
   it('returns 401 with no session', async () => {
     mockSession = null;
     const doc = await seedDocument();
-    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
     expect(response.status).toBe(401);
   });
 
   it('a role without signature.request (readOnly) is refused', async () => {
     const doc = await seedDocument();
     const readOnlyUser = { id: 'mock-user-readonly-sig-test', email: 'readonly-sig@beacon.test', displayName: 'Read Only Test User', source: 'mock' as const };
-    mockMembershipFixtures.push({ organizationId: DEFAULT_ORGANIZATION_ID, userId: readOnlyUser.id, role: 'readOnly', isActive: true });
+    mockMembershipFixtures.push({ organizationId: TEST_ORGANIZATION_ID, userId: readOnlyUser.id, role: 'readOnly', isActive: true });
     mockSession = { user: readOnlyUser };
 
-    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
     expect(response.status).toBe(403);
     mockMembershipFixtures.pop();
   });
@@ -195,13 +206,13 @@ describe('POST /api/cases/[caseId]/documents/[documentId]/signature-requests', (
 
   it('rejects an invalid signerRole', async () => {
     const doc = await seedDocument();
-    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'bogus' });
+    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'bogus' });
     expect(response.status).toBe(400);
   });
 
   it('creates a signature request and records document.signature.requested', async () => {
     const doc = await seedDocument();
-    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.request.status).toBe('pending');
@@ -209,15 +220,57 @@ describe('POST /api/cases/[caseId]/documents/[documentId]/signature-requests', (
   });
 
   it('returns 404 for a nonexistent document', async () => {
-    const response = await createRequest(TEST_CASE_ID, 'no-such-doc', { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    const response = await createRequest(TEST_CASE_ID, 'no-such-doc', { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
     expect(response.status).toBe(404);
   });
 
   it('returns 422 when an active request already exists for the document', async () => {
     const doc = await seedDocument();
-    await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
+    await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin' });
 
-    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: DEFAULT_ORGANIZATION_ID, signerName: 'John Smith', signerEmail: 'john@example.com', signerRole: 'primary_contact' });
+    const response = await createRequest(TEST_CASE_ID, doc.id, { organizationId: TEST_ORGANIZATION_ID, signerName: 'John Smith', signerEmail: 'john@example.com', signerRole: 'primary_contact' });
     expect(response.status).toBe(422);
+  });
+
+  it('handwritten item #4 (2026-09): returns 422 for managed-cremations (Signature Requests disabled), even for a fully-permissioned administrator, and creates no request', async () => {
+    caseFixtures.push({ ...caseFixtures.find((c) => c.id === TEST_CASE_ID)!, id: 'case-manors-sig-test', organizationId: DEFAULT_ORGANIZATION_ID });
+    caseDocumentFixtures.push({
+      id: 'doc-manors-sig-test',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: 'case-manors-sig-test',
+      origin: 'uploaded',
+      documentTypeKey: null,
+      category: 'authorization',
+      fileName: 'Uploaded.pdf',
+      mimeType: 'application/pdf',
+      fileSizeBytes: 100,
+      checksumSha256: 'a'.repeat(64),
+      storageKey: 'key',
+      status: 'active',
+      templateId: null,
+      templateVersion: null,
+      version: null,
+      supersedesId: null,
+      signatureStatus: null,
+      familyVisible: false,
+      generatedBy: null,
+      uploadedBy: 'staff-1',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      correlationId: 'corr-manors-sig-test',
+    });
+
+    const response = await createRequest('case-manors-sig-test', 'doc-manors-sig-test', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      signerName: 'Jane Doe',
+      signerEmail: 'jane@example.com',
+      signerRole: 'next_of_kin',
+    });
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body.error).not.toMatch(/wix|override|implementation/i);
+    expect(signatureRequestFixtures.some((r) => r.documentId === 'doc-manors-sig-test')).toBe(false);
+
+    caseFixtures.length = caseFixtures.filter((c) => c.id !== 'case-manors-sig-test').length;
+    caseDocumentFixtures.length = caseDocumentFixtures.filter((d) => d.id !== 'doc-manors-sig-test').length;
   });
 });

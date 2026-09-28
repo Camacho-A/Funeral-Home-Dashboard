@@ -34,7 +34,11 @@ const { caseDocumentFixtures, documentTemplateFixtures, signatureRequestFixtures
 const { activityEventFixtures } = await import('../__mocks__/activityEventFixtures');
 const { caseFixtures } = await import('../__mocks__/fixtures');
 const { notificationFixtures, notificationRecipientFixtures, notificationDeliveryFixtures } = await import('../__mocks__/notificationFixtures');
-const { DEFAULT_ORGANIZATION_ID } = await import('../__mocks__/organizationIds');
+const { SECOND_MOCK_ORGANIZATION_ID } = await import('../__mocks__/organizationIds');
+// Handwritten item #4 (2026-09): the real Manor's Cremation organization
+// id (managed-cremations) now has Signature Requests disabled — this
+// file's generic family-signing mechanics run against a second
+// organization instead (createSignatureRequest itself is blocked for Manors).
 
 let idCounter = 0;
 function idFactory() {
@@ -43,7 +47,7 @@ function idFactory() {
 }
 
 function ctx() {
-  return { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: 'staff-1', actorMembershipId: 'membership-1', actorRoleKey: 'funeralDirector', correlationId: 'seed-corr' };
+  return { organizationId: SECOND_MOCK_ORGANIZATION_ID, actorIdentityId: 'staff-1', actorMembershipId: 'membership-1', actorRoleKey: 'funeralDirector', correlationId: 'seed-corr' };
 }
 
 const TEST_CASE_ID = 'case-portal-signature-service-test';
@@ -69,7 +73,7 @@ beforeEach(() => {
   };
   caseFixtures.push({
     id: TEST_CASE_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: SECOND_MOCK_ORGANIZATION_ID,
     caseNumber: 'B2026-333',
     decedentName: 'Test Decedent',
     dateOfBirth: '01/01/1950',
@@ -133,7 +137,7 @@ afterEach(() => {
 
 async function seedRequest(signerEmail = 'family@example.com') {
   const template = await createTemplate(
-    { organizationId: DEFAULT_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>x</p>', idFactory },
+    { organizationId: SECOND_MOCK_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>x</p>', idFactory },
     ctx(),
     'mock',
   );
@@ -153,7 +157,7 @@ describe('portalSignatureService', () => {
       await seedRequest('someone-else@example.com');
 
       const { listFamilySignatureRequests } = await import('./portalSignatureService');
-      const list = await listFamilySignatureRequests(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'family@example.com', 'mock');
+      const list = await listFamilySignatureRequests(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'family@example.com', 'mock');
       expect(list).toHaveLength(1);
       expect(list[0]).not.toHaveProperty('signerEmail');
     });
@@ -161,7 +165,7 @@ describe('portalSignatureService', () => {
     it('email matching is case-insensitive', async () => {
       await seedRequest('Family@Example.com');
       const { listFamilySignatureRequests } = await import('./portalSignatureService');
-      const list = await listFamilySignatureRequests(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'family@example.com', 'mock');
+      const list = await listFamilySignatureRequests(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'family@example.com', 'mock');
       expect(list).toHaveLength(1);
     });
   });
@@ -172,7 +176,7 @@ describe('portalSignatureService', () => {
       const { completeFamilySignature } = await import('./portalSignatureService');
 
       const result = await completeFamilySignature(
-        { organizationId: DEFAULT_ORGANIZATION_ID, caseId: TEST_CASE_ID, requestId: request.id, portalUserId: 'portal-user-1', portalUserEmail: 'family@example.com', signedName: 'Pat Family', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory },
+        { organizationId: SECOND_MOCK_ORGANIZATION_ID, caseId: TEST_CASE_ID, requestId: request.id, portalUserId: 'portal-user-1', portalUserEmail: 'family@example.com', signedName: 'Pat Family', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory },
         'mock',
       );
 
@@ -191,7 +195,7 @@ describe('portalSignatureService', () => {
 
       await expect(
         completeFamilySignature(
-          { organizationId: DEFAULT_ORGANIZATION_ID, caseId: TEST_CASE_ID, requestId: request.id, portalUserId: 'portal-user-1', portalUserEmail: 'family@example.com', signedName: 'Pat Family', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory },
+          { organizationId: SECOND_MOCK_ORGANIZATION_ID, caseId: TEST_CASE_ID, requestId: request.id, portalUserId: 'portal-user-1', portalUserEmail: 'family@example.com', signedName: 'Pat Family', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory },
           'mock',
         ),
       ).rejects.toThrow(PortalSignatureServiceError);
@@ -204,7 +208,7 @@ describe('portalSignatureService', () => {
       const { declineFamilySignature } = await import('./portalSignatureService');
 
       const result = await declineFamilySignature(
-        { organizationId: DEFAULT_ORGANIZATION_ID, caseId: TEST_CASE_ID, requestId: request.id, portalUserEmail: 'family@example.com', reason: 'Need more time', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0' },
+        { organizationId: SECOND_MOCK_ORGANIZATION_ID, caseId: TEST_CASE_ID, requestId: request.id, portalUserEmail: 'family@example.com', reason: 'Need more time', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0' },
         'mock',
       );
       expect(result.status).toBe('declined');

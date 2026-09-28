@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #4 (2026-09): the real Manor's Cremation organization
+// id (managed-cremations) now has Signature Requests disabled — this
+// file's generic signing mechanics run against a second organization
+// instead (createSignatureRequest itself is blocked for Manors).
 import { caseDocumentFixtures, documentTemplateFixtures, signatureRequestFixtures, signatureRecordFixtures } from '@/services/__mocks__/documentFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
@@ -40,7 +44,7 @@ function signingRequest(token: string) {
 }
 
 const TEST_CASE_ID = 'case-sig-public-get-route-test';
-const SEED_CTX = { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: 'seed', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'seed-corr' };
+const SEED_CTX = { organizationId: SECOND_MOCK_ORGANIZATION_ID, actorIdentityId: 'seed', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'seed-corr' };
 
 beforeEach(() => {
   idCounter = 0;
@@ -52,7 +56,7 @@ beforeEach(() => {
   signatureRecordFixtures.length = 0;
   caseFixtures.push({
     id: TEST_CASE_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: SECOND_MOCK_ORGANIZATION_ID,
     caseNumber: 'B2026-773',
     decedentName: 'Robert Ellison',
     dateOfBirth: '04/12/1951',
@@ -113,7 +117,7 @@ afterEach(() => {
 
 async function seedActiveRequestAndToken() {
   const template = await createTemplate(
-    { organizationId: DEFAULT_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>{{case.decedent.fullName}}</p>', idFactory },
+    { organizationId: SECOND_MOCK_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>{{case.decedent.fullName}}</p>', idFactory },
     SEED_CTX,
     'mock',
   );
@@ -151,7 +155,7 @@ describe('GET /api/signing/[token]', () => {
 
   it('still resolves a cancelled request\'s token (so the page can show "this request was cancelled"), rather than a generic 404', async () => {
     const { request, rawToken } = await seedActiveRequestAndToken();
-    await cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, SEED_CTX, 'mock');
+    await cancelSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, SEED_CTX, 'mock');
 
     const response = await signingRequest(rawToken);
     expect(response.status).toBe(200);

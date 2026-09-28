@@ -67,9 +67,18 @@ function idFactory() {
   return `sig-${idCounter}`;
 }
 
+// Handwritten item #4 (2026-09): DEFAULT_ORGANIZATION_ID is the real
+// Manor's Cremation organization id, which now has Signature Requests
+// disabled — this suite's default organization for generic create/resend/
+// cancel mechanics is SECOND_MOCK_ORGANIZATION_ID instead. The pre-existing
+// "cross-tenant isolation" tests further below still use two genuinely
+// different organizations; they just swap which constant plays "self" vs.
+// "the other org" (see that describe block's own comment). A dedicated
+// "Signature Requests organization capability (item #4)" describe block
+// exercises DEFAULT_ORGANIZATION_ID specifically to prove it's blocked.
 function ctx(overrides: Partial<ActivityContext> = {}): ActivityContext {
   return {
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: SECOND_MOCK_ORGANIZATION_ID,
     actorIdentityId: 'identity-1',
     actorMembershipId: 'membership-1',
     actorRoleKey: 'manager',
@@ -102,7 +111,7 @@ beforeEach(() => {
   };
   caseFixtures.push({
     id: TEST_CASE_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: SECOND_MOCK_ORGANIZATION_ID,
     caseNumber: 'B2026-998',
     decedentName: 'Robert Ellison',
     dateOfBirth: '04/12/1951',
@@ -168,7 +177,7 @@ afterEach(() => {
 async function createSampleDocument() {
   const template = await createTemplate(
     {
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
       name: 'Cremation Authorization',
       documentTypeKey: 'authorization.cremation',
       category: 'authorization',
@@ -298,7 +307,7 @@ describe('resendSignatureRequest', () => {
     const originalTokenHash = request.tokenHash;
     const originalRawToken = mockNotifyRequested.mock.calls[0][0].signLink.split('token=')[1];
 
-    const resent = await resendSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
+    const resent = await resendSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
 
     expect(resent.tokenHash).not.toBe(originalTokenHash);
     expect(resent.status).toBe('pending');
@@ -313,9 +322,9 @@ describe('resendSignatureRequest', () => {
   it('rejects resending a terminal request', async () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
-    await cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
+    await cancelSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
 
-    await expect(resendSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock')).rejects.toThrow(/can no longer be resent/i);
+    await expect(resendSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock')).rejects.toThrow(/can no longer be resent/i);
   });
 });
 
@@ -324,9 +333,9 @@ describe('cancelSignatureRequest', () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
 
-    await cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
+    await cancelSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
 
-    const reloaded = await getRequestById(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
+    const reloaded = await getRequestById(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
     expect(reloaded?.status).toBe('cancelled');
     expect(reloaded?.cancelledBy).toBe('identity-1');
     expect(mockNotifyCancelled).toHaveBeenCalledTimes(1);
@@ -338,7 +347,7 @@ describe('cancelSignatureRequest', () => {
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
     const rawToken = mockNotifyRequested.mock.calls[0][0].signLink.split('token=')[1];
 
-    await cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
+    await cancelSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
 
     const resolved = await resolveSigningToken(rawToken, 'mock');
     expect(resolved.status).toBe('cancelled');
@@ -348,9 +357,9 @@ describe('cancelSignatureRequest', () => {
   it('rejects cancelling an already-terminal request', async () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
-    await cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
+    await cancelSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock');
 
-    await expect(cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock')).rejects.toThrow(/can no longer be cancelled/i);
+    await expect(cancelSignatureRequest(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, ctx(), 'mock')).rejects.toThrow(/can no longer be cancelled/i);
   });
 });
 
@@ -432,7 +441,7 @@ describe('completeSignatureRequest', () => {
     expect(record.verificationStatus).toBe('verified');
     expect(record.documentChecksumSha256).toBe(doc.checksumSha256);
 
-    const records = await listRecords(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
+    const records = await listRecords(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
     expect(records).toHaveLength(1);
 
     expect(mockNotifyCompleted).toHaveBeenCalledTimes(1);
@@ -462,7 +471,7 @@ describe('completeSignatureRequest', () => {
     ).rejects.toThrow(/can no longer be completed/i);
 
     // Never a second record for the same request.
-    const records = await listRecords(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
+    const records = await listRecords(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
     expect(records).toHaveLength(1);
   });
 
@@ -476,9 +485,9 @@ describe('completeSignatureRequest', () => {
       completeSignatureRequest(request, { signedName: 'Jane Doe', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory }, 'mock'),
     ).rejects.toThrow(/integrity check failed/i);
 
-    const records = await listRecords(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
+    const records = await listRecords(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
     expect(records).toHaveLength(0);
-    const reloaded = await getRequestById(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
+    const reloaded = await getRequestById(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
     expect(reloaded?.status).toBe('pending');
   });
 
@@ -506,7 +515,7 @@ describe('completeSignatureRequest', () => {
   it('Phase 29: an explicit ctx (e.g. portalActivityContext for a family-side completion) overrides the default attribution', async () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
-    const portalCtx = { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'portal-corr-1', isSystemGenerated: true };
+    const portalCtx = { organizationId: SECOND_MOCK_ORGANIZATION_ID, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'portal-corr-1', isSystemGenerated: true };
 
     await completeSignatureRequest(request, { signedName: 'Jane Doe', ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0', idFactory }, 'mock', portalCtx);
 
@@ -530,7 +539,7 @@ describe('declineSignatureRequest', () => {
     expect(activityEventFixtures.some((e) => e.eventType === 'document.signature.declined')).toBe(true);
 
     // A decline never touches CaseDocument.signatureStatus or creates a SignatureRecord.
-    const records = await listRecords(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
+    const records = await listRecords(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
     expect(records).toHaveLength(0);
     expect(caseDocumentFixtures.find((d) => d.id === doc.id)?.signatureStatus).toBeNull();
 
@@ -546,7 +555,7 @@ describe('declineSignatureRequest', () => {
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
     await declineSignatureRequest(request, { ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0' }, 'mock');
 
-    const reloaded = await getRequestById(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
+    const reloaded = await getRequestById(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
     await expect(declineSignatureRequest(reloaded!, { ipAddress: '203.0.113.1', userAgent: 'Mozilla/5.0' }, 'mock')).rejects.toThrow(/can no longer be declined/i);
   });
 });
@@ -561,10 +570,10 @@ describe('expireOverdueSignatureRequests', () => {
     );
     void request;
 
-    const expiredCount = await expireOverdueSignatureRequests(DEFAULT_ORGANIZATION_ID, 'mock');
+    const expiredCount = await expireOverdueSignatureRequests(SECOND_MOCK_ORGANIZATION_ID, 'mock');
 
     expect(expiredCount).toBe(1);
-    const reloaded = await getRequestById(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
+    const reloaded = await getRequestById(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
     expect(reloaded?.status).toBe('expired');
     expect(activityEventFixtures.some((e) => e.eventType === 'document.signature.expired')).toBe(true);
   });
@@ -573,10 +582,10 @@ describe('expireOverdueSignatureRequests', () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
 
-    const expiredCount = await expireOverdueSignatureRequests(DEFAULT_ORGANIZATION_ID, 'mock');
+    const expiredCount = await expireOverdueSignatureRequests(SECOND_MOCK_ORGANIZATION_ID, 'mock');
 
     expect(expiredCount).toBe(0);
-    const reloaded = await getRequestById(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
+    const reloaded = await getRequestById(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, request.id, 'mock');
     expect(reloaded?.status).toBe('pending');
   });
 });
@@ -586,7 +595,10 @@ describe('cross-tenant isolation', () => {
     const doc = await createSampleDocument();
     await createSignatureRequest({ caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory }, ctx(), 'mock');
 
-    const otherOrgRequests = await listRequests(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
+    // The "other org" here is DEFAULT_ORGANIZATION_ID (real Manors id) —
+    // a read-only isolation check never creates anything under it, so
+    // its Signature Requests-disabled capability is irrelevant here.
+    const otherOrgRequests = await listRequests(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, 'mock');
     expect(otherOrgRequests).toHaveLength(0);
   });
 
@@ -596,8 +608,8 @@ describe('cross-tenant isolation', () => {
     const rawToken = mockNotifyRequested.mock.calls[0][0].signLink.split('token=')[1];
 
     const resolved = await resolveSigningToken(rawToken, 'mock');
-    expect(resolved.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
-    expect(resolved.organizationId).not.toBe(SECOND_MOCK_ORGANIZATION_ID);
+    expect(resolved.organizationId).toBe(SECOND_MOCK_ORGANIZATION_ID);
+    expect(resolved.organizationId).not.toBe(DEFAULT_ORGANIZATION_ID);
   });
 });
 
@@ -609,6 +621,73 @@ describe('getDocumentBytesForSigning', () => {
     const result = await getDocumentBytesForSigning(request, 'mock');
     expect(result.buffer.toString()).toContain('%PDF');
     expect(result.fileName).toBe(doc.fileName);
+  });
+});
+
+describe('Signature Requests organization capability (handwritten item #4, 2026-09)', () => {
+  it('6: createSignatureRequest rejects managed-cremations (Signature Requests disabled) before even looking up the document — no request/activity is created', async () => {
+    await expect(
+      createSignatureRequest(
+        { caseId: TEST_CASE_ID, documentId: 'irrelevant-doc-id', signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory },
+        ctx({ organizationId: DEFAULT_ORGANIZATION_ID }),
+        'mock',
+      ),
+    ).rejects.toThrow(SignatureServiceError);
+    expect(signatureRequestFixtures).toHaveLength(0);
+    expect(activityEventFixtures.some((e) => e.eventType === 'document.signature.requested')).toBe(false);
+  });
+
+  it('resendSignatureRequest rejects managed-cremations (reissuing a token is blocked exactly like creation)', async () => {
+    await expect(resendSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'irrelevant-request-id', ctx({ organizationId: DEFAULT_ORGANIZATION_ID }), 'mock')).rejects.toThrow(
+      SignatureServiceError,
+    );
+  });
+
+  it('7: createSignatureRequest still works normally for another organization (SECOND_MOCK_ORGANIZATION_ID, capability absent/default)', async () => {
+    const doc = await createSampleDocument();
+    const request = await createSignatureRequest(
+      { caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', idFactory },
+      ctx(),
+      'mock',
+    );
+    expect(request.status).toBe('pending');
+  });
+
+  it("cancelSignatureRequest remains available for managed-cremations — cancel only terminates, it never creates/reissues, so item #4 doesn't gate it", async () => {
+    // Seeded directly via the fixture array (not createSignatureRequest,
+    // which is itself blocked for this organization) — simulates a
+    // request already issued before Signature Requests was disabled.
+    signatureRequestFixtures.push({
+      id: 'sig-request-manors-cancel-unit-test',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: TEST_CASE_ID,
+      documentId: 'doc-manors-cancel-unit-test',
+      documentVersion: 1,
+      signerName: 'JANE DOE',
+      signerEmail: 'jane@example.com',
+      signerRole: 'next_of_kin',
+      status: 'pending',
+      tokenHash: 'b'.repeat(64),
+      issuedAt: '2026-09-01T00:00:00.000Z',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      requestVersion: 1,
+      sequenceOrder: 1,
+      requestedBy: 'staff-1',
+      viewedAt: null,
+      signedAt: null,
+      declinedAt: null,
+      declineReason: null,
+      cancelledAt: null,
+      cancelledBy: null,
+      lastRemindedAt: null,
+      reminderCount: 0,
+      correlationId: 'corr-manors-cancel-unit-test',
+    });
+
+    await cancelSignatureRequest(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'sig-request-manors-cancel-unit-test', ctx({ organizationId: DEFAULT_ORGANIZATION_ID }), 'mock');
+
+    const reloaded = await getRequestById(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'sig-request-manors-cancel-unit-test', 'mock');
+    expect(reloaded?.status).toBe('cancelled');
   });
 });
 

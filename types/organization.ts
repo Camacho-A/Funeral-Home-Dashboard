@@ -95,6 +95,15 @@ export type Organization = {
       Family Portal actions may be taken and whether existing access still
       resolves to an active experience going forward. */
   familyPortalEnabled?: boolean;
+  /** Handwritten item #4 (2026-09, Request Signature removal for Manors).
+      A SEPARATE organization-level capability from `familyPortalEnabled`
+      above — see domain/organization/signatureRequestCapability.ts, the
+      sole place this field is read. Same default-preserve polarity: an
+      absent/undefined value means Signature Requests remain enabled
+      (existing behavior); only an explicit `false` disables initiating
+      new SignatureRequests for that organization. Does not delete or
+      otherwise affect any existing SignatureRequest/SignatureRecord data. */
+  signatureRequestsEnabled?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

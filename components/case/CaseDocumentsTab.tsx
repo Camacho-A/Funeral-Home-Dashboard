@@ -2,6 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { isSignatureRequestsEnabled } from '@/domain/organization/signatureRequestCapability';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseDocumentLibrary, useUploadCaseDocument, useArchiveCaseDocument } from '@/hooks/useCaseDocumentLibrary';
 import { Card } from '@/components/ui/Card';
@@ -43,6 +45,8 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const { organizationId } = useOrganization();
   const documentsQuery = useCaseDocumentLibrary(organizationId, caseId);
   const myPermissionsQuery = useMyPermissions(organizationId);
+  const { data: organizationRecord } = useOrganizationRecord();
+  const signatureRequestsEnabled = isSignatureRequestsEnabled(organizationRecord ?? null);
   const upload = useUploadCaseDocument(organizationId, caseId);
   const archive = useArchiveCaseDocument(organizationId, caseId);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,7 +91,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const canGenerate = permissions === null || permissions.includes('document.generate');
   const canUpload = permissions === null || permissions.includes('document.upload');
   const canArchive = permissions === null || permissions.includes('document.archive');
-  const canRequestSignature = permissions === null || permissions.includes('signature.request');
+  // Handwritten item #4 (2026-09): gated on both the permission AND the
+  // organization-level capability — an organization with Signature
+  // Requests disabled (Manors) never shows Request Signature/Resend
+  // regardless of the viewer's own signature.request permission.
+  const canRequestSignature = (permissions === null || permissions.includes('signature.request')) && signatureRequestsEnabled;
   const canReadSignature = permissions === null || permissions.includes('signature.read');
   const canCancelSignature = permissions === null || permissions.includes('signature.cancel');
 

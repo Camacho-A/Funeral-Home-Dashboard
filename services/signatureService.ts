@@ -31,6 +31,7 @@ import {
 import { signatureRequestFixtures, signatureRecordFixtures } from './__mocks__/documentFixtures';
 import { caseFixtures } from './__mocks__/fixtures';
 import { normalizeSignatureRequestTextFields } from '../domain/signatures/textNormalization';
+import { isSignatureRequestsEnabledForOrganizationId } from './organizationSignatureRequestCapabilityService';
 
 /**
  * Phase 26 (Electronic Signatures & Authorization Workflows).
@@ -346,6 +347,14 @@ export async function createSignatureRequest(
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
 ): Promise<SignatureRequest> {
+  // Handwritten item #4 (2026-09). Enforced here, not just in the staff
+  // route, so every current and future caller — including
+  // schedulingService.ts's createWitnessSignatureRequest, which calls
+  // this function directly — is covered by one centralized check.
+  if (!(await isSignatureRequestsEnabledForOrganizationId(ctx.organizationId, dataAdapterMode))) {
+    throw new SignatureServiceError('Signature requests are not enabled for this organization.');
+  }
+
   const documents = await listCaseDocuments(ctx.organizationId, params.caseId, dataAdapterMode);
   const targetDocument = documents.find((d) => d.id === params.documentId);
   if (!targetDocument) {
@@ -446,6 +455,15 @@ async function dispatchAndAdvance(request: SignatureRequest, rawToken: string, c
 }
 
 export async function resendSignatureRequest(organizationId: string, caseId: string, requestId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<SignatureRequest> {
+  // Handwritten item #4 (2026-09). Resend mints a new token and extends
+  // expiry (see dispatchAndAdvance below) — a reissue of the request, not
+  // a read of the existing one — so it's gated exactly like creation.
+  // cancelSignatureRequest is deliberately NOT gated: it only ever
+  // terminates an existing request, never creates or reissues one.
+  if (!(await isSignatureRequestsEnabledForOrganizationId(organizationId, dataAdapterMode))) {
+    throw new SignatureServiceError('Signature requests are not enabled for this organization.');
+  }
+
   const existing = await getRequestById(organizationId, caseId, requestId, dataAdapterMode);
   if (!existing) {
     throw new SignatureServiceError('Signature request not found.');
