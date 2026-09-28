@@ -31,7 +31,7 @@ import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
 
-type CaseDetailTab = 'overview' | 'workflow' | 'activity' | 'documents' | 'schedule' | 'portal';
+type CaseDetailTab = 'overview' | 'workflow' | 'billing' | 'documents' | 'activity' | 'schedule' | 'portal';
 
 /**
  * Case Detail page (Frontend Engineering Plan, Phase 6) — the orchestration
@@ -69,6 +69,19 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   // capability-gating pattern above; the underlying route independently
   // re-enforces authorization server-side regardless of this UI check.
   const canSeeWorkflowTab = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
+  // Billing-tab relocation (2026-09): the Billing tab contains BillingCard's
+  // financial content (Cash Advance items, Statement preview/total,
+  // Generate/Regenerate Statement PDF) — the same "case financial
+  // total/balance/history" tier CaseOrderCard already reserves behind
+  // `payment.read` (narrower than `caseOrder.read`, which every case-
+  // working role holds). BillingCard itself never self-gated this before
+  // (it simply rendered unconditionally inside Overview) — gating the tab
+  // here closes that gap using the one existing permission that already
+  // means exactly this, rather than inventing a new one. Office Staff's
+  // own role definition explicitly excludes `payment.read` ("without
+  // payment, accounting, or workflow access"), so this relocation cannot
+  // grant it new financial visibility.
+  const canSeeBillingTab = Boolean(permissionsQuery.data?.permissions.includes('payment.read'));
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
@@ -154,15 +167,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             Workflow
           </button>
         )}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'activity'}
-          className={activeTab === 'activity' ? styles.tabActive : styles.tabInactive}
-          onClick={() => setActiveTab('activity')}
-        >
-          Activity
-        </button>
+        {canSeeBillingTab && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'billing'}
+            className={activeTab === 'billing' ? styles.tabActive : styles.tabInactive}
+            onClick={() => setActiveTab('billing')}
+          >
+            Billing
+          </button>
+        )}
         <button
           type="button"
           role="tab"
@@ -171,6 +186,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           onClick={() => setActiveTab('documents')}
         >
           Documents
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'activity'}
+          className={activeTab === 'activity' ? styles.tabActive : styles.tabInactive}
+          onClick={() => setActiveTab('activity')}
+        >
+          Activity
         </button>
         <button
           type="button"
@@ -195,11 +219,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       </div>
 
       {activeTab === 'workflow' && canSeeWorkflowTab && <CaseWorkflowRepairPanel caseId={caseId} />}
-      {activeTab === 'activity' && (
-        <CaseActivityTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
-      )}
+      {activeTab === 'billing' && canSeeBillingTab && <BillingCard caseId={caseId} />}
       {activeTab === 'documents' && (
         <CaseDocumentsTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
+      )}
+      {activeTab === 'activity' && (
+        <CaseActivityTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
       )}
       {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
       {activeTab === 'portal' && familyPortalEnabled && <CaseFamilyPortalTab caseId={caseId} />}
@@ -259,8 +284,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           <CaseFormsSection caseId={caseId} />
 
           <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
-
-          <BillingCard caseId={caseId} />
 
           <ChecklistCard
             checklist={viewModel.checklist}

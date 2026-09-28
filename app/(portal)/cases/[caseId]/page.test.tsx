@@ -75,23 +75,21 @@ describe('Case Detail page — Overview tab structure (item #2, 2026-09)', () =>
     expect(SOURCE).toMatch(/useResetMainContentScrollOnChange\(caseId\);/);
   });
 
-  it("Forms and Billing are NOT moved — CaseFormsSection/BillingCard remain on Overview, unconditional on activeTab === 'overview'", () => {
+  it("Forms is NOT moved — CaseFormsSection remains on Overview, unconditional on activeTab === 'overview'", () => {
     expect(SOURCE).toMatch(/<CaseFormsSection caseId=\{caseId\} \/>/);
-    expect(SOURCE).toMatch(/<BillingCard caseId=\{caseId\} \/>/);
   });
 });
 
 const CSS_SOURCE = fs.readFileSync(path.join(__dirname, 'page.module.css'), 'utf-8');
 
 describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
-  it('3/4/5/6/7/8/9: every Overview card remains present in the page source', () => {
+  it('3/4/5/6/7/8/9: every remaining Overview card is present in the page source (BillingCard excluded — relocated to its own tab)', () => {
     expect(SOURCE).toMatch(/<CaseInformationCard/);
     expect(SOURCE).toMatch(/<ChecklistCard/);
     expect(SOURCE).toMatch(/<CaseLogCard/);
     expect(SOURCE).toMatch(/<CaseTasksCard/);
     expect(SOURCE).toMatch(/<CaseFormsSection caseId=\{caseId\} \/>/);
     expect(SOURCE).toMatch(/<CaseOrderCard caseId=\{caseId\}/);
-    expect(SOURCE).toMatch(/<BillingCard caseId=\{caseId\} \/>/);
   });
 
   it("10: Overview no longer wraps everything in the old fixed two-column '.columns'/'.column' layout", () => {
@@ -181,15 +179,15 @@ describe('Case Detail page — Workflow tab (item #10, 2026-09: workflow repair 
     expect(SOURCE).toMatch(/\{canSeeWorkflowTab && \([\s\S]*?Workflow[\s\S]*?\)\}/);
   });
 
-  it('2: the Workflow tab button appears directly after Overview and before Activity', () => {
+  it('2: the Workflow tab button appears directly after Overview and before Billing (2026-09: billing-tab relocation moved Billing directly after Workflow)', () => {
     const overviewButtonIndex = SOURCE.indexOf(">\n          Overview\n        </button>");
     const workflowButtonIndex = SOURCE.indexOf('>\n            Workflow\n          </button>');
-    const activityButtonIndex = SOURCE.indexOf('>\n          Activity\n        </button>');
+    const billingButtonIndex = SOURCE.indexOf('>\n            Billing\n          </button>');
     expect(overviewButtonIndex).toBeGreaterThan(-1);
     expect(workflowButtonIndex).toBeGreaterThan(-1);
-    expect(activityButtonIndex).toBeGreaterThan(-1);
+    expect(billingButtonIndex).toBeGreaterThan(-1);
     expect(overviewButtonIndex).toBeLessThan(workflowButtonIndex);
-    expect(workflowButtonIndex).toBeLessThan(activityButtonIndex);
+    expect(workflowButtonIndex).toBeLessThan(billingButtonIndex);
   });
 
   it('3: CaseWorkflowRepairPanel renders inside the Workflow tab, gated on both activeTab and the same authorization check', () => {
@@ -213,5 +211,85 @@ describe('Case Detail page — Workflow tab (item #10, 2026-09: workflow repair 
     // `canSeeWorkflowTab` guard — false for either means neither renders.
     const buttonGuardMatches = SOURCE.match(/canSeeWorkflowTab/g) ?? [];
     expect(buttonGuardMatches.length).toBeGreaterThanOrEqual(3); // declaration + button guard + content guard
+  });
+});
+
+describe('Case Detail page — Billing tab (2026-09, billing-tab relocation)', () => {
+  it('1/20: the Billing tab button renders only for an authorized caller (gated on canSeeBillingTab, the existing payment.read permission — the same financial-visibility tier CaseOrderCard already reserves)', () => {
+    expect(SOURCE).toMatch(/canSeeBillingTab = Boolean\(permissionsQuery\.data\?\.permissions\.includes\('payment\.read'\)\)/);
+    expect(SOURCE).toMatch(/\{canSeeBillingTab && \([\s\S]*?Billing[\s\S]*?\)\}/);
+  });
+
+  it('2: the Billing tab button appears directly after Workflow and before Documents', () => {
+    const workflowButtonIndex = SOURCE.indexOf('>\n            Workflow\n          </button>');
+    const billingButtonIndex = SOURCE.indexOf('>\n            Billing\n          </button>');
+    const documentsButtonIndex = SOURCE.indexOf('>\n          Documents\n        </button>');
+    expect(workflowButtonIndex).toBeGreaterThan(-1);
+    expect(billingButtonIndex).toBeGreaterThan(-1);
+    expect(documentsButtonIndex).toBeGreaterThan(-1);
+    expect(workflowButtonIndex).toBeLessThan(billingButtonIndex);
+    expect(billingButtonIndex).toBeLessThan(documentsButtonIndex);
+  });
+
+  it('5: BillingCard renders inside the Billing tab, gated on both activeTab and the same authorization check', () => {
+    expect(SOURCE).toMatch(/\{activeTab === 'billing' && canSeeBillingTab && <BillingCard caseId=\{caseId\} \/>\}/);
+  });
+
+  it('7: BillingCard is rendered exactly once in the whole page — no duplicate instance left in Overview', () => {
+    const occurrences = SOURCE.match(/<BillingCard caseId=\{caseId\} \/>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it('6: Overview\'s own block contains no reference to BillingCard', () => {
+    const overviewBlockStart = SOURCE.indexOf("activeTab === 'overview' && (");
+    const overviewBlockEnd = SOURCE.indexOf('</div>\n      )}', overviewBlockStart);
+    const overviewBlock = SOURCE.slice(overviewBlockStart, overviewBlockEnd);
+    expect(overviewBlock).not.toMatch(/BillingCard/);
+  });
+
+  it('8: CaseOrderCard remains on Overview, unmoved', () => {
+    const overviewBlockStart = SOURCE.indexOf("activeTab === 'overview' && (");
+    const overviewBlockEnd = SOURCE.indexOf('</div>\n      )}', overviewBlockStart);
+    const overviewBlock = SOURCE.slice(overviewBlockStart, overviewBlockEnd);
+    expect(overviewBlock).toMatch(/<CaseOrderCard caseId=\{caseId\}/);
+  });
+
+  it('21: an unauthorized caller (canSeeBillingTab false) never renders the Billing tab button or its content — no empty financial tab', () => {
+    // Both the button and the content branch share the identical
+    // `canSeeBillingTab` guard — false for either means neither renders.
+    const guardMatches = SOURCE.match(/canSeeBillingTab/g) ?? [];
+    expect(guardMatches.length).toBeGreaterThanOrEqual(3); // declaration + button guard + content guard
+  });
+
+  it("22: Office Staff's role does not include payment.read, so this relocation grants it no new accounting access (documented in the page's own comment)", () => {
+    expect(SOURCE).toMatch(/Office Staff's[\s\S]{0,400}payment\.read/);
+  });
+});
+
+describe('Case Detail page — six-tab order (2026-09, billing-tab relocation, supersedes item #10\'s Activity-before-Documents order)', () => {
+  it('3/4: Documents appears before Activity, and the authorized-Manors tab order is exactly Overview, Workflow, Billing, Documents, Activity, Schedule', () => {
+    const indices = {
+      overview: SOURCE.indexOf(">\n          Overview\n        </button>"),
+      workflow: SOURCE.indexOf('>\n            Workflow\n          </button>'),
+      billing: SOURCE.indexOf('>\n            Billing\n          </button>'),
+      documents: SOURCE.indexOf('>\n          Documents\n        </button>'),
+      activity: SOURCE.indexOf('>\n          Activity\n        </button>'),
+      schedule: SOURCE.indexOf('>\n          Schedule\n        </button>'),
+    };
+    for (const [name, index] of Object.entries(indices)) {
+      expect(index, `${name} tab button not found`).toBeGreaterThan(-1);
+    }
+    expect(indices.overview).toBeLessThan(indices.workflow);
+    expect(indices.workflow).toBeLessThan(indices.billing);
+    expect(indices.billing).toBeLessThan(indices.documents);
+    expect(indices.documents).toBeLessThan(indices.activity); // Documents before Activity
+    expect(indices.activity).toBeLessThan(indices.schedule);
+  });
+
+  it('25: no duplicate Billing content exists anywhere on Case Detail', () => {
+    const billingCardOccurrences = SOURCE.match(/<BillingCard/g) ?? [];
+    const billingHeadingOccurrences = SOURCE.match(/>\s*Billing\s*</g) ?? [];
+    expect(billingCardOccurrences).toHaveLength(1);
+    expect(billingHeadingOccurrences.length).toBeLessThanOrEqual(1);
   });
 });
