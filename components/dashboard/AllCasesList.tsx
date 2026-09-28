@@ -43,9 +43,8 @@ export function AllCasesList({
             <div className={styles.avatar}>{c.decedentInitials}</div>
             <div className={styles.main}>
               <div>
-                <div className={styles.name}>
-                  {c.decedentName} <span className={styles.caseNumber}>#{c.caseNumber}</span>
-                </div>
+                <div className={styles.name}>{c.decedentName}</div>
+                <div className={styles.caseNumber}>#{c.caseNumber}</div>
                 <div
                   className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
                 >

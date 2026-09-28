@@ -63,9 +63,8 @@ export function StageFilteredPanel({
               {c.decedentInitials}
             </Link>
             <Link href={`/cases/${c.id}`} className={styles.main}>
-              <div className={styles.name}>
-                {c.decedentName} <span className={styles.caseNumber}>#{c.caseNumber}</span>
-              </div>
+              <div className={styles.name}>{c.decedentName}</div>
+              <div className={styles.caseNumber}>#{c.caseNumber}</div>
               <div
                 className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
               >
