@@ -13,9 +13,18 @@ export function lowerFirst(label: string): string {
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
-/** First two characters, uppercased — the prototype's own avatar-initials
-    convention (e.g. design/support.js's `raw.owner.slice(0,2).toUpperCase()`
-    for case-owner avatars), reused here for any name-to-initials need. */
+/** Employee initials derived from their actual first and last name — the
+    first letter of the first word plus the first letter of the last word
+    (e.g. "Angelica Camacho" -> "AC"). Deliberately NOT a raw slice of the
+    first N characters of the whole string (that previous convention
+    produced "AN" for "Angelica Camacho" — the first two letters of just
+    the first name — which is wrong whenever a last name is available).
+    A single-word name (no last name available) falls back to that word's
+    own initial only, never inventing a second letter from anything else. */
 export function initialsFromName(name: string): string {
-  return name.slice(0, 2).toUpperCase();
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const firstInitial = words[0][0];
+  const lastInitial = words.length > 1 ? words[words.length - 1][0] : '';
+  return (firstInitial + lastInitial).toUpperCase();
 }

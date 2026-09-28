@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import { initialsFromName } from './string';
+
+/**
+ * Item #6 clarification (2026-09): the previous `initialsFromName` sliced
+ * the first two characters of the whole name string, which produced "AN"
+ * for "Angelica Camacho" (the first two letters of just the first name)
+ * instead of the correct first-name-initial + last-name-initial "AC". These
+ * tests pin the corrected first-word/last-word behavior directly.
+ */
+describe('initialsFromName', () => {
+  it('1: "Angelica Camacho" -> "AC"', () => {
+    expect(initialsFromName('Angelica Camacho')).toBe('AC');
+  });
+
+  it('2: does not produce "AN" for "Angelica Camacho"', () => {
+    expect(initialsFromName('Angelica Camacho')).not.toBe('AN');
+  });
+
+  it('3: uses the first and last word of the name, not a raw slice of the string', () => {
+    // A raw two-character slice of "Angelica Camacho" would be "An" -> "AN".
+    // The correct behavior takes the first letter of the first word and the
+    // first letter of the last word instead.
+    const result = initialsFromName('Angelica Camacho');
+    expect(result[0]).toBe('A'); // first letter of the first word ("Angelica")
+    expect(result[1]).toBe('C'); // first letter of the last word ("Camacho"), never the
+    // second letter of the first word
+  });
+
+  it('4a: "John Smith" -> "JS"', () => {
+    expect(initialsFromName('John Smith')).toBe('JS');
+  });
+
+  it('4b: "Maria Rodriguez" -> "MR"', () => {
+    expect(initialsFromName('Maria Rodriguez')).toBe('MR');
+  });
+
+  it('5a: single-name fallback uses that name\'s own first initial only ("Cher" -> "C")', () => {
+    expect(initialsFromName('Cher')).toBe('C');
+  });
+
+  it('5b: single-name fallback never invents a second letter from anywhere else', () => {
+    const result = initialsFromName('Cher');
+    expect(result).toHaveLength(1);
+  });
+
+  it('ignores a middle name — takes the first and last word only, never the middle one', () => {
+    expect(initialsFromName('Angelica Maria Camacho')).toBe('AC');
+  });
+
+  it('collapses extra whitespace between words', () => {
+    expect(initialsFromName('  Angelica   Camacho  ')).toBe('AC');
+  });
+
+  it('returns an empty string for an empty name rather than throwing', () => {
+    expect(initialsFromName('')).toBe('');
+  });
+});

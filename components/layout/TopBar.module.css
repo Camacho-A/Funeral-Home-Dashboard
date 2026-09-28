@@ -11,6 +11,13 @@
   flex: 1;
 }
 
+.employeeName {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
 .signOutButton {
   cursor: pointer;
   font-size: var(--font-size-12);

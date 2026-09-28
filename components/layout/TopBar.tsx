@@ -128,6 +128,7 @@ export function TopBar({
         </a>
       )}
       <NotificationBell />
+      <span className={styles.employeeName}>{session.displayName}</span>
       <UserAvatar initials={initialsFromName(session.displayName)} />
       <form action={logoutAction}>
         <button type="submit" className={styles.signOutButton}>

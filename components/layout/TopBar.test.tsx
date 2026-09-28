@@ -34,13 +34,14 @@ beforeEach(() => {
 });
 
 const TEST_SESSION = { staffId: 'staff-test-session', displayName: 'Jordan Rivera' };
+const ANGELICA_SESSION = { staffId: 'staff-angelica', displayName: 'Angelica Camacho' };
 
-function renderTopBar() {
+function renderTopBar(session: { staffId: string | null; displayName: string } = TEST_SESSION) {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider>
-        <SessionProvider value={TEST_SESSION}>
+        <SessionProvider value={session}>
           <TopBar />
         </SessionProvider>
       </OrganizationProvider>
@@ -51,7 +52,7 @@ function renderTopBar() {
 describe('TopBar — real session identity (Manors go-live fix)', () => {
   it('displays the authenticated employee from SessionProvider, not a hardcoded fixture', () => {
     renderTopBar();
-    expect(screen.getByText('JO')).toBeInTheDocument();
+    expect(screen.getByText('JR')).toBeInTheDocument();
     expect(screen.queryByText('DA')).not.toBeInTheDocument();
   });
 
@@ -66,7 +67,60 @@ describe('TopBar — real session identity (Manors go-live fix)', () => {
         </OrganizationProvider>
       </QueryClientProvider>,
     );
-    expect(screen.getByText('PR')).toBeInTheDocument();
+    expect(screen.getByText('PN')).toBeInTheDocument();
+  });
+});
+
+describe('TopBar — item #6 clarification (2026-09): employee initials avatar', () => {
+  it('1/2: shows "AC" for Angelica Camacho, never "AN"', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar(ANGELICA_SESSION);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.getByText('AC')).toBeInTheDocument();
+    expect(screen.queryByText('AN')).not.toBeInTheDocument();
+  });
+
+  it('shows the full employee name ("Angelica Camacho") alongside the initials avatar and Sign out', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar(ANGELICA_SESSION);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.getByText('Angelica Camacho')).toBeInTheDocument();
+    expect(screen.getByText('AC')).toBeInTheDocument();
+    expect(screen.getByText('Sign out')).toBeInTheDocument();
+  });
+
+  it('4: other employees each receive their own correct first/last initials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar({ staffId: 'staff-john', displayName: 'John Smith' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.getByText('JS')).toBeInTheDocument();
+  });
+
+  it('5: a single-name session falls back safely to that name\'s own initial', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar({ staffId: 'staff-cher', displayName: 'Cher' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.getByText('C')).toBeInTheDocument();
   });
 });
 
