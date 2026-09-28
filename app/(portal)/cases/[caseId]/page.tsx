@@ -8,6 +8,8 @@ import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { useCaseLog } from '@/hooks/useCaseLog';
 import { useCaseTasks } from '@/hooks/useCaseTasks';
 import { useStaff } from '@/hooks/useStaff';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { isFamilyPortalEnabled } from '@/domain/organization/familyPortalCapability';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
 import { printTextLog } from '@/utils/print';
 import { formatTimestamp } from '@/utils/format';
@@ -52,6 +54,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   const { data: case_, isPending } = useCase(caseId);
   const { data: staffList = [] } = useStaff();
+  const { data: organizationRecord } = useOrganizationRecord();
+  const familyPortalEnabled = isFamilyPortalEnabled(organizationRecord ?? null);
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
@@ -153,15 +157,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         >
           Schedule
         </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'portal'}
-          className={activeTab === 'portal' ? styles.tabActive : styles.tabInactive}
-          onClick={() => setActiveTab('portal')}
-        >
-          Family Portal
-        </button>
+        {familyPortalEnabled && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'portal'}
+            className={activeTab === 'portal' ? styles.tabActive : styles.tabInactive}
+            onClick={() => setActiveTab('portal')}
+          >
+            Family Portal
+          </button>
+        )}
       </div>
 
       {activeTab === 'activity' && (
@@ -171,7 +177,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         <CaseDocumentsTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
       )}
       {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
-      {activeTab === 'portal' && <CaseFamilyPortalTab caseId={caseId} />}
+      {activeTab === 'portal' && familyPortalEnabled && <CaseFamilyPortalTab caseId={caseId} />}
 
       {activeTab === 'overview' && (
       <div className={styles.overview}>

@@ -5,6 +5,7 @@ import type { DataAdapterMode } from '../env';
 import { requireFamilySession } from './requireFamilySession';
 import { getPortalAccessForPortalUserAndCase } from '../../services/portal/portalAccessService';
 import { hasPortalCapability, type PortalCapabilityKey } from '../../domain/portal/portalCapabilityPolicy';
+import { isFamilyPortalEnabledForOrganizationId } from '../../services/organizationFamilyPortalCapabilityService';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). The one function
@@ -48,6 +49,18 @@ export async function requireFamilyAccess(caseId: string, requiredCapability: Po
 
   const access = await getPortalAccessForPortalUserAndCase(sessionResult.portalUser.id, caseId, sessionResult.dataAdapterMode);
   if (!access || access.status !== 'active' || !hasPortalCapability(access, requiredCapability)) {
+    return { authorized: false, response: FORBIDDEN_RESPONSE() };
+  }
+
+  // Handwritten item #3 (2026-09). An organization that has disabled
+  // Family Portal (see domain/organization/familyPortalCapability.ts)
+  // must not continue to provide an active family portal experience
+  // through a still-existing PortalAccess grant/token — fails closed with
+  // the exact same generic response as every other denial reason above,
+  // never a distinct "Family Portal is disabled" message, so this never
+  // leaks anything beyond what the existing security model already
+  // allows a caller to infer.
+  if (!(await isFamilyPortalEnabledForOrganizationId(access.organizationId, sessionResult.dataAdapterMode))) {
     return { authorized: false, response: FORBIDDEN_RESPONSE() };
   }
 

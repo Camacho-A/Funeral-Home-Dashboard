@@ -44,6 +44,7 @@ export type WixOrganizationItem = {
   primaryPhone?: unknown;
   website?: unknown;
   requireMfa?: unknown;
+  familyPortalEnabled?: unknown;
   /** JSON-encoded string[] — mirrors the existing `categoryOverrides`-style
       JSON-in-text-field convention for a small array on a single-row entity. */
   enabledModulesJson?: unknown;
@@ -87,6 +88,7 @@ export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): O
     primaryPhone: typeof item.primaryPhone === 'string' ? item.primaryPhone : undefined,
     website: typeof item.website === 'string' ? item.website : item.website === null ? null : undefined,
     requireMfa: typeof item.requireMfa === 'boolean' ? item.requireMfa : undefined,
+    familyPortalEnabled: typeof item.familyPortalEnabled === 'boolean' ? item.familyPortalEnabled : undefined,
     enabledModules: parseEnabledModules(item.enabledModulesJson),
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
@@ -107,6 +109,7 @@ export function buildWixOrganizationData(organization: Organization): WixOrganiz
     primaryPhone: organization.primaryPhone,
     website: organization.website,
     requireMfa: organization.requireMfa,
+    familyPortalEnabled: organization.familyPortalEnabled,
     enabledModulesJson: organization.enabledModules ? JSON.stringify(organization.enabledModules) : null,
     createdAt: organization.createdAt,
     updatedAt: organization.updatedAt,
@@ -132,6 +135,7 @@ export function applyOrganizationUpdateToWixData(
   if (patch.primaryPhone !== undefined) next.primaryPhone = patch.primaryPhone;
   if (patch.website !== undefined) next.website = patch.website;
   if (patch.requireMfa !== undefined) next.requireMfa = patch.requireMfa;
+  if (patch.familyPortalEnabled !== undefined) next.familyPortalEnabled = patch.familyPortalEnabled;
   if (patch.enabledModules !== undefined) {
     next.enabledModulesJson = patch.enabledModules ? JSON.stringify(patch.enabledModules) : null;
   }

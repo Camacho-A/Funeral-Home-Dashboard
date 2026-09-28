@@ -5,6 +5,7 @@ import type { Case } from '../../types/case';
 import { caseFixtures } from '../__mocks__/fixtures';
 import { listPortalAccessForPortalUser } from './portalAccessService';
 import { buildPortalCaseView, type PortalCaseView } from '../../domain/portal/portalCaseView';
+import { isFamilyPortalEnabledForOrganizationId } from '../organizationFamilyPortalCapabilityService';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). A thin wrapper — the
@@ -30,11 +31,25 @@ export async function getFamilyCase(organizationId: string, caseId: string, data
 
 /** Every case this portal user currently has *active* access to — the
     basis for `GET /api/family/cases`. Never includes a case whose grant
-    is pending/disabled/revoked/expired. */
+    is pending/disabled/revoked/expired.
+
+    Handwritten item #3 (2026-09): also excludes any case belonging to an
+    organization that has since disabled Family Portal (see
+    domain/organization/familyPortalCapability.ts) — a still-active grant
+    must not keep surfacing that case on the family dashboard once the
+    organization has turned Family Portal off; requireFamilyAccess.ts
+    applies the same check again for the per-case routes as defense in
+    depth. */
 export async function listFamilyCases(portalUserId: string, dataAdapterMode: DataAdapterMode): Promise<PortalCaseView[]> {
   const access = await listPortalAccessForPortalUser(portalUserId, dataAdapterMode);
   const activeGrants = access.filter((a) => a.status === 'active');
 
-  const cases = await Promise.all(activeGrants.map((grant) => getCase(grant.organizationId, grant.caseId, dataAdapterMode)));
+  const enabledGrants = (
+    await Promise.all(
+      activeGrants.map(async (grant) => ((await isFamilyPortalEnabledForOrganizationId(grant.organizationId, dataAdapterMode)) ? grant : null)),
+    )
+  ).filter((grant): grant is (typeof activeGrants)[number] => grant !== null);
+
+  const cases = await Promise.all(enabledGrants.map((grant) => getCase(grant.organizationId, grant.caseId, dataAdapterMode)));
   return cases.filter((c): c is Case => c !== null).map(buildPortalCaseView);
 }

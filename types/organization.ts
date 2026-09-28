@@ -81,6 +81,20 @@ export type Organization = {
       rendered. An administrator can enable specific modules at any time;
       nothing here is ever destructive to the module's own data/code. */
   enabledModules?: string[] | null;
+  /** Handwritten item #3 (2026-09, Family Portal removal for Manors). An
+      organization-level capability — see
+      domain/organization/familyPortalCapability.ts, the sole place this
+      field is read. Unlike `enabledModules` (an opt-in allowlist that
+      defaults an unconfigured organization to *hidden*), Family Portal is
+      a long-established platform capability every pre-existing
+      organization already uses — absent/undefined means "existing
+      behavior preserved" (enabled), never "hidden by default." Only an
+      explicit `false` disables it for that organization. Does not delete
+      or otherwise affect any existing PortalUser/PortalAccess/
+      PortalMessage/SignatureRequest data — it only gates whether new
+      Family Portal actions may be taken and whether existing access still
+      resolves to an active experience going forward. */
+  familyPortalEnabled?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

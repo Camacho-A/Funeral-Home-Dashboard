@@ -92,6 +92,13 @@ describe('requireFamilyAccess', () => {
     if (!result.authorized) expect(result.response.status).toBe(403);
   });
 
+  it('handwritten item #3 (2026-09): returns 403 for an otherwise-valid, active grant when the organization has Family Portal disabled (managed-cremations)', async () => {
+    await seedActiveGrant('primary_next_of_kin', 'case-manors-disabled', 'managed-cremations');
+    const result = await requireFamilyAccess('case-manors-disabled', 'document.read');
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(403);
+  });
+
   it('a client-supplied organizationId is never trusted — access is looked up by (portalUserId, caseId) only', async () => {
     // seedActiveGrant never receives an organizationId parameter to requireFamilyAccess at all —
     // this test documents that the function signature itself has no such parameter.

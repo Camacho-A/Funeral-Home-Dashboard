@@ -5,6 +5,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canSendPortalMessage } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
 import { listMessagesForCase, sendStaffMessage } from '@/services/portal/portalMessagingService';
+import { isFamilyPortalEnabledForOrganizationId } from '@/services/organizationFamilyPortalCapabilityService';
 
 const MAX_BODY_LENGTH = 5000;
 
@@ -61,6 +62,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   if (!(await canSendPortalMessage({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to send Family Portal messages for this case.' }, { status: 403 });
+  }
+
+  if (!(await isFamilyPortalEnabledForOrganizationId(organizationId, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Family Portal is not available for this organization.' }, { status: 403 });
   }
 
   const message = await sendStaffMessage(

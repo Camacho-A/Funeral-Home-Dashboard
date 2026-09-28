@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { portalMessageFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { notificationFixtures, notificationRecipientFixtures } from '@/services/__mocks__/notificationFixtures';
@@ -109,7 +109,24 @@ describe('GET /api/cases/[caseId]/portal-messages', () => {
   });
 
   it('lists messages for the case', async () => {
-    await createRequest({ organizationId: DEFAULT_ORGANIZATION_ID, body: 'Hello family' });
+    // GET (listing) is unaffected by item #3's Family Portal capability
+    // gate — only the mutating POST below is gated — so this seeds
+    // directly via the fixture rather than through POST.
+    portalMessageFixtures.push({
+      id: 'message-list-test-1',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: TEST_CASE_ID,
+      senderType: 'staff',
+      senderStaffIdentityId: mockDefaultUser.id,
+      senderPortalUserId: null,
+      senderPortalAccessId: null,
+      senderRelationshipTypeAtSend: null,
+      body: 'Hello family',
+      attachmentDocumentId: null,
+      readByStaffAt: '2026-09-01T00:00:00.000Z',
+      readByFamilyAt: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+    });
     const response = await listRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -146,10 +163,16 @@ describe('POST /api/cases/[caseId]/portal-messages', () => {
   });
 
   it('sends a staff message, marks it read-by-staff, and notifies every active message.read-capable portal user', async () => {
+    // DEFAULT_ORGANIZATION_ID (managed-cremations) has Family Portal
+    // disabled as of item #3 (2026-09) — this test is about the generic
+    // send/notify mechanics, so it runs against a second organization
+    // where Family Portal remains enabled (existing behavior preserved).
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+    caseFixtures.push({ ...caseFixtures.find((c) => c.id === TEST_CASE_ID)!, organizationId: SECOND_MOCK_ORGANIZATION_ID });
     portalAccessFixtures.push({
       id: 'access-msg-1',
       portalUserId: 'portal-user-msg-1',
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
       caseId: TEST_CASE_ID,
       relationshipType: 'primary_next_of_kin',
       status: 'active',
@@ -158,7 +181,7 @@ describe('POST /api/cases/[caseId]/portal-messages', () => {
       updatedAt: '2026-08-01T00:00:00.000Z',
     });
 
-    const response = await createRequest({ organizationId: DEFAULT_ORGANIZATION_ID, body: 'The service is scheduled for Friday.' });
+    const response = await createRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, body: 'The service is scheduled for Friday.' });
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.message.senderType).toBe('staff');
@@ -168,5 +191,11 @@ describe('POST /api/cases/[caseId]/portal-messages', () => {
     expect(notification).toBeDefined();
     const recipient = notificationRecipientFixtures.find((r) => r.notificationId === notification!.id);
     expect(recipient?.identityId).toBe('portal-user-msg-1');
+    mockMembershipFixtures.pop();
+  });
+
+  it('handwritten item #3 (2026-09): returns 403 for managed-cremations (Family Portal disabled), even for a fully-permissioned administrator', async () => {
+    const response = await createRequest({ organizationId: DEFAULT_ORGANIZATION_ID, body: 'Hello' });
+    expect(response.status).toBe(403);
   });
 });

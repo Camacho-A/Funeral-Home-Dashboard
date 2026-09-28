@@ -92,6 +92,19 @@ describe('POST /api/family/accept-invitation', () => {
     expect(cookieStore.has(FAMILY_SESSION_COOKIE_NAME)).toBe(true);
   });
 
+  it('handwritten item #3 (2026-09): rejects an otherwise-valid invitation for an organization with Family Portal disabled (managed-cremations), without distinguishing why', async () => {
+    const { rawToken } = await issueInvitation(
+      { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, email: 'manors-family@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin', idFactory },
+      { organizationId: 'managed-cremations', actorIdentityId: 'staff-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', correlationId: 'corr-1' },
+      'mock',
+    );
+    const response = await acceptRequest({ token: rawToken, password: 'Password123!' });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('This invitation link is invalid or has expired.');
+    expect(cookieStore.has(FAMILY_SESSION_COOKIE_NAME)).toBe(false);
+  });
+
   it('rate-limits repeated attempts from the same IP', async () => {
     for (let i = 0; i < 10; i += 1) {
       await acceptRequest({ token: 'bad-token', password: 'Password123!' });

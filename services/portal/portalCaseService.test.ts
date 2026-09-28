@@ -89,11 +89,20 @@ describe('portalCaseService', () => {
 
   describe('listFamilyCases', () => {
     it('lists only cases with an active grant, excluding pending/disabled/revoked ones', async () => {
-      caseFixtures.push(makeCase({ id: 'case-active' }), makeCase({ id: 'case-pending' }), makeCase({ id: 'case-revoked' }));
+      // A generic non-Manors organizationId — this test is about status
+      // filtering (active/pending/revoked), not about any one
+      // organization's Family Portal capability (see the dedicated item
+      // #3 test below for that).
+      const ORG = 'org-generic-status-filter-test';
+      caseFixtures.push(
+        makeCase({ id: 'case-active', organizationId: ORG }),
+        makeCase({ id: 'case-pending', organizationId: ORG }),
+        makeCase({ id: 'case-revoked', organizationId: ORG }),
+      );
       portalAccessFixtures.push(
-        { id: 'access-1', portalUserId: 'portal-user-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-active', relationshipType: 'primary_next_of_kin', status: 'active', grantedFromInvitationId: 'inv-1', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
-        { id: 'access-2', portalUserId: 'portal-user-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-pending', relationshipType: 'primary_next_of_kin', status: 'pending', grantedFromInvitationId: 'inv-2', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
-        { id: 'access-3', portalUserId: 'portal-user-1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-revoked', relationshipType: 'primary_next_of_kin', status: 'revoked', grantedFromInvitationId: 'inv-3', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
+        { id: 'access-1', portalUserId: 'portal-user-1', organizationId: ORG, caseId: 'case-active', relationshipType: 'primary_next_of_kin', status: 'active', grantedFromInvitationId: 'inv-1', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
+        { id: 'access-2', portalUserId: 'portal-user-1', organizationId: ORG, caseId: 'case-pending', relationshipType: 'primary_next_of_kin', status: 'pending', grantedFromInvitationId: 'inv-2', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
+        { id: 'access-3', portalUserId: 'portal-user-1', organizationId: ORG, caseId: 'case-revoked', relationshipType: 'primary_next_of_kin', status: 'revoked', grantedFromInvitationId: 'inv-3', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
       );
 
       const { listFamilyCases } = await import('./portalCaseService');
@@ -104,6 +113,24 @@ describe('portalCaseService', () => {
     it('returns an empty list for a portal user with no grants', async () => {
       const { listFamilyCases } = await import('./portalCaseService');
       expect(await listFamilyCases('portal-user-no-grants', 'mock')).toEqual([]);
+    });
+
+    it('handwritten item #3 (2026-09): excludes an active grant whose organization has Family Portal disabled (managed-cremations)', async () => {
+      caseFixtures.push(makeCase({ id: 'case-manors-active', organizationId: DEFAULT_ORGANIZATION_ID }));
+      portalAccessFixtures.push({
+        id: 'access-manors-active',
+        portalUserId: 'portal-user-manors',
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: 'case-manors-active',
+        relationshipType: 'primary_next_of_kin',
+        status: 'active',
+        grantedFromInvitationId: 'inv-manors',
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      const { listFamilyCases } = await import('./portalCaseService');
+      expect(await listFamilyCases('portal-user-manors', 'mock')).toEqual([]);
     });
   });
 });

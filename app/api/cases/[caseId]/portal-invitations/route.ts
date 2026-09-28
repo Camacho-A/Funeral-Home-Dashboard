@@ -8,6 +8,7 @@ import { issueInvitation, listPendingInvitationsForCase, PortalInvitationService
 import { isValidPortalRelationshipType, PORTAL_RELATIONSHIP_TYPES } from '@/domain/portal/portalRelationshipRegistry';
 import { isValidEmailShape } from '@/domain/identity/email';
 import { getIdentityMessageSender } from '@/lib/identity/messageSender';
+import { isFamilyPortalEnabledForOrganizationId } from '@/services/organizationFamilyPortalCapabilityService';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). Staff-side —
@@ -74,6 +75,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   if (!(await canManagePortal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage Family Portal access for this case.' }, { status: 403 });
+  }
+
+  if (!(await isFamilyPortalEnabledForOrganizationId(organizationId, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Family Portal is not available for this organization.' }, { status: 403 });
   }
 
   try {

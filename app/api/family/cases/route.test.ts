@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { portalUserFixtures, portalSessionFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { hashPassword } from '@/lib/identity/passwordHashing';
 import type { Case } from '@/types/case';
 
@@ -94,6 +94,9 @@ describe('GET /api/family/cases', () => {
   });
 
   it('lists only cases with an active grant for this session\'s portal user', async () => {
+    // SECOND_MOCK_ORGANIZATION_ID, not DEFAULT_ORGANIZATION_ID (the real
+    // Manors id, Family Portal-disabled as of item #3, 2026-09) — this
+    // test is about generic listing/DTO-allowlist mechanics.
     const { findOrCreatePortalUser } = await import('@/services/portal/portalUserService');
     const { createPortalSession } = await import('@/services/portal/portalSessionService');
     const { portalUser } = await findOrCreatePortalUser(
@@ -103,11 +106,11 @@ describe('GET /api/family/cases', () => {
     const session = await createPortalSession({ portalUserId: portalUser.id, deviceId: 'device-1', idFactory }, 'mock');
     familySession = { portalUserId: portalUser.id, sessionId: session.id, aud: 'family', issuedAt: 0, expiresAt: Number.MAX_SAFE_INTEGER };
 
-    caseFixtures.push(makeCase());
+    caseFixtures.push(makeCase({ organizationId: SECOND_MOCK_ORGANIZATION_ID }));
     portalAccessFixtures.push({
       id: 'access-1',
       portalUserId: portalUser.id,
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
       caseId: 'case-family-list-1',
       relationshipType: 'primary_next_of_kin',
       status: 'active',
@@ -127,5 +130,34 @@ describe('GET /api/family/cases', () => {
     expect(body.cases[0]).not.toHaveProperty('fieldValues');
     expect(body.cases[0]).not.toHaveProperty('createdBy');
     expect(body.cases[0]).not.toHaveProperty('intakeOwnerId');
+  });
+
+  it('handwritten item #3 (2026-09): excludes a case whose organization has Family Portal disabled (managed-cremations), even with an active grant', async () => {
+    const { findOrCreatePortalUser } = await import('@/services/portal/portalUserService');
+    const { createPortalSession } = await import('@/services/portal/portalSessionService');
+    const { portalUser } = await findOrCreatePortalUser(
+      { email: 'family-cases-manors@example.com', displayName: 'Pat Family', passwordHash: hashPassword('Password123!'), idFactory },
+      'mock',
+    );
+    const session = await createPortalSession({ portalUserId: portalUser.id, deviceId: 'device-1', idFactory }, 'mock');
+    familySession = { portalUserId: portalUser.id, sessionId: session.id, aud: 'family', issuedAt: 0, expiresAt: Number.MAX_SAFE_INTEGER };
+
+    caseFixtures.push(makeCase({ id: 'case-manors-list-1', organizationId: DEFAULT_ORGANIZATION_ID }));
+    portalAccessFixtures.push({
+      id: 'access-manors-1',
+      portalUserId: portalUser.id,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: 'case-manors-list-1',
+      relationshipType: 'primary_next_of_kin',
+      status: 'active',
+      grantedFromInvitationId: 'invitation-manors-1',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    });
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.cases).toHaveLength(0);
   });
 });

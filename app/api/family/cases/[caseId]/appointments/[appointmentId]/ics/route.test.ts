@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { portalUserFixtures, portalSessionFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { appointmentFixtures } from '@/services/__mocks__/schedulingFixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #3 (2026-09): the real Manor's Cremation organization
+// id (DEFAULT_ORGANIZATION_ID) now has Family Portal disabled — this
+// file's scenarios are generic family-access mechanics, unrelated to that
+// org-specific capability, so they run against the second registered mock
+// organization instead, where Family Portal remains enabled by default.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { hashPassword } from '@/lib/identity/passwordHashing';
 import type { Appointment } from '@/types/appointment';
 
@@ -29,7 +35,7 @@ function getRequest(appointmentId: string = TEST_APPOINTMENT_ID) {
 function makeAppointment(overrides: Partial<Appointment> = {}): Appointment {
   return {
     id: TEST_APPOINTMENT_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     appointmentType: 'family_meeting',
     title: 'Arrangement Conference',
@@ -67,7 +73,7 @@ async function authorizeFamilySession() {
   portalAccessFixtures.push({
     id: 'access-1',
     portalUserId: portalUser.id,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     relationshipType: 'primary_next_of_kin',
     status: 'active',

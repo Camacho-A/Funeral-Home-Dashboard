@@ -4,7 +4,13 @@ import { caseDocumentFixtures, documentTemplateFixtures, signatureRequestFixture
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { notificationFixtures, notificationRecipientFixtures, notificationDeliveryFixtures } from '@/services/__mocks__/notificationFixtures';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #3 (2026-09): the real Manor's Cremation organization
+// id (DEFAULT_ORGANIZATION_ID) now has Family Portal disabled — this
+// file's scenarios are generic family-access mechanics, unrelated to that
+// org-specific capability, so they run against the second registered mock
+// organization instead, where Family Portal remains enabled by default.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { hashPassword } from '@/lib/identity/passwordHashing';
 
 const mockRenderHtmlToPdf = vi.fn();
@@ -76,7 +82,7 @@ beforeEach(() => {
   };
   caseFixtures.push({
     id: TEST_CASE_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseNumber: 'B2026-223',
     decedentName: 'Test Decedent',
     dateOfBirth: '01/01/1950',
@@ -153,7 +159,7 @@ async function seedAuthorizedSessionAndRequest(sessionEmail = 'family-sig-comple
   portalAccessFixtures.push({
     id: 'access-1',
     portalUserId: portalUser.id,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     relationshipType: 'primary_next_of_kin',
     status: 'active',
@@ -162,9 +168,9 @@ async function seedAuthorizedSessionAndRequest(sessionEmail = 'family-sig-comple
     updatedAt: '2026-08-01T00:00:00.000Z',
   });
 
-  const ctx = { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: 'staff-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', correlationId: 'seed-corr' };
+  const ctx = { organizationId: TEST_ORGANIZATION_ID, actorIdentityId: 'staff-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', correlationId: 'seed-corr' };
   const template = await createTemplate(
-    { organizationId: DEFAULT_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>x</p>', idFactory },
+    { organizationId: TEST_ORGANIZATION_ID, name: 'Cremation Authorization', documentTypeKey: 'authorization.cremation', category: 'authorization', body: '<p>x</p>', idFactory },
     ctx,
     'mock',
   );

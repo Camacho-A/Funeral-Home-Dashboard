@@ -4,6 +4,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canManagePortal } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
 import { setFamilyVisible, DocumentServiceError } from '@/services/documentService';
+import { isFamilyPortalEnabledForOrganizationId } from '@/services/organizationFamilyPortalCapabilityService';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). The **only** route
@@ -41,6 +42,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
 
   if (!(await canManagePortal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage Family Portal document visibility for this case.' }, { status: 403 });
+  }
+
+  if (!(await isFamilyPortalEnabledForOrganizationId(organizationId, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Family Portal is not available for this organization.' }, { status: 403 });
   }
 
   try {

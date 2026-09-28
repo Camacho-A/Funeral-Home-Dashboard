@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { portalUserFixtures, portalSessionFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { paymentRecordFixtures, paymentIntegrationFixtures } from '@/services/__mocks__/paymentFixtures';
 import { caseOrderFixtures } from '@/services/__mocks__/pricingFixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #3 (2026-09): the real Manor's Cremation organization
+// id (DEFAULT_ORGANIZATION_ID) now has Family Portal disabled — this
+// file's scenarios are generic family-access mechanics, unrelated to that
+// org-specific capability, so they run against the second registered mock
+// organization instead, where Family Portal remains enabled by default.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { hashPassword } from '@/lib/identity/passwordHashing';
 import { resetRateLimiter } from '@/lib/rateLimiter';
 import type { CaseOrder } from '@/types/caseOrder';
@@ -32,7 +38,7 @@ function checkoutRequest(body: unknown, headers: Record<string, string> = { orig
 function makeOrder(overrides: Partial<CaseOrder> = {}): CaseOrder {
   return {
     id: 'case-order-checkout-1',
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     status: 'active',
     subtotal: 40000,
@@ -80,7 +86,7 @@ async function seedAuthorizedSession() {
   portalAccessFixtures.push({
     id: 'access-1',
     portalUserId: portalUser.id,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     relationshipType: 'primary_next_of_kin',
     status: 'active',
@@ -122,7 +128,7 @@ describe('POST /api/family/cases/[caseId]/payments/checkout', () => {
     portalAccessFixtures.push({
       id: 'access-1',
       portalUserId: portalUser.id,
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: TEST_ORGANIZATION_ID,
       caseId: TEST_CASE_ID,
       relationshipType: 'secondary_family_member',
       status: 'active',
@@ -139,7 +145,7 @@ describe('POST /api/family/cases/[caseId]/payments/checkout', () => {
     caseOrderFixtures.push(makeOrder());
     paymentIntegrationFixtures.push({
       id: 'integration-checkout-test',
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: TEST_ORGANIZATION_ID,
       provider: 'clover',
       environment: 'sandbox',
       isEnabled: true,

@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { portalUserFixtures, portalSessionFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #3 (2026-09): the real Manor's Cremation organization
+// id (DEFAULT_ORGANIZATION_ID) now has Family Portal disabled — this
+// file's scenarios are generic family-access mechanics, unrelated to that
+// org-specific capability, so they run against the second registered mock
+// organization instead, where Family Portal remains enabled by default.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { hashPassword } from '@/lib/identity/passwordHashing';
 
 let familySession: { portalUserId: string; sessionId: string; aud: 'family'; issuedAt: number; expiresAt: number } | null = null;
@@ -50,7 +56,7 @@ async function seedAuthorizedSession() {
   portalAccessFixtures.push({
     id: 'access-1',
     portalUserId: portalUser.id,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     relationshipType: 'primary_next_of_kin',
     status: 'active',
@@ -74,12 +80,12 @@ describe('GET /api/family/cases/[caseId]/payments/return', () => {
     await seedAuthorizedSession();
     paymentRecordFixtures.push({
       id: 'payment-other-case',
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: TEST_ORGANIZATION_ID,
       caseId: 'a-different-case',
       caseOrderId: null,
       provider: 'clover',
       providerCheckoutId: 'checkout-1',
-      idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-1`,
+      idempotencyKey: `${TEST_ORGANIZATION_ID}:key-1`,
       providerPaymentId: null,
       status: 'pending',
       amount: 1000,
@@ -104,12 +110,12 @@ describe('GET /api/family/cases/[caseId]/payments/return', () => {
     await seedAuthorizedSession();
     paymentRecordFixtures.push({
       id: 'payment-mine',
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: TEST_ORGANIZATION_ID,
       caseId: TEST_CASE_ID,
       caseOrderId: null,
       provider: 'clover',
       providerCheckoutId: 'checkout-1',
-      idempotencyKey: `${DEFAULT_ORGANIZATION_ID}:key-1`,
+      idempotencyKey: `${TEST_ORGANIZATION_ID}:key-1`,
       providerPaymentId: null,
       status: 'succeeded',
       amount: 5000,

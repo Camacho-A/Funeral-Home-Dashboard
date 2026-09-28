@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMultiOrgUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { portalInvitationFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 
@@ -65,7 +65,28 @@ describe('GET /api/cases/[caseId]/portal-invitations', () => {
   });
 
   it('lists pending invitations for the case', async () => {
-    await createRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin' });
+    // GET (listing) is unaffected by item #3's Family Portal capability
+    // gate — only the mutating POST below is gated — so this seeds
+    // directly via the fixture rather than through POST, keeping this
+    // test about listing mechanics only.
+    portalInvitationFixtures.push({
+      id: 'invitation-list-test-1',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: TEST_CASE_ID,
+      email: 'family@example.com',
+      displayName: 'Pat Family',
+      relationshipType: 'primary_next_of_kin',
+      status: 'pending',
+      tokenHash: 'irrelevant-for-this-test',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      invitedByStaffIdentityId: mockDefaultUser.id,
+      linkedPortalAccessId: 'access-list-test-1',
+      acceptedAt: null,
+      revokedAt: null,
+      revokedByStaffIdentityId: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    });
 
     const response = await listRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(200);
@@ -119,7 +140,13 @@ describe('POST /api/cases/[caseId]/portal-invitations', () => {
   });
 
   it('issues an invitation, creates its linked pending PortalAccess, and sends the email — never returning the raw token', async () => {
-    const response = await createRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin' });
+    // DEFAULT_ORGANIZATION_ID (managed-cremations) has Family Portal
+    // disabled as of item #3 (2026-09) — this test is about the generic
+    // issuance mechanics, so it runs against a second organization where
+    // Family Portal remains enabled (existing behavior preserved).
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+
+    const response = await createRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin' });
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.invitation.status).toBe('pending');
@@ -131,5 +158,13 @@ describe('POST /api/cases/[caseId]/portal-invitations', () => {
 
     const linkedAccess = portalAccessFixtures.find((a) => a.id === body.invitation.linkedPortalAccessId);
     expect(linkedAccess?.status).toBe('pending');
+    mockMembershipFixtures.pop();
+  });
+
+  it('handwritten item #3 (2026-09): returns 403 for managed-cremations (Family Portal disabled), even for a fully-permissioned administrator', async () => {
+    const response = await createRequest({ organizationId: DEFAULT_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin' });
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error).not.toMatch(/token|stack|internal/i);
   });
 });

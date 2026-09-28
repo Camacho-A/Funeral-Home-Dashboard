@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { caseDocumentFixtures } from '@/services/__mocks__/documentFixtures';
 import type { CaseDocument } from '@/types/caseDocument';
@@ -83,17 +83,30 @@ describe('PATCH /api/cases/[caseId]/documents/[documentId]/family-visibility', (
   });
 
   it('returns 404 for a nonexistent document', async () => {
-    const response = await patchRequest('no-such-doc', { organizationId: DEFAULT_ORGANIZATION_ID, familyVisible: true });
+    // DEFAULT_ORGANIZATION_ID (managed-cremations) has Family Portal
+    // disabled as of item #3 (2026-09), so this generic not-found test
+    // runs against a second organization where it remains enabled.
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+    const response = await patchRequest('no-such-doc', { organizationId: SECOND_MOCK_ORGANIZATION_ID, familyVisible: true });
     expect(response.status).toBe(404);
+    mockMembershipFixtures.pop();
   });
 
   it('flips familyVisible to true, then back to false', async () => {
-    caseDocumentFixtures.push(makeDocument());
-    const first = await patchRequest('doc-visibility-1', { organizationId: DEFAULT_ORGANIZATION_ID, familyVisible: true });
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+    caseDocumentFixtures.push(makeDocument({ organizationId: SECOND_MOCK_ORGANIZATION_ID }));
+    const first = await patchRequest('doc-visibility-1', { organizationId: SECOND_MOCK_ORGANIZATION_ID, familyVisible: true });
     expect(first.status).toBe(200);
     expect((await first.json()).document.familyVisible).toBe(true);
 
-    const second = await patchRequest('doc-visibility-1', { organizationId: DEFAULT_ORGANIZATION_ID, familyVisible: false });
+    const second = await patchRequest('doc-visibility-1', { organizationId: SECOND_MOCK_ORGANIZATION_ID, familyVisible: false });
     expect((await second.json()).document.familyVisible).toBe(false);
+    mockMembershipFixtures.pop();
+  });
+
+  it('handwritten item #3 (2026-09): returns 403 for managed-cremations (Family Portal disabled), even for a fully-permissioned administrator', async () => {
+    caseDocumentFixtures.push(makeDocument());
+    const response = await patchRequest('doc-visibility-1', { organizationId: DEFAULT_ORGANIZATION_ID, familyVisible: true });
+    expect(response.status).toBe(403);
   });
 });

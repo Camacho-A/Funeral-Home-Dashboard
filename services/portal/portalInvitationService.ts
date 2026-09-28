@@ -17,6 +17,7 @@ import { findOrCreatePortalUser } from './portalUserService';
 import { createPortalSession } from './portalSessionService';
 import { portalActivityContext } from './portalActivityContext';
 import { recordPortalInvited, recordPortalAccepted, recordPortalAccessRevoked, type ActivityContext } from '../activityService';
+import { isFamilyPortalEnabledForOrganizationId } from '../organizationFamilyPortalCapabilityService';
 import { portalInvitationFixtures } from '../__mocks__/portalFixtures';
 
 /**
@@ -294,6 +295,17 @@ export async function acceptInvitation(
   }
   if (invitation.status !== 'pending') {
     return { success: false, reason: invitation.status === 'accepted' ? 'already_used' : 'invalid_or_expired' };
+  }
+
+  // Handwritten item #3 (2026-09). An organization that has disabled
+  // Family Portal must not let a still-pending, already-issued invitation
+  // activate access after the fact — "accepting" is exactly the "enabling
+  // family access" action this item requires blocking. Collapsed into the
+  // same generic reason as every other failure mode here (existence-
+  // hiding, matching resolveInvitationToken's own discipline) — nothing
+  // about this specific cause is ever surfaced to the caller.
+  if (!(await isFamilyPortalEnabledForOrganizationId(invitation.organizationId, dataAdapterMode))) {
+    return { success: false, reason: 'invalid_or_expired' };
   }
 
   const { portalUser } = await findOrCreatePortalUser(

@@ -185,6 +185,23 @@ describe('portalInvitationService', () => {
     expect(result).toEqual({ success: false, reason: 'invalid_or_expired' });
   });
 
+  it('handwritten item #3 (2026-09): acceptInvitation rejects a still-pending, already-issued invitation once the organization has Family Portal disabled (managed-cremations), without distinguishing why', async () => {
+    const { issueInvitation, acceptInvitation } = await import('./portalInvitationService');
+    // Simulates an invitation issued before Family Portal was disabled for
+    // this organization — issueInvitation itself isn't what this item
+    // gates (the staff-facing route is); this proves the family-facing
+    // acceptance path still fails closed for a token that would otherwise
+    // be perfectly valid.
+    const { rawToken } = await issueInvitation(
+      { organizationId: 'managed-cremations', caseId: 'case-manors-preexisting', email: 'manors-family@example.com', displayName: 'X', relationshipType: 'primary_next_of_kin', idFactory },
+      staffCtx({ organizationId: 'managed-cremations' }),
+      'mock',
+    );
+
+    const result = await acceptInvitation({ token: rawToken, password: 'Password123!', deviceId: 'device-1', idFactory }, 'mock');
+    expect(result).toEqual({ success: false, reason: 'invalid_or_expired' });
+  });
+
   it('acceptInvitation rejects an unknown token without distinguishing why', async () => {
     const { acceptInvitation } = await import('./portalInvitationService');
     const result = await acceptInvitation({ token: 'not-a-real-token', password: 'Password123!', deviceId: 'device-1', idFactory }, 'mock');

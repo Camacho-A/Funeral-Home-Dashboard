@@ -145,3 +145,32 @@ describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
     expect(oneFrOneFrOccurrences).toHaveLength(1); // only inside .overviewPair
   });
 });
+
+describe('Case Detail page — Family Portal tab organization capability gating (item #3, 2026-09)', () => {
+  it('reads the organization record and the central capability, not a hardcoded organizationId check', () => {
+    expect(SOURCE).toMatch(/import \{ useOrganizationRecord \} from '@\/hooks\/useOrganizationRecord';/);
+    expect(SOURCE).toMatch(/import \{ isFamilyPortalEnabled \} from '@\/domain\/organization\/familyPortalCapability';/);
+    expect(SOURCE).not.toMatch(/organizationId === 'managed-cremations'/);
+  });
+
+  it('2: the Family Portal tab button only renders when familyPortalEnabled', () => {
+    expect(SOURCE).toMatch(/\{familyPortalEnabled && \([\s\S]*?Family Portal[\s\S]*?\)\}/);
+  });
+
+  it('the Family Portal panel render is also gated on familyPortalEnabled (not just the tab button)', () => {
+    expect(SOURCE).toMatch(/activeTab === 'portal' && familyPortalEnabled && <CaseFamilyPortalTab/);
+  });
+
+  it('3/4/5/6: Overview, Activity, Documents, and Schedule tab buttons remain unconditional', () => {
+    expect(SOURCE).toMatch(/onClick=\{\(\) => setActiveTab\('overview'\)\}/);
+    expect(SOURCE).toMatch(/onClick=\{\(\) => setActiveTab\('activity'\)\}/);
+    expect(SOURCE).toMatch(/onClick=\{\(\) => setActiveTab\('documents'\)\}/);
+    expect(SOURCE).toMatch(/onClick=\{\(\) => setActiveTab\('schedule'\)\}/);
+  });
+
+  it('no empty/disabled/placeholder Family Portal tab is left behind — the button is either rendered whole or not at all', () => {
+    expect(SOURCE).not.toMatch(/disabled\s*\n?\s*role="tab"[\s\S]*?Family Portal/);
+    expect(SOURCE).not.toMatch(/Family Portal \(disabled\)/);
+    expect(SOURCE).not.toMatch(/Family Portal \(unavailable\)/);
+  });
+});

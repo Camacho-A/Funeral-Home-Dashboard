@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { portalUserFixtures, portalSessionFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #3 (2026-09): the real Manor's Cremation organization
+// id (DEFAULT_ORGANIZATION_ID) now has Family Portal disabled — this
+// file's scenarios are generic family-access mechanics, unrelated to that
+// org-specific capability, so they run against the second registered mock
+// organization instead, where Family Portal remains enabled by default.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { hashPassword } from '@/lib/identity/passwordHashing';
 import type { Case } from '@/types/case';
 import type { PortalRelationshipType } from '@/domain/portal/portalRelationshipRegistry';
@@ -38,7 +44,7 @@ async function seedSessionWithGrant(relationshipType: PortalRelationshipType = '
   portalAccessFixtures.push({
     id: idFactory(),
     portalUserId: portalUser.id,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseId: TEST_CASE_ID,
     relationshipType,
     status: 'active',
@@ -52,7 +58,7 @@ async function seedSessionWithGrant(relationshipType: PortalRelationshipType = '
 function makeCase(overrides: Partial<Case> = {}): Case {
   return {
     id: TEST_CASE_ID,
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: TEST_ORGANIZATION_ID,
     caseNumber: 'B2026-654',
     decedentName: 'Test Decedent',
     dateOfBirth: '01/01/1950',

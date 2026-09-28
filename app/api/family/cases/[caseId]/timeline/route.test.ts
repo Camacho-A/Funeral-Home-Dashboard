@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { portalUserFixtures, portalSessionFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+// Handwritten item #3 (2026-09): the real Manor's Cremation organization
+// id (DEFAULT_ORGANIZATION_ID) now has Family Portal disabled — this
+// file's scenarios are generic family-access mechanics, unrelated to that
+// org-specific capability, so they run against the second registered mock
+// organization instead, where Family Portal remains enabled by default.
+const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { hashPassword } from '@/lib/identity/passwordHashing';
 import { record } from '@/services/activityService';
 
@@ -55,7 +61,7 @@ describe('GET /api/family/cases/[caseId]/timeline', () => {
     portalAccessFixtures.push({
       id: 'access-1',
       portalUserId: portalUser.id,
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: TEST_ORGANIZATION_ID,
       caseId: TEST_CASE_ID,
       relationshipType: 'primary_next_of_kin',
       status: 'active',
@@ -65,11 +71,11 @@ describe('GET /api/family/cases/[caseId]/timeline', () => {
     });
 
     await record(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: TEST_CASE_ID, actorIdentityId: 'identity-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', category: 'documents', eventType: 'document.generated', resourceType: 'caseDocument', resourceId: 'doc-1', previousValue: null, newValue: null, description: 'Document generated', metadata: null, severity: 'info', correlationId: 'corr-1', isSystemGenerated: false },
+      { organizationId: TEST_ORGANIZATION_ID, caseId: TEST_CASE_ID, actorIdentityId: 'identity-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', category: 'documents', eventType: 'document.generated', resourceType: 'caseDocument', resourceId: 'doc-1', previousValue: null, newValue: null, description: 'Document generated', metadata: null, severity: 'info', correlationId: 'corr-1', isSystemGenerated: false },
       'mock',
     );
     await record(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: TEST_CASE_ID, actorIdentityId: 'identity-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', category: 'cases', eventType: 'case.note.added', resourceType: 'caseLogEntry', resourceId: 'note-1', previousValue: null, newValue: null, description: 'Note added', metadata: null, severity: 'info', correlationId: 'corr-2', isSystemGenerated: false },
+      { organizationId: TEST_ORGANIZATION_ID, caseId: TEST_CASE_ID, actorIdentityId: 'identity-1', actorMembershipId: null, actorRoleKey: 'funeralDirector', category: 'cases', eventType: 'case.note.added', resourceType: 'caseLogEntry', resourceId: 'note-1', previousValue: null, newValue: null, description: 'Note added', metadata: null, severity: 'info', correlationId: 'corr-2', isSystemGenerated: false },
       'mock',
     );
 
