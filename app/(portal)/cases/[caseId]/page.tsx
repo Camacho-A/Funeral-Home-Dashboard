@@ -9,6 +9,8 @@ import { useCaseLog } from '@/hooks/useCaseLog';
 import { useCaseTasks } from '@/hooks/useCaseTasks';
 import { useStaff } from '@/hooks/useStaff';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { useOrganization } from '@/hooks/useOrganization';
+import { useMyPermissions } from '@/hooks/useRbac';
 import { isFamilyPortalEnabled } from '@/domain/organization/familyPortalCapability';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
 import { printTextLog } from '@/utils/print';
@@ -29,7 +31,7 @@ import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
 
-type CaseDetailTab = 'overview' | 'activity' | 'documents' | 'schedule' | 'portal';
+type CaseDetailTab = 'overview' | 'workflow' | 'activity' | 'documents' | 'schedule' | 'portal';
 
 /**
  * Case Detail page (Frontend Engineering Plan, Phase 6) — the orchestration
@@ -56,6 +58,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const { data: staffList = [] } = useStaff();
   const { data: organizationRecord } = useOrganizationRecord();
   const familyPortalEnabled = isFamilyPortalEnabled(organizationRecord ?? null);
+  const { organizationId } = useOrganization();
+  const permissionsQuery = useMyPermissions(organizationId);
+  // Item #10 (2026-09, workflow repair relocation): the Workflow tab
+  // contains only the Administrator-only repair/recalculation control
+  // (CaseWorkflowRepairPanel, self-gated on `user.manageRoles` — see its
+  // own comment). Since it has no other content, the tab itself is hidden
+  // from anyone who can't use that control, rather than showing an empty
+  // administrative tab. This mirrors the Family Portal tab's own
+  // capability-gating pattern above; the underlying route independently
+  // re-enforces authorization server-side regardless of this UI check.
+  const canSeeWorkflowTab = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
@@ -130,6 +143,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         >
           Overview
         </button>
+        {canSeeWorkflowTab && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'workflow'}
+            className={activeTab === 'workflow' ? styles.tabActive : styles.tabInactive}
+            onClick={() => setActiveTab('workflow')}
+          >
+            Workflow
+          </button>
+        )}
         <button
           type="button"
           role="tab"
@@ -170,6 +194,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         )}
       </div>
 
+      {activeTab === 'workflow' && canSeeWorkflowTab && <CaseWorkflowRepairPanel caseId={caseId} />}
       {activeTab === 'activity' && (
         <CaseActivityTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
       )}
@@ -230,8 +255,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
             onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
           />
-
-          <CaseWorkflowRepairPanel caseId={caseId} />
 
           <CaseFormsSection caseId={caseId} />
 

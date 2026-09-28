@@ -86,7 +86,6 @@ const CSS_SOURCE = fs.readFileSync(path.join(__dirname, 'page.module.css'), 'utf
 describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
   it('3/4/5/6/7/8/9: every Overview card remains present in the page source', () => {
     expect(SOURCE).toMatch(/<CaseInformationCard/);
-    expect(SOURCE).toMatch(/<CaseWorkflowRepairPanel caseId=\{caseId\} \/>/);
     expect(SOURCE).toMatch(/<ChecklistCard/);
     expect(SOURCE).toMatch(/<CaseLogCard/);
     expect(SOURCE).toMatch(/<CaseTasksCard/);
@@ -172,5 +171,47 @@ describe('Case Detail page — Family Portal tab organization capability gating 
     expect(SOURCE).not.toMatch(/disabled\s*\n?\s*role="tab"[\s\S]*?Family Portal/);
     expect(SOURCE).not.toMatch(/Family Portal \(disabled\)/);
     expect(SOURCE).not.toMatch(/Family Portal \(unavailable\)/);
+  });
+});
+
+describe('Case Detail page — Workflow tab (item #10, 2026-09: workflow repair relocation)', () => {
+  it('1: the Workflow tab button renders only for an authorized caller (gated on canSeeWorkflowTab, the same user.manageRoles check CaseWorkflowRepairPanel already self-enforces)', () => {
+    expect(SOURCE).toMatch(/import \{ useMyPermissions \} from '@\/hooks\/useRbac';/);
+    expect(SOURCE).toMatch(/canSeeWorkflowTab = Boolean\(permissionsQuery\.data\?\.permissions\.includes\('user\.manageRoles'\)\)/);
+    expect(SOURCE).toMatch(/\{canSeeWorkflowTab && \([\s\S]*?Workflow[\s\S]*?\)\}/);
+  });
+
+  it('2: the Workflow tab button appears directly after Overview and before Activity', () => {
+    const overviewButtonIndex = SOURCE.indexOf(">\n          Overview\n        </button>");
+    const workflowButtonIndex = SOURCE.indexOf('>\n            Workflow\n          </button>');
+    const activityButtonIndex = SOURCE.indexOf('>\n          Activity\n        </button>');
+    expect(overviewButtonIndex).toBeGreaterThan(-1);
+    expect(workflowButtonIndex).toBeGreaterThan(-1);
+    expect(activityButtonIndex).toBeGreaterThan(-1);
+    expect(overviewButtonIndex).toBeLessThan(workflowButtonIndex);
+    expect(workflowButtonIndex).toBeLessThan(activityButtonIndex);
+  });
+
+  it('3: CaseWorkflowRepairPanel renders inside the Workflow tab, gated on both activeTab and the same authorization check', () => {
+    expect(SOURCE).toMatch(/\{activeTab === 'workflow' && canSeeWorkflowTab && <CaseWorkflowRepairPanel caseId=\{caseId\} \/>\}/);
+  });
+
+  it('4: CaseWorkflowRepairPanel is rendered exactly once in the whole page — no duplicate instance left in Overview', () => {
+    const occurrences = SOURCE.match(/<CaseWorkflowRepairPanel caseId=\{caseId\} \/>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("5/6: Overview's own block contains no reference to CaseWorkflowRepairPanel — \"Case stuck or missing prerequisites?\"/\"Recalculate Workflow\" (both live only inside that component) can no longer render there", () => {
+    const overviewBlockStart = SOURCE.indexOf("activeTab === 'overview' && (");
+    const overviewBlockEnd = SOURCE.indexOf('</div>\n      )}', overviewBlockStart);
+    const overviewBlock = SOURCE.slice(overviewBlockStart, overviewBlockEnd);
+    expect(overviewBlock).not.toMatch(/CaseWorkflowRepairPanel/);
+  });
+
+  it('9: an unauthorized caller (canSeeWorkflowTab false) never renders the Workflow tab button or its content — no empty administrative tab', () => {
+    // Both the button and the content branch share the identical
+    // `canSeeWorkflowTab` guard — false for either means neither renders.
+    const buttonGuardMatches = SOURCE.match(/canSeeWorkflowTab/g) ?? [];
+    expect(buttonGuardMatches.length).toBeGreaterThanOrEqual(3); // declaration + button guard + content guard
   });
 });
