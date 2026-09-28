@@ -37,6 +37,7 @@ import {
   recordDocumentArchived,
   type ActivityContext,
 } from './activityService';
+import { isDocumentArchivingEnabled } from '../domain/organization/documentArchiveCapability';
 
 /**
  * Phase 25 (Document Generation & Template Management). **`DocumentService`**
@@ -646,6 +647,17 @@ export async function upload(
 }
 
 export async function archive(organizationId: string, caseId: string, documentId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<void> {
+  // Handwritten item #12 (2026-09, Archive removal for Manors). Enforced
+  // here, not just in the staff route, so every current and future caller
+  // is covered by one centralized check — mirrors
+  // services/signatureService.ts's own isSignatureRequestsEnabledForOrganizationId
+  // gate (item #4). A stale client, a direct API call, or a future UI
+  // regression can never bypass this: the permission (`document.archive`)
+  // alone is not sufficient when the organization has archiving disabled.
+  if (!isDocumentArchivingEnabled(organizationId)) {
+    throw new DocumentServiceError('Document archiving is not enabled for this organization.');
+  }
+
   const documents = await list(organizationId, caseId, dataAdapterMode);
   const target = documents.find((d) => d.id === documentId);
   if (!target) {

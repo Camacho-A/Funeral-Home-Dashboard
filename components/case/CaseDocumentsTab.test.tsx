@@ -6,7 +6,7 @@ import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as caseDocumentsClient from '@/lib/caseDocumentsClient';
 import * as identityAuthClient from '@/lib/identityAuthClient';
 import { organizationsService } from '@/services/organizationsService';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { CaseDocument } from '@/types/caseDocument';
 import type { Organization } from '@/types/organization';
 
@@ -89,8 +89,8 @@ function renderTab(organizationId: string = DEFAULT_ORGANIZATION_ID) {
   );
 }
 
-function mockPermissions(permissions: string[]) {
-  vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey: 'administrator', permissions });
+function mockPermissions(permissions: string[], roleKey: string = 'administrator') {
+  vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey, permissions });
 }
 
 function mockOrganization(overrides: Partial<Organization> & { id: string }) {
@@ -206,10 +206,11 @@ describe('CaseDocumentsTab — document list', () => {
 });
 
 describe('CaseDocumentsTab — archive flow', () => {
-  it('archives a document after confirming', async () => {
+  it('archives a document after confirming, for an organization with archiving enabled (not Manors — item #12, 2026-09)', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
     vi.mocked(caseDocumentsClient.archiveCaseDocument).mockResolvedValue(undefined);
-    renderTab();
+    mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
+    renderTab(SECOND_MOCK_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
     fireEvent.click(screen.getByText('Archive'));
@@ -220,7 +221,7 @@ describe('CaseDocumentsTab — archive flow', () => {
 
     await waitFor(() =>
       expect(caseDocumentsClient.archiveCaseDocument).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', documentId: 'doc-1' }),
+        expect.objectContaining({ organizationId: SECOND_MOCK_ORGANIZATION_ID, caseId: 'case-1', documentId: 'doc-1' }),
       ),
     );
   });
@@ -321,7 +322,7 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     expect(await screen.findByRole('button', { name: 'Request Signature' })).toBeInTheDocument();
   });
 
-  it('3/12/13/14: all other Documents actions (Download, Print, Regenerate, Archive) and document viewing remain available for Manors', async () => {
+  it("3/12/13/14: all other Documents actions (Download, Print, Regenerate) and document viewing remain available for Manors — Archive is the one action disabled (item #12, 2026-09)", async () => {
     mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
       makeDocument({ id: 'doc-generated', fileName: 'Statement of Funeral Goods and Services Selected.pdf', origin: 'generated' }),
@@ -332,7 +333,6 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     expect(screen.getByRole('link', { name: 'Download' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Request Signature' })).not.toBeInTheDocument());
@@ -347,6 +347,85 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     await waitFor(() => {
       const disabledSignatureButtons = screen.queryAllByRole('button', { name: /signature/i }).filter((btn) => (btn as HTMLButtonElement).disabled);
       expect(disabledSignatureButtons).toHaveLength(0);
+    });
+  });
+});
+
+describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten item #12, 2026-09)', () => {
+  it('1/2: Archive is NOT shown for Manors, even for an Administrator who holds document.archive', async () => {
+    mockPermissions(['document.view', 'document.archive'], 'administrator');
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.queryByText('Archive')).not.toBeInTheDocument();
+  });
+
+  it('3: a Funeral Director in Manors does NOT see Archive even though the role holds document.archive', async () => {
+    mockPermissions(['document.view', 'document.archive'], 'funeralDirector');
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.queryByText('Archive')).not.toBeInTheDocument();
+  });
+
+  it('4: a Manager in Manors does NOT see Archive even though the role holds document.archive', async () => {
+    mockPermissions(['document.view', 'document.archive'], 'manager');
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.queryByText('Archive')).not.toBeInTheDocument();
+  });
+
+  it('8: another organization retains Archive when the caller holds document.archive', async () => {
+    mockPermissions(['document.view', 'document.archive'], 'administrator');
+    mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ organizationId: SECOND_MOCK_ORGANIZATION_ID })]);
+    renderTab(SECOND_MOCK_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(await screen.findByText('Archive')).toBeInTheDocument();
+  });
+
+  it('9: another organization without document.archive still does not show Archive (ordinary permission gating, unaffected by the capability)', async () => {
+    mockPermissions(['document.view'], 'administrator');
+    mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ organizationId: SECOND_MOCK_ORGANIZATION_ID })]);
+    renderTab(SECOND_MOCK_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.queryByText('Archive')).not.toBeInTheDocument();
+  });
+
+  it('6/7: an existing archived Manors document remains visible in the list and remains downloadable/printable — this task disables NEW archive actions only, it is not a migration', async () => {
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-already-archived', fileName: 'old-scan.pdf', status: 'archived' }),
+    ]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    expect(await screen.findByText('old-scan.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    // Never re-offered for archiving again (it's already archived, not active).
+    expect(screen.queryByText('Archive')).not.toBeInTheDocument();
+  });
+
+  it('no disabled/placeholder Archive button is left behind for Manors — the action is either fully available or fully absent', async () => {
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cremation Authorization.pdf');
+    await waitFor(() => {
+      const disabledArchiveButtons = screen.queryAllByText('Archive').filter((el) => (el as HTMLButtonElement).disabled);
+      expect(disabledArchiveButtons).toHaveLength(0);
     });
   });
 });

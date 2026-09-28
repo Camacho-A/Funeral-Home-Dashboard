@@ -43,7 +43,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof DocumentServiceError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+      // Handwritten item #12 (2026-09). Mirrors the signature-request
+      // route's own convention (app/api/cases/[caseId]/documents/[documentId]/
+      // signature-requests/route.ts): "not found" maps to 404, every other
+      // service-thrown rejection (including "archiving is not enabled for
+      // this organization") maps to 422 — never a raw 404 for a capability
+      // rejection, and never leaking which organization or why beyond the
+      // service's own safe message.
+      return NextResponse.json({ error: error.message }, { status: error.message.includes('not found') ? 404 : 422 });
     }
     throw error;
   }

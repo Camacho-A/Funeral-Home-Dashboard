@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { caseDocumentFixtures } from '@/services/__mocks__/documentFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
@@ -41,11 +41,11 @@ afterEach(() => {
   activityEventFixtures.length = 0;
 });
 
-async function seedUploadedDocument() {
+async function seedUploadedDocument(organizationId: string = DEFAULT_ORGANIZATION_ID) {
   return upload(
     { caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory },
     Buffer.from('raw bytes'),
-    { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: mockDefaultUser.id, actorMembershipId: null, actorRoleKey: 'administrator', correlationId: 'corr-1' },
+    { organizationId, actorIdentityId: mockDefaultUser.id, actorMembershipId: null, actorRoleKey: 'administrator', correlationId: 'corr-1' },
     'mock',
   );
 }
@@ -56,15 +56,31 @@ describe('POST /api/cases/[caseId]/documents/[documentId]/archive', () => {
     expect(response.status).toBe(403);
   });
 
-  it('archives the document and records document.archived', async () => {
-    const document = await seedUploadedDocument();
-    const response = await archiveRequest(document.id, { organizationId: DEFAULT_ORGANIZATION_ID });
-    expect(response.status).toBe(200);
-    expect(caseDocumentFixtures.find((d) => d.id === document.id)?.status).toBe('archived');
-    expect(activityEventFixtures.at(-1)?.eventType).toBe('document.archived');
+  it('11: archives the document and records document.archived for an organization with archiving enabled (not Manors)', async () => {
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true });
+    try {
+      const document = await seedUploadedDocument(SECOND_MOCK_ORGANIZATION_ID);
+      const response = await archiveRequest(document.id, { organizationId: SECOND_MOCK_ORGANIZATION_ID });
+      expect(response.status).toBe(200);
+      expect(caseDocumentFixtures.find((d) => d.id === document.id)?.status).toBe('archived');
+      expect(activityEventFixtures.at(-1)?.eventType).toBe('document.archived');
+    } finally {
+      mockMembershipFixtures.pop();
+    }
   });
 
-  it('a role without document.archive (officeStaff) is refused', async () => {
+  it('5: rejects a direct/server-side archive attempt for Manors (managed-cremations) — permission alone is not sufficient, the organization capability overrides it', async () => {
+    const document = await seedUploadedDocument(DEFAULT_ORGANIZATION_ID);
+    const response = await archiveRequest(document.id, { organizationId: DEFAULT_ORGANIZATION_ID });
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body.error).not.toMatch(/managed-cremations|internal|stack/i); // safe, non-leaky message
+    // Never archived — the document's status is untouched by the rejected attempt.
+    expect(caseDocumentFixtures.find((d) => d.id === document.id)?.status).toBe('active');
+    expect(activityEventFixtures.some((e) => e.eventType === 'document.archived')).toBe(false);
+  });
+
+  it('a role without document.archive (officeStaff) is refused — before the organization capability is even considered', async () => {
     const document = await seedUploadedDocument();
     const officeStaffUser = { id: 'mock-user-officestaff-archive-test', email: 'officestaff-archive@beacon.test', displayName: 'Office Staff', source: 'mock' as const };
     mockMembershipFixtures.push({ organizationId: DEFAULT_ORGANIZATION_ID, userId: officeStaffUser.id, role: 'staff', isActive: true });
@@ -76,8 +92,13 @@ describe('POST /api/cases/[caseId]/documents/[documentId]/archive', () => {
     mockMembershipFixtures.pop();
   });
 
-  it('returns 404 for a document that does not exist', async () => {
-    const response = await archiveRequest('no-such-doc', { organizationId: DEFAULT_ORGANIZATION_ID });
-    expect(response.status).toBe(404);
+  it('returns 404 for a document that does not exist, for an organization with archiving enabled', async () => {
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true });
+    try {
+      const response = await archiveRequest('no-such-doc', { organizationId: SECOND_MOCK_ORGANIZATION_ID });
+      expect(response.status).toBe(404);
+    } finally {
+      mockMembershipFixtures.pop();
+    }
   });
 });

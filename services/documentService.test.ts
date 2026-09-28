@@ -308,19 +308,45 @@ describe('upload', () => {
 });
 
 describe('archive', () => {
-  it('archives a document and records document.archived', async () => {
-    const template = await createSampleTemplate();
-    const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+  it('11: archives a document and records document.archived, for an organization with archiving enabled (not Manors)', async () => {
+    const doc = await upload(
+      { caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory },
+      Buffer.from('raw bytes'),
+      ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }),
+      'mock',
+    );
 
-    await archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock');
+    await archive(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock');
 
-    const documents = await list(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    const documents = await list(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
     expect(documents.find((d) => d.id === doc.id)?.status).toBe('archived');
     expect(activityEventFixtures.at(-1)?.eventType).toBe('document.archived');
   });
 
-  it('throws for a document that does not exist in this case/organization', async () => {
-    await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'no-such-doc', ctx(), 'mock')).rejects.toThrow(DocumentServiceError);
+  it('throws for a document that does not exist in this case/organization (an organization with archiving enabled)', async () => {
+    await expect(archive(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'no-such-doc', ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock')).rejects.toThrow(DocumentServiceError);
+  });
+
+  /**
+   * Handwritten item #12 (2026-09, Archive removal for Manors). Enforced
+   * inside the service itself, not just the staff route, so a direct
+   * service call (a stale client bypassing the UI, a crafted request, or
+   * any future caller) can never archive a Manors CaseDocument regardless
+   * of the caller's own `document.archive` permission.
+   */
+  describe('Manors (managed-cremations) — document archiving disabled (item #12, 2026-09)', () => {
+    it('5: rejects an archive attempt even for an otherwise-valid, existing document — permission alone is not sufficient', async () => {
+      const template = await createSampleTemplate();
+      const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+
+      await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock')).rejects.toThrow(DocumentServiceError);
+      await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock')).rejects.toThrow('not enabled for this organization');
+
+      // The document's status is untouched by the rejected attempt.
+      const documents = await list(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+      expect(documents.find((d) => d.id === doc.id)?.status).toBe('active');
+      expect(activityEventFixtures.some((e) => e.eventType === 'document.archived')).toBe(false);
+    });
   });
 });
 

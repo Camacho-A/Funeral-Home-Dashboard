@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { isSignatureRequestsEnabled } from '@/domain/organization/signatureRequestCapability';
+import { isDocumentArchivingEnabled } from '@/domain/organization/documentArchiveCapability';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseDocumentLibrary, useUploadCaseDocument, useArchiveCaseDocument } from '@/hooks/useCaseDocumentLibrary';
 import { Card } from '@/components/ui/Card';
@@ -90,7 +91,13 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const permissions = myPermissionsQuery.isSuccess ? myPermissionsQuery.data.permissions : null;
   const canGenerate = permissions === null || permissions.includes('document.generate');
   const canUpload = permissions === null || permissions.includes('document.upload');
-  const canArchive = permissions === null || permissions.includes('document.archive');
+  // Handwritten item #12 (2026-09, Archive removal for Manors). The
+  // `document.archive` permission alone is not sufficient — the
+  // organization-level capability must also allow it. Manors resolves to
+  // disabled here regardless of the caller's own role/permission; the
+  // server independently re-enforces the same rule (services/documentService.ts#archive)
+  // regardless of what this component renders.
+  const canArchive = (permissions === null || permissions.includes('document.archive')) && isDocumentArchivingEnabled(organizationId);
   // Handwritten item #4 (2026-09): gated on both the permission AND the
   // organization-level capability — an organization with Signature
   // Requests disabled (Manors) never shows Request Signature/Resend
