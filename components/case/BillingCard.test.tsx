@@ -180,7 +180,7 @@ describe('BillingCard — Manors Cash Advance UI cleanup (item #11, 2026-09)', (
 
     renderCard(DEFAULT_ORGANIZATION_ID);
 
-    expect(await screen.findByText('FTC Statement total')).toBeInTheDocument();
+    expect(await screen.findByText('Statement Total')).toBeInTheDocument();
     expect(await screen.findByText('Account balance due')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Generate Statement PDF' })).toBeInTheDocument();
   });
@@ -242,5 +242,72 @@ describe('BillingCard — Manors Cash Advance UI cleanup (item #11, 2026-09)', (
     // The FTC total on screen still reconciles — it includes the $50.00
     // cash advance, exactly matching the model the backend already computed.
     expect(await screen.findByText('$940.00')).toBeInTheDocument();
+  });
+});
+
+describe('BillingCard — staff-facing "FTC Statement" simplified to "Statement" (2026-09)', () => {
+  it('displays "Statement" (never "FTC Statement") in the card heading', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard();
+
+    expect(await screen.findByText('Billing & Statement')).toBeInTheDocument();
+    expect(screen.queryByText(/FTC Statement/)).not.toBeInTheDocument();
+  });
+
+  it('"Statement Total" replaces "FTC Statement total"', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard();
+
+    expect(await screen.findByText('Statement Total')).toBeInTheDocument();
+    expect(screen.queryByText('FTC Statement total')).not.toBeInTheDocument();
+    expect(screen.queryByText('FTC Statement Total')).not.toBeInTheDocument();
+  });
+
+  it('Generate/Regenerate Statement PDF button labels remain unchanged (already staff-friendly)', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard();
+
+    expect(await screen.findByRole('button', { name: 'Generate Statement PDF' })).toBeInTheDocument();
+  });
+
+  it('never renders the literal string "FTC Statement" anywhere, including in the unexpected-cash-advance read-only notice', async () => {
+    const modelWithUnexpectedCashAdvance: BillingStatementModel = {
+      ...MODEL,
+      showCashAdvanceSection: false,
+      cashAdvanceItems: [{ description: 'Third-party item', amountCents: 5000, hasMarkup: false, isEstimated: false }],
+      cashAdvanceSubtotalCents: 5000,
+      ftcStatementTotalCents: 94000,
+    };
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(modelWithUnexpectedCashAdvance);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([
+      {
+        id: 'ca-1',
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: CASE_ID,
+        description: 'Third-party item',
+        amountCents: 5000,
+        hasMarkup: false,
+        isEstimated: false,
+        isActive: true,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      },
+    ]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard(DEFAULT_ORGANIZATION_ID);
+
+    await screen.findByText('Cash advance items on this case');
+    expect(screen.queryByText(/FTC Statement/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Statement Total below/)).toBeInTheDocument();
   });
 });

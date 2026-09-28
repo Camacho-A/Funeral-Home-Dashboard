@@ -85,7 +85,7 @@ export function BillingCard({ caseId }: { caseId: string }) {
 
   return (
     <section aria-labelledby="billing-heading" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <h2 id="billing-heading">Billing &amp; FTC Statement</h2>
+      <h2 id="billing-heading">Billing &amp; Statement</h2>
 
       {/* Cash advance editor — omitted entirely for an organization that
           doesn't use this workflow (see showCashAdvanceSection above),
@@ -95,7 +95,7 @@ export function BillingCard({ caseId }: { caseId: string }) {
         <div>
           <h3 style={{ marginBottom: '0.5rem' }}>Cash advance items</h3>
           <p style={{ fontSize: '0.85rem', color: '#555', marginTop: 0 }}>
-            Third-party items obtained on the family&rsquo;s behalf. These appear on the FTC Statement but are <strong>not</strong> part of the account balance owed to the funeral home.
+            Third-party items obtained on the family&rsquo;s behalf. These appear on the Statement but are <strong>not</strong> part of the account balance owed to the funeral home.
           </p>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             {existingCashAdvances.map((c) => (
@@ -137,7 +137,7 @@ export function BillingCard({ caseId }: { caseId: string }) {
           <strong style={{ color: '#8a5a00' }}>Cash advance items on this case</strong>
           <p style={{ fontSize: '0.85rem', color: '#555', margin: '0.25rem 0 0.5rem' }}>
             This organization doesn&rsquo;t use Cash Advance Items in its normal workflow, but this case already has{' '}
-            {existingCashAdvances.length} recorded. They remain included in the FTC Statement total below and are shown here read-only.
+            {existingCashAdvances.length} recorded. They remain included in the Statement Total below and are shown here read-only.
           </p>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             {existingCashAdvances.map((c) => (
@@ -170,7 +170,7 @@ export function BillingCard({ caseId }: { caseId: string }) {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div style={{ border: '1px solid #ccc', borderRadius: 6, padding: '0.5rem' }}>
-                <strong>FTC Statement total</strong>
+                <strong>Statement Total</strong>
                 <div style={{ fontSize: '0.8rem', color: '#666' }}>Goods/services + cash advances</div>
                 <div style={{ fontSize: '1.2rem', fontVariantNumeric: 'tabular-nums' }}>{formatCents(model.ftcStatementTotalCents)}</div>
               </div>
