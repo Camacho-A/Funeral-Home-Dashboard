@@ -9,7 +9,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   vercelBlobStorageProvider: { uploadFile: (...a: unknown[]) => mockUploadFile(...a), downloadFile: vi.fn(), deleteFile: vi.fn() },
 }));
 
-const { generateStatement, generateGeneralPriceList, BillingDocumentServiceError } = await import('./billingDocumentService');
+const { generateStatement, previewStatementModel, generateGeneralPriceList, BillingDocumentServiceError } = await import('./billingDocumentService');
 const { createCaseOrder } = await import('./pricingService');
 const { createCashAdvanceItem } = await import('./cashAdvanceService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
@@ -54,12 +54,8 @@ describe('billingDocumentService.generateStatement', () => {
     await expect(generateStatement({ caseId: CASE, idFactory }, ctx, 'mock')).rejects.toBeInstanceOf(BillingDocumentServiceError);
   });
 
-  it('produces a Statement CaseDocument whose model keeps the FTC total and AR balance distinct', async () => {
+  it('produces a Statement CaseDocument whose model keeps authoritative figures correct (no cash advances)', async () => {
     await seedOrder(); // Direct Cremation $890 (base → basic services fee)
-    await createCashAdvanceItem(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE, description: 'Death certificates', amountCents: 12500, hasMarkup: false, isEstimated: true, idFactory },
-      'mock',
-    );
 
     const { document, model } = await generateStatement({ caseId: CASE, idFactory }, ctx, 'mock');
 
@@ -69,6 +65,34 @@ describe('billingDocumentService.generateStatement', () => {
     const baseLine = model.lineItems.find((l) => l.includesBasicServicesFee);
     expect(baseLine).toBeTruthy();
     expect(model.basicServicesFeeMode).toBe('included_in_priced_service');
+    // Authoritative accounting figures (from the order) — cash advances excluded.
+    expect(model.goodsAndServicesTotalCents).toBe(89000);
+    expect(model.authoritativeArBalanceDueCents).toBe(89000);
+    expect(model.ftcStatementTotalCents).toBe(89000);
+  });
+
+  /**
+   * Item #2 (2026-09). DEFAULT_ORGANIZATION_ID is the real Manor's Cremation
+   * production organization id, which per this item's requirements does not
+   * use cash advances and has its rendered Statement's Cash Advance section
+   * suppressed (see domain/billing/organizationStatementOverrides.ts) —
+   * generateStatement() now correctly refuses to render a Statement for
+   * this organization if a cash advance item unexpectedly exists (see
+   * renderStatementHtml.test.ts's "stops rather than silently hiding real
+   * data" test). The FTC-total/AR-balance-distinction math these two tests
+   * exist to prove is unaffected by that presentation rule — verified here
+   * via previewStatementModel(), which builds the same model WITHOUT
+   * rendering, so it remains a valid, org-agnostic way to exercise it.
+   */
+  it('keeps the FTC total and AR balance distinct when cash advances exist on the underlying order (model-only, no render)', async () => {
+    await seedOrder(); // Direct Cremation $890 (base → basic services fee)
+    await createCashAdvanceItem(
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE, description: 'Death certificates', amountCents: 12500, hasMarkup: false, isEstimated: true, idFactory },
+      'mock',
+    );
+
+    const model = await previewStatementModel(CASE, ctx, 'mock');
+
     // Authoritative accounting figures (from the order) — cash advances excluded.
     expect(model.goodsAndServicesTotalCents).toBe(89000);
     expect(model.authoritativeArBalanceDueCents).toBe(89000);
@@ -86,7 +110,7 @@ describe('billingDocumentService.generateStatement', () => {
       { organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE, description: 'Obituary', amountCents: 30000, hasMarkup: true, isEstimated: false, idFactory },
       'mock',
     );
-    await generateStatement({ caseId: CASE, idFactory }, ctx, 'mock');
+    await previewStatementModel(CASE, ctx, 'mock');
     const after = caseOrderFixtures.find((o) => o.caseId === CASE)!.balanceDue;
     expect(after).toBe(before); // AR untouched by cash advances
   });

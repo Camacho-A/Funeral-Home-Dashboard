@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderStatementHtml, StatementRenderError } from './renderStatementHtml';
 import { FTC_CLASS, disclosuresFor, FTC_DISCLOSURE_VERSION } from './ftcComplianceRegistry';
+import { MANORS_STATEMENT_PROVIDER_IDENTITY } from './organizationStatementOverrides';
 import type { BillingStatementModel } from './billingModels';
 
 const OFFERINGS = { offersDirectCremation: true, offersEmbalming: false, offersCaskets: false, offersOuterBurialContainers: false };
@@ -23,6 +24,7 @@ function baseModel(overrides: Partial<BillingStatementModel> = {}): BillingState
     goodsAndServicesTotalCents: 128000,
     paidToDateCents: 50000,
     authoritativeArBalanceDueCents: 78000,
+    showCashAdvanceSection: true,
     cashAdvanceItems: [
       { description: 'Certified death certificates (5)', amountCents: 12500, hasMarkup: false, isEstimated: false },
       { description: 'Obituary notice', amountCents: 20000, hasMarkup: true, isEstimated: true },
@@ -35,6 +37,20 @@ function baseModel(overrides: Partial<BillingStatementModel> = {}): BillingState
     supplementalBlocks: [],
     ...overrides,
   };
+}
+
+/** A Manors-shaped model: the real provider-identity override, Cash Advance
+    section suppressed, and (matching Manors' normal workflow) no cash
+    advance items at all — so goodsAndServices === the FTC total. */
+function manorsModel(overrides: Partial<BillingStatementModel> = {}): BillingStatementModel {
+  return baseModel({
+    provider: MANORS_STATEMENT_PROVIDER_IDENTITY,
+    showCashAdvanceSection: false,
+    cashAdvanceItems: [],
+    cashAdvanceSubtotalCents: 0,
+    ftcStatementTotalCents: 128000,
+    ...overrides,
+  });
 }
 
 describe('renderStatementHtml', () => {
@@ -106,5 +122,69 @@ describe('renderStatementHtml', () => {
     expect(html).toContain('Additional Information from');
     expect(html).toContain('does not replace or modify the required disclosures');
     expect(html).toContain('We are family owned.');
+  });
+});
+
+describe('renderStatementHtml — Manors business identity + Cash Advance suppression (item #2, 2026-09)', () => {
+  it('1: contains the street address line', () => {
+    expect(renderStatementHtml(manorsModel())).toContain('481 E Commercial Blvd');
+  });
+
+  it('2: contains the city/state/zip line', () => {
+    expect(renderStatementHtml(manorsModel())).toContain('Oakland Park, FL 33334');
+  });
+
+  it('3: contains the phone number', () => {
+    expect(renderStatementHtml(manorsModel())).toContain('954-884-5770');
+  });
+
+  it('4: contains the fax number', () => {
+    expect(renderStatementHtml(manorsModel())).toContain('305-603-9250');
+  });
+
+  it('5: contains the email address', () => {
+    expect(renderStatementHtml(manorsModel())).toContain('contact@manorscremation.com');
+  });
+
+  it('6: Statement Date renders MM/DD/YYYY, not the persisted YYYY-MM-DD form', () => {
+    const html = renderStatementHtml(manorsModel({ generatedAt: '2026-09-27' }));
+    expect(html).toContain('09/27/2026');
+    expect(html).not.toContain('2026-09-27');
+  });
+
+  it('7: the Manors logo is embedded as a data: URI in the rendered HTML', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).toContain('data:image/jpeg;base64,');
+    expect(html).toContain('<img');
+  });
+
+  it("8/9: does NOT contain the Cash Advance Items heading or the empty-state placeholder", () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).not.toContain('Cash Advance Items');
+    expect(html).not.toContain('No cash advance items.');
+  });
+
+  it('12: totals are unaffected by suppressing the itemized section — goods/services total and FTC total remain correct and equal (no cash advances)', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).toContain('$1,280.00'); // goodsAndServicesTotalCents
+    expect(html).toContain('Total cost of arrangements (this statement)');
+  });
+
+  it('11: other organizations retain their existing Cash Advance Items section unchanged', () => {
+    const html = renderStatementHtml(baseModel());
+    expect(html).toContain('Cash Advance Items');
+    expect(html).toContain('Certified death certificates (5)');
+  });
+
+  it('stops rather than silently hiding real data: throws if Cash Advance items unexpectedly exist while the section is suppressed', () => {
+    expect(() =>
+      renderStatementHtml(
+        manorsModel({
+          cashAdvanceItems: [{ description: 'Unexpected cash advance', amountCents: 1000, hasMarkup: false, isEstimated: false }],
+          cashAdvanceSubtotalCents: 1000,
+          ftcStatementTotalCents: 129000,
+        }),
+      ),
+    ).toThrow(StatementRenderError);
   });
 });

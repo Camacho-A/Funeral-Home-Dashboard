@@ -14,6 +14,19 @@ export function formatCents(cents: number, currency = 'USD'): string {
   return `${negative ? '-' : ''}${symbol}${grouped}.${rem}`;
 }
 
+/** Item #2 (2026-09). Formats an ISO date-only string ("YYYY-MM-DD" — the
+    stored/persisted representation, e.g. BillingStatementModel.generatedAt)
+    as "MM/DD/YYYY" for display. Presentation only: never changes what's
+    persisted or how dates are represented anywhere else. Falls back to the
+    original string unchanged if it isn't in the expected shape, rather than
+    producing a malformed or misleading date. */
+export function formatStatementDate(isoDateOnly: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDateOnly);
+  if (!match) return isoDateOnly;
+  const [, year, month, day] = match;
+  return `${month}/${day}/${year}`;
+}
+
 /** HTML-escapes untrusted text. Every dynamic string in a rendered compliance
     document passes through this — the documents reach a headless-Chromium
     render step, so no unescaped data ever enters the HTML. */

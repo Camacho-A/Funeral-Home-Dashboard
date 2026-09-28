@@ -36,6 +36,15 @@ export type ProviderIdentity = {
   name: string;
   addressLine: string;
   phone: string;
+  /** Optional — most organizations have no fax/email/logo configured today
+      (see domain/billing/organizationStatementOverrides.ts). Omitted from
+      the rendered header entirely when absent, matching every other
+      already-optional Statement field's "no value → no line" convention. */
+  fax?: string;
+  email?: string;
+  /** A `data:` URI only — see lib/puppeteerDocumentRenderer.ts's network
+      lockdown, which aborts every non-`data:` request during render. */
+  logoDataUri?: string;
 };
 
 export type BillingStatementModel = {
@@ -63,6 +72,12 @@ export type BillingStatementModel = {
   authoritativeArBalanceDueCents: number;
 
   /** === FTC-STATEMENT-ONLY FIGURES (display; NOT accounting) === */
+  /** Item #2 (2026-09). Whether the itemized "Cash Advance Items" section
+      renders at all — organization-scoped presentation only (see
+      domain/billing/organizationStatementOverrides.ts); never affects
+      cashAdvanceSubtotalCents/ftcStatementTotalCents, which always reflect
+      the true underlying figures regardless of this flag. */
+  showCashAdvanceSection: boolean;
   cashAdvanceItems: StatementCashAdvanceItem[];
   /** Sum of cash advances — display-only, never an accounting figure. */
   cashAdvanceSubtotalCents: number;

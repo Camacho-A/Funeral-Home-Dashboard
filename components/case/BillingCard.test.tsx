@@ -35,6 +35,7 @@ const MODEL: BillingStatementModel = {
   goodsAndServicesTotalCents: 89000,
   paidToDateCents: 0,
   authoritativeArBalanceDueCents: 89000,
+  showCashAdvanceSection: true,
   cashAdvanceItems: [],
   cashAdvanceSubtotalCents: 0,
   ftcStatementTotalCents: 89000,

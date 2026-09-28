@@ -9,6 +9,7 @@ import { createOrgDocument } from './orgDocumentService';
 import { classifyServiceItem } from '../domain/billing/ftcClassification';
 import { FTC_CLASS, FTC_DISCLOSURE_VERSION, disclosuresFor, type ProviderOfferings } from '../domain/billing/ftcComplianceRegistry';
 import { renderStatementHtml } from '../domain/billing/renderStatementHtml';
+import { MANORS_ORGANIZATION_ID, MANORS_STATEMENT_PROVIDER_IDENTITY, shouldShowCashAdvanceSection } from '../domain/billing/organizationStatementOverrides';
 import { renderGeneralPriceListHtml } from '../domain/billing/renderGeneralPriceListHtml';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
 import type { Organization } from '../types/organization';
@@ -69,6 +70,16 @@ function providerIdentity(organization: Organization, location: OrganizationLoca
   return { name: organization.name, addressLine, phone: location?.phone ?? '' };
 }
 
+/** Item #2 (2026-09). Statement-only identity resolution — see
+    domain/billing/organizationStatementOverrides.ts for why Manor's
+    Cremation Services gets a fixed override here instead of reading its
+    (currently placeholder) live Organization/Location data. The General
+    Price List keeps calling providerIdentity() directly, unaffected. */
+function statementProviderIdentity(organizationId: string, organization: Organization, location: OrganizationLocation | null): ProviderIdentity {
+  if (organizationId === MANORS_ORGANIZATION_ID) return MANORS_STATEMENT_PROVIDER_IDENTITY;
+  return providerIdentity(organization, location);
+}
+
 /**
  * Generates (or regenerates) the FTC Statement of Funeral Goods & Services
  * Selected for a case, from its active CaseOrder. Returns the created
@@ -121,7 +132,7 @@ export async function generateStatement(
   const hasBundledBasicFee = statementLines.some((l) => l.includesBasicServicesFee);
 
   const model: BillingStatementModel = {
-    provider: providerIdentity(src.organization, src.location),
+    provider: statementProviderIdentity(org, src.organization, src.location),
     decedentName: src.case.decedentName,
     caseNumber: src.case.caseNumber,
     dateOfDeath: src.case.dateOfDeath ?? null,
@@ -134,6 +145,7 @@ export async function generateStatement(
     goodsAndServicesTotalCents: order.total,
     paidToDateCents: paidToDate,
     authoritativeArBalanceDueCents: order.balanceDue,
+    showCashAdvanceSection: shouldShowCashAdvanceSection(org),
     cashAdvanceItems: cashAdvances.map((c) => ({ description: c.description, amountCents: c.amountCents, hasMarkup: c.hasMarkup, isEstimated: c.isEstimated })),
     cashAdvanceSubtotalCents: cashAdvanceSubtotal,
     ftcStatementTotalCents: order.total + cashAdvanceSubtotal,
@@ -201,7 +213,7 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
   const cashAdvanceSubtotal = sumCashAdvances(cashAdvances);
   const hasBundledBasicFee = statementLines.some((l) => l.includesBasicServicesFee);
   const model: BillingStatementModel = {
-    provider: providerIdentity(src.organization, src.location),
+    provider: statementProviderIdentity(org, src.organization, src.location),
     decedentName: src.case.decedentName,
     caseNumber: src.case.caseNumber,
     dateOfDeath: src.case.dateOfDeath ?? null,
@@ -214,6 +226,7 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
     goodsAndServicesTotalCents: order.total,
     paidToDateCents: paidToDate,
     authoritativeArBalanceDueCents: order.balanceDue,
+    showCashAdvanceSection: shouldShowCashAdvanceSection(org),
     cashAdvanceItems: cashAdvances.map((c) => ({ description: c.description, amountCents: c.amountCents, hasMarkup: c.hasMarkup, isEstimated: c.isEstimated })),
     cashAdvanceSubtotalCents: cashAdvanceSubtotal,
     ftcStatementTotalCents: order.total + cashAdvanceSubtotal,
