@@ -3,7 +3,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationActivity } from '@/hooks/useActivity';
 import { useCases } from '@/hooks/useCases';
-import { resolveActivityDisplayDescription } from '@/domain/activity/activityDisplay';
+import { resolveActivityDisplayDescription, activityActorLabel } from '@/domain/activity/activityDisplay';
 import styles from './RecentActivityPanel.module.css';
 
 function timeAgo(createdAt: string): string {
@@ -37,6 +37,15 @@ function timeAgo(createdAt: string): string {
  * organization (see that hook), a stale/missing/other-org caseId simply
  * fails the Map lookup and renders with no Case Number at all, never a
  * placeholder, never the raw id.
+ *
+ * Actor-attribution fix (2026-09): each entry's secondary line now leads
+ * with the actual employee who performed it (`activityActorLabel`, the
+ * same shared resolver `CaseActivityTab` already uses) instead of only a
+ * timestamp — `entry.actorDisplayName` is resolved server-side per
+ * request from the event's own recorded `actorIdentityId` (see
+ * `services/activityService.ts#attachActorDisplayNames`), never from the
+ * signed-in viewer, so a historical entry always shows who actually
+ * performed it rather than whoever is currently looking at the Dashboard.
  */
 export function RecentActivityPanel() {
   const { organizationId } = useOrganization();
@@ -68,7 +77,9 @@ export function RecentActivityPanel() {
                 {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
                 <span className={styles.what}>{resolveActivityDisplayDescription(entry)}</span>
               </div>
-              <div className={styles.when}>{timeAgo(entry.createdAt)}</div>
+              <div className={styles.when}>
+                {activityActorLabel(entry)} · {timeAgo(entry.createdAt)}
+              </div>
             </div>
           );
         })}

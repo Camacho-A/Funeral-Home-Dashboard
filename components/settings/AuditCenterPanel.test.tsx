@@ -6,7 +6,7 @@ import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as identityAuthClient from '@/lib/identityAuthClient';
 import * as activityClient from '@/lib/activityClient';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import type { ActivityEvent } from '@/types/activityEvent';
+import type { ActivityEventWithActor } from '@/services/activityService';
 
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');
@@ -18,7 +18,7 @@ vi.mock('@/lib/activityClient', async () => {
   return { ...actual, fetchOrganizationActivity: vi.fn() };
 });
 
-function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
+function makeEvent(overrides: Partial<ActivityEventWithActor> = {}): ActivityEventWithActor {
   return {
     id: 'event-1',
     eventVersion: 1,
@@ -27,6 +27,7 @@ function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
     actorIdentityId: 'identity-1',
     actorMembershipId: null,
     actorRoleKey: 'administrator',
+    actorDisplayName: null,
     category: 'payments',
     eventType: 'payment.recorded',
     resourceType: 'payment',

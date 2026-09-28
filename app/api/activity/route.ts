@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
 import { resolveMembershipAuthorizationContext } from '@/lib/auth/resolveMembershipAuthorizationContext';
 import { canReadAuditLog } from '@/services/authorizationPolicyService';
-import { listForOrganization } from '@/services/activityService';
+import { listForOrganization, attachActorDisplayNames } from '@/services/activityService';
 import { parseActivityFilters } from '@/lib/activityQueryParams';
 
 /**
@@ -42,5 +42,6 @@ export async function GET(request: Request) {
   const limit = limitParam ? Number(limitParam) : 25;
 
   const result = await listForOrganization(authz.context.organizationId, filters, cursor, limit, dataAdapterMode);
-  return NextResponse.json({ events: result.events, nextCursor: result.nextCursor });
+  const events = await attachActorDisplayNames(result.events, dataAdapterMode);
+  return NextResponse.json({ events, nextCursor: result.nextCursor });
 }

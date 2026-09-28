@@ -5,7 +5,7 @@ import { CaseActivityTab } from './CaseActivityTab';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as activityClient from '@/lib/activityClient';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import type { ActivityEvent } from '@/types/activityEvent';
+import type { ActivityEventWithActor } from '@/services/activityService';
 
 vi.mock('@/lib/activityClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/activityClient')>('@/lib/activityClient');
@@ -17,7 +17,12 @@ vi.mock('@/utils/print', () => ({
   printTextLog: (...args: unknown[]) => mockPrintTextLog(...args),
 }));
 
-function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
+/** `actorDisplayName` defaults to `null` (never a hardcoded person) so
+    every existing test here keeps exercising the pre-existing role-label
+    fallback via the shared `activityActorLabel` — the Recent Activity
+    actor-name fix (2026-09) reuses this same resolver, so a real resolved
+    name is exercised explicitly below rather than assumed everywhere. */
+function makeEvent(overrides: Partial<ActivityEventWithActor> = {}): ActivityEventWithActor {
   return {
     id: 'event-1',
     eventVersion: 1,
@@ -26,6 +31,7 @@ function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
     actorIdentityId: 'identity-1',
     actorMembershipId: null,
     actorRoleKey: 'administrator',
+    actorDisplayName: null,
     category: 'cases',
     eventType: 'case.updated',
     resourceType: 'case',
@@ -219,6 +225,24 @@ describe('CaseActivityTab', () => {
       expect(humanRow).toContain('Office Staff');
       expect(humanRow).not.toContain('officeStaff');
       expect(humanRow).not.toMatch(/>\s*System\s*</);
+    });
+
+    /**
+     * Recent Activity actor-attribution fix (2026-09) shares this exact
+     * `activityActorLabel` resolver with Dashboard → Recent Activity — a
+     * natural, incidental benefit for Case Activity too (not a redesign of
+     * this tab): when `actorDisplayName` is present the real employee name
+     * now shows here as well, in place of the role label. Case Activity's
+     * own layout/print behavior is otherwise completely unchanged.
+     */
+    it('naturally benefits from the shared actor resolver: a resolved actorDisplayName shows the real employee name instead of the role', async () => {
+      const events = [makeEvent({ id: 'event-name', description: 'Case updated', actorRoleKey: 'officeStaff', actorDisplayName: 'Angelica Camacho' })];
+      vi.mocked(activityClient.fetchCaseActivity).mockResolvedValue({ events, nextCursor: null });
+      renderTab();
+      await screen.findByText('Case updated');
+
+      expect(screen.getByText(/Angelica Camacho/)).toBeInTheDocument();
+      expect(screen.queryByText('Office Staff')).not.toBeInTheDocument();
     });
   });
 });

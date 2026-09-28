@@ -16,13 +16,18 @@
   flex-direction: column;
 }
 
+/* Recent Activity actor-attribution fix (2026-09): a second line (actor ·
+   timestamp) was added below the case-number/description line, so `.row`
+   stacks vertically now instead of the prior single-line two-column
+   layout — the case number/description line and its own internal `gap`
+   (`.rowMain`, Task #4) are unchanged; only the row's own axis changed to
+   make room for the new line beneath it. */
 .row {
   padding: var(--space-5) 0;
   box-shadow: inset 0 -1px 0 var(--color-surface-subtle);
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-6);
+  flex-direction: column;
+  gap: var(--space-1);
   font-size: var(--font-size-12-5);
 }
 

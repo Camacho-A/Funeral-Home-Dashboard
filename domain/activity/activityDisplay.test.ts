@@ -38,6 +38,52 @@ describe('activityActorLabel (item #16 — Case Activity actor attribution)', ()
 });
 
 /**
+ * Recent Activity actor-attribution fix (2026-09). A human event now
+ * prefers the employee's real `actorDisplayName` over a role label — the
+ * role answers "what permissions did they have," never "who did this."
+ * The role-label behavior above is preserved as the fallback tier for
+ * when no name can be resolved (a genuinely legacy/unresolvable identity),
+ * never as the default when a name is available.
+ */
+describe('activityActorLabel — actual employee name preferred over role (Recent Activity, 2026-09)', () => {
+  it('1. a human event with a resolved actorDisplayName shows the actual employee name', () => {
+    expect(activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'administrator', actorDisplayName: 'Angelica Camacho' })).toBe(
+      'Angelica Camacho',
+    );
+  });
+
+  it('2/3. never falls back to the role label ("Admin"/"Administrator") when a name is available', () => {
+    const label = activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'administrator', actorDisplayName: 'Jane Smith' });
+    expect(label).toBe('Jane Smith');
+    expect(label).not.toBe('Admin');
+    expect(label).not.toBe('Administrator');
+  });
+
+  it('4. different employees resolve to their own respective names', () => {
+    expect(activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'officeStaff', actorDisplayName: 'Jane Smith' })).toBe('Jane Smith');
+    expect(activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'officeStaff', actorDisplayName: 'John Doe' })).toBe('John Doe');
+  });
+
+  it('5. System is still System even when a stray actorDisplayName is present — isSystemGenerated always wins', () => {
+    expect(activityActorLabel({ isSystemGenerated: true, actorRoleKey: null, actorDisplayName: 'Should Never Show' })).toBe('System');
+  });
+
+  it('a missing/failed name lookup (actorDisplayName: null) falls back to the existing role label, never "Unknown" when a role is known', () => {
+    expect(activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'officeStaff', actorDisplayName: null })).toBe('Office Staff');
+  });
+
+  it('9. neither a name nor a role is available — falls back to "Unknown", never invented, never System', () => {
+    const label = activityActorLabel({ isSystemGenerated: false, actorRoleKey: null, actorDisplayName: null });
+    expect(label).toBe('Unknown');
+    expect(label).not.toBe('System');
+  });
+
+  it('an empty-string actorDisplayName is treated as "no name resolved", not rendered literally', () => {
+    expect(activityActorLabel({ isSystemGenerated: false, actorRoleKey: 'administrator', actorDisplayName: '' })).toBe('Administrator');
+  });
+});
+
+/**
  * Task #4 follow-up (2026-09) — Dashboard → Recent Activity was exposing a
  * document's internal UUID via document.regenerated's persisted
  * description ("Document regenerated (supersedes <uuid>)"). This function

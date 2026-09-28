@@ -7,7 +7,7 @@ import * as activityClient from '@/lib/activityClient';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { SignatureRequest } from '@/types/signatureRequest';
 import type { SignatureRecord } from '@/types/signatureRecord';
-import type { ActivityEvent } from '@/types/activityEvent';
+import type { ActivityEventWithActor } from '@/services/activityService';
 
 vi.mock('@/lib/signatureRequestsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/signatureRequestsClient')>('@/lib/signatureRequestsClient');
@@ -133,7 +133,7 @@ describe('SignatureStatusPanel', () => {
 
   it('shows signature history filtered to this document\'s document.signature.* events, toggled on demand', async () => {
     vi.mocked(signatureRequestsClient.fetchSignatureRequests).mockResolvedValue({ requests: [makeRequest()], records: [] });
-    const events: ActivityEvent[] = [
+    const events: ActivityEventWithActor[] = [
       {
         id: 'evt-1',
         eventVersion: 1,
@@ -142,6 +142,7 @@ describe('SignatureStatusPanel', () => {
         actorIdentityId: null,
         actorMembershipId: null,
         actorRoleKey: null,
+        actorDisplayName: null,
         category: 'documents',
         eventType: 'document.signature.requested',
         resourceType: 'caseDocument',
@@ -163,6 +164,7 @@ describe('SignatureStatusPanel', () => {
         actorIdentityId: null,
         actorMembershipId: null,
         actorRoleKey: null,
+        actorDisplayName: null,
         category: 'documents',
         eventType: 'document.generated',
         resourceType: 'caseDocument',

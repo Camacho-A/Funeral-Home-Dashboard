@@ -7,6 +7,7 @@ import {
   decodeCursor,
   listForOrganization,
   listForCase,
+  attachActorDisplayNames,
   exportCsv,
   recordCaseCreated,
   recordCaseUpdated,
@@ -77,6 +78,7 @@ import {
 } from './activityService';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
+import { MANORS_CHRIS_IDENTITY_ID, MANORS_PRIYA_IDENTITY_ID } from './__mocks__/identityFixtures';
 
 let lengths: { events: number };
 beforeEach(() => {
@@ -616,6 +618,90 @@ describe('listForOrganization / listForCase — tenant isolation and pagination'
 
     const byQuery = await listForOrganization(orgId, { query: 'card_declined' }, null, 50, 'mock');
     expect(byQuery.events.some((e) => e.description.includes('card_declined'))).toBe(true);
+  });
+});
+
+/**
+ * Recent Activity actor-attribution fix (2026-09). `attachActorDisplayNames`
+ * is the read-time resolver both `GET /api/activity` (Dashboard/Audit
+ * Center) and `GET /api/cases/[caseId]/activity` (Case Activity) call
+ * after fetching a page — never the write path, never a
+ * Production data migration. Resolves purely from each event's own
+ * already-persisted `actorIdentityId`.
+ */
+describe('attachActorDisplayNames', () => {
+  it('8. resolves a real, current identity\'s displayName for its event — legacy or fresh, same resolution path', async () => {
+    const event = await recordStageChanged(ctx({ actorIdentityId: MANORS_CHRIS_IDENTITY_ID }), 'case-1', 'a', 'b', 'mock');
+    const [resolved] = await attachActorDisplayNames([event], 'mock');
+    expect(resolved.actorDisplayName).toBe('Chris');
+  });
+
+  it('4/18. resolves different events\' different actors to their own respective names, never mixed up', async () => {
+    const chrisEvent = await recordStageChanged(ctx({ actorIdentityId: MANORS_CHRIS_IDENTITY_ID }), 'case-1', 'a', 'b', 'mock');
+    const priyaEvent = await recordPaymentRecorded(ctx({ actorIdentityId: MANORS_PRIYA_IDENTITY_ID }), 'case-2', 'payment-1', 15000, 'mock');
+
+    const [resolvedChris, resolvedPriya] = await attachActorDisplayNames([chrisEvent, priyaEvent], 'mock');
+    expect(resolvedChris.actorDisplayName).toBe('Chris');
+    expect(resolvedPriya.actorDisplayName).toBe('Priya');
+  });
+
+  it('9. an identity that no longer resolves (deleted/never existed) yields actorDisplayName: null, never a thrown error or a fabricated name', async () => {
+    const event = await recordStageChanged(ctx({ actorIdentityId: 'identity-does-not-exist' }), 'case-1', 'a', 'b', 'mock');
+    const [resolved] = await attachActorDisplayNames([event], 'mock');
+    expect(resolved.actorDisplayName).toBeNull();
+  });
+
+  it('a system-generated event (actorIdentityId: null) yields actorDisplayName: null without attempting a lookup', async () => {
+    const event = await record(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: null,
+        actorIdentityId: null,
+        actorMembershipId: null,
+        actorRoleKey: null,
+        category: 'system',
+        eventType: 'system.reminder.triggered',
+        resourceType: 'system',
+        resourceId: null,
+        previousValue: null,
+        newValue: null,
+        description: 'Reminder sent',
+        metadata: null,
+        severity: 'info',
+        correlationId: 'corr-system',
+        isSystemGenerated: true,
+      },
+      'mock',
+    );
+    const [resolved] = await attachActorDisplayNames([event], 'mock');
+    expect(resolved.actorDisplayName).toBeNull();
+  });
+
+  it('dedupes identical actorIdentityId values across many events into a single resolution, not one lookup per event', async () => {
+    const events = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => recordStageChanged(ctx({ actorIdentityId: MANORS_CHRIS_IDENTITY_ID }), `case-${i}`, 'a', 'b', 'mock')),
+    );
+    const resolved = await attachActorDisplayNames(events, 'mock');
+    expect(resolved.every((e) => e.actorDisplayName === 'Chris')).toBe(true);
+  });
+
+  it('19. only displayName is ever attached — no other Identity field (email, etc.) leaks onto the event', async () => {
+    const event = await recordStageChanged(ctx({ actorIdentityId: MANORS_CHRIS_IDENTITY_ID }), 'case-1', 'a', 'b', 'mock');
+    const [resolved] = await attachActorDisplayNames([event], 'mock');
+    expect(Object.keys(resolved).sort()).toEqual([...Object.keys(event), 'actorDisplayName'].sort());
+    expect((resolved as unknown as Record<string, unknown>).email).toBeUndefined();
+  });
+
+  it('preserves every other field on the event unchanged', async () => {
+    const event = await recordStageChanged(ctx({ actorIdentityId: MANORS_CHRIS_IDENTITY_ID }), 'case-1', 'a', 'b', 'mock');
+    const [resolved] = await attachActorDisplayNames([event], 'mock');
+    expect(resolved.id).toBe(event.id);
+    expect(resolved.description).toBe(event.description);
+    expect(resolved.previousValue).toBe(event.previousValue);
+  });
+
+  it('an empty events array resolves to an empty array without error', async () => {
+    expect(await attachActorDisplayNames([], 'mock')).toEqual([]);
   });
 });
 

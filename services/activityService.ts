@@ -5,6 +5,7 @@ import { mapWixActivityEventItem, buildWixActivityEventData, type WixActivityEve
 import { ACTIVITY_EVENT_TYPES, type ActivityEvent, type ActivityEventCategory, type ActivitySeverity, type NewActivityEventInput } from '../types/activityEvent';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { buildCsv, EXPORT_ROW_CAP } from '../domain/reporting/csvExport';
+import { getIdentityById } from './identityService';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The single service
@@ -204,6 +205,39 @@ export async function listForCase(
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityListResult> {
   return listForOrganization(organizationId, { caseId }, cursorRaw, limit, dataAdapterMode);
+}
+
+// ---------------------------------------------------------------------------
+// Actor display-name resolution (Recent Activity / Case Activity, 2026-09)
+// ---------------------------------------------------------------------------
+
+/** A read-model shape, never persisted — `ActivityEvent.actorIdentityId` is
+    the only actor identity stored on the event itself (see that field's own
+    comment); the caller's actual current name is resolved fresh on every
+    read via `getIdentityById` (the same source `GET /api/rbac/members`
+    already trusts), so a legacy event with no name at all in its own row
+    still displays the employee's current name, and a later name change
+    (e.g. legal name update) is reflected immediately without rewriting any
+    historical row. */
+export type ActivityEventWithActor = ActivityEvent & { actorDisplayName: string | null };
+
+/** Resolves each event's `actorIdentityId` to that identity's current
+    `displayName`, deduped per unique id (mirrors `GET /api/rbac/members`'s
+    own per-membership `getIdentityById` lookup, just batched by unique id
+    instead of by membership row). `null` for a system-generated event (no
+    `actorIdentityId` to resolve) or for an id that no longer resolves to a
+    real `Identity` (deleted/never-existed) — `activityActorLabel` is the
+    single place that turns that `null` into a safe fallback, never this
+    function. Never reads the caller's own session — only the event's own
+    recorded `actorIdentityId`. */
+export async function attachActorDisplayNames(events: ActivityEvent[], dataAdapterMode: DataAdapterMode): Promise<ActivityEventWithActor[]> {
+  const uniqueIds = Array.from(new Set(events.map((e) => e.actorIdentityId).filter((id): id is string => id !== null)));
+  const identities = await Promise.all(uniqueIds.map((id) => getIdentityById(id, dataAdapterMode)));
+  const nameById = new Map(uniqueIds.map((id, i) => [id, identities[i]?.displayName ?? null]));
+  return events.map((event) => ({
+    ...event,
+    actorDisplayName: event.actorIdentityId ? (nameById.get(event.actorIdentityId) ?? null) : null,
+  }));
 }
 
 // ---------------------------------------------------------------------------

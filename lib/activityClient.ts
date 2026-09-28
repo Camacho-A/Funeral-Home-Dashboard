@@ -1,4 +1,5 @@
-import type { ActivityEvent, ActivityEventCategory, ActivitySeverity } from '@/types/activityEvent';
+import type { ActivityEventCategory, ActivitySeverity } from '@/types/activityEvent';
+import type { ActivityEventWithActor } from '@/services/activityService';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). Client-side fetch
@@ -18,7 +19,7 @@ export type ActivityFilters = {
   q?: string;
 };
 
-export type ActivityPage = { events: ActivityEvent[]; nextCursor: string | null };
+export type ActivityPage = { events: ActivityEventWithActor[]; nextCursor: string | null };
 
 async function parseJsonOrThrow(response: Response): Promise<Record<string, unknown>> {
   const body = await response.json().catch(() => ({}));
@@ -44,7 +45,7 @@ export async function fetchCaseActivity(caseId: string, organizationId: string, 
   if (cursor) params.set('cursor', cursor);
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/activity?${params.toString()}`);
   const body = await parseJsonOrThrow(response);
-  return { events: (body.events as ActivityEvent[]) ?? [], nextCursor: (body.nextCursor as string | null) ?? null };
+  return { events: (body.events as ActivityEventWithActor[]) ?? [], nextCursor: (body.nextCursor as string | null) ?? null };
 }
 
 export async function fetchOrganizationActivity(organizationId: string, filters: ActivityFilters, cursor: string | null): Promise<ActivityPage> {
@@ -52,7 +53,7 @@ export async function fetchOrganizationActivity(organizationId: string, filters:
   if (cursor) params.set('cursor', cursor);
   const response = await fetch(`/api/activity?${params.toString()}`);
   const body = await parseJsonOrThrow(response);
-  return { events: (body.events as ActivityEvent[]) ?? [], nextCursor: (body.nextCursor as string | null) ?? null };
+  return { events: (body.events as ActivityEventWithActor[]) ?? [], nextCursor: (body.nextCursor as string | null) ?? null };
 }
 
 /**

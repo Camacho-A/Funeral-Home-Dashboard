@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { listForCase } from '@/services/activityService';
+import { listForCase, attachActorDisplayNames } from '@/services/activityService';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The Case Activity
@@ -34,5 +34,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
 
   const dataAdapterMode = getDataAdapterMode();
   const result = await listForCase(organizationId, caseId, cursor, limit, dataAdapterMode);
-  return NextResponse.json({ events: result.events, nextCursor: result.nextCursor });
+  const events = await attachActorDisplayNames(result.events, dataAdapterMode);
+  return NextResponse.json({ events, nextCursor: result.nextCursor });
 }

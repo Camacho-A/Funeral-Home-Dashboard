@@ -28,24 +28,36 @@ export function activitySeverityVariant(severity: ActivitySeverity): BadgeVarian
  * answer to "who should this event's actor line say performed it?" —
  * shared by every Activity surface so no second, competing formatter can
  * exist. `isSystemGenerated` is the ONLY signal ever consulted to decide
- * "System" — never inferred from a missing/null `actorRoleKey`, an
- * "Office"-sounding role, or the event's own description text, per the
- * business rule that a human action must never be silently relabeled
- * System just because some other field looks automatic.
+ * "System" — never inferred from a missing/null `actorRoleKey`, a missing
+ * `actorDisplayName`, an "Office"-sounding role, or the event's own
+ * description text, per the business rule that a human action must never
+ * be silently relabeled System just because some other field looks
+ * automatic.
  *
- * For a genuinely human event, the raw `actorRoleKey` (e.g. `officeStaff`)
- * is resolved through the *existing* role vocabulary — first
+ * Recent Activity name-attribution fix (2026-09): a human event now
+ * answers "who actually did this?" with the real employee's current
+ * display name — `actorDisplayName`, resolved server-side per request via
+ * `services/activityService.ts#attachActorDisplayNames` (from the event's
+ * own recorded `actorIdentityId`, the same `getIdentityById` source
+ * `GET /api/rbac/members` already trusts), never derived from the
+ * currently signed-in viewer. A role was never the right answer to "who" —
+ * it answers "what permissions did they have" — so the role-label
+ * fallback below now only fires for the genuinely legacy/unresolvable
+ * case: `actorDisplayName` is `null` (the identity no longer exists, or
+ * the caller's read path didn't attach one) but a role snapshot is still
+ * available, resolved through the *existing* role vocabulary — first
  * `legacyRoleAliases.ts` (so a pre-Phase-22 role string like `staff` or
  * `caseManager` still resolves), then `defaultRoles.ts`'s own friendly
  * `name` (e.g. `officeStaff` -> "Office Staff") — the same catalog
  * `TeamMemberList.tsx` already uses, never a second role-label system. A
  * custom, org-defined role key that isn't in that catalog falls back to
  * the raw key itself (exactly `TeamMemberList.tsx`'s own `?? member.role`
- * fallback), rather than inventing a label for a role this function has no
- * definition for.
+ * fallback). With neither a name nor a role to go on, falls back to
+ * "Unknown" — never invented, never the viewer.
  */
-export function activityActorLabel(event: { isSystemGenerated: boolean; actorRoleKey: string | null }): string {
+export function activityActorLabel(event: { isSystemGenerated: boolean; actorRoleKey: string | null; actorDisplayName?: string | null }): string {
   if (event.isSystemGenerated) return 'System';
+  if (event.actorDisplayName) return event.actorDisplayName;
   if (!event.actorRoleKey) return 'Unknown';
   const resolvedKey = resolveRoleKeyAlias(event.actorRoleKey);
   return isDefaultRoleKey(resolvedKey) ? defaultRoleDefinition(resolvedKey).name : event.actorRoleKey;

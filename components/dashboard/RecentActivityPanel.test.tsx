@@ -8,7 +8,7 @@ import * as activityClient from '@/lib/activityClient';
 import { casesService } from '@/services/casesService';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import type { ActivityEvent } from '@/types/activityEvent';
+import type { ActivityEventWithActor } from '@/services/activityService';
 
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');
@@ -24,7 +24,13 @@ function mockPermissions(permissions: string[]) {
   vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey: 'administrator', permissions });
 }
 
-function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
+/** `actorDisplayName` defaults to `null` (not a hardcoded person) so
+    existing tests that don't care about actor attribution keep seeing the
+    pre-existing role-label fallback ("Administrator", from `actorRoleKey`
+    below) via `activityActorLabel` — exactly what a real, resolvable-name
+    caller sees is exercised by the dedicated actor-attribution describe
+    block further down, which sets `actorDisplayName` explicitly. */
+function makeEvent(overrides: Partial<ActivityEventWithActor> = {}): ActivityEventWithActor {
   return {
     id: 'event-1',
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -33,6 +39,7 @@ function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
     actorIdentityId: 'identity-1',
     actorMembershipId: null,
     actorRoleKey: 'administrator',
+    actorDisplayName: null,
     category: 'cases',
     eventType: 'case.created',
     correlationId: 'correlation-1',
@@ -159,7 +166,7 @@ describe('RecentActivityPanel — Case Number display (2026-09)', () => {
     renderPanel();
 
     expect(await screen.findByText(case_.caseNumber)).toBeInTheDocument();
-    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+    expect(screen.getByText(/5 min ago/)).toBeInTheDocument();
   });
 
   it('9. resolving Case Numbers never introduces a second network request, regardless of how many entries have a caseId', async () => {
@@ -295,20 +302,21 @@ describe('RecentActivityPanel — Case Number / activity description spacing (Ta
     });
     renderPanel();
     await screen.findByText(case_.caseNumber);
-    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+    expect(screen.getByText(/5 min ago/)).toBeInTheDocument();
   });
 
-  it('8. actor/attribution content is unaffected — this row never rendered actor text before, and still does not (Task #10 territory, untouched)', async () => {
+  it('8. actor attribution never exposes the raw identityId, even when a resolved name is present (superseded by the dedicated actor-attribution suite below, Recent Activity name fix, 2026-09)', async () => {
     mockPermissions(['audit.read']);
     const case_ = caseFixtures[0];
     vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
-      events: [makeEvent({ id: 'event-spacing-7', caseId: case_.id, actorIdentityId: 'identity-someone', description: 'Case updated' })],
+      events: [makeEvent({ id: 'event-spacing-7', caseId: case_.id, actorIdentityId: 'identity-someone', actorDisplayName: 'Jane Smith', description: 'Case updated' })],
       nextCursor: null,
     });
     const { container } = renderPanel();
     await screen.findByText(case_.caseNumber);
     expect(container.querySelectorAll('[class*="row"]').length).toBeGreaterThan(0);
     expect(screen.queryByText('identity-someone')).not.toBeInTheDocument();
+    expect(screen.getByText(/Jane Smith/)).toBeInTheDocument();
   });
 
   it('9. no case-level navigation/link was added or removed — this row remains a plain (non-link) row, as before', async () => {
@@ -416,7 +424,7 @@ describe('RecentActivityPanel — no internal ids in Recent Activity (Task #4 fo
     renderPanel();
 
     expect(await screen.findByText(case_.caseNumber)).toBeInTheDocument();
-    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+    expect(screen.getByText(/5 min ago/)).toBeInTheDocument();
   });
 
   it('7. Task #4 layout separation remains intact for a document.regenerated row (case number + gap + description, no merged text node)', async () => {
@@ -476,5 +484,190 @@ describe('RecentActivityPanel — no internal ids in Recent Activity (Task #4 fo
     expect(screen.getAllByText('Document regenerated')).toHaveLength(1);
     expect(screen.queryByText(/blob\.vercel-storage\.com/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^https?:\/\//)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Recent Activity actor-attribution fix (2026-09) — Dashboard → Recent
+ * Activity previously showed no actor information at all; the request was
+ * to answer "who actually did this" with the employee's real full name
+ * (never a role, never the current viewer, never a raw id), falling back
+ * to "System" only for genuine system events and to the pre-existing role
+ * label / "Unknown" only when no name can be resolved. `actorDisplayName`
+ * is resolved server-side per request (see
+ * `services/activityService.ts#attachActorDisplayNames`) — these tests
+ * exercise the component's rendering of whatever the (mocked) fetch
+ * already returned, i.e. they hold `actorDisplayName` fixed per-event to
+ * simulate what a real resolved/unresolved response looks like.
+ */
+describe('RecentActivityPanel — actual employee name attribution (Recent Activity, 2026-09)', () => {
+  it('1. a human activity displays the actual employee full name', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-actor-1', actorDisplayName: 'Angelica Camacho', description: 'Document downloaded' })],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/Angelica Camacho/)).toBeInTheDocument();
+  });
+
+  it('2/3. does not display "Admin" or "Administrator" in place of the actor when the employee\'s full name is available', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-actor-2', actorRoleKey: 'administrator', actorDisplayName: 'Angelica Camacho', description: 'Document downloaded' })],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/Angelica Camacho/)).toBeInTheDocument();
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Administrator')).not.toBeInTheDocument();
+  });
+
+  it('4/18. multiple rows with different employees each render their own respective name, correctly associated', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({ id: 'event-actor-jane', actorIdentityId: 'identity-jane', actorDisplayName: 'Jane Smith', description: 'Case updated' }),
+        makeEvent({ id: 'event-actor-john', actorIdentityId: 'identity-john', actorDisplayName: 'John Doe', description: 'Payment recorded' }),
+      ],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(/Jane Smith/);
+
+    const rows = Array.from(container.querySelector('[class*="list"]')!.children) as HTMLElement[];
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText('Case updated')).toBeInTheDocument();
+    expect(within(rows[0]).getByText(/Jane Smith/)).toBeInTheDocument();
+    expect(within(rows[0]).queryByText(/John Doe/)).not.toBeInTheDocument();
+    expect(within(rows[1]).getByText('Payment recorded')).toBeInTheDocument();
+    expect(within(rows[1]).getByText(/John Doe/)).toBeInTheDocument();
+    expect(within(rows[1]).queryByText(/Jane Smith/)).not.toBeInTheDocument();
+  });
+
+  it('5. a genuinely system-generated event displays "System", never a name or role', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-actor-system',
+          isSystemGenerated: true,
+          actorIdentityId: null,
+          actorRoleKey: null,
+          actorDisplayName: null,
+          description: 'Reminder sent',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/System/)).toBeInTheDocument();
+  });
+
+  it('6. a failed/missing actor-name lookup on a human event is never falsely labeled as another employee or as System', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-actor-unresolved',
+          isSystemGenerated: false,
+          actorIdentityId: 'identity-deleted',
+          actorRoleKey: null,
+          actorDisplayName: null,
+          description: 'Case updated',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/Unknown/)).toBeInTheDocument();
+    expect(screen.queryByText(/System/)).not.toBeInTheDocument();
+    expect(screen.queryByText('identity-deleted')).not.toBeInTheDocument();
+  });
+
+  it('7. the current Dashboard viewer is never substituted as another event\'s historical actor', async () => {
+    // mockPermissions below is the CURRENT VIEWER's own identity — the
+    // rendered event belongs to a different person entirely. This panel
+    // has no code path that reads the viewer's own session/name at all
+    // (unlike TopBar's useSession()), so there is nothing for it to
+    // substitute — this test guards against a future regression wiring
+    // one in.
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-actor-historical',
+          actorIdentityId: 'identity-someone-else',
+          actorDisplayName: 'Someone Else',
+          description: 'Case updated',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/Someone Else/)).toBeInTheDocument();
+    expect(screen.queryByText(/identity-1/)).not.toBeInTheDocument();
+  });
+
+  it('9. a legacy event with genuinely insufficient actor information (no name, no role) falls back to "Unknown"', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-actor-legacy-insufficient',
+          actorIdentityId: null,
+          actorRoleKey: null,
+          actorDisplayName: null,
+          isSystemGenerated: false,
+          description: 'Case updated',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/Unknown/)).toBeInTheDocument();
+  });
+
+  it('10/11. no user/identity id or UUID is ever displayed as the actor, even when one is present on the event', async () => {
+    mockPermissions(['audit.read']);
+    const rawIdentityId = 'a1b2c3d4-5e6f-4789-90ab-cdef01234567';
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-actor-rawid',
+          actorIdentityId: rawIdentityId,
+          actorDisplayName: 'Jane Smith',
+          description: 'Case updated',
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+    expect(await screen.findByText(/Jane Smith/)).toBeInTheDocument();
+    expect(screen.queryByText(rawIdentityId)).not.toBeInTheDocument();
+    expect(screen.queryByText(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)).not.toBeInTheDocument();
+  });
+
+  it('17. Task #4 layout separation remains intact with the new actor line present', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-actor-layout', caseId: case_.id, actorDisplayName: 'Angelica Camacho', description: 'Case updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(case_.caseNumber);
+
+    const caseNumberEl = container.querySelector('[class*="caseNumber"]')!;
+    const whatEl = container.querySelector('[class*="what"]')!;
+    const rowMain = caseNumberEl.parentElement!;
+    expect(rowMain).toBe(whatEl.parentElement);
+    expect(rowMain.className).toMatch(/rowMain/);
+    expect(caseNumberEl.textContent).toBe(case_.caseNumber);
+    expect(whatEl.textContent).toBe('Case updated');
+
+    const whenEl = container.querySelector('[class*="when"]')!;
+    expect(whenEl.textContent).toMatch(/Angelica Camacho/);
+    expect(whenEl).not.toBe(rowMain);
   });
 });
