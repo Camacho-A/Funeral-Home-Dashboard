@@ -15,4 +15,13 @@ afterEach(() => {
 // item #9, is the first hook to call it during a render). Individual tests
 // that need to assert scrollTo was called still override this via
 // vi.stubGlobal('scrollTo', ...), which takes precedence per-test.
-window.scrollTo = () => {};
+//
+// Guarded (2026-09, Task #3): a handful of pure server-side route tests
+// declare `@vitest-environment node` (pdf-lib's own PDFDocument.load does a
+// strict `instanceof Uint8Array` check that fails against jsdom's distinct
+// Uint8Array realm — a real Node Buffer is never `instanceof` jsdom's own
+// Uint8Array). This setup file still runs for those files even without a
+// DOM, so `window` must be checked rather than assumed.
+if (typeof window !== 'undefined') {
+  window.scrollTo = () => {};
+}

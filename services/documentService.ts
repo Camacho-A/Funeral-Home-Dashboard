@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import JSZip from 'jszip';
+import { PDFDocument } from 'pdf-lib';
 import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
@@ -38,6 +40,14 @@ import {
   type ActivityContext,
 } from './activityService';
 import { isDocumentArchivingEnabled } from '../domain/organization/documentArchiveCapability';
+import { isCaseDocumentDownloadable } from '../domain/documents/caseDocumentDisplay';
+import {
+  isPrintableMimeType,
+  buildBulkDownloadZipFileName,
+  buildBulkPrintPdfFileName,
+  sanitizeZipEntryFileName,
+  dedupeFileNames,
+} from '../domain/documents/bulkDocumentActions';
 
 /**
  * Phase 25 (Document Generation & Template Management). **`DocumentService`**
@@ -685,7 +695,7 @@ export async function downloadFile(
 ): Promise<{ buffer: Buffer; contentType: string; fileName: string }> {
   const documents = await list(organizationId, caseId, dataAdapterMode);
   const target = documents.find((d) => d.id === documentId);
-  if (!target || target.status === 'pending' || target.status === 'failed') {
+  if (!target || !isCaseDocumentDownloadable(target.status)) {
     throw new DocumentServiceError('Document not found or not available for download.');
   }
 
@@ -698,4 +708,169 @@ export async function downloadFile(
   }
 
   return { buffer, contentType, fileName: target.fileName };
+}
+
+// ---------------------------------------------------------------------------
+// Bulk case document actions (Task #3, 2026-09) — Print All / Download All.
+// Reuse the exact same authorized retrieval path individual Download/Print
+// already use (documentStorageProvider.downloadFile, never a Blob URL);
+// the server always resolves the eligible document set itself via list()
+// — a caller can never smuggle in a document id outside this case/
+// organization. Neither function persists a new CaseDocument row — the
+// zip/merged-PDF bytes exist only in memory for this one request/response.
+// ---------------------------------------------------------------------------
+
+export type BulkDocumentExclusion = { fileName: string; reason: string };
+
+/** The exact same eligibility rule individual Download/Print already use
+    (isCaseDocumentDownloadable) — a pending/failed row is never included,
+    an active/superseded/archived one always is, regardless of Manors'
+    document.archive capability (that gate only affects the *archive
+    action* — see documentArchiveCapability.ts — never retrieval of an
+    already-archived document). */
+export async function listEligibleForBulkAction(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<CaseDocument[]> {
+  const documents = await list(organizationId, caseId, dataAdapterMode);
+  return documents.filter((d) => isCaseDocumentDownloadable(d.status));
+}
+
+export type BulkDownloadResult = { zipBuffer: Buffer; fileName: string; excluded: BulkDocumentExclusion[] };
+
+/** Builds a ZIP of every eligible document's original bytes, unmodified —
+    never persisted as a CaseDocument. A storage failure for one document
+    (a stale/broken record — see this checkpoint's own "Broken / Failed
+    Documents" section) is recorded in `excluded` and skipped; the
+    remaining documents still zip successfully. Throws only if there is
+    nothing to zip at all (no eligible documents, or every retrieval
+    failed) — callers (the route) translate that into a 404, never an
+    empty/blank ZIP silently returned as if it succeeded. */
+export async function buildBulkDownloadZip(
+  organizationId: string,
+  caseId: string,
+  caseNumber: string,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<BulkDownloadResult> {
+  const eligible = await listEligibleForBulkAction(organizationId, caseId, dataAdapterMode);
+  if (eligible.length === 0) {
+    throw new DocumentServiceError('No documents are available to download for this case.');
+  }
+
+  const excluded: BulkDocumentExclusion[] = [];
+  const succeeded: CaseDocument[] = [];
+  const buffers: Buffer[] = [];
+
+  for (const doc of eligible) {
+    try {
+      const { buffer } = await documentStorageProvider.downloadFile(doc.storageKey);
+      succeeded.push(doc);
+      buffers.push(buffer);
+    } catch {
+      // Never surfaces the raw storage error (which could name an
+      // internal storage key/path) — a short, generic, staff-safe reason.
+      excluded.push({ fileName: doc.fileName, reason: 'Document storage is currently unavailable.' });
+    }
+  }
+
+  if (succeeded.length === 0) {
+    throw new DocumentServiceError('No documents could be retrieved for this case.');
+  }
+
+  const zip = new JSZip();
+  const zipEntryNames = dedupeFileNames(succeeded.map((doc) => sanitizeZipEntryFileName(doc.fileName)));
+  succeeded.forEach((_doc, index) => zip.file(zipEntryNames[index], buffers[index]));
+  const zipBuffer = Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
+
+  for (const doc of succeeded) {
+    try {
+      await recordDocumentDownloaded(ctx, caseId, doc.id, dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to record document.downloaded activity event:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  return { zipBuffer, fileName: buildBulkDownloadZipFileName(caseNumber), excluded };
+}
+
+export type BulkPrintResult = { pdfBuffer: Buffer; fileName: string; excluded: BulkDocumentExclusion[] };
+
+/** Builds one combined, printable PDF from every eligible document that is
+    safely mergeable: every `application/pdf` document has its pages
+    copied in via pdf-lib (never re-rendered/flattened — the original
+    stored bytes are parsed and copied as-is); a JPEG/PNG upload is
+    embedded as a single full-size page image (pdf-lib's own supported
+    embedding, no external rasterization needed). A DOCX upload (or any
+    other non-printable type) is recorded in `excluded` with a clear
+    reason and left out of the combined PDF entirely — Download All still
+    includes it unmodified. Never persists the combined PDF as a
+    CaseDocument. Throws only if nothing at all could be included. */
+export async function buildBulkPrintPdf(
+  organizationId: string,
+  caseId: string,
+  caseNumber: string,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<BulkPrintResult> {
+  const eligible = await listEligibleForBulkAction(organizationId, caseId, dataAdapterMode);
+  if (eligible.length === 0) {
+    throw new DocumentServiceError('No documents are available to print for this case.');
+  }
+
+  const excluded: BulkDocumentExclusion[] = [];
+  const printable = eligible.filter((doc) => {
+    if (isPrintableMimeType(doc.mimeType)) return true;
+    excluded.push({ fileName: doc.fileName, reason: 'This file type cannot be included in the combined print — download it separately to print it.' });
+    return false;
+  });
+
+  if (printable.length === 0) {
+    throw new DocumentServiceError('No documents of a printable type are available for this case.');
+  }
+
+  const combined = await PDFDocument.create();
+  const included: CaseDocument[] = [];
+
+  for (const doc of printable) {
+    try {
+      const { buffer } = await documentStorageProvider.downloadFile(doc.storageKey);
+      // pdf-lib's JPEG/PNG embedders read `new DataView(bytes.buffer)` at
+      // absolute offset 0 of the *underlying* ArrayBuffer, never respecting
+      // a nonzero `byteOffset` — a small Node Buffer returned from
+      // Buffer.concat (exactly what downloadFile's storage provider
+      // returns) is very often a view into Node's shared, pooled
+      // ArrayBuffer (Buffer.poolSize, default 8KB) at a nonzero offset,
+      // which silently corrupts pdf-lib's read ("SOI not found in JPEG")
+      // whenever anything else has already allocated a small buffer in
+      // the same pool beforehand. `new Uint8Array(buffer)` copies into a
+      // fresh, exactly-sized ArrayBuffer at offset 0, which is immune.
+      const isolatedBytes = new Uint8Array(buffer);
+      if (doc.mimeType === 'application/pdf') {
+        const source = await PDFDocument.load(isolatedBytes);
+        const copiedPages = await combined.copyPages(source, source.getPageIndices());
+        copiedPages.forEach((page) => combined.addPage(page));
+      } else {
+        const image = doc.mimeType === 'image/png' ? await combined.embedPng(isolatedBytes) : await combined.embedJpg(isolatedBytes);
+        const page = combined.addPage([image.width, image.height]);
+        page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+      }
+      included.push(doc);
+    } catch {
+      excluded.push({ fileName: doc.fileName, reason: 'Document storage is currently unavailable.' });
+    }
+  }
+
+  if (included.length === 0) {
+    throw new DocumentServiceError('No documents could be retrieved for this case.');
+  }
+
+  const pdfBytes = await combined.save();
+
+  for (const doc of included) {
+    try {
+      await recordDocumentDownloaded(ctx, caseId, doc.id, dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to record document.downloaded activity event:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  return { pdfBuffer: Buffer.from(pdfBytes), fileName: buildBulkPrintPdfFileName(caseNumber), excluded };
 }

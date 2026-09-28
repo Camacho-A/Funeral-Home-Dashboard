@@ -12,7 +12,7 @@ import type { Organization } from '@/types/organization';
 
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
-  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn() };
+  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn() };
 });
 
 vi.mock('@/lib/identityAuthClient', async () => {
@@ -38,8 +38,10 @@ vi.mock('@/services/organizationsService', async () => {
 });
 
 const mockPrintStoredDocument = vi.fn();
+const mockPrintFile = vi.fn();
 vi.mock('@/utils/print', () => ({
   printStoredDocument: (...args: unknown[]) => mockPrintStoredDocument(...args),
+  printFile: (...args: unknown[]) => mockPrintFile(...args),
 }));
 
 // Both dialogs read the org-wide template list on mount even before the
@@ -104,6 +106,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('CaseDocumentsTab — loading and error states', () => {
@@ -282,7 +285,7 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
     expect(await screen.findByRole('alert')).toHaveTextContent(/retrieve the document to print/);
   });
 
-  it('13: does not offer a bulk "Print All" action — real per-document authorized fetches aren\'t safely batchable, so none is faked', async () => {
+  it('13: offers a bulk "Print All" action once combined server-side PDF composition exists (Task #3, 2026-09)', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
       makeDocument({ id: 'doc-1', fileName: 'one.pdf' }),
       makeDocument({ id: 'doc-2', fileName: 'two.pdf' }),
@@ -290,7 +293,169 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
     renderTab();
 
     await screen.findByText('one.pdf');
-    expect(screen.queryByRole('button', { name: /print all/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /print all/i })).toBeInTheDocument();
+  });
+});
+
+describe('Task #3 (2026-09) — Print All / Download All bulk case document actions', () => {
+  it('1. Print All renders when eligible documents exist', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    expect(screen.getByRole('button', { name: 'Print All' })).toBeEnabled();
+  });
+
+  it('2. Download All renders when eligible documents exist', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    expect(screen.getByRole('button', { name: 'Download All' })).toBeEnabled();
+  });
+
+  it('3. empty state: both bulk actions are disabled when there are no documents at all', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    renderTab();
+
+    await screen.findByText('No documents for this case yet.');
+    expect(screen.getByRole('button', { name: 'Print All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Download All' })).toBeDisabled();
+  });
+
+  it('3b. empty state: both bulk actions are disabled when every document is pending/failed (none currently eligible)', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-1', fileName: 'still-generating.pdf', status: 'pending' }),
+      makeDocument({ id: 'doc-2', fileName: 'broken.pdf', status: 'failed' }),
+    ]);
+    renderTab();
+
+    await screen.findByText('still-generating.pdf');
+    expect(screen.getByRole('button', { name: 'Print All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Download All' })).toBeDisabled();
+  });
+
+  it('21. archived documents remain eligible for bulk actions, consistent with individual Download/Print (item #12 behavior preserved)', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Old Statement.pdf', status: 'archived' })]);
+    renderTab();
+
+    await screen.findByText('Old Statement.pdf');
+    expect(screen.getByRole('button', { name: 'Print All' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Download All' })).toBeEnabled();
+  });
+
+  it('22. Manors Archive action remains disabled — bulk actions do not reintroduce it', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf', status: 'active' })]);
+    renderTab(DEFAULT_ORGANIZATION_ID); // managed-cremations — Manors, archiving disabled since item #12
+
+    await screen.findByText('Statement.pdf');
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+  });
+
+  it('7/8. Download All triggers exactly one ZIP fetch and a browser save, and surfaces no warning when nothing was excluded', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:fake-url'), revokeObjectURL: vi.fn() });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    const blob = new Blob(['fake zip bytes'], { type: 'application/zip' });
+    vi.mocked(caseDocumentsClient.fetchBulkDownloadZip).mockResolvedValue({ blob, fileName: 'B2026-001-documents.zip', excluded: [] });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Download All' }));
+
+    await waitFor(() => expect(caseDocumentsClient.fetchBulkDownloadZip).toHaveBeenCalledTimes(1));
+    expect(caseDocumentsClient.fetchBulkDownloadZip).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'case-1');
+    await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    clickSpy.mockRestore();
+  });
+
+  it('14. partial failure is clearly surfaced to staff for Download All', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:fake-url'), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' }),
+      makeDocument({ id: 'doc-2', fileName: 'Broken.pdf' }),
+    ]);
+    const blob = new Blob(['fake zip bytes'], { type: 'application/zip' });
+    vi.mocked(caseDocumentsClient.fetchBulkDownloadZip).mockResolvedValue({
+      blob,
+      fileName: 'B2026-001-documents.zip',
+      excluded: [{ fileName: 'Broken.pdf', reason: 'Document storage is currently unavailable.' }],
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Download All' }));
+
+    const warning = await screen.findByRole('status');
+    expect(warning).toHaveTextContent('Broken.pdf');
+    expect(warning).toHaveTextContent('Document storage is currently unavailable.');
+  });
+
+  it('15. Print All fetches the combined PDF and hands it to the same printFile utility individual Print uses', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    const blob = new Blob(['fake pdf bytes'], { type: 'application/pdf' });
+    vi.mocked(caseDocumentsClient.fetchBulkPrintPdf).mockResolvedValue({ blob, fileName: 'B2026-001-documents.pdf', excluded: [] });
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Print All' }));
+
+    await waitFor(() => expect(caseDocumentsClient.fetchBulkPrintPdf).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'case-1'));
+    await waitFor(() => expect(mockPrintFile).toHaveBeenCalledWith(blob, 'All Documents', 'Jane Doe', 'B2026-001'));
+  });
+
+  it('a DOCX-type exclusion from Print All is clearly surfaced, distinct from a storage failure', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' }),
+      makeDocument({ id: 'doc-2', fileName: 'Scan.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }),
+    ]);
+    const blob = new Blob(['fake pdf bytes'], { type: 'application/pdf' });
+    vi.mocked(caseDocumentsClient.fetchBulkPrintPdf).mockResolvedValue({
+      blob,
+      fileName: 'B2026-001-documents.pdf',
+      excluded: [{ fileName: 'Scan.docx', reason: 'This file type cannot be included in the combined print — download it separately to print it.' }],
+    });
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Print All' }));
+
+    const warning = await screen.findByRole('status');
+    expect(warning).toHaveTextContent('Scan.docx');
+    expect(warning).toHaveTextContent('cannot be included in the combined print');
+  });
+
+  it('surfaces a clear error, never a silent failure, when the bulk endpoint itself rejects the request', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    vi.mocked(caseDocumentsClient.fetchBulkDownloadZip).mockRejectedValue(new Error('Not authorized to view documents for this case.'));
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Download All' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not authorized to view documents for this case.');
+  });
+
+  it('19. individual Download remains functional alongside the new bulk actions', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/api/cases/case-1/documents/doc-1/download'),
+    );
+  });
+
+  it('20. individual Print remains functional alongside the new bulk actions', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Statement.pdf' })]);
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
   });
 });
 

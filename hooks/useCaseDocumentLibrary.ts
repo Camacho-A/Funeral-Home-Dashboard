@@ -1,5 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchCaseDocuments, generateCaseDocument, uploadCaseDocument, archiveCaseDocument, setCaseDocumentFamilyVisibility } from '@/lib/caseDocumentsClient';
+import {
+  fetchCaseDocuments,
+  generateCaseDocument,
+  uploadCaseDocument,
+  archiveCaseDocument,
+  setCaseDocumentFamilyVisibility,
+  fetchBulkDownloadZip,
+  fetchBulkPrintPdf,
+} from '@/lib/caseDocumentsClient';
+import { printFile } from '@/utils/print';
 
 /**
  * Phase 25 (Document Generation & Template Management). Query/mutation
@@ -57,5 +66,46 @@ export function useSetCaseDocumentFamilyVisibility(organizationId: string, caseI
   return useMutation({
     mutationFn: (params: { documentId: string; familyVisible: boolean }) => setCaseDocumentFamilyVisibility({ organizationId, caseId, ...params }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+  });
+}
+
+/** Task #3 (2026-09) — "Download All." Fetches the on-demand ZIP (never a
+    persisted CaseDocument — see documentService.ts#buildBulkDownloadZip)
+    and triggers a normal browser file save via a synthetic, immediately-
+    revoked object-URL anchor click — the same client-side-only mechanism
+    `printFile`'s real-file branch already uses for a local upload, just
+    aimed at a save instead of a print. Returns `excluded` so the caller
+    can show a partial-failure warning. No mutation state to invalidate —
+    this never changes the document list. */
+export function useBulkDownloadCaseDocuments(organizationId: string, caseId: string) {
+  return useMutation({
+    mutationFn: async () => {
+      const { blob, fileName, excluded } = await fetchBulkDownloadZip(organizationId, caseId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      return { excluded };
+    },
+  });
+}
+
+/** Task #3 (2026-09) — "Print All." Fetches the on-demand combined PDF
+    (never a persisted CaseDocument — see
+    documentService.ts#buildBulkPrintPdf) and prints it through the exact
+    same `printFile` utility individual Print already uses. Returns
+    `excluded` so the caller can show a partial-failure warning (e.g. a
+    DOCX upload that could not be included in the combined PDF). */
+export function useBulkPrintCaseDocuments(organizationId: string, caseId: string, caseName: string, caseNumber: string) {
+  return useMutation({
+    mutationFn: async () => {
+      const { blob, excluded } = await fetchBulkPrintPdf(organizationId, caseId);
+      printFile(blob, 'All Documents', caseName, caseNumber);
+      return { excluded };
+    },
   });
 }

@@ -6,13 +6,20 @@ import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { isSignatureRequestsEnabled } from '@/domain/organization/signatureRequestCapability';
 import { isDocumentArchivingEnabled } from '@/domain/organization/documentArchiveCapability';
 import { useMyPermissions } from '@/hooks/useRbac';
-import { useCaseDocumentLibrary, useUploadCaseDocument, useArchiveCaseDocument } from '@/hooks/useCaseDocumentLibrary';
+import {
+  useCaseDocumentLibrary,
+  useUploadCaseDocument,
+  useArchiveCaseDocument,
+  useBulkDownloadCaseDocuments,
+  useBulkPrintCaseDocuments,
+} from '@/hooks/useCaseDocumentLibrary';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
-import { CASE_DOCUMENT_STATUS_LABEL, caseDocumentStatusVariant } from '@/domain/documents/caseDocumentDisplay';
+import { CASE_DOCUMENT_STATUS_LABEL, caseDocumentStatusVariant, isCaseDocumentDownloadable } from '@/domain/documents/caseDocumentDisplay';
+import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
 import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
 import { buildCaseDocumentDownloadUrl } from '@/lib/caseDocumentsClient';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
@@ -38,9 +45,17 @@ import styles from './CaseDocumentsTab.module.css';
  * uses (session-cookie-gated, re-checks `document.view`, never a Blob/
  * signed URL server-side), then prints the fetched bytes via the existing
  * `printFile`-based `printStoredDocument` — never a synthetic placeholder.
- * "Print All" is deliberately NOT offered — see this component's own
- * report for why a real multi-document bulk print isn't safely supportable
- * with today's per-document-fetch architecture.
+ *
+ * Task #3 (2026-09): "Print All"/"Download All" — case-level bulk actions
+ * for every currently staff-accessible document (the same
+ * `isCaseDocumentDownloadable` eligibility individual Download/Print
+ * already uses). Both fetch an on-demand artifact from the server
+ * (services/documentService.ts#buildBulkDownloadZip/buildBulkPrintPdf) —
+ * a ZIP of original bytes, or one combined PDF via pdf-lib page-copy/
+ * image-embed — never a new persisted CaseDocument, never the originals
+ * altered. See those functions' own doc comments for the full design
+ * (why DOCX can't safely join the combined PDF, partial-failure
+ * handling, filenames).
  */
 export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: string; caseName: string; caseNumber: string }) {
   const { organizationId } = useOrganization();
@@ -50,6 +65,8 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const signatureRequestsEnabled = isSignatureRequestsEnabled(organizationRecord ?? null);
   const upload = useUploadCaseDocument(organizationId, caseId);
   const archive = useArchiveCaseDocument(organizationId, caseId);
+  const bulkDownload = useBulkDownloadCaseDocuments(organizationId, caseId);
+  const bulkPrint = useBulkPrintCaseDocuments(organizationId, caseId, caseName, caseNumber);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [generateOpen, setGenerateOpen] = useState(false);
@@ -59,6 +76,30 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const [expandedSignatureId, setExpandedSignatureId] = useState<string | null>(null);
   const [printingDocId, setPrintingDocId] = useState<string | null>(null);
   const [printError, setPrintError] = useState<{ docId: string; message: string } | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkExcluded, setBulkExcluded] = useState<{ action: 'Print All' | 'Download All'; items: BulkDocumentExclusion[] } | null>(null);
+
+  async function handleDownloadAll() {
+    setBulkError(null);
+    setBulkExcluded(null);
+    try {
+      const { excluded } = await bulkDownload.mutateAsync();
+      if (excluded.length > 0) setBulkExcluded({ action: 'Download All', items: excluded });
+    } catch (error) {
+      setBulkError(error instanceof Error ? error.message : 'Failed to download all documents.');
+    }
+  }
+
+  async function handlePrintAll() {
+    setBulkError(null);
+    setBulkExcluded(null);
+    try {
+      const { excluded } = await bulkPrint.mutateAsync();
+      if (excluded.length > 0) setBulkExcluded({ action: 'Print All', items: excluded });
+    } catch (error) {
+      setBulkError(error instanceof Error ? error.message : 'Failed to print all documents.');
+    }
+  }
 
   async function handlePrint(doc: CaseDocument) {
     setPrintError(null);
@@ -107,6 +148,13 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const canCancelSignature = permissions === null || permissions.includes('signature.cancel');
 
   const documents = documentsQuery.data ?? [];
+  // Task #3 (2026-09) — Print All / Download All. Reuses the exact same
+  // eligibility rule individual Download already applies (isCaseDocumentDownloadable),
+  // so an already-archived document (still individually downloadable per
+  // item #12) is never excluded from the bulk actions either — no second,
+  // drifting definition of "available."
+  const eligibleForBulkActions = documents.filter((doc) => isCaseDocumentDownloadable(doc.status));
+  const hasBulkEligibleDocuments = eligibleForBulkActions.length > 0;
 
   return (
     <div className={styles.card}>
@@ -139,7 +187,35 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             />
           </>
         )}
+        <Button
+          variant="secondary"
+          onClick={handlePrintAll}
+          disabled={!hasBulkEligibleDocuments || bulkPrint.isPending}
+          title={hasBulkEligibleDocuments ? undefined : 'No documents are available to print yet.'}
+        >
+          {bulkPrint.isPending ? 'Preparing…' : 'Print All'}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={handleDownloadAll}
+          disabled={!hasBulkEligibleDocuments || bulkDownload.isPending}
+          title={hasBulkEligibleDocuments ? undefined : 'No documents are available to download yet.'}
+        >
+          {bulkDownload.isPending ? 'Preparing…' : 'Download All'}
+        </Button>
       </div>
+
+      {bulkError && (
+        <div className={styles.errorText} role="alert">
+          {bulkError}
+        </div>
+      )}
+      {bulkExcluded && (
+        <div className={styles.errorText} role="status">
+          {bulkExcluded.action}: {bulkExcluded.items.length} document{bulkExcluded.items.length === 1 ? '' : 's'} could not be included —{' '}
+          {bulkExcluded.items.map((item) => `${item.fileName} (${item.reason})`).join('; ')}
+        </div>
+      )}
 
       {documents.length === 0 ? (
         <EmptyState message="No documents for this case yet." />
@@ -148,7 +224,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
           <div className={styles.list}>
             {documents.map((doc) => {
               const typeLabel = doc.documentTypeKey ? (getDocumentTypeDefinition(doc.documentTypeKey)?.displayName ?? doc.documentTypeKey) : 'Uploaded file';
-              const canDownload = doc.status === 'active' || doc.status === 'superseded' || doc.status === 'archived';
+              const canDownload = isCaseDocumentDownloadable(doc.status);
               const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active';
               const canArchiveThis = canArchive && doc.status === 'active';
               const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed';

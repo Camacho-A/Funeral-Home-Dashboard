@@ -20,7 +20,9 @@
     "@wix/business-tools": "^1.0.225",
     "@wix/members": "^1.0.491",
     "@wix/sdk": "^1.21.13",
+    "jszip": "^3.10.2",
     "next": "^15.0.0",
+    "pdf-lib": "^1.17.1",
     "puppeteer-core": "^25.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

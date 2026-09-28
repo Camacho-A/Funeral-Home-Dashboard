@@ -92,3 +92,73 @@ export function buildCaseDocumentDownloadUrl(organizationId: string, caseId: str
   const params = new URLSearchParams({ organizationId });
   return `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(documentId)}/download?${params.toString()}`;
 }
+
+/** Task #3 (2026-09) — bulk case document actions. A short, staff-safe
+    { fileName, reason } list of any document the server could not
+    include (unsupported type for Print All, or a broken/unavailable
+    storage record) — read from the `X-Bulk-Excluded` response header so
+    the UI can surface a partial-failure warning without a second round
+    trip. Never throws on a missing/malformed header — an empty array
+    means "nothing was excluded," the same as the header being absent. */
+export type BulkDocumentExclusion = { fileName: string; reason: string };
+
+function readBulkExcludedHeader(response: Response): BulkDocumentExclusion[] {
+  const raw = response.headers.get('X-Bulk-Excluded');
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Reads the server-chosen, already-sanitized filename back out of
+    Content-Disposition rather than re-deriving it client-side — the
+    server (buildBulkDownloadZipFileName/buildBulkPrintPdfFileName) is the
+    one source of truth for this name. Falls back to a safe default only
+    if the header is ever missing/malformed. */
+function readContentDispositionFileName(response: Response, fallback: string): string {
+  const raw = response.headers.get('Content-Disposition') ?? '';
+  const match = /filename="([^"]*)"/.exec(raw);
+  return match ? match[1] : fallback;
+}
+
+/** Fetches the on-demand ZIP of every eligible document for this case
+    (never a pre-existing/persisted file) through the same
+    session-cookie-gated route Download All's button triggers. */
+export async function fetchBulkDownloadZip(organizationId: string, caseId: string): Promise<{ blob: Blob; fileName: string; excluded: BulkDocumentExclusion[] }> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/documents/bulk-download?${params.toString()}`);
+  const body = await parseJsonOrThrowIfError(response);
+  if (body) throw new Error(body); // non-OK JSON error response
+  return {
+    blob: await response.blob(),
+    fileName: readContentDispositionFileName(response, 'case-documents.zip'),
+    excluded: readBulkExcludedHeader(response),
+  };
+}
+
+/** Fetches the on-demand combined, printable PDF for this case — the
+    caller opens/prints it exactly like `printStoredDocument` already does
+    for a single document. */
+export async function fetchBulkPrintPdf(organizationId: string, caseId: string): Promise<{ blob: Blob; fileName: string; excluded: BulkDocumentExclusion[] }> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/documents/bulk-print?${params.toString()}`);
+  const body = await parseJsonOrThrowIfError(response);
+  if (body) throw new Error(body);
+  return {
+    blob: await response.blob(),
+    fileName: readContentDispositionFileName(response, 'case-documents.pdf'),
+    excluded: readBulkExcludedHeader(response),
+  };
+}
+
+/** A binary-response route (ZIP/PDF) only ever returns a JSON body on
+    failure — this returns that error message string, or null on success
+    (so the body is never consumed/parsed a second time as JSON). */
+async function parseJsonOrThrowIfError(response: Response): Promise<string | null> {
+  if (response.ok) return null;
+  const body = await response.json().catch(() => ({}));
+  return typeof body.error === 'string' ? body.error : 'Something went wrong. Please try again.';
+}
