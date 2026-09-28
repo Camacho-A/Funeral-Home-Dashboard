@@ -20,6 +20,7 @@ import { STAGES, toDisplayStage } from '@/domain/cases/stages';
 import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
 import type { ReturnMethod } from '@/types/case';
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
+import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Solis
@@ -229,6 +230,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     const existing = existingItem ? mapWixCaseItem(existingItem.data) : null;
     if (!existingItem || !existing) {
       return NextResponse.json({ case: null }, { status: 404 });
+    }
+
+    // Staff-facing terminology (2026-09): a case may never persist
+    // pickupStatus === 'released' ("Family Picked Up") without a valid
+    // Released To and Released Date — see domain/cases/pickupRelease.ts's
+    // own comment. Checked against the full existing record merged with the
+    // patch, so this also catches a patch that would clear an
+    // already-released case's detail fields back to blank, not just the
+    // initial transition into 'released'.
+    try {
+      assertValidPickupReleasePatch(existing, patch);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid pickup release patch.';
+      return NextResponse.json({ case: null, error: message }, { status: 422 });
     }
 
     const mergedData = applyCaseUpdateToWixData(existingItem.data, patch);

@@ -11,6 +11,7 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 import { DEFAULT_RETURN_METHOD } from '../domain/cases/returnMethod';
+import { assertValidPickupReleasePatch } from '../domain/cases/pickupRelease';
 import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
 
 export type CaseFilters = {
@@ -319,7 +320,20 @@ export async function update(
       body: JSON.stringify({ organizationId: context.organizationId, patch }),
     });
     if (!response.ok) {
-      throw new Error(`Case ${caseId} not found for this organization`);
+      // Mirrors create()'s own fix above: surface the route's specific,
+      // already-safe-to-display error (e.g. the pickup-release validation
+      // message below) instead of always discarding it for one generic
+      // string.
+      let message = `Case ${caseId} not found for this organization`;
+      try {
+        const errorBody = (await response.json()) as { error?: string };
+        if (typeof errorBody?.error === 'string' && errorBody.error.trim() !== '') {
+          message = errorBody.error;
+        }
+      } catch {
+        // Response body wasn't valid JSON — fall back to the generic message.
+      }
+      throw new Error(message);
     }
     const body = (await response.json()) as { case: Case };
     return body.case;
@@ -333,6 +347,9 @@ export async function update(
     (c) => c.id === caseId && c.organizationId === context.organizationId,
   );
   if (index === -1) throw new Error(`Case ${caseId} not found for this organization`);
+  // Staff-facing terminology (2026-09): see domain/cases/pickupRelease.ts's
+  // own comment — mirrors the same check the Wix-mode PATCH route applies.
+  assertValidPickupReleasePatch(caseFixtures[index], patch);
   // SOLIS-wide ALL-CAPS data standard (2026-09): mirrors
   // lib/wixCaseMapper.ts's validateAndPickCaseUpdate/applyCaseUpdateToWixData
   // normalization exactly, so dev/test behavior (DATA_ADAPTER=mock) never

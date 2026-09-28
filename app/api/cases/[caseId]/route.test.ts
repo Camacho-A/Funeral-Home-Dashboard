@@ -554,6 +554,67 @@ describe('PATCH /api/cases/[caseId]', () => {
       expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ nextOfKinRelationship: 'daughter' }));
     });
 
+    it('staff-facing terminology (2026-09): rejects marking pickupStatus released without a valid Released to/Released date, with 422, before any write', async () => {
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupStatus: 'released' } });
+      expect(response.status).toBe(422);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('staff-facing terminology (2026-09): accepts marking pickupStatus released when Released to/Released date are supplied in the same patch', async () => {
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.pickupStatus).toBe('released');
+      // SOLIS ALL-CAPS data standard (2026-09): pickupReleasedTo normalizes
+      // like every other name field.
+      expect(mockUpdateWixDataItem).toHaveBeenCalledWith(
+        'cases',
+        '1042',
+        expect.objectContaining({ pickupStatus: 'released', pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '07/10/2026' }),
+      );
+    });
+
+    it('staff-facing terminology (2026-09): rejects clearing Released to to blank on an already-released case, with 422, before any write', async () => {
+      mockWixQueries([
+        {
+          id: '1042',
+          dataCollectionId: 'cases',
+          data: { ...EXISTING_WIX_CASE_DATA, pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+        },
+      ]);
+      mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+        Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+      );
+
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupReleasedTo: null } });
+
+      expect(response.status).toBe(422);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('staff-facing terminology (2026-09): reverting pickupStatus back to awaiting_pickup is never gated by the Released to/Released date requirement', async () => {
+      mockWixQueries([
+        {
+          id: '1042',
+          dataCollectionId: 'cases',
+          data: { ...EXISTING_WIX_CASE_DATA, pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+        },
+      ]);
+      mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+        Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+      );
+
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupStatus: 'awaiting_pickup' } });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.pickupStatus).toBe('awaiting_pickup');
+    });
+
     it('edits nextOfKinRelationshipOther (trimming is the caller\'s responsibility at this layer, matching tagNumber/pickupNote)', async () => {
       const response = await patchRequest('1042', {
         organizationId: DEFAULT_ORGANIZATION_ID,
@@ -900,13 +961,34 @@ describe('Dispatch (pickup-only) authorization — GET and PATCH /api/cases/[cas
       Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
     );
 
-    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupStatus: 'released' } });
+    // Staff-facing terminology (2026-09): marking released requires a valid
+    // Released to/Released date in the same (or already-persisted) patch —
+    // see domain/cases/pickupRelease.ts.
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+    });
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.case.pickupStatus).toBe('released');
     expect(body.case.nextOfKinName).toBeUndefined();
-    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ pickupStatus: 'released' }));
+    // SOLIS ALL-CAPS data standard (2026-09): pickupReleasedTo normalizes
+    // like every other name field.
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith(
+      'cases',
+      '1042',
+      expect.objectContaining({ pickupStatus: 'released', pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '07/10/2026' }),
+    );
+  });
+
+  it('PATCH rejects a pickup-only attempt to mark released without a valid Released to/Released date, with 422, before any write', async () => {
+    mockDispatchQueries([{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]);
+
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupStatus: 'released' } });
+
+    expect(response.status).toBe(422);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 
   it('PATCH rejects an attempt to change a non-pickup field, with 403, before any write', async () => {

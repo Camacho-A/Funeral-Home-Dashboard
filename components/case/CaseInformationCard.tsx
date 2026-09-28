@@ -21,6 +21,7 @@ import {
 } from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
+import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
 import styles from './CaseInformationCard.module.css';
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -28,9 +29,15 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   awaiting_payment: 'Awaiting payment',
 };
 
+/** Staff-facing terminology (2026-09) — presentation only. The persisted
+    enum values (`'awaiting_pickup'`/`'released'`) and every technical
+    identifier (pickupStatus, pickupReleasedTo/At/Note, pickup.read/.update,
+    PickupOnlyCaseView, PICKUP_ONLY_PATCH_FIELDS) are unchanged; only these
+    display strings and the field-group label below ("Cremated Remains")
+    changed. */
 const PICKUP_STATUS_LABEL: Record<PickupStatus, string> = {
-  awaiting_pickup: 'Awaiting pickup',
-  released: 'Released to family',
+  awaiting_pickup: 'Awaiting Family Pickup',
+  released: 'Family Picked Up',
 };
 
 /** Conditional shipping/tracking (2026-09). 'undecided' is the honest
@@ -486,6 +493,23 @@ export function CaseInformationCard({
   onSetVaPublishChoice: (choice: VaPublishChoice) => void;
   onSetVaNotificationResponsibility: (responsibility: VaNotificationResponsibility) => void;
 }) {
+  // Staff-facing terminology (2026-09): selecting "Family Picked Up" must
+  // not immediately persist pickupStatus === 'released' unless Released
+  // to/Released date are already valid (see domain/cases/pickupRelease.ts).
+  // `pendingPickupRelease` reveals the detail fields for entry the moment
+  // "Family Picked Up" is chosen, without yet writing pickupStatus — the
+  // effect below commits it automatically once both fields become valid.
+  // Selecting back to "Awaiting Family Pickup" is never gated and always
+  // clears this immediately (see the onChange handler below).
+  const [pendingPickupRelease, setPendingPickupRelease] = useState(false);
+
+  useEffect(() => {
+    if (pendingPickupRelease && pickupStatus !== 'released' && isValidPickupReleaseDetail(pickupReleasedTo, pickupReleasedAt)) {
+      setPendingPickupRelease(false);
+      onUpdateCaseInfo({ pickupStatus: 'released' });
+    }
+  }, [pendingPickupRelease, pickupStatus, pickupReleasedTo, pickupReleasedAt, onUpdateCaseInfo]);
+
   return (
     <div className={styles.card}>
       <div className={styles.title}>Case information</div>
@@ -651,17 +675,35 @@ export function CaseInformationCard({
         {returnMethod === 'pickup' && (
           <>
             <div>
-              <div className={styles.fieldLabel}>Pickup status</div>
+              <div className={styles.fieldLabel}>Cremated Remains</div>
               <SelectField
                 className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
-                value={pickupStatus}
-                onChange={(e) => onUpdateCaseInfo({ pickupStatus: e.target.value as PickupStatus })}
+                value={pickupStatus === 'released' || pendingPickupRelease ? 'released' : 'awaiting_pickup'}
+                onChange={(e) => {
+                  const next = e.target.value as PickupStatus;
+                  if (next === 'awaiting_pickup') {
+                    setPendingPickupRelease(false);
+                    onUpdateCaseInfo({ pickupStatus: 'awaiting_pickup' });
+                    return;
+                  }
+                  // Selecting "Family Picked Up": only persist immediately if
+                  // Released to/Released date are already valid (e.g.
+                  // already filled in earlier, or supplied by Jotform
+                  // reconciliation) — otherwise reveal the detail fields
+                  // below and wait for both to become valid; see this
+                  // component's own top-of-function effect.
+                  if (isValidPickupReleaseDetail(pickupReleasedTo, pickupReleasedAt)) {
+                    onUpdateCaseInfo({ pickupStatus: 'released' });
+                  } else {
+                    setPendingPickupRelease(true);
+                  }
+                }}
               >
                 <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
                 <option value="released">{PICKUP_STATUS_LABEL.released}</option>
               </SelectField>
             </div>
-            {pickupStatus === 'released' && (
+            {(pickupStatus === 'released' || pendingPickupRelease) && (
               <>
                 <EditableField
                   label="Released to"
@@ -681,6 +723,11 @@ export function CaseInformationCard({
                   uppercase
                   onSave={(v) => onUpdateCaseInfo({ pickupNote: v.trim().length > 0 ? v.trim() : null })}
                 />
+                {pendingPickupRelease && pickupStatus !== 'released' && (
+                  <div className={styles.fieldError} role="alert">
+                    Released to and Released date are required to mark Family Picked Up.
+                  </div>
+                )}
               </>
             )}
           </>

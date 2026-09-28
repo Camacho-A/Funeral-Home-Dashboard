@@ -539,25 +539,17 @@ describe('CaseInformationCard — NOK relationship (Manors launch-prep)', () => 
 });
 
 describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
-  it('shows "Awaiting pickup" by default and no released-detail fields, once Return method is Pickup', () => {
+  it('shows "Awaiting Family Pickup" by default and no released-detail fields, once Return method is Pickup', () => {
     render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.getByDisplayValue('Awaiting pickup')).toBeInTheDocument();
+    expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Awaiting Family Pickup')).toBeInTheDocument();
     expect(screen.queryByText('Released to')).not.toBeInTheDocument();
     expect(screen.queryByText('Released date')).not.toBeInTheDocument();
   });
 
-  it('flipping the pickup status to released updates through onUpdateCaseInfo', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    fireEvent.change(screen.getByDisplayValue('Awaiting pickup'), { target: { value: 'released' } });
-
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
-  });
-
   it('reveals Released to / Released date / note fields once the case is already released', () => {
     render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Karen Ellison" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.getByDisplayValue('Released to family')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Family Picked Up')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'KAREN ELLISON' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '07/10/2026' })).toBeInTheDocument();
   });
@@ -574,13 +566,75 @@ describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupReleasedTo: 'KAREN ELLISON' });
   });
+
+  it('selecting "Family Picked Up" without an already-valid Released to/Released date does NOT persist pickupStatus — it reveals the detail fields and shows a required-fields message instead', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(screen.getByText('Released to')).toBeInTheDocument();
+    expect(screen.getByText('Released date')).toBeInTheDocument();
+    expect(screen.getByText('Released to and Released date are required to mark Family Picked Up.')).toBeInTheDocument();
+  });
+
+  it('selecting "Family Picked Up" when Released to/Released date are already valid persists pickupStatus immediately (e.g. supplied earlier or via Jotform reconciliation)', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        returnMethod="pickup"
+        pickupReleasedTo="Karen Ellison"
+        pickupReleasedAt="07/10/2026"
+        onUpdateCaseInfo={onUpdateCaseInfo}
+      />,
+    );
+
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
+  });
+
+  it('switching back to "Awaiting Family Pickup" is never gated — it persists immediately and clears the pending-release message', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+    expect(screen.getByText('Released to and Released date are required to mark Family Picked Up.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue('Family Picked Up'), { target: { value: 'awaiting_pickup' } });
+
+    expect(onUpdateCaseInfo).toHaveBeenLastCalledWith({ pickupStatus: 'awaiting_pickup' });
+    expect(screen.queryByText('Released to and Released date are required to mark Family Picked Up.')).not.toBeInTheDocument();
+  });
+
+  it('once both Released to and Released date are filled in after selecting "Family Picked Up", pickupStatus commits to released automatically', () => {
+    const onUpdateCaseInfo = vi.fn();
+    const { rerender } = render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+
+    // Simulate the Released to save round-tripping back through props —
+    // still incomplete (no Released date yet), so nothing commits.
+    rerender(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupReleasedTo="Karen Ellison" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(screen.getByText('Released to and Released date are required to mark Family Picked Up.')).toBeInTheDocument();
+
+    // Now Released date is also valid — the pending release commits.
+    rerender(
+      <CaseInformationCard {...baseProps} returnMethod="pickup" pickupReleasedTo="Karen Ellison" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={onUpdateCaseInfo} />,
+    );
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
+  });
 });
 
 describe('CaseInformationCard — Return method (conditional shipping/tracking, 2026-09)', () => {
   it('defaults to Undecided and shows neither pickup nor shipping detail blocks', () => {
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByDisplayValue('Undecided')).toBeInTheDocument();
-    expect(screen.queryByText('Pickup status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cremated Remains')).not.toBeInTheDocument();
     expect(screen.queryByText('Carrier')).not.toBeInTheDocument();
     expect(screen.queryByText('Tracking number')).not.toBeInTheDocument();
   });
@@ -599,14 +653,14 @@ describe('CaseInformationCard — Return method (conditional shipping/tracking, 
     expect(screen.getByText('Date shipped')).toBeInTheDocument();
     expect(screen.getByText('Shipping status')).toBeInTheDocument();
     expect(screen.getByText('Delivered date')).toBeInTheDocument();
-    expect(screen.queryByText('Pickup status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cremated Remains')).not.toBeInTheDocument();
   });
 
   it('never shows the shipping block for a Pickup case, and never the pickup block for a Shipping case', () => {
     const { rerender } = render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.queryByText('Carrier')).not.toBeInTheDocument();
     rerender(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.queryByText('Pickup status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cremated Remains')).not.toBeInTheDocument();
   });
 
   it('saving a carrier trims and uppercases it', () => {
