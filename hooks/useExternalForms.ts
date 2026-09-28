@@ -48,7 +48,16 @@ export function useLinkSubmissionToCase(organizationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: { submissionId: string; caseId: string }) => linkSubmissionToCase(organizationId, params.submissionId, params.caseId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: unmatchedSubmissionsKey(organizationId) }),
+    // Case progression fix (2026-09): linking a submission can advance the
+    // target case's rawStage server-side (reconcileCaseWorkflow) — without
+    // also invalidating its own case query, a Case Detail page already
+    // open for that case (e.g. in another tab) would keep showing its
+    // stale, pre-reconciliation stage/checklist until an unrelated
+    // remount/refocus happened to refetch it.
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: unmatchedSubmissionsKey(organizationId) });
+      queryClient.invalidateQueries({ queryKey: ['case', organizationId, variables.caseId] });
+    },
   });
 }
 
@@ -81,7 +90,17 @@ export function useApplyReconciliation(organizationId: string, caseId: string) {
   return useMutation({
     mutationFn: (params: { submissionId: string; fieldsToApply: string[] }) =>
       applyReconciliation(organizationId, params.submissionId, caseId, params.fieldsToApply),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) }),
+    // Case progression fix (2026-09): applying reconciled fields (and/or
+    // marking the submission's CaseFormLink reviewed) can advance this
+    // case's rawStage server-side — this is rendered on the SAME Case
+    // Detail page (CaseFormsSection -> ReconciliationModal), so without
+    // this invalidation the page you're looking at would keep showing the
+    // pre-reconciliation stage/checklist even though the persisted record
+    // already advanced.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) });
+      queryClient.invalidateQueries({ queryKey: ['case', organizationId, caseId] });
+    },
   });
 }
 
@@ -100,7 +119,16 @@ export function useImportHistoricalSubmission(organizationId: string, caseId: st
   return useMutation({
     mutationFn: (params: { formConfigId: string; externalSubmissionId: string }) =>
       importHistoricalSubmission(organizationId, caseId, params.formConfigId, params.externalSubmissionId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) }),
+    // Case progression fix (2026-09): importing a historical submission
+    // links the Arrangement Form and advances rawStage server-side
+    // (reconcileCaseWorkflow) — this action is triggered right from this
+    // case's own Case Detail page (CaseFormsSection), so without this
+    // invalidation the already-mounted case query would keep serving its
+    // stale, pre-reconciliation stage/checklist.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) });
+      queryClient.invalidateQueries({ queryKey: ['case', organizationId, caseId] });
+    },
   });
 }
 

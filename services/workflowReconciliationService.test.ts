@@ -4,6 +4,7 @@ import { caseFixtures, DEFAULT_ORGANIZATION_ID } from './__mocks__/fixtures';
 import { caseFormLinkFixtures, ARRANGEMENT_FORMS_FORM_CONFIG_ID, VITAL_STATISTICS_FORM_CONFIG_ID } from './__mocks__/externalFormFixtures';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 import { buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
+import { buildCaseViewModel } from '../domain/cases/viewModel';
 import type { Case } from '../types/case';
 import type { CaseFormLink } from '../types/caseFormLink';
 
@@ -254,6 +255,20 @@ describe('reconcileCaseWorkflow — mock mode', () => {
     const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
     expect(result).toEqual({ rawStage: 2, changed: true }); // advances only to Jotform Application, not past it
+  });
+
+  it('14: the resulting rawStage agrees with the effective/display stage buildCaseViewModel computes — "Step 3" as staff would actually see it is EDRS & Doctor / Cause of Death, never a mislabeled stage', async () => {
+    const case_ = buildTestCase({ ...fullyCompleteFirstCallAndPayment() });
+    seedCase(case_);
+    linkArrangementForm(case_.id);
+
+    const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+    expect(result.rawStage).toBe(3);
+
+    const persisted = caseFixtures.find((c) => c.id === case_.id)!;
+    const viewModel = buildCaseViewModel(persisted, { staffList: [] });
+    expect(viewModel.displayStage).toBe(2); // toDisplayStage(3) — First Call & Payment(0), Jotform Application(1), EDRS & Doctor / Cause of Death(2)
+    expect(viewModel.stageLabel).toBe('EDRS & Doctor / Cause of Death');
   });
 
   it('a link with status other than received/reviewed (e.g. "sent") does not satisfy the prerequisite', async () => {

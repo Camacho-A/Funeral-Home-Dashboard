@@ -449,3 +449,184 @@ describe('POST /api/webhooks/jotform — organization isolation', () => {
     expect(resolved?.organizationId).not.toBe('managed-cremations');
   });
 });
+
+describe('POST /api/webhooks/jotform — workflow progression (Task #1, 2026-09)', () => {
+  const seededCaseIds: string[] = [];
+  afterEach(async () => {
+    const { caseFixtures } = await import('@/services/__mocks__/fixtures');
+    for (const id of seededCaseIds.splice(0)) {
+      const index = caseFixtures.findIndex((c) => c.id === id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+
+  /** A case with "First Call & Payment" fully complete but not yet past
+      it — the exact "normal live case, Arrangement Forms about to
+      complete" scenario this checkpoint's staff walkthrough reported as
+      stuck. Mirrors services/workflowReconciliationService.test.ts's own
+      buildTestCase/fullyCompleteFirstCallAndPayment helpers. */
+  async function seedCaseReadyForArrangementForms(id: string) {
+    const { caseFixtures, DEFAULT_ORGANIZATION_ID } = await import('@/services/__mocks__/fixtures');
+    const { standardCremationWorkflowTemplateFixture } = await import('@/services/__mocks__/workflowTemplates');
+    const { buildCaseWorkflowSnapshot } = await import('@/domain/workflow/snapshot');
+    const version = standardCremationWorkflowTemplateFixture.versions[0];
+    const case_ = {
+      id,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-901',
+      decedentName: 'Webhook Progression Test',
+      dateOfBirth: '01/01/1950',
+      dateOfDeath: '01/01/2026',
+      timeOfDeath: '10:00',
+      placeOfDeath: 'Test Hospital',
+      weight: '150 lb',
+      rawStage: 0,
+      assignedStaffId: null,
+      nextOfKinName: 'Test NOK',
+      nextOfKinPhone: '555-0100',
+      nextOfKinEmail: null,
+      nextOfKinRelationship: null,
+      nextOfKinRelationshipOther: null,
+      certifierName: null,
+      certifierPhone: null,
+      certifierLicenseNumber: null,
+      certifierFax: null,
+      tagNumber: null,
+      paymentStatus: 'awaiting_payment' as const,
+      pickupStatus: 'awaiting_pickup' as const,
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+      pickupNote: null,
+      returnMethod: 'undecided' as const,
+      shippingCarrier: null,
+      shippingTrackingNumber: null,
+      shippingDateShipped: null,
+      shippingDeliveryStatus: null,
+      shippingDeliveredAt: null,
+      isVeteran: false,
+      vaStepsState: {},
+      vaPublishChoice: null,
+      vaNotificationResponsibility: null,
+      // Every hasField index in "First Call & Payment" filled in, plus the
+      // manual "Payment collected"/"Credit card.../Payment receipt sent"
+      // checkboxes explicitly checked — the stage is genuinely, fully done.
+      checklistState: { 8: true, 9: true, 10: true },
+      fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
+      daysWaitingInStage: 0,
+      isStalled: false,
+      stalledReason: null,
+      createdBy: null,
+      intakeOwnerId: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      isDeleted: false,
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: version.version,
+      caseType: 'cremation',
+      workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, version),
+    };
+    caseFixtures.push(case_);
+    return case_;
+  }
+
+  it('1: a normal live case whose Arrangement Form submission arrives via webhook advances to the actual first incomplete stage (EDRS, rawStage 3) — never a hardcoded 3', async () => {
+    const { caseFixtures } = await import('@/services/__mocks__/fixtures');
+    const { generateLinkForSending } = await import('@/services/caseFormLinkService');
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const caseId = 'case-webhook-progression-1';
+    await seedCaseReadyForArrangementForms(caseId);
+    seededCaseIds.push(caseId);
+    const casesBefore = caseFixtures.length;
+
+    const { rawToken } = await generateLinkForSending('managed-cremations', caseId, 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({
+        formID: ARRANGEMENT_FORMS_FORM_ID,
+        submissionID: 'sub-progression-1',
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken)),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const updated = caseFixtures.find((c) => c.id === caseId);
+    expect(updated?.rawStage).toBe(3); // "EDRS & Doctor / Cause of Death" — the actual first incomplete stage, computed, not assumed
+    expect(caseFixtures.length).toBe(casesBefore); // no case created/duplicated by this webhook
+  });
+
+  it("does not advance a case whose First Call & Payment prerequisites are genuinely incomplete, even once its Arrangement Form arrives", async () => {
+    const { caseFixtures, DEFAULT_ORGANIZATION_ID } = await import('@/services/__mocks__/fixtures');
+    const { standardCremationWorkflowTemplateFixture } = await import('@/services/__mocks__/workflowTemplates');
+    const { buildCaseWorkflowSnapshot } = await import('@/domain/workflow/snapshot');
+    const { generateLinkForSending } = await import('@/services/caseFormLinkService');
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const version = standardCremationWorkflowTemplateFixture.versions[0];
+    const caseId = 'case-webhook-progression-incomplete';
+    caseFixtures.push({
+      id: caseId,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-902',
+      decedentName: 'Incomplete Prerequisite Test',
+      dateOfBirth: '01/01/1950',
+      dateOfDeath: '01/01/2026',
+      timeOfDeath: '10:00',
+      placeOfDeath: 'Test Hospital',
+      weight: '150 lb',
+      rawStage: 0,
+      assignedStaffId: null,
+      nextOfKinName: 'Test NOK',
+      nextOfKinPhone: '555-0100',
+      nextOfKinEmail: null,
+      nextOfKinRelationship: null,
+      nextOfKinRelationshipOther: null,
+      certifierName: null,
+      certifierPhone: null,
+      certifierLicenseNumber: null,
+      certifierFax: null,
+      tagNumber: null,
+      paymentStatus: 'awaiting_payment',
+      pickupStatus: 'awaiting_pickup',
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+      pickupNote: null,
+      returnMethod: 'undecided',
+      shippingCarrier: null,
+      shippingTrackingNumber: null,
+      shippingDateShipped: null,
+      shippingDeliveryStatus: null,
+      shippingDeliveredAt: null,
+      isVeteran: false,
+      vaStepsState: {},
+      vaPublishChoice: null,
+      vaNotificationResponsibility: null,
+      checklistState: {}, // nothing confirmed — "Payment collected" etc. still outstanding
+      fieldValues: {}, // nothing filled in — weight/dateOfBirth/etc. genuinely unknown
+      daysWaitingInStage: 0,
+      isStalled: false,
+      stalledReason: null,
+      createdBy: null,
+      intakeOwnerId: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      isDeleted: false,
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: version.version,
+      caseType: 'cremation',
+      workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, version),
+    });
+    seededCaseIds.push(caseId);
+
+    const { rawToken } = await generateLinkForSending('managed-cremations', caseId, 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
+
+    const { POST } = await import('./route');
+    await POST(
+      webhookRequest({
+        formID: ARRANGEMENT_FORMS_FORM_ID,
+        submissionID: 'sub-progression-incomplete',
+        rawRequest: withAuth(ARRANGEMENT_AUTH_QID, linkTokenEntry(ARRANGEMENT_LINK_QID, rawToken)),
+      }),
+    );
+
+    const updated = caseFixtures.find((c) => c.id === caseId);
+    expect(updated?.rawStage).toBe(0); // still blocked — First Call & Payment was never actually completed
+  });
+});

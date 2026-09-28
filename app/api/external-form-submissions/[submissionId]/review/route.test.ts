@@ -144,3 +144,70 @@ describe('POST /api/external-form-submissions/[submissionId]/review — apply', 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /api/external-form-submissions/[submissionId]/review — workflow progression (Task #1, 2026-09)', () => {
+  /** Root cause fix: this route's own state changes (marking a
+      submission's CaseFormLink reviewed, applying a reconciled field) can
+      be exactly the event that makes an earlier stage newly complete, but
+      this route never called reconcileCaseWorkflow at all — so a case
+      could remain stuck even after staff completed the review here. */
+  it('marking a submission reviewed (no fields applied) still reconciles — a CaseFormLink transitioning to reviewed is itself a completion-relevant event', async () => {
+    const { standardCremationWorkflowTemplateFixture } = await import('@/services/__mocks__/workflowTemplates');
+    const { buildCaseWorkflowSnapshot } = await import('@/domain/workflow/snapshot');
+    const { caseFormLinkFixtures: linkFixtures, ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const version = standardCremationWorkflowTemplateFixture.versions[0];
+    const caseId = 'review-route-progression-noop-fields';
+    const base = seedCase({
+      id: caseId,
+      rawStage: 0,
+      dateOfBirth: 'X',
+      checklistState: { 8: true, 9: true, 10: true },
+      fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: version.version,
+      workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, version),
+    });
+    void base;
+    linkFixtures.push({
+      id: `link-${caseId}`,
+      organizationId: 'managed-cremations',
+      caseId,
+      provider: 'jotform',
+      formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID,
+      linkTokenHash: 'hash',
+      status: 'received',
+      sentAt: '2026-01-01T00:00:00.000Z',
+      submissionId: `sub-${caseId}`,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const { receive } = await import('@/services/externalFormSubmissionService');
+    const { submission } = await receive(
+      {
+        organizationId: 'managed-cremations',
+        provider: 'jotform',
+        externalFormId: '262605621454050',
+        externalSubmissionId: 'review-progression-sub-noop',
+        caseFormLinkId: `link-${caseId}`,
+        mappedFields: JSON.stringify({}),
+        pdfStatus: 'not_applicable',
+      },
+      'mock',
+    );
+
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      reviewRequest('POST', { organizationId: 'managed-cremations', caseId, fieldsToApply: [] }),
+      { params: Promise.resolve({ submissionId: submission.id }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled(); // still no field patch — nothing to apply
+    const updated = caseFixtures.find((c) => c.id === caseId);
+    expect(updated?.rawStage).toBe(3); // reconciliation ran anyway and correctly advanced the case
+  });
+});

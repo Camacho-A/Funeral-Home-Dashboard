@@ -11,6 +11,7 @@ import * as caseFormLinkService from '@/services/caseFormLinkService';
 import { buildReconciliationRows } from '@/domain/externalForms/reconciliation';
 import type { MappedSolisField } from '@/domain/externalForms/fieldMapping';
 import { recordExternalFormFieldsApplied, recordExternalFormSubmissionReviewed } from '@/services/activityService';
+import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import type { Case } from '@/types/case';
 
 /** Maps a MappedSolisField onto the exact Case patch shape PATCH
@@ -180,6 +181,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   } catch (error) {
     console.error('Failed to record external_form.submission_reviewed activity event:', error instanceof Error ? error.message : error);
   }
+
+  // Workflow progression fix (2026-09): applying reconciled field(s) onto
+  // the Case (e.g. a previously-missing dateOfBirth) or marking this
+  // submission's CaseFormLink reviewed can be exactly the fact that makes
+  // an earlier stage newly complete — this call site was missing
+  // reconcileCaseWorkflow entirely, so a case could sit stuck at its
+  // current rawStage even after staff applied the very data that would
+  // satisfy its next prerequisite. Same shared, single-source-of-truth
+  // call every other Arrangement-Form-affecting entry point already uses.
+  await reconcileCaseWorkflow(organizationId, b.caseId, dataAdapterMode);
 
   return NextResponse.json({ submission: reviewed });
 }
