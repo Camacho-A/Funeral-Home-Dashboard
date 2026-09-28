@@ -5,7 +5,7 @@ import { BillingCard } from './BillingCard';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as billingClient from '@/lib/billingClient';
 import * as caseDocumentsClient from '@/lib/caseDocumentsClient';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { BillingStatementModel } from '@/domain/billing/billingModels';
 import type { CaseDocument } from '@/types/caseDocument';
 
@@ -73,11 +73,11 @@ function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
   };
 }
 
-function renderCard() {
+function renderCard(organizationId: string = DEFAULT_ORGANIZATION_ID) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+      <OrganizationProvider organizationId={organizationId}>
         <BillingCard caseId={CASE_ID} />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -155,5 +155,92 @@ describe('BillingCard — Statement generation (item #1, 2026-09)', () => {
     await waitFor(() => expect(billingClient.generateStatement).toHaveBeenCalledTimes(1));
     const call = vi.mocked(billingClient.generateStatement).mock.calls[0][0];
     expect(call.existingDocumentId).toBeUndefined();
+  });
+});
+
+describe('BillingCard — Manors Cash Advance UI cleanup (item #11, 2026-09)', () => {
+  it('1/2/3/4: a normal Manors case (no cash advance data) shows no Cash Advance UI at all — no heading, no "No cash advance items" placeholder, no entry controls', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard(DEFAULT_ORGANIZATION_ID);
+    await screen.findByText('Statement preview');
+
+    expect(screen.queryByText('Cash advance items')).not.toBeInTheDocument();
+    expect(screen.queryByText('No cash advance items.')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Cash advance description')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Cash advance amount (dollars)')).not.toBeInTheDocument();
+  });
+
+  it('8/9: balance/payment information and Statement generation remain fully intact for Manors despite the Cash Advance UI being hidden', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard(DEFAULT_ORGANIZATION_ID);
+
+    expect(await screen.findByText('FTC Statement total')).toBeInTheDocument();
+    expect(await screen.findByText('Account balance due')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Generate Statement PDF' })).toBeInTheDocument();
+  });
+
+  it('10: another organization retains the full Cash Advance editor unchanged', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard(SECOND_MOCK_ORGANIZATION_ID);
+
+    expect(await screen.findByText('Cash advance items')).toBeInTheDocument();
+    expect(await screen.findByText('No cash advance items.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Cash advance description')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument();
+  });
+
+  it('12/13/14: an unexpected existing Manors cash advance is neither deleted nor hidden — shown read-only, its amount stays reconciled in the FTC total, and no duplicate add/delete (Additional Items-style) controls are offered', async () => {
+    const modelWithUnexpectedCashAdvance: BillingStatementModel = {
+      ...MODEL,
+      showCashAdvanceSection: false,
+      cashAdvanceItems: [{ description: 'Third-party death certificate copy', amountCents: 5000, hasMarkup: false, isEstimated: false }],
+      cashAdvanceSubtotalCents: 5000,
+      ftcStatementTotalCents: 94000,
+    };
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(modelWithUnexpectedCashAdvance);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([
+      {
+        id: 'ca-1',
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseId: CASE_ID,
+        description: 'Third-party death certificate copy',
+        amountCents: 5000,
+        hasMarkup: false,
+        isEstimated: false,
+        isActive: true,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      },
+    ]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+
+    renderCard(DEFAULT_ORGANIZATION_ID);
+
+    // Read-only, not concealed — the money and description are still shown.
+    expect(await screen.findByText('Cash advance items on this case')).toBeInTheDocument();
+    expect(screen.getByText('Third-party death certificate copy')).toBeInTheDocument();
+    expect(screen.getByText('$50.00')).toBeInTheDocument();
+
+    // Never the normal editor's heading, placeholder, entry controls, or a
+    // delete action — this is a read-only indication, not a resurrected
+    // editor and not a second Additional Items-style entry system.
+    expect(screen.queryByText('Cash advance items')).not.toBeInTheDocument();
+    expect(screen.queryByText('No cash advance items.')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Cash advance description')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
+
+    // The FTC total on screen still reconciles — it includes the $50.00
+    // cash advance, exactly matching the model the backend already computed.
+    expect(await screen.findByText('$940.00')).toBeInTheDocument();
   });
 });

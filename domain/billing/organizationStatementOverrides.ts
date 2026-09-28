@@ -4,10 +4,14 @@ import { MANORS_LOGO_DATA_URI } from './manorsLogoAsset';
 /**
  * Item #2 (2026-09, Manors Statement branding). A single, explicit,
  * organization-ID-scoped override for the FTC Statement's business-identity
- * block and Cash Advance section — used ONLY by `billingDocumentService.ts`'s
- * Statement assembly (`generateStatement`/`buildStatementModelOnly`), never
- * the General Price List (which keeps reading live `Organization`/
- * `OrganizationLocation` data unchanged) and never any other organization.
+ * block and Cash Advance section — used by `billingDocumentService.ts`'s
+ * Statement assembly (`generateStatement`/`buildStatementModelOnly`) and,
+ * as of item #11 (2026-09, Manors billing cleanup), by
+ * `components/case/BillingCard.tsx` directly, so the Billing UI and the
+ * generated Statement always agree on whether an organization uses the
+ * Cash Advance workflow. Never the General Price List (which keeps reading
+ * live `Organization`/`OrganizationLocation` data unchanged) and never any
+ * other organization.
  *
  * Why an override and not a live data edit: verified directly against
  * Production Wix data (2026-09) that this organization's `organizations`/
@@ -37,8 +41,9 @@ export const MANORS_STATEMENT_PROVIDER_IDENTITY: ProviderIdentity = {
 
 /** Manor's Cremation does not use the Cash Advance Items section in its
     normal workflow (it has no cash-advance line items to itemize) — the
-    section is omitted entirely for this organization's Statement only.
-    Every other organization keeps its existing behavior unchanged. */
+    section is omitted entirely, both from this organization's Statement
+    and from BillingCard's cash-advance editor. Every other organization
+    keeps its existing behavior unchanged. */
 export function shouldShowCashAdvanceSection(organizationId: string): boolean {
   return organizationId !== MANORS_ORGANIZATION_ID;
 }
