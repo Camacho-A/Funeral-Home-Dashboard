@@ -12,7 +12,7 @@ import type { Organization } from '@/types/organization';
 
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
-  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn() };
+  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn(), generateCaseDocument: vi.fn() };
 });
 
 vi.mock('@/lib/identityAuthClient', async () => {
@@ -335,11 +335,15 @@ describe('Task #3 (2026-09) — Print All / Download All bulk case document acti
     expect(screen.getByRole('button', { name: 'Download All' })).toBeDisabled();
   });
 
-  it('21. archived documents remain eligible for bulk actions, consistent with individual Download/Print (item #12 behavior preserved)', async () => {
+  it('21. archived documents remain eligible for bulk actions, consistent with individual Download/Print (item #12 behavior preserved) — even though they now browse under History, not Documents', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Old Statement.pdf', status: 'archived' })]);
     renderTab();
 
-    await screen.findByText('Old Statement.pdf');
+    // The archived document itself renders under History now (Task #12
+    // follow-up) — the Documents view shows its own empty state — but
+    // bulk eligibility is computed over the full document set, so Print
+    // All/Download All (which live in the Documents toolbar) stay enabled.
+    await screen.findByText('No documents for this case yet.');
     expect(screen.getByRole('button', { name: 'Print All' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Download All' })).toBeEnabled();
   });
@@ -567,13 +571,19 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
 
-  it('6/7: an existing archived Manors document remains visible in the list and remains downloadable/printable — this task disables NEW archive actions only, it is not a migration', async () => {
+  it('6/7: an existing archived Manors document remains visible — now under History (Task #12 follow-up) — and remains downloadable/printable there; this task disables NEW archive actions only, it is not a migration', async () => {
     mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
       makeDocument({ id: 'doc-already-archived', fileName: 'old-scan.pdf', status: 'archived' }),
     ]);
     renderTab(DEFAULT_ORGANIZATION_ID);
 
+    // Archived documents browse under History now — not the primary
+    // Documents view (see caseDocumentDisplay.ts#isCaseDocumentHistorical).
+    await screen.findByText('No documents for this case yet.');
+    expect(screen.queryByText('old-scan.pdf')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
     expect(await screen.findByText('old-scan.pdf')).toBeInTheDocument();
     expect(screen.getByText('Archived')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download' })).toBeInTheDocument();
@@ -705,14 +715,145 @@ describe('CaseDocumentsTab — Documents/Forms sub-tab switcher (Task #12, 2026-
     expect(caseDocumentsClient.archiveCaseDocument).not.toHaveBeenCalled();
   });
 
-  it('the Forms tab is a sub-tab of Documents, not a second top-level tab — there is exactly one Documents tab and one Forms tab rendered, both inside the same tablist', async () => {
+  it('the Forms tab is a sub-tab of Documents, not a second top-level tab — there is exactly one Documents tab, one Forms tab, and one History tab rendered, all inside the same tablist', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
     vi.stubGlobal('fetch', mockFormsFetch([]));
     renderTab();
 
     await screen.findByText('Cremation Authorization.pdf');
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
     expect(screen.getAllByRole('tab', { name: 'Documents' })).toHaveLength(1);
     expect(screen.getAllByRole('tab', { name: 'Forms' })).toHaveLength(1);
+    expect(screen.getAllByRole('tab', { name: 'History' })).toHaveLength(1);
+  });
+});
+
+// Task #12 follow-up (2026-09, Documents/History separation) — the
+// user's own 21-point test list, matched 1:1 where a point names a
+// specific, checkable behavior of this component.
+describe('CaseDocumentsTab — Documents/History separation (Task #12 follow-up, 2026-09)', () => {
+  it('2/3: a current active document appears under Documents and does NOT appear under History', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-active', fileName: 'active-statement.pdf', status: 'active' })]);
+    renderTab();
+
+    expect(await screen.findByText('active-statement.pdf')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await screen.findByText('No superseded or archived documents for this case yet.');
+    expect(screen.queryByText('active-statement.pdf')).not.toBeInTheDocument();
+  });
+
+  it('4/5: a successful superseded document appears under History and does NOT appear under Documents', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-active', fileName: 'Statement.pdf', status: 'active', version: 9 }),
+      makeDocument({ id: 'doc-superseded', fileName: 'Statement.pdf', status: 'superseded', version: 8 }),
+    ]);
+    renderTab();
+
+    await screen.findByText('Statement.pdf');
+    // Documents view shows exactly the active row — the superseded row's
+    // own supersededId/version distinguishes it, but since both share a
+    // filename, assert by count instead.
+    expect(screen.getAllByText('Statement.pdf')).toHaveLength(1);
+    expect(screen.getByText('v9', { exact: false })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('Statement.pdf')).toBeInTheDocument();
+    expect(screen.getByText('v8', { exact: false })).toBeInTheDocument();
+  });
+
+  it('6/7: multiple superseded versions all appear in History, each showing its own existing version metadata', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-newest', fileName: 'Statement-newest.pdf', status: 'active', version: 9 }),
+      makeDocument({ id: 'doc-mid', fileName: 'Statement-mid.pdf', status: 'superseded', version: 8 }),
+      makeDocument({ id: 'doc-oldest', fileName: 'Statement-oldest.pdf', status: 'superseded', version: 7 }),
+    ]);
+    renderTab();
+    await screen.findByText('Statement-newest.pdf');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('Statement-mid.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Statement-oldest.pdf')).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent?.includes('· v8 ·') === true)).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent?.includes('· v7 ·') === true)).toBeInTheDocument();
+    // The current active document never leaks into History.
+    expect(screen.queryByText('Statement-newest.pdf')).not.toBeInTheDocument();
+  });
+
+  it('8: no document is duplicated between Documents and History across a mixed set', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-active', fileName: 'active-only.pdf', status: 'active' }),
+      makeDocument({ id: 'doc-superseded', fileName: 'superseded-only.pdf', status: 'superseded' }),
+      makeDocument({ id: 'doc-archived', fileName: 'archived-only.pdf', status: 'archived' }),
+    ]);
+    renderTab();
+
+    await screen.findByText('active-only.pdf');
+    expect(screen.queryByText('superseded-only.pdf')).not.toBeInTheDocument();
+    expect(screen.queryByText('archived-only.pdf')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('superseded-only.pdf')).toBeInTheDocument();
+    expect(screen.getByText('archived-only.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('active-only.pdf')).not.toBeInTheDocument();
+  });
+
+  it('10/11: Generate Document remains under Documents and is not offered under History', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-superseded', fileName: 'old.pdf', status: 'superseded' })]);
+    renderTab();
+
+    expect(await screen.findByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await screen.findByText('old.pdf');
+    expect(screen.queryByRole('button', { name: 'Generate Document' })).not.toBeInTheDocument();
+  });
+
+  it('12: an existing active uploaded document (not generated) remains in Documents', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-uploaded', fileName: 'scan.pdf', origin: 'uploaded', status: 'active', templateId: null, templateVersion: null, version: null, generatedBy: null, uploadedBy: 'Dana' }),
+    ]);
+    renderTab();
+    expect(await screen.findByText('scan.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/Uploaded by Dana/)).toBeInTheDocument();
+  });
+
+  it('13: an active document produced from an external form submission (e.g. Vital Statistics) remains in Documents like any other active CaseDocument', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-vital', fileName: 'Vital Statistics.pdf', documentTypeKey: 'vitalStatistics', status: 'active' }),
+    ]);
+    renderTab();
+    expect(await screen.findByText('Vital Statistics.pdf')).toBeInTheDocument();
+  });
+
+  it('14: a failed record with no usable file is NOT presented under History as a historical PDF — it stays visible in Documents, distinctly badged, never downloadable', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-failed', fileName: 'Broken.pdf', status: 'failed' })]);
+    renderTab();
+
+    expect(await screen.findByText('Broken.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Generation Failed')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Download' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await screen.findByText('No superseded or archived documents for this case yet.');
+    expect(screen.queryByText('Broken.pdf')).not.toBeInTheDocument();
+  });
+
+  it('15/16: switching between Documents and History triggers no CaseDocument fetch/mutation, no generation, and no archive call', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ id: 'doc-active', fileName: 'active.pdf', status: 'active' }),
+      makeDocument({ id: 'doc-superseded', fileName: 'old.pdf', status: 'superseded' }),
+    ]);
+    renderTab();
+
+    await screen.findByText('active.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await screen.findByText('old.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    await screen.findByText('active.pdf');
+
+    expect(caseDocumentsClient.fetchCaseDocuments).toHaveBeenCalledTimes(1);
+    expect(caseDocumentsClient.generateCaseDocument).not.toHaveBeenCalled();
+    expect(caseDocumentsClient.archiveCaseDocument).not.toHaveBeenCalled();
   });
 });

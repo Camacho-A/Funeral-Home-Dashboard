@@ -40,7 +40,7 @@ import {
   type ActivityContext,
 } from './activityService';
 import { isDocumentArchivingEnabled } from '../domain/organization/documentArchiveCapability';
-import { isCaseDocumentDownloadable } from '../domain/documents/caseDocumentDisplay';
+import { isCaseDocumentDownloadable, isCaseDocumentEligibleForBulkAction } from '../domain/documents/caseDocumentDisplay';
 import {
   isPrintableMimeType,
   buildBulkDownloadZipFileName,
@@ -722,15 +722,19 @@ export async function downloadFile(
 
 export type BulkDocumentExclusion = { fileName: string; reason: string };
 
-/** The exact same eligibility rule individual Download/Print already use
-    (isCaseDocumentDownloadable) — a pending/failed row is never included,
-    an active/superseded/archived one always is, regardless of Manors'
-    document.archive capability (that gate only affects the *archive
-    action* — see documentArchiveCapability.ts — never retrieval of an
-    already-archived document). */
+/** Task #12 follow-up (2026-09, Documents/History separation) —
+    `isCaseDocumentEligibleForBulkAction`, not the broader
+    `isCaseDocumentDownloadable` individual Download/Print use: a
+    pending/failed/superseded row is never included (a superseded version
+    must never be silently swept into a bulk action on the case's current
+    documents), while archived remains included, preserving the earlier,
+    separately-established item #12 (document Archive removal for
+    Manors) precedent that archiving only hides the *archive action*,
+    never a document's own retrievability. See that function's own doc
+    comment for the full reasoning. */
 export async function listEligibleForBulkAction(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<CaseDocument[]> {
   const documents = await list(organizationId, caseId, dataAdapterMode);
-  return documents.filter((d) => isCaseDocumentDownloadable(d.status));
+  return documents.filter((d) => isCaseDocumentEligibleForBulkAction(d.status));
 }
 
 export type BulkDownloadResult = { zipBuffer: Buffer; fileName: string; excluded: BulkDocumentExclusion[] };

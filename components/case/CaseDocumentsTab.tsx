@@ -18,7 +18,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
-import { CASE_DOCUMENT_STATUS_LABEL, caseDocumentStatusVariant, isCaseDocumentDownloadable } from '@/domain/documents/caseDocumentDisplay';
+import {
+  CASE_DOCUMENT_STATUS_LABEL,
+  caseDocumentStatusVariant,
+  isCaseDocumentDownloadable,
+  isCaseDocumentHistorical,
+  isCaseDocumentEligibleForBulkAction,
+} from '@/domain/documents/caseDocumentDisplay';
 import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
 import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
 import { buildCaseDocumentDownloadUrl } from '@/lib/caseDocumentsClient';
@@ -69,6 +75,28 @@ import styles from './CaseDocumentsTab.module.css';
  * Purely a presentation move: same component, same caseId prop, same
  * queries/permissions (`case.read`, already required to view this page at
  * all) — switching sub-tabs never mutates anything.
+ *
+ * Task #12 follow-up (2026-09, Documents/History separation). Adds a
+ * third internal sub-tab, "History" — a pure presentation split of the
+ * SAME `documentsQuery.data` array by existing `CaseDocument.status`
+ * (domain/documents/caseDocumentDisplay.ts#isCaseDocumentHistorical:
+ * `superseded` or `archived`), never a second query, never a data
+ * mutation. "Documents" now shows only the current working set
+ * (`pending`/`active`/`failed` — a failed generation attempt has no
+ * usable file and is deliberately NOT treated as a historical PDF, see
+ * that function's own doc comment); "History" shows exactly the
+ * complement. The same per-row markup (`renderDocumentRow` below) backs
+ * both lists — every existing status-gated action (Regenerate/Archive/
+ * Request Signature, each already conditioned on `doc.status === 'active'`)
+ * is therefore automatically absent from History rows with zero new
+ * conditionals, and Download/Print stay exactly as eligible as they
+ * always were (`isCaseDocumentDownloadable`, unchanged). Generate
+ * Document/Upload File/Print All/Download All remain Documents-only
+ * actions — History has no toolbar. Print All/Download All's own
+ * eligibility narrows from `isCaseDocumentDownloadable` to
+ * `isCaseDocumentEligibleForBulkAction` (excludes `superseded`; keeps
+ * `archived`, preserving the separate, earlier document-archiving item
+ * #12 precedent) — see that function's own doc comment.
  */
 export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: string; caseName: string; caseNumber: string }) {
   const { organizationId } = useOrganization();
@@ -81,7 +109,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const bulkDownload = useBulkDownloadCaseDocuments(organizationId, caseId);
   const bulkPrint = useBulkPrintCaseDocuments(organizationId, caseId, caseName, caseNumber);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [subTab, setSubTab] = useState<'documents' | 'forms'>('documents');
+  const [subTab, setSubTab] = useState<'documents' | 'forms' | 'history'>('documents');
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [regeneratingDoc, setRegeneratingDoc] = useState<CaseDocument | null>(null);
@@ -162,13 +190,96 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const canCancelSignature = permissions === null || permissions.includes('signature.cancel');
 
   const documents = documentsQuery.data ?? [];
-  // Task #3 (2026-09) — Print All / Download All. Reuses the exact same
-  // eligibility rule individual Download already applies (isCaseDocumentDownloadable),
-  // so an already-archived document (still individually downloadable per
-  // item #12) is never excluded from the bulk actions either — no second,
-  // drifting definition of "available."
-  const eligibleForBulkActions = documents.filter((doc) => isCaseDocumentDownloadable(doc.status));
+  // Task #12 follow-up (2026-09, Documents/History separation) — a pure
+  // presentation split of the same array by existing status; see this
+  // component's own doc comment above.
+  const currentDocuments = documents.filter((doc) => !isCaseDocumentHistorical(doc.status));
+  const historicalDocuments = documents.filter((doc) => isCaseDocumentHistorical(doc.status));
+  // Task #3 (2026-09) — Print All / Download All. Computed over the full
+  // document set (not just currentDocuments) via isCaseDocumentEligibleForBulkAction,
+  // which deliberately keeps archived documents bulk-eligible even though
+  // they now browse under History — see that function's own doc comment.
+  const eligibleForBulkActions = documents.filter((doc) => isCaseDocumentEligibleForBulkAction(doc.status));
   const hasBulkEligibleDocuments = eligibleForBulkActions.length > 0;
+
+  function renderDocumentRow(doc: CaseDocument) {
+    const typeLabel = doc.documentTypeKey ? (getDocumentTypeDefinition(doc.documentTypeKey)?.displayName ?? doc.documentTypeKey) : 'Uploaded file';
+    const canDownload = isCaseDocumentDownloadable(doc.status);
+    const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active';
+    const canArchiveThis = canArchive && doc.status === 'active';
+    const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed';
+    const isSignatureExpanded = expandedSignatureId === doc.id;
+
+    return (
+      <div key={doc.id} className={styles.rowGroup}>
+        <div className={styles.row}>
+          <div className={styles.identity}>
+            <span className={styles.fileName}>{doc.fileName}</span>
+            <span className={styles.meta}>
+              {typeLabel}
+              {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.generatedBy ?? doc.uploadedBy ?? 'unknown'} ·{' '}
+              {formatTimestamp(doc.createdAt)}
+            </span>
+          </div>
+          <Badge variant={caseDocumentStatusVariant(doc.status)}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</Badge>
+          <div className={styles.actions}>
+            {canDownload && (
+              <a href={buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id)} className={styles.downloadLink}>
+                Download
+              </a>
+            )}
+            {canDownload && (
+              <Button variant="secondary" onClick={() => handlePrint(doc)} disabled={printingDocId === doc.id}>
+                {printingDocId === doc.id ? 'Preparing…' : 'Print'}
+              </Button>
+            )}
+            {canRegenerate && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRegeneratingDoc(doc);
+                  setGenerateOpen(true);
+                }}
+              >
+                Regenerate
+              </Button>
+            )}
+            {canRequestSignatureForThis && (
+              <Button variant="secondary" onClick={() => setRequestingSignatureFor(doc)}>
+                Request Signature
+              </Button>
+            )}
+            {canArchiveThis && (
+              <Button variant="ghost" onClick={() => setArchivingDoc(doc)}>
+                Archive
+              </Button>
+            )}
+          </div>
+        </div>
+        {printError && printError.docId === doc.id && (
+          <div className={styles.errorText} role="alert">
+            {printError.message}
+          </div>
+        )}
+        {canReadSignature && doc.status === 'active' && (
+          <>
+            <button type="button" className={styles.signatureToggle} onClick={() => setExpandedSignatureId(isSignatureExpanded ? null : doc.id)}>
+              {isSignatureExpanded ? 'Hide signature status' : 'Show signature status'}
+            </button>
+            {isSignatureExpanded && (
+              <SignatureStatusPanel
+                organizationId={organizationId}
+                caseId={caseId}
+                documentId={doc.id}
+                canRequest={canRequestSignature}
+                canCancel={canCancelSignature}
+              />
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={styles.card}>
@@ -191,9 +302,28 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
         >
           Forms
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === 'history'}
+          className={subTab === 'history' ? styles.subTabActive : styles.subTabInactive}
+          onClick={() => setSubTab('history')}
+        >
+          History
+        </button>
       </div>
 
       {subTab === 'forms' && <CaseFormsSection caseId={caseId} />}
+
+      {subTab === 'history' && (
+        historicalDocuments.length === 0 ? (
+          <EmptyState message="No superseded or archived documents for this case yet." />
+        ) : (
+          <Card className={styles.listCard}>
+            <div className={styles.list}>{historicalDocuments.map(renderDocumentRow)}</div>
+          </Card>
+        )
+      )}
 
       {subTab === 'documents' && (
       <>
@@ -256,90 +386,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
         </div>
       )}
 
-      {documents.length === 0 ? (
+      {currentDocuments.length === 0 ? (
         <EmptyState message="No documents for this case yet." />
       ) : (
         <Card className={styles.listCard}>
-          <div className={styles.list}>
-            {documents.map((doc) => {
-              const typeLabel = doc.documentTypeKey ? (getDocumentTypeDefinition(doc.documentTypeKey)?.displayName ?? doc.documentTypeKey) : 'Uploaded file';
-              const canDownload = isCaseDocumentDownloadable(doc.status);
-              const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active';
-              const canArchiveThis = canArchive && doc.status === 'active';
-              const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed';
-              const isSignatureExpanded = expandedSignatureId === doc.id;
-
-              return (
-                <div key={doc.id} className={styles.rowGroup}>
-                  <div className={styles.row}>
-                    <div className={styles.identity}>
-                      <span className={styles.fileName}>{doc.fileName}</span>
-                      <span className={styles.meta}>
-                        {typeLabel}
-                        {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.generatedBy ?? doc.uploadedBy ?? 'unknown'} ·{' '}
-                        {formatTimestamp(doc.createdAt)}
-                      </span>
-                    </div>
-                    <Badge variant={caseDocumentStatusVariant(doc.status)}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</Badge>
-                    <div className={styles.actions}>
-                      {canDownload && (
-                        <a href={buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id)} className={styles.downloadLink}>
-                          Download
-                        </a>
-                      )}
-                      {canDownload && (
-                        <Button variant="secondary" onClick={() => handlePrint(doc)} disabled={printingDocId === doc.id}>
-                          {printingDocId === doc.id ? 'Preparing…' : 'Print'}
-                        </Button>
-                      )}
-                      {canRegenerate && (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setRegeneratingDoc(doc);
-                            setGenerateOpen(true);
-                          }}
-                        >
-                          Regenerate
-                        </Button>
-                      )}
-                      {canRequestSignatureForThis && (
-                        <Button variant="secondary" onClick={() => setRequestingSignatureFor(doc)}>
-                          Request Signature
-                        </Button>
-                      )}
-                      {canArchiveThis && (
-                        <Button variant="ghost" onClick={() => setArchivingDoc(doc)}>
-                          Archive
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  {printError && printError.docId === doc.id && (
-                    <div className={styles.errorText} role="alert">
-                      {printError.message}
-                    </div>
-                  )}
-                  {canReadSignature && doc.status === 'active' && (
-                    <>
-                      <button type="button" className={styles.signatureToggle} onClick={() => setExpandedSignatureId(isSignatureExpanded ? null : doc.id)}>
-                        {isSignatureExpanded ? 'Hide signature status' : 'Show signature status'}
-                      </button>
-                      {isSignatureExpanded && (
-                        <SignatureStatusPanel
-                          organizationId={organizationId}
-                          caseId={caseId}
-                          documentId={doc.id}
-                          canRequest={canRequestSignature}
-                          canCancel={canCancelSignature}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <div className={styles.list}>{currentDocuments.map(renderDocumentRow)}</div>
         </Card>
       )}
 

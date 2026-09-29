@@ -17,7 +17,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
     deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
   },
 }));
-const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, DocumentServiceError } = await import('./documentService');
+const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, listEligibleForBulkAction, DocumentServiceError } = await import('./documentService');
 const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { documentTemplateFixtures } = await import('./__mocks__/documentFixtures');
@@ -347,6 +347,52 @@ describe('archive', () => {
       expect(documents.find((d) => d.id === doc.id)?.status).toBe('active');
       expect(activityEventFixtures.some((e) => e.eventType === 'document.archived')).toBe(false);
     });
+  });
+});
+
+/**
+ * Task #12 follow-up (2026-09, Documents/History separation).
+ * `listEligibleForBulkAction` narrows from the broader
+ * `isCaseDocumentDownloadable` (used by individual Download/Print) to
+ * `isCaseDocumentEligibleForBulkAction` — a superseded version must never
+ * be silently swept into a bulk action on the case's current documents,
+ * while an archived document remains bulk-eligible (the earlier,
+ * separately-established document-Archive item #12 precedent — Manors
+ * item #12, not this Forms/Documents Task #12 — that archiving only
+ * hides the *archive action*, never a document's own retrievability).
+ */
+describe('listEligibleForBulkAction (Task #12 follow-up)', () => {
+  it('excludes a superseded document — only the current active version is eligible', async () => {
+    const template = await createSampleTemplate();
+    const first = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+    const second = await generate({ caseId: TEST_CASE_ID, templateId: template.id, existingDocumentId: first.id, idFactory }, ctx(), 'mock');
+
+    const eligible = await listEligibleForBulkAction(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    const eligibleIds = eligible.map((d) => d.id);
+    expect(eligibleIds).toContain(second.id);
+    expect(eligibleIds).not.toContain(first.id);
+  });
+
+  it('keeps an archived document eligible, consistent with individual download (item #12 behavior preserved)', async () => {
+    const doc = await upload(
+      { caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory },
+      Buffer.from('raw bytes'),
+      ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }),
+      'mock',
+    );
+    await archive(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock');
+
+    const eligible = await listEligibleForBulkAction(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    expect(eligible.map((d) => d.id)).toContain(doc.id);
+  });
+
+  it('excludes a pending or failed document — neither has a usable file', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx(), 'mock');
+    const index = caseDocumentFixtures.findIndex((d) => d.id === doc.id);
+    caseDocumentFixtures[index] = { ...caseDocumentFixtures[index], status: 'failed' };
+
+    const eligible = await listEligibleForBulkAction(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    expect(eligible.map((d) => d.id)).not.toContain(doc.id);
   });
 });
 
