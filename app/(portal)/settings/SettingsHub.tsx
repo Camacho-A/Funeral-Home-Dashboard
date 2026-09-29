@@ -5,9 +5,6 @@ import Link from 'next/link';
 import type { AuthAdapterMode } from '@/lib/env';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
-import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
-import { WorkflowTemplateList } from '@/components/settings/WorkflowTemplateList';
-import { WorkflowEditor } from '@/components/settings/WorkflowEditor';
 import { ImportHistoricalCaseModal } from '@/components/modals/ImportHistoricalCaseModal';
 import { Card } from '@/components/ui/Card';
 import styles from './SettingsHub.module.css';
@@ -47,20 +44,24 @@ type AdminArea = {
  * None of this is itself authorization — every route/action re-checks
  * server-side exactly as before; this only decides what's *offered* here.
  *
- * The pre-existing Workflow Template management UI (Phase 18 — this
- * route's original content) is preserved below the new cards, completely
- * unchanged, under its own heading.
+ * Workflow Templates (Task #11, 2026-09, Settings organization cleanup):
+ * previously the one administrative area rendered inline at the bottom of
+ * this page, unconditionally — no card, no visibility gate at all, unlike
+ * every area above. Moved to its own dedicated `/settings/workflow-templates`
+ * route (see that page's own comment) and given a card here like every
+ * other area. `user.manageRoles` is reused as its visibility gate — the
+ * same "admin-tier" permission already gating Roles & Permissions and the
+ * Case Numbering fallback above — rather than inventing a new permission;
+ * the underlying API routes' own authorization
+ * (requireAuthorizedOrganization, unchanged) remains exactly as it was.
  */
 export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterMode }) {
   const { organizationId } = useOrganization();
   const permissionsQuery = useMyPermissions(organizationId);
   const permissions = permissionsQuery.data?.permissions ?? [];
 
-  const { data: templates = [], isPending: templatesPending } = useWorkflowTemplates();
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isImportModalOpen, setImportModalOpen] = useState(false);
 
-  const activeTemplateId = selectedTemplateId ?? templates[0]?.id ?? null;
   const isIdentityMode = authAdapterMode === 'identity';
 
   const administration: AdminArea[] = [
@@ -84,6 +85,13 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
       description: 'Manage case number sequencing and formatting.',
       href: '/settings/case-numbering',
       visible: permissions.includes('caseNumber.manage') || permissions.includes('user.manageRoles'),
+    },
+    {
+      key: 'workflow-templates',
+      label: 'Workflow Templates',
+      description: 'Manage this organization’s case workflow stages and intake fields.',
+      href: '/settings/workflow-templates',
+      visible: permissions.includes('user.manageRoles'),
     },
     {
       key: 'import-jotform',
@@ -153,22 +161,6 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
           <div className={styles.grid}>{visibleSecurityAndRoles.map(renderArea)}</div>
         </section>
       )}
-
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Workflow Templates</h2>
-        {templatesPending ? (
-          <p className={styles.loading}>Loading workflow templates…</p>
-        ) : (
-          <div className={styles.columns}>
-            <WorkflowTemplateList
-              templates={templates.map((t) => ({ id: t.id, name: t.name, isEnabled: t.isEnabled, caseTypes: t.caseTypes }))}
-              selectedTemplateId={activeTemplateId}
-              onSelect={setSelectedTemplateId}
-            />
-            {activeTemplateId && <WorkflowEditor key={activeTemplateId} templateId={activeTemplateId} />}
-          </div>
-        )}
-      </section>
 
       <ImportHistoricalCaseModal open={isImportModalOpen} onClose={() => setImportModalOpen(false)} />
     </div>

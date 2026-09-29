@@ -55,9 +55,11 @@ import styles from './Sidebar.module.css';
  * identity-mode session unconditionally; Case Numbering and Import
  * Existing Jotform are org-agnostic, permission-only) — Settings is
  * shown if any one of them would be. This intentionally does NOT account
- * for Workflow Templates (the pre-existing, ungated `/settings` landing
- * content) or the pre-existing Audit/Templates/Resources/etc. links,
- * which were out of this item's scope and are unaffected either way.
+ * for the pre-existing Audit/Templates/Resources/etc. links, which were
+ * out of this item's scope and are unaffected either way. Workflow
+ * Templates (Task #11, 2026-09) is now also `user.manageRoles`-gated,
+ * exactly like Roles & Permissions above — already covered by this same
+ * `canSeeSettings` check, so no separate condition was needed here.
  */
 export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode }) {
   const { organizationId } = useOrganization();

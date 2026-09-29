@@ -1,26 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SettingsHub } from './SettingsHub';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as identityAuthClient from '@/lib/identityAuthClient';
-import { workflowTemplatesService } from '@/services/workflowTemplatesService';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');
   return { ...actual, fetchMyPermissions: vi.fn() };
-});
-
-// useWorkflowTemplates() calls workflowTemplatesService.list(...) directly
-// (the namespace object, not the standalone `list` export) — both must be
-// mocked to the same vi.fn(), mirroring
-// components/case/CaseDocumentsTab.test.tsx's identical organizationsService
-// gotcha.
-vi.mock('@/services/workflowTemplatesService', async () => {
-  const actual = await vi.importActual<typeof import('@/services/workflowTemplatesService')>('@/services/workflowTemplatesService');
-  const mockList = vi.fn();
-  return { ...actual, list: mockList, workflowTemplatesService: { ...actual.workflowTemplatesService, list: mockList } };
 });
 
 vi.mock('@/components/modals/ImportHistoricalCaseModal', () => ({
@@ -41,10 +29,6 @@ function renderHub(authAdapterMode: 'mock' | 'wix' | 'identity' = 'mock') {
     </QueryClientProvider>,
   );
 }
-
-beforeEach(() => {
-  vi.mocked(workflowTemplatesService.list).mockResolvedValue([]);
-});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -158,7 +142,7 @@ describe('SettingsHub — Organization Profile (2026-09)', () => {
   });
 
   it('35. every other existing Settings area remains reachable alongside the new card', async () => {
-    mockPermissions(['organization.manage', 'caseNumber.manage', 'case.create']);
+    mockPermissions(['organization.manage', 'caseNumber.manage', 'case.create', 'user.manageRoles']);
     renderHub('mock');
     expect(await screen.findByText('Organization Profile')).toBeInTheDocument();
     expect(screen.getByText('Case Numbering')).toBeInTheDocument();
@@ -175,10 +159,36 @@ describe('SettingsHub — no empty sections (item #5, 2026-09)', () => {
     expect(screen.queryByText('Administration')).not.toBeInTheDocument();
     expect(screen.queryByText('Security & Roles')).not.toBeInTheDocument();
   });
+});
 
-  it('12: Workflow Templates section remains present and unaffected regardless of the other permissions', async () => {
-    mockPermissions([]);
+/**
+ * Task #11 (2026-09, Settings organization cleanup). Workflow Templates
+ * used to render unconditionally, with no card and no visibility gate at
+ * all — the one administrative area with no permission check, unlike
+ * every other card here. Now a normal card, gated on `user.manageRoles`
+ * (the same "admin-tier" permission already gating Roles & Permissions
+ * and the Case Numbering fallback above — reused, not invented), linking
+ * to its own dedicated `/settings/workflow-templates` page rather than
+ * rendering inline.
+ */
+describe('SettingsHub — Workflow Templates (Task #11, 2026-09)', () => {
+  it('shows Workflow Templates for a caller holding user.manageRoles, org-agnostic (no identity-mode requirement)', async () => {
+    mockPermissions(['user.manageRoles']);
     renderHub('mock');
     expect(await screen.findByText('Workflow Templates')).toBeInTheDocument();
+  });
+
+  it('hides Workflow Templates for a caller without user.manageRoles', async () => {
+    mockPermissions([]);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Workflow Templates')).not.toBeInTheDocument();
+  });
+
+  it('links to the dedicated /settings/workflow-templates page rather than rendering inline', async () => {
+    mockPermissions(['user.manageRoles']);
+    renderHub('mock');
+    const link = (await screen.findByText('Workflow Templates')).closest('a');
+    expect(link).toHaveAttribute('href', '/settings/workflow-templates');
   });
 });
