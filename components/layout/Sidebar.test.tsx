@@ -127,3 +127,43 @@ describe('Sidebar — Settings visibility (item #5, 2026-09 navigation cleanup)'
   });
 });
 
+describe('Sidebar — SOLIS product branding (Task #13, 2026-09)', () => {
+  it('1/2: renders the real SolisCode mark asset alongside the SOLIS wordmark as real text', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark).toHaveAttribute('src', '/brand/soliscode-mark.png');
+    expect(screen.getByText('SOLIS')).toBeInTheDocument();
+  });
+
+  it('3: the old CSS-only placeholder square is gone — no element with the removed brandMark class', async () => {
+    mockPermissions([]);
+    const { container } = renderSidebar('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(container.querySelector('[class*="brandMark"]')).toBeNull();
+  });
+
+  it('9: the mark is decorative — alt="" and aria-hidden, so it never duplicates the accessible "SOLIS" text', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark).toHaveAttribute('alt', '');
+    expect(mark).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('6: the active organization name (Manors Cremation) remains its own, separate identity from the SOLIS product mark', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    expect(await screen.findByText('Manors Cremation')).toBeInTheDocument();
+    expect(screen.getByText('SOLIS')).toBeInTheDocument();
+  });
+
+  it('7: Sidebar navigation remains functional alongside the new branding', async () => {
+    mockPermissions(['case.create']);
+    renderSidebar('mock');
+    expect(await screen.findByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Tasks')).toBeInTheDocument();
+  });
+});
+

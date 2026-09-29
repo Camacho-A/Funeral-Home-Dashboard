@@ -1,0 +1,11 @@
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mark {
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
+}

@@ -1,6 +1,7 @@
 import { getAuthAdapterMode } from '@/lib/env';
 import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/authFixtures';
 import { sanitizeRedirectPath } from '@/lib/auth/redirect';
+import { ProductBrand } from '@/components/layout/ProductBrand';
 import { loginAction } from './actions';
 import styles from './page.module.css';
 
@@ -51,6 +52,14 @@ const NOTICE_MESSAGES: Record<string, string> = {
  * Phase 15A.1 (Auth/Data Adapter Separation): branches on AUTH_ADAPTER,
  * not DATA_ADAPTER — this page's appearance no longer depends on which
  * backend `services/*` happen to be reading/writing against.
+ *
+ * Task #13 (2026-09, SOLIS product branding): the heading now renders
+ * `<ProductBrand>` (components/layout/ProductBrand.tsx) instead of plain
+ * "SOLIS" text — the same [SolisCode mark] SOLIS lockup the Sidebar uses.
+ * `<h1>` still wraps it, so this remains the page's one accessible
+ * heading; the mark is decorative (`alt=""`), so its accessible name is
+ * still exactly "SOLIS". No authentication/form/validation behavior
+ * changed.
  */
 export default async function LoginPage({
   searchParams,
@@ -66,7 +75,9 @@ export default async function LoginPage({
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.title}>SOLIS</h1>
+        <h1 className={styles.title}>
+          <ProductBrand markSize={40} />
+        </h1>
         <p className={styles.subtitle}>Sign in to continue.</p>
 
         {errorMessage && (

@@ -6,6 +6,7 @@ import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useActiveStaffCount } from '@/hooks/useIdentitySessions';
 import { SidebarNavItem } from './SidebarNavItem';
+import { ProductBrand } from './ProductBrand';
 import styles from './Sidebar.module.css';
 
 /**
@@ -81,8 +82,7 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
   return (
     <nav className={styles.sidebar} aria-label="Primary">
       <div className={styles.brand}>
-        <div className={styles.brandMark} aria-hidden="true" />
-        <div className={styles.brandWordmark}>SOLIS</div>
+        <ProductBrand wordmarkClassName={styles.brandWordmark} />
       </div>
 
       <div className={styles.navList}>

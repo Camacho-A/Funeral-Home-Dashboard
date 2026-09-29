@@ -15,4 +15,32 @@ describe('LoginPage', () => {
     expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
     expect(screen.queryByText('Beacon')).not.toBeInTheDocument();
   });
+
+  /** Task #13 (2026-09, SOLIS product branding). Login now renders the
+      same [SolisCode mark] SOLIS lockup (ProductBrand) the Sidebar uses,
+      inside the same <h1> as before — never a redesign of the form/page
+      itself. */
+  describe('SOLIS product branding (Task #13, 2026-09)', () => {
+    it('4/5: renders the real SolisCode mark asset, and SOLIS remains the heading\'s accessible (real-text) name', async () => {
+      render(await renderLoginPage());
+      const heading = screen.getByRole('heading', { name: 'SOLIS' });
+      const mark = screen.getByRole('presentation', { hidden: true });
+      expect(mark).toHaveAttribute('src', '/brand/soliscode-mark.png');
+      expect(heading).toHaveTextContent('SOLIS');
+    });
+
+    it('7: the mark is decorative (alt="", aria-hidden) — never announced redundantly alongside the SOLIS heading', async () => {
+      render(await renderLoginPage());
+      const mark = screen.getByRole('presentation', { hidden: true });
+      expect(mark).toHaveAttribute('alt', '');
+      expect(mark).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    it('10: form fields, validation, and error/notice messaging remain unaffected by the branding change', async () => {
+      render(await renderLoginPage({ error: 'invalid_credentials' }));
+      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+      expect(screen.getByLabelText('Password')).toBeInTheDocument();
+      expect(screen.getByText('Invalid email or password.')).toBeInTheDocument();
+    });
+  });
 });

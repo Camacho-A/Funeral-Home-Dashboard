@@ -8,19 +8,12 @@
   gap: var(--space-18);
 }
 
+/* Task #13 (2026-09, SOLIS product branding). Now just a padding wrapper —
+   ProductBrand (components/layout/ProductBrand.tsx) owns the flex row/gap
+   for the mark + wordmark itself. The old CSS-only `.brandMark` placeholder
+   square is gone entirely, replaced by the real SolisCode mark. */
 .brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
   padding: 0 var(--space-4);
-}
-
-.brandMark {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  background: var(--color-brand);
-  flex-shrink: 0;
 }
 
 .brandWordmark {
