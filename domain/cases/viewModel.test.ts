@@ -406,6 +406,120 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
 });
 
 /**
+ * Task #7 reopened, second follow-up (2026-09). Reproduces the ACTUAL
+ * proven Production shape a live read-only diagnostic confirmed: a real
+ * Manors case frozen under workflowTemplateVersion 3, now sitting at
+ * rawStage 3 (past "First Call & Payment," where the legacy Certifier/
+ * dcContact item — index 6, hasField: true — actually lives, at raw
+ * stages 0/1). Staff revisiting that earlier stage via the StageStepper
+ * were still shown the raw fieldValues[6] free-text box ("DR.SID"),
+ * because legacyCertifierPresentation's past-stage branch was a pure
+ * label swap. This section proves the fix: the structured Name+Phone
+ * editor renders (and is genuinely editable) even when viewed as a past
+ * stage, while historical done/locked/progression stay untouched.
+ */
+describe('buildCaseViewModel — legacy (v3) Certifier past-stage editing (Task #7 reopened, second follow-up, 2026-09)', () => {
+  function v3CaseAtRawStage3(overrides: Partial<Case> = {}): Case {
+    const template = standardCremationWorkflowTemplateFixture;
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    const snapshot = buildCaseWorkflowSnapshot(template, { ...v1, version: 3 });
+    return baseCase({
+      rawStage: 3,
+      workflowTemplateVersion: 3,
+      workflowSnapshot: snapshot,
+      fieldValues: { 6: 'DR.SID' },
+      certifierName: null,
+      certifierPhone: null,
+      ...overrides,
+    });
+  }
+
+  it('1. viewing the earlier stage (First Call & Payment) still labels the item "Certifier Information"', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[6].label).toBe('Certifier Information');
+  });
+
+  it('2. the old editable DR.SID textbox is NOT rendered as the Certifier editor (hasField is false, fieldValue is blank)', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[6].hasField).toBe(false);
+    expect(vm.checklist[6].fieldValue).toBe('');
+  });
+
+  it('3/4. the structured Certifier name and phone inputs are present (requiredCaseFields)', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[6].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+  });
+
+  it('5/6. Name and Phone are initially blank — DR.SID is never guessed into either', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[6].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
+  });
+
+  it('7/8. DR.SID is not copied into Name or Phone — Case.certifierName/certifierPhone remain null on the source case', () => {
+    const case_ = v3CaseAtRawStage3();
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.certifierName).toBeNull();
+    expect(case_.certifierPhone).toBeNull();
+  });
+
+  it('11. fieldValues[6] remains "DR.SID" untouched — merely viewing the past stage never mutates the Case', () => {
+    const case_ = v3CaseAtRawStage3();
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.fieldValues[6]).toBe('DR.SID');
+  });
+
+  it('12. the frozen v3 workflowSnapshot is byte-for-byte unchanged', () => {
+    const case_ = v3CaseAtRawStage3();
+    const before = JSON.parse(JSON.stringify(case_.workflowSnapshot));
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.workflowSnapshot).toEqual(before);
+  });
+
+  it('13. rawStage remains 3 — merely viewing an earlier stage never regresses the case\'s real current stage', () => {
+    const case_ = v3CaseAtRawStage3();
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.rawStage).toBe(3);
+  });
+
+  it('14. historical completion state is unchanged: the past-stage item is still done-by-definition, never relocked', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[6].done).toBe(true);
+    expect(vm.checklist[6].locked).toBe(false);
+  });
+
+  it('15. unrelated past-stage items remain read-only/historical — only the Certifier item gets the live-editing exception', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    // Every other item in this past-stage view still reports done (past
+    // stage, done-by-definition) with no requiredCaseFields of its own.
+    vm.checklist.forEach((item, i) => {
+      if (i === 6) return;
+      expect(item.done).toBe(true);
+      expect(item.requiredCaseFields).toBeUndefined();
+    });
+  });
+
+  it('the default (current-stage) view of this same case does not show the Certifier item at all — it belongs to an earlier, already-passed stage', () => {
+    const case_ = v3CaseAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.checklist.some((i) => i.label === 'Certifier Information')).toBe(false);
+  });
+
+  it('once structured data is entered, the past-stage view reflects it — done/locked still untouched', () => {
+    const case_ = v3CaseAtRawStage3({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[6].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    expect(vm.checklist[6].done).toBe(true);
+  });
+});
+
+/**
  * Case Information sync fix (2026-09). Weight/Time of Death legacy
  * fieldValues compatibility fallback — see resolveFieldWithLegacyFallback
  * in ./viewModel.ts for the full "why." checklistItemIndex 3 = weight,

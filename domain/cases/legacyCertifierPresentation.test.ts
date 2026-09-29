@@ -114,13 +114,37 @@ describe('applyLegacyCertifierPresentation', () => {
     expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
   });
 
-  it('Task #7 follow-up: a past-stage view keeps showing the raw legacy fieldValue untouched (historical record), never the new structured editor', () => {
+  it('Task #7 reopened, second follow-up (2026-09): a past-stage view ALSO shows the structured Name+Phone editor — never the raw legacy fieldValue box (the real Manors case is viewed this way once it advances past the First Call & Payment stage)', () => {
     const case_ = baseCase();
-    const items = [item({ hasField: true, fieldValue: 'Dr. Choi — 555-0100', isDerived: false })];
+    const items = [item({ done: true, locked: false, hasField: true, fieldValue: 'Dr. Choi — 555-0100', isDerived: false })];
     const result = applyLegacyCertifierPresentation(items, case_, true);
-    expect(result[0].hasField).toBe(true);
-    expect(result[0].fieldValue).toBe('Dr. Choi — 555-0100');
-    expect(result[0].requiredCaseFields).toBeUndefined();
+    // done/locked are exactly what resolveChecklist already computed for a
+    // past stage (done-by-definition, never relocked) — untouched here.
+    expect(result[0].done).toBe(true);
+    expect(result[0].locked).toBe(false);
+    // The editing surface is the live structured editor, same as the
+    // current-stage "no structured data yet" case — Certifier Name/Phone
+    // are current Case data, not part of the frozen stage snapshot.
+    expect(result[0].hasField).toBe(false);
+    expect(result[0].fieldValue).toBe('');
+    expect(result[0].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
+  });
+
+  it('Task #7 reopened: the legacy fieldValue is never read into requiredCaseFieldValues on a past-stage view either — DR.SID must never be guessed as the Certifier Name', () => {
+    const case_ = baseCase();
+    const items = [item({ fieldValue: 'DR.SID' })];
+    const result = applyLegacyCertifierPresentation(items, case_, true);
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
+    expect(case_.certifierName).toBeNull();
+  });
+
+  it('Task #7 reopened: once structured data exists, a past-stage view reflects the real values too', () => {
+    const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    const items = [item({ done: true, locked: false })];
+    const result = applyLegacyCertifierPresentation(items, case_, true);
+    expect(result[0].done).toBe(true); // untouched — still done-by-definition, not recomputed
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
   });
 
   it('3. an old dcContact value alone never marks the item done via the new rule (Name only present is still incomplete)', () => {
@@ -178,13 +202,14 @@ describe('applyLegacyCertifierPresentation', () => {
     expect(result[0].label).toBe('Certifier Information');
   });
 
-  it('skips the completion-rule upgrade entirely for a past-stage view, even with structured data present — label still relabels', () => {
+  it('skips the done/locked upgrade for a past-stage view even with structured data present — label relabels and the editing surface is structured, but done/locked stay exactly as resolveChecklist already computed', () => {
     const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
     const items = [item({ done: true, locked: false, hasField: true })]; // isPastStage forces done:true upstream already
     const result = applyLegacyCertifierPresentation(items, case_, true);
     expect(result[0].label).toBe('Certifier Information');
-    expect(result[0].done).toBe(true);
-    expect(result[0].hasField).toBe(true); // untouched — no completion-rule override applied
+    expect(result[0].done).toBe(true); // untouched — never recomputed for a past-stage view
+    expect(result[0].hasField).toBe(false); // Task #7 reopened: structured editor, not the old free-text box
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
   });
 
   it('is a no-op for a v5+ Case whose item is already labeled "Certifier Information"', () => {

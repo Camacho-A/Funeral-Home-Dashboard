@@ -455,8 +455,19 @@ describe('ChecklistCard — Certifier Information dual-field editor (Task #7 reo
     expect(certifierPhoneField()).toBeDisabled();
   });
 
-  it('viewingStageLabel (past-stage read-only mode) disables both fields', () => {
-    renderChecklist([certifierItem()], { viewingStageLabel: 'First Call & Payment' });
+  it('Task #7 reopened, second follow-up (2026-09): viewingStageLabel (past-stage viewing) does NOT disable the Certifier fields — Name/Phone are live Case data, editable regardless of which stage is being viewed', () => {
+    const { onSaveCertifierName } = renderChecklist([certifierItem()], { viewingStageLabel: 'First Call & Payment' });
+    expect(certifierNameField()).not.toBeDisabled();
+    expect(certifierPhoneField()).not.toBeDisabled();
+    const nameField = certifierNameField();
+    fireEvent.focus(nameField);
+    fireEvent.change(nameField, { target: { value: 'DR. JANE FOSTER' } });
+    fireEvent.blur(nameField);
+    expect(onSaveCertifierName).toHaveBeenCalledWith('DR. JANE FOSTER');
+  });
+
+  it('a locked Certifier item still disables both fields even in past-stage view (item.locked always wins)', () => {
+    renderChecklist([certifierItem({ locked: true })], { viewingStageLabel: 'First Call & Payment' });
     expect(certifierNameField()).toBeDisabled();
     expect(certifierPhoneField()).toBeDisabled();
   });

@@ -248,6 +248,15 @@ function ChecklistTimeInput({
  * onFieldChange/setFieldValue, so no fieldValues mirror is ever created
  * for these fields, and the legacy dcContact fieldValues entry (if any)
  * is never read or touched.
+ *
+ * `disabled` deliberately does NOT include the card's `readOnly` (past-
+ * stage viewing) flag at the call site below — Certifier Name/Phone are
+ * live Case data, not part of the frozen stage snapshot, so staff must be
+ * able to complete or correct them from an earlier stage's view exactly
+ * as they already can from Case Information. `item.locked` still applies
+ * (always false for a past-stage item anyway — see resolveChecklist.ts).
+ * Server-side Case Information edit permission remains the authoritative
+ * gate, identical to every other Certifier edit path.
  */
 const REQUIRED_CASE_FIELD_LABELS: Record<string, string> = {
   certifierName: 'Certifier name',
@@ -380,7 +389,7 @@ export function ChecklistCard({
               {!item.hasField && item.requiredCaseFields && item.requiredCaseFields.length > 0 && (
                 <RequiredCaseFieldsGroup
                   item={item}
-                  disabled={readOnly || item.locked}
+                  disabled={item.locked}
                   onSaveCertifierName={onSaveCertifierName}
                   onSaveCertifierPhone={onSaveCertifierPhone}
                 />
