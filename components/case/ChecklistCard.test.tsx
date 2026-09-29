@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ChecklistCard } from './ChecklistCard';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 
@@ -36,6 +36,8 @@ function renderChecklist(checklist: ChecklistItemViewModel[], overrides: Partial
   const onToggleItem = vi.fn();
   const onFieldChange = vi.fn();
   const onBackToCurrentStage = vi.fn();
+  const onSaveCertifierName = vi.fn();
+  const onSaveCertifierPhone = vi.fn();
   render(
     <ChecklistCard
       checklist={checklist}
@@ -43,10 +45,12 @@ function renderChecklist(checklist: ChecklistItemViewModel[], overrides: Partial
       onBackToCurrentStage={onBackToCurrentStage}
       onToggleItem={onToggleItem}
       onFieldChange={onFieldChange}
+      onSaveCertifierName={onSaveCertifierName}
+      onSaveCertifierPhone={onSaveCertifierPhone}
       {...overrides}
     />,
   );
-  return { onToggleItem, onFieldChange, onBackToCurrentStage };
+  return { onToggleItem, onFieldChange, onBackToCurrentStage, onSaveCertifierName, onSaveCertifierPhone };
 }
 
 function weightField() {
@@ -353,5 +357,119 @@ describe('ChecklistCard — Time of Death 12-hour display (valueKind: "time", 20
   it('viewingStageLabel (past-stage read-only mode) disables all three selects', () => {
     renderChecklist([timeItem({ fieldValue: '15:45' })], { viewingStageLabel: 'First Call & Payment' });
     expect(screen.getByRole('combobox', { name: 'Hour' })).toBeDisabled();
+  });
+});
+
+/**
+ * Task #7 reopened (2026-09). The Workflow checklist's Certifier
+ * Information item previously rendered nothing editable at all for a
+ * clean v5+ Case (hasField: false, no UI branch handled it) and, for a
+ * legacy Case, silently exposed the raw legacy dcContact fieldValues box
+ * relabeled to look like the new item — staff typing a name there saved
+ * into fieldValues, never into Case.certifierName/certifierPhone, and no
+ * phone field existed at all. These tests cover the new dual-field
+ * editor, driven generically by requiredCaseFields/requiredCaseFieldValues
+ * (any recognized field name), reusing the exact same
+ * ChecklistFieldInput save-race-safe textbox every hasField item uses.
+ */
+function certifierItem(overrides: Partial<ChecklistItemViewModel> = {}): ChecklistItemViewModel {
+  return item({
+    index: 6,
+    label: 'Certifier Information',
+    hasField: false,
+    isDerived: true,
+    requiredCaseFields: ['certifierName', 'certifierPhone'],
+    requiredCaseFieldValues: { certifierName: '', certifierPhone: '' },
+    ...overrides,
+  });
+}
+
+function certifierNameField() {
+  return within(screen.getByText('Certifier name').parentElement!).getByRole('textbox') as HTMLInputElement;
+}
+
+function certifierPhoneField() {
+  return within(screen.getByText('Certifier phone').parentElement!).getByRole('textbox') as HTMLInputElement;
+}
+
+describe('ChecklistCard — Certifier Information dual-field editor (Task #7 reopened, 2026-09)', () => {
+  it('1. renders a Certifier name field', () => {
+    renderChecklist([certifierItem()]);
+    expect(screen.getByText('Certifier name')).toBeInTheDocument();
+  });
+
+  it('2. renders a Certifier phone field', () => {
+    renderChecklist([certifierItem()]);
+    expect(screen.getByText('Certifier phone')).toBeInTheDocument();
+  });
+
+  it('3. the Name field reads its value from requiredCaseFieldValues.certifierName (i.e. Case.certifierName)', () => {
+    renderChecklist([certifierItem({ requiredCaseFieldValues: { certifierName: 'DR. JANE FOSTER', certifierPhone: '' } })]);
+    expect(certifierNameField()).toHaveValue('DR. JANE FOSTER');
+  });
+
+  it('4. the Phone field reads its value from requiredCaseFieldValues.certifierPhone (i.e. Case.certifierPhone)', () => {
+    renderChecklist([certifierItem({ requiredCaseFieldValues: { certifierName: '', certifierPhone: '555-0199' } })]);
+    expect(certifierPhoneField()).toHaveValue('555-0199');
+  });
+
+  it('5. editing and committing the Name field calls onSaveCertifierName, never onFieldChange', () => {
+    const { onSaveCertifierName, onFieldChange } = renderChecklist([certifierItem()]);
+    const nameField = certifierNameField();
+    fireEvent.focus(nameField);
+    fireEvent.change(nameField, { target: { value: 'DR. JANE FOSTER' } });
+    fireEvent.blur(nameField);
+    expect(onSaveCertifierName).toHaveBeenCalledWith('DR. JANE FOSTER');
+    expect(onFieldChange).not.toHaveBeenCalled();
+  });
+
+  it('6. editing and committing the Phone field calls onSaveCertifierPhone, never onFieldChange', () => {
+    const { onSaveCertifierPhone, onFieldChange } = renderChecklist([certifierItem()]);
+    const phoneField = certifierPhoneField();
+    fireEvent.focus(phoneField);
+    fireEvent.change(phoneField, { target: { value: '555-0199' } });
+    fireEvent.blur(phoneField);
+    expect(onSaveCertifierPhone).toHaveBeenCalledWith('555-0199');
+    expect(onFieldChange).not.toHaveBeenCalled();
+  });
+
+  it('7. clearing a field commits null, not an empty string (matches Case Information\'s own convention)', () => {
+    const { onSaveCertifierPhone } = renderChecklist([
+      certifierItem({ requiredCaseFieldValues: { certifierName: '', certifierPhone: '555-0199' } }),
+    ]);
+    const phoneField = certifierPhoneField();
+    fireEvent.focus(phoneField);
+    fireEvent.change(phoneField, { target: { value: '   ' } });
+    fireEvent.blur(phoneField);
+    expect(onSaveCertifierPhone).toHaveBeenCalledWith(null);
+  });
+
+  it('8. the checkbox stays disabled (isDerived) — completion is never manually toggleable for this item', () => {
+    renderChecklist([certifierItem()]);
+    expect(screen.getByRole('checkbox', { name: 'Certifier Information' })).toBeDisabled();
+  });
+
+  it('a locked Certifier item disables both fields', () => {
+    renderChecklist([certifierItem({ locked: true })]);
+    expect(certifierNameField()).toBeDisabled();
+    expect(certifierPhoneField()).toBeDisabled();
+  });
+
+  it('viewingStageLabel (past-stage read-only mode) disables both fields', () => {
+    renderChecklist([certifierItem()], { viewingStageLabel: 'First Call & Payment' });
+    expect(certifierNameField()).toBeDisabled();
+    expect(certifierPhoneField()).toBeDisabled();
+  });
+
+  it('an item with no requiredCaseFields at all renders neither sub-field (baseline non-field item unaffected)', () => {
+    renderChecklist([item({ index: 0, label: 'Payment collected' })]);
+    expect(screen.queryByText('Certifier name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Certifier phone')).not.toBeInTheDocument();
+  });
+
+  it('an isDerived item with requiredCaseFields empty renders no sub-fields (the terminal return-of-remains item\'s own isDerived is unaffected)', () => {
+    renderChecklist([item({ index: 7, label: 'Return of remains', isDerived: true, requiredCaseFields: undefined })]);
+    expect(screen.queryByText('Certifier name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Certifier phone')).not.toBeInTheDocument();
   });
 });

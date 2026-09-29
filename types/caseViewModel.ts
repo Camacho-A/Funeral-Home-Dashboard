@@ -36,6 +36,22 @@ export type ChecklistItemViewModel = {
       value is 24-hour HH:mm but should render/edit as 12-hour AM/PM (e.g.
       Time of Death). Undefined for every other item. */
   valueKind?: 'time';
+  /** Task #7 follow-up (2026-09). Mirrors ChecklistItemTemplate.
+      requiredCaseFields — present only for an isDerived item whose
+      completion (and, as of this change, editing) comes from one or more
+      structured Case fields directly (Certifier Information's
+      ['certifierName', 'certifierPhone'] today). Undefined for every other
+      item, including the terminal return-of-remains item (that one's
+      isDerived comes from a separate override in viewModel.ts, never from
+      a template's requiredCaseFields). */
+  requiredCaseFields?: string[];
+  /** The current value of each requiredCaseFields entry, keyed by field
+      name — a read-only snapshot for display, exactly like `fieldValue`
+      already is for a hasField item. ChecklistCard only knows how to
+      render specific, known field names (certifierName/certifierPhone
+      today); an unrecognized key here is simply not rendered, never
+      guessed at generically. */
+  requiredCaseFieldValues?: Record<string, string>;
 };
 
 export type VaStepViewModel = {

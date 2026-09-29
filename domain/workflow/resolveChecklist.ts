@@ -63,6 +63,10 @@ export function resolveChecklist(
       fieldIsPassword: Boolean(item.isPasswordField),
       isDerived: Boolean(item.requiredCaseFields),
       valueKind: item.valueKind,
+      requiredCaseFields: item.requiredCaseFields,
+      requiredCaseFieldValues: item.requiredCaseFields
+        ? Object.fromEntries(item.requiredCaseFields.map((field) => [field, (case_[field as keyof Case] as string | null) ?? '']))
+        : undefined,
     };
   });
 }

@@ -29,9 +29,14 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
  */
 export const LEGACY_CERTIFIER_ITEM_LABEL = 'Hospice or physician who will sign the DC — name & phone number';
 export const CERTIFIER_INFORMATION_LABEL = 'Certifier Information';
+const CERTIFIER_REQUIRED_CASE_FIELDS = ['certifierName', 'certifierPhone'];
 
 function nonEmpty(value: string | null): boolean {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function certifierRequiredCaseFieldValues(case_: Case): Record<string, string> {
+  return { certifierName: case_.certifierName ?? '', certifierPhone: case_.certifierPhone ?? '' };
 }
 
 /**
@@ -53,26 +58,35 @@ export function presentedChecklistItemLabel(label: string, organizationId: strin
  *
  * - If the case has NOT started using the new structured certifierName/
  *   certifierPhone fields (both null/empty — the common case for every
- *   existing legacy Case today), this is a PURE label swap: done/locked/
- *   hasField/fieldValue are all left exactly as resolveChecklist already
- *   computed them, preserving the historical fieldValues-based completion
- *   mechanism byte-for-byte. No functional behavior changes for a legacy
- *   Case nobody has touched yet.
+ *   existing legacy Case today), `done`/`locked` are left exactly as
+ *   resolveChecklist already computed them (the historical, fieldValues-
+ *   based rule) — a Task #7 follow-up fix must never itself flip an
+ *   existing case's completion state, which would silently change
+ *   workflow progression the moment it deploys. What DOES change here
+ *   (2026-09 follow-up): the item stops rendering/editing the raw legacy
+ *   fieldValues entry (`hasField: true`, showing whatever free text was
+ *   typed under the old "Hospice or physician..." item) — that was the
+ *   actual reported bug, staff typing into a box now *labeled* "Certifier
+ *   Information" but which silently saved into the legacy dcContact
+ *   fieldValues slot, never into `Case.certifierName`/`certifierPhone`.
+ *   It now renders the same structured Name+Phone fields a v5+ Case uses,
+ *   reading/writing only `Case.certifierName`/`certifierPhone` — the old
+ *   fieldValues entry (if any) is left completely untouched, purely
+ *   historical, never read or migrated by this change.
  * - If the case DOES already carry structured certifier data (staff have
  *   started filling in Case Detail's Certifier Information section, which
  *   is wired unconditionally regardless of template version), the item
  *   switches to the same Name+Phone `requiredCaseFields` completion rule
- *   v5 Cases use, and the old free-text fieldValues entry (if any) becomes
- *   purely historical — never read, never silently treated as equivalent.
- *   The immediately-following item's `locked` state is recomputed to stay
- *   consistent with the new done value (mirroring what
+ *   v5 Cases use. The immediately-following item's `locked` state is
+ *   recomputed to stay consistent with the new done value (mirroring what
  *   domain/workflow/resolveChecklist.ts would have computed had this been
  *   the item's real completion rule from the start).
  * - Never called with `isPastStage: true` in a way that would contradict
- *   resolveChecklist's own "a past stage is done by definition" rule — the
- *   completion-rule upgrade is skipped entirely for a past-stage view,
- *   leaving only the label swapped, exactly like the "no structured data
- *   yet" branch above.
+ *   resolveChecklist's own "a past stage is done by definition" rule — a
+ *   past stage's checklist is a read-only historical record, so it keeps
+ *   showing exactly what was frozen at the time (the legacy fieldValues
+ *   text, if that's what the case actually had) rather than being
+ *   retroactively re-presented as the new structured fields.
  *
  * A no-op (returns `items` unchanged) for any organization other than
  * managed-cremations, and for any item list that doesn't contain the
@@ -88,11 +102,24 @@ export function applyLegacyCertifierPresentation(
   const idx = items.findIndex((item) => item.label === LEGACY_CERTIFIER_ITEM_LABEL);
   if (idx === -1) return items;
 
+  const result = [...items];
+  if (isPastStage) {
+    result[idx] = { ...items[idx], label: CERTIFIER_INFORMATION_LABEL };
+    return result;
+  }
+
   const hasStructuredCertifierData = nonEmpty(case_.certifierName) || nonEmpty(case_.certifierPhone);
 
-  const result = [...items];
-  if (isPastStage || !hasStructuredCertifierData) {
-    result[idx] = { ...items[idx], label: CERTIFIER_INFORMATION_LABEL };
+  if (!hasStructuredCertifierData) {
+    result[idx] = {
+      ...items[idx],
+      label: CERTIFIER_INFORMATION_LABEL,
+      hasField: false,
+      fieldValue: '',
+      isDerived: true,
+      requiredCaseFields: CERTIFIER_REQUIRED_CASE_FIELDS,
+      requiredCaseFieldValues: certifierRequiredCaseFieldValues(case_),
+    };
     return result;
   }
 
@@ -102,7 +129,10 @@ export function applyLegacyCertifierPresentation(
     label: CERTIFIER_INFORMATION_LABEL,
     done,
     hasField: false,
+    fieldValue: '',
     isDerived: true,
+    requiredCaseFields: CERTIFIER_REQUIRED_CASE_FIELDS,
+    requiredCaseFieldValues: certifierRequiredCaseFieldValues(case_),
   };
   if (idx + 1 < result.length) {
     result[idx + 1] = { ...result[idx + 1], locked: !done };

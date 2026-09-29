@@ -311,6 +311,15 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
     expect(incomplete.checklist[6].done).toBe(false);
   });
 
+  it('Task #7 reopened (2026-09): a new v5 Case\'s Certifier Information item carries requiredCaseFieldValues from Case.certifierName/certifierPhone, driving the Workflow checklist\'s dual-field editor', () => {
+    const vm = buildCaseViewModel(baseCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' }), {
+      staffList: [],
+    });
+    expect(vm.checklist[6].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+    expect(vm.checklist[6].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    expect(vm.checklist[6].hasField).toBe(false);
+  });
+
   it('an already-past First Call & Payment stage (v5) still reports "Certifier Information" as the completed item\'s label in the timeline', () => {
     const case_ = baseCase({ rawStage: 2, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
     const vm = buildCaseViewModel(case_, { staffList: [] });
@@ -348,14 +357,22 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
       expect(rawItem?.label).toBe('Hospice or physician who will sign the DC — name & phone number');
     });
 
-    it('a legacy Case with no structured certifier data preserves its exact historical done/locked state (pure relabel, no completion-rule change)', () => {
+    it('a legacy Case with no structured certifier data preserves its exact historical done/locked state (Task #7 follow-up: completion unchanged, editing surface fixed)', () => {
       const case_ = legacyCase({ rawStage: 0, fieldValues: { 6: 'Dr. Choi — 555-0100' } });
       const vm = buildCaseViewModel(case_, { staffList: [] });
       // The old free-text fieldValues[6] entry still drives completion,
-      // exactly as it always has — never silently reinterpreted.
+      // exactly as it always has — never silently reinterpreted. This must
+      // never flip when the display/editing fix below deploys.
       expect(vm.checklist[6].label).toBe('Certifier Information');
       expect(vm.checklist[6].done).toBe(true);
-      expect(vm.checklist[6].hasField).toBe(true);
+      // Task #7 follow-up (2026-09): the editing surface is no longer the
+      // raw legacy free-text box — it's the structured Name+Phone editor,
+      // reading real (here still-blank) Case.certifierName/certifierPhone,
+      // never the legacy fieldValues[6] text.
+      expect(vm.checklist[6].hasField).toBe(false);
+      expect(vm.checklist[6].fieldValue).toBe('');
+      expect(vm.checklist[6].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+      expect(vm.checklist[6].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
     });
 
     it('10. B2026-034-style legacy Case: the compatibility behavior requires no data migration — same generic function, no per-case special-casing', () => {

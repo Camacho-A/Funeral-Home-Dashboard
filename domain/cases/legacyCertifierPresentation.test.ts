@@ -76,11 +76,19 @@ describe('applyLegacyCertifierPresentation', () => {
     expect(result[0].label).not.toContain('Hospice');
   });
 
-  it('a case with no structured certifier data preserves the exact existing done/locked/hasField/fieldValue behavior (pure relabel)', () => {
+  it('Task #7 follow-up (2026-09): a case with no structured certifier data preserves the exact existing done/locked state, but now presents the structured Name+Phone editor — never the raw legacy fieldValues box', () => {
     const case_ = baseCase();
     const items = [item({ done: true, locked: false, hasField: true, fieldValue: 'Dr. Choi — 555-0100', isDerived: false })];
     const result = applyLegacyCertifierPresentation(items, case_, false);
-    expect(result[0]).toMatchObject({ done: true, locked: false, hasField: true, fieldValue: 'Dr. Choi — 555-0100', isDerived: false });
+    // done/locked preserved byte-for-byte — this fix must never itself flip
+    // an existing case's completion state.
+    expect(result[0]).toMatchObject({ done: true, locked: false });
+    // The editing surface changes: no longer the raw legacy free-text box.
+    expect(result[0].hasField).toBe(false);
+    expect(result[0].fieldValue).toBe('');
+    expect(result[0].isDerived).toBe(true);
+    expect(result[0].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
   });
 
   it('does not silently copy the old dcContact fieldValue into structured Case fields — untouched by this presentation layer', () => {
@@ -89,6 +97,30 @@ describe('applyLegacyCertifierPresentation', () => {
     applyLegacyCertifierPresentation(items, case_, false);
     expect(case_.certifierName).toBeNull();
     expect(case_.certifierPhone).toBeNull();
+  });
+
+  it('Task #7 follow-up: the legacy fieldValue is left completely untouched (never read into requiredCaseFieldValues) even though the item no longer displays it', () => {
+    const case_ = baseCase();
+    const items = [item({ fieldValue: 'Dr. Choi — 555-0100' })];
+    const result = applyLegacyCertifierPresentation(items, case_, false);
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
+  });
+
+  it('Task #7 follow-up: once structured data exists, requiredCaseFieldValues reflects the real Case.certifierName/certifierPhone values', () => {
+    const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    const items = [item({})];
+    const result = applyLegacyCertifierPresentation(items, case_, false);
+    expect(result[0].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+  });
+
+  it('Task #7 follow-up: a past-stage view keeps showing the raw legacy fieldValue untouched (historical record), never the new structured editor', () => {
+    const case_ = baseCase();
+    const items = [item({ hasField: true, fieldValue: 'Dr. Choi — 555-0100', isDerived: false })];
+    const result = applyLegacyCertifierPresentation(items, case_, true);
+    expect(result[0].hasField).toBe(true);
+    expect(result[0].fieldValue).toBe('Dr. Choi — 555-0100');
+    expect(result[0].requiredCaseFields).toBeUndefined();
   });
 
   it('3. an old dcContact value alone never marks the item done via the new rule (Name only present is still incomplete)', () => {

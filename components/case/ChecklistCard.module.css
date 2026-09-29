@@ -100,3 +100,29 @@
   font-weight: var(--font-weight-bold);
   color: var(--color-text-secondary);
 }
+
+/* Required Case Fields group (Task #7 follow-up, 2026-09): Certifier
+   Information's Name + Phone rendered together, visually grouped, so it's
+   obvious both belong to the same checklist requirement — indented to
+   match .fieldInput/.timeFieldGroup's alignment under the checkbox/label
+   row above. */
+.requiredFieldsGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-1) 28px;
+  max-width: 420px;
+}
+
+.requiredFieldRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.requiredFieldLabel {
+  font-size: var(--font-size-12);
+  color: var(--color-text-secondary);
+  min-width: 90px;
+  flex-shrink: 0;
+}

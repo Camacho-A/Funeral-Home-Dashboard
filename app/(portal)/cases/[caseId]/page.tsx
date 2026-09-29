@@ -291,6 +291,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onBackToCurrentStage={() => setViewingDisplayStage(null)}
             onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone)}
             onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}
+            onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
+            onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
           />
 
           <div className={styles.overviewPair}>

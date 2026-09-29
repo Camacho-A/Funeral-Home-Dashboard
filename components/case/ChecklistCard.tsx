@@ -230,18 +230,92 @@ function ChecklistTimeInput({
   );
 }
 
+/**
+ * Task #7 follow-up (2026-09). A `requiredCaseFields` item's editable
+ * surface — currently only Certifier Information's
+ * ['certifierName', 'certifierPhone'] — reusing ChecklistFieldInput per
+ * field (the same save-race-safe textbox every hasField item already
+ * uses) rather than inventing a new input component. Deliberately not a
+ * fully generic "render any Case field by name" renderer: only the field
+ * names this component actually knows how to label and save are rendered
+ * at all, so an unrecognized future requiredCaseFields entry is silently
+ * skipped here rather than guessed at.
+ *
+ * Writes go straight to the named onSave callback (which
+ * hooks/useCaseMutations.ts's setCertifierName/setCertifierPhone turn
+ * into a `{ certifierX: value }`-only patch, the exact same path Case
+ * Information's own Certifier fields already use) — never through
+ * onFieldChange/setFieldValue, so no fieldValues mirror is ever created
+ * for these fields, and the legacy dcContact fieldValues entry (if any)
+ * is never read or touched.
+ */
+const REQUIRED_CASE_FIELD_LABELS: Record<string, string> = {
+  certifierName: 'Certifier name',
+  certifierPhone: 'Certifier phone',
+};
+
+function RequiredCaseFieldsGroup({
+  item,
+  disabled,
+  onSaveCertifierName,
+  onSaveCertifierPhone,
+}: {
+  item: ChecklistItemViewModel;
+  disabled: boolean;
+  onSaveCertifierName?: (value: string | null) => void;
+  onSaveCertifierPhone?: (value: string | null) => void;
+}) {
+  const fields = item.requiredCaseFields ?? [];
+  const values = item.requiredCaseFieldValues ?? {};
+  const commit = (onSave: ((value: string | null) => void) | undefined) => (newValue: string) => {
+    const trimmed = newValue.trim();
+    onSave?.(trimmed.length > 0 ? trimmed : null);
+  };
+
+  return (
+    <div className={styles.requiredFieldsGroup}>
+      {fields.includes('certifierName') && (
+        <div className={styles.requiredFieldRow}>
+          <span className={styles.requiredFieldLabel}>{REQUIRED_CASE_FIELD_LABELS.certifierName}</span>
+          <ChecklistFieldInput
+            value={values.certifierName ?? ''}
+            isPassword={false}
+            disabled={disabled}
+            onCommit={commit(onSaveCertifierName)}
+          />
+        </div>
+      )}
+      {fields.includes('certifierPhone') && (
+        <div className={styles.requiredFieldRow}>
+          <span className={styles.requiredFieldLabel}>{REQUIRED_CASE_FIELD_LABELS.certifierPhone}</span>
+          <ChecklistFieldInput
+            value={values.certifierPhone ?? ''}
+            isPassword={false}
+            disabled={disabled}
+            onCommit={commit(onSaveCertifierPhone)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChecklistCard({
   checklist,
   viewingStageLabel,
   onBackToCurrentStage,
   onToggleItem,
   onFieldChange,
+  onSaveCertifierName,
+  onSaveCertifierPhone,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
   onBackToCurrentStage: () => void;
   onToggleItem: (index: number, newDone: boolean) => void;
   onFieldChange: (index: number, value: string) => void;
+  onSaveCertifierName?: (value: string | null) => void;
+  onSaveCertifierPhone?: (value: string | null) => void;
 }) {
   const readOnly = viewingStageLabel !== null;
 
@@ -301,6 +375,14 @@ export function ChecklistCard({
                   isPassword={item.fieldIsPassword}
                   disabled={readOnly || item.locked}
                   onCommit={(newValue) => onFieldChange(item.index, newValue)}
+                />
+              )}
+              {!item.hasField && item.requiredCaseFields && item.requiredCaseFields.length > 0 && (
+                <RequiredCaseFieldsGroup
+                  item={item}
+                  disabled={readOnly || item.locked}
+                  onSaveCertifierName={onSaveCertifierName}
+                  onSaveCertifierPhone={onSaveCertifierPhone}
                 />
               )}
             </div>
