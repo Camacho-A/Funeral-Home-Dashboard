@@ -676,3 +676,45 @@ describe('casesService.create/update — wix mode (dataAdapterMode = "wix")', ()
     );
   });
 });
+
+/**
+ * Task #7 (2026-09). Audit-confirmed, not a bug fix — mirrors
+ * lib/wixCaseMapper.test.ts's identical Certifier-on-legacy-v3-case
+ * coverage against the mock-mode update path, so the two never diverge.
+ */
+describe('casesService.update — Certifier Name/Phone on a legacy (v3) case (Task #7, 2026-09)', () => {
+  it('staff can populate both structured Certifier fields on a legacy v3 case, preserving dcContact/workflowSnapshot/unrelated fields', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Legacy V3 Certifier Test', nextOfKinName: 'Karen Ellison', nextOfKinPhone: '555-0155' },
+      session,
+      template,
+    );
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    const index = caseFixtures.findIndex((c) => c.id === created.id);
+    caseFixtures[index] = {
+      ...caseFixtures[index],
+      workflowTemplateVersion: 3,
+      workflowSnapshot: { workflowTemplateId: template.id, workflowTemplateVersion: 3, stages: v1.stages, intake: v1.intake },
+      fieldValues: { ...created.fieldValues, 6: 'DR. LINDA CHOI — 555-0100' },
+      certifierName: null,
+      certifierPhone: null,
+    };
+    const beforeSnapshot = caseFixtures[index].workflowSnapshot;
+
+    const updated = await casesService.update(organization, created.id, {
+      certifierName: 'DR. LINDA CHOI',
+      certifierPhone: '555-0100',
+    });
+
+    expect(updated.certifierName).toBe('DR. LINDA CHOI');
+    expect(updated.certifierPhone).toBe('555-0100');
+    expect(updated.workflowSnapshot).toEqual(beforeSnapshot);
+    expect(updated.workflowTemplateVersion).toBe(3);
+    expect(updated.fieldValues[6]).toBe('DR. LINDA CHOI — 555-0100');
+    expect(updated.nextOfKinName).toBe('KAREN ELLISON');
+    expect(updated.nextOfKinPhone).toBe('555-0155');
+  });
+});

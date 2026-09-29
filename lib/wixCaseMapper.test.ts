@@ -896,3 +896,64 @@ describe('applyCaseUpdateToWixData — Case Information field sync fix (2026-09)
     expect(result.checklistState).toEqual(validItem.checklistState);
   });
 });
+
+/**
+ * Task #7 (2026-09). Audit-confirmed, not a bug fix: structured Certifier
+ * Name/Phone already work on a legacy (pre-v5) case exactly as they do on
+ * a v5+ case — buildStructuredIntakeFieldPatch/applyCaseUpdateToWixData
+ * never gate on workflowTemplateVersion for these two fields (they have
+ * no checklistItemIndex at all, on any version). These tests lock that in
+ * as an explicit regression against the exact real-world shape ("a v3 case
+ * whose Certifier Information was never entered, with the old free-text
+ * dcContact still sitting in fieldValues[6]"), since every existing
+ * Certifier test above exercises a v1-shaped `validItem` that happens to
+ * have no dcContact entry at all.
+ */
+describe('applyCaseUpdateToWixData — Certifier Name/Phone on a legacy (v3) case (Task #7, 2026-09)', () => {
+  const LEGACY_V3_ITEM = {
+    ...validItem,
+    workflowTemplateVersion: 3,
+    workflowSnapshot: { ...validItem.workflowSnapshot, workflowTemplateVersion: 3 },
+    fieldValues: { 0: 'Robert Ellison', 6: 'DR. LINDA CHOI — 555-0100' },
+    certifierName: null,
+    certifierPhone: null,
+  };
+
+  it('staff can populate both structured Certifier fields on a legacy v3 case with none set', () => {
+    const result = applyCaseUpdateToWixData(LEGACY_V3_ITEM, {
+      certifierName: 'DR. LINDA CHOI',
+      certifierPhone: '555-0100',
+    });
+    expect(result.certifierName).toBe('DR. LINDA CHOI');
+    expect(result.certifierPhone).toBe('555-0100');
+  });
+
+  it('the frozen v3 workflowSnapshot is passed through byte-for-byte unchanged by a Certifier edit', () => {
+    const result = applyCaseUpdateToWixData(LEGACY_V3_ITEM, { certifierName: 'DR. LINDA CHOI', certifierPhone: '555-0100' });
+    expect(result.workflowSnapshot).toEqual(LEGACY_V3_ITEM.workflowSnapshot);
+    expect(result.workflowTemplateVersion).toBe(3);
+  });
+
+  it('the legacy dcContact fieldValues entry is never copied into, parsed for, or otherwise touched by a Certifier edit', () => {
+    const result = applyCaseUpdateToWixData(LEGACY_V3_ITEM, { certifierName: 'DR. LINDA CHOI', certifierPhone: '555-0100' });
+    const fieldValues = result.fieldValues as Record<string, string>;
+    expect(fieldValues).toEqual(LEGACY_V3_ITEM.fieldValues);
+    expect(fieldValues[6]).toBe('DR. LINDA CHOI — 555-0100');
+  });
+
+  it('a Certifier edit preserves Time of Death, Weight, NOK, and every other unrelated Case field (full-object Wix safety)', () => {
+    const result = applyCaseUpdateToWixData(LEGACY_V3_ITEM, { certifierName: 'DR. LINDA CHOI', certifierPhone: '555-0100' });
+    expect(result.timeOfDeath).toBe(LEGACY_V3_ITEM.timeOfDeath);
+    expect(result.weight).toBe(LEGACY_V3_ITEM.weight);
+    expect(result.nextOfKinName).toBe(LEGACY_V3_ITEM.nextOfKinName);
+    expect(result.nextOfKinPhone).toBe(LEGACY_V3_ITEM.nextOfKinPhone);
+    expect(result.caseNumber).toBe(LEGACY_V3_ITEM.caseNumber);
+    expect(result.currentStage).toBe(LEGACY_V3_ITEM.currentStage);
+    expect(result.checklistState).toEqual(LEGACY_V3_ITEM.checklistState);
+  });
+
+  it('populating Certifier fields on a legacy case never introduces a fieldValues entry for them (no checklistItemIndex exists for certifier fields on any version)', () => {
+    const result = applyCaseUpdateToWixData(LEGACY_V3_ITEM, { certifierName: 'DR. LINDA CHOI', certifierPhone: '555-0100' });
+    expect(Object.keys(result.fieldValues as Record<string, string>).sort()).toEqual(['0', '6']);
+  });
+});
