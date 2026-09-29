@@ -4,7 +4,9 @@ import {
   standardCremationWorkflowTemplateFixture,
   STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID,
 } from '@/services/__mocks__/workflowTemplates';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser, mockReadOnlyUser, mockManagerUser } from '@/services/__mocks__/authFixtures';
+import { organizationRolePermissionOverrideFixtures } from '@/services/__mocks__/rbacFixtures';
+import { organizationRolePermissionOverrideId } from '@/domain/rbac/deterministicIds';
 import type { IntakeTemplate, StageTemplate } from '@/types/workflowTemplate';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
@@ -33,6 +35,29 @@ let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUs
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
 }));
+
+// Task #11 security follow-up (2026-09). The POST route now calls
+// canPublishWorkflow before any write. Under DATA_ADAPTER=mock this
+// resolves against real in-memory RBAC fixtures with no extra mocking
+// needed (mockDefaultUser is a real 'administrator', which genuinely has
+// workflow.publish) — see the dedicated "Authorization" describe block
+// below, which exercises that real resolution end to end. This partial
+// mock exists only for the pre-existing tests below whose own concern is
+// version-creation *mechanics*, not authorization, and which use either a
+// user/org combination with no real RBAC role (mockMultiOrgUser's
+// 'caseManager') or DATA_ADAPTER=wix (whose RBAC resolution would need
+// its own Wix collection mocking this file doesn't otherwise set up) —
+// those explicitly opt back into a real/false resolution per test.
+vi.mock('@/services/authorizationPolicyService', async () => {
+  const actual = await vi.importActual<typeof import('@/services/authorizationPolicyService')>(
+    '@/services/authorizationPolicyService',
+  );
+  return { ...actual, canPublishWorkflow: (...args: Parameters<typeof actual.canPublishWorkflow>) => mockCanPublishWorkflow(...args) };
+});
+const { canPublishWorkflow: realCanPublishWorkflow } = await vi.importActual<
+  typeof import('@/services/authorizationPolicyService')
+>('@/services/authorizationPolicyService');
+let mockCanPublishWorkflow: typeof realCanPublishWorkflow = realCanPublishWorkflow;
 
 const { POST } = await import('./route');
 const { WixDataApiError } = await import('@/lib/wixDataApi');
@@ -97,6 +122,7 @@ beforeEach(() => {
   mockQueryWixDataItems = vi.fn();
   mockInsertWixDataItem = vi.fn();
   mockSession = { user: mockDefaultUser };
+  mockCanPublishWorkflow = realCanPublishWorkflow;
 });
 
 afterEach(() => {
@@ -110,6 +136,10 @@ afterEach(() => {
   // (in this file or any other importing the same fixture module) see the
   // same starting state every time.
   standardCremationWorkflowTemplateFixture.versions.length = 1;
+  // Task #11 security follow-up: any test-scoped grant/revoke override
+  // pushed onto this shared, module-level fixture must not leak into
+  // later tests (in this file or any other importing the same module).
+  organizationRolePermissionOverrideFixtures.length = 0;
 });
 
 describe('POST /api/workflow-templates/[templateId]/versions — authorization', () => {
@@ -142,6 +172,102 @@ describe('POST /api/workflow-templates/[templateId]/versions — authorization',
   it('returns 400 when organizationId is missing from the body', async () => {
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, { stages: [stage(0, 'X')] });
     expect(response.status).toBe(400);
+  });
+});
+
+/**
+ * Task #11 security follow-up (2026-09). Previously this route had no
+ * RBAC check at all beyond organization membership — any authenticated
+ * staff member could create a new workflow template version. These tests
+ * exercise the real `canPublishWorkflow`/`workflow.publish` resolution end
+ * to end (no service-level mocking — see the top-level
+ * authorizationPolicyService mock's own comment for why that's safe here)
+ * against real mock-mode RBAC fixtures, proving the write is genuinely
+ * blocked before it happens, not merely hidden by the UI.
+ */
+describe('POST /api/workflow-templates/[templateId]/versions — RBAC (Task #11 security follow-up, 2026-09)', () => {
+  it('denies an authenticated organization member without workflow.publish (readOnly)', async () => {
+    mockSession = { user: mockReadOnlyUser };
+    const beforeCount = standardCremationWorkflowTemplateFixture.versions.length;
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'Renamed by readOnly')],
+    });
+    const body = await response.json();
+    expect(response.status).toBe(403);
+    expect(body.error).toBe('Not authorized.');
+    // Zero write: no new version, no mutation of the existing one.
+    expect(standardCremationWorkflowTemplateFixture.versions.length).toBe(beforeCount);
+    expect(standardCremationWorkflowTemplateFixture.versions[0].stages[0].label).not.toBe('Renamed by readOnly');
+  });
+
+  it('allows an authorized administrator (workflow.publish via the base role) to save a new version, unchanged from before this fix', async () => {
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'Renamed by administrator')],
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.workflowTemplate.versions).toHaveLength(2);
+  });
+
+  it('allows an authorized manager (workflow.publish via the base role, distinct from administrator) to save a new version', async () => {
+    mockSession = { user: mockManagerUser };
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'Renamed by manager')],
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('cross-tenant: a caller with no membership in the target organization is denied at the organization-authorization step, before the RBAC/permission check ever runs', async () => {
+    mockSession = { user: mockMultiOrgUser }; // no membership row in DEFAULT_ORGANIZATION_ID at all
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'X')],
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('an organization-specific grant override respects "base ∪ grants": readOnly (no base workflow.publish) becomes authorized once granted', async () => {
+    organizationRolePermissionOverrideFixtures.push({
+      id: organizationRolePermissionOverrideId(DEFAULT_ORGANIZATION_ID, 'readOnly', 'workflow.publish'),
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      roleKey: 'readOnly',
+      permissionKey: 'workflow.publish',
+      action: 'grant',
+      reason: 'Task #11 security follow-up test',
+      createdAt: '2026-09-28T00:00:00.000Z',
+      createdBy: 'test-admin',
+      updatedAt: '2026-09-28T00:00:00.000Z',
+    });
+    mockSession = { user: mockReadOnlyUser };
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'Renamed via granted readOnly')],
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('an organization-specific revoke override wins over the base role grant: administrator (has workflow.publish by default) is denied once revoked', async () => {
+    organizationRolePermissionOverrideFixtures.push({
+      id: organizationRolePermissionOverrideId(DEFAULT_ORGANIZATION_ID, 'administrator', 'workflow.publish'),
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      roleKey: 'administrator',
+      permissionKey: 'workflow.publish',
+      action: 'revoke',
+      reason: 'Task #11 security follow-up test',
+      createdAt: '2026-09-28T00:00:00.000Z',
+      createdBy: 'test-admin',
+      updatedAt: '2026-09-28T00:00:00.000Z',
+    });
+    const beforeCount = standardCremationWorkflowTemplateFixture.versions.length;
+    const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      stages: [stage(0, 'Renamed despite revoke')],
+    });
+    expect(response.status).toBe(403);
+    expect(standardCremationWorkflowTemplateFixture.versions.length).toBe(beforeCount);
   });
 });
 
@@ -258,6 +384,12 @@ describe('POST /api/workflow-templates/[templateId]/versions — mock mode', () 
 
   it('returns 404 for a template id that does not belong to this organization', async () => {
     mockSession = { user: mockMultiOrgUser };
+    // mockMultiOrgUser's membership in SECOND_MOCK_ORGANIZATION_ID uses the
+    // legacy 'caseManager' role string, which resolves no real RBAC grants
+    // at all — irrelevant to what this test actually checks (tenant-scoped
+    // template lookup), so authorization is granted here explicitly rather
+    // than this test silently asserting a 403 it was never about.
+    mockCanPublishWorkflow = async () => true;
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
       organizationId: SECOND_MOCK_ORGANIZATION_ID,
       stages: [stage(0, 'X')],
@@ -271,6 +403,14 @@ describe('POST /api/workflow-templates/[templateId]/versions — wix mode', () =
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
+    // Task #11 security follow-up: this describe block's own concern is
+    // Wix insert mechanics, not RBAC resolution, and mockQueryWixDataItems
+    // below isn't shaped to answer real 'roles'/'rolePermissions' queries
+    // — bypass the (now-real-by-default) authorization check here so
+    // these pre-existing tests keep testing what they always tested. Real
+    // authorization resolution (allow/deny) is covered by the dedicated
+    // "Authorization" describe block further down, under mock mode.
+    mockCanPublishWorkflow = async () => true;
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'workflowTemplates') return Promise.resolve({ dataItems: [WIX_TEMPLATE_ITEM] });
       return Promise.resolve({ dataItems: [WIX_VERSION_ITEM] });

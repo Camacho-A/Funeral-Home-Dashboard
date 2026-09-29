@@ -57,9 +57,11 @@ import styles from './Sidebar.module.css';
  * shown if any one of them would be. This intentionally does NOT account
  * for the pre-existing Audit/Templates/Resources/etc. links, which were
  * out of this item's scope and are unaffected either way. Workflow
- * Templates (Task #11, 2026-09) is now also `user.manageRoles`-gated,
- * exactly like Roles & Permissions above — already covered by this same
- * `canSeeSettings` check, so no separate condition was needed here.
+ * Templates (Task #11, 2026-09; security follow-up) is gated on
+ * `workflow.publish` — included explicitly below so a hypothetical
+ * custom role holding only that permission (no default role is shaped
+ * this way today; Manager already has `case.create` too) still
+ * discovers Settings via this link.
  */
 export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode }) {
   const { organizationId } = useOrganization();
@@ -72,7 +74,8 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
     authAdapterMode === 'identity' || // Security is always available to any identity-mode session
     permissions.includes('caseNumber.manage') ||
     permissions.includes('user.manageRoles') ||
-    permissions.includes('case.create');
+    permissions.includes('case.create') ||
+    permissions.includes('workflow.publish');
   const activeStaffCountQuery = useActiveStaffCount(organizationId, authAdapterMode === 'identity');
 
   return (

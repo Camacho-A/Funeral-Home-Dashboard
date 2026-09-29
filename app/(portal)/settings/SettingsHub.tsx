@@ -49,11 +49,21 @@ type AdminArea = {
  * this page, unconditionally — no card, no visibility gate at all, unlike
  * every area above. Moved to its own dedicated `/settings/workflow-templates`
  * route (see that page's own comment) and given a card here like every
- * other area. `user.manageRoles` is reused as its visibility gate — the
- * same "admin-tier" permission already gating Roles & Permissions and the
- * Case Numbering fallback above — rather than inventing a new permission;
- * the underlying API routes' own authorization
- * (requireAuthorizedOrganization, unchanged) remains exactly as it was.
+ * other area.
+ *
+ * Security follow-up (2026-09): first gated on `user.manageRoles`
+ * (matching Roles & Permissions' own gate above), but that permission is
+ * about role/user administration, not workflow administration — Manager
+ * (default role) has `workflow.edit`/`workflow.publish` but deliberately
+ * NOT `user.manageRoles` ("without organization- or role-management
+ * access," see domain/rbac/defaultRoles.ts), so that gate would have hidden
+ * this card from exactly the role meant to use it. Switched to
+ * `workflow.publish` — already defined in the permission catalog
+ * ("Publish a new workflow template version") and already wired into
+ * `canPublishWorkflow`, just previously never called from anywhere — the
+ * same permission the write route (app/api/workflow-templates/
+ * [templateId]/versions/route.ts) now enforces server-side, so the UI and
+ * API agree on who's authorized. Reused, not invented.
  */
 export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterMode }) {
   const { organizationId } = useOrganization();
@@ -91,7 +101,7 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
       label: 'Workflow Templates',
       description: 'Manage this organization’s case workflow stages and intake fields.',
       href: '/settings/workflow-templates',
-      visible: permissions.includes('user.manageRoles'),
+      visible: permissions.includes('workflow.publish'),
     },
     {
       key: 'import-jotform',

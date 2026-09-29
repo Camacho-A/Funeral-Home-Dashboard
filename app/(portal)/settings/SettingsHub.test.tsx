@@ -142,7 +142,7 @@ describe('SettingsHub — Organization Profile (2026-09)', () => {
   });
 
   it('35. every other existing Settings area remains reachable alongside the new card', async () => {
-    mockPermissions(['organization.manage', 'caseNumber.manage', 'case.create', 'user.manageRoles']);
+    mockPermissions(['organization.manage', 'caseNumber.manage', 'case.create', 'workflow.publish']);
     renderHub('mock');
     expect(await screen.findByText('Organization Profile')).toBeInTheDocument();
     expect(screen.getByText('Case Numbering')).toBeInTheDocument();
@@ -162,31 +162,46 @@ describe('SettingsHub — no empty sections (item #5, 2026-09)', () => {
 });
 
 /**
- * Task #11 (2026-09, Settings organization cleanup). Workflow Templates
- * used to render unconditionally, with no card and no visibility gate at
- * all — the one administrative area with no permission check, unlike
- * every other card here. Now a normal card, gated on `user.manageRoles`
- * (the same "admin-tier" permission already gating Roles & Permissions
- * and the Case Numbering fallback above — reused, not invented), linking
- * to its own dedicated `/settings/workflow-templates` page rather than
- * rendering inline.
+ * Task #11 (2026-09, Settings organization cleanup + security follow-up).
+ * Workflow Templates used to render unconditionally, with no card and no
+ * visibility gate at all — the one administrative area with no permission
+ * check, unlike every other card here. Now a normal card, linking to its
+ * own dedicated `/settings/workflow-templates` page rather than rendering
+ * inline.
+ *
+ * Gated on `workflow.publish` — not `user.manageRoles` as first shipped:
+ * that permission is about role/user administration, not workflow
+ * administration, and Manager (a default role) has `workflow.edit`/
+ * `workflow.publish` but deliberately NOT `user.manageRoles` ("without
+ * organization- or role-management access," domain/rbac/defaultRoles.ts),
+ * so the original gate would have hidden this card from exactly the role
+ * meant to use it. `workflow.publish` is the same permission the write
+ * route (app/api/workflow-templates/[templateId]/versions/route.ts) now
+ * enforces server-side, so the UI and API agree.
  */
 describe('SettingsHub — Workflow Templates (Task #11, 2026-09)', () => {
-  it('shows Workflow Templates for a caller holding user.manageRoles, org-agnostic (no identity-mode requirement)', async () => {
-    mockPermissions(['user.manageRoles']);
+  it('shows Workflow Templates for a caller holding workflow.publish, org-agnostic (no identity-mode requirement)', async () => {
+    mockPermissions(['workflow.publish']);
     renderHub('mock');
     expect(await screen.findByText('Workflow Templates')).toBeInTheDocument();
   });
 
-  it('hides Workflow Templates for a caller without user.manageRoles', async () => {
+  it('hides Workflow Templates for a caller without workflow.publish', async () => {
     mockPermissions([]);
     renderHub('mock');
     await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
     expect(screen.queryByText('Workflow Templates')).not.toBeInTheDocument();
   });
 
-  it('links to the dedicated /settings/workflow-templates page rather than rendering inline', async () => {
+  it('hides Workflow Templates for a caller holding only user.manageRoles — the two permissions are distinct', async () => {
     mockPermissions(['user.manageRoles']);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Workflow Templates')).not.toBeInTheDocument();
+  });
+
+  it('links to the dedicated /settings/workflow-templates page rather than rendering inline', async () => {
+    mockPermissions(['workflow.publish']);
     renderHub('mock');
     const link = (await screen.findByText('Workflow Templates')).closest('a');
     expect(link).toHaveAttribute('href', '/settings/workflow-templates');

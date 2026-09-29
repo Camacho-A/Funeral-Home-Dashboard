@@ -11,6 +11,7 @@ import { validateStageSequencing, validateIntakeFields } from '@/domain/workflow
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { canPublishWorkflow } from '@/services/authorizationPolicyService';
 import type { WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflowTemplate';
 
 /**
@@ -51,7 +52,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
   // session/membership — never used directly.
   const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
   if (!authResult.authorized) return authResult.response;
-  const { organizationId } = authResult.context;
+  const { organizationId, userId, role } = authResult.context;
+
+  // Task #11 security follow-up (2026-09): this route previously had no
+  // RBAC check at all beyond organization membership — any authenticated
+  // staff member could append a new workflow template version. Reuses the
+  // existing, already-defined-but-previously-unwired `workflow.publish`
+  // permission (see services/authorizationPolicyService.ts's own
+  // canPublishWorkflow, and its catalog description "Publish a new
+  // workflow template version" — an exact match for what this route
+  // does), rather than inventing a new permission. Evaluated for the SAME
+  // organization the write is about to target — never a different one —
+  // and strictly before any validation/write below.
+  const adapter = getDataAdapterMode();
+  if (!(await canPublishWorkflow({ identityId: userId, organizationId, roleKey: role }, adapter))) {
+    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+  }
 
   const { stages, errors: stageShapeErrors } = validateWorkflowStagesPayload(body);
   if (!stages) {
@@ -72,8 +88,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
   if (intakeErrors.length > 0) {
     return NextResponse.json({ error: 'Invalid intake structure.', details: intakeErrors }, { status: 400 });
   }
-
-  const adapter = getDataAdapterMode();
 
   if (adapter === 'mock') {
     const template = workflowTemplateFixtures.find(
