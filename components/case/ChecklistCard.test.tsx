@@ -38,6 +38,7 @@ function renderChecklist(checklist: ChecklistItemViewModel[], overrides: Partial
   const onBackToCurrentStage = vi.fn();
   const onSaveCertifierName = vi.fn();
   const onSaveCertifierPhone = vi.fn();
+  const onUpdateCaseInfo = vi.fn();
   render(
     <ChecklistCard
       checklist={checklist}
@@ -47,10 +48,11 @@ function renderChecklist(checklist: ChecklistItemViewModel[], overrides: Partial
       onFieldChange={onFieldChange}
       onSaveCertifierName={onSaveCertifierName}
       onSaveCertifierPhone={onSaveCertifierPhone}
+      onUpdateCaseInfo={onUpdateCaseInfo}
       {...overrides}
     />,
   );
-  return { onToggleItem, onFieldChange, onBackToCurrentStage, onSaveCertifierName, onSaveCertifierPhone };
+  return { onToggleItem, onFieldChange, onBackToCurrentStage, onSaveCertifierName, onSaveCertifierPhone, onUpdateCaseInfo };
 }
 
 function weightField() {
@@ -482,5 +484,147 @@ describe('ChecklistCard — Certifier Information dual-field editor (Task #7 reo
     renderChecklist([item({ index: 7, label: 'Return of remains', isDerived: true, requiredCaseFields: undefined })]);
     expect(screen.queryByText('Certifier name')).not.toBeInTheDocument();
     expect(screen.queryByText('Certifier phone')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Task #7 UI consistency follow-up (2026-09). Family Contact reuses the
+ * SAME generic RequiredCaseFieldsGroup renderer as Certifier, but saves
+ * through the single generic `onUpdateCaseInfo` callback (mirroring
+ * CaseInformationCard.tsx's own Next of kin fields exactly), not a
+ * dedicated per-field mutation, and Email gets the same validate-before-
+ * commit/revert-on-blur behavior as CaseInformationCard's own kind='email'
+ * EditableField.
+ */
+function familyContactItem(overrides: Partial<ChecklistItemViewModel> = {}): ChecklistItemViewModel {
+  return item({
+    index: 7,
+    label: 'Family contact — name, phone number & email',
+    hasField: false,
+    isDerived: true,
+    requiredCaseFields: ['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail'],
+    requiredCaseFieldValues: { nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: '' },
+    ...overrides,
+  });
+}
+
+function nokNameField() {
+  return within(screen.getByText('Next of kin').parentElement!).getByRole('textbox') as HTMLInputElement;
+}
+
+function nokPhoneField() {
+  return within(screen.getByText('NOK phone').parentElement!).getByRole('textbox') as HTMLInputElement;
+}
+
+function nokEmailField() {
+  return within(screen.getByText('NOK email').parentElement!).getByRole('textbox') as HTMLInputElement;
+}
+
+describe('ChecklistCard — Family Contact structured Name/Phone/Email editor (Task #7 UI consistency follow-up, 2026-09)', () => {
+  it('1/2/3/4. renders Name, Phone, and Email fields — exactly three inputs, the old combined free-text box no longer renders', () => {
+    renderChecklist([familyContactItem()]);
+    expect(screen.getByText('Next of kin')).toBeInTheDocument();
+    expect(screen.getByText('NOK phone')).toBeInTheDocument();
+    expect(screen.getByText('NOK email')).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText('Enter value to complete this step…')).toHaveLength(3);
+  });
+
+  it('5. Name/Phone/Email are initially blank when the structured Case fields are blank', () => {
+    renderChecklist([familyContactItem()]);
+    expect(nokNameField()).toHaveValue('');
+    expect(nokPhoneField()).toHaveValue('');
+    expect(nokEmailField()).toHaveValue('');
+  });
+
+  it('displays existing structured values when populated', () => {
+    renderChecklist([
+      familyContactItem({
+        requiredCaseFieldValues: { nextOfKinName: 'KAREN ELLISON', nextOfKinPhone: '555-0155', nextOfKinEmail: 'karen@example.com' },
+      }),
+    ]);
+    expect(nokNameField()).toHaveValue('KAREN ELLISON');
+    expect(nokPhoneField()).toHaveValue('555-0155');
+    expect(nokEmailField()).toHaveValue('karen@example.com');
+  });
+
+  it('9. editing and committing Name calls onUpdateCaseInfo with { nextOfKinName }, uppercased, never onFieldChange', () => {
+    const { onUpdateCaseInfo, onFieldChange } = renderChecklist([familyContactItem()]);
+    const nameField = nokNameField();
+    fireEvent.focus(nameField);
+    fireEvent.change(nameField, { target: { value: 'karen ellison' } });
+    fireEvent.blur(nameField);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinName: 'KAREN ELLISON' });
+    expect(onFieldChange).not.toHaveBeenCalled();
+  });
+
+  it('10. editing and committing Phone calls onUpdateCaseInfo with { nextOfKinPhone }, unmasked (no uppercase)', () => {
+    const { onUpdateCaseInfo } = renderChecklist([familyContactItem()]);
+    const phoneField = nokPhoneField();
+    fireEvent.focus(phoneField);
+    fireEvent.change(phoneField, { target: { value: '555-0155' } });
+    fireEvent.blur(phoneField);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinPhone: '555-0155' });
+  });
+
+  it('11. editing and committing a valid Email calls onUpdateCaseInfo with { nextOfKinEmail }', () => {
+    const { onUpdateCaseInfo } = renderChecklist([familyContactItem()]);
+    const emailField = nokEmailField();
+    fireEvent.focus(emailField);
+    fireEvent.change(emailField, { target: { value: 'karen@example.com' } });
+    fireEvent.blur(emailField);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinEmail: 'karen@example.com' });
+  });
+
+  it('an invalid Email does not commit on blur — silently reverts, matching EditableField kind="email" behavior', () => {
+    const { onUpdateCaseInfo } = renderChecklist([
+      familyContactItem({ requiredCaseFieldValues: { nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: 'karen@example.com' } }),
+    ]);
+    const emailField = nokEmailField();
+    fireEvent.focus(emailField);
+    fireEvent.change(emailField, { target: { value: 'not-an-email' } });
+    fireEvent.blur(emailField);
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(nokEmailField()).toHaveValue('karen@example.com');
+  });
+
+  it('an invalid Email on Enter shows an inline error and preserves the typed text', () => {
+    const { onUpdateCaseInfo } = renderChecklist([familyContactItem()]);
+    const emailField = nokEmailField();
+    fireEvent.focus(emailField);
+    fireEvent.change(emailField, { target: { value: 'not-an-email' } });
+    fireEvent.keyDown(emailField, { key: 'Enter' });
+    expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(emailField).toHaveValue('not-an-email');
+  });
+
+  it('clearing a field commits null, not an empty string', () => {
+    const { onUpdateCaseInfo } = renderChecklist([
+      familyContactItem({ requiredCaseFieldValues: { nextOfKinName: '', nextOfKinPhone: '555-0155', nextOfKinEmail: '' } }),
+    ]);
+    const phoneField = nokPhoneField();
+    fireEvent.focus(phoneField);
+    fireEvent.change(phoneField, { target: { value: '   ' } });
+    fireEvent.blur(phoneField);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinPhone: null });
+  });
+
+  it('17. viewingStageLabel (past-stage viewing) does NOT disable the Family Contact fields — live Case data, editable regardless of stage', () => {
+    renderChecklist([familyContactItem()], { viewingStageLabel: 'First Call & Payment' });
+    expect(nokNameField()).not.toBeDisabled();
+    expect(nokPhoneField()).not.toBeDisabled();
+    expect(nokEmailField()).not.toBeDisabled();
+  });
+
+  it('a locked Family Contact item disables all three fields even in past-stage view', () => {
+    renderChecklist([familyContactItem({ locked: true })], { viewingStageLabel: 'First Call & Payment' });
+    expect(nokNameField()).toBeDisabled();
+    expect(nokPhoneField()).toBeDisabled();
+    expect(nokEmailField()).toBeDisabled();
+  });
+
+  it('the checkbox stays disabled (isDerived) — never manually toggled, matching every other hasField-turned-structured item', () => {
+    renderChecklist([familyContactItem()]);
+    expect(screen.getByRole('checkbox', { name: 'Family contact — name, phone number & email' })).toBeDisabled();
   });
 });

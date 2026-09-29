@@ -1,6 +1,6 @@
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
-import type { CaseViewModel, RequiredDocumentViewModel } from '../../types/caseViewModel';
+import type { CaseViewModel, RequiredDocumentViewModel, ChecklistItemViewModel } from '../../types/caseViewModel';
 import { resolveChecklist } from '../workflow/resolveChecklist';
 import {
   findStageByRawStage,
@@ -99,6 +99,58 @@ function resolveDecedentInitials(decedentName: string): string {
   return decedentName.trim() === '' ? '?' : initialsFromName(decedentName);
 }
 
+const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail'];
+
+/**
+ * Family Contact structured Workflow presentation (2026-09, Task #7 UI
+ * consistency follow-up). "Family contact — name, phone number & email"
+ * has always been a hasField-backed checklist item combining
+ * nextOfKinName + nextOfKinPhone into one joined fieldValues string at
+ * intake time (see NewCaseModal.tsx's own comment on that join) —
+ * nextOfKinEmail has never been part of the checklist/fieldValues
+ * mechanism at all (no template version gives it a checklistItemIndex).
+ * Unlike Certifier, this item never got a v5-style requiredCaseFields
+ * completion upgrade, and this function doesn't invent one: `done`/
+ * `locked` are left completely untouched here, still governed by
+ * whatever resolveChecklist already computed from the historical
+ * fieldValues rule. Only the EDITING SURFACE changes — reading/writing
+ * the three already-authoritative structured Case fields Case
+ * Information already uses, never the joined fieldValues text (which
+ * stays exactly as-is, purely historical, in every branch, current or
+ * past stage — these are live Case contact fields, not part of the
+ * frozen stage snapshot, mirroring the same reasoning as
+ * legacyCertifierPresentation.ts's past-stage exception).
+ *
+ * Identifies the item generically — by finding whichever checklist index
+ * `nextOfKinName` maps to via the case's own workflowSnapshot.intake
+ * (findChecklistIndexForCaseField, the same reverse lookup Weight/Time of
+ * Death/Certifier already use) — never a literal label match, so this
+ * works for any organization/template shaped this way, not just
+ * managed-cremations, and needs no template/schema change at all.
+ */
+function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: Case): ChecklistItemViewModel[] {
+  if (!case_.workflowSnapshot) return items;
+  const familyContactIndex = findChecklistIndexForCaseField(case_.workflowSnapshot.intake, 'nextOfKinName');
+  if (familyContactIndex === null) return items;
+  const idx = items.findIndex((item) => item.index === familyContactIndex && item.hasField);
+  if (idx === -1) return items;
+
+  const result = [...items];
+  result[idx] = {
+    ...items[idx],
+    hasField: false,
+    fieldValue: '',
+    isDerived: true,
+    requiredCaseFields: FAMILY_CONTACT_REQUIRED_CASE_FIELDS,
+    requiredCaseFieldValues: {
+      nextOfKinName: case_.nextOfKinName ?? '',
+      nextOfKinPhone: case_.nextOfKinPhone ?? '',
+      nextOfKinEmail: case_.nextOfKinEmail ?? '',
+    },
+  };
+  return result;
+}
+
 /**
  * Auto-required documents by stage — ported from design/support.js's
  * buildCase(). Uses raw stage thresholds directly, matching the source
@@ -149,7 +201,10 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // and the terminal checklist item's overridden label/done state, so the
   // two can never drift apart into competing signals.
   const remainsReturnComplete = isTerminalReturnRequirementComplete(case_);
-  const currentChecklist = applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, case_), case_, false);
+  const currentChecklist = applyFamilyContactPresentation(
+    applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, case_), case_, false),
+    case_,
+  );
   // The immutable workflowSnapshot still carries its original "Family
   // picked up ashes" item text (never rewritten — see this project's
   // append-only-snapshot discipline); when the case is actually sitting at
@@ -220,14 +275,17 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // clickable.
   const viewedChecklist =
     viewingDisplayStage != null
-      ? applyLegacyCertifierPresentation(
-          resolveChecklist(
-            findStageByDisplayStage(snapshot, viewingDisplayStage)?.checklist.items ?? [],
+      ? applyFamilyContactPresentation(
+          applyLegacyCertifierPresentation(
+            resolveChecklist(
+              findStageByDisplayStage(snapshot, viewingDisplayStage)?.checklist.items ?? [],
+              case_,
+              { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+            ),
             case_,
-            { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+            viewingDisplayStage < effectiveDisplayStage,
           ),
           case_,
-          viewingDisplayStage < effectiveDisplayStage,
         )
       : effectiveCurrentChecklist;
 

@@ -493,13 +493,13 @@ describe('buildCaseViewModel — legacy (v3) Certifier past-stage editing (Task 
     expect(vm.checklist[6].locked).toBe(false);
   });
 
-  it('15. unrelated past-stage items remain read-only/historical — only the Certifier item gets the live-editing exception', () => {
+  it('15. unrelated past-stage items remain read-only/historical — only Certifier (6) and Family Contact (7) get the live-editing exception', () => {
     const case_ = v3CaseAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
     // Every other item in this past-stage view still reports done (past
     // stage, done-by-definition) with no requiredCaseFields of its own.
     vm.checklist.forEach((item, i) => {
-      if (i === 6) return;
+      if (i === 6 || i === 7) return;
       expect(item.done).toBe(true);
       expect(item.requiredCaseFields).toBeUndefined();
     });
@@ -516,6 +516,155 @@ describe('buildCaseViewModel — legacy (v3) Certifier past-stage editing (Task 
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
     expect(vm.checklist[6].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
     expect(vm.checklist[6].done).toBe(true);
+  });
+});
+
+/**
+ * Task #7 UI consistency follow-up (2026-09). "Family contact — name,
+ * phone number & email" (checklistItemIndex 7) reuses the SAME
+ * structured multi-field presentation now used for Certifier
+ * Information — but unlike Certifier, this item never got a v5-style
+ * requiredCaseFields completion upgrade, so `done`/`locked` are NEVER
+ * touched by applyFamilyContactPresentation in any branch (current or
+ * past stage) — only the editing surface changes. Reproduces the same
+ * class of real Manors legacy v3 case used throughout Task #6/#7: frozen
+ * workflowTemplateVersion 3, now past the stage where this item lives,
+ * with the old combined "name — phone" fieldValues[7] entry still intact
+ * and the authoritative nextOfKinName/nextOfKinPhone/nextOfKinEmail
+ * fields blank.
+ */
+describe('buildCaseViewModel — Family Contact structured Workflow presentation (Task #7 UI consistency follow-up, 2026-09)', () => {
+  function v3CaseWithFamilyContactAtRawStage3(overrides: Partial<Case> = {}): Case {
+    const template = standardCremationWorkflowTemplateFixture;
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    const snapshot = buildCaseWorkflowSnapshot(template, { ...v1, version: 3 });
+    return baseCase({
+      rawStage: 3,
+      workflowTemplateVersion: 3,
+      workflowSnapshot: snapshot,
+      fieldValues: { 7: 'KAREN ELLISON — 555-0100' },
+      nextOfKinName: '',
+      nextOfKinPhone: '',
+      nextOfKinEmail: null,
+      ...overrides,
+    });
+  }
+
+  it('1. the Family Contact grouped structured editor renders (requiredCaseFields present) when viewing the earlier stage', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail']);
+    expect(vm.checklist[7].hasField).toBe(false);
+    expect(vm.checklist[7].fieldValue).toBe('');
+  });
+
+  it('2/3/4. Name, Phone, and Email are all present among requiredCaseFields', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[7].requiredCaseFields).toContain('nextOfKinName');
+    expect(vm.checklist[7].requiredCaseFields).toContain('nextOfKinPhone');
+    expect(vm.checklist[7].requiredCaseFields).toContain('nextOfKinEmail');
+  });
+
+  it('5. structured inputs are initially blank when the structured Case fields are blank', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[7].requiredCaseFieldValues).toEqual({ nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: '' });
+  });
+
+  it('6/7/8. the legacy combined "KAREN ELLISON — 555-0100" text is never copied into Name, Phone, or Email', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    const values = vm.checklist[7].requiredCaseFieldValues ?? {};
+    expect(values.nextOfKinName).not.toContain('KAREN');
+    expect(values.nextOfKinPhone).not.toContain('555-0100');
+    expect(values.nextOfKinEmail).not.toContain('KAREN');
+    expect(case_.nextOfKinName).toBe('');
+    expect(case_.nextOfKinPhone).toBe('');
+    expect(case_.nextOfKinEmail).toBeNull();
+  });
+
+  it('12. the legacy combined fieldValues[7] value remains unchanged — merely viewing never mutates the Case', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.fieldValues[7]).toBe('KAREN ELLISON — 555-0100');
+  });
+
+  it('13. the frozen v3 workflowSnapshot is byte-for-byte unchanged', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const before = JSON.parse(JSON.stringify(case_.workflowSnapshot));
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.workflowSnapshot).toEqual(before);
+  });
+
+  it('14. rawStage remains unchanged', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(case_.rawStage).toBe(3);
+  });
+
+  it('15. historical completion state is unchanged: the past-stage item is still done-by-definition, exactly as before this change', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(vm.checklist[7].done).toBe(true);
+    expect(vm.checklist[7].locked).toBe(false);
+  });
+
+  it('16. unrelated past-stage items remain read-only/historical — only Certifier (6) and Family Contact (7) get the exception', () => {
+    const case_ = v3CaseWithFamilyContactAtRawStage3();
+    const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    vm.checklist.forEach((item, i) => {
+      if (i === 6 || i === 7) return;
+      expect(item.requiredCaseFields).toBeUndefined();
+    });
+  });
+
+  it('current-stage (non-past) view also shows the structured editor for a case that still has this item in its current stage', () => {
+    const template = standardCremationWorkflowTemplateFixture;
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    const case_ = baseCase({
+      rawStage: 0,
+      workflowTemplateVersion: 3,
+      workflowSnapshot: buildCaseWorkflowSnapshot(template, { ...v1, version: 3 }),
+      fieldValues: { 7: 'KAREN ELLISON — 555-0100' },
+      nextOfKinName: '',
+      nextOfKinPhone: '',
+      nextOfKinEmail: null,
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail']);
+    expect(vm.checklist[7].hasField).toBe(false);
+  });
+
+  describe('18/19/20/21. structured fields ARE populated — Workflow and Case Information read the same values', () => {
+    it('displays the existing structured Name/Phone/Email, matching Case.nextOfKinName/Phone/Email exactly (the same fields Case Information reads)', () => {
+      const case_ = v3CaseWithFamilyContactAtRawStage3({
+        nextOfKinName: 'KAREN ELLISON',
+        nextOfKinPhone: '555-0155',
+        nextOfKinEmail: 'karen@example.com',
+      });
+      const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+      expect(vm.checklist[7].requiredCaseFieldValues).toEqual({
+        nextOfKinName: 'KAREN ELLISON',
+        nextOfKinPhone: '555-0155',
+        nextOfKinEmail: 'karen@example.com',
+      });
+      // Same underlying Case fields Case Information itself reads directly.
+      expect(case_.nextOfKinName).toBe(vm.checklist[7].requiredCaseFieldValues?.nextOfKinName);
+      expect(case_.nextOfKinPhone).toBe(vm.checklist[7].requiredCaseFieldValues?.nextOfKinPhone);
+      expect(case_.nextOfKinEmail).toBe(vm.checklist[7].requiredCaseFieldValues?.nextOfKinEmail);
+    });
+  });
+
+  it('is a no-op for a template with no nextOfKinName checklist mapping at all (e.g. secondOrgWorkflowTemplateFixture)', () => {
+    const case_ = baseCase({
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
+      workflowSnapshot: buildCaseWorkflowSnapshot(secondOrgWorkflowTemplateFixture, latestTemplateVersion(secondOrgWorkflowTemplateFixture)),
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.checklist.every((item) => item.requiredCaseFields === undefined)).toBe(true);
   });
 });
 

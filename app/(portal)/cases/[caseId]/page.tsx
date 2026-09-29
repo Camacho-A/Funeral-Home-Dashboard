@@ -293,6 +293,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}
             onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
             onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
+            onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
           />
 
           <div className={styles.overviewPair}>

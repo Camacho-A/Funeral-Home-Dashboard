@@ -78,10 +78,19 @@
    stretched a single text input the whole width of what's now a much
    wider card) keeps a checklist field a normal, comfortable text-entry
    size regardless of how wide the card itself is. */
-.fieldInput {
+.fieldInputWrap {
   margin: var(--space-3) 0 var(--space-1) 28px;
-  width: 100%;
   max-width: 420px;
+}
+
+.fieldInput {
+  width: 100%;
+}
+
+.fieldError {
+  font-size: var(--font-size-12-5);
+  color: var(--color-danger-text);
+  margin-top: var(--space-2);
 }
 
 /* Checklist Time Display (2026-09): the hour/minute/AM-PM selects, laid
@@ -118,6 +127,17 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+/* .fieldInputWrap's standalone margin/max-width (for a lone hasField
+   textbox directly under the checkbox row) don't apply once it's nested
+   inside a required-field row — the row's own gap/alignment already
+   handles spacing, and the input should fill the row instead of being
+   independently capped. */
+.requiredFieldRow .fieldInputWrap {
+  margin: 0;
+  max-width: none;
+  flex: 1;
 }
 
 .requiredFieldLabel {
