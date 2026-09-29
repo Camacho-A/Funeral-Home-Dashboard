@@ -143,6 +143,30 @@ describe('SettingsHub — Import Existing Jotform (item #5, 2026-09)', () => {
   });
 });
 
+describe('SettingsHub — Organization Profile (2026-09)', () => {
+  it('35. shows Organization Profile for a caller holding organization.manage, org-agnostic (no identity-mode requirement)', async () => {
+    mockPermissions(['organization.manage']);
+    renderHub('mock');
+    expect(await screen.findByText('Organization Profile')).toBeInTheDocument();
+  });
+
+  it('35. hides Organization Profile for a caller without organization.manage', async () => {
+    mockPermissions([]);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Organization Profile')).not.toBeInTheDocument();
+  });
+
+  it('35. every other existing Settings area remains reachable alongside the new card', async () => {
+    mockPermissions(['organization.manage', 'caseNumber.manage', 'case.create']);
+    renderHub('mock');
+    expect(await screen.findByText('Organization Profile')).toBeInTheDocument();
+    expect(screen.getByText('Case Numbering')).toBeInTheDocument();
+    expect(screen.getByText('Import Existing Jotform')).toBeInTheDocument();
+    expect(screen.getByText('Workflow Templates')).toBeInTheDocument();
+  });
+});
+
 describe('SettingsHub — no empty sections (item #5, 2026-09)', () => {
   it('renders no Administration or Security & Roles section heading when the caller has none of those permissions', async () => {
     mockPermissions([]);

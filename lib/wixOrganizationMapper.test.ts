@@ -175,4 +175,63 @@ describe('buildWixOrganizationData / applyOrganizationUpdateToWixData', () => {
     const cleared = applyOrganizationUpdateToWixData(withModules, { enabledModules: null });
     expect(mapWixOrganizationItem(cleared)?.enabledModules).toBeUndefined();
   });
+
+  /**
+   * Settings → Organization Profile (2026-09). A full-object-merge-safety
+   * regression: a profile-editor-shaped patch (only `name`/`legalName`/
+   * `primaryEmail`/`primaryPhone`/`website` — exactly what
+   * `app/api/organization/profile/route.ts` ever sends) must never disturb
+   * any technical/configuration field, even when every one of those
+   * fields already carries a real, non-default value.
+   */
+  it('an Organization-Profile-shaped patch never disturbs technical/configuration fields', () => {
+    const FULLY_CONFIGURED: Organization = {
+      id: 'managed-cremations',
+      name: "Manor's Cremation",
+      isActive: true,
+      legalName: 'Old Legal Name',
+      slug: 'manors-cremation',
+      status: 'active',
+      timezone: 'America/Chicago',
+      defaultCurrency: 'usd',
+      primaryEmail: 'old@example.test',
+      primaryPhone: '(555) 000-0000',
+      website: 'https://old.example.com',
+      requireMfa: true,
+      enabledModules: ['inventory', 'resources'],
+      familyPortalEnabled: false,
+      signatureRequestsEnabled: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const existing = buildWixOrganizationData(FULLY_CONFIGURED);
+    const merged = applyOrganizationUpdateToWixData(existing, {
+      name: 'MANORS CREMATION SERVICES',
+      legalName: 'MANORS CREMATION SERVICES, LLC',
+      primaryEmail: 'contact@manorscremation.com',
+      primaryPhone: '954-884-5770',
+      website: 'https://manorscremation.com',
+      updatedAt: '2026-09-28T00:00:00.000Z',
+    });
+    const mapped = mapWixOrganizationItem(merged);
+
+    expect(mapped?.name).toBe('MANORS CREMATION SERVICES');
+    expect(mapped?.legalName).toBe('MANORS CREMATION SERVICES, LLC');
+    expect(mapped?.primaryEmail).toBe('contact@manorscremation.com');
+    expect(mapped?.primaryPhone).toBe('954-884-5770');
+    expect(mapped?.website).toBe('https://manorscremation.com');
+
+    // Every technical/configuration field: untouched.
+    expect(mapped?.id).toBe('managed-cremations');
+    expect(mapped?.slug).toBe('manors-cremation');
+    expect(mapped?.status).toBe('active');
+    expect(mapped?.timezone).toBe('America/Chicago');
+    expect(mapped?.defaultCurrency).toBe('usd');
+    expect(mapped?.requireMfa).toBe(true);
+    expect(mapped?.enabledModules).toEqual(['inventory', 'resources']);
+    expect(mapped?.familyPortalEnabled).toBe(false);
+    expect(mapped?.signatureRequestsEnabled).toBe(false);
+    expect(mapped?.isActive).toBe(true);
+    expect(mapped?.createdAt).toBe('2026-01-01T00:00:00.000Z');
+  });
 });

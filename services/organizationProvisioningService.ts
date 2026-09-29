@@ -12,6 +12,7 @@ import {
 import {
   mapWixOrganizationLocationItem,
   buildWixOrganizationLocationData,
+  applyOrganizationLocationUpdateToWixData,
   type WixOrganizationLocationItem,
 } from '../lib/wixOrganizationLocationMapper';
 import {
@@ -534,6 +535,43 @@ export async function createPrimaryLocation(
   const mapped = mapWixOrganizationLocationItem(inserted.data);
   if (!mapped) throw new Error('Failed to create primary location.');
   return { location: mapped, isNew: true };
+}
+
+/**
+ * Settings → Organization Profile (2026-09). Updates the organization's
+ * existing primary location — never creates one (see `getPrimaryLocation`/
+ * `createPrimaryLocation` above for that; this function returns `null`,
+ * untouched, when no primary location exists rather than fabricating one).
+ * Same load-current → merge → write-full-record safety as
+ * `updateOrganization`: `applyOrganizationLocationUpdateToWixData` spreads
+ * the existing raw Wix item first, only then overlays the patch's fields —
+ * `isPrimary`/`isActive`/`organizationId`/`createdAt` are never part of
+ * that patch's possible fields (see this editor's own API route), so they
+ * always survive the full-replace write untouched.
+ */
+export async function updatePrimaryLocation(
+  organizationId: string,
+  patch: Partial<OrganizationLocation>,
+  dataAdapterMode: DataAdapterMode,
+): Promise<OrganizationLocation | null> {
+  const nextPatch = { ...patch, updatedAt: nowIso() };
+
+  if (dataAdapterMode === 'mock') {
+    const index = organizationLocationFixtures.findIndex((l) => l.organizationId === organizationId && l.isPrimary);
+    if (index === -1) return null;
+    organizationLocationFixtures[index] = { ...organizationLocationFixtures[index], ...nextPatch };
+    return organizationLocationFixtures[index];
+  }
+
+  const response = await queryWixDataItems<WixOrganizationLocationItem>('organizationLocations', {
+    filter: { organizationId, isPrimary: true },
+    paging: { limit: 1 },
+  });
+  const existingItem = response.dataItems[0];
+  if (!existingItem) return null;
+  const merged = applyOrganizationLocationUpdateToWixData(existingItem.data, nextPatch);
+  const updated = await updateWixDataItem<WixOrganizationLocationItem>('organizationLocations', existingItem.id, merged);
+  return mapWixOrganizationLocationItem(updated.data);
 }
 
 // ---------------------------------------------------------------------------

@@ -160,6 +160,81 @@ describe('createPrimaryLocation', () => {
   });
 });
 
+/**
+ * Settings → Organization Profile (2026-09). `updatePrimaryLocation`
+ * never creates a location (that's `createPrimaryLocation`'s job) — it
+ * only ever updates an existing primary location, or returns `null`
+ * untouched if none exists.
+ */
+describe('updatePrimaryLocation', () => {
+  it('updates the existing primary location\'s patched fields', async () => {
+    const { createPrimaryLocation, updatePrimaryLocation } = await import('./organizationProvisioningService');
+    const orgId = idFactory();
+    await createPrimaryLocation(
+      orgId,
+      { name: 'Old Name', addressLine1: '100 Memorial Drive', city: 'Springfield', state: 'IL', postalCode: '62701', country: 'US', phone: '(555) 201-4432' },
+      idFactory,
+      'mock',
+    );
+
+    const updated = await updatePrimaryLocation(
+      orgId,
+      { name: 'MANORS CREMATION SERVICES', addressLine1: '481 E Commercial Blvd', city: 'Oakland Park', state: 'FL', postalCode: '33334', phone: '954-884-5770' },
+      'mock',
+    );
+
+    expect(updated?.name).toBe('MANORS CREMATION SERVICES');
+    expect(updated?.addressLine1).toBe('481 E Commercial Blvd');
+    expect(updated?.city).toBe('Oakland Park');
+    expect(updated?.state).toBe('FL');
+    expect(updated?.postalCode).toBe('33334');
+    expect(updated?.phone).toBe('954-884-5770');
+  });
+
+  it('preserves isPrimary/isActive/organizationId/id/createdAt across an update', async () => {
+    const { createPrimaryLocation, updatePrimaryLocation } = await import('./organizationProvisioningService');
+    const orgId = idFactory();
+    const { location: created } = await createPrimaryLocation(
+      orgId,
+      { name: 'Main Office', addressLine1: '1 Main St', city: 'Springfield', state: 'IL', postalCode: '62701', country: 'US', phone: '(555) 000-0000' },
+      idFactory,
+      'mock',
+    );
+
+    const updated = await updatePrimaryLocation(orgId, { name: 'New Name' }, 'mock');
+
+    expect(updated?.id).toBe(created.id);
+    expect(updated?.organizationId).toBe(orgId);
+    expect(updated?.isPrimary).toBe(true);
+    expect(updated?.isActive).toBe(true);
+    expect(updated?.createdAt).toBe(created.createdAt);
+  });
+
+  it('returns null, and creates nothing, when no primary location exists for the organization', async () => {
+    const { updatePrimaryLocation } = await import('./organizationProvisioningService');
+    const orgId = idFactory();
+    const before = organizationLocationFixtures.length;
+
+    const updated = await updatePrimaryLocation(orgId, { name: 'Should Not Apply' }, 'mock');
+
+    expect(updated).toBeNull();
+    expect(organizationLocationFixtures.length).toBe(before);
+  });
+
+  it('never affects a different organization\'s primary location', async () => {
+    const { createPrimaryLocation, updatePrimaryLocation } = await import('./organizationProvisioningService');
+    const orgA = idFactory();
+    const orgB = idFactory();
+    await createPrimaryLocation(orgA, { name: 'Org A Office', addressLine1: '1 A St', city: 'A City', state: 'AA', postalCode: '00001', country: 'US', phone: '(555) 111-1111' }, idFactory, 'mock');
+    await createPrimaryLocation(orgB, { name: 'Org B Office', addressLine1: '1 B St', city: 'B City', state: 'BB', postalCode: '00002', country: 'US', phone: '(555) 222-2222' }, idFactory, 'mock');
+
+    await updatePrimaryLocation(orgA, { name: 'Updated Org A' }, 'mock');
+
+    const orgBLocation = organizationLocationFixtures.find((l) => l.organizationId === orgB && l.isPrimary);
+    expect(orgBLocation?.name).toBe('Org B Office');
+  });
+});
+
 describe('assignInitialAdministrator', () => {
   it('creates an administrator-role membership, never any other role', async () => {
     const { assignInitialAdministrator } = await import('./organizationProvisioningService');

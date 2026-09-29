@@ -86,3 +86,31 @@ export function buildWixOrganizationLocationData(location: OrganizationLocation)
     updatedAt: location.updatedAt,
   };
 }
+
+/** Settings → Organization Profile (2026-09). Merges a partial patch onto
+    the existing full Wix item — same full-replace safety as
+    `applyOrganizationUpdateToWixData` (Wix Data's `updateDataItem` fully
+    replaces `data`, never merges). Deliberately omits `beaconLocationId`,
+    `organizationId`, `isPrimary`, `isActive`, and `createdAt` from the
+    fields it will ever apply, even if a caller's patch object somehow
+    carried one — this editor never changes which location is primary,
+    never reassigns a location to a different organization, and never
+    touches active/creation bookkeeping. */
+export function applyOrganizationLocationUpdateToWixData(
+  existing: WixOrganizationLocationItem,
+  patch: Partial<OrganizationLocation>,
+): WixOrganizationLocationItem {
+  const next: WixOrganizationLocationItem = { ...existing };
+  if (patch.name !== undefined) next.name = patch.name;
+  if (patch.locationType !== undefined) next.locationType = patch.locationType;
+  if (patch.addressLine1 !== undefined) next.addressLine1 = patch.addressLine1;
+  if (patch.addressLine2 !== undefined) next.addressLine2 = patch.addressLine2;
+  if (patch.city !== undefined) next.city = patch.city;
+  if (patch.state !== undefined) next.state = patch.state;
+  if (patch.postalCode !== undefined) next.postalCode = patch.postalCode;
+  if (patch.country !== undefined) next.country = patch.country;
+  if (patch.phone !== undefined) next.phone = patch.phone;
+  if (patch.email !== undefined) next.email = patch.email;
+  if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
+  return next;
+}

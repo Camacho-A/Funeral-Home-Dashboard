@@ -30,6 +30,10 @@ type AdminArea = {
  * TopBar.tsx — moving *where staff discover them from*, never their
  * implementation, permissions, or business logic.
  *
+ * Organization Profile (2026-09) is new, not a moved TopBar link — gated
+ * on `organization.manage`, org-agnostic (works the same for any tenant,
+ * not just Manors). See `components/settings/OrganizationProfilePanel.tsx`.
+ *
  * Visibility mirrors each area's previous TopBar gate exactly:
  *   - Team / Roles & Permissions: `authAdapterMode === 'identity'` AND the
  *     same permission (`user.invite` / `user.manageRoles`) TopBar checked.
@@ -60,6 +64,13 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
   const isIdentityMode = authAdapterMode === 'identity';
 
   const administration: AdminArea[] = [
+    {
+      key: 'organization-profile',
+      label: 'Organization Profile',
+      description: 'Manage your organization’s business information and primary location.',
+      href: '/settings/organization-profile',
+      visible: permissions.includes('organization.manage'),
+    },
     {
       key: 'team',
       label: 'Team',
