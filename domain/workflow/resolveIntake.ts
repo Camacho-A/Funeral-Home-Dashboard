@@ -1,4 +1,5 @@
 import type { IntakeTemplate } from '../../types/workflowTemplate';
+import { parseLegacyTimeOfDeath } from '../../utils/inputMask';
 
 /**
  * Maps a New Case modal's typed draft values (keyed by IntakeFieldTemplate.key)
@@ -153,6 +154,19 @@ export function findCaseFieldForChecklistIndex(intake: IntakeTemplate, index: nu
  * combined `{ weight, fieldValues }` patch) — that value always wins;
  * this function only fills in a structured field a caller's patch left
  * untouched, never overrides one it set on purpose.
+ *
+ * Legacy Time of Death follow-up (2026-09): a case frozen under a pre-v5
+ * workflowSnapshot has no `valueKind: 'time'` on the checklist item, so an
+ * edit made through ChecklistCard's free-text box (the only edit surface
+ * such a case has for this field) can be something like "11:30AM" — not
+ * strict "HH:mm". `Case.timeOfDeath` must stay canonical (every other
+ * reader — CaseInformationCard's formatter, isValidMilitaryTime — assumes
+ * it), so this is the one field that gets parsed before being synced;
+ * every other mapped field (Weight included) is copied through verbatim,
+ * unchanged from before. An unparseable legacy value is left out of the
+ * result entirely — the raw fieldValues entry is never touched by this
+ * function (that assignment happens separately, in the caller), so
+ * nothing is lost, it just isn't (yet) mirrored onto the structured field.
  */
 export function deriveCaseFieldSyncFromFieldValues(
   intake: IntakeTemplate,
@@ -162,9 +176,14 @@ export function deriveCaseFieldSyncFromFieldValues(
   const result: Record<string, string> = {};
   for (const [indexKey, value] of Object.entries(normalizedFieldValues)) {
     const caseField = findCaseFieldForChecklistIndex(intake, Number(indexKey));
-    if (caseField && !alreadyPatchedFields.has(caseField)) {
-      result[caseField] = value;
+    if (!caseField || alreadyPatchedFields.has(caseField)) continue;
+
+    if (caseField === 'timeOfDeath') {
+      const normalized = parseLegacyTimeOfDeath(value);
+      if (normalized !== null) result[caseField] = normalized;
+      continue;
     }
+    result[caseField] = value;
   }
   return result;
 }

@@ -278,4 +278,40 @@ describe('deriveCaseFieldSyncFromFieldValues', () => {
   it('returns an empty object for an empty fieldValues patch', () => {
     expect(deriveCaseFieldSyncFromFieldValues(INTAKE, {}, new Set())).toEqual({});
   });
+
+  describe('legacy Time of Death normalization (Task #6 follow-up, 2026-09)', () => {
+    it.each([
+      ['11:30AM', '11:30'],
+      ['11:30 AM', '11:30'],
+      ['11:30am', '11:30'],
+      ['11:30 am', '11:30'],
+      ['3:45PM', '15:45'],
+      ['3:45 PM', '15:45'],
+      ['03:45PM', '15:45'],
+      ['03:45 PM', '15:45'],
+      ['15:45', '15:45'],
+      ['03:45', '03:45'],
+    ])('normalizes fieldValues[5] = %j into Case.timeOfDeath = %j, never the raw legacy text', (raw, expected) => {
+      const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 5: raw }, new Set());
+      expect(result).toEqual({ timeOfDeath: expected });
+    });
+
+    it.each(['25:00', '13:75', 'abc', '3pm-ish', 'unknown', 'noon-ish'])(
+      'excludes timeOfDeath from the result entirely when fieldValues[5] = %j cannot be safely parsed — never guesses',
+      (raw) => {
+        const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 5: raw }, new Set());
+        expect(result).toEqual({});
+      },
+    );
+
+    it('an unparseable Time of Death does not block sync of other simultaneously-mapped fields', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 3: '178 lb', 5: 'unknown' }, new Set());
+      expect(result).toEqual({ weight: '178 lb' });
+    });
+
+    it('Weight is never passed through the legacy time parser — an arbitrary weight string syncs verbatim', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 3: '178 lb, approx' }, new Set());
+      expect(result).toEqual({ weight: '178 lb, approx' });
+    });
+  });
 });

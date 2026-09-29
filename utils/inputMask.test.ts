@@ -16,6 +16,7 @@ import {
   splitMilitaryTimeToTwelveHourParts,
   combineTwelveHourTimeParts,
   formatMilitaryTimeToTwelveHour,
+  parseLegacyTimeOfDeath,
   expandTwoDigitYear,
   expandTwoDigitYearInDateInput,
   isValidCalendarDateAllowingTwoDigitYear,
@@ -591,5 +592,91 @@ describe('SOLIS cleanup item #15 (2026-09) — fast date entry, literal spec exa
   it('leap-year Feb 29 accepted via fast digit typing; non-leap-year Feb 29 rejected', () => {
     expect(isValidCalendarDate(formatDateInput('02292024'))).toBe(true); // 2024 is a leap year
     expect(isValidCalendarDate(formatDateInput('02292023'))).toBe(false); // 2023 is not
+  });
+});
+
+describe('parseLegacyTimeOfDeath (legacy Time of Death compatibility, 2026-09 follow-up)', () => {
+  it('normalizes "11:30AM" (no space, uppercase) to canonical "11:30"', () => {
+    expect(parseLegacyTimeOfDeath('11:30AM')).toBe('11:30');
+  });
+
+  it('normalizes "11:30 AM" (spaced) to canonical "11:30"', () => {
+    expect(parseLegacyTimeOfDeath('11:30 AM')).toBe('11:30');
+  });
+
+  it('normalizes "11:30am" (lowercase, no space) to canonical "11:30"', () => {
+    expect(parseLegacyTimeOfDeath('11:30am')).toBe('11:30');
+  });
+
+  it('normalizes "11:30 am" (lowercase, spaced) to canonical "11:30"', () => {
+    expect(parseLegacyTimeOfDeath('11:30 am')).toBe('11:30');
+  });
+
+  it('normalizes "3:45PM" (no leading zero) to canonical "15:45"', () => {
+    expect(parseLegacyTimeOfDeath('3:45PM')).toBe('15:45');
+  });
+
+  it('normalizes "3:45 PM" to canonical "15:45"', () => {
+    expect(parseLegacyTimeOfDeath('3:45 PM')).toBe('15:45');
+  });
+
+  it('normalizes "03:45PM" (leading zero) to canonical "15:45"', () => {
+    expect(parseLegacyTimeOfDeath('03:45PM')).toBe('15:45');
+  });
+
+  it('normalizes "03:45 PM" to canonical "15:45"', () => {
+    expect(parseLegacyTimeOfDeath('03:45 PM')).toBe('15:45');
+  });
+
+  it('passes an already-canonical 24-hour value through unchanged: "15:45"', () => {
+    expect(parseLegacyTimeOfDeath('15:45')).toBe('15:45');
+  });
+
+  it('passes an already-canonical 24-hour value through unchanged: "03:45"', () => {
+    expect(parseLegacyTimeOfDeath('03:45')).toBe('03:45');
+  });
+
+  it('rejects an empty string (nothing to normalize)', () => {
+    expect(parseLegacyTimeOfDeath('')).toBeNull();
+  });
+
+  it('rejects out-of-range 24-hour "25:00" rather than guessing', () => {
+    expect(parseLegacyTimeOfDeath('25:00')).toBeNull();
+  });
+
+  it('rejects an invalid minute "13:75" rather than guessing', () => {
+    expect(parseLegacyTimeOfDeath('13:75')).toBeNull();
+  });
+
+  it('rejects non-time text "abc"', () => {
+    expect(parseLegacyTimeOfDeath('abc')).toBeNull();
+  });
+
+  it('rejects ambiguous shorthand "3pm-ish"', () => {
+    expect(parseLegacyTimeOfDeath('3pm-ish')).toBeNull();
+  });
+
+  it('rejects "unknown"', () => {
+    expect(parseLegacyTimeOfDeath('unknown')).toBeNull();
+  });
+
+  it('rejects "noon-ish"', () => {
+    expect(parseLegacyTimeOfDeath('noon-ish')).toBeNull();
+  });
+
+  it('does not guess an unpunctuated 4-digit form like "1545" (not in the accepted grammar)', () => {
+    expect(parseLegacyTimeOfDeath('1545')).toBeNull();
+  });
+
+  it('does not guess an unpunctuated meridiem form like "345 PM" (not in the accepted grammar)', () => {
+    expect(parseLegacyTimeOfDeath('345 PM')).toBeNull();
+  });
+
+  it('rejects an hour of 0 with a meridiem ("0:30AM" is not a valid 12-hour representation)', () => {
+    expect(parseLegacyTimeOfDeath('0:30AM')).toBeNull();
+  });
+
+  it('rejects an hour above 12 with a meridiem ("13:30PM")', () => {
+    expect(parseLegacyTimeOfDeath('13:30PM')).toBeNull();
   });
 });

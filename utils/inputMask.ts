@@ -339,6 +339,32 @@ export function formatMilitaryTimeToTwelveHour(value: string): string {
   return `${parts.hour}:${parts.minute} ${parts.period}`;
 }
 
+/**
+ * Legacy Time of Death compatibility (2026-09). Pre-v5 workflow snapshots
+ * render the Time of Death checklist item as free text (no `valueKind:
+ * 'time'` yet), so a case created under one of those snapshots can have a
+ * fieldValues entry staff typed by hand — e.g. "11:30AM" — instead of
+ * strict 24-hour "HH:mm". Rather than teach the canonical formatter to
+ * accept that, this narrowly recognizes only unambiguous 12-hour-with-
+ * meridiem input and normalizes it to canonical form; anything else
+ * (already-canonical "HH:mm", which passes through unchanged) or anything
+ * genuinely ambiguous returns `null` rather than guessing. Reuses
+ * combineTwelveHourTimeParts for the actual 12->24 conversion so the two
+ * never diverge on what counts as a valid hour/minute.
+ */
+const LEGACY_TWELVE_HOUR_TIME = /^(\d{1,2}):([0-5]\d)\s*([AaPp][Mm])$/;
+
+export function parseLegacyTimeOfDeath(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (isValidMilitaryTime(trimmed)) return trimmed;
+
+  const match = LEGACY_TWELVE_HOUR_TIME.exec(trimmed);
+  if (!match) return null;
+  const [, hour, minute, meridiem] = match;
+  return combineTwelveHourTimeParts(hour, minute, meridiem.toUpperCase() as 'AM' | 'PM');
+}
+
 export function getValidationError(
   validationType:
     | 'none'

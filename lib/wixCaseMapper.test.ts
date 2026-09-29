@@ -840,10 +840,24 @@ describe('applyCaseUpdateToWixData — Case Information field sync fix (2026-09)
     expect(result.fieldValues).toEqual({ 3: '178 lb' });
   });
 
-  it('syncs Time of Death the same way', () => {
+  it('syncs Time of Death the same way, normalizing a legacy 12-hour value to canonical 24-hour', () => {
     const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, timeOfDeath: '' };
     const result = applyCaseUpdateToWixData(existing, { fieldValues: { 5: '02:30 PM' } });
-    expect(result.timeOfDeath).toBe('02:30 PM');
+    expect(result.timeOfDeath).toBe('14:30');
+  });
+
+  it('Task #6 follow-up (2026-09): syncs the real Production shape — "11:30AM" normalizes to "11:30", never the raw legacy text', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, timeOfDeath: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 5: '11:30AM' } });
+    expect(result.timeOfDeath).toBe('11:30');
+    expect(result.fieldValues).toEqual({ 5: '11:30AM' });
+  });
+
+  it('leaves Case.timeOfDeath unchanged (not guessed) when the legacy fieldValues entry cannot be safely parsed', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, timeOfDeath: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 5: 'unknown' } });
+    expect(result.timeOfDeath).toBe('');
+    expect(result.fieldValues).toEqual({ 5: 'unknown' });
   });
 
   it('syncs multiple mapped fields from one combined fieldValues patch', () => {

@@ -24,6 +24,7 @@ import { buildTimeline } from './timeline';
 import { applyLegacyCertifierPresentation } from './legacyCertifierPresentation';
 import { findChecklistIndexForCaseField } from '../workflow/resolveIntake';
 import { initialsFromName } from '../../utils/string';
+import { parseLegacyTimeOfDeath } from '../../utils/inputMask';
 
 export type CaseViewModelContext = {
   staffList: StaffProfile[];
@@ -59,8 +60,23 @@ function resolveOwner(case_: Case, staffList: StaffProfile[]): { name: string; i
  * services/casesService.ts#create's own default for an unset weight/
  * timeOfDeath, the same placeholder resolveOwner/effectiveOwnerName above
  * already treat as "not really a value" for the exact same reason).
+ *
+ * `normalizeLegacyValue` (Time of Death only, 2026-09 follow-up): a case
+ * frozen under a pre-v5 workflowSnapshot has no `valueKind: 'time'` on the
+ * checklist item, so its fieldValues mirror may hold whatever staff typed
+ * into that free-text box (e.g. "11:30AM"), not strict "HH:mm" — passing
+ * that straight through would just get silently blanked by
+ * CaseInformationCard's canonical-format display formatter, the exact
+ * failure this fallback exists to fix. When a normalizer is supplied, an
+ * unparseable legacy value falls back to `structured` (the placeholder)
+ * rather than guessing. Weight has no such normalizer — its display never
+ * re-parses the value, so the raw fieldValues passthrough is unaffected.
  */
-function resolveFieldWithLegacyFallback(case_: Case, field: 'weight' | 'timeOfDeath'): string {
+function resolveFieldWithLegacyFallback(
+  case_: Case,
+  field: 'weight' | 'timeOfDeath',
+  normalizeLegacyValue?: (value: string) => string | null,
+): string {
   const structured = case_[field];
   const trimmed = structured.trim();
   if (trimmed !== '' && trimmed !== '—') return structured;
@@ -68,7 +84,9 @@ function resolveFieldWithLegacyFallback(case_: Case, field: 'weight' | 'timeOfDe
   const index = findChecklistIndexForCaseField(case_.workflowSnapshot.intake, field);
   if (index === null) return structured;
   const fieldValue = case_.fieldValues[index];
-  return fieldValue && fieldValue.trim() !== '' ? fieldValue : structured;
+  if (!fieldValue || fieldValue.trim() === '') return structured;
+  if (!normalizeLegacyValue) return fieldValue;
+  return normalizeLegacyValue(fieldValue) ?? structured;
 }
 
 /** Item #7 (2026-09, decedent avatar fix). Derives the case avatar's
@@ -220,7 +238,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     decedentInitials: resolveDecedentInitials(case_.decedentName),
     dateOfBirth: case_.dateOfBirth,
     dateOfDeath: case_.dateOfDeath,
-    timeOfDeath: resolveFieldWithLegacyFallback(case_, 'timeOfDeath'),
+    timeOfDeath: resolveFieldWithLegacyFallback(case_, 'timeOfDeath', parseLegacyTimeOfDeath),
     placeOfDeath: case_.placeOfDeath,
 
     displayStage: effectiveDisplayStage,

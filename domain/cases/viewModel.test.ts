@@ -416,10 +416,10 @@ describe('buildCaseViewModel — Weight/Time of Death legacy fieldValues fallbac
     expect(vm.weight).toBe('178 lb');
   });
 
-  it('falls back for Time of Death the same way', () => {
+  it('falls back for Time of Death the same way, normalizing a legacy 12-hour mirror value to canonical 24-hour', () => {
     const case_ = baseCase({ timeOfDeath: '—', fieldValues: { 5: '02:15 PM' } });
     const vm = buildCaseViewModel(case_, { staffList: [] });
-    expect(vm.timeOfDeath).toBe('02:15 PM');
+    expect(vm.timeOfDeath).toBe('14:15');
   });
 
   it('weightOver200 is computed from the fallback-resolved value, not the blank structured field', () => {
@@ -443,6 +443,72 @@ describe('buildCaseViewModel — Weight/Time of Death legacy fieldValues fallbac
     expect(vm.timeOfDeath).toBe('06:12');
   });
 
+});
+
+/**
+ * Task #6 follow-up (2026-09) — reproduces the ACTUAL proven Production
+ * shape, not another synthetic approximation: a real Manors case frozen
+ * under workflowTemplateVersion 3, whose Time of Death checklist item
+ * predates `valueKind: 'time'` (hasField: true, valueKind absent/null),
+ * with a legacy free-text fieldValues[5] entry ("11:30AM") a staff member
+ * typed by hand. The read-only Production diagnostic (browser console)
+ * confirmed this exact shape: workflowTemplateId
+ * 'workflow-template-standard-cremation', workflowTemplateVersion 3,
+ * Case.timeOfDeath unset, fieldValues[5] === '11:30AM'.
+ */
+describe('buildCaseViewModel — legacy (v3) Time of Death 12-hour compatibility (Task #6 follow-up, 2026-09)', () => {
+  function v3Case(overrides: Partial<Case>): Case {
+    const template = standardCremationWorkflowTemplateFixture;
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    // v1's stages/intake already have the pre-ADR-041 shape (hasField:
+    // true, no valueKind, mapsToCaseField: 'timeOfDeath') — only the
+    // version NUMBER differs from the real case (3 vs. this fixture's 1),
+    // and workflowSnapshot resolution never reads the version number
+    // itself, only the stages/intake it carries, so stamping 3 here
+    // reproduces the real shape exactly without inventing a parallel v3
+    // template definition.
+    const snapshot = buildCaseWorkflowSnapshot(template, { ...v1, version: 3 });
+    return baseCase({
+      workflowTemplateVersion: 3,
+      workflowSnapshot: snapshot,
+      ...overrides,
+    });
+  }
+
+  it('checklist index 5 has no valueKind and hasField is true — confirms the reproduced shape matches the real diagnostic', () => {
+    const case_ = v3Case({ timeOfDeath: '—', fieldValues: { 5: '11:30AM' } });
+    const item = case_.workflowSnapshot?.stages
+      .flatMap((s) => s.checklist.items)
+      .find((i) => i.index === 5);
+    expect(item?.hasField).toBe(true);
+    expect(item?.valueKind).toBeUndefined();
+  });
+
+  it('resolves the legacy "11:30AM" fieldValues mirror to canonical "11:30" in the view model', () => {
+    const case_ = v3Case({ timeOfDeath: '—', fieldValues: { 5: '11:30AM' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.timeOfDeath).toBe('11:30');
+  });
+
+  it('merely building the view model (reading/rendering) never mutates the Case — fieldValues[5] remains the original "11:30AM"', () => {
+    const case_ = v3Case({ timeOfDeath: '—', fieldValues: { 5: '11:30AM' } });
+    buildCaseViewModel(case_, { staffList: [] });
+    expect(case_.fieldValues[5]).toBe('11:30AM');
+    expect(case_.timeOfDeath).toBe('—');
+  });
+
+  it('preserves the safe blank/placeholder behavior when the legacy value cannot be parsed — never guesses', () => {
+    const case_ = v3Case({ timeOfDeath: '—', fieldValues: { 5: 'unknown' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.timeOfDeath).toBe('—');
+  });
+
+  it('the structured field still wins outright once it has a real canonical value (unaffected by the legacy path)', () => {
+    const case_ = v3Case({ timeOfDeath: '09:00', fieldValues: { 5: '11:30AM' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.timeOfDeath).toBe('09:00');
+  });
 });
 
 /**

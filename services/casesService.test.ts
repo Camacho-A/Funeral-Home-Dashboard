@@ -208,6 +208,68 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
   });
 });
 
+/**
+ * Task #6 follow-up (2026-09). Reproduces the ACTUAL proven Production
+ * shape rather than another synthetic approximation: a case frozen under
+ * workflowTemplateVersion 3, whose Time of Death checklist item predates
+ * `valueKind: 'time'` — the exact shape the read-only Production
+ * diagnostic confirmed for the real Manors case (workflowTemplateId
+ * 'workflow-template-standard-cremation', workflowTemplateVersion 3,
+ * fieldValues[5] === '11:30AM', Case.timeOfDeath unset). Mirrors
+ * lib/wixCaseMapper.test.ts's identical v3-shape coverage, against the
+ * mock-mode update path, so the two never diverge.
+ */
+describe('casesService.update — legacy Time of Death (v3 shape) sync (Task #6 follow-up, 2026-09)', () => {
+  function stampV3Snapshot(caseId: string) {
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    const index = caseFixtures.findIndex((c) => c.id === caseId);
+    if (index === -1) throw new Error(`Case ${caseId} not found in fixtures`);
+    caseFixtures[index] = {
+      ...caseFixtures[index],
+      workflowTemplateVersion: 3,
+      workflowSnapshot: { workflowTemplateId: template.id, workflowTemplateVersion: 3, stages: v1.stages, intake: v1.intake },
+      timeOfDeath: '—',
+    };
+  }
+
+  it('normalizes a real Production-shaped legacy "11:30AM" fieldValues entry into canonical Case.timeOfDeath', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Legacy V3 Time of Death Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    stampV3Snapshot(created.id);
+
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, 5: '11:30AM' },
+    });
+
+    expect(updated.timeOfDeath).toBe('11:30');
+    expect(updated.fieldValues[5]).toBe('11:30AM');
+  });
+
+  it('leaves Case.timeOfDeath unchanged (never guesses) when the legacy fieldValues entry cannot be safely parsed', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Legacy V3 Unparseable Time Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    stampV3Snapshot(created.id);
+
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, 5: 'unknown' },
+    });
+
+    expect(updated.timeOfDeath).toBe('—');
+    expect(updated.fieldValues[5]).toBe('unknown');
+  });
+});
+
 describe('casesService.create — workflow template snapshot (Phase 11)', () => {
   it('stores the resolved template id/version and a matching snapshot', async () => {
     const session = sessionFor(staffFixtures[0].id);
