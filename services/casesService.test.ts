@@ -117,6 +117,97 @@ describe('casesService.update — intake owner immutability', () => {
   });
 });
 
+/**
+ * Case Information sync fix (2026-09). Mirrors
+ * lib/wixCaseMapper.test.ts's identical describe block exactly, against
+ * the mock-mode (DATA_ADAPTER=mock) update path, so dev/test behavior
+ * never diverges from what DATA_ADAPTER=wix actually does in Production.
+ */
+describe('casesService.update — Case Information field sync fix (2026-09)', () => {
+  it('a checklist-only fieldValues patch (the ChecklistCard/setFieldValue shape) also updates the mapped structured Weight field', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Weight Sync Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const weightIndex = 3;
+    expect(created.workflowSnapshot?.intake.sections.flatMap((s) => s.fields).find((f) => f.mapsToCaseField === 'weight')?.checklistItemIndex).toBe(weightIndex);
+
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, [weightIndex]: '178 lb' },
+    });
+
+    expect(updated.weight).toBe('178 lb');
+    expect(updated.fieldValues[weightIndex]).toBe('178 lb');
+  });
+
+  it('syncs Time of Death the same way', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Time of Death Sync Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const timeOfDeathIndex = 5;
+
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, [timeOfDeathIndex]: '14:30' },
+    });
+
+    expect(updated.timeOfDeath).toBe('14:30');
+  });
+
+  it('never overrides a structured field the same patch already sets explicitly', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Explicit Win Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const weightIndex = 3;
+
+    const updated = await casesService.update(organization, created.id, {
+      weight: '200 lb',
+      fieldValues: { ...created.fieldValues, [weightIndex]: '199 lb' },
+    });
+
+    expect(updated.weight).toBe('200 lb');
+  });
+
+  it('Weight is not lost by an unrelated Case PATCH — a later, unrelated update leaves it exactly as synced', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Weight Preservation Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const weightIndex = 3;
+    await casesService.update(organization, created.id, { fieldValues: { ...created.fieldValues, [weightIndex]: '178 lb' } });
+
+    const afterUnrelated = await casesService.update(organization, created.id, { isVeteran: true });
+
+    expect(afterUnrelated.weight).toBe('178 lb');
+    expect(afterUnrelated.isVeteran).toBe(true);
+  });
+
+  it('does not introduce a duplicate field — Case still has exactly one weight/timeOfDeath property, no new field name', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'No Duplicate Field Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const updated = await casesService.update(organization, created.id, { fieldValues: { ...created.fieldValues, 3: '178 lb' } });
+    expect(Object.keys(updated).filter((k) => k.toLowerCase().includes('weight'))).toEqual(['weight']);
+  });
+});
+
 describe('casesService.create — workflow template snapshot (Phase 11)', () => {
   it('stores the resolved template id/version and a matching snapshot', async () => {
     const session = sessionFor(staffFixtures[0].id);

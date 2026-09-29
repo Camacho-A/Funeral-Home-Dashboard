@@ -22,6 +22,7 @@ import {
 } from './veteran';
 import { buildTimeline } from './timeline';
 import { applyLegacyCertifierPresentation } from './legacyCertifierPresentation';
+import { findChecklistIndexForCaseField } from '../workflow/resolveIntake';
 import { initialsFromName } from '../../utils/string';
 
 export type CaseViewModelContext = {
@@ -37,6 +38,37 @@ function resolveOwner(case_: Case, staffList: StaffProfile[]): { name: string; i
   const name = staff?.displayName ?? '—';
   const initials = name === '—' ? '?' : initialsFromName(name);
   return { name, initials };
+}
+
+/**
+ * Case Information legacy fieldValues compatibility fallback (2026-09).
+ * Weight and Time of Death are structured Case properties that are also
+ * field-backed checklist items (see hooks/useCaseMutations.ts's own
+ * comment on why both must stay in sync) — the structured property is
+ * always authoritative and always wins here whenever it has a real value.
+ * This fallback only ever applies to a case whose structured field is
+ * still blank while its checklist fieldValues mirror already carries a
+ * real value — e.g. a value entered before the write-side sync fix
+ * (lib/wixCaseMapper.ts#applyCaseUpdateToWixData /
+ * services/casesService.ts#update) existed. Display-only: never writes
+ * anything back to the Case itself, and no Production migration is
+ * implied or performed by this function existing.
+ *
+ * "No real value yet" means either a genuinely empty string or this
+ * codebase's own existing unset-placeholder convention (`'—'` —
+ * services/casesService.ts#create's own default for an unset weight/
+ * timeOfDeath, the same placeholder resolveOwner/effectiveOwnerName above
+ * already treat as "not really a value" for the exact same reason).
+ */
+function resolveFieldWithLegacyFallback(case_: Case, field: 'weight' | 'timeOfDeath'): string {
+  const structured = case_[field];
+  const trimmed = structured.trim();
+  if (trimmed !== '' && trimmed !== '—') return structured;
+  if (!case_.workflowSnapshot) return structured;
+  const index = findChecklistIndexForCaseField(case_.workflowSnapshot.intake, field);
+  if (index === null) return structured;
+  const fieldValue = case_.fieldValues[index];
+  return fieldValue && fieldValue.trim() !== '' ? fieldValue : structured;
 }
 
 /** Item #7 (2026-09, decedent avatar fix). Derives the case avatar's
@@ -188,7 +220,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     decedentInitials: resolveDecedentInitials(case_.decedentName),
     dateOfBirth: case_.dateOfBirth,
     dateOfDeath: case_.dateOfDeath,
-    timeOfDeath: case_.timeOfDeath,
+    timeOfDeath: resolveFieldWithLegacyFallback(case_, 'timeOfDeath'),
     placeOfDeath: case_.placeOfDeath,
 
     displayStage: effectiveDisplayStage,
@@ -201,8 +233,8 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     ownerInitials: owner.initials,
     effectiveOwnerName,
 
-    weight: case_.weight,
-    weightOver200: parseInt(case_.weight, 10) > 200,
+    weight: resolveFieldWithLegacyFallback(case_, 'weight'),
+    weightOver200: parseInt(resolveFieldWithLegacyFallback(case_, 'weight'), 10) > 200,
 
     daysWaitingInStage: case_.daysWaitingInStage,
     slaTargetDays,

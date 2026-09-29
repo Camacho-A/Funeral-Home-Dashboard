@@ -799,3 +799,86 @@ describe('SOLIS ALL-CAPS data standard (2026-09)', () => {
     expect(patch.nextOfKinName).toBe('JOHN SMITH');
   });
 });
+
+/**
+ * Case Information sync fix (2026-09). Root-cause fix for "Weight/Time of
+ * Death entered via the checklist's own field-backed textbox
+ * (hooks/useCaseMutations.ts#setFieldValue, which only ever patches
+ * fieldValues) never appears in Case Information" — applyCaseUpdateToWixData
+ * is the exact server persistence boundary every Case Detail edit AND
+ * Jotform reconciliation's own Apply route already funnels through, so
+ * fixing it here fixes every caller at once.
+ */
+describe('applyCaseUpdateToWixData — Case Information field sync fix (2026-09)', () => {
+  const SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS = {
+    workflowTemplateId: 'wf-1',
+    workflowTemplateVersion: 1,
+    stages: [],
+    intake: {
+      sections: [
+        {
+          key: 'decedent',
+          label: 'Decedent',
+          fields: [
+            { key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' },
+            { key: 'timeOfDeath', label: 'Time of death', checklistItemIndex: 5, mapsToCaseField: 'timeOfDeath' },
+          ],
+        },
+        {
+          key: 'contacts',
+          label: 'Contacts',
+          fields: [{ key: 'dcContact', label: 'Hospice/physician', checklistItemIndex: 6 }],
+        },
+      ],
+    },
+  };
+
+  it('a checklist-only fieldValues patch (the ChecklistCard/setFieldValue shape) also updates the mapped structured Case field', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, weight: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 3: '178 lb' } });
+    expect(result.weight).toBe('178 lb');
+    expect(result.fieldValues).toEqual({ 3: '178 lb' });
+  });
+
+  it('syncs Time of Death the same way', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, timeOfDeath: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 5: '02:30 PM' } });
+    expect(result.timeOfDeath).toBe('02:30 PM');
+  });
+
+  it('syncs multiple mapped fields from one combined fieldValues patch', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, weight: '', timeOfDeath: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 3: '178 lb', 5: '14:30' } });
+    expect(result.weight).toBe('178 lb');
+    expect(result.timeOfDeath).toBe('14:30');
+  });
+
+  it('never derives anything for an index with no mapsToCaseField (dcContact stays fieldValues-only, exactly as before)', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 6: 'Dr. Smith — 555-0100' } });
+    expect(result).not.toHaveProperty('certifierName');
+    expect(result.fieldValues).toEqual({ 6: 'Dr. Smith — 555-0100' });
+  });
+
+  it('never overrides a structured field the same patch already sets explicitly (setWeight\'s own combined patch keeps winning)', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, weight: '150 lb' };
+    const result = applyCaseUpdateToWixData(existing, { weight: '200 lb', fieldValues: { 3: '200 lb' } });
+    expect(result.weight).toBe('200 lb');
+  });
+
+  it('a patch with no workflowSnapshot on the existing item leaves the structured field untouched (no crash, no fabricated sync)', () => {
+    const existing = { ...validItem, workflowSnapshot: null, weight: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 3: '178 lb' } });
+    expect(result.weight).toBe('');
+  });
+
+  it('full-object Wix safety: every unrelated field on the existing item survives a fieldValues-only sync patch untouched', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FIELD_BACKED_CASE_FIELDS, weight: '' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 3: '178 lb' } });
+    expect(result.decedentName).toBe(validItem.decedentName);
+    expect(result.nextOfKinName).toBe(validItem.nextOfKinName);
+    expect(result.caseNumber).toBe(validItem.caseNumber);
+    expect(result.timeOfDeath).toBe(validItem.timeOfDeath);
+    expect(result.checklistState).toEqual(validItem.checklistState);
+  });
+});

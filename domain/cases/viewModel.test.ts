@@ -389,6 +389,63 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
 });
 
 /**
+ * Case Information sync fix (2026-09). Weight/Time of Death legacy
+ * fieldValues compatibility fallback — see resolveFieldWithLegacyFallback
+ * in ./viewModel.ts for the full "why." checklistItemIndex 3 = weight,
+ * 5 = timeOfDeath on the standard cremation template (same indices the
+ * write-side sync fix tests use in lib/wixCaseMapper.test.ts /
+ * services/casesService.test.ts).
+ */
+describe('buildCaseViewModel — Weight/Time of Death legacy fieldValues fallback (2026-09)', () => {
+  it('5. the structured field displays even when the legacy fieldValues mirror is missing entirely (the common, already-synced case)', () => {
+    const case_ = baseCase({ weight: '178 lb', timeOfDeath: '14:30', fieldValues: {} });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.weight).toBe('178 lb');
+    expect(vm.timeOfDeath).toBe('14:30');
+  });
+
+  it('the structured field always wins when both representations are present', () => {
+    const case_ = baseCase({ weight: '178 lb', fieldValues: { 3: '999 lb' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.weight).toBe('178 lb');
+  });
+
+  it('falls back to the legacy fieldValues mirror when the structured field is genuinely unset ("—")', () => {
+    const case_ = baseCase({ weight: '—', fieldValues: { 3: '178 lb' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.weight).toBe('178 lb');
+  });
+
+  it('falls back for Time of Death the same way', () => {
+    const case_ = baseCase({ timeOfDeath: '—', fieldValues: { 5: '02:15 PM' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.timeOfDeath).toBe('02:15 PM');
+  });
+
+  it('weightOver200 is computed from the fallback-resolved value, not the blank structured field', () => {
+    const case_ = baseCase({ weight: '—', fieldValues: { 3: '215 lb' } });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.weight).toBe('215 lb');
+    expect(vm.weightOver200).toBe(true);
+  });
+
+  it('shows the unset placeholder ("—") when neither the structured field nor the legacy mirror has a real value', () => {
+    const case_ = baseCase({ weight: '—', fieldValues: {} });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.weight).toBe('—');
+    expect(vm.weightOver200).toBe(false);
+  });
+
+  it('B2026-034-style legacy case: falls back correctly with no data migration, same generic function used for every case', () => {
+    const case_ = baseCase({ weight: '—', timeOfDeath: '—', fieldValues: { 3: '178 lb', 5: '06:12' }, rawStage: 3 });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.weight).toBe('178 lb');
+    expect(vm.timeOfDeath).toBe('06:12');
+  });
+
+});
+
+/**
  * Item #7 (2026-09, decedent avatar fix). `decedentInitials` is derived from
  * `Case.decedentName` via the same corrected `initialsFromName` helper item
  * #6 fixed for employee avatars — never from the assigned staff owner,

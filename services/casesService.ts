@@ -13,6 +13,7 @@ import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 import { DEFAULT_RETURN_METHOD } from '../domain/cases/returnMethod';
 import { assertValidPickupReleasePatch } from '../domain/cases/pickupRelease';
 import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
+import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
 
 export type CaseFilters = {
   searchQuery?: string;
@@ -356,7 +357,17 @@ export async function update(
   // diverges from production.
   const normalizedPatch = normalizeCaseTextFields(patch) as CaseUpdate;
   if (normalizedPatch.fieldValues !== undefined) {
-    normalizedPatch.fieldValues = normalizeCaseFieldValues(normalizedPatch.fieldValues, caseFixtures[index].workflowSnapshot);
+    const snapshot = caseFixtures[index].workflowSnapshot;
+    const normalizedFieldValues = normalizeCaseFieldValues(normalizedPatch.fieldValues, snapshot) ?? normalizedPatch.fieldValues;
+    normalizedPatch.fieldValues = normalizedFieldValues;
+    // Case Information sync fix (2026-09): mirrors
+    // lib/wixCaseMapper.ts#applyCaseUpdateToWixData's identical fix exactly,
+    // so DATA_ADAPTER=mock never diverges from DATA_ADAPTER=wix — see that
+    // function's own comment for the full "why."
+    if (snapshot) {
+      const sync = deriveCaseFieldSyncFromFieldValues(snapshot.intake, normalizedFieldValues, new Set(Object.keys(patch)));
+      Object.assign(normalizedPatch, sync);
+    }
   }
   const updated = { ...caseFixtures[index], ...normalizedPatch };
   caseFixtures[index] = updated;

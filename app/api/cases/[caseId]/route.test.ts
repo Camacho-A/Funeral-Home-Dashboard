@@ -470,6 +470,64 @@ describe('PATCH /api/cases/[caseId]', () => {
     });
   });
 
+  /**
+   * Case Information sync fix (2026-09), end-to-end through the real route
+   * handler. Root cause: ChecklistCard's own field-backed textbox commits
+   * through hooks/useCaseMutations.ts#setFieldValue, which sends a
+   * fieldValues-only patch — this proves the route's response (what Case
+   * Detail's React Query cache is seeded with via setQueryData) now
+   * reflects the synced structured field immediately, with no second
+   * fetch required.
+   */
+  describe('field-backed checklist item -> structured Case field sync (2026-09)', () => {
+    const CASE_WITH_FIELD_BACKED_MAPPINGS = {
+      ...EXISTING_WIX_CASE_DATA,
+      weight: '',
+      timeOfDeath: '',
+      workflowSnapshot: {
+        workflowTemplateId: 'workflow-template-standard-cremation',
+        workflowTemplateVersion: 1,
+        stages: [],
+        intake: {
+          sections: [
+            {
+              key: 'decedent',
+              label: 'Decedent',
+              fields: [
+                { key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' },
+                { key: 'timeOfDeath', label: 'Time of death', checklistItemIndex: 5, mapsToCaseField: 'timeOfDeath' },
+              ],
+            },
+          ],
+        },
+      },
+    };
+
+    it('16. a checklist-only fieldValues patch updates the structured Weight field in the route\'s own response (Case Detail query refresh)', async () => {
+      mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: CASE_WITH_FIELD_BACKED_MAPPINGS }]);
+      const response = await patchRequest('1042', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        patch: { fieldValues: { 3: '178 lb' } },
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.case.weight).toBe('178 lb');
+      const mergedData = mockUpdateWixDataItem.mock.calls[0][2];
+      expect(mergedData.weight).toBe('178 lb');
+    });
+
+    it('21. the full merged object sent to Wix preserves every unrelated field on this fieldValues-only sync patch', async () => {
+      mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: CASE_WITH_FIELD_BACKED_MAPPINGS }]);
+      await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { fieldValues: { 3: '178 lb' } } });
+
+      const mergedData = mockUpdateWixDataItem.mock.calls[0][2];
+      expect(mergedData.decedentName).toBe(CASE_WITH_FIELD_BACKED_MAPPINGS.decedentName);
+      expect(mergedData.nextOfKinName).toBe(CASE_WITH_FIELD_BACKED_MAPPINGS.nextOfKinName);
+      expect(mergedData.caseNumber).toBe(CASE_WITH_FIELD_BACKED_MAPPINGS.caseNumber);
+    });
+  });
+
   describe('successful update', () => {
     it('updates an allowed field and returns the mapped, updated case', async () => {
       const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } });

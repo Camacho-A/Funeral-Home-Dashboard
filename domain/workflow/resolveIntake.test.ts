@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildIntakeFieldValues, buildStructuredCaseFields, findChecklistIndexForCaseField } from './resolveIntake';
+import {
+  buildIntakeFieldValues,
+  buildStructuredCaseFields,
+  findChecklistIndexForCaseField,
+  findCaseFieldForChecklistIndex,
+  deriveCaseFieldSyncFromFieldValues,
+} from './resolveIntake';
 import type { IntakeTemplate } from '../../types/workflowTemplate';
 
 /**
@@ -173,5 +179,103 @@ describe('findChecklistIndexForCaseField', () => {
     // change to this function's payment-safety posture is a deliberate,
     // reviewed choice rather than a silent regression.
     expect(findChecklistIndexForCaseField(intake, 'weight')).toBe(8);
+  });
+});
+
+/**
+ * Case Information sync fix (2026-09). `findCaseFieldForChecklistIndex` is
+ * the inverse of `findChecklistIndexForCaseField` above — the direction
+ * needed when a write path only has an index (ChecklistCard's own
+ * field-backed textbox, via hooks/useCaseMutations.ts#setFieldValue),
+ * never a caseField name directly.
+ */
+describe('findCaseFieldForChecklistIndex', () => {
+  const STANDARD_CREMATION_LIKE_INTAKE: IntakeTemplate = {
+    sections: [
+      {
+        key: 'decedent',
+        label: 'Decedent',
+        fields: [
+          { key: 'decedentName', label: 'Name of deceased', checklistItemIndex: 0, mapsToCaseField: 'decedentName' },
+          { key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' },
+          { key: 'timeOfDeath', label: 'Time of death', checklistItemIndex: 5, mapsToCaseField: 'timeOfDeath' },
+        ],
+      },
+      {
+        key: 'contacts',
+        label: 'Contacts',
+        fields: [{ key: 'dcContact', label: 'Hospice/physician', checklistItemIndex: 6 }],
+      },
+    ],
+  };
+
+  it('finds the mapped Case field for a field-backed index (Weight)', () => {
+    expect(findCaseFieldForChecklistIndex(STANDARD_CREMATION_LIKE_INTAKE, 3)).toBe('weight');
+  });
+
+  it('finds the mapped Case field for a different index (Time of death)', () => {
+    expect(findCaseFieldForChecklistIndex(STANDARD_CREMATION_LIKE_INTAKE, 5)).toBe('timeOfDeath');
+  });
+
+  it('returns null for an index with no mapsToCaseField at all (dcContact — pure free text)', () => {
+    expect(findCaseFieldForChecklistIndex(STANDARD_CREMATION_LIKE_INTAKE, 6)).toBeNull();
+  });
+
+  it('returns null for an index no intake field uses', () => {
+    expect(findCaseFieldForChecklistIndex(STANDARD_CREMATION_LIKE_INTAKE, 99)).toBeNull();
+  });
+});
+
+/**
+ * Case Information sync fix (2026-09). This is the actual root-cause fix
+ * for "Time of Death/Weight entered via the checklist never appear in
+ * Case Information": ChecklistCard's own field-backed textbox commits
+ * through hooks/useCaseMutations.ts#setFieldValue, which only ever
+ * patches `fieldValues` — this function is what lets the server
+ * persistence boundary (lib/wixCaseMapper.ts#applyCaseUpdateToWixData /
+ * services/casesService.ts#update) recognize that gap and fill in the
+ * structured Case field too, for any caller, present or future.
+ */
+describe('deriveCaseFieldSyncFromFieldValues', () => {
+  const INTAKE: IntakeTemplate = {
+    sections: [
+      {
+        key: 'decedent',
+        label: 'Decedent',
+        fields: [
+          { key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' },
+          { key: 'timeOfDeath', label: 'Time of death', checklistItemIndex: 5, mapsToCaseField: 'timeOfDeath' },
+        ],
+      },
+      {
+        key: 'contacts',
+        label: 'Contacts',
+        fields: [{ key: 'dcContact', label: 'Hospice/physician', checklistItemIndex: 6 }],
+      },
+    ],
+  };
+
+  it('derives the structured field patch for a fieldValues-only change (the ChecklistCard gap)', () => {
+    const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 3: '178 lb' }, new Set());
+    expect(result).toEqual({ weight: '178 lb' });
+  });
+
+  it('derives multiple structured fields when multiple mapped indices are present', () => {
+    const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 3: '178 lb', 5: '14:30' }, new Set());
+    expect(result).toEqual({ weight: '178 lb', timeOfDeath: '14:30' });
+  });
+
+  it('never derives anything for an index with no mapsToCaseField (dcContact)', () => {
+    const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 6: 'Dr. Smith — 555-0100' }, new Set());
+    expect(result).toEqual({});
+  });
+
+  it('never overrides a structured field the same patch already sets explicitly', () => {
+    const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 3: '178 lb' }, new Set(['weight']));
+    expect(result).toEqual({});
+  });
+
+  it('returns an empty object for an empty fieldValues patch', () => {
+    expect(deriveCaseFieldSyncFromFieldValues(INTAKE, {}, new Set())).toEqual({});
   });
 });

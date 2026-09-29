@@ -3,6 +3,7 @@ import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
 import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
+import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
 
 /** Manors launch-prep. Mirrors lib/wixOrganizationMapper.ts's own
     VALID_STATUSES/isValidStatus local-guard convention exactly. */
@@ -651,7 +652,22 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
     // update patch (buildWixCaseData handles the creation-time case
     // directly, where the snapshot is a required constructor param).
     const snapshot = isValidWorkflowSnapshot(existing.workflowSnapshot) ? existing.workflowSnapshot : null;
-    next.fieldValues = normalizeCaseFieldValues(patch.fieldValues, snapshot);
+    const normalizedFieldValues = normalizeCaseFieldValues(patch.fieldValues, snapshot) ?? patch.fieldValues;
+    next.fieldValues = normalizedFieldValues;
+
+    // Case Information sync fix (2026-09): a patch that only ever touches
+    // fieldValues (ChecklistCard's own field-backed textbox, via
+    // hooks/useCaseMutations.ts#setFieldValue) must still update whichever
+    // structured Case field that index maps to (Weight, Time of Death) —
+    // otherwise Case Information silently keeps showing blank for a value
+    // staff already entered through the checklist. Never overrides a
+    // structured field this same patch already sets explicitly.
+    if (snapshot) {
+      const sync = deriveCaseFieldSyncFromFieldValues(snapshot.intake, normalizedFieldValues, new Set(Object.keys(patch)));
+      for (const [field, value] of Object.entries(sync)) {
+        (next as Record<string, unknown>)[field] = value;
+      }
+    }
   }
   if (patch.daysWaitingInStage !== undefined) next.daysWaitingInStage = patch.daysWaitingInStage;
   if (patch.isStalled !== undefined) next.isStalled = patch.isStalled;

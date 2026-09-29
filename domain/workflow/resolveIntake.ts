@@ -108,3 +108,63 @@ export function findChecklistIndexForCaseField(intake: IntakeTemplate, caseField
   }
   return null;
 }
+
+/**
+ * The inverse of findChecklistIndexForCaseField above: given a checklist
+ * fieldValues index, finds the structured Case field it maps to (if any).
+ * Returns null when no intake field has this checklistItemIndex, or when
+ * the matching field has no mapsToCaseField (the common case — most
+ * field-backed checklist items are pure free text with no structured
+ * counterpart at all).
+ *
+ * Case Information sync fix (2026-09): exists so a write path that only
+ * ever touches fieldValues (ChecklistCard's own field-backed textbox,
+ * wired through hooks/useCaseMutations.ts#setFieldValue) can still be
+ * recognized, at the server persistence boundary, as also needing to
+ * update the structured Case property Case Information actually reads
+ * (Weight, Time of Death) — see deriveCaseFieldSyncFromFieldValues below,
+ * the function that actually uses this lookup.
+ */
+export function findCaseFieldForChecklistIndex(intake: IntakeTemplate, index: number): string | null {
+  for (const section of intake.sections) {
+    for (const field of section.fields) {
+      if (field.checklistItemIndex === index && field.mapsToCaseField) {
+        return field.mapsToCaseField;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Case Information sync fix (2026-09). Given a fieldValues patch (already
+ * fully merged/normalized — the shape every fieldValues-touching caller
+ * already sends, e.g. `{ ...case_.fieldValues, [index]: value }`) and the
+ * case's own workflowSnapshot.intake, derives which structured Case
+ * fields should be updated to match, so a field-backed checklist item's
+ * own edit (Weight, Time of Death) is never silently invisible in Case
+ * Information. This is the ONE place that sync is computed — both
+ * lib/wixCaseMapper.ts#applyCaseUpdateToWixData (DATA_ADAPTER=wix) and
+ * services/casesService.ts#update (DATA_ADAPTER=mock) call this exact
+ * function, so the two modes can never diverge.
+ *
+ * `alreadyPatchedFields` is the set of Case-field keys the SAME patch
+ * already sets explicitly (e.g. hooks/useCaseMutations.ts#setWeight's own
+ * combined `{ weight, fieldValues }` patch) — that value always wins;
+ * this function only fills in a structured field a caller's patch left
+ * untouched, never overrides one it set on purpose.
+ */
+export function deriveCaseFieldSyncFromFieldValues(
+  intake: IntakeTemplate,
+  normalizedFieldValues: Record<number, string>,
+  alreadyPatchedFields: ReadonlySet<string>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [indexKey, value] of Object.entries(normalizedFieldValues)) {
+    const caseField = findCaseFieldForChecklistIndex(intake, Number(indexKey));
+    if (caseField && !alreadyPatchedFields.has(caseField)) {
+      result[caseField] = value;
+    }
+  }
+  return result;
+}
