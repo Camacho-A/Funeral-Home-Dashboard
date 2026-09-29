@@ -186,25 +186,35 @@ describe('GET /api/cases/[caseId]/documents/bulk-download — ZIP construction',
     void doc1;
   });
 
-  it('archived documents remain eligible for Download All, consistent with individual download (item #12)', async () => {
+  it('Task #12 final follow-up (2026-09): an archived document is EXCLUDED from Download All — it now browses under History, not Documents; its own individual Download (unchanged, isCaseDocumentDownloadable) still applies', async () => {
     const { archive } = await import('@/services/documentService');
-    const doc = await seedDocument('Old Statement.pdf');
-    await archive(
-      DEFAULT_ORGANIZATION_ID,
-      TEST_CASE_ID,
-      doc.id,
-      { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: mockDefaultUser.id, actorMembershipId: null, actorRoleKey: 'administrator', correlationId: 'corr-archive' },
+    // Manors (DEFAULT_ORGANIZATION_ID) has archiving disabled (item #12) —
+    // use the second mock organization, where archiving actually succeeds,
+    // so this exercises a genuinely archived document, not a still-active
+    // one masquerading as archived.
+    const secondOrgCaseId = `${TEST_CASE_ID}-second-org`;
+    seedCase(secondOrgCaseId, SECOND_MOCK_ORGANIZATION_ID, 'B2026-099');
+    const doc = await upload(
+      { caseId: secondOrgCaseId, fileName: 'Old Statement.pdf', mimeType: 'application/pdf', idFactory },
+      Buffer.from('raw bytes for Old Statement.pdf'),
+      { organizationId: SECOND_MOCK_ORGANIZATION_ID, actorIdentityId: mockDefaultUser.id, actorMembershipId: null, actorRoleKey: 'administrator', correlationId: 'corr-1' },
       'mock',
-    ).catch(() => {
-      // Manors (managed-cremations) has archiving disabled since item #12 —
-      // this assertion only needs the document's eligibility for bulk
-      // download, not that the archive call itself succeeds here.
-    });
+    );
+    await archive(
+      SECOND_MOCK_ORGANIZATION_ID,
+      secondOrgCaseId,
+      doc.id,
+      { organizationId: SECOND_MOCK_ORGANIZATION_ID, actorIdentityId: mockDefaultUser.id, actorMembershipId: null, actorRoleKey: 'administrator', correlationId: 'corr-archive' },
+      'mock',
+    );
 
-    const response = await bulkDownloadRequest(TEST_CASE_ID, DEFAULT_ORGANIZATION_ID);
-    expect(response.status).toBe(200);
-    const zip = await JSZip.loadAsync(Buffer.from(await response.arrayBuffer()));
-    expect(Object.keys(zip.files)).toContain('Old Statement.pdf');
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true });
+    const response = await bulkDownloadRequest(secondOrgCaseId, SECOND_MOCK_ORGANIZATION_ID);
+    // No eligible (active) documents remain for this case — never an empty ZIP.
+    expect(response.status).toBe(404);
+    mockMembershipFixtures.pop();
+    const secondOrgCaseIndex = caseFixtures.findIndex((c) => c.id === secondOrgCaseId);
+    if (secondOrgCaseIndex !== -1) caseFixtures.splice(secondOrgCaseIndex, 1);
   });
 
   it('never touches caseSequences or Case Numbering — the ZIP filename only reads the existing caseNumber, never allocates one', async () => {

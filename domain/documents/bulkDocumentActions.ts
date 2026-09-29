@@ -74,14 +74,16 @@ export function sanitizeZipEntryFileName(fileName: string): string {
 
 /**
  * Handles the exact "duplicate filename" scenario this checkpoint calls
- * out by name: a regenerated Statement (or any regeneration) produces a
- * new CaseDocument row that legitimately shares its predecessor's
- * fileName (superseded/archived rows are still eligible for bulk actions
- * - see isCaseDocumentDownloadable). Input order is preserved (callers
- * pass documents in list()'s own newest-first order, so disambiguation is
- * deterministic across runs for the same document set) - the first
- * occurrence of a name keeps it as-is; each later occurrence gets " (n)"
- * appended before the extension.
+ * out by name: e.g. two independently uploaded files sharing a name.
+ * (Task #12 final follow-up, 2026-09: bulk actions now only ever include
+ * `active` documents — see isCaseDocumentEligibleForBulkAction — so a
+ * regenerated document's superseded predecessor is no longer part of
+ * this input at all; this helper is unaware of status either way, it
+ * just disambiguates whatever list it's given.) Input order is preserved
+ * (callers pass documents in list()'s own newest-first order, so
+ * disambiguation is deterministic across runs for the same document set)
+ * - the first occurrence of a name keeps it as-is; each later occurrence
+ * gets " (n)" appended before the extension.
  */
 export function dedupeFileNames(fileNames: string[]): string[] {
   const seenCount = new Map<string, number>();

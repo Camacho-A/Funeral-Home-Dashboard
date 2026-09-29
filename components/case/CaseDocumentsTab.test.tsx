@@ -335,17 +335,18 @@ describe('Task #3 (2026-09) — Print All / Download All bulk case document acti
     expect(screen.getByRole('button', { name: 'Download All' })).toBeDisabled();
   });
 
-  it('21. archived documents remain eligible for bulk actions, consistent with individual Download/Print (item #12 behavior preserved) — even though they now browse under History, not Documents', async () => {
+  it('5/6, 21 (Task #12 final follow-up, 2026-09): an archived-only document set disables Print All/Download All — bulk actions never reach into History', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'Old Statement.pdf', status: 'archived' })]);
     renderTab();
 
-    // The archived document itself renders under History now (Task #12
-    // follow-up) — the Documents view shows its own empty state — but
-    // bulk eligibility is computed over the full document set, so Print
-    // All/Download All (which live in the Documents toolbar) stay enabled.
+    // The archived document renders under History (Task #12 follow-up) —
+    // the Documents view shows its own empty state, and bulk eligibility
+    // (isCaseDocumentEligibleForBulkAction, active-only) now agrees:
+    // Print All/Download All are disabled, matching zero current, usable
+    // documents.
     await screen.findByText('No documents for this case yet.');
-    expect(screen.getByRole('button', { name: 'Print All' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Download All' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Print All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Download All' })).toBeDisabled();
   });
 
   it('22. Manors Archive action remains disabled — bulk actions do not reintroduce it', async () => {

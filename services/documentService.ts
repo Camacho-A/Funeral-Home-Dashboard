@@ -722,16 +722,16 @@ export async function downloadFile(
 
 export type BulkDocumentExclusion = { fileName: string; reason: string };
 
-/** Task #12 follow-up (2026-09, Documents/History separation) —
-    `isCaseDocumentEligibleForBulkAction`, not the broader
-    `isCaseDocumentDownloadable` individual Download/Print use: a
-    pending/failed/superseded row is never included (a superseded version
-    must never be silently swept into a bulk action on the case's current
-    documents), while archived remains included, preserving the earlier,
-    separately-established item #12 (document Archive removal for
-    Manors) precedent that archiving only hides the *archive action*,
-    never a document's own retrievability. See that function's own doc
-    comment for the full reasoning. */
+/** Task #12 final follow-up (2026-09, bulk actions scoped to the current
+    Documents view) — `isCaseDocumentEligibleForBulkAction`, not the
+    broader `isCaseDocumentDownloadable` individual Download/Print use:
+    only `active` (the one current-view status with a real stored file)
+    is ever included. Print All/Download All live in the Documents
+    sub-tab's own toolbar, so eligibility must never reach into History —
+    pending/failed (no usable file) and superseded/archived (History,
+    per `isCaseDocumentHistorical`) are all excluded. See that function's
+    own doc comment for the full reasoning, including why an earlier
+    version of this rule that kept `archived` bulk-eligible was revised. */
 export async function listEligibleForBulkAction(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<CaseDocument[]> {
   const documents = await list(organizationId, caseId, dataAdapterMode);
   return documents.filter((d) => isCaseDocumentEligibleForBulkAction(d.status));

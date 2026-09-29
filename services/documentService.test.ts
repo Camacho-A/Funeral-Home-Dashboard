@@ -351,18 +351,20 @@ describe('archive', () => {
 });
 
 /**
- * Task #12 follow-up (2026-09, Documents/History separation).
- * `listEligibleForBulkAction` narrows from the broader
- * `isCaseDocumentDownloadable` (used by individual Download/Print) to
- * `isCaseDocumentEligibleForBulkAction` — a superseded version must never
- * be silently swept into a bulk action on the case's current documents,
- * while an archived document remains bulk-eligible (the earlier,
- * separately-established document-Archive item #12 precedent — Manors
- * item #12, not this Forms/Documents Task #12 — that archiving only
- * hides the *archive action*, never a document's own retrievability).
+ * Task #12 final follow-up (2026-09, bulk actions scoped to the current
+ * Documents view). `listEligibleForBulkAction` narrows to
+ * `isCaseDocumentEligibleForBulkAction` (`status === 'active'` only) —
+ * Print All/Download All live in the Documents sub-tab's own toolbar, so
+ * eligibility must never reach into History: a superseded version is
+ * excluded (revised from an earlier Documents/History-separation version
+ * of this rule), and — corrected in this same follow-up — an archived
+ * document is excluded too, now that archived documents browse under
+ * History rather than Documents. Individual Download/Print
+ * (`isCaseDocumentDownloadable`) is unaffected — an archived document's
+ * own row still offers those actions.
  */
-describe('listEligibleForBulkAction (Task #12 follow-up)', () => {
-  it('excludes a superseded document — only the current active version is eligible', async () => {
+describe('listEligibleForBulkAction (Task #12 final follow-up)', () => {
+  it('1/3/4: excludes a superseded document — only the current active version is eligible for Print All/Download All', async () => {
     const template = await createSampleTemplate();
     const first = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
     const second = await generate({ caseId: TEST_CASE_ID, templateId: template.id, existingDocumentId: first.id, idFactory }, ctx(), 'mock');
@@ -373,7 +375,7 @@ describe('listEligibleForBulkAction (Task #12 follow-up)', () => {
     expect(eligibleIds).not.toContain(first.id);
   });
 
-  it('keeps an archived document eligible, consistent with individual download (item #12 behavior preserved)', async () => {
+  it('5/6: excludes an archived document — it now browses under History, not Documents; only its individual Download/Print remain (isCaseDocumentDownloadable, unaffected)', async () => {
     const doc = await upload(
       { caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory },
       Buffer.from('raw bytes'),
@@ -383,16 +385,65 @@ describe('listEligibleForBulkAction (Task #12 follow-up)', () => {
     await archive(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock');
 
     const eligible = await listEligibleForBulkAction(SECOND_MOCK_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
-    expect(eligible.map((d) => d.id)).toContain(doc.id);
+    expect(eligible.map((d) => d.id)).not.toContain(doc.id);
   });
 
-  it('excludes a pending or failed document — neither has a usable file', async () => {
+  it('7: excludes a failed document — no usable file', async () => {
     const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx(), 'mock');
     const index = caseDocumentFixtures.findIndex((d) => d.id === doc.id);
     caseDocumentFixtures[index] = { ...caseDocumentFixtures[index], status: 'failed' };
 
     const eligible = await listEligibleForBulkAction(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
     expect(eligible.map((d) => d.id)).not.toContain(doc.id);
+  });
+
+  it('8: excludes a pending document — not yet a usable completed document', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx(), 'mock');
+    const index = caseDocumentFixtures.findIndex((d) => d.id === doc.id);
+    caseDocumentFixtures[index] = { ...caseDocumentFixtures[index], status: 'pending' };
+
+    const eligible = await listEligibleForBulkAction(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    expect(eligible.map((d) => d.id)).not.toContain(doc.id);
+  });
+
+  it('1/2: includes an active, usable document', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx(), 'mock');
+
+    const eligible = await listEligibleForBulkAction(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+    expect(eligible.map((d) => d.id)).toContain(doc.id);
+  });
+
+  it('15: computing eligibility does not mutate any CaseDocument row', async () => {
+    const template = await createSampleTemplate();
+    const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
+    const before = caseDocumentFixtures.find((d) => d.id === doc.id);
+    const beforeSnapshot = JSON.stringify(before);
+
+    await listEligibleForBulkAction(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+
+    const after = caseDocumentFixtures.find((d) => d.id === doc.id);
+    expect(JSON.stringify(after)).toBe(beforeSnapshot);
+  });
+});
+
+/**
+ * Task #12 final follow-up. The governing invariant: a status the
+ * Documents/History split classifies as historical
+ * (`isCaseDocumentHistorical`) must never simultaneously qualify for the
+ * Documents tab's own bulk actions (`isCaseDocumentEligibleForBulkAction`)
+ * — checked exhaustively over every `CaseDocumentStatus`, not just the
+ * two statuses that happen to be historical today, so a future status
+ * addition can't silently violate it without a test noticing.
+ */
+describe('isCaseDocumentHistorical / isCaseDocumentEligibleForBulkAction invariant (Task #12 final follow-up)', () => {
+  it('13: no status classified as historical ever satisfies bulk-action eligibility', async () => {
+    const { isCaseDocumentHistorical, isCaseDocumentEligibleForBulkAction } = await import('../domain/documents/caseDocumentDisplay');
+    const ALL_STATUSES: Array<'pending' | 'active' | 'superseded' | 'archived' | 'failed'> = ['pending', 'active', 'superseded', 'archived', 'failed'];
+    for (const status of ALL_STATUSES) {
+      if (isCaseDocumentHistorical(status)) {
+        expect(isCaseDocumentEligibleForBulkAction(status)).toBe(false);
+      }
+    }
   });
 });
 

@@ -64,19 +64,32 @@ export function isCaseDocumentHistorical(status: CaseDocumentStatus): boolean {
 }
 
 /**
- * Task #12 follow-up. Print All / Download All's eligibility rule — a
- * document is only ever affected by these bulk actions when the primary
- * Documents view is what's being acted on, so it must never silently
- * include a superseded version. Deliberately keeps `archived` alongside
- * `active`: the document-archiving item (handwritten item #12, Archive
- * removal for Manors — a different, earlier "item #12" than this Forms/
- * Documents Task #12) already established, with its own dedicated test
- * ("archived documents remain eligible for Download All, consistent with
- * individual download"), that archiving only hides the *archive action*,
- * never the document's own retrievability — that precedent is preserved
- * here, not revisited, even though archived documents now browse under
- * History rather than Documents.
+ * Task #12 final follow-up (2026-09, bulk actions scoped to the current
+ * Documents view). Print All / Download All live in the Documents
+ * sub-tab's own toolbar, so their eligibility must be drawn from exactly
+ * the same set the Documents view itself renders — never reaching into
+ * History. Superseded a prior version of this rule (2026-09, Documents/
+ * History separation) that deliberately kept `archived` bulk-eligible,
+ * preserving an earlier, separate document-archiving precedent
+ * (handwritten item #12, Archive removal for Manors) that archiving only
+ * hides the *archive action*, never a document's own retrievability.
+ * That precedent still holds for *individual* Download/Print
+ * (`isCaseDocumentDownloadable`, unchanged — an archived document's own
+ * row in History still offers Download/Print) — it just no longer
+ * extends to the *bulk* actions once archived moved out of the
+ * Documents view entirely. Concretely: of the three current-view
+ * statuses (`pending`/`active`/`failed`), only `active` ever has a real
+ * stored file — `pending` is still generating and `failed` never
+ * completed (both persist with an empty `storageKey`, see
+ * `services/documentService.ts#completeDocumentGeneration`) — so
+ * "current AND usable" reduces to exactly `status === 'active'`.
+ *
+ * The invariant this must never violate: `isCaseDocumentHistorical(s)`
+ * true implies this returns false for the same `s` — enforced by
+ * `isCaseDocumentEligibleForBulkAction` never testing a status
+ * `isCaseDocumentHistorical` also claims (see this file's own test for
+ * an explicit, exhaustive check over every `CaseDocumentStatus`).
  */
 export function isCaseDocumentEligibleForBulkAction(status: CaseDocumentStatus): boolean {
-  return status === 'active' || status === 'archived';
+  return status === 'active';
 }
