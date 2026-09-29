@@ -75,20 +75,19 @@ describe('Case Detail page — Overview tab structure (item #2, 2026-09)', () =>
     expect(SOURCE).toMatch(/useResetMainContentScrollOnChange\(caseId\);/);
   });
 
-  it("Forms is NOT moved — CaseFormsSection remains on Overview, unconditional on activeTab === 'overview'", () => {
-    expect(SOURCE).toMatch(/<CaseFormsSection caseId=\{caseId\} \/>/);
+  it('Task #12 (2026-09, Forms organization): CaseFormsSection no longer imported/rendered on Overview — moved into the Documents tab\'s own sub-tab switcher', () => {
+    expect(SOURCE).not.toMatch(/CaseFormsSection/);
   });
 });
 
 const CSS_SOURCE = fs.readFileSync(path.join(__dirname, 'page.module.css'), 'utf-8');
 
 describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
-  it('3/4/5/6/7/8/9: every remaining Overview card is present in the page source (BillingCard excluded — relocated to its own tab)', () => {
+  it('3/4/5/6/7/8/9: every remaining Overview card is present in the page source (BillingCard excluded — relocated to its own tab; CaseFormsSection excluded — Task #12 moved it into the Documents tab)', () => {
     expect(SOURCE).toMatch(/<CaseInformationCard/);
     expect(SOURCE).toMatch(/<ChecklistCard/);
     expect(SOURCE).toMatch(/<CaseLogCard/);
     expect(SOURCE).toMatch(/<CaseTasksCard/);
-    expect(SOURCE).toMatch(/<CaseFormsSection caseId=\{caseId\} \/>/);
     expect(SOURCE).toMatch(/<CaseOrderCard caseId=\{caseId\}/);
   });
 

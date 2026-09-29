@@ -35,11 +35,13 @@
    cards (ActivityLogCard/DocumentsCard, see fdf3fd3) were removed, the
    remaining cards no longer need to be squeezed into a fixed 1fr/1fr
    split just to fill a second column that no longer exists. Overview is
-   now one full-width stack, so Case Information, Workflow Repair, Forms,
+   now one full-width stack, so Case Information, Workflow Repair,
    Case Order, Billing, and the Checklist can each use the page's actual
    available width — each card's own internal layout (not this file)
    decides how it spends that width (see e.g. CaseInformationCard.module.css's
-   .grid and ChecklistCard.module.css's field-input max-width). */
+   .grid and ChecklistCard.module.css's field-input max-width). Forms
+   (Task #12, 2026-09) moved from here into the Documents tab's own
+   "Documents"/"Forms" sub-tab switcher — no longer part of this stack. */
 .overview {
   display: flex;
   flex-direction: column;

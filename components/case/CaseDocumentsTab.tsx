@@ -27,6 +27,7 @@ import type { CaseDocument } from '@/types/caseDocument';
 import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
 import { SignatureStatusPanel } from './SignatureStatusPanel';
+import { CaseFormsSection } from './CaseFormsSection';
 import { printStoredDocument } from '@/utils/print';
 import styles from './CaseDocumentsTab.module.css';
 
@@ -56,6 +57,18 @@ import styles from './CaseDocumentsTab.module.css';
  * altered. See those functions' own doc comments for the full design
  * (why DOCX can't safely join the combined PDF, partial-failure
  * handling, filenames).
+ *
+ * Task #12 (2026-09, Forms organization). Adds an internal "Documents" /
+ * "Forms" sub-tab switcher — CaseFormsSection (external Jotform status/
+ * activity: sent/received/reviewed, retry, reconciliation) moved here,
+ * unchanged, from its old spot on the Overview tab. It's a distinct
+ * concept from the CaseDocument files below (Documents = actual stored
+ * files; Forms = status/activity for external submissions, one of which
+ * may eventually *produce* a CaseDocument here, via ExternalFormSubmission's
+ * own `documentId` link — never a second copy, never a second repository).
+ * Purely a presentation move: same component, same caseId prop, same
+ * queries/permissions (`case.read`, already required to view this page at
+ * all) — switching sub-tabs never mutates anything.
  */
 export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: string; caseName: string; caseNumber: string }) {
   const { organizationId } = useOrganization();
@@ -68,6 +81,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const bulkDownload = useBulkDownloadCaseDocuments(organizationId, caseId);
   const bulkPrint = useBulkPrintCaseDocuments(organizationId, caseId, caseName, caseNumber);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [subTab, setSubTab] = useState<'documents' | 'forms'>('documents');
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [regeneratingDoc, setRegeneratingDoc] = useState<CaseDocument | null>(null);
@@ -158,6 +172,31 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
 
   return (
     <div className={styles.card}>
+      <div className={styles.subTabs} role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === 'documents'}
+          className={subTab === 'documents' ? styles.subTabActive : styles.subTabInactive}
+          onClick={() => setSubTab('documents')}
+        >
+          Documents
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === 'forms'}
+          className={subTab === 'forms' ? styles.subTabActive : styles.subTabInactive}
+          onClick={() => setSubTab('forms')}
+        >
+          Forms
+        </button>
+      </div>
+
+      {subTab === 'forms' && <CaseFormsSection caseId={caseId} />}
+
+      {subTab === 'documents' && (
+      <>
       <div className={styles.toolbar}>
         {canGenerate && (
           <Button
@@ -325,6 +364,8 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
           confirmLabel="Archive"
           onConfirm={() => archive.mutateAsync(archivingDoc.id)}
         />
+      )}
+      </>
       )}
     </div>
   );

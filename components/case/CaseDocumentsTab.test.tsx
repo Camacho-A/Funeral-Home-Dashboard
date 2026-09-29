@@ -594,3 +594,125 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     });
   });
 });
+
+// Task #12 (2026-09, Forms organization) — the Documents/Forms sub-tab
+// switcher this tab now owns. CaseFormsSection itself is unchanged and
+// exhaustively covered by its own test file; these tests only cover the
+// switcher shell: default state, switching behavior, accessibility, and
+// that no mutation/refetch of either surface's data is triggered merely by
+// switching between them.
+function mockFormsFetch(forms: unknown[]) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/forms?')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ forms }) });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+  });
+}
+
+function formRow(overrides: Record<string, unknown> = {}) {
+  return {
+    config: { id: 'config-vital', label: 'Vital Statistics', audience: 'family' },
+    status: 'received',
+    sentAt: '2026-01-01T00:00:00.000Z',
+    submissionId: 'sub-vital-1',
+    pdfStatus: 'stored',
+    documentId: 'doc-vital-1',
+    ...overrides,
+  };
+}
+
+describe('CaseDocumentsTab — Documents/Forms sub-tab switcher (Task #12, 2026-09)', () => {
+  it('1/2: Documents is the default sub-tab, and the top-level Case Detail Documents tab is not duplicated as a new top-level tab (this component renders only the sub-tab bar, never a second set of page-level tabs)', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    vi.stubGlobal('fetch', mockFormsFetch([formRow()]));
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Forms' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.queryByText('Vital Statistics')).not.toBeInTheDocument();
+  });
+
+  it('3/4: existing case Documents remain accessible and render unchanged on the default sub-tab', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    vi.stubGlobal('fetch', mockFormsFetch([]));
+    renderTab();
+
+    expect(await screen.findByText('Cremation Authorization.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
+  });
+
+  it('5/6: clicking Forms reveals existing form-status/activity information and its actions for a user who already had permission', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    vi.stubGlobal('fetch', mockFormsFetch([formRow()]));
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'Forms' }));
+
+    expect(await screen.findByText('Vital Statistics')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Forms' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'false');
+    // Documents content is hidden while Forms is active, not merely styled away.
+    expect(screen.queryByText('Cremation Authorization.pdf')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Generate Document' })).not.toBeInTheDocument();
+  });
+
+  it('clicking back to Documents shows Documents content again and hides Forms', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    vi.stubGlobal('fetch', mockFormsFetch([formRow()]));
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'Forms' }));
+    await screen.findByText('Vital Statistics');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(await screen.findByText('Cremation Authorization.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('Vital Statistics')).not.toBeInTheDocument();
+  });
+
+  it('11/12/13: switching sub-tabs triggers no document/form mutation and no PDF regeneration — the Forms side only ever re-issues its own read (GET /forms), never archive/retry/generate/link calls, and Documents is never refetched merely by switching', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    const fetchMock = mockFormsFetch([formRow()]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'Forms' }));
+    await screen.findByText('Vital Statistics');
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    await screen.findByText('Cremation Authorization.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'Forms' }));
+    await screen.findByText('Vital Statistics');
+
+    // Documents' own query client never refetches merely from switching away
+    // and back — CaseDocumentsTab itself stays mounted throughout, only its
+    // conditionally-rendered children change.
+    expect(caseDocumentsClient.fetchCaseDocuments).toHaveBeenCalledTimes(1);
+    // CaseFormsSection unmounts/remounts with the sub-tab (a plain conditional
+    // render), so its own react-query re-issues its read on each remount —
+    // that's an ordinary read, never a mutation, which is what matters here.
+    const formsCalls = fetchMock.mock.calls.filter(([input]) => {
+      const url = typeof input === 'string' ? input : (input as URL | Request).toString();
+      return url.includes('/forms?');
+    });
+    expect(formsCalls.length).toBeGreaterThanOrEqual(1);
+    expect(fetchMock.mock.calls.some(([input]) => (typeof input === 'string' ? input : (input as URL | Request).toString()).includes('/retry-pdf'))).toBe(false);
+    expect(caseDocumentsClient.archiveCaseDocument).not.toHaveBeenCalled();
+  });
+
+  it('the Forms tab is a sub-tab of Documents, not a second top-level tab — there is exactly one Documents tab and one Forms tab rendered, both inside the same tablist', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    vi.stubGlobal('fetch', mockFormsFetch([]));
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getAllByRole('tab', { name: 'Documents' })).toHaveLength(1);
+    expect(screen.getAllByRole('tab', { name: 'Forms' })).toHaveLength(1);
+  });
+});

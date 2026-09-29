@@ -4,6 +4,36 @@
   gap: var(--space-8);
 }
 
+/* Documents / Forms sub-tab switcher (Task #12, 2026-09) — same visual
+   language as the top-level Case Detail tabs (app/(portal)/cases/[caseId]/
+   page.module.css's own .tabs/.tabActive/.tabInactive), scoped to this
+   tab's own module so it reads as a sub-navigation, not a second set of
+   top-level tabs. */
+.subTabs {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.subTabs button {
+  cursor: pointer;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-3) var(--space-7);
+  border-radius: var(--radius-xl);
+  border: none;
+  font-family: inherit;
+}
+
+.subTabActive {
+  background: var(--color-brand-tint);
+  color: var(--color-brand-hover);
+}
+
+.subTabInactive {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+}
+
 .loading,
 .errorText {
   color: var(--color-text-secondary);

@@ -110,6 +110,21 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
       onClick: () => setImportModalOpen(true),
       visible: permissions.includes('case.create'),
     },
+    {
+      key: 'unmatched-forms',
+      label: 'Unmatched Forms',
+      description: 'Manually link a Jotform submission that could not be auto-matched to a case.',
+      href: '/unmatched-forms',
+      // Gated on case.update (canEditCase), not case.read — the page's
+      // only real action is linking a submission to a case
+      // (POST /api/external-form-submissions/[id]/link, which already
+      // requires case.update server-side); a caller who could only view
+      // the list but never act on it would land on a page offering
+      // nothing they can actually complete, matching Import Existing
+      // Jotform's own "gate on the write permission, not the read one"
+      // precedent above.
+      visible: permissions.includes('case.update'),
+    },
   ];
 
   const securityAndRoles: AdminArea[] = [

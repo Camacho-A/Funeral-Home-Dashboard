@@ -207,3 +207,43 @@ describe('SettingsHub — Workflow Templates (Task #11, 2026-09)', () => {
     expect(link).toHaveAttribute('href', '/settings/workflow-templates');
   });
 });
+
+/**
+ * Task #12 (2026-09, Forms organization) — "Unmatched Forms." Fixes a
+ * genuinely orphaned route: /unmatched-forms (UnmatchedFormsPanel) existed
+ * with zero navigation entries linking to it anywhere in the app. Gated on
+ * `case.update` (canEditCase), not `case.read` — the page's only real
+ * action, linking a submission to a case, already requires case.update
+ * server-side (POST /api/external-form-submissions/[id]/link); a caller
+ * who could only view the list but never act on it would land on a page
+ * offering nothing they can complete, matching Import Existing Jotform's
+ * own "gate on the write permission, not the read one" precedent above.
+ */
+describe('SettingsHub — Unmatched Forms (Task #12, 2026-09)', () => {
+  it('shows Unmatched Forms for a caller holding case.update, org-agnostic (no identity-mode requirement)', async () => {
+    mockPermissions(['case.update']);
+    renderHub('mock');
+    expect(await screen.findByText('Unmatched Forms')).toBeInTheDocument();
+  });
+
+  it('hides Unmatched Forms for a caller without case.update', async () => {
+    mockPermissions([]);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Unmatched Forms')).not.toBeInTheDocument();
+  });
+
+  it('hides Unmatched Forms for a caller holding only case.read — viewing without acting is not enough', async () => {
+    mockPermissions(['case.read']);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Unmatched Forms')).not.toBeInTheDocument();
+  });
+
+  it('links to the /unmatched-forms route', async () => {
+    mockPermissions(['case.update']);
+    renderHub('mock');
+    const link = (await screen.findByText('Unmatched Forms')).closest('a');
+    expect(link).toHaveAttribute('href', '/unmatched-forms');
+  });
+});

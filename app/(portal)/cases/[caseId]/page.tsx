@@ -18,7 +18,6 @@ import { formatTimestamp } from '@/utils/format';
 import { CaseHeader } from '@/components/case/CaseHeader';
 import { StageStepper, type StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
-import { CaseFormsSection } from '@/components/case/CaseFormsSection';
 import { CaseWorkflowRepairPanel } from '@/components/case/CaseWorkflowRepairPanel';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
 import { BillingCard } from '@/components/case/BillingCard';
@@ -280,8 +279,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
             onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
           />
-
-          <CaseFormsSection caseId={caseId} />
 
           <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
 
