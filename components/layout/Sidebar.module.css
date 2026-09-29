@@ -8,11 +8,17 @@
   gap: var(--space-18);
 }
 
-/* Task #13 (2026-09, SOLIS product branding). Now just a padding wrapper —
-   ProductBrand (components/layout/ProductBrand.tsx) owns the flex row/gap
-   for the mark + wordmark itself. The old CSS-only `.brandMark` placeholder
-   square is gone entirely, replaced by the real SolisCode mark. */
+/* Task #13 (2026-09, SOLIS product branding). ProductBrand
+   (components/layout/ProductBrand.tsx) owns its own internal layout for
+   the mark + wordmark; this wrapper only supplies the horizontal inset
+   and, since the Sidebar final adjustment moved to ProductBrand's
+   `vertical` variant (a taller mark stacked above centered "SOLIS"),
+   centers that whole stack within the Sidebar's own width. The old
+   CSS-only `.brandMark` placeholder square is gone entirely, replaced by
+   the real SolisCode mark. */
 .brand {
+  display: flex;
+  justify-content: center;
   padding: 0 var(--space-4);
 }
 

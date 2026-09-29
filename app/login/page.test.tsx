@@ -43,4 +43,23 @@ describe('LoginPage', () => {
       expect(screen.getByText('Invalid email or password.')).toBeInTheDocument();
     });
   });
+
+  /** Task #13 final visual adjustment (2026-09): the Sidebar moved to
+      ProductBrand's `vertical` variant (larger mark stacked above
+      centered "SOLIS"); Login explicitly keeps its original horizontal
+      [mark] SOLIS lockup, unchanged. */
+  describe('Login retains its original horizontal lockup (Task #13 final visual adjustment, 2026-09)', () => {
+    it('4: does not use the vertical variant\'s wrapper class — the horizontal side-by-side lockup is unchanged', async () => {
+      render(await renderLoginPage());
+      const mark = screen.getByRole('presentation', { hidden: true });
+      expect(mark.parentElement?.className).not.toMatch(/vertical/);
+    });
+
+    it('4: the mark size is unchanged from the original horizontal implementation (40px)', async () => {
+      render(await renderLoginPage());
+      const mark = screen.getByRole('presentation', { hidden: true });
+      expect(mark).toHaveAttribute('width', '40');
+      expect(mark).toHaveAttribute('height', '40');
+    });
+  });
 });

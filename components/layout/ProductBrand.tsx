@@ -24,9 +24,17 @@ const SOLISCODE_MARK_SRC = '/brand/soliscode-mark.png';
  * text (e.g. Login's own `<h1>`) via `children`/`wordmarkClassName` — this
  * component only owns the mark + layout, never the text's semantic tag,
  * so each site keeps its own existing heading/heading-less structure.
+ *
+ * Task #13 final visual adjustment (2026-09): adds a `variant` prop —
+ * `'horizontal'` (default, unchanged: `[mark] SOLIS` side by side — still
+ * Login's presentation) and `'vertical'` (a larger mark stacked directly
+ * above a centered "SOLIS," used by the Sidebar only). Same component,
+ * same asset, same accessibility treatment either way — only the CSS
+ * layout direction changes, never a second duplicated implementation.
  */
 export function ProductBrand({
   markSize = 32,
+  variant = 'horizontal',
   wordmarkClassName,
   className,
 }: {
@@ -34,6 +42,10 @@ export function ProductBrand({
       previous 30px placeholder — the real artwork is more detailed and
       needs slightly more room to stay recognizable. */
   markSize?: number;
+  /** `'horizontal'` (default): `[mark] SOLIS` side by side, vertically
+      centered — Login's lockup. `'vertical'`: mark stacked above a
+      centered "SOLIS" — the Sidebar's lockup. */
+  variant?: 'horizontal' | 'vertical';
   /** Typography for the "SOLIS" text — left to the caller so each site's
       own existing font-size/weight (Sidebar's small wordmark vs. Login's
       larger page title) is preserved exactly, not reset by this shared
@@ -41,8 +53,9 @@ export function ProductBrand({
   wordmarkClassName?: string;
   className?: string;
 }) {
+  const classes = [styles.brand, variant === 'vertical' ? styles.vertical : null, className].filter(Boolean).join(' ');
   return (
-    <div className={className ? `${styles.brand} ${className}` : styles.brand}>
+    <div className={classes}>
       {/* Small, always-local, fixed-size decorative mark — no next/image
           precedent exists anywhere else in this codebase, and its
           optimization pipeline (blur placeholders, remote loaders) buys

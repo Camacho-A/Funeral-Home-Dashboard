@@ -167,3 +167,31 @@ describe('Sidebar — SOLIS product branding (Task #13, 2026-09)', () => {
   });
 });
 
+describe('Sidebar — vertical SOLIS lockup (Task #13 final visual adjustment, 2026-09)', () => {
+  it('1: uses ProductBrand\'s vertical variant — mark stacked above centered SOLIS, not the horizontal side-by-side lockup', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    // The vertical variant's own wrapper class (ProductBrand.module.css's
+    // .vertical), applied alongside the shared .brand class.
+    expect(mark.parentElement?.className).toMatch(/vertical/);
+  });
+
+  it('1: the mark is enlarged to within the requested 55-60px range for the vertical lockup', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    const width = Number(mark.getAttribute('width'));
+    expect(width).toBeGreaterThanOrEqual(55);
+    expect(width).toBeLessThanOrEqual(60);
+    expect(mark.getAttribute('height')).toBe(mark.getAttribute('width'));
+  });
+
+  it('2: still uses the exact same /brand/soliscode-mark.png asset — only size/layout changed, never the artwork', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark).toHaveAttribute('src', '/brand/soliscode-mark.png');
+  });
+});
+

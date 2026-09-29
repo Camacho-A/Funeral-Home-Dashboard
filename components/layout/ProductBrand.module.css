@@ -4,6 +4,14 @@
   gap: var(--space-3);
 }
 
+/* Task #13 final visual adjustment (2026-09) — Sidebar-only vertical
+   lockup: mark stacked above a centered "SOLIS." Tighter gap than the
+   horizontal variant's, matching a typical compact vertical logo lockup. */
+.vertical {
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .mark {
   display: block;
   object-fit: contain;
