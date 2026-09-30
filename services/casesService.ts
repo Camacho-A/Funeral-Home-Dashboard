@@ -14,6 +14,7 @@ import { DEFAULT_RETURN_METHOD } from '../domain/cases/returnMethod';
 import { assertValidPickupReleasePatch } from '../domain/cases/pickupRelease';
 import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
 import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
+import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 
 export type CaseFilters = {
   searchQuery?: string;
@@ -231,6 +232,20 @@ export async function create(
     return body.case;
   }
 
+  // Task #15 (2026-09, future-historical-date validation): mirrors the
+  // Wix-mode route's own check (app/api/cases/route.ts) — mock mode is
+  // exercised entirely client-side, so the browser's own local "now" is
+  // already the correct reference clock (no organization-timezone lookup
+  // needed the way the server-side Wix route requires).
+  if (typeof input.dateOfBirth === 'string') {
+    const error = getDateOfBirthFutureError(input.dateOfBirth);
+    if (error) throw new Error(error);
+  }
+  if (typeof input.dateOfDeath === 'string') {
+    const error = getDateOfDeathFutureError(input.dateOfDeath);
+    if (error) throw new Error(error);
+  }
+
   if (input.assignedStaffId) {
     await assertStaffProfileIsActiveAndInOrganization(context.organizationId, input.assignedStaffId, 'mock');
   }
@@ -351,6 +366,24 @@ export async function update(
   // Staff-facing terminology (2026-09): see domain/cases/pickupRelease.ts's
   // own comment — mirrors the same check the Wix-mode PATCH route applies.
   assertValidPickupReleasePatch(caseFixtures[index], patch);
+  // Task #15 (2026-09, future-historical-date validation): mirrors the
+  // Wix-mode route's own check, only for a field this patch actually sets
+  // (an untouched existing value is never re-validated by an unrelated
+  // edit). Mock mode runs client-side, so the browser's own local "now" is
+  // the correct reference clock here, same reasoning as create() above.
+  const dateFieldChecks: Array<[unknown, (value: string) => string | null]> = [
+    [patch.dateOfBirth, getDateOfBirthFutureError],
+    [patch.dateOfDeath, getDateOfDeathFutureError],
+    [patch.pickupReleasedAt, (value) => getFutureDateError(value, 'Released date')],
+    [patch.shippingDateShipped, (value) => getFutureDateError(value, 'Date shipped')],
+    [patch.shippingDeliveredAt, (value) => getFutureDateError(value, 'Delivered date')],
+  ];
+  for (const [value, check] of dateFieldChecks) {
+    if (typeof value === 'string') {
+      const error = check(value);
+      if (error) throw new Error(error);
+    }
+  }
   // SOLIS-wide ALL-CAPS data standard (2026-09): mirrors
   // lib/wixCaseMapper.ts's validateAndPickCaseUpdate/applyCaseUpdateToWixData
   // normalization exactly, so dev/test behavior (DATA_ADAPTER=mock) never

@@ -490,6 +490,67 @@ describe('NewCaseModal — DOB/DOD cross-field validation (Solis go-live checkpo
   });
 });
 
+describe('NewCaseModal — Task #15 (2026-09, future-historical-date validation)', () => {
+  it('flags a future Date of Birth', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfBirth = intakeInputs(container)[2];
+
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(dateOfBirth, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.blur(dateOfBirth);
+
+    expect(screen.getByText(/date of birth cannot be in the future/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create case' })).toBeDisabled();
+  });
+
+  it('accepts a Date of Birth of today', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfBirth = intakeInputs(container)[2];
+
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const yyyy = String(now.getFullYear());
+    fireEvent.change(dateOfBirth, { target: { value: `${mm}${dd}${yyyy}` } });
+    fireEvent.blur(dateOfBirth);
+
+    expect(screen.queryByText(/date of birth cannot be in the future/i)).not.toBeInTheDocument();
+  });
+
+  it('accepts a Date of Death of today', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfDeath = intakeInputs(container)[4];
+
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const yyyy = String(now.getFullYear());
+    fireEvent.change(dateOfDeath, { target: { value: `${mm}${dd}${yyyy}` } });
+    fireEvent.blur(dateOfDeath);
+
+    expect(screen.queryByText(/date of death cannot be in the future/i)).not.toBeInTheDocument();
+  });
+
+  it('a valid Date of Birth still allows case creation to succeed', async () => {
+    const { container } = await renderModalWithFields();
+    fillRequiredFields(container);
+    const dateOfBirth = intakeInputs(container)[2];
+
+    fireEvent.change(dateOfBirth, { target: { value: '01051950' } });
+    fireEvent.blur(dateOfBirth);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+
+    const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
+    const createdCase = caseFixtures.find((c) => c.id === newCaseId);
+    expect(createdCase?.dateOfBirth).toBe('01/05/1950');
+  });
+});
+
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces the
  * old informational-only Payment intake field entirely — a hardcoded

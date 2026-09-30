@@ -969,6 +969,77 @@ describe('POST /api/cases — creation', () => {
   });
 });
 
+describe('POST /api/cases — Task #15 (2026-09, future-historical-date validation)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  const farFutureDate = `01/01/${new Date().getFullYear() + 5}`;
+
+  it('rejects a future Date of Birth with 400, before any workflow-template lookup or write', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, dateOfBirth: farFutureDate }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe('Date of Birth cannot be in the future.');
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a future Date of Death with 400', async () => {
+    mockEnabledTemplate();
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, dateOfDeath: farFutureDate }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe('Date of Death cannot be in the future.');
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('looks up the organization\'s own timezone to resolve "today" when a date field is present (resolveOrgLocalToday, same authoritative source as case-number year rollover — see utils/inputMask.test.ts for the org-local-vs-UTC correctness proof itself)', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+    mockGetOrganization = vi.fn().mockResolvedValue({ timezone: 'America/New_York' });
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, dateOfDeath: '01/05/2020' }));
+
+    expect(response.status).toBe(201);
+    expect(mockGetOrganization).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'wix');
+  });
+
+  it('does not fetch the organization at all when neither date field is present in the request', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    await POST(postRequest(VALID_CREATE_BODY));
+
+    // The route still fetches organization once for case-number year
+    // rollover (orgLocalYear) — this asserts no *extra*, redundant fetch
+    // happens for date validation when there's nothing to validate.
+    expect(mockGetOrganization).toHaveBeenCalledTimes(1);
+  });
+
+  it('a valid past Date of Birth/Date of Death still creates the case', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, dateOfBirth: '01/05/1950', dateOfDeath: '07/09/2026' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.dateOfBirth).toBe('01/05/1950');
+    expect(body.case.dateOfDeath).toBe('07/09/2026');
+  });
+});
+
 describe('POST /api/cases — historical case-number authorization (2026-09)', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';

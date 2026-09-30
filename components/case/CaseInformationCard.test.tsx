@@ -260,6 +260,100 @@ describe('CaseInformationCard — DOB/DOD cross-field validation (Solis go-live 
   });
 });
 
+describe('CaseInformationCard — Task #15 (2026-09, future-historical-date validation)', () => {
+  it('blocks Enter on a future Date of Birth', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '03/14/1951' }));
+    const input = screen.getByDisplayValue('03/14/1951');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText(/date of birth cannot be in the future/i)).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('allows committing Date of Birth = today', () => {
+    const onUpdateCaseInfo = vi.fn();
+    // dateOfDeath overridden far into the future so "today" as a Date of
+    // Birth can never collide with the separate, pre-existing DOB-after-DOD
+    // order check — this test is only about the future-date rule.
+    render(<CaseInformationCard {...baseProps} dateOfDeath="12/31/2099" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const yyyy = String(now.getFullYear());
+
+    fireEvent.click(screen.getByRole('button', { name: '03/14/1951' }));
+    const input = screen.getByDisplayValue('03/14/1951');
+    fireEvent.change(input, { target: { value: `${mm}${dd}${yyyy}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfBirth: `${mm}/${dd}/${yyyy}` });
+  });
+
+  it('blocks Enter on a future Released date', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Jane Smith" pickupReleasedAt="07/01/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const releasedDateField = screen.getByText('Released date').parentElement!;
+    fireEvent.click(within(releasedDateField).getByRole('button'));
+    const input = within(releasedDateField).getByDisplayValue('07/01/2026');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Released date cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('blocks Enter on a future Date shipped', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const dateShippedField = screen.getByText('Date shipped').parentElement!;
+    fireEvent.click(within(dateShippedField).getByRole('button'));
+    const input = within(dateShippedField).getByDisplayValue('');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Date shipped cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('blocks Enter on a future Delivered date', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const deliveredDateField = screen.getByText('Delivered date').parentElement!;
+    fireEvent.click(within(deliveredDateField).getByRole('button'));
+    const input = within(deliveredDateField).getByDisplayValue('');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Delivered date cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('still allows committing a valid past Date shipped', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const dateShippedField = screen.getByText('Date shipped').parentElement!;
+    fireEvent.click(within(dateShippedField).getByRole('button'));
+    const input = within(dateShippedField).getByDisplayValue('');
+    fireEvent.change(input, { target: { value: '07012020' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingDateShipped: '07/01/2020' });
+  });
+});
+
 describe('CaseInformationCard — Time of Death 12-hour entry (2026-09)', () => {
   function openTimeEditor() {
     fireEvent.click(screen.getByRole('button', { name: '2:30 PM' }));

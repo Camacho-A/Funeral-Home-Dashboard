@@ -30,6 +30,7 @@ import {
   expandTwoDigitYearInDateInput,
   getDateOfBirthDeathOrderError,
   getDateOfDeathFutureError,
+  getDateOfBirthFutureError,
   splitMilitaryTimeToTwelveHourParts,
   combineTwelveHourTimeParts,
 } from '@/utils/inputMask';
@@ -367,6 +368,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const dodValue = dodField ? (draft[dodField.key] ?? dodField.defaultValue) : '';
   const dobDodOrderError = getDateOfBirthDeathOrderError(dobValue, dodValue);
   const dodFutureError = getDateOfDeathFutureError(dodValue);
+  const dobFutureError = getDateOfBirthFutureError(dobValue);
 
   const hasFieldErrors =
     allResolvedFields.some(
@@ -375,7 +377,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         getValidationError(field.validationType, draft[field.key] ?? field.defaultValue) !== null,
     ) ||
     dobDodOrderError !== null ||
-    dodFutureError !== null;
+    dodFutureError !== null ||
+    dobFutureError !== null;
   const hasMissingRequired = allResolvedFields.some((field) => {
     // Phase 19B (Clover Hosted Checkout Integration): a payment field is
     // purely informational at intake time now — real collection happens
@@ -601,13 +604,13 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
     const value = draft[field.key] ?? field.defaultValue;
     let error = touched[field.key] ? getValidationError(field.validationType, value) : null;
-    // Solis go-live checkpoint: cross-field DOB/DOD errors surface under
-    // whichever of the two fields is "the one that's wrong" relative to
-    // its counterpart — Date of Death also carries its own not-in-the-
-    // future check, checked first since it never depends on Date of Birth
-    // at all.
+    // Solis go-live checkpoint (+ Task #15): cross-field DOB/DOD errors
+    // surface under whichever of the two fields is "the one that's wrong"
+    // relative to its counterpart — each also carries its own not-in-the-
+    // future check, checked first since it never depends on the other
+    // field at all.
     if (!error && touched[field.key]) {
-      if (field.mapsToCaseField === 'dateOfBirth') error = dobDodOrderError;
+      if (field.mapsToCaseField === 'dateOfBirth') error = dobFutureError ?? dobDodOrderError;
       else if (field.mapsToCaseField === 'dateOfDeath') error = dodFutureError ?? dobDodOrderError;
     }
     const isRevealed = revealedFields[field.key];

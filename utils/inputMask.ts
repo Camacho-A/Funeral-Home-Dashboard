@@ -119,17 +119,73 @@ export function getDateOfBirthDeathOrderError(dateOfBirth: string, dateOfDeath: 
 }
 
 /**
+ * Task #15 (2026-09, future-historical-date validation). Generic core
+ * behind every "this field records an event that must already have
+ * happened" check — compared against local calendar "today"
+ * (midnight-to-midnight, never a UTC day boundary: `historicalDate <=
+ * today`, not an instant-vs-instant comparison). `now` is injectable
+ * (no real-clock dependency) so a caller can pass either a real browser
+ * `Date` (client-side) or an organization-local "today" resolved via
+ * `resolveOrgLocalToday` below (server-side) — this function itself never
+ * knows or cares which. Empty/partial/malformed values are left alone
+ * (return null) — that's `isValidCalendarDate`'s own job, checked
+ * elsewhere; this only ever adds the future-date rule on top of an
+ * already-complete, already-valid date.
+ */
+export function getFutureDateError(value: string, fieldLabel: string, now: Date = new Date()): string | null {
+  const expanded = expandTwoDigitYearInDateInput(value);
+  if (expanded === '' || !isValidCalendarDate(expanded)) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return parseMonthDayYearToLocalDate(expanded) > today ? `${fieldLabel} cannot be in the future.` : null;
+}
+
+/**
  * Solis go-live checkpoint. Date of Death cannot be an invalid future
  * date — compared against local calendar "today" (midnight-to-midnight),
  * never a UTC day boundary. `now` is injectable for deterministic testing
  * (no real-clock dependency), matching this codebase's established
- * discipline for anything that reads "today."
+ * discipline for anything that reads "today." Thin wrapper over
+ * getFutureDateError (Task #15) — same behavior/signature as before.
  */
 export function getDateOfDeathFutureError(dateOfDeath: string, now: Date = new Date()): string | null {
-  const dod = expandTwoDigitYearInDateInput(dateOfDeath);
-  if (dod === '' || !isValidCalendarDate(dod)) return null;
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return parseMonthDayYearToLocalDate(dod) > today ? 'Date of Death cannot be in the future.' : null;
+  return getFutureDateError(dateOfDeath, 'Date of Death', now);
+}
+
+/**
+ * Task #15 (2026-09). Date of Birth cannot be in the future — the
+ * symmetric counterpart to getDateOfDeathFutureError above, introduced
+ * because no such check existed for Date of Birth at all before this.
+ * Deliberately does NOT add any other age/business restriction (e.g. no
+ * minimum/maximum plausible age) — future-date rejection only.
+ */
+export function getDateOfBirthFutureError(dateOfBirth: string, now: Date = new Date()): string | null {
+  return getFutureDateError(dateOfBirth, 'Date of Birth', now);
+}
+
+/**
+ * Task #15 (2026-09). Resolves an organization's own local calendar
+ * "today" as a plain Date (local y/m/d components only, midnight — never
+ * an instant) for server-side future-date checks — the server-side
+ * counterpart to a browser's own `new Date()` already being correct for
+ * client-side checks (a browser's local clock genuinely is the on-premises
+ * staff's own local time). Mirrors domain/cases/caseNumber.ts#orgLocalYear's
+ * exact Intl.DateTimeFormat + organization-timezone technique (UTC
+ * fallback for an organization with no timezone configured) — the same
+ * already-established, already-accepted authoritative source used for
+ * case-number year rollover, inheriting that mechanism's own known
+ * limitation (a stale/incorrect organization timezone) rather than
+ * introducing a new one. See this session's own Task #15 report for why
+ * this was deliberately not "fixed" as part of this change.
+ */
+export function resolveOrgLocalToday(nowIso: string, timezone: string | undefined): Date {
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: timezone || 'UTC',
+  }).format(new Date(nowIso));
+  const [month, day, year] = formatted.split('/').map(Number);
+  return new Date(year, month - 1, day);
 }
 
 /** Reformats raw input toward MM/YY, inserting "/" after the month —

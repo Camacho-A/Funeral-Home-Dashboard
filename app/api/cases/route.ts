@@ -8,7 +8,7 @@ import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
 import { orgLocalYear } from '@/domain/cases/caseNumber';
 import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
-import { isValidEmail } from '@/utils/inputMask';
+import { isValidEmail, getDateOfBirthFutureError, getDateOfDeathFutureError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { isValidReturnMethod } from '@/domain/cases/returnMethod';
 import type { ReturnMethod } from '@/types/case';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
@@ -212,6 +212,31 @@ export async function POST(request: Request) {
   if ('fieldValues' in b && (typeof b.fieldValues !== 'object' || b.fieldValues === null || Array.isArray(b.fieldValues))) {
     return NextResponse.json({ case: null, error: 'Invalid field(s): fieldValues' }, { status: 400 });
   }
+
+  // Task #15 (2026-09, future-historical-date validation): server-side
+  // backstop against a bypassed/forged request — the client (NewCaseModal)
+  // already blocks this in the common case, but a direct POST must be
+  // rejected too. "Today" is resolved in the organization's own local
+  // timezone (resolveOrgLocalToday — same Intl.DateTimeFormat + timezone
+  // technique domain/cases/caseNumber.ts#orgLocalYear already established
+  // for case-number year rollover, inheriting that same authoritative
+  // source and its known limitations rather than inventing a new one).
+  // Only fetched when actually needed, to avoid an extra Wix read on every
+  // case creation that doesn't supply either date.
+  let organization: Awaited<ReturnType<typeof getOrganization>> | undefined;
+  if (typeof b.dateOfBirth === 'string' || typeof b.dateOfDeath === 'string') {
+    organization = await getOrganization(organizationId, 'wix');
+    const orgToday = resolveOrgLocalToday(new Date().toISOString(), organization?.timezone);
+    if (typeof b.dateOfBirth === 'string') {
+      const dobError = getDateOfBirthFutureError(b.dateOfBirth, orgToday);
+      if (dobError) return NextResponse.json({ case: null, error: dobError }, { status: 400 });
+    }
+    if (typeof b.dateOfDeath === 'string') {
+      const dodError = getDateOfDeathFutureError(b.dateOfDeath, orgToday);
+      if (dodError) return NextResponse.json({ case: null, error: dodError }, { status: 400 });
+    }
+  }
+
   // Historical Arrangement import (2026-09) — narrow migration exception
   // only. This is NEVER a general client-editable case-number field: it
   // must be a valid, signed, short-lived authorization minted by
@@ -396,8 +421,10 @@ export async function POST(request: Request) {
       // Manors launch-prep — P0: the case-number year is the organization's
       // own LOCAL calendar year, never the server's/UTC's, so a case created
       // just after local midnight on Jan 1 gets the new year's prefix — see
-      // domain/cases/caseNumber.ts#orgLocalYear.
-      const organization = await getOrganization(organizationId, 'wix');
+      // domain/cases/caseNumber.ts#orgLocalYear. Reuses the same
+      // organization fetched above for date validation when one already
+      // happened (Task #15), rather than fetching it a second time.
+      organization ??= await getOrganization(organizationId, 'wix');
       caseNumber = await reserveNextCaseNumber(organizationId, orgLocalYear(createdAt, organization?.timezone));
     }
 

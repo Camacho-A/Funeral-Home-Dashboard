@@ -718,3 +718,136 @@ describe('casesService.update — Certifier Name/Phone on a legacy (v3) case (Ta
     expect(updated.nextOfKinPhone).toBe('555-0155');
   });
 });
+
+describe('casesService — Task #15 (2026-09, future-historical-date validation, mock mode)', () => {
+  const farFutureDate = `01/01/${new Date().getFullYear() + 5}`;
+
+  it('create() rejects a future Date of Birth', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    await expect(
+      casesService.create(
+        organization,
+        { decedentName: 'Future DOB Test', nextOfKinName: '', nextOfKinPhone: '', dateOfBirth: farFutureDate },
+        session,
+        template,
+      ),
+    ).rejects.toThrow(/date of birth cannot be in the future/i);
+  });
+
+  it('create() rejects a future Date of Death', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    await expect(
+      casesService.create(
+        organization,
+        { decedentName: 'Future DOD Test', nextOfKinName: '', nextOfKinPhone: '', dateOfDeath: farFutureDate },
+        session,
+        template,
+      ),
+    ).rejects.toThrow(/date of death cannot be in the future/i);
+  });
+
+  it('create() still succeeds with valid past DOB/DOD', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const newCase = await casesService.create(
+      organization,
+      { decedentName: 'Valid Dates Test', nextOfKinName: '', nextOfKinPhone: '', dateOfBirth: '01/05/1950', dateOfDeath: '07/09/2026' },
+      session,
+      template,
+    );
+    expect(newCase.dateOfBirth).toBe('01/05/1950');
+    expect(newCase.dateOfDeath).toBe('07/09/2026');
+  });
+
+  it('update() rejects a future Date of Birth and leaves the stored case untouched', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Update Future DOB Test', nextOfKinName: '', nextOfKinPhone: '', dateOfBirth: '01/05/1950' },
+      session,
+      template,
+    );
+
+    await expect(casesService.update(organization, created.id, { dateOfBirth: farFutureDate })).rejects.toThrow(
+      /date of birth cannot be in the future/i,
+    );
+
+    const fetched = await casesService.get(organization, created.id);
+    expect(fetched?.dateOfBirth).toBe('01/05/1950');
+  });
+
+  it('update() rejects a future Date of Death', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Update Future DOD Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    await expect(casesService.update(organization, created.id, { dateOfDeath: farFutureDate })).rejects.toThrow(
+      /date of death cannot be in the future/i,
+    );
+  });
+
+  it('update() rejects a future Released date', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Update Future Released Date Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    await expect(
+      casesService.update(organization, created.id, { pickupReleasedTo: 'Jane Smith', pickupReleasedAt: farFutureDate }),
+    ).rejects.toThrow(/released date cannot be in the future/i);
+  });
+
+  it('update() rejects a future Date shipped', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Update Future Date Shipped Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    await expect(casesService.update(organization, created.id, { shippingDateShipped: farFutureDate })).rejects.toThrow(
+      /date shipped cannot be in the future/i,
+    );
+  });
+
+  it('update() rejects a future Delivered date', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Update Future Delivered Date Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+
+    await expect(casesService.update(organization, created.id, { shippingDeliveredAt: farFutureDate })).rejects.toThrow(
+      /delivered date cannot be in the future/i,
+    );
+  });
+
+  it('update() never re-validates an untouched existing date field on an unrelated edit', async () => {
+    // A case whose already-persisted dateOfDeath happens to be malformed/
+    // unusual for some pre-existing reason must not start failing every
+    // future unrelated edit — see domain/cases/caseNumber.ts and this
+    // session's own "leave existing records untouched" requirement.
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Untouched Field Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const index = caseFixtures.findIndex((c) => c.id === created.id);
+    caseFixtures[index] = { ...caseFixtures[index], dateOfDeath: farFutureDate };
+
+    const updated = await casesService.update(organization, created.id, { placeOfDeath: 'HOSPITAL' });
+    expect(updated.placeOfDeath).toBe('HOSPITAL');
+    expect(updated.dateOfDeath).toBe(farFutureDate);
+  });
+});

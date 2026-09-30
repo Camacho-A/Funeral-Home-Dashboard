@@ -21,6 +21,8 @@ import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/ser
 import type { ReturnMethod } from '@/types/case';
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
+import { getOrganization } from '@/services/organizationProvisioningService';
+import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Solis
@@ -244,6 +246,38 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid pickup release patch.';
       return NextResponse.json({ case: null, error: message }, { status: 422 });
+    }
+
+    // Task #15 (2026-09, future-historical-date validation): only checks a
+    // field this patch actually sets — an already-persisted, untouched
+    // value (however it got there) is never re-validated by an unrelated
+    // edit, per "leave existing records untouched unless the user edits
+    // the relevant field." "Today" is the organization's own local
+    // calendar day (resolveOrgLocalToday), same authoritative source as
+    // case-number year rollover; only fetched when a relevant field is
+    // actually part of this patch.
+    const dateFieldsInPatch: Array<[string, string]> = [
+      ['dateOfBirth', 'Date of Birth'],
+      ['dateOfDeath', 'Date of Death'],
+      ['pickupReleasedAt', 'Released date'],
+      ['shippingDateShipped', 'Date shipped'],
+      ['shippingDeliveredAt', 'Delivered date'],
+    ].filter(([key]) => typeof (patch as Record<string, unknown>)[key] === 'string') as Array<[string, string]>;
+    if (dateFieldsInPatch.length > 0) {
+      const organization = await getOrganization(organizationId, 'wix');
+      const orgToday = resolveOrgLocalToday(new Date().toISOString(), organization?.timezone);
+      for (const [key, label] of dateFieldsInPatch) {
+        const value = (patch as Record<string, unknown>)[key] as string;
+        const error =
+          key === 'dateOfBirth'
+            ? getDateOfBirthFutureError(value, orgToday)
+            : key === 'dateOfDeath'
+              ? getDateOfDeathFutureError(value, orgToday)
+              : getFutureDateError(value, label, orgToday);
+        if (error) {
+          return NextResponse.json({ case: null, error }, { status: 422 });
+        }
+      }
     }
 
     const mergedData = applyCaseUpdateToWixData(existingItem.data, patch);

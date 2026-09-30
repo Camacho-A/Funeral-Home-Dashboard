@@ -22,6 +22,9 @@ import {
   isValidCalendarDateAllowingTwoDigitYear,
   getDateOfBirthDeathOrderError,
   getDateOfDeathFutureError,
+  getDateOfBirthFutureError,
+  getFutureDateError,
+  resolveOrgLocalToday,
 } from './inputMask';
 
 describe('formatDateInput', () => {
@@ -201,6 +204,87 @@ describe('getDateOfDeathFutureError (Solis go-live checkpoint)', () => {
   it('understands a two-digit year without requiring pre-expansion', () => {
     expect(getDateOfDeathFutureError('07/21/26', fixedNow)).toBe('Date of Death cannot be in the future.');
     expect(getDateOfDeathFutureError('07/19/26', fixedNow)).toBeNull();
+  });
+});
+
+describe('getDateOfBirthFutureError (Task #15, 2026-09)', () => {
+  const fixedNow = new Date(2026, 6, 20); // July 20, 2026 (local)
+
+  it('returns null for a past date of birth', () => {
+    expect(getDateOfBirthFutureError('07/19/2026', fixedNow)).toBeNull();
+  });
+
+  it('returns null for today', () => {
+    expect(getDateOfBirthFutureError('07/20/2026', fixedNow)).toBeNull();
+  });
+
+  it('flags a future date of birth', () => {
+    expect(getDateOfBirthFutureError('07/21/2026', fixedNow)).toBe('Date of Birth cannot be in the future.');
+  });
+
+  it('returns null for an empty or individually-invalid value', () => {
+    expect(getDateOfBirthFutureError('', fixedNow)).toBeNull();
+    expect(getDateOfBirthFutureError('13/15/2026', fixedNow)).toBeNull();
+  });
+
+  it('understands a two-digit year without requiring pre-expansion', () => {
+    expect(getDateOfBirthFutureError('07/21/26', fixedNow)).toBe('Date of Birth cannot be in the future.');
+    expect(getDateOfBirthFutureError('07/19/26', fixedNow)).toBeNull();
+  });
+
+  it('introduces no new age restriction — a century-old date of birth is still accepted', () => {
+    expect(getDateOfBirthFutureError('01/01/1926', fixedNow)).toBeNull();
+  });
+});
+
+describe('getFutureDateError (Task #15, 2026-09 — generic core behind every past-event-date field)', () => {
+  const fixedNow = new Date(2026, 6, 20); // July 20, 2026 (local)
+
+  it('returns null for a past value', () => {
+    expect(getFutureDateError('07/19/2026', 'Released date', fixedNow)).toBeNull();
+  });
+
+  it('returns null for today', () => {
+    expect(getFutureDateError('07/20/2026', 'Date shipped', fixedNow)).toBeNull();
+  });
+
+  it('flags a future value with the given field label', () => {
+    expect(getFutureDateError('07/21/2026', 'Delivered date', fixedNow)).toBe('Delivered date cannot be in the future.');
+  });
+
+  it('returns null for an empty or malformed value regardless of label', () => {
+    expect(getFutureDateError('', 'Released date', fixedNow)).toBeNull();
+    expect(getFutureDateError('13/40/2026', 'Released date', fixedNow)).toBeNull();
+  });
+});
+
+describe('resolveOrgLocalToday (Task #15, 2026-09)', () => {
+  it('falls back to UTC when no timezone is configured, matching orgLocalYear\'s own fallback', () => {
+    // 2026-07-20T23:30:00Z is still July 20 in UTC.
+    const today = resolveOrgLocalToday('2026-07-20T23:30:00.000Z', undefined);
+    expect(today.getFullYear()).toBe(2026);
+    expect(today.getMonth()).toBe(6); // July (0-indexed)
+    expect(today.getDate()).toBe(20);
+  });
+
+  it('resolves the organization\'s own local calendar day, not the UTC one', () => {
+    // 2026-07-21T02:30:00Z is 2026-07-20 22:30 in America/New_York (UTC-4,
+    // daylight time) — the organization's own local "today" is still the 20th
+    // even though UTC has already rolled over to the 21st.
+    const today = resolveOrgLocalToday('2026-07-21T02:30:00.000Z', 'America/New_York');
+    expect(today.getFullYear()).toBe(2026);
+    expect(today.getMonth()).toBe(6);
+    expect(today.getDate()).toBe(20);
+  });
+
+  it('produces a Date whose local y/m/d getters round-trip exactly (safe to pass into getXFutureError)', () => {
+    const today = resolveOrgLocalToday('2026-01-01T04:00:00.000Z', 'America/New_York');
+    // 2026-01-01T04:00Z is 2025-12-31 23:00 in America/New_York.
+    expect(today.getFullYear()).toBe(2025);
+    expect(today.getMonth()).toBe(11); // December
+    expect(today.getDate()).toBe(31);
+    expect(getDateOfDeathFutureError('12/31/2025', today)).toBeNull();
+    expect(getDateOfDeathFutureError('01/01/2026', today)).toBe('Date of Death cannot be in the future.');
   });
 });
 

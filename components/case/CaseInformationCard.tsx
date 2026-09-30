@@ -15,6 +15,8 @@ import {
   expandTwoDigitYearInDateInput,
   getDateOfBirthDeathOrderError,
   getDateOfDeathFutureError,
+  getDateOfBirthFutureError,
+  getFutureDateError,
   splitMilitaryTimeToTwelveHourParts,
   combineTwelveHourTimeParts,
   formatMilitaryTimeToTwelveHour,
@@ -519,7 +521,7 @@ export function CaseInformationCard({
           value={dateOfBirth}
           kind="date"
           onSave={(v) => onUpdateCaseInfo({ dateOfBirth: v })}
-          crossFieldValidate={(v) => getDateOfBirthDeathOrderError(v, dateOfDeath)}
+          crossFieldValidate={(v) => getDateOfBirthFutureError(v) ?? getDateOfBirthDeathOrderError(v, dateOfDeath)}
         />
         <EditableField
           label="Date of death"
@@ -716,6 +718,7 @@ export function CaseInformationCard({
                   value={pickupReleasedAt ?? ''}
                   kind="date"
                   onSave={(v) => onUpdateCaseInfo({ pickupReleasedAt: v.trim().length > 0 ? v.trim() : null })}
+                  crossFieldValidate={(v) => getFutureDateError(v, 'Released date')}
                 />
                 <EditableField
                   label="Pickup note (optional)"
@@ -752,6 +755,7 @@ export function CaseInformationCard({
               value={shippingDateShipped ?? ''}
               kind="date"
               onSave={(v) => onUpdateCaseInfo({ shippingDateShipped: v.trim().length > 0 ? v.trim() : null })}
+              crossFieldValidate={(v) => getFutureDateError(v, 'Date shipped')}
             />
             <div>
               <div className={styles.fieldLabel}>Shipping status</div>
@@ -774,6 +778,7 @@ export function CaseInformationCard({
               value={shippingDeliveredAt ?? ''}
               kind="date"
               onSave={(v) => onUpdateCaseInfo({ shippingDeliveredAt: v.trim().length > 0 ? v.trim() : null })}
+              crossFieldValidate={(v) => getFutureDateError(v, 'Delivered date')}
             />
           </>
         )}

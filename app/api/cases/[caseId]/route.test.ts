@@ -46,6 +46,17 @@ vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
 }));
 
+// Task #15 (2026-09, future-historical-date validation): the PATCH route
+// only fetches the organization (for resolveOrgLocalToday's timezone) when
+// the patch actually contains one of the five protected date fields — see
+// the identical mock in app/api/cases/route.test.ts. Defaults to null (no
+// organization record, UTC fallback) unless a test needs a specific
+// timezone.
+let mockGetOrganization = vi.fn().mockResolvedValue(null);
+vi.mock('@/services/organizationProvisioningService', () => ({
+  getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
+}));
+
 const { GET, PATCH } = await import('./route');
 
 function requestFor(caseId: string, organizationId: string | null) {
@@ -145,6 +156,7 @@ beforeEach(() => {
   mockQueryWixDataItems = vi.fn();
   mockUpdateWixDataItem = vi.fn();
   mockInsertWixDataItem = vi.fn().mockResolvedValue({ id: 'activity-event-mock', dataCollectionId: 'activityEvents', data: {} });
+  mockGetOrganization = vi.fn().mockResolvedValue(null);
   mockSession = { user: mockDefaultUser };
 });
 
@@ -940,6 +952,103 @@ describe('PATCH /api/cases/[caseId]', () => {
       // SOLIS ALL-CAPS data standard (2026-09): normalized on update.
       expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ decedentName: 'UPDATED NAME' }));
     });
+  });
+});
+
+describe('PATCH /api/cases/[caseId] — Task #15 (2026-09, future-historical-date validation)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    mockWixQueries();
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  });
+
+  const farFutureDate = `01/01/${new Date().getFullYear() + 5}`;
+
+  it('rejects a future Date of Birth with 422, before any write', async () => {
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { dateOfBirth: farFutureDate } });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toBe('Date of Birth cannot be in the future.');
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a future Date of Death with 422', async () => {
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { dateOfDeath: farFutureDate } });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toBe('Date of Death cannot be in the future.');
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a future Released date with 422', async () => {
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: farFutureDate },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toBe('Released date cannot be in the future.');
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a future Date shipped with 422', async () => {
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { shippingDateShipped: farFutureDate } });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toBe('Date shipped cannot be in the future.');
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a future Delivered date with 422', async () => {
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { shippingDeliveredAt: farFutureDate } });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toBe('Delivered date cannot be in the future.');
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('a valid past Date of Death still succeeds', async () => {
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { dateOfDeath: '07/09/2026' } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.dateOfDeath).toBe('07/09/2026');
+  });
+
+  it('looks up the organization\'s own timezone only when a protected date field is present in the patch', async () => {
+    mockGetOrganization = vi.fn().mockResolvedValue({ timezone: 'America/New_York' });
+
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { dateOfDeath: '07/09/2026' } });
+    expect(response.status).toBe(200);
+    expect(mockGetOrganization).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'wix');
+  });
+
+  it('never fetches the organization when the patch contains no date field', async () => {
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } });
+    expect(response.status).toBe(200);
+    expect(mockGetOrganization).not.toHaveBeenCalled();
+  });
+
+  it('never re-validates an already-persisted (unrelated, untouched) future-looking dateOfDeath merely because a different field is edited', async () => {
+    // Confirms the "leave existing records untouched unless the user edits
+    // the relevant field" requirement: an existing (however it got there)
+    // out-of-range dateOfDeath must not block an unrelated edit.
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: { ...EXISTING_WIX_CASE_DATA, dateOfDeath: farFutureDate } }]);
+
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { placeOfDeath: 'Test Hospital' } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.dateOfDeath).toBe(farFutureDate); // left exactly as-is
   });
 });
 
