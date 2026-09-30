@@ -26,6 +26,22 @@
   font-size: var(--font-size-13);
 }
 
+/* Task #16 spacing follow-up (2026-09): the lower operational rows (Tag #/
+   Payment, Owner/Return method, and Return method's own conditional
+   pickup/shipping fields) previously ran together with zero separation —
+   every .grid block is a sibling <div> with no margin of its own, so
+   nothing but a .sectionHeading (DOB/NOK/Certifier already have one)
+   created a visible gap between one row and the next. Deliberately NOT a
+   change to .grid's own gap (that's the *intra-row* field-to-field
+   spacing shared by every grid on this card, including DOB/DOD/Time of
+   Death/Location and the NOK fields — widening it there would space out
+   rows that were never reported as cramped). This is a *inter-row*
+   top-margin applied only to the specific operational grids below,
+   closest-token match to the requested ~20-28px separation. */
+.operationalRow {
+  margin-top: var(--space-12);
+}
+
 /* Structured Certifier data (2026-09): the first grouped sub-section
    heading this card has ever needed — every prior grid ran unlabelled,
    directly under the card's own .title. */

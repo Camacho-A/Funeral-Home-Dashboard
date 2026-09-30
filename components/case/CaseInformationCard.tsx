@@ -626,7 +626,7 @@ export function CaseInformationCard({
         />
       </div>
 
-      <div className={styles.grid}>
+      <div className={`${styles.grid} ${styles.operationalRow}`}>
         <EditableField
           label="Tag #"
           value={tagNumber ?? ''}
@@ -654,7 +654,7 @@ export function CaseInformationCard({
           precede them. The conditional pickup/shipping detail fields
           below remain in their own separate grid, unchanged, so they
           never compete with Owner/Return method for a slot in this row. */}
-      <div className={styles.grid}>
+      <div className={`${styles.grid} ${styles.operationalRow}`}>
         <div>
           <div className={styles.fieldLabel}>Owner</div>
           <SelectField
@@ -683,7 +683,7 @@ export function CaseInformationCard({
         </div>
       </div>
 
-      <div className={styles.grid}>
+      <div className={`${styles.grid} ${styles.operationalRow}`}>
         {returnMethod === 'pickup' && (
           <>
             <div>
