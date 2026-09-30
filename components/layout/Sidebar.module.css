@@ -22,8 +22,14 @@
   padding: 0 var(--space-4);
 }
 
+/* Task #13 final sizing adjustment (2026-09) — 24px, enlarged from the
+   original 18px placeholder-era size for more visual presence in the
+   vertical lockup. Scoped to this Sidebar-only class (passed to
+   ProductBrand via `wordmarkClassName`) — Login's own wordmark uses its
+   own page.module.css `.title` sizing entirely separately, so this never
+   affects it. */
 .brandWordmark {
-  font-size: var(--font-size-18);
+  font-size: 24px;
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--tracking-tight);
 }

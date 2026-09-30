@@ -82,7 +82,7 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
   return (
     <nav className={styles.sidebar} aria-label="Primary">
       <div className={styles.brand}>
-        <ProductBrand variant="vertical" markSize={58} wordmarkClassName={styles.brandWordmark} />
+        <ProductBrand variant="vertical" markSize={72} wordmarkClassName={styles.brandWordmark} />
       </div>
 
       <div className={styles.navList}>

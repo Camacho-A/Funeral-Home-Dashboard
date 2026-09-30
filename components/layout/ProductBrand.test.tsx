@@ -34,10 +34,10 @@ describe('ProductBrand', () => {
   });
 
   it('respects an explicit markSize regardless of variant', () => {
-    render(<ProductBrand variant="vertical" markSize={58} />);
+    render(<ProductBrand variant="vertical" markSize={72} />);
     const mark = screen.getByRole('presentation', { hidden: true });
-    expect(mark).toHaveAttribute('width', '58');
-    expect(mark).toHaveAttribute('height', '58');
+    expect(mark).toHaveAttribute('width', '72');
+    expect(mark).toHaveAttribute('height', '72');
   });
 
   it('keeps the mark decorative in both variants', () => {

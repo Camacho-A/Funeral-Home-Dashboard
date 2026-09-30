@@ -177,21 +177,66 @@ describe('Sidebar — vertical SOLIS lockup (Task #13 final visual adjustment, 2
     expect(mark.parentElement?.className).toMatch(/vertical/);
   });
 
-  it('1: the mark is enlarged to within the requested 55-60px range for the vertical lockup', async () => {
-    mockPermissions([]);
-    renderSidebar('mock');
-    const mark = await screen.findByRole('presentation', { hidden: true });
-    const width = Number(mark.getAttribute('width'));
-    expect(width).toBeGreaterThanOrEqual(55);
-    expect(width).toBeLessThanOrEqual(60);
-    expect(mark.getAttribute('height')).toBe(mark.getAttribute('width'));
-  });
-
   it('2: still uses the exact same /brand/soliscode-mark.png asset — only size/layout changed, never the artwork', async () => {
     mockPermissions([]);
     renderSidebar('mock');
     const mark = await screen.findByRole('presentation', { hidden: true });
     expect(mark).toHaveAttribute('src', '/brand/soliscode-mark.png');
+  });
+});
+
+describe('Sidebar — enlarged SOLIS brand lockup (Task #13 final sizing adjustment, 2026-09)', () => {
+  it('1: the mark renders at 72px', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark).toHaveAttribute('width', '72');
+    expect(mark).toHaveAttribute('height', '72');
+  });
+
+  it('2: the SOLIS wordmark uses the enlarged brandWordmark styling (24px, scoped to the Sidebar only)', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const wordmark = await screen.findByText('SOLIS');
+    expect(wordmark.className).toMatch(/brandWordmark/);
+  });
+
+  it('3: the vertical centered layout is preserved at the new size', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark.parentElement?.className).toMatch(/vertical/);
+  });
+
+  it('5: still the same /brand/soliscode-mark.png asset', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark).toHaveAttribute('src', '/brand/soliscode-mark.png');
+  });
+
+  it('6: SOLIS remains real, visible text', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    expect(await screen.findByText('SOLIS')).toBeInTheDocument();
+  });
+
+  it('7: accessibility treatment is unchanged — decorative mark, no redundant announcement', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    const mark = await screen.findByRole('presentation', { hidden: true });
+    expect(mark).toHaveAttribute('alt', '');
+    expect(mark).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('8: Sidebar navigation remains unaffected by the larger lockup', async () => {
+    mockPermissions(['case.create']);
+    renderSidebar('mock');
+    expect(await screen.findByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Tasks')).toBeInTheDocument();
+    expect(screen.getByText('Calendar')).toBeInTheDocument();
+    expect(screen.getByText('Reports')).toBeInTheDocument();
   });
 });
 
