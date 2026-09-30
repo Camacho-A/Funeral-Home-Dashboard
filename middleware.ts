@@ -87,7 +87,20 @@ export const config = {
   // session check (the branch above), not a free pass. Only its own
   // public sub-paths (login/accept-invitation/forgot-password/reset-password)
   // skip the check, handled inside the middleware function itself.
+  //
+  // Task #19 (2026-09) adds `brand` — public/brand/soliscode-mark.png (the
+  // SOLIS mark ProductBrand renders on both Login and the Sidebar) was
+  // never excluded, so an unauthenticated <img> request for it fell
+  // through to this matcher's catch-all like any other protected route
+  // and got 307-redirected to /login?next=%2Fbrand%2F... — an HTML page,
+  // not an image, which is exactly what produced the missing/broken logo
+  // specifically on the logged-out Login screen (the Sidebar's identical
+  // usage of the same asset never showed this, since the Sidebar only
+  // ever renders inside the authenticated portal layout, where a valid
+  // session cookie already lets the request through). Same treatment as
+  // `_next/static`/`_next/image`/`favicon.ico` above — public, static,
+  // never session-gated.
   matcher: [
-    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|sign|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|sign|brand|_next/static|_next/image|favicon.ico).*)',
   ],
 };
