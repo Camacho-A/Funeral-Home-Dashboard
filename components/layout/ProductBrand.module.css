@@ -17,3 +17,21 @@
   object-fit: contain;
   flex-shrink: 0;
 }
+
+/* Task #13 spacing tightening (2026-09). The source PNG
+   (public/brand/soliscode-mark.png, never modified) has substantial
+   transparent padding baked into its square canvas — the visible
+   artwork only spans roughly y:378-1540 of the 2000px-tall canvas, i.e.
+   ~23% (460px) of pure transparent padding below the visible bottom
+   edge. At the Sidebar's 96px render size that's ~22px of invisible
+   space INSIDE the <img> box itself, on top of the .vertical gap above
+   — together making the visible gap to "SOLIS" read as much larger than
+   the CSS gap alone would suggest. This negative margin pulls the
+   wordmark up into that PNG's own transparent zone (never into the
+   visible artwork) to land at ~5px of actual visual space, per visual
+   review — compensating in presentation only, never by cropping/
+   altering the source asset. Scoped to `.vertical` (Sidebar) only —
+   Login's horizontal variant never matches this selector. */
+.vertical .mark {
+  margin-bottom: -21px;
+}
