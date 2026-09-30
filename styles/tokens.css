@@ -26,21 +26,33 @@
 
 :root {
   /* ---------------------------------------------------------------------
-   * Color — brand (hue 265)
+   * Color — brand (Task #14 Phase A, 2026-09: SOLIS design-token
+   * foundation). Previously oklch(0.32 0.1 265) ≈ #192f65, hand-measured
+   * from the original Beacon prototype. Replaced with the Task #14
+   * audit's approved palette — derived from the real SolisCode brand mark
+   * (public/brand/soliscode-mark.png, sampled directly: alpha-weighted
+   * pixel clustering + OKLCH conversion, not guessed), which reads as a
+   * calmer, less-saturated steel-slate than the prototype's more-saturated
+   * indigo at a similar lightness. Expressed as literal hex (exact
+   * approved values, same convention --color-surface-card already uses
+   * for a literal-hex token in this otherwise-oklch file) rather than a
+   * rounded oklch() to guarantee no drift from the approved values.
    * ------------------------------------------------------------------- */
-  --color-brand: oklch(
-    0.32 0.1 265
-  ); /* 30 occurrences — buttons, current stage, checked boxes, links inside pills */
-  --color-brand-hover: oklch(0.28 0.1 265); /* 5 occurrences */
-  /* Tint cluster (0.86/0.87/0.89 0.05-0.06 265, 10 occurrences total) consolidated to one value */
-  --color-brand-tint: oklch(0.87 0.05 265);
-  --color-brand-disabled: oklch(
-    0.8 0.02 265
-  ); /* disabled primary-button fill (New Case modal's "Create case" button) */
+  --color-brand: #1f3c5b; /* buttons, current stage, checked boxes, links inside pills */
+  --color-brand-hover: #122f4d;
+  --color-brand-tint: #d4dfef;
+  --color-brand-disabled: #bec5ce; /* disabled primary-button fill (New Case modal's "Create case" button) */
 
-  /* Anchor-tag color is a distinct hue (230) from the brand color (265) in the
-     prototype's own <style> block — preserved as its own token, not merged
-     into --color-brand. */
+  /* New (Task #14 Phase A). The mark's own brighter circuit-line blue —
+     NOT a replacement for --color-brand. Reserved for restrained,
+     sparing highlight/focus/link treatment in later phases; this phase
+     only defines the token, it does not apply it to any component. */
+  --color-accent: #598fcd;
+
+  /* Anchor-tag color is a distinct hue (230) from the brand color in the
+     original prototype's own <style> block — preserved as its own token,
+     not merged into --color-brand, and NOT part of this phase's brand
+     palette change (out of scope — untouched). */
   --color-link: oklch(0.5 0.1 230);
   --color-link-hover: oklch(0.4 0.1 230);
 
@@ -54,6 +66,20 @@
     0.5 0.15 25
   ); /* 6 occurrences — the anchor value for danger text/icons */
   --color-danger-border: oklch(0.85 0.06 25);
+
+  /* ---------------------------------------------------------------------
+   * Color — warning (new, Task #14 Phase A, 2026-09). Fills a confirmed
+   * gap: no warning semantic existed anywhere in this file, despite ~17
+   * already-shipped consumers (Settings/Case dialogs/external-forms
+   * historical-import callouts) silently falling back to a hardcoded
+   * Tailwind amber (#92400e/#fef3c7) because the tokens they referenced
+   * were never actually defined. Same amber hue family those fallbacks
+   * already used, expressed as real oklch tokens (approved Task #14
+   * values) rather than a fourth independent hardcoded amber.
+   * ------------------------------------------------------------------- */
+  --color-warning-text: oklch(0.55 0.13 70); /* ≈ #a16100 */
+  --color-warning-bg: oklch(0.95 0.04 85); /* ≈ #fbedd1 */
+  --color-warning-border: oklch(0.85 0.07 75); /* ≈ #e9c89b */
 
   /* ---------------------------------------------------------------------
    * Color — success (hue 145). Reserved exclusively for true completion —
@@ -99,6 +125,33 @@
   --color-text-faint: oklch(0.65 0.015 60);
 
   /* ---------------------------------------------------------------------
+   * Color — Task #14 Phase A bridging aliases (2026-09). Every property
+   * name below was ALREADY being referenced (with a hardcoded Tailwind-hex
+   * fallback) by real, shipped components before this phase — confirmed
+   * by a repo-wide var()-reference sweep against every real token defined
+   * above. None of these are new colors: each aliases the one existing
+   * token whose real call sites clearly matched — verified call-site by
+   * call-site, not guessed from the property name alone. In particular,
+   * `--color-attention` reads like it should mean "warning," but every one
+   * of its 12 real call sites is a `.error` class using the exact same red
+   * fallback (`#b91c1c`) used for danger text everywhere else — so it
+   * aliases danger, not warning. This is a presentation-only bridge: the
+   * dependent files above need zero edits and simply start resolving to
+   * the real design system instead of a hardcoded fallback.
+   * ------------------------------------------------------------------- */
+  --color-attention: var(--color-danger-text); /* 12 call sites, all `.error`, fallback #b91c1c */
+  --color-danger: var(--color-danger-text); /* 4 call sites — Accounting panels */
+  --color-warning-surface: var(--color-warning-bg); /* 1 call site */
+  /* Same lightness tier already used for chip/tag backgrounds — a
+     reasonable starting point for row/control hover surfaces without
+     inventing a 7th near-identical light-neutral value; Phase B may
+     introduce a dedicated value once real hover treatments are visually
+     reviewed in place. */
+  --color-surface-hover: var(--color-surface-subtle); /* 1 call site */
+  --color-text: var(--color-text-primary); /* 3 call sites */
+  --color-surface: var(--color-surface-card); /* 1 call site — bordered stepper-button background */
+
+  /* ---------------------------------------------------------------------
    * Typography. Font family is loaded via next/font/google in app/layout.tsx
    * (see the ADR-001 rationale) rather than the prototype's literal
    * <link>/@import — --font-sans below is set to the CSS variable next/font
@@ -124,6 +177,17 @@
   --font-size-20: 20px; /* modal close glyph */
   --font-size-26: 26px; /* page / case-detail title */
   --font-size-28: 28px; /* Reports KPI stat numbers */
+
+  /* Task #14 Phase A (2026-09) — bridging additions/aliases. Every name
+     below was already referenced by real components before this phase;
+     confirmed via a repo-wide var()-reference sweep. */
+  --font-size-sm: var(
+    --font-size-12-5
+  ); /* 24 call sites across 8 files (Settings/external-forms/modal labels, descriptions, inline validation) — no fallback existed, so these previously computed to nothing (inherited ambient size). 12.5px matches this scale's own "label" tier and the shared Button component's own small-text size, one step below the 13px body default — the literal meaning of "sm" here, not an arbitrary pick. */
+  --font-size-24: 24px; /* 1 call site (app/onboarding/page.module.css page title) — had NO fallback at all, so this was previously computing to nothing; 24px is the token's own literal, unambiguous name */
+  --font-size-lg: var(
+    --font-size-20
+  ); /* 1 call site (Settings' "current case number" stat) — already resolving to 20px via its own `1.25rem` fallback; --font-size-20 already exists at that exact value */
 
   --font-weight-regular: 400; /* implicit default — rarely set explicitly in the prototype, but real */
   --font-weight-medium: 500;
