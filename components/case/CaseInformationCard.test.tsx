@@ -1389,3 +1389,79 @@ describe('CaseInformationCard — Task #18 (2026-09, section heading cleanup)', 
     expect(nokHeading.className).not.toMatch(/grid/);
   });
 });
+
+describe('CaseInformationCard — Notify Crematory panel expansion (2026-09)', () => {
+  it('1. "Notify crematory" remains rendered when weightOver200 is true', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+  });
+
+  it("2. Weight's field wrapper (Notify crematory's own container) stays inside the same DOB/DOD/Time of death/Location .grid row — never moved to a separate section", () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    const weightWrapper = screen.getByText('Weight').parentElement!;
+    const dobWrapper = screen.getByText('Date of birth').parentElement!;
+    expect(weightWrapper.parentElement).toBe(dobWrapper.parentElement);
+  });
+
+  it('3. Weight\'s own wrapper gains the expanded-width class only while the badge is showing (weightOver200)', () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
+    const weightWrapperNormal = screen.getByText('Weight').parentElement!;
+    expect(weightWrapperNormal.className).not.toMatch(/weightNotifyExpanded/);
+
+    rerender(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    const weightWrapperExpanded = screen.getByText('Weight').parentElement!;
+    expect(weightWrapperExpanded.className).toMatch(/weightNotifyExpanded/);
+  });
+
+  it('4. Weight value remains visible and unchanged alongside the expanded badge', () => {
+    render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '242 lb' })).toBeInTheDocument();
+  });
+
+  it('5. Date of birth / Date of death / Time of death / Location remain rendered and unaffected by the Weight expansion', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Date of birth')).toBeInTheDocument();
+    expect(screen.getByText('Date of death')).toBeInTheDocument();
+    expect(screen.getByText('Time of death')).toBeInTheDocument();
+    expect(screen.getByText('Location')).toBeInTheDocument();
+    // None of these siblings carry the Weight-only expansion class.
+    expect(screen.getByText('Date of birth').parentElement!.className).not.toMatch(/weightNotifyExpanded/);
+  });
+
+  it('6. the badge continues to appear/disappear based on weightOver200 only — no new trigger condition introduced', () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Notify crematory')).not.toBeInTheDocument();
+    rerender(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+  });
+
+  it('7. Weight\'s click-to-edit save behavior is unaffected by the wider layout', () => {
+    const onSaveWeight = vi.fn();
+    render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} onSaveWeight={onSaveWeight} />);
+    fireEvent.click(screen.getByRole('button', { name: '242 lb' }));
+    const input = screen.getByDisplayValue('242 lb');
+    fireEvent.change(input, { target: { value: '190 lb' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSaveWeight).toHaveBeenCalledWith('190 lb');
+  });
+
+  it('8-9. the expansion is implemented as a CSS grid-column span with a sub-860px fallback to span 1 (see CaseInformationCard.module.css .weightNotifyExpanded) — auto-placement wraps rather than overflows at any width, so no horizontal scrolling is introduced at any breakpoint', () => {
+    // jsdom does not compute external stylesheet layout, so the responsive
+    // fallback itself is verified by static CSS inspection (documented in
+    // the stylesheet's own comment) rather than a runtime assertion here.
+    // This test only confirms the single class hook the CSS rule targets
+    // is applied exactly as expected, which is what the CSS rule keys off.
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    const weightWrapper = screen.getByText('Weight').parentElement!;
+    expect(weightWrapper.className).toMatch(/weightNotifyExpanded/);
+  });
+
+  it('10. the rest of Case Information (NOK/Certifier headings, operational row, Owner visibility) is unaffected by the Weight expansion', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
+    expect(screen.getByText('Certifier information')).toBeInTheDocument();
+    expect(screen.queryByText('Owner')).not.toBeInTheDocument();
+    expect(screen.getByText('Tag #')).toBeInTheDocument();
+    expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
+  });
+});

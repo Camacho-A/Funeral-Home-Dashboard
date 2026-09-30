@@ -193,6 +193,34 @@
   color: var(--color-danger-text);
 }
 
+/* Notify Crematory panel expansion (2026-09): Weight shares the same
+   auto-fill/minmax(200px, 260px) grid track as DOB/DOD/Time of Death/
+   Location, which is enough room for the Weight value alone but cramped
+   once the "Notify crematory" badge also has to fit in the same row (see
+   .notifyBadge above) — hence "too narrow/cramped". Spanning 2 tracks
+   gives the value + badge roughly double the width without touching the
+   other fields' own column width, and without moving Weight out of this
+   row — grid auto-placement simply wraps whichever sibling fields don't
+   fit onto the next row, so this never forces horizontal overflow.
+   Applied only while the badge is actually showing (weightOver200) — the
+   common case (no badge) keeps Weight at its normal single-column width,
+   matching every other field in this row.
+   The span is reverted below 860px (mirroring the same breakpoint
+   app/(portal)/cases/[caseId]/page.module.css already uses for its own
+   side-by-side-to-stacked collapse) — a span-2 requirement at typical
+   phone widths (~375-414px) would exceed 2 × 200px-minimum tracks and
+   risk the grid container overflowing; below that width Weight simply
+   falls back to normal single-column placement like every other field. */
+.weightNotifyExpanded {
+  grid-column: span 2;
+}
+
+@media (max-width: 860px) {
+  .weightNotifyExpanded {
+    grid-column: span 1;
+  }
+}
+
 .paymentSuccess {
   color: var(--color-success-text);
 }
