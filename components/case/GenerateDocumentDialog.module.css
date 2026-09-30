@@ -14,16 +14,16 @@
 .label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .error {
-  color: var(--color-attention, #b91c1c);
+  color: var(--color-attention);
   font-size: 12.5px;
 }
 
 .previewFrame {
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }

@@ -121,3 +121,35 @@
   flex-basis: 100%;
   color: var(--color-danger-text);
 }
+
+/* Task #14 Phase E (2026-09): the Record Payment sub-panel previously used
+   raw inline style={{}} objects and a hardcoded #ddd/#666 — replaced with
+   this card's own established tokens. Its native select/inputs kept their
+   exact behavior (see BillingCard.module.css's identical reasoning);
+   TextField/SelectField are pure CSS wrappers over the same element. */
+.recordPaymentPanel {
+  margin-top: var(--space-6);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.recordPaymentHint {
+  font-size: var(--font-size-13);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.recordPaymentField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recordPaymentActions {
+  display: flex;
+  gap: var(--space-4);
+}

@@ -60,6 +60,15 @@ button.descriptionRow {
   cursor: pointer;
 }
 
+button.descriptionRow:hover {
+  color: var(--color-text-secondary);
+}
+
+button.descriptionRow:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
 .description {
   font-size: var(--font-size-13);
 }

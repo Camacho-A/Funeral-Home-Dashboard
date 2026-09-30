@@ -8,6 +8,8 @@ import { useStatementPreview, useCashAdvances, useCreateCashAdvance, useDeleteCa
 import { useCaseDocumentLibrary } from '@/hooks/useCaseDocumentLibrary';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
+import styles from './BillingCard.module.css';
 
 /**
  * Phase 39 (Family Billing & FTC Compliance). Focused case Billing panel:
@@ -25,6 +27,11 @@ import { Button } from '@/components/ui/Button';
  * version whenever that's provided; only omitting it (the prior behavior)
  * caused every click to silently create a second, competing "active"
  * Statement instead of replacing the first.
+ *
+ * Task #14 Phase E (2026-09): presentation rebuilt onto BillingCard.module.css
+ * (previously raw inline style={{}} objects and hardcoded hex colors, the
+ * single largest visual outlier in the app) — every hook, handler, and
+ * mutation call below is byte-for-byte unchanged from before this phase.
  */
 function dollarsToCents(input: string): number | null {
   const n = Number(input);
@@ -84,43 +91,70 @@ export function BillingCard({ caseId }: { caseId: string }) {
   }
 
   return (
-    <section aria-labelledby="billing-heading" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <h2 id="billing-heading">Billing &amp; Statement</h2>
+    <section aria-labelledby="billing-heading" className={styles.card}>
+      <h2 id="billing-heading" className={styles.heading}>
+        Billing &amp; Statement
+      </h2>
 
       {/* Cash advance editor — omitted entirely for an organization that
           doesn't use this workflow (see showCashAdvanceSection above),
           unless the case unexpectedly already has cash advance data (see
           the read-only fallback just below). */}
       {showCashAdvanceSection && (
-        <div>
-          <h3 style={{ marginBottom: '0.5rem' }}>Cash advance items</h3>
-          <p style={{ fontSize: '0.85rem', color: '#555', marginTop: 0 }}>
-            Third-party items obtained on the family&rsquo;s behalf. These appear on the Statement but are <strong>not</strong> part of the account balance owed to the funeral home.
+        <div className={styles.subsection}>
+          <h3 className={styles.subsectionTitle}>Cash advance items</h3>
+          <p className={styles.subsectionDescription}>
+            Third-party items obtained on the family&rsquo;s behalf. These appear on the Statement but are{' '}
+            <strong>not</strong> part of the account balance owed to the funeral home.
           </p>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <ul className={styles.cashAdvanceList}>
             {existingCashAdvances.map((c) => (
-              <li key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+              <li key={c.id} className={styles.cashAdvanceRow}>
                 <span>
                   {c.description}
-                  {c.isEstimated && <em style={{ fontSize: '0.8em', color: '#a60' }}> (estimated)</em>}
-                  {c.hasMarkup && <em style={{ fontSize: '0.8em', color: '#555' }}> (incl. service charge)</em>}
+                  {c.isEstimated && <em className={styles.estimatedNote}> (estimated)</em>}
+                  {c.hasMarkup && <em className={styles.markupNote}> (incl. service charge)</em>}
                 </span>
-                <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCents(c.amountCents)}</span>
-                  <button type="button" onClick={() => deleteCa.mutate(c.id)} aria-label={`Remove ${c.description}`} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#a00' }}>
+                <span className={styles.cashAdvanceAmountGroup}>
+                  <span className={styles.tabularAmount}>{formatCents(c.amountCents)}</span>
+                  <button
+                    type="button"
+                    onClick={() => deleteCa.mutate(c.id)}
+                    aria-label={`Remove ${c.description}`}
+                    className={styles.removeButton}
+                  >
                     ×
                   </button>
                 </span>
               </li>
             ))}
-            {existingCashAdvances.length === 0 && <li style={{ color: '#777', fontStyle: 'italic' }}>No cash advance items.</li>}
+            {existingCashAdvances.length === 0 && <li className={styles.emptyNote}>No cash advance items.</li>}
           </ul>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
-            <input aria-label="Cash advance description" placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} />
-            <input aria-label="Cash advance amount (dollars)" placeholder="Amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: '6rem' }} />
-            <label style={{ fontSize: '0.85rem' }}><input type="checkbox" checked={isEstimated} onChange={(e) => setIsEstimated(e.target.checked)} /> Estimate</label>
-            <label style={{ fontSize: '0.85rem' }}><input type="checkbox" checked={hasMarkup} onChange={(e) => setHasMarkup(e.target.checked)} /> Has markup</label>
-            <Button variant="secondary" onClick={addCashAdvance} disabled={createCa.isPending || !desc.trim() || dollarsToCents(amount) === null}>Add</Button>
+          <div className={styles.cashAdvanceForm}>
+            <TextField
+              aria-label="Cash advance description"
+              placeholder="Description"
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              className={styles.descriptionField}
+            />
+            <TextField
+              aria-label="Cash advance amount (dollars)"
+              placeholder="Amount"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className={styles.amountField}
+            />
+            <label className={styles.checkboxLabel}>
+              <input type="checkbox" checked={isEstimated} onChange={(e) => setIsEstimated(e.target.checked)} /> Estimate
+            </label>
+            <label className={styles.checkboxLabel}>
+              <input type="checkbox" checked={hasMarkup} onChange={(e) => setHasMarkup(e.target.checked)} /> Has markup
+            </label>
+            <Button variant="secondary" onClick={addCashAdvance} disabled={createCa.isPending || !desc.trim() || dollarsToCents(amount) === null}>
+              Add
+            </Button>
           </div>
         </div>
       )}
@@ -133,17 +167,17 @@ export function BillingCard({ caseId }: { caseId: string }) {
           since this organization's normal workflow doesn't use this
           mechanism at all. */}
       {hasUnexpectedCashAdvances && (
-        <div style={{ border: '1px solid #e0a030', borderRadius: 6, padding: '0.75rem', background: '#fff8ec' }}>
-          <strong style={{ color: '#8a5a00' }}>Cash advance items on this case</strong>
-          <p style={{ fontSize: '0.85rem', color: '#555', margin: '0.25rem 0 0.5rem' }}>
+        <div className={styles.warningBox}>
+          <strong className={styles.warningTitle}>Cash advance items on this case</strong>
+          <p className={styles.warningText}>
             This organization doesn&rsquo;t use Cash Advance Items in its normal workflow, but this case already has{' '}
             {existingCashAdvances.length} recorded. They remain included in the Statement Total below and are shown here read-only.
           </p>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <ul className={styles.cashAdvanceList}>
             {existingCashAdvances.map((c) => (
-              <li key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <li key={c.id} className={styles.cashAdvanceRowReadOnly}>
                 <span>{c.description}</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCents(c.amountCents)}</span>
+                <span className={styles.tabularAmount}>{formatCents(c.amountCents)}</span>
               </li>
             ))}
           </ul>
@@ -151,42 +185,47 @@ export function BillingCard({ caseId }: { caseId: string }) {
       )}
 
       {/* Statement preview with the FTC-total vs AR-balance distinction */}
-      <div>
-        <h3 style={{ marginBottom: '0.5rem' }}>Statement preview</h3>
-        {preview.isPending && <p>Loading preview…</p>}
-        {preview.isError && <p style={{ color: '#a00' }}>{(preview.error as Error)?.message ?? 'No active order — create an order first.'}</p>}
+      <div className={styles.subsection}>
+        <h3 className={styles.subsectionTitle}>Statement preview</h3>
+        {preview.isPending && <p className={styles.loading}>Loading preview…</p>}
+        {preview.isError && (
+          <p className={styles.error}>{(preview.error as Error)?.message ?? 'No active order — create an order first.'}</p>
+        )}
         {model && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className={styles.statementBody}>
+            <table className={styles.lineItemsTable}>
               <tbody>
                 {model.lineItems.map((l, i) => (
                   <tr key={i}>
-                    <td>{l.description}{l.includesBasicServicesFee && <em style={{ fontSize: '0.8em', color: '#555' }}> (incl. basic services fee)</em>}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCents(l.lineTotalCents)}</td>
+                    <td>
+                      {l.description}
+                      {l.includesBasicServicesFee && <em className={styles.markupNote}> (incl. basic services fee)</em>}
+                    </td>
+                    <td className={styles.lineItemAmount}>{formatCents(l.lineTotalCents)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div style={{ border: '1px solid #ccc', borderRadius: 6, padding: '0.5rem' }}>
+            <div className={styles.totalsGrid}>
+              <div className={styles.totalBox}>
                 <strong>Statement Total</strong>
-                <div style={{ fontSize: '0.8rem', color: '#666' }}>Goods/services + cash advances</div>
-                <div style={{ fontSize: '1.2rem', fontVariantNumeric: 'tabular-nums' }}>{formatCents(model.ftcStatementTotalCents)}</div>
+                <div className={styles.totalCaption}>Goods/services + cash advances</div>
+                <div className={styles.totalFigure}>{formatCents(model.ftcStatementTotalCents)}</div>
               </div>
-              <div style={{ border: '1px solid #ccc', borderRadius: 6, padding: '0.5rem', background: '#f6f6f6' }}>
+              <div className={`${styles.totalBox} ${styles.totalBoxEmphasis}`}>
                 <strong>Account balance due</strong>
-                <div style={{ fontSize: '0.8rem', color: '#666' }}>Owed to funeral home (cash advances excluded)</div>
-                <div style={{ fontSize: '1.2rem', fontVariantNumeric: 'tabular-nums' }}>{formatCents(model.authoritativeArBalanceDueCents)}</div>
+                <div className={styles.totalCaption}>Owed to funeral home (cash advances excluded)</div>
+                <div className={styles.totalFigure}>{formatCents(model.authoritativeArBalanceDueCents)}</div>
               </div>
             </div>
 
-            <div>
+            <div className={styles.generateRow}>
               <Button onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
                 {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
               </Button>
-              {generate.isError && <span style={{ color: '#a00', marginLeft: '0.5rem' }}>{(generate.error as Error).message}</span>}
-              {generate.isSuccess && <span style={{ color: '#0a0', marginLeft: '0.5rem' }}>Generated — see the Documents tab.</span>}
+              {generate.isError && <span className={styles.generateError}>{(generate.error as Error).message}</span>}
+              {generate.isSuccess && <span className={styles.generateSuccess}>Generated — see the Documents tab.</span>}
             </div>
           </div>
         )}

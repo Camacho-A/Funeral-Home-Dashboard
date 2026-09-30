@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { TextField } from '@/components/ui/TextField';
+import { SelectField } from '@/components/ui/SelectField';
 import { EditServicesModal } from '@/components/case/EditServicesModal';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
@@ -218,26 +220,26 @@ export function CaseOrderCard({
           )}
 
           {recordOpen && (
-            <div style={{ marginTop: '0.75rem', padding: '0.75rem', border: '1px solid #ddd', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div className={styles.recordPaymentPanel}>
               <strong>Record a payment</strong>
-              <p style={{ fontSize: '0.8rem', color: '#666', margin: 0 }}>For cash, check, or any payment collected outside Clover.</p>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <p className={styles.recordPaymentHint}>For cash, check, or any payment collected outside Clover.</p>
+              <label className={styles.recordPaymentField}>
                 Method
-                <select value={method} onChange={(e) => setMethod(e.target.value as 'cash' | 'check' | 'other')}>
+                <SelectField value={method} onChange={(e) => setMethod(e.target.value as 'cash' | 'check' | 'other')}>
                   <option value="cash">Cash</option>
                   <option value="check">Check</option>
                   <option value="other">Other</option>
-                </select>
+                </SelectField>
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label className={styles.recordPaymentField}>
                 Amount ($)
-                <input type="text" inputMode="decimal" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
+                <TextField inputMode="decimal" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label className={styles.recordPaymentField}>
                 Reference (optional — e.g. check number)
-                <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} />
+                <TextField value={reference} onChange={(e) => setReference(e.target.value)} />
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className={styles.recordPaymentActions}>
                 <Button onClick={submitManualPayment} disabled={recordManualPayment.isPending || dollarsToCents(amountInput) === null}>
                   {recordManualPayment.isPending ? 'Recording…' : 'Save Payment'}
                 </Button>

@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
@@ -16,16 +16,16 @@
 
 .signerLine {
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .meta {
   font-size: 12px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .error {
-  color: var(--color-attention, #b91c1c);
+  color: var(--color-attention);
   font-size: 12.5px;
 }
 
@@ -37,7 +37,7 @@
 .historyToggle {
   align-self: flex-start;
   font-size: 12.5px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
   background: none;
   border: none;
   padding: 0;
@@ -49,16 +49,16 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
   padding-top: 8px;
 }
 
 .historyEntry {
   font-size: 12px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .signedLine {
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
