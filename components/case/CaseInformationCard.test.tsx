@@ -1327,7 +1327,7 @@ describe('CaseInformationCard — Task #18 (2026-09, section heading cleanup)', 
     expect(screen.getByText('NOK phone').className).toMatch(/fieldLabel/);
   });
 
-  it('4. both section headings are centered (via .sectionHeading\'s text-align: center rule) — proven by both sharing the identical centering class, not a per-heading inline style', () => {
+  it('4. both section headings are left-aligned (via .sectionHeading\'s text-align: left rule) — proven by both sharing the identical alignment class, not a per-heading inline style', () => {
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
     const nokHeading = screen.getByText('Next of kin / primary contact');
     const certifierHeading = screen.getByText('Certifier information');
@@ -1337,7 +1337,7 @@ describe('CaseInformationCard — Task #18 (2026-09, section heading cleanup)', 
     expect(nokHeadingClass).toBe(certifierHeadingClass);
   });
 
-  it('5. Certifier helper text remains present, using the dedicated centered .sectionHelperText style', () => {
+  it('5. Certifier helper text remains present, using the dedicated left-aligned .sectionHelperText style', () => {
     render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
     const helperText = screen.getByText('Medical certifier responsible for signing the death certificate.');
     expect(helperText).toBeInTheDocument();

@@ -47,19 +47,21 @@
    directly under the card's own .title.
    Task #18 (2026-09): previously font-weight-semibold/font-size-11-5,
    nearly identical to .fieldLabel below and reported as blending into the
-   surrounding field labels. Now bold + centered + a full size step up, so
-   it reads as a section break rather than another field label — while
-   staying well short of .title's 14px (this is a sub-section of the card,
-   not a second card title). Centering only the heading/helper text, never
-   the field grids beneath (those keep their existing left-aligned .grid
-   layout untouched). */
+   surrounding field labels. Now bold + a full size step up, so it reads as
+   a section break rather than another field label — while staying well
+   short of .title's 14px (this is a sub-section of the card, not a second
+   card title).
+   Task #18 left-align follow-up (2026-09): briefly centered, reverted to
+   left per explicit feedback — every other typographic/spacing change from
+   the centered pass (13px/bold/primary color/uppercase/28px-above/12px-
+   below) is kept as-is. */
 .sectionHeading {
   font-size: var(--font-size-13);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
-  text-align: center;
+  text-align: left;
   margin-top: var(--space-14);
   margin-bottom: var(--space-6);
 }
@@ -67,12 +69,13 @@
 /* Structured Certifier data (2026-09, ADR-041): a short context line under
    a section heading — currently only Certifier information's, to make
    explicit it's the medical certifier, never the family/NOK contact.
-   Task #18 (2026-09): centered under the now-centered heading, remains
-   visually secondary via its smaller size and secondary text color. */
+   Task #18 left-align follow-up (2026-09): left-aligned under the
+   left-aligned heading; remains visually secondary via its smaller size
+   and secondary text color. */
 .sectionHelperText {
   font-size: var(--font-size-12-5);
   color: var(--color-text-secondary);
-  text-align: center;
+  text-align: left;
   margin-top: 0;
   margin-bottom: var(--space-6);
 }
