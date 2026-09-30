@@ -20,22 +20,27 @@
 }
 
 .item:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
 }
 
 .itemActive {
-  background: var(--color-brand-tint, #e8e9f5);
+  background: var(--color-brand-tint);
 }
 
 .itemName {
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .itemMeta {
   font-size: 11px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .newRoleForm {
@@ -44,5 +49,5 @@
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
 }

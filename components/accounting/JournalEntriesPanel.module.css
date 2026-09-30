@@ -1,13 +1,13 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
 }
 
 .title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   margin: 0;
 }
 
@@ -16,16 +16,16 @@
 }
 
 .form {
-  margin-bottom: 16px;
-  padding: 14px;
+  margin-bottom: var(--space-8);
+  padding: var(--space-7);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-5);
 }
 
 .formRow {
   display: flex;
-  gap: 10px;
+  gap: var(--space-5);
   flex-wrap: wrap;
   align-items: center;
 }
@@ -35,8 +35,8 @@
 }
 
 .error {
-  color: var(--color-danger, #b91c1c);
-  font-size: 12.5px;
+  color: var(--color-danger);
+  font-size: var(--font-size-12-5);
 }
 
 .card {
@@ -52,9 +52,9 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  gap: var(--space-7);
+  padding: var(--space-5) 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .row:last-child {
@@ -63,31 +63,31 @@
 
 .number {
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   min-width: 90px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .identity {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 200px;
   flex: 1;
 }
 
 .name {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--color-text-primary, #111827);
+  font-size: var(--font-size-13-5);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 
 .meta {
-  font-size: 11.5px;
-  color: var(--color-text-muted, #6b7280);
+  font-size: var(--font-size-11-5);
+  color: var(--color-text-muted);
 }
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-4);
 }

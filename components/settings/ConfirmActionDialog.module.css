@@ -6,12 +6,12 @@
 
 .message {
   font-size: 13.5px;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .error {
-  color: var(--color-attention, #b91c1c);
+  color: var(--color-attention);
   font-size: 12.5px;
 }
 

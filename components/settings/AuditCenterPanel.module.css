@@ -43,13 +43,13 @@
 }
 
 .detailFields dt {
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
   font-weight: 600;
 }
 
 .detailFields dd {
   margin: 0;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .detailActions {

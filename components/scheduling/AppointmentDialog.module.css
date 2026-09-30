@@ -1,7 +1,7 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-7);
   min-width: 460px;
   max-width: 520px;
 }
@@ -9,65 +9,65 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
   flex: 1;
 }
 
 .row {
   display: flex;
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 .label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-muted, #6b7280);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
 }
 
 .hint {
-  font-size: 12px;
-  color: var(--color-text-muted, #6b7280);
+  font-size: var(--font-size-12);
+  color: var(--color-text-muted);
 }
 
 .error {
-  color: var(--color-attention, #b91c1c);
-  font-size: 12.5px;
+  color: var(--color-attention);
+  font-size: var(--font-size-12-5);
 }
 
 .resourceList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-3);
   max-height: 160px;
   overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  padding: var(--space-4) var(--space-5);
 }
 
 .resourceRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   cursor: pointer;
 }
 
 .resourceName {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   flex: 1;
 }
 
 .inlineCheckbox {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-4);
+  font-size: var(--font-size-13);
   cursor: pointer;
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }

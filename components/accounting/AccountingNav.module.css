@@ -1,7 +1,7 @@
 .nav {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
@@ -10,16 +10,21 @@
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
   border-bottom: 2px solid transparent;
   text-decoration: none;
 }
 
 .link:hover {
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
 }
 
 .linkActive {
-  color: var(--color-brand, #2563eb);
-  border-bottom-color: var(--color-brand, #2563eb);
+  color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
 }

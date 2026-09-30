@@ -15,7 +15,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .row {
@@ -27,9 +27,9 @@
 
 .rowLabel {
   font-size: 13px;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .rowLabelDisabled {
-  color: var(--color-text-disabled, #9ca3af);
+  color: var(--color-text-disabled);
 }

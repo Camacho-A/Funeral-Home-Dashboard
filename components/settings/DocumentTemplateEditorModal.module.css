@@ -22,7 +22,7 @@
 .label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }
 
 .bodyTextArea {
@@ -32,12 +32,12 @@
 }
 
 .error {
-  color: var(--color-attention, #b91c1c);
+  color: var(--color-attention);
   font-size: 12.5px;
 }
 
 .previewFrame {
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -47,10 +47,10 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
   padding: 8px 12px;
-  background: var(--color-surface-subtle, #f9fafb);
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .previewContent {
@@ -73,7 +73,7 @@
   gap: 8px;
   width: 220px;
   flex-shrink: 0;
-  border-left: 1px solid var(--color-border, #e5e7eb);
+  border-left: 1px solid var(--color-border);
   padding-left: 16px;
 }
 
@@ -102,28 +102,33 @@
   padding: 6px 8px;
   border-radius: 6px;
   border: 1px solid transparent;
-  background: var(--color-surface-subtle, #f9fafb);
+  background: var(--color-surface-subtle);
   cursor: pointer;
   font-family: inherit;
 }
 
 .mergeFieldItem:hover {
-  border-color: var(--color-brand, #4f46e5);
+  border-color: var(--color-brand);
+}
+
+.mergeFieldItem:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
 }
 
 .mergeFieldName {
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .mergeFieldToken {
   font-family: ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--color-brand-hover, #4338ca);
+  color: var(--color-brand-hover);
 }
 
 .mergeFieldExample {
   font-size: 10px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
 }

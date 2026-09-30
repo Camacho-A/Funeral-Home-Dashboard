@@ -27,18 +27,18 @@
 }
 
 .fieldError {
-  color: var(--color-danger-text, #b91c1c);
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
 }
 
 .error {
-  color: var(--color-danger-text, #b91c1c);
+  color: var(--color-danger-text);
   font-size: var(--font-size-sm);
   margin-bottom: var(--space-5);
 }
 
 .success {
-  color: var(--color-success-text, #15803d);
+  color: var(--color-success-text);
   font-size: var(--font-size-sm);
   margin-bottom: var(--space-5);
 }
