@@ -1778,3 +1778,542 @@ describe('POST /api/cases — role-based authorization (Manors go-live fix: case
     expect(body.case.assignedStaffId).toBe('staff-chris');
   });
 });
+
+/**
+ * Case list scalability, Phase 2 (2026-09). Stage filtering + server-side
+ * search, wix mode. Unlike Phase 1's `mockPagedCasesListQuery` (which
+ * simply slices a pre-arranged array), this mock actually INTERPRETS the
+ * `filter` object the route builds (`buildCaseListWixFilter`/
+ * `buildCaseSearchWixFilter`) against each item's raw Wix-shaped data —
+ * proving the route pushes `stage`/`searchQuery` into the Wix QUERY
+ * itself (matched before pagination), not a post-fetch filter over
+ * whatever page happened to come back. Uses the real Wix field names
+ * (`currentStage`, `beaconCaseId`) — the exact bug this suite is designed
+ * to catch if the route ever regresses to the wrong (domain-level) names.
+ */
+describe('GET /api/cases — stage filtering + server-side search (Case list scalability, Phase 2), wix mode', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function caseItem(overrides: {
+    id: string;
+    caseNumber: string;
+    createdAt: string;
+    currentStage?: number;
+    decedentName?: string;
+    organizationId?: string;
+  }) {
+    return {
+      id: overrides.id,
+      dataCollectionId: 'cases',
+      data: {
+        beaconCaseId: overrides.id,
+        organizationId: overrides.organizationId ?? DEFAULT_ORGANIZATION_ID,
+        caseNumber: overrides.caseNumber,
+        caseType: 'cremation',
+        workflowTemplateId: 'workflow-template-standard-cremation',
+        workflowTemplateVersion: 1,
+        workflowSnapshot: {
+          workflowTemplateId: 'workflow-template-standard-cremation',
+          workflowTemplateVersion: 1,
+          stages: [],
+          intake: { sections: [] },
+        },
+        intakeOwnerId: 'staff-dana',
+        caseHandlerId: 'staff-dana',
+        currentStage: overrides.currentStage ?? 0,
+        checklistState: {},
+        fieldValues: {},
+        decedentName: overrides.decedentName ?? `Decedent ${overrides.id}`,
+        dateOfBirth: '01/01/2000',
+        dateOfDeath: '01/01/2026',
+        timeOfDeath: '00:00',
+        placeOfDeath: 'Test Hospital',
+        weight: '150 lb',
+        nextOfKinName: 'Test NOK',
+        nextOfKinPhone: '555-0000',
+        nextOfKinEmail: null,
+        tagNumber: null,
+        paymentStatus: 'awaiting_payment',
+        isVeteran: false,
+        isArchived: false,
+        createdAt: overrides.createdAt,
+      },
+    };
+  }
+
+  function matchesWixFilterValue(actual: unknown, condition: unknown): boolean {
+    if (condition !== null && typeof condition === 'object' && !Array.isArray(condition)) {
+      const ops = condition as Record<string, unknown>;
+      if ('$eq' in ops) return actual === ops.$eq;
+      if ('$in' in ops) return Array.isArray(ops.$in) && (ops.$in as unknown[]).includes(actual);
+      if ('$startsWith' in ops) {
+        return (
+          typeof actual === 'string' &&
+          typeof ops.$startsWith === 'string' &&
+          actual.toLowerCase().startsWith((ops.$startsWith as string).toLowerCase())
+        );
+      }
+      throw new Error(`Unrecognized filter operator: ${JSON.stringify(ops)}`);
+    }
+    return actual === condition;
+  }
+
+  function matchesWixFilter(data: Record<string, unknown>, filter: Record<string, unknown>): boolean {
+    if ('$and' in filter) return (filter.$and as Record<string, unknown>[]).every((f) => matchesWixFilter(data, f));
+    if ('$or' in filter) return (filter.$or as Record<string, unknown>[]).some((f) => matchesWixFilter(data, f));
+    return Object.entries(filter).every(([key, condition]) => matchesWixFilterValue(data[key], condition));
+  }
+
+  /** A "real collection" simulator — the query it receives is actually
+      applied against `allCaseItems` (organization scope + isArchived +
+      currentStage + search, exactly as Wix's own filter engine would),
+      THEN paginated. This is what makes "500 total, 12 matching" tests
+      meaningful: the mock can't be fooled by a route that fetches an
+      arbitrary page and filters afterward, because there IS no
+      unfiltered page to fetch — filtering always happens first. */
+  function mockWixCasesCollection(allCaseItems: ReturnType<typeof caseItem>[]) {
+    let pageSize = 0;
+    mockQueryWixDataItems.mockImplementation(
+      (collectionId: string, options?: { filter?: Record<string, unknown>; paging?: { limit?: number; cursor?: string } }) => {
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+
+        const filter = options?.filter ?? {};
+        const matched = allCaseItems.filter((item) => matchesWixFilter(item.data, filter));
+
+        if (!options?.paging) {
+          return Promise.resolve({ dataItems: matched, pagingMetadata: { hasNext: false, cursors: { next: null } } });
+        }
+
+        const { limit, cursor } = options.paging;
+        let offset = 0;
+        if (typeof limit === 'number') pageSize = limit;
+        else if (typeof cursor === 'string') offset = Number(cursor);
+        const slice = matched.slice(offset, offset + pageSize);
+        const nextOffset = offset + slice.length;
+        const hasNext = nextOffset < matched.length;
+        return Promise.resolve({
+          dataItems: slice,
+          pagingMetadata: { hasNext, cursors: { next: hasNext ? String(nextOffset) : null } },
+        });
+      },
+    );
+  }
+
+  function requestWith(organizationId: string, params: Record<string, string>) {
+    const search = new URLSearchParams({ organizationId, ...params });
+    return new Request(`http://localhost/api/cases?${search.toString()}`);
+  }
+
+  describe('stage filtering', () => {
+    it('1/2. a valid stage returns only that stage\'s cases — 500-total/12-matching shape: the query matches only the 12, never fetching an arbitrary page and filtering afterward', () => {
+      const firstCall = Array.from({ length: 12 }, (_, i) => caseItem({ id: `fc-${i}`, caseNumber: `B2026-${100 + i}`, createdAt: '2026-01-01T00:00:00.000Z', currentStage: 0 }));
+      const otherStages = Array.from({ length: 488 }, (_, i) => caseItem({ id: `other-${i}`, caseNumber: `B2026-${200 + i}`, createdAt: '2026-01-01T00:00:00.000Z', currentStage: 3 }));
+      mockWixCasesCollection([...firstCall, ...otherStages]);
+
+      return (async () => {
+        const body = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'First Call & Payment', limit: '50' }))).json();
+        expect(body.cases).toHaveLength(12);
+        expect(body.cases.every((c: { id: string }) => c.id.startsWith('fc-'))).toBe(true);
+        expect(body.hasMore).toBe(false);
+      })();
+    });
+
+    it('confirms the query filter itself carries the stage constraint (currentStage $in), not a post-fetch check', async () => {
+      mockWixCasesCollection([caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z', currentStage: 7 })]);
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '10' }));
+
+      expect(mockQueryWixDataItems).toHaveBeenCalledWith(
+        'cases',
+        expect.objectContaining({ filter: expect.objectContaining({ currentStage: { $in: [7] } }) }),
+      );
+    });
+
+    it('"First Call & Payment" resolves to currentStage $in [0, 1] — the one combined display stage', async () => {
+      mockWixCasesCollection([]);
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'First Call & Payment', limit: '10' }));
+
+      expect(mockQueryWixDataItems).toHaveBeenCalledWith(
+        'cases',
+        expect.objectContaining({ filter: expect.objectContaining({ currentStage: { $in: [0, 1] } }) }),
+      );
+    });
+
+    it('3. an invalid stage returns 400, never silently behaving as All Cases', async () => {
+      mockWixCasesCollection([caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z' })]);
+      const response = await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Pending Approval', limit: '10' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.cases).toEqual([]);
+      expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+    });
+
+    it('4. no stage param at all returns All Cases behavior (every stage represented)', async () => {
+      mockWixCasesCollection([
+        caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z', currentStage: 0 }),
+        caseItem({ id: 'c2', caseNumber: 'B2026-002', createdAt: '2026-01-02T00:00:00.000Z', currentStage: 7 }),
+      ]);
+      const body = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { limit: '10' }))).json();
+      expect(body.cases.map((c: { id: string }) => c.id).sort()).toEqual(['c1', 'c2']);
+    });
+
+    it('5/6. stage + pagination works across multiple pages with no duplicates or skips', async () => {
+      const items = Array.from({ length: 5 }, (_, i) => caseItem({ id: `s-${5 - i}`, caseNumber: `B2026-${100 + (5 - i)}`, createdAt: `2026-0${5 - i}-01T00:00:00.000Z`, currentStage: 7 }));
+      mockWixCasesCollection(items);
+
+      const page1 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '2' }))).json();
+      const page2 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '2', cursor: page1.nextCursor }))).json();
+      const page3 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '2', cursor: page2.nextCursor }))).json();
+
+      const allIds = [...page1.cases, ...page2.cases, ...page3.cases].map((c: { id: string }) => c.id);
+      expect(allIds).toEqual(['s-5', 's-4', 's-3', 's-2', 's-1']);
+      expect(new Set(allIds).size).toBe(5);
+      expect(page3.hasMore).toBe(false);
+    });
+
+    it('7. a cursor minted for one stage cannot be reused for another', async () => {
+      mockWixCasesCollection([
+        caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z', currentStage: 7 }),
+        caseItem({ id: 'c2', caseNumber: 'B2026-002', createdAt: '2026-01-02T00:00:00.000Z', currentStage: 0 }),
+      ]);
+      const page1 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '1' }))).json();
+      // Force a cursor to exist even though this tiny fixture set has only
+      // one Completed case, by re-minting one directly against a larger
+      // synthetic Completed set, then attempting to reuse it under a
+      // DIFFERENT stage param.
+      void page1;
+      const items = Array.from({ length: 3 }, (_, i) => caseItem({ id: `cc-${i}`, caseNumber: `B2026-${300 + i}`, createdAt: '2026-01-01T00:00:00.000Z', currentStage: 7 }));
+      mockWixCasesCollection(items);
+      const completedPage1 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '1' }))).json();
+      expect(typeof completedPage1.nextCursor).toBe('string');
+
+      const response = await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'First Call & Payment', limit: '1', cursor: completedPage1.nextCursor }));
+      expect(response.status).toBe(400);
+    });
+
+    it('8. deleted/archived cases remain excluded when a stage filter is applied', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+        expect(options?.filter).toMatchObject({ isArchived: false });
+        return Promise.resolve({ dataItems: [], pagingMetadata: { hasNext: false, cursors: { next: null } } });
+      });
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '10' }));
+      expect(mockQueryWixDataItems).toHaveBeenCalled();
+    });
+
+    it('9. organization isolation remains enforced when a stage filter is applied', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+        expect(options?.filter).toMatchObject({ organizationId: DEFAULT_ORGANIZATION_ID });
+        return Promise.resolve({ dataItems: [], pagingMetadata: { hasNext: false, cursors: { next: null } } });
+      });
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', limit: '10' }));
+      expect(mockQueryWixDataItems).toHaveBeenCalled();
+    });
+  });
+
+  describe('server-side search', () => {
+    it('1/2/3. search operates across the complete eligible dataset, not just a fetched page — pagination + search compose correctly', async () => {
+      const items = [
+        caseItem({ id: 'm1', caseNumber: 'B2026-001', createdAt: '2026-03-01T00:00:00.000Z', decedentName: 'MORALES FAMILY A' }),
+        caseItem({ id: 'other', caseNumber: 'B2026-002', createdAt: '2026-02-01T00:00:00.000Z', decedentName: 'SMITH FAMILY' }),
+        caseItem({ id: 'm2', caseNumber: 'B2026-003', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY B' }),
+      ];
+      mockWixCasesCollection(items);
+
+      const page1 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'morales', limit: '1' }))).json();
+      expect(page1.cases).toHaveLength(1);
+      expect(page1.cases[0].id).toBe('m1');
+      expect(page1.hasMore).toBe(true);
+
+      const page2 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'morales', limit: '1', cursor: page1.nextCursor }))).json();
+      expect(page2.cases).toHaveLength(1);
+      expect(page2.cases[0].id).toBe('m2');
+      expect(page2.hasMore).toBe(false);
+    });
+
+    it('4/5. search + stage, and search + stage + pagination, all compose correctly', async () => {
+      const items = [
+        caseItem({ id: 'match', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', currentStage: 6 }),
+        caseItem({ id: 'wrong-stage', caseNumber: 'B2026-002', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES OTHER', currentStage: 0 }),
+        caseItem({ id: 'wrong-name', caseNumber: 'B2026-003', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'SMITH FAMILY', currentStage: 6 }),
+      ];
+      mockWixCasesCollection(items);
+
+      const body = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Ready for Pickup / Contact Family', searchQuery: 'morales', limit: '10' }))).json();
+      expect(body.cases.map((c: { id: string }) => c.id)).toEqual(['match']);
+    });
+
+    it('6. search remains organization-scoped', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+        const filter = options?.filter as { $and?: Record<string, unknown>[] } | undefined;
+        expect(filter?.$and?.[0]).toMatchObject({ organizationId: DEFAULT_ORGANIZATION_ID });
+        return Promise.resolve({ dataItems: [], pagingMetadata: { hasNext: false, cursors: { next: null } } });
+      });
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'morales', limit: '10' }));
+      expect(mockQueryWixDataItems).toHaveBeenCalled();
+    });
+
+    it('7. search excludes deleted/archived cases', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+        const filter = options?.filter as { $and?: Record<string, unknown>[] } | undefined;
+        expect(filter?.$and?.[0]).toMatchObject({ isArchived: false });
+        return Promise.resolve({ dataItems: [], pagingMetadata: { hasNext: false, cursors: { next: null } } });
+      });
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'morales', limit: '10' }));
+      expect(mockQueryWixDataItems).toHaveBeenCalled();
+    });
+
+    it('8. case-insensitive search: an uppercase query matches a lowercase-stored value and vice versa', async () => {
+      mockWixCasesCollection([caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'morales family' })]);
+      const body = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'MORALES', limit: '10' }))).json();
+      expect(body.cases).toHaveLength(1);
+    });
+
+    it('9. whitespace around the query is trimmed before it reaches the filter', async () => {
+      mockWixCasesCollection([caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z' })]);
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: '  B2026-001  ', limit: '10' }));
+
+      expect(mockQueryWixDataItems).toHaveBeenCalledWith(
+        'cases',
+        expect.objectContaining({
+          filter: expect.objectContaining({
+            $and: expect.arrayContaining([expect.objectContaining({ $or: expect.arrayContaining([{ caseNumber: { $startsWith: 'B2026-001' } }]) })]),
+          }),
+        }),
+      );
+    });
+
+    it('10. every existing searchable field remains searchable (decedentName, caseNumber, nextOfKinPhone, nextOfKinEmail, tagNumber, id -> beaconCaseId)', async () => {
+      mockWixCasesCollection([caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z' })]);
+      await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'x', limit: '10' }));
+
+      const call = mockQueryWixDataItems.mock.calls.find((c) => c[0] === 'cases' && c[1]?.paging?.limit);
+      const filter = call?.[1]?.filter as { $and: Record<string, unknown>[] };
+      const orClause = filter.$and[1] as { $or: Record<string, unknown>[] };
+      const fieldsSearched = orClause.$or.map((clause) => Object.keys(clause)[0]);
+      expect(fieldsSearched.sort()).toEqual(['beaconCaseId', 'caseNumber', 'decedentName', 'nextOfKinEmail', 'nextOfKinPhone', 'tagNumber'].sort());
+    });
+
+    it('11. a search cursor cannot be reused with a different search query', async () => {
+      const items = Array.from({ length: 3 }, (_, i) => caseItem({ id: `m-${i}`, caseNumber: `B2026-${100 + i}`, createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' }));
+      mockWixCasesCollection(items);
+      const page1 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'morales', limit: '1' }))).json();
+      expect(typeof page1.nextCursor).toBe('string');
+
+      const response = await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'smith', limit: '1', cursor: page1.nextCursor }));
+      expect(response.status).toBe(400);
+    });
+
+    it('12. a search cursor cannot be reused with a different stage', async () => {
+      const items = Array.from({ length: 3 }, (_, i) => caseItem({ id: `m-${i}`, caseNumber: `B2026-${100 + i}`, createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', currentStage: 7 }));
+      mockWixCasesCollection(items);
+      const page1 = await (await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'Completed', searchQuery: 'morales', limit: '1' }))).json();
+      expect(typeof page1.nextCursor).toBe('string');
+
+      const response = await GET(requestWith(DEFAULT_ORGANIZATION_ID, { stage: 'First Call & Payment', searchQuery: 'morales', limit: '1', cursor: page1.nextCursor }));
+      expect(response.status).toBe(400);
+    });
+  });
+});
+
+/**
+ * Case list scalability, Phase 2 (2026-09). Mock-mode parity for stage
+ * filtering + search — same contract, same $startsWith search semantics
+ * (never the legacy `.includes()`), proven against a dedicated
+ * organization's temporarily-pushed fixtures.
+ */
+describe('GET /api/cases — stage filtering + server-side search (Case list scalability, Phase 2), mock mode', () => {
+  const pushedIds: string[] = [];
+
+  function pushMockCase(id: string, overrides: Partial<Case> & { caseNumber: string; createdAt: string }) {
+    const template = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    caseFixtures.push({
+      ...template,
+      ...overrides,
+      id,
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
+      isDeleted: overrides.isDeleted ?? false,
+    });
+    pushedIds.push(id);
+  }
+
+  function requestWith(organizationId: string, params: Record<string, string>) {
+    const search = new URLSearchParams({ organizationId, ...params });
+    return new Request(`http://localhost/api/cases?${search.toString()}`);
+  }
+
+  beforeEach(() => {
+    mockSession = { user: mockMultiOrgUser };
+  });
+
+  afterEach(() => {
+    while (pushedIds.length > 0) {
+      const id = pushedIds.pop()!;
+      const index = caseFixtures.findIndex((c) => c.id === id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+
+  describe('stage filtering', () => {
+    it('1. a valid stage returns only that stage\'s cases', async () => {
+      pushMockCase('fc-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 0 });
+      pushMockCase('completed-1', { caseNumber: 'B2026-102', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 7 });
+
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', limit: '10' }))).json();
+      expect(body.cases.map((c: { id: string }) => c.id)).toEqual(['completed-1']);
+    });
+
+    it('"First Call & Payment" matches both raw stage 0 and raw stage 1', async () => {
+      pushMockCase('raw-0', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 0 });
+      pushMockCase('raw-1', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', rawStage: 1 });
+
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'First Call & Payment', limit: '10' }))).json();
+      expect(body.cases.map((c: { id: string }) => c.id).sort()).toEqual(['raw-0', 'raw-1']);
+    });
+
+    it('3. an invalid stage returns 400', async () => {
+      const response = await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'In-House', limit: '10' }));
+      expect(response.status).toBe(400);
+    });
+
+    it('4. no stage param returns All Cases behavior', async () => {
+      pushMockCase('a', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 0 });
+      pushMockCase('b', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', rawStage: 7 });
+
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { limit: '10' }))).json();
+      expect(body.cases.map((c: { id: string }) => c.id).sort()).toEqual(['a', 'b']);
+    });
+
+    it('5/6. stage + pagination across multiple pages, no duplicates or skips', async () => {
+      pushMockCase('s-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 7 });
+      pushMockCase('s-2', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', rawStage: 7 });
+      pushMockCase('s-3', { caseNumber: 'B2026-103', createdAt: '2026-01-03T00:00:00.000Z', rawStage: 7 });
+
+      const page1 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', limit: '2' }))).json();
+      const page2 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', limit: '2', cursor: page1.nextCursor }))).json();
+
+      const allIds = [...page1.cases, ...page2.cases].map((c: { id: string }) => c.id);
+      expect(allIds).toEqual(['s-3', 's-2', 's-1']);
+      expect(new Set(allIds).size).toBe(3);
+      expect(page2.hasMore).toBe(false);
+    });
+
+    it('7. a cursor minted for one stage cannot be reused for another', async () => {
+      pushMockCase('s-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 7 });
+      pushMockCase('s-2', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', rawStage: 7 });
+      const page1 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', limit: '1' }))).json();
+      expect(typeof page1.nextCursor).toBe('string');
+
+      const response = await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'First Call & Payment', limit: '1', cursor: page1.nextCursor }));
+      expect(response.status).toBe(400);
+    });
+
+    it('8. deleted cases remain excluded when a stage filter is applied', async () => {
+      pushMockCase('s-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 7 });
+      pushMockCase('s-deleted', { caseNumber: 'B2026-199', createdAt: '2026-01-05T00:00:00.000Z', rawStage: 7, isDeleted: true });
+
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', limit: '10' }))).json();
+      expect(body.cases.some((c: { id: string }) => c.id === 's-deleted')).toBe(false);
+    });
+
+    it('9. organization isolation remains enforced when a stage filter is applied', async () => {
+      pushMockCase('s-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 7 });
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', limit: '10' }))).json();
+      expect(body.cases.every((c: { organizationId: string }) => c.organizationId === SECOND_MOCK_ORGANIZATION_ID)).toBe(true);
+    });
+  });
+
+  describe('server-side search', () => {
+    it('1/2/3. search operates across the complete eligible dataset with correct pagination', async () => {
+      pushMockCase('m1', { caseNumber: 'B2026-101', createdAt: '2026-02-01T00:00:00.000Z', decedentName: 'MORALES FAMILY A' });
+      pushMockCase('other', { caseNumber: 'B2026-102', createdAt: '2026-02-02T00:00:00.000Z', decedentName: 'SMITH FAMILY' });
+      pushMockCase('m2', { caseNumber: 'B2026-103', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY B' });
+
+      const page1 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'morales', limit: '1' }))).json();
+      expect(page1.cases[0].id).toBe('m1');
+      expect(page1.hasMore).toBe(true);
+
+      const page2 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'morales', limit: '1', cursor: page1.nextCursor }))).json();
+      expect(page2.cases[0].id).toBe('m2');
+      expect(page2.hasMore).toBe(false);
+    });
+
+    it('4/5. search + stage + pagination compose correctly', async () => {
+      pushMockCase('match', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', rawStage: 6 });
+      pushMockCase('wrong-stage', { caseNumber: 'B2026-102', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES OTHER', rawStage: 0 });
+      pushMockCase('wrong-name', { caseNumber: 'B2026-103', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'SMITH FAMILY', rawStage: 6 });
+
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Ready for Pickup / Contact Family', searchQuery: 'morales', limit: '10' }))).json();
+      expect(body.cases.map((c: { id: string }) => c.id)).toEqual(['match']);
+    });
+
+    it('6. search remains organization-scoped', async () => {
+      pushMockCase('other-org-match', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'morales', limit: '10' }))).json();
+      expect(body.cases.every((c: { organizationId: string }) => c.organizationId === SECOND_MOCK_ORGANIZATION_ID)).toBe(true);
+    });
+
+    it('7. search excludes deleted cases', async () => {
+      pushMockCase('m-deleted', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', isDeleted: true });
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'morales', limit: '10' }))).json();
+      expect(body.cases).toEqual([]);
+    });
+
+    it('8. case-insensitive search', async () => {
+      pushMockCase('m1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'morales family' });
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'MORALES', limit: '10' }))).json();
+      expect(body.cases).toHaveLength(1);
+    });
+
+    it('9. whitespace around the query is trimmed', async () => {
+      pushMockCase('m1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
+      const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: '  morales  ', limit: '10' }))).json();
+      expect(body.cases).toHaveLength(1);
+    });
+
+    it('10. every existing searchable field remains searchable in mock mode too', async () => {
+      pushMockCase('m1', { caseNumber: 'B2026-999', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'ZZZ', nextOfKinPhone: '555-0000', nextOfKinEmail: 'zzz@example.com', tagNumber: 'T-ZZZ' });
+      for (const [query] of [['b2026-999'], ['555-0000'], ['zzz@example'], ['t-zzz'], ['m1']]) {
+        const body = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: query, limit: '10' }))).json();
+        expect(body.cases.some((c: { id: string }) => c.id === 'm1')).toBe(true);
+      }
+    });
+
+    it('11. a search cursor cannot be reused with a different search query', async () => {
+      pushMockCase('m1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
+      pushMockCase('m2', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
+      const page1 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'morales', limit: '1' }))).json();
+      expect(typeof page1.nextCursor).toBe('string');
+
+      const response = await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { searchQuery: 'smith', limit: '1', cursor: page1.nextCursor }));
+      expect(response.status).toBe(400);
+    });
+
+    it('12. a search cursor cannot be reused with a different stage', async () => {
+      pushMockCase('m1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', rawStage: 7 });
+      pushMockCase('m2', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'MORALES FAMILY', rawStage: 7 });
+      const page1 = await (await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'Completed', searchQuery: 'morales', limit: '1' }))).json();
+      expect(typeof page1.nextCursor).toBe('string');
+
+      const response = await GET(requestWith(SECOND_MOCK_ORGANIZATION_ID, { stage: 'First Call & Payment', searchQuery: 'morales', limit: '1', cursor: page1.nextCursor }));
+      expect(response.status).toBe(400);
+    });
+  });
+});

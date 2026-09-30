@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   queryWixDataItems,
   queryAllWixDataItems,
+  countWixDataItems,
   insertWixDataItem,
   updateWixDataItem,
   deleteWixDataItem,
@@ -164,6 +165,65 @@ describe('queryAllWixDataItems — Manors go-live incident fix (2026-09)', () =>
 
     const result = await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
     expect(result).toHaveLength(1);
+  });
+});
+
+/**
+ * Case list scalability, Phase 2 (2026-09) — efficient tab counts. Hits
+ * Wix Data's dedicated Count Data Items endpoint (`POST
+ * /wix-data/v2/items/count`, response `{ totalCount }`) — no `dataItems`
+ * at all, confirming this never transfers a single record merely to
+ * count them.
+ */
+describe('countWixDataItems', () => {
+  it('sends the correct method, headers, and body shape', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ totalCount: 12 }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await countWixDataItems('cases', { organizationId: 'managed-cremations', isArchived: false });
+
+    expect(result).toBe(12);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://www.wixapis.com/wix-data/v2/items/count',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'test-key-value',
+          'wix-site-id': 'test-site-id',
+        },
+        body: JSON.stringify({
+          dataCollectionId: 'cases',
+          filter: { organizationId: 'managed-cremations', isArchived: false },
+        }),
+      }),
+    );
+  });
+
+  it('works with no filter at all', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ totalCount: 142 }) }));
+    expect(await countWixDataItems('cases')).toBe(142);
+  });
+
+  it('treats a missing/non-numeric totalCount as zero rather than throwing or returning undefined', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+    expect(await countWixDataItems('cases', {})).toBe(0);
+  });
+
+  it('throws a clean error, naming the collection and status, on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) }));
+    await expect(countWixDataItems('cases', {})).rejects.toThrow(/Wix Data count failed for collection "cases" \(HTTP 403\)/);
+  });
+
+  it('never leaks the API key into the thrown error message', async () => {
+    process.env.WIX_API_KEY = 'super-secret-count-test-value';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }));
+    await expect(countWixDataItems('cases', {})).rejects.toThrow(WixDataApiError);
+    try {
+      await countWixDataItems('cases', {});
+    } catch (error) {
+      expect((error as Error).message).not.toContain('super-secret-count-test-value');
+    }
   });
 });
 

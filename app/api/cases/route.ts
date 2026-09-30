@@ -4,11 +4,15 @@ import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem } from '@/li
 import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, describeMapWixCaseItemFailure, type WixCaseItem } from '@/lib/wixCaseMapper';
 import {
   CASE_LIST_SORT,
+  buildCaseListWixFilter,
+  buildCaseSearchWixFilter,
   clampCaseListPageSize,
   compareCasesForListSort,
   encodeCaseCursor,
+  matchesSearchStartsWith,
   validateCaseCursor,
 } from '@/lib/casePagination';
+import { STAGES, rawStagesForStageLabel } from '@/domain/cases/stages';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
@@ -72,6 +76,22 @@ import { toPickupOnlyView } from '@/domain/cases/pickupView';
  * was issued for, so it can't be tampered with or replayed against a
  * different query. This is additive only: the response shape gains
  * `hasMore`/`nextCursor`, `cases` is unchanged.
+ *
+ * Case list scalability, Phase 2 (2026-09) — server-side stage filtering
+ * + search. `stage` is an exact `domain/cases/stages.ts#STAGES` label
+ * (never a new/invented identifier — see that module's own
+ * rawStagesForStageLabel, the single canonical raw<->display mapping this
+ * route reuses rather than duplicating); an unrecognized value is a 400,
+ * never a silent "All Cases" fallback. When supplied, it's translated to
+ * the underlying `rawStage` value(s) and applied as part of the Wix/mock
+ * FILTER — before sorting/pagination, never as a post-fetch check on an
+ * already-paged result. `searchQuery`, in the bounded (`limit`/`cursor`)
+ * mode, is likewise pushed into the filter (`buildCaseSearchWixFilter`/
+ * `matchesSearchStartsWith` — see lib/casePagination.ts's own comment for
+ * why this is `$startsWith`, not the legacy branch's `.includes()`, and
+ * what that narrows). The legacy (no `limit`/`cursor`) branch keeps its
+ * existing `matchesSearch` (`.includes()`) behavior unchanged — it's the
+ * transitional path, not where new search architecture lands.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -79,6 +99,7 @@ export async function GET(request: Request) {
   const searchQuery = url.searchParams.get('searchQuery') ?? '';
   const limitParam = url.searchParams.get('limit');
   const cursorParam = url.searchParams.get('cursor');
+  const stageParam = url.searchParams.get('stage');
 
   if (!requestedOrganizationId) {
     return NextResponse.json({ cases: [], hasMore: false, nextCursor: null, error: 'organizationId is required.' }, { status: 400 });
@@ -96,6 +117,20 @@ export async function GET(request: Request) {
     requestedLimit = parsed;
   }
   const paginationRequested = requestedLimit !== null || cursorParam !== null;
+
+  // "All Cases" is never a persisted stage — no `stage` param at all is
+  // the only way to request it; an unrecognized label is rejected
+  // outright rather than silently treated as All Cases.
+  let rawStages: number[] | null = null;
+  if (stageParam !== null) {
+    rawStages = rawStagesForStageLabel(stageParam);
+    if (rawStages === null) {
+      return NextResponse.json(
+        { cases: [], hasMore: false, nextCursor: null, error: `Invalid stage. Must be one of: ${STAGES.join(', ')}.` },
+        { status: 400 },
+      );
+    }
+  }
 
   // Phase 15X (Multi-Tenant Authorization Hardening): re-derived from the
   // caller's session/membership, never trusted from the query param.
@@ -123,15 +158,15 @@ export async function GET(request: Request) {
     // Cursor validated once, centrally, before either adapter branch —
     // rejected outright (400) rather than silently falling back to page 1
     // or leaking a mismatched page. The cursor's own embedded
-    // organizationId/searchQuery/kind must match this exact request's
-    // server-derived context; even if that check were somehow bypassed,
-    // both branches below always re-apply the server-derived
+    // organizationId/searchQuery/stage/kind must match this exact
+    // request's server-derived context; even if that check were somehow
+    // bypassed, both branches below always re-apply the server-derived
     // organizationId as their own query filter regardless of what a
     // cursor claims, so a forged/foreign cursor still can never surface
     // another organization's cases.
     let cursor: { wix?: string; mockOffset?: number } | null = null;
     if (cursorParam !== null) {
-      const validation = validateCaseCursor(cursorParam, { organizationId, searchQuery, kind: adapter === 'mock' ? 'mock' : 'wix' });
+      const validation = validateCaseCursor(cursorParam, { organizationId, searchQuery, stage: stageParam, kind: adapter === 'mock' ? 'mock' : 'wix' });
       if (!validation.ok) {
         return NextResponse.json(
           { cases: [], hasMore: false, nextCursor: null, error: 'Invalid or expired pagination cursor.' },
@@ -142,13 +177,15 @@ export async function GET(request: Request) {
     }
 
     if (adapter === 'mock') {
-      const filtered = caseFixtures.filter(
-        (c) => c.organizationId === organizationId && !c.isDeleted && matchesSearch(c, searchQuery),
+      const eligible = caseFixtures.filter(
+        (c) => c.organizationId === organizationId && !c.isDeleted && (rawStages === null || rawStages.includes(c.rawStage)),
       );
 
       if (!paginationRequested) {
-        // Legacy/default shape: unchanged order and content — mock mode's
-        // in-memory filter never had the Wix 50-item cap to begin with.
+        // Legacy/default shape: unchanged order and search mechanism —
+        // mock mode's in-memory filter never had the Wix 50-item cap to
+        // begin with; only the (new, opt-in) stage filter is new here.
+        const filtered = eligible.filter((c) => matchesSearch(c, searchQuery));
         return NextResponse.json({
           cases: hasFullRead ? filtered : filtered.map(toPickupOnlyView),
           hasMore: false,
@@ -156,13 +193,14 @@ export async function GET(request: Request) {
         });
       }
 
-      const sorted = [...filtered].sort(compareCasesForListSort);
+      const searched = eligible.filter((c) => matchesSearchStartsWith(c, searchQuery));
+      const sorted = [...searched].sort(compareCasesForListSort);
       const offset = cursor?.mockOffset ?? 0;
       const pageSize = clampCaseListPageSize(requestedLimit);
       const page = sorted.slice(offset, offset + pageSize);
       const hasMore = offset + page.length < sorted.length;
       const nextCursor = hasMore
-        ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId, searchQuery, offset: offset + page.length })
+        ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId, searchQuery, stage: stageParam, offset: offset + page.length })
         : null;
 
       return NextResponse.json({ cases: hasFullRead ? page : page.map(toPickupOnlyView), hasMore, nextCursor });
@@ -176,8 +214,10 @@ export async function GET(request: Request) {
       // downstream of this branch depends on a specific order; the
       // deterministic CASE_LIST_SORT only matters for the bounded-page
       // mode below, where stable ordering is what prevents a case from
-      // being skipped or duplicated across pages.
-      const items = await queryAllWixDataItems<WixCaseItem>('cases', { organizationId, isArchived: false });
+      // being skipped or duplicated across pages. Stage filtering (new,
+      // opt-in) is pushed into the same Wix filter; search stays
+      // `matchesSearch` (`.includes()`), unchanged.
+      const items = await queryAllWixDataItems<WixCaseItem>('cases', buildCaseListWixFilter({ organizationId, rawStages }));
       const cases = items
         .map((item) => mapWixCaseItem(item.data))
         .filter((c): c is Case => c !== null)
@@ -187,25 +227,36 @@ export async function GET(request: Request) {
     }
 
     const pageSize = clampCaseListPageSize(requestedLimit);
+    const searchFilter = buildCaseSearchWixFilter(searchQuery);
     const pageResponse = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: { organizationId, isArchived: false },
+      filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter }),
       sort: CASE_LIST_SORT,
       // Wix's cursor-paging contract: the first page is requested via
       // `limit` alone, every subsequent page via `cursor` alone — never
       // both together (see lib/wixDataApi.ts's own comment). `cursor` here
       // is already the raw Wix-issued token (unwrapped by
-      // validateCaseCursor above), never a client-supplied value.
+      // validateCaseCursor above), never a client-supplied value. Per
+      // Wix's own docs, `filter`/`sort` are ignored on a cursor-continuation
+      // call anyway (locked in from the first page) — still passed here
+      // for clarity/symmetry, since Wix accepts and ignores rather than
+      // rejecting them.
       paging: cursor?.wix ? { cursor: cursor.wix } : { limit: pageSize },
     });
 
     const cases = pageResponse.dataItems
       .map((item) => mapWixCaseItem(item.data))
-      .filter((c): c is Case => c !== null)
-      .filter((c) => matchesSearch(c, searchQuery));
+      .filter((c): c is Case => c !== null);
+    // No post-fetch search re-filtering here, deliberately: the whole
+    // point of buildCaseSearchWixFilter above is that Wix already applied
+    // it — re-filtering client-side would silently mask a real mismatch
+    // between assumed and actual Wix $startsWith behavior instead of
+    // surfacing it.
 
     const nextWixCursor = pageResponse.pagingMetadata?.cursors?.next ?? null;
     const hasMore = Boolean(pageResponse.pagingMetadata?.hasNext) && nextWixCursor !== null;
-    const nextCursor = hasMore ? encodeCaseCursor({ v: 1, kind: 'wix', organizationId, searchQuery, wixCursor: nextWixCursor! }) : null;
+    const nextCursor = hasMore
+      ? encodeCaseCursor({ v: 1, kind: 'wix', organizationId, searchQuery, stage: stageParam, wixCursor: nextWixCursor! })
+      : null;
 
     return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView), hasMore, nextCursor });
   } catch (error) {

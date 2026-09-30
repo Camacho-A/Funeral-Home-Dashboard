@@ -86,6 +86,42 @@ export async function queryWixDataItems<Item = Record<string, unknown>>(
   return response.json();
 }
 
+/**
+ * Case list scalability, Phase 2 (2026-09) — efficient tab counts. Wix
+ * Data's dedicated Count Data Items endpoint (`POST
+ * /wix-data/v2/items/count`, request `{ dataCollectionId, filter }`,
+ * response `{ totalCount }`) returns a pure count with no item data
+ * transferred at all — the right tool for "how many cases are in stage X"
+ * without downloading every Case record merely to call `.length` on it
+ * client-side. Same WQL filter grammar as `queryWixDataItems`'s `filter`.
+ */
+export async function countWixDataItems(
+  dataCollectionId: string,
+  filter?: Record<string, unknown>,
+): Promise<number> {
+  const { apiKey, siteId } = getWixServerConfig();
+
+  const response = await fetch('https://www.wixapis.com/wix-data/v2/items/count', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: apiKey,
+      'wix-site-id': siteId,
+    },
+    body: JSON.stringify({ dataCollectionId, filter }),
+  });
+
+  if (!response.ok) {
+    throw new WixDataApiError(
+      `Wix Data count failed for collection "${dataCollectionId}" (HTTP ${response.status}).`,
+      response.status,
+    );
+  }
+
+  const body = (await response.json()) as { totalCount?: unknown };
+  return typeof body.totalCount === 'number' ? body.totalCount : 0;
+}
+
 /** Wix Data silently caps an unpaginated (no explicit `paging`, or
     `paging` without a `limit`) query at 50 items — `hasNext: true` is
     returned, but a caller that never checks it (as `fetchRolePermissions`
