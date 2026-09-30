@@ -898,6 +898,88 @@ describe('applyCaseUpdateToWixData — Case Information field sync fix (2026-09)
 });
 
 /**
+ * Task #5 root-cause fix (2026-09, NOK name/phone corruption). Family
+ * Contact (checklistItemIndex 7) maps BOTH nextOfKinName and nextOfKinPhone
+ * to the same index — the exact ambiguous-index case
+ * findCaseFieldForChecklistIndex used to resolve by first-match-wins,
+ * silently writing a legacy combined "Name — Phone" fieldValues[7] value
+ * into nextOfKinName. Mirrors services/casesService.test.ts's identical
+ * mock-mode coverage so the two modes can never diverge on this fix.
+ */
+describe('applyCaseUpdateToWixData — ambiguous multi-field index (Family Contact) never corrupts nextOfKinName (Task #5 root-cause fix, 2026-09)', () => {
+  const SNAPSHOT_WITH_FAMILY_CONTACT = {
+    workflowTemplateId: 'wf-1',
+    workflowTemplateVersion: 1,
+    stages: [],
+    intake: {
+      sections: [
+        {
+          key: 'decedent',
+          label: 'Decedent',
+          fields: [{ key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' }],
+        },
+        {
+          key: 'contacts',
+          label: 'Contacts',
+          fields: [
+            { key: 'nextOfKinName', label: 'Next of kin — name', checklistItemIndex: 7, mapsToCaseField: 'nextOfKinName' },
+            { key: 'nextOfKinPhone', label: 'Next of kin — phone number', checklistItemIndex: 7, mapsToCaseField: 'nextOfKinPhone' },
+          ],
+        },
+      ],
+    },
+  };
+
+  it('a legacy combined fieldValues[7] patch does not overwrite nextOfKinName with "Name — Phone"', () => {
+    const existing = {
+      ...validItem,
+      workflowSnapshot: SNAPSHOT_WITH_FAMILY_CONTACT,
+      nextOfKinName: 'Emma Morales Silva',
+      nextOfKinPhone: '(954) 901-4165',
+    };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 7: 'Emma Morales Silva — (954) 901-4165' } });
+    expect(result.nextOfKinName).toBe('Emma Morales Silva');
+    expect(result.nextOfKinPhone).toBe('(954) 901-4165');
+    expect(result.fieldValues).toEqual({ 7: 'Emma Morales Silva — (954) 901-4165' });
+  });
+
+  it('nextOfKinPhone is equally unaffected by an ambiguous index-7 sync attempt', () => {
+    const existing = {
+      ...validItem,
+      workflowSnapshot: SNAPSHOT_WITH_FAMILY_CONTACT,
+      nextOfKinName: 'Jane Doe',
+      nextOfKinPhone: '(555) 000-1111',
+    };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 7: 'Someone Else — (555) 999-8888' } });
+    expect(result.nextOfKinPhone).toBe('(555) 000-1111');
+    expect(result.nextOfKinName).toBe('Jane Doe');
+  });
+
+  it('an ambiguous index-7 patch does not block unrelated unambiguous sync (Weight) in the same request', () => {
+    const existing = {
+      ...validItem,
+      workflowSnapshot: SNAPSHOT_WITH_FAMILY_CONTACT,
+      weight: '',
+      nextOfKinName: 'Emma Morales Silva',
+      nextOfKinPhone: '(954) 901-4165',
+    };
+    const result = applyCaseUpdateToWixData(existing, {
+      fieldValues: { 3: '178 lb', 7: 'Emma Morales Silva — (954) 901-4165' },
+    });
+    expect(result.weight).toBe('178 lb');
+    expect(result.nextOfKinName).toBe('Emma Morales Silva');
+  });
+
+  it('full-object Wix safety: every unrelated field survives an ambiguous-index-7 sync patch untouched', () => {
+    const existing = { ...validItem, workflowSnapshot: SNAPSHOT_WITH_FAMILY_CONTACT, nextOfKinName: 'Karen Ellison' };
+    const result = applyCaseUpdateToWixData(existing, { fieldValues: { 7: 'Karen Ellison — (555) 201-4432' } });
+    expect(result.decedentName).toBe(validItem.decedentName);
+    expect(result.caseNumber).toBe(validItem.caseNumber);
+    expect(result.checklistState).toEqual(validItem.checklistState);
+  });
+});
+
+/**
  * Task #7 (2026-09). Audit-confirmed, not a bug fix: structured Certifier
  * Name/Phone already work on a legacy (pre-v5) case exactly as they do on
  * a v5+ case — buildStructuredIntakeFieldPatch/applyCaseUpdateToWixData

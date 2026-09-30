@@ -227,6 +227,70 @@ describe('findCaseFieldForChecklistIndex', () => {
 });
 
 /**
+ * Ambiguous-index fix (2026-09, NOK name/phone corruption root cause).
+ * Family Contact (checklistItemIndex 7) maps BOTH nextOfKinName and
+ * nextOfKinPhone to the same index — the real bug: findCaseFieldForChecklistIndex
+ * used to return whichever field was listed first (always nextOfKinName),
+ * causing deriveCaseFieldSyncFromFieldValues to write the whole combined
+ * "Name — Phone" fieldValues[7] string into Case.nextOfKinName. These tests
+ * prove the fix: an index with more than one distinct mapsToCaseField now
+ * resolves to null (no sync), while single-field indices are unaffected.
+ */
+describe('findCaseFieldForChecklistIndex — ambiguous multi-field index', () => {
+  const FAMILY_CONTACT_LIKE_INTAKE: IntakeTemplate = {
+    sections: [
+      {
+        key: 'decedent',
+        label: 'Decedent',
+        fields: [{ key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' }],
+      },
+      {
+        key: 'contacts',
+        label: 'Contacts',
+        fields: [
+          {
+            key: 'nextOfKinName',
+            label: 'Next of kin — name',
+            checklistItemIndex: 7,
+            mapsToCaseField: 'nextOfKinName',
+          },
+          {
+            key: 'nextOfKinPhone',
+            label: 'Next of kin — phone number',
+            checklistItemIndex: 7,
+            mapsToCaseField: 'nextOfKinPhone',
+          },
+        ],
+      },
+    ],
+  };
+
+  it('returns null for an index mapped to two distinct Case fields (Family Contact), never the first match', () => {
+    expect(findCaseFieldForChecklistIndex(FAMILY_CONTACT_LIKE_INTAKE, 7)).toBeNull();
+  });
+
+  it('still returns the single Case field for an unambiguous index (Weight), unaffected by the fix', () => {
+    expect(findCaseFieldForChecklistIndex(FAMILY_CONTACT_LIKE_INTAKE, 3)).toBe('weight');
+  });
+
+  it('treats the same mapsToCaseField repeated across fields at one index as unambiguous (still resolves)', () => {
+    const intake: IntakeTemplate = {
+      sections: [
+        {
+          key: 's',
+          label: 'S',
+          fields: [
+            { key: 'a', label: 'A', checklistItemIndex: 2, mapsToCaseField: 'weight' },
+            { key: 'b', label: 'B', checklistItemIndex: 2, mapsToCaseField: 'weight' },
+          ],
+        },
+      ],
+    };
+    expect(findCaseFieldForChecklistIndex(intake, 2)).toBe('weight');
+  });
+});
+
+/**
  * Case Information sync fix (2026-09). This is the actual root-cause fix
  * for "Time of Death/Weight entered via the checklist never appear in
  * Case Information": ChecklistCard's own field-backed textbox commits
@@ -312,6 +376,85 @@ describe('deriveCaseFieldSyncFromFieldValues', () => {
     it('Weight is never passed through the legacy time parser — an arbitrary weight string syncs verbatim', () => {
       const result = deriveCaseFieldSyncFromFieldValues(INTAKE, { 3: '178 lb, approx' }, new Set());
       expect(result).toEqual({ weight: '178 lb, approx' });
+    });
+  });
+
+  /**
+   * Ambiguous-index fix (2026-09, NOK name/phone corruption root cause).
+   * Family Contact (index 7) maps both nextOfKinName and nextOfKinPhone to
+   * the same checklistItemIndex. Before the fix, a legacy combined
+   * fieldValues[7] value like "EMMA MORALES SILVA — (954) 901-4165" was
+   * written wholesale into Case.nextOfKinName (findCaseFieldForChecklistIndex
+   * always picked the first-listed field). These tests prove that can never
+   * happen again, while unambiguous single-field sync (Weight, Time of
+   * Death) keeps working exactly as before.
+   */
+  describe('ambiguous multi-field index — Family Contact (2026-09 NOK corruption fix)', () => {
+    const INTAKE_WITH_FAMILY_CONTACT: IntakeTemplate = {
+      sections: [
+        {
+          key: 'decedent',
+          label: 'Decedent',
+          fields: [
+            { key: 'weight', label: 'Weight', checklistItemIndex: 3, mapsToCaseField: 'weight' },
+            { key: 'timeOfDeath', label: 'Time of death', checklistItemIndex: 5, mapsToCaseField: 'timeOfDeath' },
+          ],
+        },
+        {
+          key: 'contacts',
+          label: 'Contacts',
+          fields: [
+            {
+              key: 'nextOfKinName',
+              label: 'Next of kin — name',
+              checklistItemIndex: 7,
+              mapsToCaseField: 'nextOfKinName',
+            },
+            {
+              key: 'nextOfKinPhone',
+              label: 'Next of kin — phone number',
+              checklistItemIndex: 7,
+              mapsToCaseField: 'nextOfKinPhone',
+            },
+          ],
+        },
+      ],
+    };
+
+    it('never syncs a legacy combined fieldValues[7] value into nextOfKinName', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(
+        INTAKE_WITH_FAMILY_CONTACT,
+        { 7: 'EMMA MORALES SILVA — (954) 901-4165' },
+        new Set(),
+      );
+      expect(result).toEqual({});
+      expect(result.nextOfKinName).toBeUndefined();
+      expect(result.nextOfKinPhone).toBeUndefined();
+    });
+
+    it('does not sync anything for index 7 regardless of value shape (not just the specific reported case)', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(INTAKE_WITH_FAMILY_CONTACT, { 7: 'Some Name — 555-0100' }, new Set());
+      expect(result).toEqual({});
+    });
+
+    it('an ambiguous index-7 entry never blocks sync of other, unambiguous indices in the same patch', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(
+        INTAKE_WITH_FAMILY_CONTACT,
+        { 3: '178 lb', 5: '14:30', 7: 'Emma Morales Silva — (954) 901-4165' },
+        new Set(),
+      );
+      expect(result).toEqual({ weight: '178 lb', timeOfDeath: '14:30' });
+      expect(result.nextOfKinName).toBeUndefined();
+    });
+
+    it('single-field sync (Weight) is completely unaffected by the presence of an ambiguous index elsewhere in the template', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(INTAKE_WITH_FAMILY_CONTACT, { 3: '178 lb' }, new Set());
+      expect(result).toEqual({ weight: '178 lb' });
+    });
+
+    it('single-field sync (Time of Death) is completely unaffected by the presence of an ambiguous index elsewhere in the template', () => {
+      const result = deriveCaseFieldSyncFromFieldValues(INTAKE_WITH_FAMILY_CONTACT, { 5: '11:30AM' }, new Set());
+      expect(result).toEqual({ timeOfDeath: '11:30' });
     });
   });
 });

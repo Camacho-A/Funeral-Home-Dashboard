@@ -211,6 +211,91 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
 });
 
 /**
+ * Task #5 root-cause fix (2026-09, NOK name/phone corruption). Family
+ * Contact (checklistItemIndex 7) maps BOTH nextOfKinName and nextOfKinPhone
+ * to the same index — the ambiguous-index case the Weight/Time of Death
+ * sync above was never designed to handle. Before the fix, a legacy
+ * combined fieldValues[7] patch (the shape ChecklistCard's old free-text
+ * box sends) silently overwrote Case.nextOfKinName with the whole "Name —
+ * Phone" string. Mirrors lib/wixCaseMapper.test.ts's identical coverage so
+ * mock and Wix modes never diverge.
+ */
+describe('casesService.update — ambiguous multi-field index (Family Contact) never corrupts nextOfKinName (Task #5 root-cause fix, 2026-09)', () => {
+  it('a legacy combined fieldValues[7] patch does not overwrite nextOfKinName with "Name — Phone"', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'NOK Corruption Regression Test', nextOfKinName: 'Emma Morales Silva', nextOfKinPhone: '(954) 901-4165' },
+      session,
+      template,
+    );
+    const familyContactIndex = 7;
+    expect(
+      created.workflowSnapshot?.intake.sections
+        .flatMap((s) => s.fields)
+        .filter((f) => f.checklistItemIndex === familyContactIndex)
+        .map((f) => f.mapsToCaseField),
+    ).toEqual(['nextOfKinName', 'nextOfKinPhone']);
+
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, [familyContactIndex]: 'Emma Morales Silva — (954) 901-4165' },
+    });
+
+    expect(updated.nextOfKinName).toBe(created.nextOfKinName);
+    expect(updated.nextOfKinPhone).toBe(created.nextOfKinPhone);
+    expect(updated.fieldValues[familyContactIndex]).toBe('EMMA MORALES SILVA — (954) 901-4165');
+  });
+
+  it('nextOfKinPhone is equally unaffected by an ambiguous index-7 sync attempt', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'NOK Phone Regression Test', nextOfKinName: 'Jane Doe', nextOfKinPhone: '(555) 000-1111' },
+      session,
+      template,
+    );
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, 7: 'Someone Else — (555) 999-8888' },
+    });
+
+    expect(updated.nextOfKinPhone).toBe(created.nextOfKinPhone);
+    expect(updated.nextOfKinName).toBe(created.nextOfKinName);
+  });
+
+  it('an ambiguous index-7 patch does not block unrelated unambiguous sync (Weight) in the same request', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Mixed Patch Regression Test', nextOfKinName: 'Emma Morales Silva', nextOfKinPhone: '(954) 901-4165' },
+      session,
+      template,
+    );
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, 3: '178 lb', 7: 'Emma Morales Silva — (954) 901-4165' },
+    });
+
+    expect(updated.weight).toBe('178 lb');
+    expect(updated.nextOfKinName).toBe(created.nextOfKinName);
+  });
+
+  it('Weight/Time of Death single-field sync continue to work unchanged after the ambiguous-index fix', async () => {
+    const session = sessionFor(staffFixtures[0].id);
+    const created = await casesService.create(
+      organization,
+      { decedentName: 'Regression Sanity Test', nextOfKinName: '', nextOfKinPhone: '' },
+      session,
+      template,
+    );
+    const updated = await casesService.update(organization, created.id, {
+      fieldValues: { ...created.fieldValues, 3: '150 lb', 5: '09:15' },
+    });
+
+    expect(updated.weight).toBe('150 lb');
+    expect(updated.timeOfDeath).toBe('09:15');
+  });
+});
+
+/**
  * Task #6 follow-up (2026-09). Reproduces the ACTUAL proven Production
  * shape rather than another synthetic approximation: a case frozen under
  * workflowTemplateVersion 3, whose Time of Death checklist item predates

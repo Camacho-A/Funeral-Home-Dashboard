@@ -23,6 +23,7 @@ import {
 } from '@/utils/inputMask';
 import { VaNotificationPanel } from './VaNotificationPanel';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
+import { normalizeNextOfKinName } from '@/domain/cases/nextOfKinName';
 import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
 import styles from './CaseInformationCard.module.css';
 
@@ -619,7 +620,7 @@ export function CaseInformationCard({
       <div className={styles.grid}>
         <EditableField
           label="Next of kin"
-          value={nextOfKinName}
+          value={normalizeNextOfKinName(nextOfKinName, nextOfKinPhone)}
           uppercase
           onSave={(v) => onUpdateCaseInfo({ nextOfKinName: v })}
         />

@@ -125,16 +125,40 @@ export function findChecklistIndexForCaseField(intake: IntakeTemplate, caseField
  * update the structured Case property Case Information actually reads
  * (Weight, Time of Death) — see deriveCaseFieldSyncFromFieldValues below,
  * the function that actually uses this lookup.
+ *
+ * Ambiguous-index fix (2026-09, NOK name/phone corruption root cause).
+ * A checklistItemIndex is only ever safe to auto-sync when it resolves to
+ * exactly ONE distinct mapsToCaseField. Family Contact (index 7) maps
+ * BOTH nextOfKinName and nextOfKinPhone to the same index (the pair
+ * buildIntakeFieldValues above joins with " — " into one combined
+ * fieldValues entry) — for an index like that, this function has no way
+ * to know which half of a combined value belongs to which Case field, so
+ * it must return null rather than guessing. Previously this returned
+ * whichever field happened to be listed first in the intake template,
+ * which silently wrote the WHOLE joined "Name — Phone" string into
+ * nextOfKinName every time a legacy fieldValues[7] edit reached the
+ * server. Returning null here means deriveCaseFieldSyncFromFieldValues
+ * below skips sync entirely for such an index — exactly correct, since
+ * an item like Family Contact already has its own dedicated, safe
+ * editing path (the structured NOK editor, domain/cases/viewModel.ts's
+ * applyFamilyContactPresentation, which writes nextOfKinName/
+ * nextOfKinPhone directly via onUpdateCaseInfo, never through
+ * fieldValues) and was never meant to flow through this generic
+ * single-field sync at all. Unambiguous indices (Weight, Time of Death —
+ * exactly one mapsToCaseField each) are completely unaffected.
  */
 export function findCaseFieldForChecklistIndex(intake: IntakeTemplate, index: number): string | null {
+  const mappedFields = new Set<string>();
   for (const section of intake.sections) {
     for (const field of section.fields) {
       if (field.checklistItemIndex === index && field.mapsToCaseField) {
-        return field.mapsToCaseField;
+        mappedFields.add(field.mapsToCaseField);
       }
     }
   }
-  return null;
+  if (mappedFields.size !== 1) return null;
+  const [onlyField] = mappedFields;
+  return onlyField;
 }
 
 /**

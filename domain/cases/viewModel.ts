@@ -25,6 +25,8 @@ import { applyLegacyCertifierPresentation } from './legacyCertifierPresentation'
 import { findChecklistIndexForCaseField } from '../workflow/resolveIntake';
 import { initialsFromName } from '../../utils/string';
 import { parseLegacyTimeOfDeath } from '../../utils/inputMask';
+import { normalizeNextOfKinName } from './nextOfKinName';
+import { getChecklistLabels } from './checklist';
 
 export type CaseViewModelContext = {
   staffList: StaffProfile[];
@@ -100,72 +102,88 @@ function resolveDecedentInitials(decedentName: string): string {
 }
 
 /**
- * Task #5 correction (2026-09, NOK name/phone display cleanup). Originally
- * this presented all three of Name/Phone/Email as a structured group (the
- * Task #7 UI consistency follow-up's own upgrade) — but the Next of Kin /
- * Primary Contact checklist area is meant to show the NAME only; Phone and
- * Email already live (and are already editable) in Case Information, and
- * showing them a second time here — even split onto their own rows — was
- * exactly the "phone number visible in this checklist section" complaint
- * this whole fix exists to resolve, just one layer more subtle than the
- * original combined-text version. Only 'nextOfKinName' is a required
- * field here now; Phone/Email are deliberately never included. */
-const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName'];
+ * Task #5 FINAL correction (2026-09). Certifier Information is the
+ * reference architecture: Name/Phone are separate, independently-editable
+ * structured rows. Family Contact now matches that exact pattern — Name,
+ * Phone, AND Email each get their own row, never a combined "NAME — PHONE"
+ * textbox. (A prior pass of this fix dropped Phone/Email back out on the
+ * theory that Case Information already shows them; the live CRM showed
+ * the checklist section needs its own structured rows too, exactly like
+ * Certifier.) */
+const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail'];
 
 /**
- * Family Contact structured Workflow presentation (2026-09, Task #7 UI
- * consistency follow-up). "Family contact — name, phone number & email"
- * has always been a hasField-backed checklist item combining
- * nextOfKinName + nextOfKinPhone into one joined fieldValues string at
- * intake time (see NewCaseModal.tsx's own comment on that join) —
- * nextOfKinEmail has never been part of the checklist/fieldValues
- * mechanism at all (no template version gives it a checklistItemIndex).
- * Unlike Certifier, this item never got a v5-style requiredCaseFields
- * completion upgrade, and this function doesn't invent one: `done`/
- * `locked` are left completely untouched here, still governed by
- * whatever resolveChecklist already computed from the historical
- * fieldValues rule. Only the EDITING SURFACE changes — reading/writing
- * the already-authoritative nextOfKinName Case field Case Information
- * already uses, never the joined fieldValues text (which stays exactly
- * as-is, purely historical, in every branch, current or past stage —
- * these are live Case contact fields, not part of the frozen stage
- * snapshot, mirroring the same reasoning as legacyCertifierPresentation
- * .ts's past-stage exception).
+ * The frozen Family Contact checklist item label — verbatim from
+ * domain/cases/checklist.ts's CHECKLIST_BY_RAW_STAGE[0][7], the same
+ * constant every pre/post-v5 workflowSnapshot persists for this item
+ * (mirrors legacyCertifierPresentation.ts's own LEGACY_CERTIFIER_ITEM_LABEL
+ * precedent). Used below as a stable, metadata-only identity fallback —
+ * see applyFamilyContactPresentation's own comment for why this replaces
+ * the old text-value-matching fallback. Guarded against drift from the
+ * real constant by this module's own test file.
+ */
+export const FAMILY_CONTACT_ITEM_LABEL = getChecklistLabels(0)[7];
+
+function familyContactRequiredCaseFieldValues(case_: Case): Record<string, string> {
+  return {
+    nextOfKinName: normalizeNextOfKinName(case_.nextOfKinName ?? '', case_.nextOfKinPhone ?? ''),
+    nextOfKinPhone: case_.nextOfKinPhone ?? '',
+    nextOfKinEmail: case_.nextOfKinEmail ?? '',
+  };
+}
+
+/**
+ * Family Contact structured Workflow presentation (2026-09, Task #5 FINAL
+ * fix). "Family contact — name, phone number & email" has always been a
+ * hasField-backed checklist item combining nextOfKinName + nextOfKinPhone
+ * into one joined fieldValues string at intake time (see
+ * NewCaseModal.tsx's own comment on that join). This converts it to the
+ * same structured multi-field presentation Certifier Information already
+ * uses — Name/Phone/Email each their own editable row, reading/writing
+ * the already-authoritative Case fields Case Information itself uses,
+ * never the joined fieldValues text (which stays exactly as-is, purely
+ * historical, in every branch, current or past stage — these are live
+ * Case contact fields, not part of the frozen stage snapshot, mirroring
+ * legacyCertifierPresentation.ts's own past-stage exception). Unlike
+ * Certifier, this item never got a v5-style requiredCaseFields completion
+ * upgrade, so `done`/`locked` are left completely untouched here, still
+ * governed by whatever resolveChecklist already computed from the
+ * historical fieldValues rule.
  *
- * Identifies the item generically — by finding whichever checklist index
+ * IDENTIFICATION (2026-09, Task #5 FINAL fix — replaces a prior,
+ * text-value-based fallback). Primary: find whichever checklist index
  * `nextOfKinName` maps to via the case's own workflowSnapshot.intake
  * (findChecklistIndexForCaseField, the same reverse lookup Weight/Time of
  * Death/Certifier already use) — never a literal label match, so this
  * works for any organization/template shaped this way, not just
- * managed-cremations, and needs no template/schema change at all.
+ * managed-cremations, and needs no template/schema change at all. This
+ * alone is already immune to corrupted data, since it never reads
+ * nextOfKinName's or fieldValues' actual text.
  *
- * Task #5 (2026-09, NOK name/phone display cleanup). The checklistIndex
- * lookup above doesn't resolve for every real case — reported live: a case
- * whose checklist still showed the old joined "NAME — PHONE" text (the
- * phone number visible right beside the Next of Kin name) even though
- * Case Information's own separate "Next of kin"/"NOK phone" fields were
- * already correct — i.e., the authoritative structured fields were fine,
- * only this one stale checklist value display lagged behind. Rather than
- * chase the exact template-shape reason the primary lookup misses it (a
- * deeper, riskier change to shared lookup logic Weight/Time of Death/
- * Certifier also depend on — out of scope for a presentation-only fix),
- * this adds a second, independent detection: any still-hasField item
- * whose fieldValue literally starts with this case's own live
- * nextOfKinName followed by the exact " — " buildIntakeFieldValues joins
- * with (domain/workflow/resolveIntake.ts) is unambiguously this same
- * legacy combined value — matched against the real, current name on THIS
- * case, not a generic pattern, so it can't misfire on an unrelated
- * free-text item. Converted through the exact same, already-tested path
- * as the primary case above: never touches fieldValues/persisted data,
- * only the rendered view model. */
+ * That primary lookup can still miss for a workflowSnapshot whose intake
+ * doesn't wire a checklistItemIndex onto nextOfKinName at all (e.g. an
+ * onboarding-provisioned organization's simpler starter template — see
+ * domain/onboarding/starterWorkflow.ts). The OLD fallback for that case
+ * matched by comparing a still-hasField item's fieldValue text against
+ * this case's own *current* nextOfKinName (`fieldValue.startsWith(name +
+ * ' — ')`) — which breaks the moment nextOfKinName is itself the
+ * corrupted "NAME — PHONE" string (the exact production shape this fix
+ * exists for): the check ends up searching for "NAME — PHONE — ", which
+ * never appears, so identification silently fails and the raw legacy
+ * textbox renders. The fix: fall back to matching the item's own LABEL
+ * against FAMILY_CONTACT_ITEM_LABEL, the frozen, immutable string every
+ * workflowSnapshot persists for this item — stable template/snapshot
+ * metadata, exactly like legacyCertifierPresentation.ts's label match, and
+ * completely independent of nextOfKinName/fieldValues' current text. This
+ * correctly identifies the item for clean cases, legacy cases, and
+ * corrupted-nextOfKinName cases alike. */
 function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: Case): ChecklistItemViewModel[] {
   if (!case_.workflowSnapshot) return items;
   const familyContactIndex = findChecklistIndexForCaseField(case_.workflowSnapshot.intake, 'nextOfKinName');
   let idx = familyContactIndex === null ? -1 : items.findIndex((item) => item.index === familyContactIndex && item.hasField);
 
-  if (idx === -1 && case_.nextOfKinName.trim() !== '') {
-    const legacyJoinedPrefix = `${case_.nextOfKinName} — `;
-    idx = items.findIndex((item) => item.hasField && item.fieldValue.startsWith(legacyJoinedPrefix));
+  if (idx === -1) {
+    idx = items.findIndex((item) => item.hasField && item.label === FAMILY_CONTACT_ITEM_LABEL);
   }
   if (idx === -1) return items;
 
@@ -176,9 +194,7 @@ function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: 
     fieldValue: '',
     isDerived: true,
     requiredCaseFields: FAMILY_CONTACT_REQUIRED_CASE_FIELDS,
-    requiredCaseFieldValues: {
-      nextOfKinName: case_.nextOfKinName ?? '',
-    },
+    requiredCaseFieldValues: familyContactRequiredCaseFieldValues(case_),
   };
   return result;
 }

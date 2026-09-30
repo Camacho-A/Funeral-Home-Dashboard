@@ -52,6 +52,101 @@ const baseProps = {
   onSetVaNotificationResponsibility: vi.fn(),
 };
 
+/**
+ * Task #5 FINAL fix (2026-09). A production case's Case.nextOfKinName can
+ * be corrupted to the legacy combined "NAME — PHONE" form (see
+ * domain/cases/nextOfKinName.ts for the full "why" and the shared
+ * normalization helper both this component and ChecklistCard's structured
+ * Family Contact editor rely on). General Info must display/edit only the
+ * clean name, never the raw corrupted string, while never inventing a
+ * strip that could corrupt a legitimate name containing its own
+ * punctuation.
+ */
+describe('CaseInformationCard — Next of kin corrupted-name normalization (Task #5 FINAL fix, 2026-09)', () => {
+  it('renders only the clean name when nextOfKinName is corrupted with a trailing "— phone" matching the separately stored nextOfKinPhone', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        nextOfKinName="EMMA MORALES SILVA — (954) 901-4165"
+        nextOfKinPhone="(954) 901-4165"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'EMMA MORALES SILVA' })).toBeInTheDocument();
+    expect(screen.queryByText('EMMA MORALES SILVA — (954) 901-4165')).not.toBeInTheDocument();
+  });
+
+  it('NOK phone still displays the phone separately, unaffected by the name normalization', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        nextOfKinName="EMMA MORALES SILVA — (954) 901-4165"
+        nextOfKinPhone="(954) 901-4165"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '(954) 901-4165' })).toBeInTheDocument();
+  });
+
+  it('clean names (no separator) are rendered unchanged', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'KAREN ELLISON' })).toBeInTheDocument();
+  });
+
+  it('a name containing an em dash that does NOT correspond to the stored phone is left unchanged (no unsafe stripping)', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        nextOfKinName="SMITH — JONES FAMILY TRUST"
+        nextOfKinPhone="555-0100"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'SMITH — JONES FAMILY TRUST' })).toBeInTheDocument();
+  });
+
+  it('phone-formatting-equivalent suffixes are safely recognized (dashed phone vs. parenthesized stored phone)', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        nextOfKinName="EMMA MORALES SILVA — 954-901-4165"
+        nextOfKinPhone="(954) 901-4165"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'EMMA MORALES SILVA' })).toBeInTheDocument();
+  });
+
+  it('a blank/missing nextOfKinPhone never causes stripping, even if the name contains an em dash', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        nextOfKinName="EMMA MORALES SILVA — (954) 901-4165"
+        nextOfKinPhone=""
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'EMMA MORALES SILVA — (954) 901-4165' })).toBeInTheDocument();
+  });
+
+  it('editing the normalized displayed name writes only the clean value to nextOfKinName, never reconstructing "NAME — PHONE"', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        nextOfKinName="EMMA MORALES SILVA — (954) 901-4165"
+        nextOfKinPhone="(954) 901-4165"
+        onUpdateCaseInfo={onUpdateCaseInfo}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'EMMA MORALES SILVA' }));
+    const input = screen.getByDisplayValue('EMMA MORALES SILVA');
+    fireEvent.change(input, { target: { value: 'EMMA SILVA' } });
+    fireEvent.blur(input);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ nextOfKinName: 'EMMA SILVA' });
+  });
+});
+
 describe('CaseInformationCard — click-to-edit fields (Phase 17)', () => {
   // Generic EditableField behaviors (click-to-edit toggle, commit-on-Enter,
   // unchanged-value skip, Escape-revert) use Location as the vehicle field
