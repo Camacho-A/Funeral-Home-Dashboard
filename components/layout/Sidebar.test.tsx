@@ -186,12 +186,12 @@ describe('Sidebar — vertical SOLIS lockup (Task #13 final visual adjustment, 2
 });
 
 describe('Sidebar — enlarged SOLIS brand lockup (Task #13 final sizing adjustment, 2026-09)', () => {
-  it('1: the mark renders at 72px', async () => {
+  it('1: the mark renders at 96px', async () => {
     mockPermissions([]);
     renderSidebar('mock');
     const mark = await screen.findByRole('presentation', { hidden: true });
-    expect(mark).toHaveAttribute('width', '72');
-    expect(mark).toHaveAttribute('height', '72');
+    expect(mark).toHaveAttribute('width', '96');
+    expect(mark).toHaveAttribute('height', '96');
   });
 
   it('2: the SOLIS wordmark uses the enlarged brandWordmark styling (24px, scoped to the Sidebar only)', async () => {
