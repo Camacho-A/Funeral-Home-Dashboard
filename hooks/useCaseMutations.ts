@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case, CaseUpdate, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import { casesService } from '@/services/casesService';
@@ -44,10 +45,64 @@ export function useCaseMutations(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
 
+  /**
+   * Task #21 (2026-09, checklist response delay). Root cause: this shared
+   * mutation had no onMutate at all — the checklist Checkbox's `checked`
+   * prop is derived purely from the server-cached Case (see
+   * ChecklistCard.tsx/useCaseViewModel), so it only visually flipped once
+   * the *entire* round trip (Wix fetch existing → merge → persist → best-
+   * effort Activity write → response → setQueryData) had completed. No
+   * reconciliation/workflow-advance step was involved in that latency —
+   * reconcileCaseWorkflow is never called by this PATCH route at all (only
+   * by the Jotform-linking/payment-workflow paths) — it was purely "the UI
+   * waits for the server" with zero local optimistic state.
+   *
+   * Scoped narrowly to `checklistState` patches only (the reported
+   * interaction) — every other call below (setFieldValue, updateCaseInfo,
+   * owner reassignment, VA steps, certifier saves, ...) is untouched and
+   * keeps waiting for the real response exactly as before; this is not a
+   * general "make all Case editing optimistic" change.
+   *
+   * `latestChecklistMutationId` is a monotonic "latest wins" guard against
+   * rapid check→uncheck racing: each checklist-patch mutation captures its
+   * own id at onMutate time; onError/onSuccess only touch the cache if
+   * their id is still the most recent one issued. A stale (superseded)
+   * response is a no-op for the cache — it never overwrites whatever a
+   * newer toggle already established, and the newer toggle's own
+   * eventual onSuccess/onError is what settles the cache authoritatively.
+   */
+  const latestChecklistMutationId = useRef(0);
+
   const updateCase = useMutation({
     mutationFn: (patch: Parameters<typeof casesService.update>[2]) =>
       casesService.update(organization, caseId, patch, organization.dataAdapterMode),
-    onSuccess: (updated) => {
+    onMutate: async (patch) => {
+      if (!('checklistState' in patch) || !patch.checklistState) return undefined;
+      const queryKey = ['case', organization.organizationId, caseId] as const;
+      const mutationId = ++latestChecklistMutationId.current;
+      await queryClient.cancelQueries({ queryKey });
+      const previousCase = queryClient.getQueryData<Case>(queryKey);
+      if (previousCase) {
+        queryClient.setQueryData<Case>(queryKey, {
+          ...previousCase,
+          checklistState: { ...previousCase.checklistState, ...patch.checklistState },
+        });
+      }
+      return { previousCase, mutationId, queryKey };
+    },
+    onError: (_err, _patch, context) => {
+      if (!context?.previousCase) return;
+      // A later checklist toggle has already superseded this one — its own
+      // onSuccess/onError will settle the cache; rolling back here would
+      // incorrectly undo the newer action.
+      if (context.mutationId !== latestChecklistMutationId.current) return;
+      queryClient.setQueryData(context.queryKey, context.previousCase);
+    },
+    onSuccess: (updated, _patch, context) => {
+      // Same staleness guard for the success path: a superseded request's
+      // server-confirmed data must not clobber a newer toggle's own
+      // optimistic (or already-settled) state.
+      if (context && context.mutationId !== latestChecklistMutationId.current) return;
       queryClient.setQueryData(['case', organization.organizationId, caseId], updated);
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
     },
