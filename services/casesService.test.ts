@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { casesService, matchesSearch } from './casesService';
+import { casesService, matchesSearch, listForOrganization } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
 import type { Case } from '../types/case';
@@ -1074,5 +1074,30 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
     const second = await casesService.update(organization, case_.id, patch);
     expect(second.rawStage).toBe(4);
+  });
+});
+
+/**
+ * Case list scalability, Phase 1 (2026-09). `listForOrganization` had the
+ * identical silent-cap defect GET /api/cases did (a single, unpaginated
+ * `queryWixDataItems` call) — fixed to loop via `queryAllWixDataItems`
+ * (see this function's own comment in casesService.ts). Mock mode's
+ * behavior was never affected by that defect (an in-memory filter has no
+ * such cap) — these tests are a regression guard on its unchanged
+ * contract (`Promise<Case[]>`, org-scoped, excludes soft-deleted) after
+ * the import/implementation change. The wix-mode branch's correctness now
+ * rests entirely on `queryAllWixDataItems`, already proven independently
+ * in lib/wixDataApi.test.ts ("Manors go-live incident fix").
+ */
+describe('listForOrganization (used by services/reportingService.ts)', () => {
+  it('lists only this organization\'s non-deleted cases in mock mode', async () => {
+    const result = await listForOrganization(DEFAULT_ORGANIZATION_ID, 'mock');
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.every((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)).toBe(true);
+  });
+
+  it('returns an empty array for an organization with no fixtures, never another organization\'s cases', async () => {
+    const result = await listForOrganization(SECOND_MOCK_ORGANIZATION_ID, 'mock');
+    expect(result).toEqual([]);
   });
 });

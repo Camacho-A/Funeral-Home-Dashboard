@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
-import { queryWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, describeMapWixCaseItemFailure, type WixCaseItem } from '@/lib/wixCaseMapper';
+import {
+  CASE_LIST_SORT,
+  clampCaseListPageSize,
+  compareCasesForListSort,
+  encodeCaseCursor,
+  validateCaseCursor,
+} from '@/lib/casePagination';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
@@ -40,15 +47,55 @@ import { toPickupOnlyView } from '@/domain/cases/pickupView';
  * and isArchived=false, maps each item via lib/wixCaseMapper.ts (skipping
  * malformed records rather than throwing), then applies the same search
  * filter server-side.
+ *
+ * Case list scalability, Phase 1 (2026-09) — pagination contract. Neither
+ * `limit` nor `cursor` is required: a caller that omits both (every
+ * existing caller today — casesService.ts's list()/the Dashboard) keeps
+ * getting the complete, unbounded result set in `cases`, exactly the
+ * shape it has always returned — except this is now genuinely complete.
+ * Before this fix, the wix-mode branch below called
+ * `queryWixDataItems` directly with no `paging` at all, which Wix Data
+ * silently caps at 50 items (see lib/wixDataApi.ts's own comment on the
+ * `rolePermissions` incident this is the same bug class as) — any
+ * organization with more than 50 non-deleted cases was silently missing
+ * everything past the 50th, with no error and no signal anywhere. The
+ * "no limit/cursor" branch now loops via `queryAllWixDataItems` (the
+ * same fix already applied to `rolePermissions`) instead of a single
+ * capped call, so a caller that wants "everything" actually gets it.
+ *
+ * Passing `limit` (optionally with `cursor` for page 2+) opts into a
+ * bounded page instead — `hasMore`/`nextCursor` tell the caller
+ * explicitly whether more cases exist, so no consumer can mistake a
+ * partial page for the complete collection. `nextCursor` is an opaque,
+ * versioned, application-level token (lib/casePagination.ts) — never the
+ * raw Wix cursor — bound to the exact `organizationId`/`searchQuery` it
+ * was issued for, so it can't be tampered with or replayed against a
+ * different query. This is additive only: the response shape gains
+ * `hasMore`/`nextCursor`, `cases` is unchanged.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedOrganizationId = url.searchParams.get('organizationId');
   const searchQuery = url.searchParams.get('searchQuery') ?? '';
+  const limitParam = url.searchParams.get('limit');
+  const cursorParam = url.searchParams.get('cursor');
 
   if (!requestedOrganizationId) {
-    return NextResponse.json({ cases: [], error: 'organizationId is required.' }, { status: 400 });
+    return NextResponse.json({ cases: [], hasMore: false, nextCursor: null, error: 'organizationId is required.' }, { status: 400 });
   }
+
+  let requestedLimit: number | null = null;
+  if (limitParam !== null) {
+    const parsed = Number(limitParam);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return NextResponse.json(
+        { cases: [], hasMore: false, nextCursor: null, error: 'limit must be a positive integer.' },
+        { status: 400 },
+      );
+    }
+    requestedLimit = parsed;
+  }
+  const paginationRequested = requestedLimit !== null || cursorParam !== null;
 
   // Phase 15X (Multi-Tenant Authorization Hardening): re-derived from the
   // caller's session/membership, never trusted from the query param.
@@ -70,29 +117,100 @@ export async function GET(request: Request) {
       canReadPickup(policyParams, adapter),
     ]);
     if (!hasFullRead && !hasPickupOnlyRead) {
-      return NextResponse.json({ cases: [], error: 'Not authorized to view cases for this organization.' }, { status: 403 });
+      return NextResponse.json({ cases: [], hasMore: false, nextCursor: null, error: 'Not authorized to view cases for this organization.' }, { status: 403 });
+    }
+
+    // Cursor validated once, centrally, before either adapter branch —
+    // rejected outright (400) rather than silently falling back to page 1
+    // or leaking a mismatched page. The cursor's own embedded
+    // organizationId/searchQuery/kind must match this exact request's
+    // server-derived context; even if that check were somehow bypassed,
+    // both branches below always re-apply the server-derived
+    // organizationId as their own query filter regardless of what a
+    // cursor claims, so a forged/foreign cursor still can never surface
+    // another organization's cases.
+    let cursor: { wix?: string; mockOffset?: number } | null = null;
+    if (cursorParam !== null) {
+      const validation = validateCaseCursor(cursorParam, { organizationId, searchQuery, kind: adapter === 'mock' ? 'mock' : 'wix' });
+      if (!validation.ok) {
+        return NextResponse.json(
+          { cases: [], hasMore: false, nextCursor: null, error: 'Invalid or expired pagination cursor.' },
+          { status: 400 },
+        );
+      }
+      cursor = validation.payload.kind === 'wix' ? { wix: validation.payload.wixCursor } : { mockOffset: validation.payload.offset };
     }
 
     if (adapter === 'mock') {
-      const cases = caseFixtures.filter(
+      const filtered = caseFixtures.filter(
         (c) => c.organizationId === organizationId && !c.isDeleted && matchesSearch(c, searchQuery),
       );
-      return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView) });
+
+      if (!paginationRequested) {
+        // Legacy/default shape: unchanged order and content — mock mode's
+        // in-memory filter never had the Wix 50-item cap to begin with.
+        return NextResponse.json({
+          cases: hasFullRead ? filtered : filtered.map(toPickupOnlyView),
+          hasMore: false,
+          nextCursor: null,
+        });
+      }
+
+      const sorted = [...filtered].sort(compareCasesForListSort);
+      const offset = cursor?.mockOffset ?? 0;
+      const pageSize = clampCaseListPageSize(requestedLimit);
+      const page = sorted.slice(offset, offset + pageSize);
+      const hasMore = offset + page.length < sorted.length;
+      const nextCursor = hasMore
+        ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId, searchQuery, offset: offset + page.length })
+        : null;
+
+      return NextResponse.json({ cases: hasFullRead ? page : page.map(toPickupOnlyView), hasMore, nextCursor });
     }
 
-    const response = await queryWixDataItems<WixCaseItem>('cases', {
+    if (!paginationRequested) {
+      // Legacy/default shape: now genuinely complete (loops through every
+      // Wix page via queryAllWixDataItems) instead of one silently-capped
+      // call — see this function's own top comment. Order is left exactly
+      // as before (Wix's own default, never specified) since nothing
+      // downstream of this branch depends on a specific order; the
+      // deterministic CASE_LIST_SORT only matters for the bounded-page
+      // mode below, where stable ordering is what prevents a case from
+      // being skipped or duplicated across pages.
+      const items = await queryAllWixDataItems<WixCaseItem>('cases', { organizationId, isArchived: false });
+      const cases = items
+        .map((item) => mapWixCaseItem(item.data))
+        .filter((c): c is Case => c !== null)
+        .filter((c) => matchesSearch(c, searchQuery));
+
+      return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView), hasMore: false, nextCursor: null });
+    }
+
+    const pageSize = clampCaseListPageSize(requestedLimit);
+    const pageResponse = await queryWixDataItems<WixCaseItem>('cases', {
       filter: { organizationId, isArchived: false },
+      sort: CASE_LIST_SORT,
+      // Wix's cursor-paging contract: the first page is requested via
+      // `limit` alone, every subsequent page via `cursor` alone — never
+      // both together (see lib/wixDataApi.ts's own comment). `cursor` here
+      // is already the raw Wix-issued token (unwrapped by
+      // validateCaseCursor above), never a client-supplied value.
+      paging: cursor?.wix ? { cursor: cursor.wix } : { limit: pageSize },
     });
 
-    const cases = response.dataItems
+    const cases = pageResponse.dataItems
       .map((item) => mapWixCaseItem(item.data))
       .filter((c): c is Case => c !== null)
       .filter((c) => matchesSearch(c, searchQuery));
 
-    return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView) });
+    const nextWixCursor = pageResponse.pagingMetadata?.cursors?.next ?? null;
+    const hasMore = Boolean(pageResponse.pagingMetadata?.hasNext) && nextWixCursor !== null;
+    const nextCursor = hasMore ? encodeCaseCursor({ v: 1, kind: 'wix', organizationId, searchQuery, wixCursor: nextWixCursor! }) : null;
+
+    return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView), hasMore, nextCursor });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
-    return NextResponse.json({ cases: [], error: message }, { status: 503 });
+    return NextResponse.json({ cases: [], hasMore: false, nextCursor: null, error: message }, { status: 503 });
   }
 }
 

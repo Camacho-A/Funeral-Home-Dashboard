@@ -8,7 +8,7 @@ import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/work
 import { formatCaseNumber, parseCaseNumber, assertCaseNumberUnchanged } from '../domain/cases/caseNumber';
 import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { caseFixtures } from './__mocks__/fixtures';
-import { queryWixDataItems } from '../lib/wixDataApi';
+import { queryAllWixDataItems } from '../lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 import { DEFAULT_RETURN_METHOD } from '../domain/cases/returnMethod';
 import { assertValidPickupReleasePatch } from '../domain/cases/pickupRelease';
@@ -126,13 +126,24 @@ export async function list(
  * refactored to call this same function in a later pass, but is left
  * unchanged here since it works correctly today and this phase's own
  * scope is reporting, not cases-route internals.
+ *
+ * Case list scalability, Phase 1 (2026-09): this had the identical
+ * silent-cap defect GET /api/cases did — a single `queryWixDataItems`
+ * call with no `paging`, capped by Wix Data at 50 items (see
+ * lib/wixDataApi.ts's own comment on the `rolePermissions` incident this
+ * is the same bug class as), so reporting for any organization past 50
+ * non-deleted cases was silently computed over an incomplete set. Now
+ * loops via `queryAllWixDataItems` (the same fix already applied to
+ * `rolePermissions`) to return the genuinely complete set — this
+ * function's signature/contract (`Promise<Case[]>`, still every case, no
+ * pagination surfaced to its callers) is unchanged.
  */
 export async function listForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<Case[]> {
   if (dataAdapterMode === 'mock') {
     return caseFixtures.filter((c) => c.organizationId === organizationId && !c.isDeleted);
   }
-  const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { organizationId, isArchived: false } });
-  return response.dataItems.map((item) => mapWixCaseItem(item.data)).filter((c): c is Case => c !== null);
+  const items = await queryAllWixDataItems<WixCaseItem>('cases', { organizationId, isArchived: false });
+  return items.map((item) => mapWixCaseItem(item.data)).filter((c): c is Case => c !== null);
 }
 
 export async function get(

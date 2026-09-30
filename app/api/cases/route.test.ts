@@ -4,6 +4,7 @@ import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 import { orgLocalYear } from '@/domain/cases/caseNumber';
 import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
+import type { Case } from '@/types/case';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -383,6 +384,420 @@ describe('GET /api/cases — wix mode', () => {
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const bodyText = await response.text();
     expect(bodyText).not.toContain('super-secret-test-value');
+  });
+});
+
+/**
+ * Case list scalability, Phase 1 (2026-09). Proves the new pagination
+ * contract in wix mode: `limit`/`cursor` opt into a bounded page with an
+ * honest `hasMore`/`nextCursor`, deterministic order (createdAt DESC,
+ * caseNumber DESC — see lib/casePagination.ts), and organization isolation
+ * that holds even if a cursor is forged. `queryAllWixDataItems`'s own
+ * multi-page-looping mechanics are already proven independently in
+ * lib/wixDataApi.test.ts ("Manors go-live incident fix") — these tests
+ * only prove this ROUTE now delegates to it (for the legacy, no-params
+ * shape) and correctly drives the bounded, cursor-based mode.
+ */
+describe('GET /api/cases — wix mode pagination (Case list scalability, Phase 1)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function caseItem(id: string, caseNumber: string, createdAt: string) {
+    return {
+      id,
+      dataCollectionId: 'cases',
+      data: {
+        beaconCaseId: id,
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseNumber,
+        caseType: 'cremation',
+        workflowTemplateId: 'workflow-template-standard-cremation',
+        workflowTemplateVersion: 1,
+        workflowSnapshot: {
+          workflowTemplateId: 'workflow-template-standard-cremation',
+          workflowTemplateVersion: 1,
+          stages: [],
+          intake: { sections: [] },
+        },
+        intakeOwnerId: 'staff-dana',
+        caseHandlerId: 'staff-dana',
+        currentStage: 0,
+        checklistState: {},
+        fieldValues: {},
+        decedentName: `Decedent ${id}`,
+        dateOfBirth: '01/01/2000',
+        dateOfDeath: '01/01/2026',
+        timeOfDeath: '00:00',
+        placeOfDeath: 'Test Hospital',
+        weight: '150 lb',
+        nextOfKinName: 'Test NOK',
+        nextOfKinPhone: '555-0000',
+        paymentStatus: 'awaiting_payment',
+        isVeteran: false,
+        isArchived: false,
+        createdAt,
+      },
+    };
+  }
+
+  /** A paging-aware 'cases' mock: honors `paging.limit`/`paging.cursor`
+      against a fixed, caller-supplied (already correctly-ordered) item
+      array — a call with NO `paging` at all (the legacy/queryAllWixDataItems
+      shape) gets everything in one shot, matching that path's real,
+      independently-tested looping behavior. */
+  function mockPagedCasesListQuery(allCaseItems: ReturnType<typeof caseItem>[]) {
+    let pageSize = 0;
+    mockQueryWixDataItems.mockImplementation(
+      (collectionId: string, options?: { filter?: Record<string, unknown>; paging?: { limit?: number; cursor?: string } }) => {
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+
+        if (!options?.paging) {
+          return Promise.resolve({ dataItems: allCaseItems, pagingMetadata: { hasNext: false, cursors: { next: null } } });
+        }
+
+        const { limit, cursor } = options.paging;
+        let offset = 0;
+        if (typeof limit === 'number') {
+          pageSize = limit;
+        } else if (typeof cursor === 'string') {
+          offset = Number(cursor);
+        }
+        const slice = allCaseItems.slice(offset, offset + pageSize);
+        const nextOffset = offset + slice.length;
+        const hasNext = nextOffset < allCaseItems.length;
+        return Promise.resolve({
+          dataItems: slice,
+          pagingMetadata: { hasNext, cursors: { next: hasNext ? String(nextOffset) : null } },
+        });
+      },
+    );
+  }
+
+  function requestWithPaging(organizationId: string, params: Record<string, string>) {
+    const search = new URLSearchParams({ organizationId, ...params });
+    return new Request(`http://localhost/api/cases?${search.toString()}`);
+  }
+
+  it('1. fewer than one page: all cases returned, hasMore false', async () => {
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-002', '2026-02-01T00:00:00.000Z'), caseItem('c2', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
+
+    const body = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '10' }))).json();
+
+    expect(body.cases).toHaveLength(2);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('2. exactly one full page: correct cases, correct (empty) continuation state', async () => {
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-002', '2026-02-01T00:00:00.000Z'), caseItem('c2', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
+
+    const body = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '2' }))).json();
+
+    expect(body.cases).toHaveLength(2);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('3. more than one page: first page is bounded with hasMore true; a second request with the returned cursor retrieves the rest', async () => {
+    mockPagedCasesListQuery([
+      caseItem('c1', 'B2026-003', '2026-03-01T00:00:00.000Z'),
+      caseItem('c2', 'B2026-002', '2026-02-01T00:00:00.000Z'),
+      caseItem('c3', 'B2026-001', '2026-01-01T00:00:00.000Z'),
+    ]);
+
+    const page1 = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '2' }))).json();
+    expect(page1.cases.map((c: { id: string }) => c.id)).toEqual(['c1', 'c2']);
+    expect(page1.hasMore).toBe(true);
+    expect(typeof page1.nextCursor).toBe('string');
+
+    const page2 = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '2', cursor: page1.nextCursor }))).json();
+    expect(page2.cases.map((c: { id: string }) => c.id)).toEqual(['c3']);
+    expect(page2.hasMore).toBe(false);
+    expect(page2.nextCursor).toBeNull();
+  });
+
+  it('4/5. no duplicate or skipped cases across a full pagination run', async () => {
+    const items = Array.from({ length: 5 }, (_, i) => caseItem(`c${5 - i}`, `B2026-00${5 - i}`, `2026-0${5 - i}-01T00:00:00.000Z`));
+    mockPagedCasesListQuery(items);
+
+    const page1 = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '2' }))).json();
+    const page2 = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '2', cursor: page1.nextCursor }))).json();
+    const page3 = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '2', cursor: page2.nextCursor }))).json();
+
+    const allIds = [...page1.cases, ...page2.cases, ...page3.cases].map((c: { id: string }) => c.id);
+    expect(allIds).toEqual(['c5', 'c4', 'c3', 'c2', 'c1']);
+    expect(new Set(allIds).size).toBe(allIds.length);
+    expect(page3.hasMore).toBe(false);
+  });
+
+  it('6. the bounded-page query is issued with the deterministic createdAt DESC, caseNumber DESC sort', async () => {
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
+    await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '10' }));
+
+    expect(mockQueryWixDataItems).toHaveBeenCalledWith(
+      'cases',
+      expect.objectContaining({
+        sort: [
+          { fieldName: 'createdAt', order: 'DESC' },
+          { fieldName: 'caseNumber', order: 'DESC' },
+        ],
+      }),
+    );
+  });
+
+  it('7/8. organization isolation holds in paginated mode: the query always filters on the server-derived organizationId', async () => {
+    mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+      if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
+      expect(options?.filter).toEqual({ organizationId: DEFAULT_ORGANIZATION_ID, isArchived: false });
+      return Promise.resolve({ dataItems: [caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z')], pagingMetadata: { hasNext: false, cursors: { next: null } } });
+    });
+
+    const body = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '10' }))).json();
+    expect(body.cases.every((c: { organizationId: string }) => c.organizationId === DEFAULT_ORGANIZATION_ID)).toBe(true);
+  });
+
+  it('12. empty organization: cases = [], hasMore = false', async () => {
+    mockPagedCasesListQuery([]);
+    const body = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '10' }))).json();
+
+    expect(body.cases).toEqual([]);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('13. a tampered/garbage cursor is rejected with 400 rather than producing undefined behavior', async () => {
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
+    const response = await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '10', cursor: 'not-a-real-cursor' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.cases).toEqual([]);
+  });
+
+  it('14. a cursor minted for a different organization is rejected outright — pagination cannot be used to bypass org scoping', async () => {
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
+    const foreignToken = Buffer.from(
+      JSON.stringify({ v: 1, kind: 'wix', organizationId: 'some-other-org', searchQuery: '', wixCursor: 'whatever' }),
+      'utf8',
+    ).toString('base64url');
+
+    const response = await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '10', cursor: foreignToken }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.cases).toEqual([]);
+  });
+
+  it('rejects a non-positive-integer limit with 400, before any Wix call', async () => {
+    const response = await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '0' }));
+    expect(response.status).toBe(400);
+    expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+  });
+
+  it('clamps a requested limit above the maximum page size rather than issuing an unbounded query', async () => {
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
+    await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '999999' }));
+
+    expect(mockQueryWixDataItems).toHaveBeenCalledWith('cases', expect.objectContaining({ paging: { limit: 200 } }));
+  });
+});
+
+/**
+ * Case list scalability, Phase 1 (2026-09). Backward compatibility: every
+ * existing caller (casesService.ts's list(), the Dashboard) never sends
+ * `limit`/`cursor` at all — this proves that shape still returns the
+ * `{ cases: [...] }` contract unchanged, now additionally carrying
+ * `hasMore: false, nextCursor: null` (additive, never a removed field).
+ */
+describe('GET /api/cases — backward compatibility (Case list scalability, Phase 1)', () => {
+  it('mock mode: a legacy request with no pagination params still returns the complete set plus hasMore/nextCursor', async () => {
+    const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.cases.length).toBeGreaterThan(0);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('wix mode: a legacy request with no pagination params calls queryAllWixDataItems\'s underlying query with no `paging` at all (the exact assertion already covering the pre-Phase-1 shape) and adds hasMore/nextCursor', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    mockCasesListQuery([
+      {
+        id: '1042',
+        dataCollectionId: 'cases',
+        data: {
+          beaconCaseId: '1042',
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          caseNumber: 'B2026-001',
+          caseType: 'cremation',
+          workflowTemplateId: 'workflow-template-standard-cremation',
+          workflowTemplateVersion: 1,
+          workflowSnapshot: {
+            workflowTemplateId: 'workflow-template-standard-cremation',
+            workflowTemplateVersion: 1,
+            stages: [],
+            intake: { sections: [] },
+          },
+          intakeOwnerId: 'staff-dana',
+          caseHandlerId: 'staff-dana',
+          currentStage: 0,
+          checklistState: {},
+          fieldValues: {},
+          decedentName: 'Test Decedent',
+          dateOfBirth: '01/01/2000',
+          dateOfDeath: '01/01/2026',
+          timeOfDeath: '00:00',
+          placeOfDeath: 'Test Hospital',
+          weight: '150 lb',
+          nextOfKinName: 'Test NOK',
+          nextOfKinPhone: '555-0000',
+          paymentStatus: 'awaiting_payment',
+          isVeteran: false,
+          isArchived: false,
+          createdAt: '2026-07-22T00:00:00.000Z',
+        },
+      },
+    ]);
+
+    const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.cases).toHaveLength(1);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+    expect(mockQueryWixDataItems).toHaveBeenCalledWith('cases', { filter: { organizationId: DEFAULT_ORGANIZATION_ID, isArchived: false } });
+  });
+});
+
+/**
+ * Case list scalability, Phase 1 (2026-09). Mock mode follows the exact
+ * same pagination contract as wix mode above (same field names, same
+ * hasMore/nextCursor/cursor semantics) — proven against a second,
+ * dedicated organization's temporarily-pushed fixtures so it never
+ * interferes with any other test's assumptions about caseFixtures.
+ */
+describe('GET /api/cases — mock mode pagination (Case list scalability, Phase 1)', () => {
+  const pushedIds: string[] = [];
+
+  function pushMockCase(id: string, caseNumber: string, createdAt: string, overrides: Partial<Case> = {}) {
+    const template = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    caseFixtures.push({ ...template, ...overrides, id, organizationId: SECOND_MOCK_ORGANIZATION_ID, caseNumber, createdAt, isDeleted: overrides.isDeleted ?? false });
+    pushedIds.push(id);
+  }
+
+  function requestWithPaging(organizationId: string, params: Record<string, string>) {
+    const search = new URLSearchParams({ organizationId, ...params });
+    return new Request(`http://localhost/api/cases?${search.toString()}`);
+  }
+
+  beforeEach(() => {
+    mockSession = { user: mockMultiOrgUser };
+  });
+
+  afterEach(() => {
+    while (pushedIds.length > 0) {
+      const id = pushedIds.pop()!;
+      const index = caseFixtures.findIndex((c) => c.id === id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+
+  it('1. fewer than one page: all cases returned, hasMore false', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    pushMockCase('pg-2', 'B2026-102', '2026-01-02T00:00:00.000Z');
+
+    const body = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10' }))).json();
+
+    expect(body.cases.map((c: { id: string }) => c.id).sort()).toEqual(['pg-1', 'pg-2']);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('2. exactly one full page: correct cases, correct (empty) continuation state', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    pushMockCase('pg-2', 'B2026-102', '2026-01-02T00:00:00.000Z');
+
+    const body = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '2' }))).json();
+
+    expect(body.cases).toHaveLength(2);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('3/4/5. more than one page: bounded first page with hasMore true, second page retrieves the rest, no dupes/skips', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    pushMockCase('pg-2', 'B2026-102', '2026-01-02T00:00:00.000Z');
+    pushMockCase('pg-3', 'B2026-103', '2026-01-03T00:00:00.000Z');
+
+    const page1 = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '2' }))).json();
+    expect(page1.cases).toHaveLength(2);
+    expect(page1.hasMore).toBe(true);
+    expect(typeof page1.nextCursor).toBe('string');
+
+    const page2 = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '2', cursor: page1.nextCursor }))).json();
+    expect(page2.hasMore).toBe(false);
+    expect(page2.nextCursor).toBeNull();
+
+    const allIds = [...page1.cases, ...page2.cases].map((c: { id: string }) => c.id);
+    expect(allIds).toEqual(['pg-3', 'pg-2', 'pg-1']);
+    expect(new Set(allIds).size).toBe(3);
+  });
+
+  it('6. stable ordering: createdAt DESC, caseNumber DESC as the tiebreaker', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    pushMockCase('pg-2', 'B2026-102', '2026-01-01T00:00:00.000Z'); // identical createdAt
+
+    const body = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10' }))).json();
+    expect(body.cases.map((c: { id: string }) => c.id)).toEqual(['pg-2', 'pg-1']);
+  });
+
+  it('7/8. organization isolation: another organization\'s cases never appear in this organization\'s page', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    const body = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10' }))).json();
+    expect(body.cases.every((c: { organizationId: string }) => c.organizationId === SECOND_MOCK_ORGANIZATION_ID)).toBe(true);
+  });
+
+  it('9. archived-case behavior is unchanged: a soft-deleted case never appears in a page', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    pushMockCase('pg-deleted', 'B2026-199', '2026-01-05T00:00:00.000Z', { isDeleted: true });
+
+    const body = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10' }))).json();
+    expect(body.cases.some((c: { id: string }) => c.id === 'pg-deleted')).toBe(false);
+  });
+
+  it('12. empty organization: cases = [], hasMore = false', async () => {
+    const body = await (await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10' }))).json();
+    expect(body.cases).toEqual([]);
+    expect(body.hasMore).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it('13. an invalid/garbage cursor is rejected with 400', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    const response = await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10', cursor: 'garbage' }));
+    expect(response.status).toBe(400);
+  });
+
+  it('14. a cursor minted for a different organization is rejected — pagination cannot bypass org scoping', async () => {
+    pushMockCase('pg-1', 'B2026-101', '2026-01-01T00:00:00.000Z');
+    const foreignToken = Buffer.from(
+      JSON.stringify({ v: 1, kind: 'mock', organizationId: DEFAULT_ORGANIZATION_ID, searchQuery: '', offset: 0 }),
+      'utf8',
+    ).toString('base64url');
+
+    const response = await GET(requestWithPaging(SECOND_MOCK_ORGANIZATION_ID, { limit: '10', cursor: foreignToken }));
+    expect(response.status).toBe(400);
   });
 });
 
