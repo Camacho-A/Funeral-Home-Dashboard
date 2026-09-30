@@ -644,6 +644,17 @@ export function CaseInformationCard({
             <option value="paid_in_full">{PAYMENT_STATUS_LABEL.paid_in_full}</option>
           </SelectField>
         </div>
+      </div>
+
+      {/* Task #16 (2026-09): Owner and Return method share their own
+          dedicated grid — exactly two items, so they always land in the
+          same row together (Owner left, Return method right) regardless
+          of how many columns the auto-fill grid computes elsewhere on
+          this card, rather than depending on how many items happened to
+          precede them. The conditional pickup/shipping detail fields
+          below remain in their own separate grid, unchanged, so they
+          never compete with Owner/Return method for a slot in this row. */}
+      <div className={styles.grid}>
         <div>
           <div className={styles.fieldLabel}>Owner</div>
           <SelectField
@@ -658,9 +669,6 @@ export function CaseInformationCard({
             ))}
           </SelectField>
         </div>
-      </div>
-
-      <div className={styles.grid}>
         <div>
           <div className={styles.fieldLabel}>Return method</div>
           <SelectField
@@ -673,7 +681,9 @@ export function CaseInformationCard({
             <option value="shipping">{RETURN_METHOD_LABEL.shipping}</option>
           </SelectField>
         </div>
+      </div>
 
+      <div className={styles.grid}>
         {returnMethod === 'pickup' && (
           <>
             <div>

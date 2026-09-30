@@ -802,6 +802,104 @@ describe('CaseInformationCard — Return method (conditional shipping/tracking, 
   });
 });
 
+describe('CaseInformationCard — Task #16 (2026-09, Owner/Return method layout)', () => {
+  it('Owner and Return method render in the same dedicated grid row, Owner first', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+
+    const ownerLabel = screen.getByText('Owner');
+    const returnMethodLabel = screen.getByText('Return method');
+
+    // Each field label's grandparent is the shared .grid row container —
+    // asserting they're the same element proves Owner/Return method are
+    // grouped together, not merely "somewhere on the page."
+    const ownerRow = ownerLabel.parentElement?.parentElement;
+    const returnMethodRow = returnMethodLabel.parentElement?.parentElement;
+    expect(ownerRow).not.toBeNull();
+    expect(ownerRow).toBe(returnMethodRow);
+
+    // Owner precedes Return method in DOM order (left column, then right).
+    expect(ownerLabel.compareDocumentPosition(returnMethodLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('Owner editing still works after the layout change', () => {
+    const onReassignOwner = vi.fn();
+    render(<CaseInformationCard {...baseProps} onReassignOwner={onReassignOwner} onUpdateCaseInfo={vi.fn()} staffOptions={[{ id: 'staff-dana', name: 'Dana' }, { id: 'staff-chris', name: 'Chris' }]} />);
+    fireEvent.change(screen.getByDisplayValue('Dana'), { target: { value: 'staff-chris' } });
+    expect(onReassignOwner).toHaveBeenCalledWith('staff-chris');
+  });
+
+  it('Return method editing still works after the layout change', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Undecided'), { target: { value: 'pickup' } });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ returnMethod: 'pickup' });
+  });
+
+  it('Return method conditional fields (pickup) still render and stay in their own separate row', () => {
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    const cremaRemainsLabel = screen.getByText('Cremated Remains');
+    const returnMethodLabel = screen.getByText('Return method');
+    const ownerLabel = screen.getByText('Owner');
+
+    const conditionalRow = cremaRemainsLabel.parentElement?.parentElement;
+    const ownerReturnMethodRow = returnMethodLabel.parentElement?.parentElement;
+    expect(conditionalRow).not.toBe(ownerReturnMethodRow);
+    expect(conditionalRow).not.toBe(ownerLabel.parentElement?.parentElement);
+  });
+
+  it('Return method conditional fields (shipping) still render and stay in their own separate row', () => {
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Carrier')).toBeInTheDocument();
+    expect(screen.getByText('Date shipped')).toBeInTheDocument();
+    expect(screen.getByText('Delivered date')).toBeInTheDocument();
+  });
+
+  it('Released date future-date validation (Task #15) still works after the layout change', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Jane Smith" pickupReleasedAt="07/01/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const releasedDateField = screen.getByText('Released date').parentElement!;
+    fireEvent.click(within(releasedDateField).getByRole('button'));
+    const input = within(releasedDateField).getByDisplayValue('07/01/2026');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Released date cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('Date shipped future-date validation (Task #15) still works after the layout change', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const dateShippedField = screen.getByText('Date shipped').parentElement!;
+    fireEvent.click(within(dateShippedField).getByRole('button'));
+    const input = within(dateShippedField).getByDisplayValue('');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Date shipped cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('Delivered date future-date validation (Task #15) still works after the layout change', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const deliveredDateField = screen.getByText('Delivered date').parentElement!;
+    fireEvent.click(within(deliveredDateField).getByRole('button'));
+    const input = within(deliveredDateField).getByDisplayValue('');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Delivered date cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * Case field editing (2026-09): Weight becomes click-to-edit, same pattern
  * as every other EditableField above, but saves through the dedicated
