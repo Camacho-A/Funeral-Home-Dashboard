@@ -8,9 +8,14 @@
   z-index: 50;
 }
 
+/* Task #14 Phase C (2026-09) — previously no border/shadow at all,
+   relying solely on the scrim behind it for separation. Reuses the same
+   single --shadow-card tier every other raised surface in the app
+   already uses (Card's own `elevated` variant) — no new shadow system. */
 .panel {
   background: var(--color-surface-card);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
   width: 560px;
   max-width: 90vw;
   max-height: 85vh;

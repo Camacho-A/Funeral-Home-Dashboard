@@ -18,6 +18,23 @@
   outline-offset: 1px;
 }
 
+/* Task #14 Phase C (2026-09) — previously only `cursor: not-allowed`, no
+   visual difference at all from an enabled field. Matches SelectField's
+   own existing disabled treatment. */
 .field:disabled {
   cursor: not-allowed;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-disabled);
+}
+
+/* Task #14 Phase C — a passive capability, not a new validation behavior:
+   `:user-invalid` only matches after the user has actually interacted with
+   the field (never on initial render of an empty required field), and
+   `[aria-invalid="true"]` covers any consumer that sets it explicitly. No
+   current consumer sets either today, so this has zero visual effect until
+   a future consumer opts in — it standardizes what "invalid" looks like on
+   the field itself, which previously only ever showed as separate text. */
+.field:user-invalid,
+.field[aria-invalid='true'] {
+  border-color: var(--color-danger-border);
 }

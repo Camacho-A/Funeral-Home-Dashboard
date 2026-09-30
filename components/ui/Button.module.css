@@ -43,28 +43,46 @@
   font-size: var(--font-size-12-5);
 }
 
-/* --- secondary: always pill-shaped in practice ("Add entry", "Upload") --- */
+/* --- secondary: always pill-shaped in practice ("Add entry", "Upload").
+   Task #14 Phase C (2026-09) — previously filled with --color-brand-tint,
+   the exact same color pair Badge's own `neutral` variant used, so a
+   supporting ACTION and a passive STATUS LABEL read as the same visual
+   object. Now a light neutral surface with a border, per the phase's own
+   "prefer a light/neutral surface with border" direction — still clearly
+   a button (bordered, not just colored text), no longer color-identical
+   to any Badge variant. Padding shrinks by the new 1px border on each
+   side so the overall box size is unchanged from before. */
 .secondary {
-  background: var(--color-brand-tint);
-  color: var(--color-brand-hover);
-  padding: var(--space-3) var(--space-7);
+  background: var(--color-surface-card);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-input);
+  padding: calc(var(--space-3) - 1px) calc(var(--space-7) - 1px);
   border-radius: var(--radius-xl);
   font-size: var(--font-size-12-5);
 }
 
 .secondary:hover:not(:disabled) {
-  filter: brightness(0.97);
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
 }
 
-/* --- ghost: text-only inline action ("Print", "← Back") --- */
+/* --- ghost: text-only inline action ("Print", "← Back"). Task #14 Phase C
+   — added a restrained hover surface ("minimal surface until hover/focus")
+   using an equal padding/negative-margin pair, so the button gains a
+   small hover-highlight box without shifting any surrounding content —
+   its outer margin box (what siblings see) is identical to the original
+   zero-padding version. */
 .ghost {
   background: transparent;
   color: var(--color-brand);
-  padding: 0;
+  padding: var(--space-1) var(--space-2);
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1);
+  border-radius: var(--radius-xs);
   font-size: var(--font-size-12);
 }
 
 .ghost:hover:not(:disabled) {
+  background: var(--color-surface-hover);
   color: var(--color-brand-hover);
 }
 
@@ -82,4 +100,30 @@
 
 .danger:hover:not(:disabled) {
   filter: brightness(0.92);
+}
+
+/* --- icon: compact, square, glyph-only (e.g. a close ×, a stepper +/-).
+   Task #14 Phase C (2026-09) — a new shared capability, not yet adopted by
+   any existing ad hoc icon button (each currently lives in its own
+   page-specific component — see the Phase C final report). 32px keeps a
+   reasonably accessible click target while staying visually compact;
+   transparent by default, a neutral surface on hover/focus so it never
+   competes with the real action buttons beside it. --- */
+.icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-14);
+}
+
+.icon:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.icon:disabled {
+  color: var(--color-text-disabled);
 }

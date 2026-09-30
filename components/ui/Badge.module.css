@@ -8,9 +8,14 @@
   white-space: nowrap;
 }
 
+/* Task #14 Phase C (2026-09) — previously var(--color-brand-tint)/
+   var(--color-brand), color-identical to `.brand` below just lighter, so
+   an "inactive/draft" status read as brand-colored (notable) rather than
+   neutral. Now a real gray, matching this file's own established neutral
+   surface tokens. */
 .neutral {
-  background: var(--color-brand-tint);
-  color: var(--color-brand);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
 }
 
 .brand {
@@ -38,4 +43,11 @@
 .success {
   background: oklch(0.95 0.035 145);
   color: var(--color-success-text);
+}
+
+/* Task #14 Phase C (2026-09) — new. Uses the Phase A canonical warning
+   tokens directly (no construction needed, unlike .success above). */
+.warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }

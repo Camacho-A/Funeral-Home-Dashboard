@@ -22,3 +22,17 @@
   outline: 2px solid var(--color-brand);
   outline-offset: 1px;
 }
+
+/* Task #14 Phase C (2026-09) — mirrors TextField.module.css's own
+   additions exactly, for the same "one consistent form-field family"
+   reason this file's own header comment already establishes. */
+.field:disabled {
+  cursor: not-allowed;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-disabled);
+}
+
+.field:user-invalid,
+.field[aria-invalid='true'] {
+  border-color: var(--color-danger-border);
+}

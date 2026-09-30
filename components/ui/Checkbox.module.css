@@ -18,6 +18,14 @@
   cursor: not-allowed;
 }
 
+/* Task #14 Phase C (2026-09) — previously entirely missing; this is a
+   real <button role="checkbox">, keyboard-focusable, with zero visible
+   focus indication before this. */
+.checkbox:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
 .sizeMd {
   width: 18px;
   height: 18px;

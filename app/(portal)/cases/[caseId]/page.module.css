@@ -31,6 +31,18 @@
   color: var(--color-text-muted);
 }
 
+/* Task #14 Phase C (2026-09) — previously no hover/focus treatment at
+   all. Mirrors the same additions made to CaseDocumentsTab.module.css's
+   own sub-tabs (an identical visual pattern already, kept in sync). */
+.tabs button:hover:not(.tabActive) {
+  background: var(--color-surface-hover);
+}
+
+.tabs button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
 /* Case Overview layout (2026-09) — after the old right-hand column's two
    cards (ActivityLogCard/DocumentsCard, see fdf3fd3) were removed, the
    remaining cards no longer need to be squeezed into a fixed 1fr/1fr

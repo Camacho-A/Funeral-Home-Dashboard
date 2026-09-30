@@ -30,3 +30,12 @@
   cursor: not-allowed;
   color: var(--color-text-disabled);
 }
+
+/* Task #14 Phase C (2026-09) — matches TextField/TextArea's own addition;
+   a passive capability only, see TextField.module.css's own comment for
+   why this has zero visual effect until a consumer actually sets
+   aria-invalid or triggers native validation. */
+.field:user-invalid,
+.field[aria-invalid='true'] {
+  border-color: var(--color-danger-border);
+}
