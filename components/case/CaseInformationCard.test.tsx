@@ -1390,52 +1390,62 @@ describe('CaseInformationCard — Task #18 (2026-09, section heading cleanup)', 
   });
 });
 
-describe('CaseInformationCard — Notify Crematory panel expansion (2026-09)', () => {
-  it('1. "Notify crematory" remains rendered when weightOver200 is true', () => {
+describe('CaseInformationCard — Notify Crematory warning layout correction (2026-09)', () => {
+  it('1. Weight remains a normal single-grid-track field: its wrapper carries no special width class at all', () => {
     render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+    const weightWrapper = screen.getByText('Weight').parentElement!;
+    // EditableField's outer div renders with no className at all (undefined),
+    // matching every one of its siblings (Date of birth, Location, etc.) —
+    // there is no longer any Weight-only wrapper class to opt into.
+    expect(weightWrapper.className).toBe('');
   });
 
-  it("2. Weight's field wrapper (Notify crematory's own container) stays inside the same DOB/DOD/Time of death/Location .grid row — never moved to a separate section", () => {
+  it('2. no grid-column: span 2 (or any .weightNotifyExpanded-style) class remains anywhere on Weight\'s wrapper, on or off', () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Weight').parentElement!.className).not.toMatch(/weightNotifyExpanded|span/i);
+    rerender(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Weight').parentElement!.className).not.toMatch(/weightNotifyExpanded|span/i);
+  });
+
+  it("3. Weight's wrapper stays inside the same DOB/DOD/Time of death/Location .grid row as every other field in that row — never moved to a separate section", () => {
     render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
     const weightWrapper = screen.getByText('Weight').parentElement!;
     const dobWrapper = screen.getByText('Date of birth').parentElement!;
     expect(weightWrapper.parentElement).toBe(dobWrapper.parentElement);
   });
 
-  it('3. Weight\'s own wrapper gains the expanded-width class only while the badge is showing (weightOver200)', () => {
-    const { rerender } = render(<CaseInformationCard {...baseProps} weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
-    const weightWrapperNormal = screen.getByText('Weight').parentElement!;
-    expect(weightWrapperNormal.className).not.toMatch(/weightNotifyExpanded/);
-
-    rerender(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
-    const weightWrapperExpanded = screen.getByText('Weight').parentElement!;
-    expect(weightWrapperExpanded.className).toMatch(/weightNotifyExpanded/);
-  });
-
-  it('4. Weight value remains visible and unchanged alongside the expanded badge', () => {
-    render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '242 lb' })).toBeInTheDocument();
-  });
-
-  it('5. Date of birth / Date of death / Time of death / Location remain rendered and unaffected by the Weight expansion', () => {
+  it('4. "Notify crematory" remains rendered immediately beside the Weight value, associated with Weight (not a separate field)', () => {
     render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.getByText('Date of birth')).toBeInTheDocument();
-    expect(screen.getByText('Date of death')).toBeInTheDocument();
-    expect(screen.getByText('Time of death')).toBeInTheDocument();
-    expect(screen.getByText('Location')).toBeInTheDocument();
-    // None of these siblings carry the Weight-only expansion class.
-    expect(screen.getByText('Date of birth').parentElement!.className).not.toMatch(/weightNotifyExpanded/);
+    const badge = screen.getByText('Notify crematory');
+    const valueRow = screen.getByRole('button', { name: /lb/ }).parentElement!;
+    expect(Array.from(valueRow.children)).toContain(badge);
   });
 
-  it('6. the badge continues to appear/disappear based on weightOver200 only — no new trigger condition introduced', () => {
+  it('5. the badge receives the flex-allocation fix (flex-shrink: 0 + white-space: nowrap) so its text is never squeezed into wrapping — the widening/readability fix, applied to the badge itself, not the grid', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    const badge = screen.getByText('Notify crematory');
+    expect(badge.className).toMatch(/notifyBadge/);
+    // The class hook the CSS rule (flex-shrink: 0; white-space: nowrap;
+    // see CaseInformationCard.module.css .notifyBadge) targets — actual
+    // computed layout isn't available in jsdom, so the fix is verified via
+    // this class hook plus static CSS review, matching this file's
+    // established pattern for CSS-module-driven style assertions.
+  });
+
+  it('6. the existing "Notify crematory" wording is unchanged', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+    expect(screen.queryByText(/notify the crematory/i)).not.toBeInTheDocument();
+  });
+
+  it('7. weightOver200 remains the sole trigger for the badge — no new trigger condition introduced', () => {
     const { rerender } = render(<CaseInformationCard {...baseProps} weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
     expect(screen.queryByText('Notify crematory')).not.toBeInTheDocument();
     rerender(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByText('Notify crematory')).toBeInTheDocument();
   });
 
-  it('7. Weight\'s click-to-edit save behavior is unaffected by the wider layout', () => {
+  it("8. Weight's click-to-edit save behavior is unaffected by the layout correction", () => {
     const onSaveWeight = vi.fn();
     render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} onSaveWeight={onSaveWeight} />);
     fireEvent.click(screen.getByRole('button', { name: '242 lb' }));
@@ -1445,18 +1455,15 @@ describe('CaseInformationCard — Notify Crematory panel expansion (2026-09)', (
     expect(onSaveWeight).toHaveBeenCalledWith('190 lb');
   });
 
-  it('8-9. the expansion is implemented as a CSS grid-column span with a sub-860px fallback to span 1 (see CaseInformationCard.module.css .weightNotifyExpanded) — auto-placement wraps rather than overflows at any width, so no horizontal scrolling is introduced at any breakpoint', () => {
-    // jsdom does not compute external stylesheet layout, so the responsive
-    // fallback itself is verified by static CSS inspection (documented in
-    // the stylesheet's own comment) rather than a runtime assertion here.
-    // This test only confirms the single class hook the CSS rule targets
-    // is applied exactly as expected, which is what the CSS rule keys off.
+  it('9. Date of birth / Date of death / Time of death / Location remain rendered and unaffected', () => {
     render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
-    const weightWrapper = screen.getByText('Weight').parentElement!;
-    expect(weightWrapper.className).toMatch(/weightNotifyExpanded/);
+    expect(screen.getByText('Date of birth')).toBeInTheDocument();
+    expect(screen.getByText('Date of death')).toBeInTheDocument();
+    expect(screen.getByText('Time of death')).toBeInTheDocument();
+    expect(screen.getByText('Location')).toBeInTheDocument();
   });
 
-  it('10. the rest of Case Information (NOK/Certifier headings, operational row, Owner visibility) is unaffected by the Weight expansion', () => {
+  it('10. the rest of Case Information (NOK/Certifier headings, operational row, Owner visibility) is unaffected by the Notify Crematory correction', () => {
     render(<CaseInformationCard {...baseProps} weightOver200 showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
     expect(screen.getByText('Certifier information')).toBeInTheDocument();

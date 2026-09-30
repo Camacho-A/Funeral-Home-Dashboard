@@ -83,7 +83,6 @@ function EditableField({
   crossFieldValidate,
   valueClassName,
   trailingBadge,
-  className,
 }: {
   label: string;
   value: string;
@@ -103,11 +102,6 @@ function EditableField({
       displayed value only (never shown while editing) — e.g. Weight's
       "Notify crematory" badge. */
   trailingBadge?: ReactNode;
-  /** Notify Crematory panel expansion (2026-09). Extra class on this
-      field's own outer wrapper — e.g. Weight's grid-column span when the
-      "Notify crematory" badge needs more room — without inserting an
-      extra non-semantic wrapper div around the field. */
-  className?: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -235,7 +229,7 @@ function EditableField({
   }
 
   return (
-    <div className={className}>
+    <div>
       <div className={styles.fieldLabel}>{label}</div>
       {isEditing ? (
         <>
@@ -614,7 +608,6 @@ export function CaseInformationCard({
           onSave={(v) => onSaveWeight(v)}
           valueClassName={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}
           trailingBadge={weightOver200 ? <span className={styles.notifyBadge}>Notify crematory</span> : null}
-          className={weightOver200 ? styles.weightNotifyExpanded : undefined}
         />
       </div>
 

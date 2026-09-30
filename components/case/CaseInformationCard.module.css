@@ -183,6 +183,25 @@
   color: var(--color-danger-text);
 }
 
+/* Notify Crematory warning layout correction (2026-09): a prior attempt
+   (since reverted) tried to fix the badge feeling cramped by making
+   Weight's whole grid cell span 2 tracks — the wrong layer entirely, since
+   Weight itself was never actually short on room (its value, e.g.
+   "242 lb", is only a few characters). The real cause: .editableValue
+   (the value button) is width: 100% of .editableValueRow's flex box, so
+   its flex-basis is effectively the *entire* row — forcing .notifyBadge,
+   a sibling flex item with default flex-shrink: 1 and no white-space
+   override, to shrink below its own natural one-line content width and
+   wrap "Notify crematory" onto two cramped lines inside the pill. Fixing
+   it here, on the badge itself, is the correct layer: flex-shrink: 0
+   stops the flex algorithm from ever taking room away from the badge
+   (the value button absorbs any squeeze instead, exactly as the button
+   already can via ordinary text wrapping if truly starved — never
+   observed in practice since the badge's natural width comfortably fits
+   Weight's existing single 200-260px grid track), and white-space: nowrap
+   guarantees the badge is measured at — and always rendered at — its
+   full one-line content width, never wrapping regardless of available
+   space. Weight remains a completely normal single-grid-track field. */
 .notifyBadge {
   margin-left: var(--space-3);
   font-size: var(--font-size-10-5);
@@ -191,34 +210,8 @@
   border-radius: var(--radius-xl);
   background: var(--color-danger-bg);
   color: var(--color-danger-text);
-}
-
-/* Notify Crematory panel expansion (2026-09): Weight shares the same
-   auto-fill/minmax(200px, 260px) grid track as DOB/DOD/Time of Death/
-   Location, which is enough room for the Weight value alone but cramped
-   once the "Notify crematory" badge also has to fit in the same row (see
-   .notifyBadge above) — hence "too narrow/cramped". Spanning 2 tracks
-   gives the value + badge roughly double the width without touching the
-   other fields' own column width, and without moving Weight out of this
-   row — grid auto-placement simply wraps whichever sibling fields don't
-   fit onto the next row, so this never forces horizontal overflow.
-   Applied only while the badge is actually showing (weightOver200) — the
-   common case (no badge) keeps Weight at its normal single-column width,
-   matching every other field in this row.
-   The span is reverted below 860px (mirroring the same breakpoint
-   app/(portal)/cases/[caseId]/page.module.css already uses for its own
-   side-by-side-to-stacked collapse) — a span-2 requirement at typical
-   phone widths (~375-414px) would exceed 2 × 200px-minimum tracks and
-   risk the grid container overflowing; below that width Weight simply
-   falls back to normal single-column placement like every other field. */
-.weightNotifyExpanded {
-  grid-column: span 2;
-}
-
-@media (max-width: 860px) {
-  .weightNotifyExpanded {
-    grid-column: span 1;
-  }
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .paymentSuccess {
