@@ -1302,3 +1302,90 @@ describe('CaseInformationCard — Certifier Information (2026-09, ADR-041)', () 
     expect(onSaveCertifierFax).toHaveBeenCalledWith('555-0188');
   });
 });
+
+describe('CaseInformationCard — Task #18 (2026-09, section heading cleanup)', () => {
+  it('1. "Next of kin / primary contact" remains rendered', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
+  });
+
+  it('2. "Certifier information" remains rendered', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Certifier information')).toBeInTheDocument();
+  });
+
+  it('3. both section headings use the dedicated .sectionHeading style, not the plain .fieldLabel style individual field labels use', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    const nokHeading = screen.getByText('Next of kin / primary contact');
+    const certifierHeading = screen.getByText('Certifier information');
+    expect(nokHeading.className).toMatch(/sectionHeading/);
+    expect(certifierHeading.className).toMatch(/sectionHeading/);
+    expect(nokHeading.className).not.toMatch(/fieldLabel/);
+    expect(certifierHeading.className).not.toMatch(/fieldLabel/);
+    // A real field label (e.g. "NOK phone") stays on its own distinct class,
+    // proving the two headings never merely reuse field-label styling.
+    expect(screen.getByText('NOK phone').className).toMatch(/fieldLabel/);
+  });
+
+  it('4. both section headings are centered (via .sectionHeading\'s text-align: center rule) — proven by both sharing the identical centering class, not a per-heading inline style', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    const nokHeading = screen.getByText('Next of kin / primary contact');
+    const certifierHeading = screen.getByText('Certifier information');
+    const nokHeadingClass = nokHeading.className.match(/\S*sectionHeading\S*/)?.[0];
+    const certifierHeadingClass = certifierHeading.className.match(/\S*sectionHeading\S*/)?.[0];
+    expect(nokHeadingClass).toBeTruthy();
+    expect(nokHeadingClass).toBe(certifierHeadingClass);
+  });
+
+  it('5. Certifier helper text remains present, using the dedicated centered .sectionHelperText style', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    const helperText = screen.getByText('Medical certifier responsible for signing the death certificate.');
+    expect(helperText).toBeInTheDocument();
+    expect(helperText.className).toMatch(/sectionHelperText/);
+  });
+
+  it('6. NOK fields remain unchanged: all four still render under the (now-restyled) heading', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Next of kin')).toBeInTheDocument();
+    expect(screen.getByText('NOK phone')).toBeInTheDocument();
+    expect(screen.getByText('NOK email')).toBeInTheDocument();
+    expect(screen.getByText('NOK relationship')).toBeInTheDocument();
+  });
+
+  it('7. Certifier fields remain unchanged: all four still render under the (now-restyled) heading', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Certifier name')).toBeInTheDocument();
+    expect(screen.getByText('Certifier phone')).toBeInTheDocument();
+    expect(screen.getByText('Certifier license #')).toBeInTheDocument();
+    expect(screen.getByText('Certifier fax')).toBeInTheDocument();
+  });
+
+  it('8. Manors Owner remains hidden (showOwner=false) — heading restyling made no change to Task #17 visibility', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Owner')).not.toBeInTheDocument();
+  });
+
+  it('9. the Tag #/Payment/Return method/Cremated Remains consolidated row remains intact for Manors', () => {
+    render(
+      <CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />,
+    );
+    const row = screen.getByText('Tag #').parentElement!.parentElement!;
+    expect(Array.from(row.children).map((child) => child.textContent)).toEqual([
+      expect.stringContaining('Tag #'),
+      expect.stringContaining('Payment'),
+      expect.stringContaining('Return method'),
+      expect.stringContaining('Cremated Remains'),
+    ]);
+  });
+
+  it('10. existing responsive .grid structure is untouched: section headings are separate siblings, never rendered as extra children inside a field .grid', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    const nokHeading = screen.getByText('Next of kin / primary contact');
+    const nokFieldRow = screen.getByText('Next of kin').parentElement!.parentElement!;
+    // The heading is not a child of the NOK fields' own grid row — it is a
+    // preceding sibling, so the grid's own column/child count is unaffected.
+    expect(nokFieldRow.className).toMatch(/grid/);
+    expect(Array.from(nokFieldRow.children)).not.toContain(nokHeading);
+    expect(nokHeading.className).not.toMatch(/grid/);
+  });
+});
