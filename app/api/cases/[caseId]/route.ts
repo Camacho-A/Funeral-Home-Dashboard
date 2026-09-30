@@ -23,6 +23,7 @@ import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/picku
 import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
+import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Solis
@@ -282,9 +283,44 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
 
     const mergedData = applyCaseUpdateToWixData(existingItem.data, patch);
     const updated = await updateWixDataItem<WixCaseItem>('cases', existingItem.id, mergedData);
-    const result = mapWixCaseItem(updated.data);
+    let result = mapWixCaseItem(updated.data);
     if (!result) {
       return NextResponse.json({ case: null, error: 'Failed to update case.' }, { status: 500 });
+    }
+
+    // Task #6 (2026-09, checklist completion → workflow reconciliation).
+    // A checklistState-only patch (the normal checkbox-toggle path) never
+    // itself carries a rawStage change, so it never triggered
+    // reconcileCaseWorkflow — meaning a case whose current stage's
+    // checklist just became fully complete (e.g. the last item in a
+    // stage) never advanced past it; it sat there showing "Review case"
+    // (domain/cases/viewModel.ts's own fallback nextActionLabel, not a
+    // real stage) until something ELSE happened to independently trigger
+    // reconciliation. Reusing the exact existing
+    // reconcileCaseWorkflow/computeFirstIncompleteRawStage logic already
+    // used by the CaseFormLink-linking and payment-workflow paths —
+    // never a second stage-calculation implementation — scoped
+    // specifically to checklistState patches so every other Case edit
+    // (Weight, NOK, Owner, ...) is completely unaffected.
+    //
+    // Runs AFTER the checklist patch above has actually persisted, so it
+    // evaluates the new checklist state — and, critically, its result is
+    // folded into `result` (the object this response returns) before
+    // NextResponse.json below, so the client's optimistic-update cache
+    // write (hooks/useCaseMutations.ts) receives the already-advanced
+    // rawStage in this same response, rather than a stale value that
+    // would only self-correct on some later, unrelated refetch.
+    // Best-effort: a reconciliation failure never fails the checklist
+    // update that already succeeded.
+    if (patch.checklistState) {
+      try {
+        const reconcileResult = await reconcileCaseWorkflow(organizationId, caseId, 'wix');
+        if (reconcileResult.changed) {
+          result = { ...result, rawStage: reconcileResult.rawStage };
+        }
+      } catch (error) {
+        console.error('Failed to reconcile workflow after checklist update:', error instanceof Error ? error.message : error);
+      }
     }
 
     // Phase 24: best-effort — never fails the actual update. A stage

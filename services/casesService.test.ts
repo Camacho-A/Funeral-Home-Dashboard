@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { casesService, matchesSearch } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
+import type { Case } from '../types/case';
 import { DEFAULT_ORGANIZATION_ID, caseFixtures, staffFixtures } from './__mocks__/fixtures';
 import { SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
+import { buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
 
 const organization: OrganizationContext = { organizationId: DEFAULT_ORGANIZATION_ID };
 const template = standardCremationWorkflowTemplateFixture;
@@ -849,5 +851,143 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
     const updated = await casesService.update(organization, created.id, { placeOfDeath: 'HOSPITAL' });
     expect(updated.placeOfDeath).toBe('HOSPITAL');
     expect(updated.dateOfDeath).toBe(farFutureDate);
+  });
+});
+
+/**
+ * Task #6 (2026-09, checklist completion → workflow reconciliation, mock
+ * mode). Mirrors app/api/cases/[caseId]/route.test.ts's identical "Task #6"
+ * suite exactly, so DATA_ADAPTER=mock never diverges from DATA_ADAPTER=wix
+ * — see that file's own comment for the full root-cause explanation.
+ * Stage 3's own 3-item checklist (EDRS submitted & sent to doctor / Cause
+ * of death entered / Hardsave for state approval if not an online doctor)
+ * has its first two items default-done (resolveChecklist.ts's own
+ * `defaultDone` rule) — so completing raw stage 3 only ever requires the
+ * ONE explicit checklistState entry for the last item (local index 2).
+ * Pinned to versions[0] (v1) for the same reason
+ * workflowReconciliationService.test.ts pins it — the dcContact-era
+ * 11-item First Call & Payment shape the fieldValues below assume.
+ */
+describe('casesService.update — Task #6 (2026-09, checklist completion triggers workflow reconciliation, mock mode)', () => {
+  const RECONCILIATION_VERSION = standardCremationWorkflowTemplateFixture.versions[0];
+  const pushedCaseIds: string[] = [];
+
+  afterEach(() => {
+    for (const id of pushedCaseIds.splice(0)) {
+      const index = caseFixtures.findIndex((c) => c.id === id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+
+  /** A case sitting at raw stage 3 with every earlier stage (First Call &
+      Payment, Jotform Application) already satisfied via plain
+      checklistState/fieldValues — no CaseFormLink fixture needed, since
+      stage 2's own single item is satisfied directly via checklistState[0]
+      instead of the arrangementFormLinked overlay. Only stage 3's own
+      checklist (`stage3ChecklistState`) varies per test. */
+  function seedStage3Case(stage3ChecklistState: Record<number, boolean>) {
+    const id = `task6-mock-${Math.random().toString(36).slice(2)}`;
+    const case_: Case = {
+      id,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-901',
+      decedentName: 'Task 6 Test Decedent',
+      dateOfBirth: '01/01/1950',
+      dateOfDeath: '01/01/2026',
+      timeOfDeath: '10:00',
+      placeOfDeath: 'Test Hospital',
+      weight: '150 lb',
+      rawStage: 3,
+      assignedStaffId: null,
+      nextOfKinName: 'Test NOK',
+      nextOfKinPhone: '555-0100',
+      nextOfKinEmail: null,
+      nextOfKinRelationship: null,
+      nextOfKinRelationshipOther: null,
+      certifierName: null,
+      certifierPhone: null,
+      certifierLicenseNumber: null,
+      certifierFax: null,
+      tagNumber: null,
+      paymentStatus: 'awaiting_payment',
+      pickupStatus: 'awaiting_pickup',
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+      pickupNote: null,
+      returnMethod: 'undecided',
+      shippingCarrier: null,
+      shippingTrackingNumber: null,
+      shippingDateShipped: null,
+      shippingDeliveryStatus: null,
+      shippingDeliveredAt: null,
+      isVeteran: false,
+      vaStepsState: {},
+      vaPublishChoice: null,
+      vaNotificationResponsibility: null,
+      checklistState: { 0: true, 8: true, 9: true, 10: true, ...stage3ChecklistState },
+      fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
+      daysWaitingInStage: 0,
+      isStalled: false,
+      stalledReason: null,
+      createdBy: null,
+      intakeOwnerId: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      isDeleted: false,
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: RECONCILIATION_VERSION.version,
+      caseType: 'cremation',
+      workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, RECONCILIATION_VERSION),
+    };
+    caseFixtures.push(case_);
+    pushedCaseIds.push(id);
+    return case_;
+  }
+
+  it('A. Stage 3 with Hardsave (local index 2) still incomplete remains at rawStage 3, even though the update itself carries a checklistState patch', async () => {
+    const case_ = seedStage3Case({});
+    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 8: true, 9: true, 10: true } });
+    expect(updated.rawStage).toBe(3);
+  });
+
+  it('B. Stage 3 with Hardsave checked and every other Stage 3 requirement already satisfied (by default) advances to Stage 4', async () => {
+    const case_ = seedStage3Case({ 2: true });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } });
+    expect(updated.rawStage).toBe(4);
+  });
+
+  it('C. Partial checklist completion (only an already-default-done item re-affirmed, Hardsave itself still false) does not advance', async () => {
+    const case_ = seedStage3Case({});
+    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 8: true, 9: true, 10: true } });
+    expect(updated.rawStage).toBe(3);
+  });
+
+  it('D. the checklistState patch is what triggers reconciliation — Stage 4 is the observable proof (no rawStage field appears anywhere in the request)', async () => {
+    const case_ = seedStage3Case({ 2: true });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } });
+    expect(updated.rawStage).toBe(4);
+  });
+
+  it('E. an unrelated Case update WITHOUT checklistState does not trigger reconciliation, even when every prerequisite is already satisfied (would otherwise advance to Stage 4)', async () => {
+    const case_ = seedStage3Case({ 2: true });
+    const updated = await casesService.update(organization, case_.id, { decedentName: 'RENAMED DECEDENT' });
+    expect(updated.decedentName).toBe('RENAMED DECEDENT');
+    expect(updated.rawStage).toBe(3);
+  });
+
+  it('F. mock mode produces the exact same Stage 3 -> Stage 4 outcome as Wix mode (see app/api/cases/[caseId]/route.test.ts\'s identical test B)', async () => {
+    const case_ = seedStage3Case({ 2: true });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } });
+    expect(updated.rawStage).toBe(4);
+  });
+
+  it('G. repeating the same completed checklist update is safe/idempotent — a second, identical update never double-advances past Stage 4', async () => {
+    const case_ = seedStage3Case({ 2: true });
+    const patch = { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } };
+
+    const first = await casesService.update(organization, case_.id, patch);
+    expect(first.rawStage).toBe(4);
+
+    const second = await casesService.update(organization, case_.id, patch);
+    expect(second.rawStage).toBe(4);
   });
 });

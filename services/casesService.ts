@@ -15,6 +15,7 @@ import { assertValidPickupReleasePatch } from '../domain/cases/pickupRelease';
 import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
 import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
+import { reconcileCaseWorkflow } from './workflowReconciliationService';
 
 export type CaseFilters = {
   searchQuery?: string;
@@ -404,7 +405,24 @@ export async function update(
   }
   const updated = { ...caseFixtures[index], ...normalizedPatch };
   caseFixtures[index] = updated;
-  return updated;
+
+  // Task #6 (2026-09, checklist completion → workflow reconciliation).
+  // Mirrors the Wix-mode PATCH route's identical fix exactly, so
+  // DATA_ADAPTER=mock never diverges from DATA_ADAPTER=wix — see that
+  // route's own comment for the full "why." Scoped to the original
+  // (pre-normalization) patch's checklistState key, same as the route.
+  let result: Case = updated;
+  if (patch.checklistState) {
+    try {
+      const reconcileResult = await reconcileCaseWorkflow(context.organizationId, caseId, 'mock');
+      if (reconcileResult.changed) {
+        result = { ...result, rawStage: reconcileResult.rawStage };
+      }
+    } catch (error) {
+      console.error('Failed to reconcile workflow after checklist update:', error instanceof Error ? error.message : error);
+    }
+  }
+  return result;
 }
 
 export const casesService = { list, get, create, update };

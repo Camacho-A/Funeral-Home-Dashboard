@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { standardCremationWorkflowTemplateFixture } from '@/services/__mocks__/workflowTemplates';
+import { buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -1341,5 +1343,147 @@ describe('PATCH /api/cases/[caseId] — conditional shipping/tracking (2026-09)'
     await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { shippingDeliveryStatus: 'delivered' } });
     const activityInsertCalls = mockInsertWixDataItem.mock.calls.filter(([collectionId]) => collectionId === 'activityEvents');
     expect(activityInsertCalls.some(([, data]) => (data as Record<string, unknown>).description === 'Shipment marked delivered.')).toBe(true);
+  });
+});
+
+/**
+ * Task #6 (2026-09, checklist completion → workflow reconciliation). Root
+ * cause: a checklistState-only patch (the normal checkbox-toggle path)
+ * never itself carried a rawStage change, so it never triggered
+ * reconcileCaseWorkflow — a case whose current stage's checklist just
+ * became fully complete (e.g. the last item in a stage, like the real
+ * "Hardsave for state approval if not an online doctor" item at raw stage
+ * 3) never advanced past it; it sat there showing "Review case"
+ * (domain/cases/viewModel.ts's own fallback nextActionLabel, not a real
+ * stage) forever.
+ *
+ * Stage 3's own 3-item checklist (EDRS submitted & sent to doctor / Cause
+ * of death entered / Hardsave...) has its first two items default-done
+ * (domain/workflow/resolveChecklist.ts's own `defaultDone` rule: every
+ * item but the last defaults to done) — so completing raw stage 3 only
+ * ever requires the ONE explicit checklistState entry for the last item
+ * (local index 2). isArrangementFormLinked's own Wix reads (caseFormLinks)
+ * are deliberately left unmocked here (the catch-all "unknown collection
+ * -> empty dataItems" branch in mockWixQueries already covers them) —
+ * stage 2's own single item is instead satisfied directly via
+ * checklistState[0], avoiding the need to also mock case-form-link/
+ * external-form-config collections for what this suite is actually
+ * testing (the new reconciliation wiring, not reconcileCaseWorkflow's own
+ * already-tested internals).
+ */
+describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion triggers workflow reconciliation)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  const RECONCILIATION_TEMPLATE_VERSION = standardCremationWorkflowTemplateFixture.versions[0];
+  const RECONCILIATION_SNAPSHOT = buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, RECONCILIATION_TEMPLATE_VERSION);
+
+  /** Mirrors the "conditional shipping/tracking" describe block's own
+      mockAdminQueries exactly (that one is scoped to its own describe
+      block, not reusable here) — full admin role + an updateWixDataItem
+      echo of whatever merged data it receives. */
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  /** A case sitting at raw stage 3 with every earlier stage (First Call &
+      Payment, Jotform Application) already satisfied — only stage 3's own
+      checklist (passed in via `stage3ChecklistState`) varies per test. */
+  function stage3CaseData(stage3ChecklistState: Record<number, boolean>): Record<string, unknown> {
+    return {
+      ...EXISTING_WIX_CASE_DATA,
+      currentStage: 3,
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: RECONCILIATION_TEMPLATE_VERSION.version,
+      workflowSnapshot: RECONCILIATION_SNAPSHOT,
+      fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
+      checklistState: { 0: true, 8: true, 9: true, 10: true, ...stage3ChecklistState },
+    };
+  }
+
+  it('A. Stage 3 with Hardsave (local index 2) still incomplete remains at rawStage 3, even though the request itself carries a checklistState patch', async () => {
+    mockAdminQueries(stage3CaseData({}));
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { 0: true, 8: true, 9: true, 10: true } },
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.rawStage).toBe(3);
+  });
+
+  it('B. Stage 3 with Hardsave checked and every other Stage 3 requirement already satisfied (by default) advances to Stage 4 — and the SAME response already reflects it', async () => {
+    mockAdminQueries(stage3CaseData({ 2: true }));
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } },
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.rawStage).toBe(4);
+  });
+
+  it('C. Partial checklist completion (only an already-default-done item re-affirmed, Hardsave itself still false) does not advance', async () => {
+    mockAdminQueries(stage3CaseData({}));
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { 0: true, 8: true, 9: true, 10: true } },
+    });
+    const body = await response.json();
+    expect(body.case.rawStage).toBe(3);
+  });
+
+  it('D. the checklistState patch is what triggers reconciliation — Stage 4 is the observable proof (no rawStage field appears anywhere in the request body)', async () => {
+    mockAdminQueries(stage3CaseData({ 2: true }));
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } },
+    });
+    const body = await response.json();
+    expect(body.case.rawStage).toBe(4);
+  });
+
+  it('E. an unrelated Case update WITHOUT checklistState does not trigger reconciliation, even when every prerequisite is already satisfied (would otherwise advance to Stage 4)', async () => {
+    mockAdminQueries(stage3CaseData({ 2: true }));
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { decedentName: 'RENAMED DECEDENT' },
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.case.decedentName).toBe('RENAMED DECEDENT');
+    // Reconciliation never ran — the response still shows the stale
+    // rawStage 3, exactly matching what updateWixDataItem's own echo
+    // returned (no separate reconciliation write occurred).
+    expect(body.case.rawStage).toBe(3);
+  });
+
+  it('G. repeating the same completed checklist update is safe/idempotent — the second, identical request never double-advances past Stage 4', async () => {
+    const patchBody = {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } },
+    };
+
+    // First request: Stage 3 -> Stage 4, mirroring test B exactly.
+    mockAdminQueries(stage3CaseData({ 2: true }));
+    const first = await patchRequest('1042', patchBody);
+    const firstBody = await first.json();
+    expect(firstBody.case.rawStage).toBe(4);
+
+    // Second, identical request: the backend now genuinely reports
+    // currentStage 4 (as it would for real, having persisted the first
+    // request) — re-running the exact same checklistState patch must not
+    // advance any further, and must not error.
+    mockAdminQueries({ ...stage3CaseData({ 2: true }), currentStage: 4 });
+    const second = await patchRequest('1042', patchBody);
+    const secondBody = await second.json();
+    expect(second.status).toBe(200);
+    expect(secondBody.case.rawStage).toBe(4);
   });
 });
