@@ -1472,3 +1472,74 @@ describe('CaseInformationCard — Notify Crematory warning layout correction (20
     expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
   });
 });
+
+describe('CaseInformationCard — Notify Crematory badge spacing (2026-09)', () => {
+  it('1. Weight remains one normal grid track (no wrapper-level width class, same as every other field in its row)', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Weight').parentElement!.className).toBe('');
+  });
+
+  it('2. Notify crematory remains rendered inside the Weight value row', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    const badge = screen.getByText('Notify crematory');
+    const valueRow = screen.getByRole('button', { name: /lb/ }).parentElement!;
+    expect(Array.from(valueRow.children)).toContain(badge);
+  });
+
+  it('3-4. the badge remains one-line and non-shrinking (flex-shrink: 0 + white-space: nowrap, unchanged from the prior correction)', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Notify crematory').className).toMatch(/notifyBadge/);
+  });
+
+  it("5. Weight's value button uses the compact trailing-badge layout (width: auto via .editableValueCompact) only while the badge is showing", () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '242 lb' }).className).not.toMatch(/editableValueCompact/);
+
+    rerender(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '242 lb' }).className).toMatch(/editableValueCompact/);
+  });
+
+  it('6. no large flexible spacer remains between the Weight value and the badge: only Weight\'s own value button (the one with a trailing badge) gets the compact/shrink-to-content treatment — every other field\'s value button keeps its full-width (width: 100%) click target untouched', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    const weightButton = screen.getByRole('button', { name: /lb/ });
+    const dobButton = screen.getByRole('button', { name: '03/14/1951' });
+    expect(weightButton.className).toMatch(/editableValueCompact/);
+    expect(dobButton.className).not.toMatch(/editableValueCompact/);
+  });
+
+  it('7. Weight remains editable with the compact layout in place', () => {
+    const onSaveWeight = vi.fn();
+    render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} onSaveWeight={onSaveWeight} />);
+    fireEvent.click(screen.getByRole('button', { name: '242 lb' }));
+    const input = screen.getByDisplayValue('242 lb');
+    fireEvent.change(input, { target: { value: '175 lb' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSaveWeight).toHaveBeenCalledWith('175 lb');
+  });
+
+  it('8. weightOver200 remains the only trigger for both the badge and the compact layout', () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Notify crematory')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '242 lb' }).className).not.toMatch(/editableValueCompact/);
+
+    rerender(<CaseInformationCard {...baseProps} weight="242 lb" weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Notify crematory')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '242 lb' }).className).toMatch(/editableValueCompact/);
+  });
+
+  it('9. other EditableFields (Date of birth, Date of death, Time of death, Location) remain unchanged — no trailing badge, no compact class, normal width: 100% click target', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '03/14/1951' }).className).not.toMatch(/editableValueCompact/);
+    expect(screen.getByRole('button', { name: '07/09/2026' }).className).not.toMatch(/editableValueCompact/);
+    expect(screen.getByText('ST. MARY\'S HOSPITAL')).toBeInTheDocument();
+  });
+
+  it('10. no Case Information regressions: NOK/Certifier headings, consolidated operational row, and Owner visibility remain intact', () => {
+    render(<CaseInformationCard {...baseProps} weightOver200 showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
+    expect(screen.getByText('Certifier information')).toBeInTheDocument();
+    expect(screen.queryByText('Owner')).not.toBeInTheDocument();
+    expect(screen.getByText('Tag #')).toBeInTheDocument();
+    expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
+  });
+});

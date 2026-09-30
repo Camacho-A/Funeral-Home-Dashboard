@@ -251,7 +251,11 @@ function EditableField({
         </>
       ) : (
         <div className={styles.editableValueRow}>
-          <button type="button" className={`${styles.editableValue} ${valueClassName ?? ''}`} onClick={startEditing}>
+          <button
+            type="button"
+            className={`${styles.editableValue} ${trailingBadge ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
+            onClick={startEditing}
+          >
             {displayValue || '—'}
           </button>
           {trailingBadge}

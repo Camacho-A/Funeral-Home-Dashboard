@@ -117,6 +117,29 @@
   border-bottom-color: var(--color-border);
 }
 
+/* Notify Crematory badge spacing fix (2026-09): .editableValue's own
+   width: 100% is correct for every plain field (the whole grid cell
+   becomes a comfortable click target) but is exactly wrong once a
+   trailing badge is present — width: 100% sets the button's flex-basis
+   to the *entire* row, so even though flex-shrink then hands the badge
+   (flex-shrink: 0) its full needed width, the button's own box still
+   stretches to fill everything up to the badge. Its text stays
+   left-aligned inside that oversized, invisible (no background/border)
+   box, which is what actually produced the large visual gap — the
+   badge's own var(--space-3) margin was never the problem, only ever a
+   small addition on top of the button's own leftover width. Overriding
+   to width: auto here — applied only via EditableField's own
+   trailingBadge-present branch (see the component), never globally —
+   shrinks the button to its own text's width, so the badge (still
+   flex-shrink: 0 + white-space: nowrap, unchanged) lands immediately
+   after the visible value with only its own margin-left as the real,
+   intended gap. Every field without a trailing badge (the overwhelming
+   majority) is completely unaffected — still width: 100%, still the
+   same full-cell click target as before. */
+.editableValueCompact {
+  width: auto;
+}
+
 /* Case field editing (2026-09): lets a trailing badge (e.g. Weight's
    "Notify crematory") sit next to the click-to-edit value without
    affecting the button's own click target. */
