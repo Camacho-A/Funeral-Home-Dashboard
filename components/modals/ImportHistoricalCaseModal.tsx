@@ -60,14 +60,41 @@ export function ImportHistoricalCaseModal({ open, onClose }: { open: boolean; on
     await preview.mutateAsync({ formConfigId, externalSubmissionId: submissionId.trim() });
   }
 
+  /**
+   * Task #20 (2026-09, close import window after success). A confirmed
+   * successful creation (a genuinely new case, `!alreadyImported`) closes
+   * the window automatically — tied to the mutation's own resolution, not
+   * a timer — reusing handleClose()'s existing reset()+onClose() so the
+   * next open starts from the same clean state the manual "Close" button
+   * already produced. `create.mutateAsync` rejects on failure, so this
+   * line is only ever reached on success; failures fall through to the
+   * catch below, where the window is deliberately left open (create.isError
+   * renders the existing error message, and the user's typed Next of
+   * Kin/submission ID stay exactly as entered for a retry).
+   *
+   * The duplicate-protection "already imported" outcome is NOT an error —
+   * the mutation resolves normally — but it also created nothing new, so
+   * it keeps the prior behavior of showing the informational message and
+   * waiting for a manual Close, rather than instantly closing over text
+   * the user hasn't had a chance to read.
+   */
   async function handleCreate() {
-    const outcome = await create.mutateAsync({
-      formConfigId,
-      externalSubmissionId: submissionId.trim(),
-      nextOfKinName: nextOfKinName.trim(),
-      nextOfKinPhone: nextOfKinPhone.trim(),
-    });
-    setResult(outcome);
+    try {
+      const outcome = await create.mutateAsync({
+        formConfigId,
+        externalSubmissionId: submissionId.trim(),
+        nextOfKinName: nextOfKinName.trim(),
+        nextOfKinPhone: nextOfKinPhone.trim(),
+      });
+      if (outcome.alreadyImported) {
+        setResult(outcome);
+        return;
+      }
+      handleClose();
+    } catch {
+      // create.isError (already reflected by the mutation object) renders
+      // the existing error message below — nothing further to do here.
+    }
   }
 
   const previewData = preview.data;

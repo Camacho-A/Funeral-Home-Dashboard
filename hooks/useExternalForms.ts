@@ -150,9 +150,22 @@ export function usePreviewHistoricalCase(organizationId: string) {
   });
 }
 
+/** Task #20 (2026-09, close import window after success): this mutation
+    previously had no onSuccess at all — a genuinely new case was created
+    server-side, but the Cases list query was never invalidated, so it
+    wouldn't appear without a manual browser refresh. Only invalidates
+    when a new case was actually created (`!alreadyImported`) — the
+    duplicate-protection no-op path changes nothing, so there's nothing to
+    refetch. */
 export function useCreateHistoricalCase(organizationId: string) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: { formConfigId: string; externalSubmissionId: string; nextOfKinName: string; nextOfKinPhone: string }) =>
       createHistoricalCase(organizationId, params.formConfigId, params.externalSubmissionId, params.nextOfKinName, params.nextOfKinPhone),
+    onSuccess: (outcome) => {
+      if (!outcome.alreadyImported) {
+        queryClient.invalidateQueries({ queryKey: ['cases', organizationId] });
+      }
+    },
   });
 }
