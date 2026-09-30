@@ -10,7 +10,31 @@
   color: var(--color-text-secondary);
 }
 
+/* Task #14 Phase B (2026-09) — the audit confirmed inactive items had no
+   hover treatment at all. Excludes the active item so hovering it never
+   layers a second background under the active tint. Quieter than the
+   active state below (a flat neutral surface, not brand-colored). */
+.item:hover:not(.itemActive) {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+/* Task #14 Phase B — kept the existing restrained tint fill (already a
+   light surface treatment, not a loud solid fill) and added a slim
+   brand-colored left accent via an inset box-shadow, so the active page
+   reads as clearly and immediately identifiable, distinct from hover,
+   without changing the item's box size/padding (an inset shadow needs no
+   compensating padding, unlike a real border) and without inventing a new
+   nav design. The shadow is naturally clipped to this element's own
+   border-radius, so it integrates with the existing rounded-rect geometry
+   automatically. */
 .itemActive {
   background: var(--color-brand-tint);
   color: var(--color-brand-hover);
+  box-shadow: inset 3px 0 0 var(--color-brand);
 }

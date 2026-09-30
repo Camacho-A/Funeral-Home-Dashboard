@@ -1,3 +1,9 @@
+/* Task #14 Phase B (2026-09) — the audit confirmed the TopBar had no
+   surface/border of its own and visually floated on the page background.
+   A restrained card-white surface + a single hairline bottom border is
+   sufficient separation on its own; no shadow was added (default choice
+   per the phase's own instruction — a shadow wasn't demonstrated to be
+   necessary once the border was in place). Height/padding/gap unchanged. */
 .topBar {
   height: 72px;
   flex-shrink: 0;
@@ -5,6 +11,22 @@
   align-items: center;
   padding: 0 var(--space-16);
   gap: var(--space-8);
+  background: var(--color-surface-card);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Task #14 Phase B — a subtle divider between the navigation/module
+   links above and the user-identity/session cluster (notifications,
+   name, avatar, sign out), so the two groups read as visually distinct
+   without any new icons or a toolbar redesign. Purely a grouping
+   wrapper — no change to which actions appear, their routes, or their
+   handlers. */
+.identityGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding-left: var(--space-8);
+  border-left: 1px solid var(--color-border);
 }
 
 .spacer {

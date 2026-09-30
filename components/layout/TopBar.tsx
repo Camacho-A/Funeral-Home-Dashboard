@@ -127,14 +127,16 @@ export function TopBar({
           Calendar
         </a>
       )}
-      <NotificationBell />
-      <span className={styles.employeeName}>{session.displayName}</span>
-      <UserAvatar initials={initialsFromName(session.displayName)} />
-      <form action={logoutAction}>
-        <button type="submit" className={styles.signOutButton}>
-          Sign out
-        </button>
-      </form>
+      <div className={styles.identityGroup}>
+        <NotificationBell />
+        <span className={styles.employeeName}>{session.displayName}</span>
+        <UserAvatar initials={initialsFromName(session.displayName)} />
+        <form action={logoutAction}>
+          <button type="submit" className={styles.signOutButton}>
+            Sign out
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
