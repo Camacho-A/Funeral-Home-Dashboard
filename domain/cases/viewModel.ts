@@ -99,7 +99,18 @@ function resolveDecedentInitials(decedentName: string): string {
   return decedentName.trim() === '' ? '?' : initialsFromName(decedentName);
 }
 
-const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail'];
+/**
+ * Task #5 correction (2026-09, NOK name/phone display cleanup). Originally
+ * this presented all three of Name/Phone/Email as a structured group (the
+ * Task #7 UI consistency follow-up's own upgrade) — but the Next of Kin /
+ * Primary Contact checklist area is meant to show the NAME only; Phone and
+ * Email already live (and are already editable) in Case Information, and
+ * showing them a second time here — even split onto their own rows — was
+ * exactly the "phone number visible in this checklist section" complaint
+ * this whole fix exists to resolve, just one layer more subtle than the
+ * original combined-text version. Only 'nextOfKinName' is a required
+ * field here now; Phone/Email are deliberately never included. */
+const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName'];
 
 /**
  * Family Contact structured Workflow presentation (2026-09, Task #7 UI
@@ -114,12 +125,12 @@ const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName', 'nextOfKinPhone', 
  * `locked` are left completely untouched here, still governed by
  * whatever resolveChecklist already computed from the historical
  * fieldValues rule. Only the EDITING SURFACE changes — reading/writing
- * the three already-authoritative structured Case fields Case
- * Information already uses, never the joined fieldValues text (which
- * stays exactly as-is, purely historical, in every branch, current or
- * past stage — these are live Case contact fields, not part of the
- * frozen stage snapshot, mirroring the same reasoning as
- * legacyCertifierPresentation.ts's past-stage exception).
+ * the already-authoritative nextOfKinName Case field Case Information
+ * already uses, never the joined fieldValues text (which stays exactly
+ * as-is, purely historical, in every branch, current or past stage —
+ * these are live Case contact fields, not part of the frozen stage
+ * snapshot, mirroring the same reasoning as legacyCertifierPresentation
+ * .ts's past-stage exception).
  *
  * Identifies the item generically — by finding whichever checklist index
  * `nextOfKinName` maps to via the case's own workflowSnapshot.intake
@@ -127,12 +138,35 @@ const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName', 'nextOfKinPhone', 
  * Death/Certifier already use) — never a literal label match, so this
  * works for any organization/template shaped this way, not just
  * managed-cremations, and needs no template/schema change at all.
- */
+ *
+ * Task #5 (2026-09, NOK name/phone display cleanup). The checklistIndex
+ * lookup above doesn't resolve for every real case — reported live: a case
+ * whose checklist still showed the old joined "NAME — PHONE" text (the
+ * phone number visible right beside the Next of Kin name) even though
+ * Case Information's own separate "Next of kin"/"NOK phone" fields were
+ * already correct — i.e., the authoritative structured fields were fine,
+ * only this one stale checklist value display lagged behind. Rather than
+ * chase the exact template-shape reason the primary lookup misses it (a
+ * deeper, riskier change to shared lookup logic Weight/Time of Death/
+ * Certifier also depend on — out of scope for a presentation-only fix),
+ * this adds a second, independent detection: any still-hasField item
+ * whose fieldValue literally starts with this case's own live
+ * nextOfKinName followed by the exact " — " buildIntakeFieldValues joins
+ * with (domain/workflow/resolveIntake.ts) is unambiguously this same
+ * legacy combined value — matched against the real, current name on THIS
+ * case, not a generic pattern, so it can't misfire on an unrelated
+ * free-text item. Converted through the exact same, already-tested path
+ * as the primary case above: never touches fieldValues/persisted data,
+ * only the rendered view model. */
 function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: Case): ChecklistItemViewModel[] {
   if (!case_.workflowSnapshot) return items;
   const familyContactIndex = findChecklistIndexForCaseField(case_.workflowSnapshot.intake, 'nextOfKinName');
-  if (familyContactIndex === null) return items;
-  const idx = items.findIndex((item) => item.index === familyContactIndex && item.hasField);
+  let idx = familyContactIndex === null ? -1 : items.findIndex((item) => item.index === familyContactIndex && item.hasField);
+
+  if (idx === -1 && case_.nextOfKinName.trim() !== '') {
+    const legacyJoinedPrefix = `${case_.nextOfKinName} — `;
+    idx = items.findIndex((item) => item.hasField && item.fieldValue.startsWith(legacyJoinedPrefix));
+  }
   if (idx === -1) return items;
 
   const result = [...items];
@@ -144,8 +178,6 @@ function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: 
     requiredCaseFields: FAMILY_CONTACT_REQUIRED_CASE_FIELDS,
     requiredCaseFieldValues: {
       nextOfKinName: case_.nextOfKinName ?? '',
-      nextOfKinPhone: case_.nextOfKinPhone ?? '',
-      nextOfKinEmail: case_.nextOfKinEmail ?? '',
     },
   };
   return result;

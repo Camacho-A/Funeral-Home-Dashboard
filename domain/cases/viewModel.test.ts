@@ -551,35 +551,35 @@ describe('buildCaseViewModel — Family Contact structured Workflow presentation
     });
   }
 
-  it('1. the Family Contact grouped structured editor renders (requiredCaseFields present) when viewing the earlier stage', () => {
+  it('1. the Family Contact structured editor renders name-only (requiredCaseFields present) when viewing the earlier stage', () => {
     const case_ = v3CaseWithFamilyContactAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
-    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail']);
+    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName']);
     expect(vm.checklist[7].hasField).toBe(false);
     expect(vm.checklist[7].fieldValue).toBe('');
   });
 
-  it('2/3/4. Name, Phone, and Email are all present among requiredCaseFields', () => {
+  it('2/3/4. Task #5 correction (2026-09): ONLY nextOfKinName is present among requiredCaseFields — Phone and Email are deliberately never included here', () => {
     const case_ = v3CaseWithFamilyContactAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
-    expect(vm.checklist[7].requiredCaseFields).toContain('nextOfKinName');
-    expect(vm.checklist[7].requiredCaseFields).toContain('nextOfKinPhone');
-    expect(vm.checklist[7].requiredCaseFields).toContain('nextOfKinEmail');
+    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName']);
+    expect(vm.checklist[7].requiredCaseFields).not.toContain('nextOfKinPhone');
+    expect(vm.checklist[7].requiredCaseFields).not.toContain('nextOfKinEmail');
   });
 
-  it('5. structured inputs are initially blank when the structured Case fields are blank', () => {
+  it('5. the structured name input is initially blank when the structured Case field is blank', () => {
     const case_ = v3CaseWithFamilyContactAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
-    expect(vm.checklist[7].requiredCaseFieldValues).toEqual({ nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: '' });
+    expect(vm.checklist[7].requiredCaseFieldValues).toEqual({ nextOfKinName: '' });
   });
 
-  it('6/7/8. the legacy combined "KAREN ELLISON — 555-0100" text is never copied into Name, Phone, or Email', () => {
+  it('6/7/8. the legacy combined "KAREN ELLISON — 555-0100" text is never copied into Name, and no Phone/Email entry exists at all', () => {
     const case_ = v3CaseWithFamilyContactAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
     const values = vm.checklist[7].requiredCaseFieldValues ?? {};
     expect(values.nextOfKinName).not.toContain('KAREN');
-    expect(values.nextOfKinPhone).not.toContain('555-0100');
-    expect(values.nextOfKinEmail).not.toContain('KAREN');
+    expect(values.nextOfKinPhone).toBeUndefined();
+    expect(values.nextOfKinEmail).toBeUndefined();
     expect(case_.nextOfKinName).toBe('');
     expect(case_.nextOfKinPhone).toBe('');
     expect(case_.nextOfKinEmail).toBeNull();
@@ -634,27 +634,25 @@ describe('buildCaseViewModel — Family Contact structured Workflow presentation
       nextOfKinEmail: null,
     });
     const vm = buildCaseViewModel(case_, { staffList: [] });
-    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail']);
+    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName']);
     expect(vm.checklist[7].hasField).toBe(false);
   });
 
-  describe('18/19/20/21. structured fields ARE populated — Workflow and Case Information read the same values', () => {
-    it('displays the existing structured Name/Phone/Email, matching Case.nextOfKinName/Phone/Email exactly (the same fields Case Information reads)', () => {
+  describe('18/19/20/21. Task #5 correction (2026-09): only Name is populated — Phone/Email are never part of this checklist item\'s requiredCaseFieldValues, even when Case.nextOfKinPhone/Email are populated', () => {
+    it('displays only the existing structured Name, matching Case.nextOfKinName exactly (the same field Case Information reads); Phone/Email are absent from requiredCaseFieldValues despite being populated on the Case', () => {
       const case_ = v3CaseWithFamilyContactAtRawStage3({
         nextOfKinName: 'KAREN ELLISON',
         nextOfKinPhone: '555-0155',
         nextOfKinEmail: 'karen@example.com',
       });
       const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
-      expect(vm.checklist[7].requiredCaseFieldValues).toEqual({
-        nextOfKinName: 'KAREN ELLISON',
-        nextOfKinPhone: '555-0155',
-        nextOfKinEmail: 'karen@example.com',
-      });
-      // Same underlying Case fields Case Information itself reads directly.
+      expect(vm.checklist[7].requiredCaseFieldValues).toEqual({ nextOfKinName: 'KAREN ELLISON' });
+      // Same underlying Case field Case Information itself reads directly.
       expect(case_.nextOfKinName).toBe(vm.checklist[7].requiredCaseFieldValues?.nextOfKinName);
-      expect(case_.nextOfKinPhone).toBe(vm.checklist[7].requiredCaseFieldValues?.nextOfKinPhone);
-      expect(case_.nextOfKinEmail).toBe(vm.checklist[7].requiredCaseFieldValues?.nextOfKinEmail);
+      // Phone/Email remain fully populated and unaffected on the Case itself
+      // — they're simply never surfaced through this checklist item.
+      expect(case_.nextOfKinPhone).toBe('555-0155');
+      expect(case_.nextOfKinEmail).toBe('karen@example.com');
     });
   });
 
@@ -665,6 +663,119 @@ describe('buildCaseViewModel — Family Contact structured Workflow presentation
     });
     const vm = buildCaseViewModel(case_, { staffList: [] });
     expect(vm.checklist.every((item) => item.requiredCaseFields === undefined)).toBe(true);
+  });
+});
+
+/**
+ * Task #5 (2026-09, NOK name/phone display cleanup). A live-reported case
+ * still showed the old joined "NAME — PHONE" checklist value even though
+ * Case Information's own separate Next of kin/NOK phone fields were
+ * already correct — the checklistItemIndex-based lookup above didn't
+ * resolve for that case's particular workflowSnapshot shape. Reproduced
+ * here by giving a real cremation-template snapshot an empty `intake`
+ * (so findChecklistIndexForCaseField has nothing to map nextOfKinName to,
+ * exactly mirroring the "is a no-op..." test above) while keeping the
+ * stage's own checklist item — and its legacy joined fieldValues[7] —
+ * intact, matching a real case whose authoritative nextOfKinName/Phone
+ * are already populated correctly.
+ */
+describe('buildCaseViewModel — Family Contact fallback detection when checklistIndex lookup misses (Task #5, 2026-09)', () => {
+  function caseWithUnmappedIntakeButLegacyJoinedValue(overrides: Partial<Case> = {}): Case {
+    const template = standardCremationWorkflowTemplateFixture;
+    const v1 = template.versions.find((v) => v.version === 1);
+    if (!v1) throw new Error('Fixture missing version 1');
+    const snapshot = buildCaseWorkflowSnapshot(template, v1);
+    return baseCase({
+      rawStage: 0,
+      workflowSnapshot: { ...snapshot, intake: { sections: [] } },
+      fieldValues: { 7: 'EMMA MORALES SILVA — (954) 901-4165' },
+      nextOfKinName: 'EMMA MORALES SILVA',
+      nextOfKinPhone: '(954) 901-4165',
+      nextOfKinEmail: null,
+      ...overrides,
+    });
+  }
+
+  it('1. the fallback still converts the item to the structured editor (requiredCaseFields present, hasField false) — Task #5 correction: verifies existing fallback detection still works for legacy cases', () => {
+    const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName']);
+    expect(vm.checklist[7].hasField).toBe(false);
+  });
+
+  it('2. the phone number is no longer part of the rendered fieldValue (never shown beside the name)', () => {
+    const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.checklist[7].fieldValue).toBe('');
+    expect(vm.checklist[7].fieldValue).not.toContain('901-4165');
+  });
+
+  /** Task #5 correction (2026-09) — the user's own explicit 6-point
+      verification list. */
+  describe('Task #5 correction verification', () => {
+    it('1. the Next of Kin checklist display contains the NOK name', () => {
+      const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist[7].requiredCaseFieldValues?.nextOfKinName).toBe('EMMA MORALES SILVA');
+    });
+
+    it('2. the rendered checklist presentation does NOT contain the NOK phone number anywhere (fieldValue, requiredCaseFieldValues, or requiredCaseFields)', () => {
+      const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      const item = vm.checklist[7];
+      expect(item.fieldValue).not.toContain('901-4165');
+      expect(JSON.stringify(item.requiredCaseFieldValues ?? {})).not.toContain('901-4165');
+      expect(item.requiredCaseFields).not.toContain('nextOfKinPhone');
+    });
+
+    it('3. does not create a separate NOK phone row in this checklist item — requiredCaseFields contains only nextOfKinName, nothing else', () => {
+      const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist[7].requiredCaseFields).toEqual(['nextOfKinName']);
+      expect(vm.checklist[7].requiredCaseFieldValues).toEqual({ nextOfKinName: 'EMMA MORALES SILVA' });
+    });
+
+    it('4. Case.nextOfKinPhone remains unchanged after building the view model', () => {
+      const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+      buildCaseViewModel(case_, { staffList: [] });
+      expect(case_.nextOfKinPhone).toBe('(954) 901-4165');
+    });
+
+    it('5. the original persisted legacy fieldValues[7] value remains unchanged', () => {
+      const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+      buildCaseViewModel(case_, { staffList: [] });
+      expect(case_.fieldValues[7]).toBe('EMMA MORALES SILVA — (954) 901-4165');
+    });
+
+    it('6. existing fallback detection still works for legacy cases (the item is still identified and converted)', () => {
+      const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+      const vm = buildCaseViewModel(case_, { staffList: [] });
+      expect(vm.checklist[7].hasField).toBe(false);
+      expect(vm.checklist[7].isDerived).toBe(true);
+    });
+  });
+
+  it("the frozen workflowSnapshot is byte-for-byte unchanged — merely viewing never mutates the Case", () => {
+    const case_ = caseWithUnmappedIntakeButLegacyJoinedValue();
+    const before = JSON.parse(JSON.stringify(case_.workflowSnapshot));
+    buildCaseViewModel(case_, { staffList: [] });
+    expect(case_.workflowSnapshot).toEqual(before);
+  });
+
+  it('does not fire for an unrelated hasField item with no legacy-prefix match (no false positive)', () => {
+    const case_ = caseWithUnmappedIntakeButLegacyJoinedValue({
+      fieldValues: { 3: '210 lb', 7: 'EMMA MORALES SILVA — (954) 901-4165' },
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    // Weight (index 3) is untouched by this presentation function.
+    expect(vm.checklist[3]?.requiredCaseFields).toBeUndefined();
+  });
+
+  it('is still a no-op when nextOfKinName is blank (no live value to match against) — matches the pre-existing no-op behavior', () => {
+    const case_ = caseWithUnmappedIntakeButLegacyJoinedValue({ nextOfKinName: '', nextOfKinPhone: '' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.checklist[7].hasField).toBe(true);
+    expect(vm.checklist[7].fieldValue).toBe('EMMA MORALES SILVA — (954) 901-4165');
   });
 });
 
