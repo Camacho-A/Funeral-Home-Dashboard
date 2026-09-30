@@ -919,15 +919,94 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
     expect(screen.getByText('Return method')).toBeInTheDocument();
   });
 
-  it('Return method occupies the first (only) position in its row when Owner is hidden — no empty placeholder column', () => {
+  it('Layout follow-up: Tag #, Payment, and Return method share one row when Owner is hidden and returnMethod is undecided — no empty placeholder column', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
     const returnMethodLabel = screen.getByText('Return method');
     const row = returnMethodLabel.parentElement?.parentElement;
+    const tagRow = screen.getByText('Tag #').parentElement?.parentElement;
     expect(row).not.toBeNull();
-    // Exactly one child (Return method's own wrapper <div>) — nothing else
-    // in the row, so it naturally falls into the first grid column rather
-    // than a reserved second one.
-    expect(row?.children.length).toBe(1);
+    expect(row).toBe(tagRow); // same shared grid row
+    expect(row?.children.length).toBe(3); // Tag #, Payment, Return method
+  });
+
+  it('Layout follow-up: Cremated Remains joins the same row as Tag #/Payment/Return method when returnMethod is pickup', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    const row = screen.getByText('Tag #').parentElement?.parentElement;
+    const crematedRemainsRow = screen.getByText('Cremated Remains').parentElement?.parentElement;
+    expect(crematedRemainsRow).toBe(row);
+    expect(row?.children.length).toBe(4); // Tag #, Payment, Return method, Cremated Remains
+  });
+
+  it('Layout follow-up: fields appear in Tag # -> Payment -> Return method -> Cremated Remains order', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    const row = screen.getByText('Tag #').parentElement!.parentElement!;
+    const labels = Array.from(row.children).map((child) => child.querySelector('div')?.textContent ?? child.textContent);
+    expect(labels).toEqual(['Tag #', 'Payment', 'Return method', 'Cremated Remains']);
+  });
+
+  it('Layout follow-up: Cremated Remains does NOT join the row for Shipping (pickup-only by domain logic) — column stays absent, not invented', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    const row = screen.getByText('Tag #').parentElement?.parentElement;
+    expect(row?.children.length).toBe(3); // Tag #, Payment, Return method only
+    expect(screen.queryByText('Cremated Remains')).not.toBeInTheDocument();
+  });
+
+  it('Layout follow-up: pickup release-detail fields (Released to/date/note) remain in a separate row beneath the operational row', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        showOwner={false}
+        returnMethod="pickup"
+        pickupStatus="released"
+        pickupReleasedTo="Jane Smith"
+        pickupReleasedAt="07/01/2026"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    const operationalRow = screen.getByText('Tag #').parentElement?.parentElement;
+    const releasedToRow = screen.getByText('Released to').parentElement?.parentElement;
+    expect(releasedToRow).not.toBe(operationalRow);
+  });
+
+  it('Layout follow-up: shipping detail fields (Carrier/Tracking/Date shipped/Shipping status/Delivered date) remain in a separate row beneath the operational row', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    const operationalRow = screen.getByText('Tag #').parentElement?.parentElement;
+    const carrierRow = screen.getByText('Carrier').parentElement?.parentElement;
+    expect(carrierRow).not.toBe(operationalRow);
+  });
+
+  it('Layout follow-up: Cremated Remains editing still works when consolidated into the operational row', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        showOwner={false}
+        returnMethod="pickup"
+        pickupReleasedTo="Jane Smith"
+        pickupReleasedAt="07/01/2026"
+        onUpdateCaseInfo={onUpdateCaseInfo}
+      />,
+    );
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
+  });
+
+  it('Layout follow-up: Payment editing still works in the Manors consolidated row', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Awaiting payment'), { target: { value: 'paid_in_full' } });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ paymentStatus: 'paid_in_full' });
+  });
+
+  it('Layout follow-up: Tag # editing still works in the Manors consolidated row', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    const tagField = screen.getByText('Tag #').parentElement!;
+    fireEvent.click(within(tagField).getByRole('button'));
+    const input = within(tagField).getByDisplayValue('');
+    fireEvent.change(input, { target: { value: 'a123' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ tagNumber: 'A123' });
   });
 
   it('the Owner/Return-method row still has two children when Owner is shown (Task #16 pairing unaffected)', () => {

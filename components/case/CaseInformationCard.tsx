@@ -521,6 +521,58 @@ export function CaseInformationCard({
     }
   }, [pendingPickupRelease, pickupStatus, pickupReleasedTo, pickupReleasedAt, onUpdateCaseInfo]);
 
+  // Task #17 layout follow-up (2026-09): Return method's own control and
+  // Cremated Remains' own control are each defined exactly once here and
+  // placed into different rows depending on `showOwner` below — never
+  // duplicated JSX/logic, just relocated. Identical markup/behavior to
+  // what existed inline before this follow-up.
+  const returnMethodControl = (
+    <div>
+      <div className={styles.fieldLabel}>Return method</div>
+      <SelectField
+        className={`${styles.paymentSelect} ${returnMethod === 'undecided' ? styles.paymentPending : styles.paymentSuccess}`}
+        value={returnMethod}
+        onChange={(e) => onUpdateCaseInfo({ returnMethod: e.target.value as ReturnMethod })}
+      >
+        <option value="undecided">{RETURN_METHOD_LABEL.undecided}</option>
+        <option value="pickup">{RETURN_METHOD_LABEL.pickup}</option>
+        <option value="shipping">{RETURN_METHOD_LABEL.shipping}</option>
+      </SelectField>
+    </div>
+  );
+
+  const crematedRemainsControl = (
+    <div>
+      <div className={styles.fieldLabel}>Cremated Remains</div>
+      <SelectField
+        className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
+        value={pickupStatus === 'released' || pendingPickupRelease ? 'released' : 'awaiting_pickup'}
+        onChange={(e) => {
+          const next = e.target.value as PickupStatus;
+          if (next === 'awaiting_pickup') {
+            setPendingPickupRelease(false);
+            onUpdateCaseInfo({ pickupStatus: 'awaiting_pickup' });
+            return;
+          }
+          // Selecting "Family Picked Up": only persist immediately if
+          // Released to/Released date are already valid (e.g.
+          // already filled in earlier, or supplied by Jotform
+          // reconciliation) — otherwise reveal the detail fields
+          // below and wait for both to become valid; see this
+          // component's own top-of-function effect.
+          if (isValidPickupReleaseDetail(pickupReleasedTo, pickupReleasedAt)) {
+            onUpdateCaseInfo({ pickupStatus: 'released' });
+          } else {
+            setPendingPickupRelease(true);
+          }
+        }}
+      >
+        <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
+        <option value="released">{PICKUP_STATUS_LABEL.released}</option>
+      </SelectField>
+    </div>
+  );
+
   return (
     <div className={styles.card}>
       <div className={styles.title}>Case information</div>
@@ -635,6 +687,16 @@ export function CaseInformationCard({
         />
       </div>
 
+      {/* Task #17 layout follow-up (2026-09): for Manors (showOwner=false),
+          Tag #/Payment/Return method/Cremated Remains consolidate onto one
+          four-column row (Cremated Remains only joins it when
+          returnMethod === 'pickup' — it has never applied to Shipping, so
+          column 4 is simply absent rather than filled with an invented
+          control there; see crematedRemainsControl's own comment).
+          Generic organizations (showOwner=true) keep their exact prior
+          three-grid structure: Tag#/Payment, then Owner+Return method
+          together (Task #16), then Cremated Remains inside the conditional
+          details grid below (unchanged placement/order). */}
       <div className={`${styles.grid} ${styles.operationalRow}`}>
         <EditableField
           label="Tag #"
@@ -653,6 +715,12 @@ export function CaseInformationCard({
             <option value="paid_in_full">{PAYMENT_STATUS_LABEL.paid_in_full}</option>
           </SelectField>
         </div>
+        {!showOwner && (
+          <>
+            {returnMethodControl}
+            {returnMethod === 'pickup' && crematedRemainsControl}
+          </>
+        )}
       </div>
 
       {/* Task #16 (2026-09): Owner and Return method share their own
@@ -660,18 +728,10 @@ export function CaseInformationCard({
           same row together (Owner left, Return method right) regardless
           of how many columns the auto-fill grid computes elsewhere on
           this card, rather than depending on how many items happened to
-          precede them. The conditional pickup/shipping detail fields
-          below remain in their own separate grid, unchanged, so they
-          never compete with Owner/Return method for a slot in this row.
-
-          Task #17 (2026-09): showOwner is false only for Manors (see
-          domain/organization/caseOwnerVisibility.ts) — Owner's editor is
-          simply omitted, never rendered as an empty/disabled placeholder,
-          so Return method (this grid's only remaining child in that case)
-          naturally falls into the first column instead of a reserved
-          second one. */}
-      <div className={`${styles.grid} ${styles.operationalRow}`}>
-        {showOwner && (
+          precede them. Generic organizations only (Task #17 layout
+          follow-up folds Return method into the row above for Manors). */}
+      {showOwner && (
+        <div className={`${styles.grid} ${styles.operationalRow}`}>
           <div>
             <div className={styles.fieldLabel}>Owner</div>
             <SelectField
@@ -686,53 +746,14 @@ export function CaseInformationCard({
               ))}
             </SelectField>
           </div>
-        )}
-        <div>
-          <div className={styles.fieldLabel}>Return method</div>
-          <SelectField
-            className={`${styles.paymentSelect} ${returnMethod === 'undecided' ? styles.paymentPending : styles.paymentSuccess}`}
-            value={returnMethod}
-            onChange={(e) => onUpdateCaseInfo({ returnMethod: e.target.value as ReturnMethod })}
-          >
-            <option value="undecided">{RETURN_METHOD_LABEL.undecided}</option>
-            <option value="pickup">{RETURN_METHOD_LABEL.pickup}</option>
-            <option value="shipping">{RETURN_METHOD_LABEL.shipping}</option>
-          </SelectField>
+          {returnMethodControl}
         </div>
-      </div>
+      )}
 
       <div className={`${styles.grid} ${styles.operationalRow}`}>
         {returnMethod === 'pickup' && (
           <>
-            <div>
-              <div className={styles.fieldLabel}>Cremated Remains</div>
-              <SelectField
-                className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
-                value={pickupStatus === 'released' || pendingPickupRelease ? 'released' : 'awaiting_pickup'}
-                onChange={(e) => {
-                  const next = e.target.value as PickupStatus;
-                  if (next === 'awaiting_pickup') {
-                    setPendingPickupRelease(false);
-                    onUpdateCaseInfo({ pickupStatus: 'awaiting_pickup' });
-                    return;
-                  }
-                  // Selecting "Family Picked Up": only persist immediately if
-                  // Released to/Released date are already valid (e.g.
-                  // already filled in earlier, or supplied by Jotform
-                  // reconciliation) — otherwise reveal the detail fields
-                  // below and wait for both to become valid; see this
-                  // component's own top-of-function effect.
-                  if (isValidPickupReleaseDetail(pickupReleasedTo, pickupReleasedAt)) {
-                    onUpdateCaseInfo({ pickupStatus: 'released' });
-                  } else {
-                    setPendingPickupRelease(true);
-                  }
-                }}
-              >
-                <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
-                <option value="released">{PICKUP_STATUS_LABEL.released}</option>
-              </SelectField>
-            </div>
+            {showOwner && crematedRemainsControl}
             {(pickupStatus === 'released' || pendingPickupRelease) && (
               <>
                 <EditableField
