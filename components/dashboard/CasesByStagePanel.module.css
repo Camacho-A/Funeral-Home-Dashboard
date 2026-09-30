@@ -39,6 +39,15 @@
   background: var(--color-brand-tint);
 }
 
+.row:hover:not(.rowSelected) {
+  background: var(--color-surface-hover);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
 .label {
   width: 150px;
   flex-shrink: 0;

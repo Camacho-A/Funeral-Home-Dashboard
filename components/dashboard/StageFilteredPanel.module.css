@@ -1,6 +1,6 @@
 .card {
   background: var(--color-surface-card);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   padding: var(--space-9) var(--space-11);
   box-shadow: var(--shadow-card);
   margin-bottom: var(--space-12);
@@ -58,19 +58,29 @@
   border-left-color: var(--color-danger-text);
 }
 
+/* Task #14 Phase D (2026-09): matches AllCasesList's decedent-avatar
+   treatment (36px, brand-tint fill) — same decedentInitials concept
+   rendered two different ways was the confirmed inconsistency; this one
+   was the outlier. */
 .avatar {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-full);
-  background: var(--color-surface-card);
+  background: var(--color-brand-tint);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-11);
+  font-size: var(--font-size-12-5);
   font-weight: var(--font-weight-bold);
-  color: var(--color-text-secondary);
+  color: oklch(0.3 0.09 265);
   flex-shrink: 0;
   text-decoration: none;
+}
+
+.avatar:focus-visible,
+.main:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 .main {

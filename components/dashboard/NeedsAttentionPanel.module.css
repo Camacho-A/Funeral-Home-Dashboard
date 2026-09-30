@@ -1,17 +1,21 @@
 /*
- * This card's internal color variety (title/count/name/reason/meta each a
- * distinct shade of the danger hue, 25) is local to this one panel in the
- * prototype — five one-off shades used nowhere else in the whole file, not
- * reused elsewhere the way --color-danger-bg/-text are. Kept as local
- * literals rather than global tokens (same precedent as
- * components/layout/UserAvatar.module.css's one-off brand-text color),
- * since promoting single-use values to global tokens would just be
- * token-catalog bloat with no reuse benefit.
+ * Task #14 Phase D (2026-09): .panel's background and .row's divider were
+ * raw literals that happen to sit almost exactly on --color-danger-bg/
+ * -border (both introduced by Phase A, after this panel was written) —
+ * consolidated onto those tokens below. The remaining five shades
+ * (title/count/name/reason/meta) are a distinct, finer-grained typographic
+ * hierarchy those three flat tokens can't reproduce — five one-off shades
+ * used nowhere else in the whole file, not reused elsewhere the way
+ * --color-danger-bg/-text are. Kept as local literals rather than global
+ * tokens (same precedent as components/layout/UserAvatar.module.css's
+ * one-off brand-text color), since promoting single-use values to global
+ * tokens would just be token-catalog bloat with no reuse benefit.
  */
 .panel {
-  background: oklch(0.96 0.03 25);
+  background: var(--color-danger-bg);
   border-radius: var(--radius-xl);
   padding: var(--space-11) var(--space-12);
+  box-shadow: var(--shadow-card);
 }
 
 .header {
@@ -41,7 +45,7 @@
 .row {
   cursor: pointer;
   padding: var(--space-5) 0;
-  box-shadow: inset 0 -1px 0 oklch(0.88 0.05 25 / 0.5);
+  box-shadow: inset 0 -1px 0 var(--color-danger-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
