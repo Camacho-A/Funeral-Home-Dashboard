@@ -12,6 +12,7 @@ import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { isFamilyPortalEnabled } from '@/domain/organization/familyPortalCapability';
+import { shouldShowCaseOwner } from '@/domain/organization/caseOwnerVisibility';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
 import { printTextLog } from '@/utils/print';
 import { formatTimestamp } from '@/utils/format';
@@ -265,6 +266,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             ownerStaffId={viewModel.ownerStaffId}
             staffOptions={staffOptions}
             onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
+            showOwner={shouldShowCaseOwner(organizationId)}
             onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
             onSaveWeight={(value) => mutations.setWeight(case_, value)}
             onSaveTimeOfDeath={(value) => mutations.setTimeOfDeath(case_, value)}

@@ -37,6 +37,7 @@ const baseProps = {
   ownerStaffId: 'staff-dana',
   staffOptions: [{ id: 'staff-dana', name: 'Dana' }],
   onReassignOwner: vi.fn(),
+  showOwner: true,
   onSaveWeight: vi.fn(),
   onSaveTimeOfDeath: vi.fn(),
   isVeteran: false,
@@ -897,6 +898,112 @@ describe('CaseInformationCard — Task #16 (2026-09, Owner/Return method layout)
 
     expect(screen.getByText('Delivered date cannot be in the future.')).toBeInTheDocument();
     expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+});
+
+describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)', () => {
+  it('hides Owner entirely when showOwner is false', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Owner')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Dana')).not.toBeInTheDocument();
+  });
+
+  it('shows Owner when showOwner is true (generic/non-Manors organization) — unchanged default behavior', () => {
+    render(<CaseInformationCard {...baseProps} showOwner onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Owner')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Dana')).toBeInTheDocument();
+  });
+
+  it('Return method remains visible when Owner is hidden', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Return method')).toBeInTheDocument();
+  });
+
+  it('Return method occupies the first (only) position in its row when Owner is hidden — no empty placeholder column', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
+    const returnMethodLabel = screen.getByText('Return method');
+    const row = returnMethodLabel.parentElement?.parentElement;
+    expect(row).not.toBeNull();
+    // Exactly one child (Return method's own wrapper <div>) — nothing else
+    // in the row, so it naturally falls into the first grid column rather
+    // than a reserved second one.
+    expect(row?.children.length).toBe(1);
+  });
+
+  it('the Owner/Return-method row still has two children when Owner is shown (Task #16 pairing unaffected)', () => {
+    render(<CaseInformationCard {...baseProps} showOwner onUpdateCaseInfo={vi.fn()} />);
+    const returnMethodLabel = screen.getByText('Return method');
+    const row = returnMethodLabel.parentElement?.parentElement;
+    expect(row?.children.length).toBe(2);
+  });
+
+  it('Return method editing still works when Owner is hidden', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Undecided'), { target: { value: 'pickup' } });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ returnMethod: 'pickup' });
+  });
+
+  it('pickup conditional fields (Cremated Remains) still render and work when Owner is hidden', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
+    expect(screen.getByText(/awaiting family pickup/i)).toBeInTheDocument();
+  });
+
+  it('shipping conditional fields still render when Owner is hidden', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Carrier')).toBeInTheDocument();
+    expect(screen.getByText('Date shipped')).toBeInTheDocument();
+    expect(screen.getByText('Delivered date')).toBeInTheDocument();
+  });
+
+  it('Task #15 future-date validation (Released date) remains intact when Owner is hidden', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        showOwner={false}
+        returnMethod="pickup"
+        pickupStatus="released"
+        pickupReleasedTo="Jane Smith"
+        pickupReleasedAt="07/01/2026"
+        onUpdateCaseInfo={onUpdateCaseInfo}
+      />,
+    );
+    const releasedDateField = screen.getByText('Released date').parentElement!;
+    fireEvent.click(within(releasedDateField).getByRole('button'));
+    const input = within(releasedDateField).getByDisplayValue('07/01/2026');
+    const farFutureYear = new Date().getFullYear() + 5;
+    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByText('Released date cannot be in the future.')).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('Task #16 operational-row spacing class is unaffected by whether Owner is shown', () => {
+    const { container: withOwner } = render(<CaseInformationCard {...baseProps} showOwner onUpdateCaseInfo={vi.fn()} />);
+    const { container: withoutOwner } = render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
+    const ownerRowWith = within(withOwner).getByText('Return method').parentElement?.parentElement;
+    const ownerRowWithout = within(withoutOwner).getByText('Return method').parentElement?.parentElement;
+    expect(ownerRowWith?.className).toMatch(/operationalRow/);
+    expect(ownerRowWithout?.className).toMatch(/operationalRow/);
+  });
+
+  it('saving an unrelated field (Tag #) while Owner is hidden never touches ownerStaffId/onReassignOwner', () => {
+    const onUpdateCaseInfo = vi.fn();
+    const onReassignOwner = vi.fn();
+    render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} onReassignOwner={onReassignOwner} />);
+
+    const tagField = screen.getByText('Tag #').parentElement!;
+    fireEvent.click(within(tagField).getByRole('button'));
+    const input = within(tagField).getByDisplayValue('');
+    fireEvent.change(input, { target: { value: 'a123' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ tagNumber: 'A123' });
+    expect(onReassignOwner).not.toHaveBeenCalled();
   });
 });
 

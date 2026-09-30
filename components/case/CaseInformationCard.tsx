@@ -405,6 +405,7 @@ export function CaseInformationCard({
   ownerStaffId,
   staffOptions,
   onReassignOwner,
+  showOwner,
   onUpdateCaseInfo,
   onSaveWeight,
   onSaveTimeOfDeath,
@@ -473,6 +474,14 @@ export function CaseInformationCard({
   ownerStaffId: string | null;
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
+  /** Task #17 (2026-09, hide Case Owner for Manors). Owner assignment
+      still exists fully — this only controls whether its editor renders
+      in Case Information for this organization. See
+      domain/organization/caseOwnerVisibility.ts#shouldShowCaseOwner,
+      which the caller (Case Detail page.tsx) resolves and passes down;
+      this component stays a pure-props component with no org lookups of
+      its own, matching its existing architecture. */
+  showOwner: boolean;
   onUpdateCaseInfo: (patch: CaseUpdate) => void;
   /** Case field editing / field-backed checklist sync (2026-09). Distinct
       from onUpdateCaseInfo — saving Weight must also keep the First Call &
@@ -653,22 +662,31 @@ export function CaseInformationCard({
           this card, rather than depending on how many items happened to
           precede them. The conditional pickup/shipping detail fields
           below remain in their own separate grid, unchanged, so they
-          never compete with Owner/Return method for a slot in this row. */}
+          never compete with Owner/Return method for a slot in this row.
+
+          Task #17 (2026-09): showOwner is false only for Manors (see
+          domain/organization/caseOwnerVisibility.ts) — Owner's editor is
+          simply omitted, never rendered as an empty/disabled placeholder,
+          so Return method (this grid's only remaining child in that case)
+          naturally falls into the first column instead of a reserved
+          second one. */}
       <div className={`${styles.grid} ${styles.operationalRow}`}>
-        <div>
-          <div className={styles.fieldLabel}>Owner</div>
-          <SelectField
-            className={styles.ownerSelect}
-            value={ownerStaffId ?? ''}
-            onChange={(e) => onReassignOwner(e.target.value)}
-          >
-            {staffOptions.map((staff) => (
-              <option key={staff.id} value={staff.id}>
-                {staff.name}
-              </option>
-            ))}
-          </SelectField>
-        </div>
+        {showOwner && (
+          <div>
+            <div className={styles.fieldLabel}>Owner</div>
+            <SelectField
+              className={styles.ownerSelect}
+              value={ownerStaffId ?? ''}
+              onChange={(e) => onReassignOwner(e.target.value)}
+            >
+              {staffOptions.map((staff) => (
+                <option key={staff.id} value={staff.id}>
+                  {staff.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+        )}
         <div>
           <div className={styles.fieldLabel}>Return method</div>
           <SelectField
