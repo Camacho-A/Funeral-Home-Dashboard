@@ -8,3 +8,16 @@
   padding: var(--space-2) var(--space-4);
   font-family: inherit;
 }
+
+/* Mobile TopBar design correction (2026-09): not part of the approved
+   mobile priority row (hamburger/New Case/Audit/Templates/Notifications/
+   account avatar) — wraps below the search row with the other
+   module-gated TopBar links instead of competing for that row's limited
+   space. Self-contained here (rather than a cross-file rule in
+   TopBar.module.css) since this is this component's own flex-item class
+   either way. */
+@media (max-width: 860px) {
+  .select {
+    order: 8;
+  }
+}

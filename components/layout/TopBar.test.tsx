@@ -5,6 +5,12 @@ import { TopBar } from './TopBar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { SessionProvider } from '@/hooks/useSession';
 
+// Only needed for the identity-mode Audit/Templates test below, which
+// also renders OrganizationSwitcher (authAdapterMode === 'identity') —
+// that component calls useRouter(), which needs a real App Router
+// context none of this file's other tests exercise.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+
 /**
  * Manors go-live fix (real session identity). TopBar's avatar/signed-in
  * display must reflect whatever SessionProvider actually supplies — never
@@ -49,10 +55,18 @@ function renderTopBar(session: { staffId: string | null; displayName: string } =
   );
 }
 
+/**
+ * Mobile TopBar design correction (2026-09): the account's initials now
+ * render TWICE — once in the desktop-only avatar (`.desktopAccountGroup`,
+ * CSS-hidden on mobile) and once inside the mobile-only AccountMenu
+ * trigger (CSS-hidden on desktop) — see TopBar.tsx's own comment for why
+ * both representations exist in the DOM at once. Every initials
+ * assertion below that used to expect exactly one match now expects two.
+ */
 describe('TopBar — real session identity (Manors go-live fix)', () => {
   it('displays the authenticated employee from SessionProvider, not a hardcoded fixture', () => {
     renderTopBar();
-    expect(screen.getByText('JR')).toBeInTheDocument();
+    expect(screen.getAllByText('JR')).toHaveLength(2);
     expect(screen.queryByText('DA')).not.toBeInTheDocument();
   });
 
@@ -67,7 +81,7 @@ describe('TopBar — real session identity (Manors go-live fix)', () => {
         </OrganizationProvider>
       </QueryClientProvider>,
     );
-    expect(screen.getByText('PN')).toBeInTheDocument();
+    expect(screen.getAllByText('PN')).toHaveLength(2);
   });
 });
 
@@ -81,7 +95,7 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar(ANGELICA_SESSION);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getByText('AC')).toBeInTheDocument();
+    expect(screen.getAllByText('AC')).toHaveLength(2);
     expect(screen.queryByText('AN')).not.toBeInTheDocument();
   });
 
@@ -95,7 +109,7 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     renderTopBar(ANGELICA_SESSION);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.getByText('Angelica Camacho')).toBeInTheDocument();
-    expect(screen.getByText('AC')).toBeInTheDocument();
+    expect(screen.getAllByText('AC')).toHaveLength(2);
     expect(screen.getByText('Sign out')).toBeInTheDocument();
   });
 
@@ -108,7 +122,7 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar({ staffId: 'staff-john', displayName: 'John Smith' });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getByText('JS')).toBeInTheDocument();
+    expect(screen.getAllByText('JS')).toHaveLength(2);
   });
 
   it('5: a single-name session falls back safely to that name\'s own initial', async () => {
@@ -120,7 +134,7 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar({ staffId: 'staff-cher', displayName: 'Cher' });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getByText('C')).toBeInTheDocument();
+    expect(screen.getAllByText('C')).toHaveLength(2);
   });
 });
 
@@ -144,6 +158,98 @@ describe('TopBar — mobile navigation drawer (2026-09)', () => {
   it('renders with no onMenuClick at all without throwing (desktop\'s unchanged default)', () => {
     expect(() => renderTopBar()).not.toThrow();
     expect(screen.getByRole('button', { name: 'Open navigation menu' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Mobile TopBar design correction (2026-09). Whether these elements are
+ * actually HIDDEN at a given width is a CSS/media-query fact jsdom can't
+ * evaluate (no real layout engine) — covered instead by this phase's own
+ * live-browser verification, the same way every earlier CSS-only
+ * responsive change in this project's Dashboard mobile-friendliness work
+ * was verified. What IS meaningfully jsdom-testable, and asserted here,
+ * is the STRUCTURAL contract the CSS relies on: the employee name and
+ * the standalone "Sign out" link are scoped inside the one wrapper
+ * (`desktopAccountGroup`) the mobile breakpoint hides as a unit, and the
+ * mobile AccountMenu control is present in the DOM unconditionally
+ * (never only rendered for a specific breakpoint via JS).
+ */
+describe('TopBar — mobile TopBar design correction (2026-09)', () => {
+  it('the employee name and the standalone Sign out form are both scoped inside the desktop-only wrapper', () => {
+    const { container } = renderTopBar(ANGELICA_SESSION);
+    const desktopGroup = container.querySelector('[class*="desktopAccountGroup"]');
+    expect(desktopGroup).not.toBeNull();
+    expect(desktopGroup).toHaveTextContent('Angelica Camacho');
+    expect(desktopGroup?.querySelector('form button[type="submit"]')).toHaveTextContent('Sign out');
+  });
+
+  it('the mobile AccountMenu control (the account avatar as a real button) is present, independent of the desktop group', () => {
+    renderTopBar(ANGELICA_SESSION);
+    expect(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' })).toBeInTheDocument();
+  });
+
+  it('desktop account behavior does not regress: name, avatar, and a standalone, always-visible Sign out control are still all present together', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTopBar(ANGELICA_SESSION);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    expect(screen.getByText('Angelica Camacho')).toBeInTheDocument();
+    expect(screen.getAllByText('AC')).toHaveLength(2);
+    // The standalone Sign out control — distinct from the one inside the
+    // (closed, not rendered) AccountMenu popover — is unconditionally in
+    // the DOM, exactly as before this phase.
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('Audit and Templates carry the mobile priority-row class (order, verified live in this phase\'s own report — identity-mode auth wasn\'t reachable in this sandbox\'s test login)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: ['audit.read', 'document.template.manage'], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <OrganizationProvider>
+          <SessionProvider value={TEST_SESSION}>
+            <TopBar authAdapterMode="identity" />
+          </SessionProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+
+    const audit = screen.getByText('Audit');
+    const templates = screen.getByText('Templates');
+    expect(audit.className).toMatch(/priorityLink/);
+    expect(templates.className).toMatch(/priorityLink/);
+    // Neither link is scoped inside the overflow group (Resources/
+    // Merchandise/etc.) — distinct classes for distinct mobile rows.
+    expect(audit.className).not.toMatch(/overflowLink/);
+    expect(container.querySelectorAll('[class*="priorityLink"]')).toHaveLength(2);
+  });
+
+  it('the notification control renders both its desktop text and its mobile icon representation — one control, not two', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderTopBar();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const bellButtons = screen.getAllByRole('button', { name: 'Notifications' });
+    expect(bellButtons).toHaveLength(1);
+    expect(bellButtons[0].querySelector('svg')).not.toBeNull();
+    expect(container.querySelector('[class*="bellLabel"]')).toHaveTextContent('Notifications');
   });
 });
 

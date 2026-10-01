@@ -9,7 +9,7 @@
 }
 
 /* Mobile navigation drawer (2026-09). Hidden by default (desktop/tablet,
-   above 560px — matching the breakpoint the Dashboard mobile-friendliness
+   above 860px — matching the breakpoint the Dashboard mobile-friendliness
    pass already established for AppShell/CasesByStagePanel/
    NeedsAttentionPanel) — shown only inside the matching TopBar.module.css
    hamburger button's own media query. `position: fixed` + `transform` is
@@ -21,7 +21,7 @@
   display: none;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 860px) {
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;

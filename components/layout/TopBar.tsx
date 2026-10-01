@@ -12,6 +12,7 @@ import { initialsFromName } from '@/utils/string';
 import { logoutAction } from '@/app/login/actions';
 import { SearchInput } from './SearchInput';
 import { UserAvatar } from './UserAvatar';
+import { AccountMenu } from './AccountMenu';
 import { OrganizationSwitcher } from './OrganizationSwitcher';
 import { NotificationBell } from './NotificationBell';
 import styles from './TopBar.module.css';
@@ -64,14 +65,25 @@ import styles from './TopBar.module.css';
  *
  * Mobile navigation drawer (2026-09): `onMenuClick` is new and optional —
  * when provided, a hamburger button renders first (hidden above the
- * shared 560px breakpoint in TopBar.module.css, alongside the matching
- * Sidebar.module.css drawer it opens). Nothing else in this component
- * changed to make room for it: below that same breakpoint, `.topBar`
- * switches to `flex-wrap` so every existing control here (search, New
- * Case, the conditional links, the identity cluster) simply flows onto
- * as many rows as it needs, rather than any of them being hidden,
- * relocated into the drawer, or duplicated into a second mobile-only
- * component.
+ * shared 860px breakpoint in TopBar.module.css, alongside the matching
+ * Sidebar.module.css drawer it opens).
+ *
+ * Mobile TopBar design correction (2026-09): below that same breakpoint,
+ * the first wrap-to-new-row pass (plain `flex-wrap`, DOM order) read as a
+ * tall, awkwardly-wrapped desktop header rather than a real mobile
+ * design. This replaces it with a deliberate two-row mobile layout —
+ * [hamburger, New Case, Audit, Templates, Notifications, account avatar]
+ * on row one, the expanded search bar alone on row two, anything else
+ * (Org Switcher, Resources/Merchandise/Inventory/Suppliers/Purchase
+ * Orders/Accounts Payable/Calendar Integrations — module-gated links not
+ * part of the approved priority row) wrapping below that — all via CSS
+ * `order` on each element's own existing class (TopBar.module.css), never
+ * a different DOM order or a second mobile-only copy of this component.
+ * Employee name and the standalone "Sign out" link are CSS-hidden on
+ * mobile only; AccountMenu (new) is what replaces them there — see its
+ * own doc comment for why two account representations exist in the DOM.
+ * Desktop (above 860px) is unchanged: same DOM, same classes, same
+ * visual order, `order` only even applies inside that media query.
  */
 export function TopBar({
   onNewCaseClick,
@@ -94,64 +106,71 @@ export function TopBar({
       <button type="button" className={styles.menuButton} onClick={onMenuClick} aria-label="Open navigation menu">
         <span className={styles.menuIcon} aria-hidden="true" />
       </button>
-      <SearchInput value={query} onChange={setQuery} />
+      <SearchInput value={query} onChange={setQuery} className={styles.searchSlot} />
       <div className={styles.spacer} />
-      <Button onClick={onNewCaseClick}>+ New Case</Button>
+      <Button onClick={onNewCaseClick} className={styles.newCaseButton}>
+        + New Case
+      </Button>
       {authAdapterMode === 'identity' && <OrganizationSwitcher />}
       {authAdapterMode === 'identity' && permissions.includes('audit.read') && (
-        <a href="/settings/audit" className={styles.signOutButton}>
+        <a href="/settings/audit" className={`${styles.signOutButton} ${styles.priorityLink}`}>
           Audit
         </a>
       )}
       {authAdapterMode === 'identity' && permissions.includes('document.template.manage') && (
-        <a href="/settings/document-templates" className={styles.signOutButton}>
+        <a href="/settings/document-templates" className={`${styles.signOutButton} ${styles.priorityLink}`}>
           Templates
         </a>
       )}
       {isModuleEnabled(organization, 'resources') && (
-        <a href="/settings/resources" className={styles.signOutButton}>
+        <a href="/settings/resources" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Resources
         </a>
       )}
       {isModuleEnabled(organization, 'merchandise') && (
-        <a href="/settings/merchandise" className={styles.signOutButton}>
+        <a href="/settings/merchandise" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Merchandise
         </a>
       )}
       {isModuleEnabled(organization, 'inventory') && (
-        <a href="/settings/inventory" className={styles.signOutButton}>
+        <a href="/settings/inventory" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Inventory
         </a>
       )}
       {isModuleEnabled(organization, 'procurement') && (
-        <a href="/settings/suppliers" className={styles.signOutButton}>
+        <a href="/settings/suppliers" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Suppliers
         </a>
       )}
       {isModuleEnabled(organization, 'procurement') && (
-        <a href="/settings/purchase-orders" className={styles.signOutButton}>
+        <a href="/settings/purchase-orders" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Purchase Orders
         </a>
       )}
       {isModuleEnabled(organization, 'accountsPayable') && (
-        <a href="/settings/accounts-payable" className={styles.signOutButton}>
+        <a href="/settings/accounts-payable" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Accounts Payable
         </a>
       )}
       {isModuleEnabled(organization, 'calendarIntegrations') && (
-        <a href="/settings/calendar-integrations" className={styles.signOutButton}>
+        <a href="/settings/calendar-integrations" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Calendar
         </a>
       )}
       <div className={styles.identityGroup}>
         <NotificationBell />
-        <span className={styles.employeeName}>{session.displayName}</span>
-        <UserAvatar initials={initialsFromName(session.displayName)} />
-        <form action={logoutAction}>
-          <button type="submit" className={styles.signOutButton}>
-            Sign out
-          </button>
-        </form>
+        <div className={styles.desktopAccountGroup}>
+          <span className={styles.employeeName}>{session.displayName}</span>
+          <UserAvatar initials={initialsFromName(session.displayName)} />
+          <form action={logoutAction}>
+            <button type="submit" className={styles.signOutButton}>
+              Sign out
+            </button>
+          </form>
+        </div>
+        <div className={styles.mobileAccountSlot}>
+          <AccountMenu initials={initialsFromName(session.displayName)} displayName={session.displayName} />
+        </div>
       </div>
     </div>
   );

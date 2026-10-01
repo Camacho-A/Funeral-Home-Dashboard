@@ -15,3 +15,24 @@
 .countBadge {
   font-variant-numeric: tabular-nums;
 }
+
+/* Mobile TopBar design correction (2026-09). Hidden by default (desktop)
+   — shown only below the shared 860px breakpoint, where the bell glyph
+   replaces the literal "Notifications" text (see NotificationBell.tsx's
+   own comment). */
+.bellIcon {
+  display: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 860px) {
+  .bellIcon {
+    display: block;
+  }
+
+  .bellLabel {
+    display: none;
+  }
+}
