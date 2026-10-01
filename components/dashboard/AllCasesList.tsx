@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { BadgeVariant } from '@/types/caseViewModel';
 import styles from './AllCasesList.module.css';
@@ -22,46 +23,59 @@ export type AllCasesListItem = {
 };
 
 /**
- * The full, search-filtered (and stalled-first-sorted) case list — hidden
- * by the page while a stage filter is active, matching the prototype's
- * showAllCasesList/searchFilteredCases behavior. All filtering/sorting
- * happens in the page/hooks layer; this only renders what it's given.
+ * The "All Cases" tab's case list (Case list scalability, Phase 3,
+ * 2026-09) — renders one bounded, server-paginated page at a time
+ * (hooks/useCaseListPage.ts), never a client-side-filtered full dataset.
+ * All filtering/sorting/pagination happens server-side; this only renders
+ * what it's given plus the "Load More" control for the next page.
  */
 export function AllCasesList({
   cases,
-  searchQuery,
+  emptyMessage,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }: {
   cases: AllCasesListItem[];
-  searchQuery: string;
+  /** Shown only when `cases` is empty — the page decides the exact
+      wording (search-no-matches vs. genuinely-empty), since that
+      distinction depends on state (searchQuery) this component doesn't
+      otherwise need to know about. */
+  emptyMessage: string;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   return (
-    <>
-      <div className={styles.sectionLabel}>All cases</div>
-      <div className={styles.card}>
-        {cases.map((c) => (
-          <Link key={c.id} href={`/cases/${c.id}`} className={styles.row}>
-            <div className={styles.avatar}>{c.decedentInitials}</div>
-            <div className={styles.main}>
-              <div>
-                <div className={styles.name}>{c.decedentName}</div>
-                <div className={styles.caseNumber}>#{c.caseNumber}</div>
-                <div
-                  className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
-                >
-                  {c.rowSummaryText}
-                </div>
-              </div>
-              <div className={styles.badges}>
-                {c.isOverdue && <span className={styles.overdueTag}>overdue</span>}
-                <Badge variant={c.stageBadgeVariant}>{c.stageLabel}</Badge>
+    <div className={styles.card}>
+      {cases.map((c) => (
+        <Link key={c.id} href={`/cases/${c.id}`} className={styles.row}>
+          <div className={styles.avatar}>{c.decedentInitials}</div>
+          <div className={styles.main}>
+            <div>
+              <div className={styles.name}>{c.decedentName}</div>
+              <div className={styles.caseNumber}>#{c.caseNumber}</div>
+              <div
+                className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
+              >
+                {c.rowSummaryText}
               </div>
             </div>
-          </Link>
-        ))}
-        {cases.length === 0 && searchQuery.length > 0 && (
-          <EmptyState message={`No cases match "${searchQuery}"`} />
-        )}
-      </div>
-    </>
+            <div className={styles.badges}>
+              {c.isOverdue && <span className={styles.overdueTag}>overdue</span>}
+              <Badge variant={c.stageBadgeVariant}>{c.stageLabel}</Badge>
+            </div>
+          </div>
+        </Link>
+      ))}
+      {cases.length === 0 && <EmptyState message={emptyMessage} />}
+      {hasMore && (
+        <div className={styles.loadMoreRow}>
+          <Button variant="secondary" onClick={onLoadMore} disabled={isLoadingMore}>
+            {isLoadingMore ? 'Loading…' : 'Load More'}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

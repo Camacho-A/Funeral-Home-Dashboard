@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { BadgeVariant } from '@/types/caseViewModel';
 import { BulkActionBar } from './BulkActionBar';
 import styles from './StageFilteredPanel.module.css';
@@ -20,36 +22,45 @@ export type StageFilteredCase = {
 };
 
 /**
- * Shown when a Cases-by-stage bar is clicked (see CasesByStagePanel).
- * Bulk-select state and the advance mutation are owned by the page;
- * this only renders rows and forwards the interactions.
+ * A single workflow-stage tab's case list (Case list scalability, Phase
+ * 3, 2026-09) — one bounded, server-paginated page at a time
+ * (hooks/useCaseListPage.ts), with the bulk "select + advance to next
+ * stage" action this panel has always owned. The "← back to all cases"
+ * link/title header from the pre-tabs design is gone — the active tab
+ * itself is now what communicates "you're viewing Completed," and
+ * switching away is just clicking a different tab, not a one-way drill-in
+ * `onBack` had to undo. Bulk-select state and the advance mutation are
+ * still owned by the page; this only renders rows and forwards the
+ * interactions, plus the new "Load More" control for the next page.
  */
 export function StageFilteredPanel({
-  stageLabel,
   cases,
+  emptyMessage,
   selectedCount,
   onToggleSelect,
   onAdvance,
-  onBack,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }: {
-  stageLabel: string;
   cases: StageFilteredCase[];
+  /** Shown only when `cases` is empty — see AllCasesList's identical prop
+      for why the exact wording is the page's call, not this component's. */
+  emptyMessage: string;
   selectedCount: number;
   onToggleSelect: (caseId: string) => void;
   onAdvance: () => void;
-  onBack: () => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   return (
     <div className={styles.card}>
-      <div className={styles.header}>
-        <div className={styles.title}>{stageLabel}</div>
-        <div className={styles.headerActions}>
+      {selectedCount > 0 && (
+        <div className={styles.header}>
           <BulkActionBar selectedCount={selectedCount} onAdvance={onAdvance} />
-          <button type="button" className={styles.backLink} onClick={onBack}>
-            ← back to all cases
-          </button>
         </div>
-      </div>
+      )}
       <div className={styles.list}>
         {cases.map((c) => (
           <div key={c.id} className={`${styles.row} ${c.isStalled ? styles.rowStalled : ''}`}>
@@ -74,6 +85,14 @@ export function StageFilteredPanel({
           </div>
         ))}
       </div>
+      {cases.length === 0 && <EmptyState message={emptyMessage} />}
+      {hasMore && (
+        <div className={styles.loadMoreRow}>
+          <Button variant="secondary" onClick={onLoadMore} disabled={isLoadingMore}>
+            {isLoadingMore ? 'Loading…' : 'Load More'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

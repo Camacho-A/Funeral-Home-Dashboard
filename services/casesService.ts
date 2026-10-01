@@ -16,10 +16,139 @@ import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cas
 import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
+import { STAGES, rawStagesForDisplayStage, rawStagesForStageLabel } from '../domain/cases/stages';
+import {
+  clampCaseListPageSize,
+  compareCasesForListSort,
+  encodeCaseCursor,
+  matchesSearchStartsWith,
+  validateCaseCursor,
+} from '../lib/casePagination';
 
 export type CaseFilters = {
   searchQuery?: string;
 };
+
+/**
+ * Case list scalability, Phase 3 (2026-09). The bounded/stage/search-aware
+ * counterpart to `list()` above, backing the Dashboard's tabbed case list
+ * (hooks/useCaseListPage.ts). Mirrors `list()`'s own mock/wix split
+ * exactly, for the same reason documented there: mock mode's
+ * create()/update() mutate the BROWSER's own in-memory `caseFixtures`, so
+ * a mock-mode read must also run locally in the browser — fetching
+ * `/api/cases` would hit the Next.js SERVER's own separate `caseFixtures`
+ * module instance, which never sees those local mutations. This is why
+ * the mock branch re-implements the exact same stage/search/pagination
+ * logic `app/api/cases/route.ts`'s own mock branch has, rather than
+ * calling it — the two are deliberately kept in lockstep via the shared,
+ * pure `lib/casePagination.ts` helpers (sort comparator, cursor
+ * encode/decode, $startsWith-equivalent search), never independently
+ * reimplemented field-by-field.
+ */
+export type CaseListPage = { cases: Case[]; hasMore: boolean; nextCursor: string | null };
+
+export type CaseListPageFilters = {
+  stage?: string | null;
+  searchQuery?: string;
+  limit?: number;
+  cursor?: string | null;
+};
+
+function listPageMock(context: OrganizationContext, filters: CaseListPageFilters): CaseListPage {
+  const searchQuery = filters.searchQuery ?? '';
+  const stage = filters.stage ?? null;
+  const rawStages = stage ? rawStagesForStageLabel(stage) : null;
+  if (stage && rawStages === null) {
+    // An unrecognized stage never silently falls back to "All Cases" —
+    // matches app/api/cases/route.ts's own 400 behavior in spirit (the
+    // caller here has no HTTP status to return, so an empty page is the
+    // closest local equivalent to "there is nothing to show").
+    return { cases: [], hasMore: false, nextCursor: null };
+  }
+
+  const eligible = caseFixtures.filter(
+    (c) => c.organizationId === context.organizationId && !c.isDeleted && (rawStages === null || rawStages.includes(c.rawStage)),
+  );
+  const searched = eligible.filter((c) => matchesSearchStartsWith(c, searchQuery));
+  const sorted = [...searched].sort(compareCasesForListSort);
+
+  let offset = 0;
+  if (filters.cursor) {
+    const validation = validateCaseCursor(filters.cursor, { organizationId: context.organizationId, searchQuery, stage, kind: 'mock' });
+    if (!validation.ok || validation.payload.kind !== 'mock') {
+      return { cases: [], hasMore: false, nextCursor: null };
+    }
+    offset = validation.payload.offset;
+  }
+
+  const pageSize = clampCaseListPageSize(filters.limit ?? null);
+  const page = sorted.slice(offset, offset + pageSize);
+  const hasMore = offset + page.length < sorted.length;
+  const nextCursor = hasMore
+    ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId: context.organizationId, searchQuery, stage, offset: offset + page.length })
+    : null;
+
+  return { cases: page, hasMore, nextCursor };
+}
+
+export async function listPage(
+  context: OrganizationContext,
+  filters: CaseListPageFilters = {},
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<CaseListPage> {
+  if (dataAdapterMode === 'mock') {
+    return listPageMock(context, filters);
+  }
+
+  const params = new URLSearchParams({ organizationId: context.organizationId });
+  if (filters.stage) params.set('stage', filters.stage);
+  if (filters.searchQuery) params.set('searchQuery', filters.searchQuery);
+  params.set('limit', String(clampCaseListPageSize(filters.limit ?? null)));
+  if (filters.cursor) params.set('cursor', filters.cursor);
+
+  const response = await fetch(`/api/cases?${params.toString()}`);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.error ?? 'Failed to load cases.');
+  }
+  return body as CaseListPage;
+}
+
+/**
+ * Case list scalability, Phase 3 (2026-09). Tab counts for the Dashboard —
+ * see app/api/cases/counts/route.ts's own comment for the Wix-side
+ * ("Count Data Items", no record payload) design. Same mock/wix split as
+ * `listPage` above, for the identical reason.
+ */
+export type CaseCounts = { total: number; byStage: Record<string, number> };
+
+export async function counts(
+  context: OrganizationContext,
+  searchQuery: string = '',
+  dataAdapterMode: DataAdapterMode = 'mock',
+): Promise<CaseCounts> {
+  if (dataAdapterMode === 'mock') {
+    const eligible = caseFixtures.filter(
+      (c) => c.organizationId === context.organizationId && !c.isDeleted && matchesSearchStartsWith(c, searchQuery),
+    );
+    const byStage: Record<string, number> = {};
+    STAGES.forEach((label, displayStage) => {
+      const rawStages = rawStagesForDisplayStage(displayStage);
+      byStage[label] = eligible.filter((c) => rawStages.includes(c.rawStage)).length;
+    });
+    return { total: eligible.length, byStage };
+  }
+
+  const params = new URLSearchParams({ organizationId: context.organizationId });
+  if (searchQuery) params.set('searchQuery', searchQuery);
+
+  const response = await fetch(`/api/cases/counts?${params.toString()}`);
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.error ?? 'Failed to load case counts.');
+  }
+  return body as CaseCounts;
+}
 
 /**
  * Mock implementation backed by services/__mocks__/fixtures.ts. Every
@@ -436,4 +565,4 @@ export async function update(
   return result;
 }
 
-export const casesService = { list, get, create, update };
+export const casesService = { list, get, create, update, listPage, counts };

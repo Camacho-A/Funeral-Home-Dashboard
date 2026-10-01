@@ -13,3 +13,13 @@
 .financialSummarySection {
   margin-bottom: var(--space-12);
 }
+
+/* Case list scalability, Phase 3 (2026-09): a failed tab request's
+   contained retry state — never a full-page crash/reload. */
+.listErrorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-8) 0;
+}

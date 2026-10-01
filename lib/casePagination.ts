@@ -73,8 +73,36 @@ type MockCaseCursorPayload = { v: 1; kind: 'mock'; organizationId: string; searc
     point. */
 export type CaseCursorPayload = WixCaseCursorPayload | MockCaseCursorPayload;
 
+/**
+ * Case list scalability, Phase 3 (2026-09): this module is now imported
+ * from BROWSER code too (services/casesService.ts's mock-mode
+ * `listPage`/`counts` — mock mode has always run client-side, never
+ * through this route, so it needs the exact same cursor contract
+ * locally). `Buffer` doesn't exist in a browser bundle, so encode/decode
+ * use `TextEncoder`/`TextDecoder` + `btoa`/`atob` instead — both are
+ * standard globals in every environment this module now runs in (modern
+ * Node and every browser), unlike `Buffer`. Output is byte-for-byte the
+ * same base64url alphabet Phase 1/2 already used, so no previously-issued
+ * cursor format changes.
+ */
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 export function encodeCaseCursor(payload: CaseCursorPayload): string {
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  return toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
 }
 
 /** Never throws — a malformed/tampered/foreign-format token simply decodes
@@ -82,7 +110,7 @@ export function encodeCaseCursor(payload: CaseCursorPayload): string {
     than guessing at a fallback. */
 export function decodeCaseCursor(token: string): CaseCursorPayload | null {
   try {
-    const parsed: unknown = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(fromBase64Url(token)));
     if (!parsed || typeof parsed !== 'object') return null;
     const p = parsed as Record<string, unknown>;
     if (p.v !== 1 || typeof p.organizationId !== 'string' || typeof p.searchQuery !== 'string') return null;

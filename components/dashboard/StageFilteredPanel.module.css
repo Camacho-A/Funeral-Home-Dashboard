@@ -119,3 +119,9 @@
   color: var(--color-text-secondary);
   font-weight: var(--font-weight-regular);
 }
+
+.loadMoreRow {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) 0 var(--space-2);
+}

@@ -13,42 +13,35 @@ const item: StageFilteredCase = {
   selected: false,
 };
 
-/**
- * Item #7 (2026-09, decedent avatar fix). This component previously had no
- * dedicated test file — added here since its row avatar is one of the two
- * directly-affected decedent-avatar surfaces.
- */
+/** Case list scalability, Phase 3 (2026-09): `stageLabel`/`onBack` are
+    gone (the active tab itself now communicates the stage; "back" has no
+    meaning once switching stages is just clicking a different tab) —
+    replaced by `emptyMessage`/`hasMore`/`isLoadingMore`/`onLoadMore`. */
+function renderPanel(overrides: Partial<React.ComponentProps<typeof StageFilteredPanel>> = {}) {
+  return render(
+    <StageFilteredPanel
+      cases={[item]}
+      emptyMessage="No cases in this stage."
+      selectedCount={0}
+      onToggleSelect={vi.fn()}
+      onAdvance={vi.fn()}
+      hasMore={false}
+      isLoadingMore={false}
+      onLoadMore={vi.fn()}
+      {...overrides}
+    />,
+  );
+}
+
 describe('StageFilteredPanel — decedent avatar (item #7, 2026-09)', () => {
   it("shows the decedent's initials on the row avatar, never \"?\"", () => {
-    render(
-      <StageFilteredPanel
-        stageLabel="First Call & Payment"
-        cases={[item]}
-        selectedCount={0}
-        onToggleSelect={vi.fn()}
-        onAdvance={vi.fn()}
-        onBack={vi.fn()}
-      />,
-    );
+    renderPanel();
     expect(screen.getByText('MR')).toBeInTheDocument();
     expect(screen.queryByText('?')).not.toBeInTheDocument();
   });
 });
 
 describe('StageFilteredPanel — Case Number moved beneath decedent name (Task #2, 2026-09)', () => {
-  function renderPanel() {
-    return render(
-      <StageFilteredPanel
-        stageLabel="First Call & Payment"
-        cases={[item]}
-        selectedCount={0}
-        onToggleSelect={vi.fn()}
-        onAdvance={vi.fn()}
-        onBack={vi.fn()}
-      />,
-    );
-  }
-
   it('1/2. renders both the decedent name and the Case Number', () => {
     const { container } = renderPanel();
     expect(screen.getByText('Maria Rodriguez')).toBeInTheDocument();
@@ -83,5 +76,50 @@ describe('StageFilteredPanel — Case Number moved beneath decedent name (Task #
   it('8. no duplicate Case Number is introduced', () => {
     const { container } = renderPanel();
     expect(container.querySelectorAll('[class*="caseNumber"]')).toHaveLength(1);
+  });
+});
+
+/**
+ * Case list scalability, Phase 3 (2026-09). The "back to all cases" link
+ * is gone — tabs replace it.
+ */
+describe('StageFilteredPanel — no more "back to all cases" (Case list scalability, Phase 3)', () => {
+  it('never renders a "back to all cases" control', () => {
+    renderPanel();
+    expect(screen.queryByText(/back to all cases/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the bulk action bar only once at least one case is selected', () => {
+    renderPanel({ selectedCount: 0 });
+    expect(screen.queryByRole('button', { name: /advance/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the bulk action bar once a case is selected', () => {
+    renderPanel({ selectedCount: 2 });
+    expect(screen.getByRole('button', { name: 'Advance 2 to next stage' })).toBeInTheDocument();
+  });
+});
+
+describe('StageFilteredPanel — Load More / empty state (Case list scalability, Phase 3)', () => {
+  it('shows a Load More button when hasMore is true', () => {
+    renderPanel({ hasMore: true });
+    expect(screen.getByRole('button', { name: 'Load More' })).toBeInTheDocument();
+  });
+
+  it('does not show a Load More button when hasMore is false', () => {
+    renderPanel({ hasMore: false });
+    expect(screen.queryByRole('button', { name: 'Load More' })).not.toBeInTheDocument();
+  });
+
+  it('calls onLoadMore when clicked', () => {
+    const onLoadMore = vi.fn();
+    renderPanel({ hasMore: true, onLoadMore });
+    screen.getByRole('button', { name: 'Load More' }).click();
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the caller-provided empty message when there are no cases', () => {
+    renderPanel({ cases: [], emptyMessage: 'No cases in this stage.' });
+    expect(screen.getByText('No cases in this stage.')).toBeInTheDocument();
   });
 });
