@@ -1,9 +1,14 @@
-.stageOverviewGrid {
-  display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: var(--space-8);
+/* Case list scalability, Phase 3 — UX correction (2026-09): Needs
+   Attention and Cases by Stage no longer share a two-column grid — each
+   spans the Dashboard's full content width, stacked vertically, so both
+   have more room and the page keeps a fixed height regardless of case
+   count (neither section renders case results itself). */
+.attentionSection {
+  margin-bottom: var(--space-8);
+}
+
+.stageOverviewSection {
   margin-bottom: var(--space-12);
-  align-items: start;
 }
 
 /* Manors go-live cleanup (2026-09): Financial Summary's own row, now that
@@ -12,14 +17,4 @@
    goes somewhere intentional instead of shrinking to fit a column. */
 .financialSummarySection {
   margin-bottom: var(--space-12);
-}
-
-/* Case list scalability, Phase 3 (2026-09): a failed tab request's
-   contained retry state — never a full-page crash/reload. */
-.listErrorState {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-8) 0;
 }

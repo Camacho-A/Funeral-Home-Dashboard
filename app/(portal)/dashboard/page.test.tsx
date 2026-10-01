@@ -1,44 +1,36 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useState } from 'react';
-import { render, screen, waitFor, within, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, within, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DashboardPage from './page';
 import * as reportsClient from '@/lib/reportsClient';
 import type { DashboardResult } from '@/services/dashboardService';
 import { OrganizationProvider } from '@/hooks/useOrganization';
-import { CaseSearchContext, useCaseSearch } from '@/hooks/useCaseSearch';
-import { casesService } from '@/services/casesService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { STAGES } from '@/domain/cases/stages';
 import type { Case } from '@/types/case';
 
 /**
- * Manors go-live cleanup (2026-09) — the Main Dashboard's own page-level
- * test file (none existed before this task). Mocks
- * lib/reportsClient.ts#fetchDashboard directly (the same "mock the client
- * fetch function" pattern app/family/(portal)/dashboard/page.test.tsx
- * already established) — everything else (cases, staff, organization
- * context) uses the real mock adapter and its shared fixtures, matching
- * how the rest of this app's page-level tests already run.
+ * Manors go-live cleanup (2026-09): the Main Dashboard's own page-level
+ * test file. Mocks lib/reportsClient.ts#fetchDashboard directly (the same
+ * "mock the client fetch function" pattern app/family/(portal)/dashboard/
+ * page.test.tsx already established) — everything else (cases, staff,
+ * organization context) uses the real mock adapter and its shared
+ * fixtures, matching how the rest of this app's page-level tests already
+ * run.
+ *
+ * Case list scalability, Phase 3 — UX correction (2026-09): this file's
+ * tab/pagination/search/Load-More/mutation-invalidation coverage moved
+ * to app/(portal)/cases/page.test.tsx, since that behavior now lives on
+ * the dedicated case-list route, not the Dashboard. What remains here
+ * proves the Dashboard stayed a fixed-height summary — Needs Attention
+ * full-width, Cases by Stage below it as a pure navigation hub, and
+ * critically, NO case results of any kind rendered inline.
  */
 vi.mock('@/lib/reportsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/reportsClient')>('@/lib/reportsClient');
   return { ...actual, fetchDashboard: vi.fn() };
 });
-
-/**
- * Case list scalability, Phase 3 (2026-09). The active tab is reflected
- * in the URL (`?tab=<STAGES label>`), which needs `next/navigation`'s
- * router hooks — mocked the same way app/family/login/page.test.tsx
- * already does for its own `useRouter`/`useSearchParams` usage.
- */
-let searchParams = new URLSearchParams();
-const replaceMock = vi.fn();
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: replaceMock }),
-  usePathname: () => '/dashboard',
-  useSearchParams: () => searchParams,
-}));
 
 const BASE_DASHBOARD: DashboardResult = {
   today: { unreadNotifications: 0, appointmentsToday: 0 },
@@ -56,21 +48,20 @@ function renderPage() {
   );
 }
 
-/** Case list scalability, Phase 3 (2026-09): the new tabbed-list tests
-    below need precise control over which cases exist, so they render
-    against a second, dedicated organization (never DEFAULT_ORGANIZATION_ID's
-    real seed data) and return the QueryClient so a test can also drive
-    cache invalidation directly. */
+/** Case list scalability, Phase 3 — UX correction (2026-09): a couple of
+    tests need precise control over how many cases exist (to prove the
+    Dashboard's own footprint doesn't grow with them), so they render
+    against a second, dedicated organization rather than
+    DEFAULT_ORGANIZATION_ID's real seed data. */
 function renderPageForOrg(organizationId: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const result = render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider organizationId={organizationId}>
         <DashboardPage />
       </OrganizationProvider>
     </QueryClientProvider>,
   );
-  return { ...result, queryClient };
 }
 
 const pushedIds: string[] = [];
@@ -79,13 +70,6 @@ function pushCase(id: string, overrides: Partial<Case> & { caseNumber: string; c
   const template = caseFixtures.find((c) => c.organizationId !== SECOND_MOCK_ORGANIZATION_ID && !c.isDeleted)!;
   caseFixtures.push({
     ...template,
-    // The cloned template is itself stalled (it drives the real "Waiting
-    // on ... release" summary text seen elsewhere) — defaulted to false
-    // here so a pushed test fixture doesn't also surface in
-    // NeedsAttentionPanel (a legacy-fetch-all-driven, unrelated section —
-    // see DashboardPageContent's own comment) and collide with this same
-    // decedent name appearing in the tabbed list too. Tests that actually
-    // want to exercise "needs attention" can still override it.
     isStalled: false,
     ...overrides,
     id,
@@ -96,21 +80,8 @@ function pushCase(id: string, overrides: Partial<Case> & { caseNumber: string; c
 }
 
 afterEach(() => {
-  // Explicit, FIRST: unmount every rendered tree before touching shared
-  // fixture state below — otherwise a still-mounted component from this
-  // test can read `caseFixtures` mid-splice (or immediately after), which
-  // is what caused this file's original cross-test flakiness.
   cleanup();
-  // `restoreAllMocks` (not just `clearAllMocks`): several tests below use
-  // `vi.spyOn(casesService, 'listPage'/'counts')` and restore it manually
-  // at the end of their own test body — but a test that throws/fails
-  // BEFORE reaching that line never runs it, permanently leaving the spy
-  // (and whatever custom `.mockImplementation` it had) active for every
-  // later test in this file. `clearAllMocks` only resets call history, not
-  // implementations, so it can't fix that; `restoreAllMocks` unconditionally
-  // puts every spied module function back exactly once per test.
   vi.restoreAllMocks();
-  searchParams = new URLSearchParams();
   while (pushedIds.length > 0) {
     const id = pushedIds.pop()!;
     const index = caseFixtures.findIndex((c) => c.id === id);
@@ -211,336 +182,90 @@ describe('DashboardPage — Financial Summary expanded layout (Manors go-live cl
     const panel = heading.parentElement!;
     const section = panel.parentElement;
     expect(section?.getAttribute('style')).toBeNull(); // no inline width/fixed sizing introduced
-    // The panel's own 3 stat links (Gross revenue/Cash collected/Accounts
-    // receivable) are still present and unaltered — the flex-wrap
-    // mechanism they already relied on for narrow viewports is untouched.
     expect(within(panel).getAllByRole('link')).toHaveLength(3);
   });
 });
 
 /**
- * Case list scalability, Phase 3 (2026-09). The 8-tab case list —
- * integration-level coverage against the real mock adapter, a dedicated
- * organization (never DEFAULT_ORGANIZATION_ID's real seed data), and
- * temporarily-pushed fixtures so every assertion is exact.
+ * Case list scalability, Phase 3 — UX correction (2026-09). Cases by
+ * Stage is now a pure navigation hub into the dedicated `/cases` route —
+ * these tests prove the Dashboard itself never renders case results, and
+ * that Needs Attention/Cases by Stage are laid out full-width/stacked
+ * rather than sharing the old two-column grid.
  */
-describe('DashboardPage — tabs (Case list scalability, Phase 3)', () => {
-  it('1. renders exactly 8 tabs', async () => {
+describe('DashboardPage — Cases by Stage is a navigation hub, not a case list (Case list scalability, Phase 3 — UX correction)', () => {
+  it('1. Needs Attention appears before Cases by Stage, in document order (full-width, stacked layout)', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(8));
+    renderPage();
+
+    const needsAttentionHeading = await screen.findByText('Needs attention');
+    const casesByStageHeading = await screen.findByText('Cases by stage');
+    expect(needsAttentionHeading.compareDocumentPosition(casesByStageHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('2. "All Cases" is the default tab', async () => {
+  it('2/3. Cases by Stage contains an "All Cases" navigation link to /cases (no stage filter)', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    await waitFor(() => expect(screen.getByRole('tab', { name: /All Cases/ })).toHaveAttribute('aria-selected', 'true'));
+    renderPage();
+
+    const allCasesLink = await screen.findByRole('link', { name: /All Cases/ });
+    expect(allCasesLink).toHaveAttribute('href', '/cases');
   });
 
-  it('4/7. only the active tab\'s panel is displayed, and switching tabs never mixes results', async () => {
+  it('4. every canonical stage remains present as a navigation link, filtering the /cases route to that stage', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('fc-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'FIRSTCALL DECEDENT', rawStage: 0 });
-    pushCase('completed-1', { caseNumber: 'B2026-102', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'COMPLETED DECEDENT', rawStage: 7 });
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    // All Cases (the default) legitimately shows both — isolation is a
-    // property of a STAGE tab, not of All Cases itself.
-    await screen.findByText('FIRSTCALL DECEDENT');
-    await screen.findByText('COMPLETED DECEDENT');
+    renderPage();
 
-    fireEvent.click(screen.getByRole('tab', { name: /^First Call & Payment/ }));
-    // Both in the SAME waitFor — "COMPLETED DECEDENT absent" would
-    // trivially (and wrongly) pass while the panel still shows its
-    // "Loading cases…" placeholder.
-    await waitFor(() => {
-      expect(screen.queryByText('COMPLETED DECEDENT')).not.toBeInTheDocument();
-      expect(screen.getByText('FIRSTCALL DECEDENT')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole('tab', { name: /^Completed/ }));
-    await waitFor(() => {
-      expect(screen.getByText('COMPLETED DECEDENT')).toBeInTheDocument();
-      expect(screen.queryByText('FIRSTCALL DECEDENT')).not.toBeInTheDocument();
-    });
+    for (const label of STAGES) {
+      const link = await screen.findByRole('link', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
+      const url = new URL(link.getAttribute('href')!, 'http://localhost');
+      expect(url.pathname).toBe('/cases');
+      expect(url.searchParams.get('stage')).toBe(label);
+    }
   });
 
-  it('5. initial Dashboard load requests only the active (All Cases) list, never all eight', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    const listPageSpy = vi.spyOn(casesService, 'listPage');
-    pushCase('a', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 0 });
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-
-    await waitFor(() => expect(listPageSpy).toHaveBeenCalled());
-    const stagesRequested = new Set(listPageSpy.mock.calls.map((call) => call[1]?.stage ?? null));
-    expect(stagesRequested.size).toBe(1);
-    expect(stagesRequested.has(null)).toBe(true);
-    listPageSpy.mockRestore();
-  });
-
-  it('6. selecting a stage tab requests only that stage', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    const listPageSpy = vi.spyOn(casesService, 'listPage');
-    pushCase('a', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', rawStage: 7 });
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByRole('tab', { name: /All Cases/ });
-
-    fireEvent.click(screen.getByRole('tab', { name: /Completed/ }));
-    await waitFor(() => expect(listPageSpy.mock.calls.some((call) => call[1]?.stage === 'Completed')).toBe(true));
-    listPageSpy.mockRestore();
-  });
-
-  it('8. tab counts render from the server-side counts data, not the loaded page', async () => {
+  it('5. renders stage counts from the server-side counts endpoint, not a client-side aggregation', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     for (let i = 0; i < 3; i++) {
       pushCase(`c-${i}`, { caseNumber: `B2026-${100 + i}`, createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, rawStage: 7 });
     }
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
 
-    await waitFor(() => expect(screen.getByRole('tab', { name: /Completed/ }).textContent).toContain('3'));
+    const completedLink = await screen.findByRole('link', { name: /^Completed/ });
+    await waitFor(() => expect(completedLink.textContent).toContain('3'));
   });
 
-  it('9. an empty stage renders "No cases in this stage."', async () => {
+  it('6. 5/6/7. the Dashboard never renders individual case rows or cards, regardless of how many cases exist', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    fireEvent.click(screen.getByRole('tab', { name: /Completed/ }));
-    expect(await screen.findByText('No cases in this stage.')).toBeInTheDocument();
-  });
-
-  it('10. the active tab is reflected in the URL as ?tab=<STAGES label>', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    fireEvent.click(screen.getByRole('tab', { name: /Completed/ }));
-
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard?tab=Completed', { scroll: false }));
-  });
-
-  it('a bookmarked ?tab=<label> URL restores that tab on load', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    searchParams = new URLSearchParams({ tab: 'Completed' });
+    for (let i = 0; i < 10; i++) {
+      pushCase(`bulk-${i}`, {
+        caseNumber: `B2026-${200 + i}`,
+        createdAt: `2026-02-0${(i % 9) + 1}T00:00:00.000Z`,
+        decedentName: `BULK DECEDENT ${i}`,
+        rawStage: (i % 7) + 1,
+        isStalled: false,
+      });
+    }
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
 
-    await waitFor(() => expect(screen.getByRole('tab', { name: /Completed/ })).toHaveAttribute('aria-selected', 'true'));
-  });
-
-  it('an unrecognized ?tab= value falls back to All Cases rather than erroring', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    searchParams = new URLSearchParams({ tab: 'Not A Real Stage' });
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-
-    await waitFor(() => expect(screen.getByRole('tab', { name: /All Cases/ })).toHaveAttribute('aria-selected', 'true'));
-  });
-
-  it("CasesByStagePanel's stage bars stay wired to the same tab-selection state: clicking a bar selects its tab, and re-clicking the selected bar toggles back to All Cases", async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('bar-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'BAR CLICK CASE', rawStage: 7 });
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
     await screen.findByText('Cases by stage');
-
-    fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: /^Completed/ })).toHaveAttribute('aria-selected', 'true');
-      expect(screen.getByText('BAR CLICK CASE')).toBeInTheDocument();
-    });
-
-    // Re-clicking the SAME (now-selected) bar toggles back to All Cases,
-    // mirroring handleSelectStageFromBar's `activeTab === label ? null : label`.
-    fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
-    await waitFor(() => expect(screen.getByRole('tab', { name: /^All Cases/ })).toHaveAttribute('aria-selected', 'true'));
-  });
-});
-
-describe('DashboardPage — pagination / Load More (Case list scalability, Phase 3)', () => {
-  it('8. a Load More failure preserves the cases already loaded', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('a', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'KEEP ME', rawStage: 7 });
-
-    // Full control over the response shape: page 1 claims hasMore (via a
-    // fake cursor) without needing 50 real fixtures to force a genuine
-    // second Wix/mock page; the cursor-bearing (page 2) call always fails.
-    const listPageSpy = vi.spyOn(casesService, 'listPage').mockImplementation(async (_context, filters) => {
-      if (filters?.cursor) throw new Error('simulated Load More failure');
-      return { cases: [caseFixtures.find((c) => c.id === 'a')!], hasMore: true, nextCursor: 'fake-cursor' };
-    });
-
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    fireEvent.click(screen.getByRole('tab', { name: /Completed/ }));
-    await screen.findByText('KEEP ME');
-    const loadMoreButton = await screen.findByRole('button', { name: 'Load More' });
-
-    fireEvent.click(loadMoreButton);
-    await waitFor(() => expect(listPageSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ cursor: 'fake-cursor' }), expect.anything()));
-
-    // The failed page-2 request never cleared the already-loaded case.
-    expect(screen.getByText('KEEP ME')).toBeInTheDocument();
-    listPageSpy.mockRestore();
-  });
-});
-
-describe('DashboardPage — server-side search (Case list scalability, Phase 3)', () => {
-  function renderPageWithSearch(organizationId: string) {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    // A test-only search provider that updates `query` and `debouncedQuery`
-    // TOGETHER, synchronously — no real SEARCH_DEBOUNCE_MS timer at all.
-    // These integration tests are about "given a search term is active,
-    // does the Dashboard do X" — not about the debounce mechanism itself
-    // (which has its own dedicated unit test, hooks/useCaseSearch.test.tsx);
-    // going through the real timer here only reintroduced exactly the
-    // real-timer/act() flakiness this rewrite is replacing.
-    function TestSearchProvider({ children }: { children: React.ReactNode }) {
-      const [value, setValue] = useState('');
-      return (
-        <CaseSearchContext.Provider value={{ query: value, setQuery: setValue, debouncedQuery: value }}>
-          {children}
-        </CaseSearchContext.Provider>
-      );
+    // None of the pushed decedents' names ever appear anywhere on the
+    // Dashboard — there is no case list/card UI left to render them.
+    for (let i = 0; i < 10; i++) {
+      expect(screen.queryByText(`BULK DECEDENT ${i}`)).not.toBeInTheDocument();
     }
-    function SearchDriver() {
-      // Mirrors TopBar.tsx's own `<SearchInput value={query} onChange={setQuery}>`
-      // wiring, minimally, so a test can drive the shared search context
-      // without mounting the whole (portal) layout.
-      const { setQuery } = useCaseSearch();
-      return <input aria-label="search-driver" onChange={(e) => setQuery(e.target.value)} />;
-    }
-    const result = render(
-      <QueryClientProvider client={queryClient}>
-        <OrganizationProvider organizationId={organizationId}>
-          <TestSearchProvider>
-            <SearchDriver />
-            <DashboardPage />
-          </TestSearchProvider>
-        </OrganizationProvider>
-      </QueryClientProvider>,
-    );
-    function search(value: string) {
-      fireEvent.change(screen.getByLabelText('search-driver'), { target: { value } });
-    }
-    return { ...result, queryClient, search };
-  }
-
-  it('1/4. search is sent server-side — casesService.listPage receives the search query, not a client-side array filter', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    const listPageSpy = vi.spyOn(casesService, 'listPage');
-    pushCase('morales-1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
-    const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByRole('tab', { name: /All Cases/ });
-
-    search('morales');
-    await waitFor(() => expect(listPageSpy.mock.calls.some((call) => call[1]?.searchQuery === 'morales')).toBe(true));
-    listPageSpy.mockRestore();
+    // No "Load More" control either — that belongs exclusively to the
+    // dedicated case-list route's pagination, never the Dashboard.
+    expect(screen.queryByRole('button', { name: 'Load More' })).not.toBeInTheDocument();
   });
 
-  it('2. search composes with the selected stage', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    const listPageSpy = vi.spyOn(casesService, 'listPage');
-    const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    fireEvent.click(await screen.findByRole('tab', { name: /Completed/ }));
-    search('morales');
-
-    await waitFor(() =>
-      expect(listPageSpy.mock.calls.some((call) => call[1]?.stage === 'Completed' && call[1]?.searchQuery === 'morales')).toBe(true),
-    );
-    listPageSpy.mockRestore();
-  });
-
-  it('3. search persists when switching tabs', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('m1', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', rawStage: 0 });
-    pushCase('m2', { caseNumber: 'B2026-102', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES OTHER', rawStage: 7 });
-    const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByRole('tab', { name: /All Cases/ });
-    search('morales');
-    await screen.findByText('MORALES FAMILY');
-
-    fireEvent.click(screen.getByRole('tab', { name: /Completed/ }));
-    await screen.findByText('MORALES OTHER');
-    // The search box's own value was never cleared by switching tabs.
-    expect(screen.getByLabelText('search-driver')).toHaveValue('morales');
-  });
-
-  it('5. search results never mix with a prior unsearched page', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('match', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
-    pushCase('no-match', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'SMITH FAMILY' });
-    const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByText('SMITH FAMILY'); // unsearched "All Cases" shows both
-
-    search('morales');
-    // Both assertions in the SAME waitFor — "SMITH FAMILY absent" would
-    // trivially (and wrongly) pass while the panel is still showing its
-    // "Loading cases…" placeholder; requiring MORALES FAMILY's presence
-    // too forces this to wait for the actual settled, re-fetched state.
-    await waitFor(() => {
-      expect(screen.queryByText('SMITH FAMILY')).not.toBeInTheDocument();
-      expect(screen.getByText('MORALES FAMILY')).toBeInTheDocument();
+  it('8. Financial Summary and the rest of the Dashboard remain in the normal page flow, reachable without scrolling past any case list', async () => {
+    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
+      ...BASE_DASHBOARD,
+      financial: { grossRevenue: 100, cashCollected: 100, accountsReceivableTotal: 0 },
     });
-  });
+    renderPage();
 
-  it('6. search-aware counts update when a search query is active', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('match', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY', rawStage: 7 });
-    pushCase('no-match', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'SMITH FAMILY', rawStage: 7 });
-    const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    await waitFor(() => expect(screen.getByRole('tab', { name: /^All Cases/ }).textContent).toContain('2'));
-
-    search('morales');
-    await waitFor(() => expect(screen.getByRole('tab', { name: /^All Cases/ }).textContent).toContain('1'));
-  });
-
-  it('7. clearing search restores the selected tab\'s unsearched results', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    pushCase('match', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
-    pushCase('no-match', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'SMITH FAMILY' });
-    const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    search('morales');
-    await waitFor(() => expect(screen.queryByText('SMITH FAMILY')).not.toBeInTheDocument());
-
-    search('');
-    await waitFor(() => expect(screen.getByText('SMITH FAMILY')).toBeInTheDocument());
-    expect(screen.getByText('MORALES FAMILY')).toBeInTheDocument();
-  });
-});
-
-/**
- * Case list scalability, Phase 3 (2026-09). Mutation / cache invalidation
- * — every case mutation already invalidates the `['cases', organizationId]`
- * prefix (hooks/useCaseMutations.ts, useCreateCase.ts, useAdvanceCaseStage.ts);
- * the new tabbed list/counts queries nest under that exact prefix (see
- * hooks/useCaseListPage.ts/useCaseCounts.ts's own comments), so these
- * prove that existing invalidation now also refreshes the new UI, with no
- * new invalidation code of its own.
- */
-describe('DashboardPage — mutation cache invalidation (Case list scalability, Phase 3)', () => {
-  it('1/2/5. advancing a case to its next stage removes it from the old tab and updates both tabs\' counts', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    // rawStage 1, not 0: "First Call & Payment" combines BOTH raw stages 0
-    // and 1 into one display stage (domain/cases/stages.ts) — advancing
-    // from raw 0 to raw 1 would still be the SAME tab. Starting at raw 1
-    // means advanceToNextStage's single `rawStage + 1` genuinely leaves
-    // the tab (-> raw 2, "Jotform Application").
-    pushCase('advance-me', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'ADVANCE ME', rawStage: 1 });
-    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-
-    fireEvent.click(await screen.findByRole('tab', { name: /First Call & Payment/ }));
-    await screen.findByText('ADVANCE ME');
-    await waitFor(() => expect(screen.getByRole('tab', { name: /First Call & Payment/ }).textContent).toContain('1'));
-
-    fireEvent.click(screen.getByRole('checkbox', { name: /Select ADVANCE ME/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Advance 1 to next stage' }));
-
-    await waitFor(() => expect(screen.queryByText('ADVANCE ME')).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('tab', { name: /First Call & Payment/ }).textContent).toContain('0'));
-    await waitFor(() => expect(screen.getByRole('tab', { name: /Jotform Application/ }).textContent).toContain('1'));
-  });
-
-  it('3. a newly-created case appears in All Cases and its stage tab, and updates counts, once the standard cases cache is invalidated', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    const { queryClient } = renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    await waitFor(() => expect(screen.getByRole('tab', { name: /^All Cases/ }).textContent).toContain('0'));
-
-    pushCase('brand-new', { caseNumber: 'B2026-999', createdAt: '2026-05-01T00:00:00.000Z', decedentName: 'BRAND NEW CASE', rawStage: 0 });
-    // The exact invalidation hooks/useCreateCase.ts's own onSuccess performs.
-    await queryClient.invalidateQueries({ queryKey: ['cases', SECOND_MOCK_ORGANIZATION_ID] });
-
-    await screen.findByText('BRAND NEW CASE');
-    await waitFor(() => expect(screen.getByRole('tab', { name: /^All Cases/ }).textContent).toContain('1'), { timeout: 3000 });
+    await screen.findByText('Cases by stage');
+    expect(await screen.findByText('Financial summary')).toBeInTheDocument();
   });
 });

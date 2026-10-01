@@ -1,80 +1,53 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useMemo, useState, useEffect } from 'react';
 import { useCases } from '@/hooks/useCases';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
-import { useCaseSearch } from '@/hooks/useCaseSearch';
-import { useAdvanceCaseStage } from '@/hooks/useAdvanceCaseStage';
-import { useCaseListPage } from '@/hooks/useCaseListPage';
 import { useCaseCounts } from '@/hooks/useCaseCounts';
 import { STAGES } from '@/domain/cases/stages';
-import { computeKpis, groupCasesByDisplayStage } from '@/domain/reports/calculations';
+import { computeKpis } from '@/domain/reports/calculations';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useDashboardData } from '@/hooks/useDashboard';
 import { PageGreetingHeader } from '@/components/dashboard/PageGreetingHeader';
 import { NeedsAttentionPanel } from '@/components/dashboard/NeedsAttentionPanel';
-import { CasesByStagePanel } from '@/components/dashboard/CasesByStagePanel';
-import { CaseListTabs, type CaseListTabDef } from '@/components/dashboard/CaseListTabs';
-import { AllCasesList } from '@/components/dashboard/AllCasesList';
-import { StageFilteredPanel } from '@/components/dashboard/StageFilteredPanel';
+import { CasesByStagePanel, type StageBarRow } from '@/components/dashboard/CasesByStagePanel';
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel';
 import { FinancialSummaryPanel } from '@/components/dashboard/FinancialSummaryPanel';
-import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './page.module.css';
 
-const CASE_LIST_PANEL_ID = 'case-list-panel';
-
-/** "All Cases" (`null`) + the 7 canonical STAGES, in that fixed order —
-    built once from the canonical array (Case list scalability, Phase 3),
-    never a second, hand-typed list of stage names. */
-const TAB_DEFS: { key: string | null; label: string }[] = [
-  { key: null, label: 'All Cases' },
-  ...STAGES.map((label) => ({ key: label, label })),
-];
-
-function isValidStageTab(value: string | null): value is (typeof STAGES)[number] {
-  return value !== null && (STAGES as readonly string[]).includes(value);
-}
-
 /**
- * Case list scalability, Phase 3 (2026-09). The 8-tab case list — see
- * CaseListTabs.tsx, hooks/useCaseListPage.ts, hooks/useCaseCounts.ts for
- * the supporting architecture. Replaces the old vertical
- * AllCasesList/StageFilteredPanel toggle (driven by a numeric
- * `stageFilter` + the full-dataset `useCases()` fetch) with tabs driven
- * by a bounded, server-paginated query per tab — only the ACTIVE tab's
- * data is ever requested.
+ * Case list scalability, Phase 3 — UX correction (2026-09). The Dashboard
+ * is a fixed-height SUMMARY/command center: its height must never grow
+ * with the organization's case count. The prior iteration of this phase
+ * rendered an 8-tab bar plus a full, paginated case list directly on this
+ * page — that direction was explicitly reversed.
  *
- * `useCases()` (the legacy, complete-result fetch) is deliberately NOT
- * removed — NeedsAttentionPanel, the KPI header's active-case count, and
- * CasesByStagePanel's own bar-chart breakdown are unrelated to this
- * phase's scope and still depend on having every case's ViewModel in
- * memory to compute "needs attention"/stage-breakdown bars client-side.
- * See this phase's own report for why that's an accepted, explicitly
- * reported remaining legacy-fetch-all consumer rather than something
- * silently left in place.
+ * Needs Attention now spans the full content width (it no longer shares a
+ * two-column grid with Cases by Stage), with Cases by Stage immediately
+ * below it, also full width. Cases by Stage (components/dashboard/
+ * CasesByStagePanel.tsx) is a pure NAVIGATION HUB now — "All Cases" plus
+ * each of the 7 canonical stages are links into the dedicated case-list
+ * route (`/cases`, optionally `?stage=<STAGES label>`; see
+ * app/(portal)/cases/page.tsx), not a local filter that renders results
+ * here. No case card, AllCasesList, or StageFilteredPanel renders on this
+ * page at all — Financial Summary and everything below it stays exactly
+ * as reachable as before, regardless of whether the org has 20 cases or
+ * 20,000.
+ *
+ * Stage/All-Cases counts come from the Phase 2 counts endpoint
+ * (useCaseCounts) — never a client-side aggregation over a fully-
+ * downloaded case list (the prior `groupCasesByDisplayStage(allViewModels)`
+ * approach). `useCases()` (the legacy, complete-result fetch) is still
+ * used for NeedsAttentionPanel and the KPI header's active-case count —
+ * both genuinely need every case's ViewModel client-side today and are
+ * unrelated to this phase's scope; see this phase's own report for why
+ * that's an accepted, explicitly reported remaining legacy-fetch-all
+ * consumer rather than something silently left in place.
  */
-function DashboardPageContent() {
+export default function DashboardPage() {
   const { organizationId } = useOrganization();
   const { data: dashboardData, isLoading: isDashboardLoading, isError: isDashboardError } = useDashboardData(organizationId);
-  const { debouncedQuery } = useCaseSearch();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  // URL/navigation state (Case list scalability, Phase 3): the active tab
-  // is reflected as `?tab=<STAGES label>` — the exact same stable
-  // identifier GET /api/cases's own `stage` param already uses, never a
-  // second, Dashboard-only id scheme. Omitted entirely for "All Cases"
-  // (the default), so the plain `/dashboard` URL is still the common
-  // case. An unrecognized/stale `tab` value (e.g. a bookmarked URL from
-  // before a stage was renamed) falls back to All Cases rather than
-  // erroring.
-  const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTabState] = useState<string | null>(() => (isValidStageTab(tabParam) ? tabParam : null));
-  const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
   const [todayLabel, setTodayLabel] = useState('');
 
   useEffect(() => {
@@ -83,138 +56,38 @@ function DashboardPageContent() {
     );
   }, []);
 
-  function setActiveTab(tab: string | null) {
-    setActiveTabState(tab);
-    setSelectedCaseIds({});
-    const params = new URLSearchParams(searchParams.toString());
-    if (tab) params.set('tab', tab);
-    else params.delete('tab');
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-
-  // Search query changes reset pagination implicitly: it's part of
-  // useCaseListPage's own query key, so a new searchQuery is simply a
-  // different cached query starting at page 1 — but bulk-selection is
-  // page-content-dependent UI state this component owns, so it's reset
-  // explicitly here rather than silently pointing at rows that may no
-  // longer be visible.
-  useEffect(() => {
-    setSelectedCaseIds({});
-  }, [debouncedQuery]);
-
-  // Legacy, complete-result fetch (Case list scalability, Phase 1/2's
-  // documented "transitional" path) — kept ONLY for the three unrelated
-  // features below; the tabbed case list itself never reads from this.
+  // Legacy, complete-result fetch — kept ONLY for NeedsAttentionPanel and
+  // the KPI header below; Cases by Stage no longer reads from this.
   const { data: allCases } = useCases();
   const allViewModels = useCaseViewModels(allCases);
-  const advanceStage = useAdvanceCaseStage();
-
   const kpis = useMemo(() => computeKpis(allViewModels), [allViewModels]);
   const urgentCases = useMemo(() => allViewModels.filter((c) => c.needsAttention), [allViewModels]);
-  const stageBreakdownRows = useMemo(() => {
-    const counts = groupCasesByDisplayStage(allViewModels).map((group) => group.length);
-    const maxCount = Math.max(1, ...counts);
+
+  // Cases by Stage's navigation hub — server-side counts only (Phase 2),
+  // never every Case object. Dashboard has no search of its own (search
+  // belongs to the dedicated case-list route), so this is always the
+  // organization's unfiltered counts.
+  const { data: countsData } = useCaseCounts({ searchQuery: '' });
+  const stageBreakdownRows: StageBarRow[] = useMemo(() => {
+    const counts = STAGES.map((label) => countsData?.byStage[label] ?? null);
+    const maxCount = Math.max(1, ...counts.map((c) => c ?? 0));
     return STAGES.map((label, index) => ({
       label,
       count: counts[index],
-      pct: Math.round((counts[index] / maxCount) * 100),
-      selected: activeTab === label,
+      pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
     }));
-  }, [allViewModels, activeTab]);
-
-  // The actual tabbed case list — bounded, server-paginated, scoped to
-  // the active tab + debounced search term only.
-  const listQuery = useCaseListPage({ stage: activeTab, searchQuery: debouncedQuery });
-  const flatCases = useMemo(() => listQuery.data?.pages.flatMap((page) => page.cases) ?? [], [listQuery.data]);
-  const listViewModels = useCaseViewModels(flatCases);
-
-  const { data: countsData } = useCaseCounts({ searchQuery: debouncedQuery });
-  const tabs: CaseListTabDef[] = useMemo(
-    () =>
-      TAB_DEFS.map((tab) => ({
-        key: tab.key,
-        label: tab.label,
-        count: !countsData ? null : tab.key === null ? countsData.total : countsData.byStage[tab.key] ?? 0,
-      })),
-    [countsData],
-  );
-
-  const emptyMessage = debouncedQuery.trim() !== '' ? 'No cases found.' : activeTab !== null ? 'No cases in this stage.' : 'No cases yet.';
-
-  const selectedCount = Object.values(selectedCaseIds).filter(Boolean).length;
-
-  function handleSelectStageFromBar(index: number) {
-    const label = STAGES[index];
-    setActiveTab(activeTab === label ? null : label);
-  }
-
-  function handleToggleSelect(caseId: string) {
-    setSelectedCaseIds((current) => ({ ...current, [caseId]: !current[caseId] }));
-  }
-
-  function handleAdvance() {
-    const selected = flatCases.filter((c) => selectedCaseIds[c.id]);
-    advanceStage.mutate(selected, {
-      onSuccess: () => setSelectedCaseIds({}),
-    });
-  }
+  }, [countsData]);
 
   return (
     <div>
       <PageGreetingHeader todayLabel={todayLabel} activeCount={kpis.activeCases} />
 
-      <div className={styles.stageOverviewGrid}>
+      <div className={styles.attentionSection}>
         <NeedsAttentionPanel cases={urgentCases} />
-        <CasesByStagePanel rows={stageBreakdownRows} onSelectStage={handleSelectStageFromBar} />
       </div>
 
-      <CaseListTabs tabs={tabs} activeTab={activeTab} onSelectTab={setActiveTab} panelId={CASE_LIST_PANEL_ID} />
-
-      <div
-        id={CASE_LIST_PANEL_ID}
-        role="tabpanel"
-        aria-labelledby={`case-list-tab-${activeTab ?? '__all__'}`}
-      >
-        {listQuery.isLoading && <EmptyState message="Loading cases…" />}
-
-        {/* A failed Load More (fetchNextPage) must never replace the
-            already-loaded page — gated on `!listQuery.data` specifically,
-            not just `isError`, since React Query marks the query `isError`
-            for a failed fetchNextPage too, even though `data` (page 1)
-            is still fully intact. Only an initial-load failure (no data
-            at all yet) shows this full-panel error/retry state. */}
-        {!listQuery.isLoading && listQuery.isError && !listQuery.data && (
-          <div className={styles.listErrorState}>
-            <EmptyState message="Unable to load cases right now." />
-            <Button variant="secondary" onClick={() => listQuery.refetch()}>
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {!listQuery.isLoading && listQuery.data && activeTab === null && (
-          <AllCasesList
-            cases={listViewModels}
-            emptyMessage={emptyMessage}
-            hasMore={Boolean(listQuery.hasNextPage)}
-            isLoadingMore={listQuery.isFetchingNextPage}
-            onLoadMore={() => { listQuery.fetchNextPage().catch(() => {}); }}
-          />
-        )}
-
-        {!listQuery.isLoading && listQuery.data && activeTab !== null && (
-          <StageFilteredPanel
-            cases={listViewModels.map((c) => ({ ...c, selected: Boolean(selectedCaseIds[c.id]) }))}
-            emptyMessage={emptyMessage}
-            selectedCount={selectedCount}
-            onToggleSelect={handleToggleSelect}
-            onAdvance={handleAdvance}
-            hasMore={Boolean(listQuery.hasNextPage)}
-            isLoadingMore={listQuery.isFetchingNextPage}
-            onLoadMore={() => { listQuery.fetchNextPage().catch(() => {}); }}
-          />
-        )}
+      <div className={styles.stageOverviewSection}>
+        <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} />
       </div>
 
       {/* Manors go-live cleanup (2026-09): the dashboard's own "Attention"
@@ -246,13 +119,5 @@ function DashboardPageContent() {
 
       <RecentActivityPanel />
     </div>
-  );
-}
-
-export default function DashboardPage() {
-  return (
-    <Suspense fallback={<EmptyState message="Loading…" />}>
-      <DashboardPageContent />
-    </Suspense>
   );
 }

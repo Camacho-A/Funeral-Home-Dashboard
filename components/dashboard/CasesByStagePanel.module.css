@@ -11,6 +11,43 @@
   margin-bottom: var(--space-7);
 }
 
+/* The "All Cases" navigation row (Case list scalability, Phase 3 — UX
+   correction) — visually distinct from the stage rows below it since it
+   isn't a workflow stage, just the entry point into the unfiltered case
+   directory. */
+.allCasesRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-3);
+  margin: 0 calc(var(--space-3) * -1) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--color-brand-tint);
+  text-decoration: none;
+  color: inherit;
+}
+
+.allCasesRow:hover {
+  background: var(--color-surface-hover);
+}
+
+.allCasesRow:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+.allCasesLabel {
+  font-size: var(--font-size-13-5);
+  font-weight: var(--font-weight-bold);
+}
+
+.allCasesCount {
+  font-size: var(--font-size-13-5);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}
+
 .rows {
   display: flex;
   flex-direction: column;
@@ -28,18 +65,11 @@
     --radius-sm
   ); /* literal 8px in the prototype, consolidated into --radius-sm per the Phase 1 8px/9px cluster */
   background: transparent;
-  border: none;
-  width: 100%;
-  text-align: left;
-  font: inherit;
+  text-decoration: none;
   color: inherit;
 }
 
-.rowSelected {
-  background: var(--color-brand-tint);
-}
-
-.row:hover:not(.rowSelected) {
+.row:hover {
   background: var(--color-surface-hover);
 }
 
@@ -49,7 +79,11 @@
 }
 
 .label {
-  width: 150px;
+  /* Widened from the old 150px two-column layout (Case list scalability,
+     Phase 3 — UX correction): this panel now spans the Dashboard's full
+     content width, so the longest canonical stage label ("Permit &
+     Authorization Sent to Crematory") has room to sit on one line. */
+  width: 260px;
   flex-shrink: 0;
   font-size: var(--font-size-11);
   color: var(--color-text-secondary);
@@ -75,7 +109,7 @@
 }
 
 .count {
-  width: 16px;
+  width: 32px; /* was 16px — wide enough for 3-digit counts (e.g. "142") */
   flex-shrink: 0;
   text-align: right;
   font-size: var(--font-size-12);
