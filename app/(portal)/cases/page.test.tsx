@@ -345,14 +345,17 @@ describe('CasesPage — case progress indicator (Case list scalability, Phase 3)
       createdAt: '2026-01-01T00:00:00.000Z',
       decedentName: 'CHECKLIST CASE',
       rawStage: 3,
-      checklistState: { 0: true, 1: false, 2: false },
+      // displayStage 2 (EDRS) — composite-keyed per B2026-035's fix
+      // (domain/workflow/checklistItemKey.ts); a genuinely NEW/changing
+      // write must use this format, enforced server-side.
+      checklistState: { '2:0': true, '2:1': false, '2:2': false },
     });
     const { queryClient } = renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
     await screen.findByText('CHECKLIST CASE');
     const before = Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'));
 
     const organization = { organizationId: SECOND_MOCK_ORGANIZATION_ID, dataAdapterMode: 'mock' as const };
-    await casesService.update(organization, 'checklist-case', { checklistState: { 0: true, 1: true, 2: false } });
+    await casesService.update(organization, 'checklist-case', { checklistState: { '2:0': true, '2:1': true, '2:2': false } });
     await queryClient.invalidateQueries({ queryKey: ['cases', SECOND_MOCK_ORGANIZATION_ID] });
 
     await waitFor(() => {

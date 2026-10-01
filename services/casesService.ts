@@ -16,6 +16,7 @@ import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cas
 import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
+import { findInvalidChecklistStatePatchEntries } from '../domain/workflow/checklistItemKey';
 import { STAGES, rawStagesForDisplayStage, rawStagesForStageLabel } from '../domain/cases/stages';
 import {
   clampCaseListPageSize,
@@ -507,6 +508,19 @@ export async function update(
   // Staff-facing terminology (2026-09): see domain/cases/pickupRelease.ts's
   // own comment — mirrors the same check the Wix-mode PATCH route applies.
   assertValidPickupReleasePatch(caseFixtures[index], patch);
+  // B2026-035 hardening (2026-10): mirrors the Wix-mode PATCH route's
+  // identical check exactly — see
+  // domain/workflow/checklistItemKey.ts#findInvalidChecklistStatePatchEntries.
+  if (patch.checklistState) {
+    const invalidEntries = findInvalidChecklistStatePatchEntries(
+      caseFixtures[index].checklistState,
+      patch.checklistState,
+      caseFixtures[index].workflowSnapshot,
+    );
+    if (invalidEntries.length > 0) {
+      throw new Error(`Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}`);
+    }
+  }
   // Task #15 (2026-09, future-historical-date validation): mirrors the
   // Wix-mode route's own check, only for a field this patch actually sets
   // (an untouched existing value is never re-validated by an unrelated

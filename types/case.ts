@@ -169,7 +169,13 @@ export type Case = {
       `isVeteran` is true; `null` (undecided) for every non-veteran case
       and for a veteran case where the decision hasn't been made yet. */
   vaNotificationResponsibility: VaNotificationResponsibility | null;
-  checklistState: Record<number, boolean>;
+  /** Keyed by "{displayStage}:{index}" (see domain/workflow/checklistItemKey.ts)
+      — never a bare index alone, which is ambiguous across stages, and
+      never rawStage (First Call/Payment share one displayStage). A bare
+      numeric-string key may still be present on cases written before this
+      key format existed; readChecklistValue is the only code allowed
+      to interpret one, and only for the case's own current stage. */
+  checklistState: Record<string, boolean>;
   fieldValues: Record<number, string>;
   /** Manors launch-prep. Structured pickup/release tracking — the answer
       "are the remains still here or have they gone home?" without relying

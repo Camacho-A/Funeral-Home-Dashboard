@@ -255,7 +255,12 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     vaStepsState: isPlainObject(item.vaStepsState) ? (item.vaStepsState as Record<number, boolean>) : {},
     vaPublishChoice,
     vaNotificationResponsibility,
-    checklistState: item.checklistState as Record<number, boolean>,
+    // Keyed by "{displayStage}:{index}" going forward (domain/workflow/checklistItemKey.ts);
+    // a legacy row may still carry bare numeric-string keys, which is why
+    // the domain type is Record<string, boolean> rather than
+    // Record<number, boolean> — Wix itself only validates "is a plain
+    // object" (isPlainObject above), never this field's internal shape.
+    checklistState: item.checklistState as Record<string, boolean>,
     fieldValues: item.fieldValues as Record<number, string>,
     daysWaitingInStage: typeof item.daysWaitingInStage === 'number' ? item.daysWaitingInStage : 0,
     isStalled: typeof item.isStalled === 'boolean' ? item.isStalled : false,

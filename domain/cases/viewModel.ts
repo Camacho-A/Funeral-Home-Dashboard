@@ -251,7 +251,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // two can never drift apart into competing signals.
   const remainsReturnComplete = isTerminalReturnRequirementComplete(case_);
   const currentChecklist = applyFamilyContactPresentation(
-    applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, case_), case_, false),
+    applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, rawDisplayStage, case_), case_, false),
     case_,
   );
   // The immutable workflowSnapshot still carries its original "Family
@@ -332,12 +332,14 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // here from the case's own effective stage, not assumed from how the
   // caller (the StageStepper) happens to restrict which stages are
   // clickable.
+  const viewedStage = viewingDisplayStage != null ? findStageByDisplayStage(snapshot, viewingDisplayStage) : null;
   const viewedChecklist =
     viewingDisplayStage != null
       ? applyFamilyContactPresentation(
           applyLegacyCertifierPresentation(
             resolveChecklist(
-              findStageByDisplayStage(snapshot, viewingDisplayStage)?.checklist.items ?? [],
+              viewedStage?.checklist.items ?? [],
+              viewingDisplayStage,
               case_,
               { isPastStage: viewingDisplayStage < effectiveDisplayStage },
             ),

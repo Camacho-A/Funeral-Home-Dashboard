@@ -1487,3 +1487,107 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     expect(secondBody.case.rawStage).toBe(4);
   });
 });
+
+/**
+ * B2026-035 hardening (2026-10) — server-side checklistState write
+ * validation, the real production (Wix-mode) path. Mirrors
+ * services/casesService.test.ts's identical mock-mode suite exactly —
+ * both call the same domain/workflow/checklistItemKey.ts#findInvalidChecklistStatePatchEntries.
+ * Seeds a case at rawStage 4 (Permit & Authorization, displayStage 3, 2
+ * items) — the real B2026-035 stage.
+ */
+describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-035 hardening, 2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  const VALIDATION_TEMPLATE_VERSION = standardCremationWorkflowTemplateFixture.versions[0];
+  const VALIDATION_SNAPSHOT = buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, VALIDATION_TEMPLATE_VERSION);
+
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  function permitStageCaseData(checklistState: Record<string, boolean> = {}): Record<string, unknown> {
+    return {
+      ...EXISTING_WIX_CASE_DATA,
+      currentStage: 4,
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: VALIDATION_TEMPLATE_VERSION.version,
+      workflowSnapshot: VALIDATION_SNAPSHOT,
+      checklistState,
+    };
+  }
+
+  it('1. rejects a newly-introduced bare legacy-shaped key with 400, never 500/200', async () => {
+    mockAdminQueries(permitStageCaseData({}));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '1': true } } });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.case).toBeNull();
+    expect(body.error).toMatch(/canonical/);
+  });
+
+  it('2. rejects a malformed composite key with 400', async () => {
+    mockAdminQueries(permitStageCaseData({}));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { 'x:y': true } } });
+    expect(response.status).toBe(400);
+  });
+
+  it('3. rejects a negative stage/index with 400', async () => {
+    mockAdminQueries(permitStageCaseData({}));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '-1:0': true } } });
+    expect(response.status).toBe(400);
+  });
+
+  it('4. rejects a non-boolean checklist value with 400', async () => {
+    mockAdminQueries(permitStageCaseData({}));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:1': 'yes' } } });
+    expect(response.status).toBe(400);
+  });
+
+  it('5. accepts a valid composite key that exists in the case\'s own workflow snapshot', async () => {
+    mockAdminQueries(permitStageCaseData({}));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:1': true } } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.checklistState['3:1']).toBe(true);
+  });
+
+  it('6. an invalid checklist patch performs no persistence — updateWixDataItem is never called', async () => {
+    mockAdminQueries(permitStageCaseData({ '3:1': true }));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '1': true } } });
+    expect(response.status).toBe(400);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('7. an unchanged legacy key carried forward in the patch is never rejected — a case mid-migration can still be edited', async () => {
+    mockAdminQueries(permitStageCaseData({ '1': true })); // pre-migration bare key already stored
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { '1': true, '3:0': true } }, // '1' unchanged, '3:0' new and valid
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.checklistState['1']).toBe(true);
+    expect(body.case.checklistState['3:0']).toBe(true);
+  });
+
+  it('10. Task #6 reconciliation remains functional alongside validation — a valid, changing composite-key write still advances rawStage', async () => {
+    // mockWixQueries returns one static snapshot for every query, including
+    // reconcileCaseWorkflow's own re-fetch — so (mirroring the existing
+    // Task #6 suite's stage3CaseData({2: true}) pattern above) the mocked
+    // "existing" data must already reflect the post-patch checklistState,
+    // not the pre-patch one, or reconciliation re-reads stale state.
+    mockAdminQueries(permitStageCaseData({ '3:1': true }));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:1': true } } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.rawStage).toBe(5);
+  });
+});

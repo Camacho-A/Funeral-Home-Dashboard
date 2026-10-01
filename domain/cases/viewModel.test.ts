@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCaseViewModel, FAMILY_CONTACT_ITEM_LABEL } from './viewModel';
+import { resolveChecklist } from '../workflow/resolveChecklist';
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../workflow/snapshot';
@@ -1051,5 +1052,52 @@ describe('buildCaseViewModel — decedentInitials (item #7, 2026-09)', () => {
   it('13. reuses the shared initialsFromName helper rather than a duplicate algorithm — proven by identical edge-case behavior (middle name ignored, exactly like item #6)', () => {
     const case_ = baseCase({ decedentName: 'Angelica Maria Camacho' });
     expect(buildCaseViewModel(case_, { staffList: [] }).decedentInitials).toBe('AC');
+  });
+});
+
+/**
+ * B2026-035 progress regression (2026-10). Concrete proof that
+ * computeCaseProgress (domain/cases/progress.ts) cannot be inflated by
+ * the fixed cross-stage index collision: it never reads checklistState
+ * for a non-current stage at all — a future stage's contribution is
+ * always "0 completed, its own item count toward the total," regardless
+ * of any checklistState entry. Permit & Authorization's own composite key
+ * ("3:1") is explicitly set true here; DC Application Sent (the very
+ * stage that collided with it under the old flat-index architecture) is
+ * a future stage from this case's own rawStage (4), so its contribution
+ * must be exactly its own item count with zero credited, never inflated.
+ */
+describe('buildCaseViewModel — progress is immune to the cross-stage checklist collision (B2026-035)', () => {
+  it('Permit\'s own composite-keyed completion never credits DC Application Sent\'s item count', () => {
+    const template = standardCremationWorkflowTemplateFixture;
+    const version = latestTemplateVersion(template);
+    const snapshot = buildCaseWorkflowSnapshot(template, version);
+    const permitStage = findStageByRawStage(snapshot, 4)!; // displayStage 3, 2 items
+    const dcStage = findStageByRawStage(snapshot, 5)!; // displayStage 4, 2 items — collided with Permit under the old bug
+    expect(permitStage.checklist.items).toHaveLength(2);
+    expect(dcStage.checklist.items).toHaveLength(2);
+
+    const case_ = baseCase({
+      rawStage: 4,
+      checklistState: { '3:1': true }, // Permit's own last item, explicitly done — composite-keyed
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+
+    // Every stage strictly before Permit (First Call & Payment combined
+    // 11 items, Jotform 1, EDRS 3 — 15 total) is fully credited by the
+    // "past stage" rule; Permit itself (current stage, 2 items) is fully
+    // done; every stage at/after DC Application Sent (DC 2, Ready for
+    // Pickup 6, Completed 1 — 9 total) contributes 0 completed, its own
+    // item count toward the total.
+    expect(vm.progressCompletedItems).toBe(15 + 2); // 17 — DC's 2 items contribute nothing
+    expect(vm.progressTotalItems).toBe(15 + 2 + 9); // 26
+    expect(vm.progressPercent).toBe(65); // round(17/26 * 100)
+
+    // The direct mechanism: DC Application Sent's own resolved checklist
+    // (evaluated independently, the same way Case Detail would show it if
+    // viewed) must still read its item 1 as NOT done — the collision is
+    // fixed at the source, not merely absent from this one aggregate.
+    const dcResolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, case_, { isPastStage: false });
+    expect(dcResolved[1].done).toBe(false);
   });
 });

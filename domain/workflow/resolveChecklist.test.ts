@@ -80,32 +80,34 @@ describe('resolveChecklist — Weight (checklistItemIndex 3) field-backed comple
 
   it('Weight is not done when fieldValues[3] is absent', () => {
     const case_ = baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982' } });
-    const items = resolveChecklist(RAW_STAGE_0_ITEMS, case_);
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, case_);
     expect(items[3].done).toBe(false);
   });
 
   it('5. Weight becomes done once fieldValues[3] has a non-empty value, with no code path other than the existing field-backed logic involved', () => {
     const case_ = baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '210 lb' } });
-    const items = resolveChecklist(RAW_STAGE_0_ITEMS, case_);
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, case_);
     expect(items[3].done).toBe(true);
     expect(items[3].fieldValue).toBe('210 lb');
   });
 
   it('a whitespace-only value does not count as done (matches isFieldDone\'s own trim check)', () => {
     const case_ = baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '   ' } });
-    const items = resolveChecklist(RAW_STAGE_0_ITEMS, case_);
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, case_);
     expect(items[3].done).toBe(false);
   });
 
   it('completing Weight unlocks the next field-backed item (Date of death, index 4)', () => {
     const withoutWeight = resolveChecklist(
       RAW_STAGE_0_ITEMS,
+      0,
       baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 4: '08/15/2026' } }),
     );
     expect(withoutWeight[4].locked).toBe(true);
 
     const withWeight = resolveChecklist(
       RAW_STAGE_0_ITEMS,
+      0,
       baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '210 lb', 4: '08/15/2026' } }),
     );
     expect(withWeight[4].locked).toBe(false);
@@ -121,7 +123,7 @@ describe('resolveChecklist — Weight (checklistItemIndex 3) field-backed comple
       checklistState: { 3: true },
       rawStage: 5,
     });
-    const items = resolveChecklist(RAW_STAGE_0_ITEMS, case_);
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, case_);
     expect(items[3].done).toBe(false);
   });
 });
@@ -135,12 +137,14 @@ describe('resolveChecklist — Time of Death (checklistItemIndex 5) field-backed
   it('6. Time of Death becomes done once fieldValues[5] has a non-empty value, through the existing generic field-backed logic', () => {
     const before = resolveChecklist(
       RAW_STAGE_0_ITEMS,
+      0,
       baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '210 lb', 4: '08/15/2026' } }),
     );
     expect(before[5].done).toBe(false);
 
     const after = resolveChecklist(
       RAW_STAGE_0_ITEMS,
+      0,
       baseCase({ fieldValues: { 0: 'DECEDENT', 1: 'HOSPITAL', 2: '03/08/1982', 3: '210 lb', 4: '08/15/2026', 5: '15:45' } }),
     );
     expect(after[5].done).toBe(true);
@@ -172,27 +176,27 @@ describe('resolveChecklist — Certifier Information (requiredCaseFields) generi
 
   it('37. not done when both required Case fields are null', () => {
     const case_ = baseCase({ certifierName: null, certifierPhone: null });
-    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_);
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_);
     expect(items[6].done).toBe(false);
   });
 
   it('not done when only one of the two required fields is set — never "any one populated"', () => {
     const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: null });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(false);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_)[6].done).toBe(false);
 
     const flipped = baseCase({ certifierName: null, certifierPhone: '555-0199' });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, flipped)[6].done).toBe(false);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, flipped)[6].done).toBe(false);
   });
 
   it('38. done once both certifierName and certifierPhone are non-empty strings', () => {
     const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
-    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_);
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_);
     expect(items[6].done).toBe(true);
   });
 
   it('a whitespace-only required field does not count as done (matches isFieldDone\'s own trim check)', () => {
     const case_ = baseCase({ certifierName: '   ', certifierPhone: '555-0199' });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(false);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_)[6].done).toBe(false);
   });
 
   it('certifierLicenseNumber/certifierFax being null never blocks completion — only Name/Phone are required', () => {
@@ -202,16 +206,16 @@ describe('resolveChecklist — Certifier Information (requiredCaseFields) generi
       certifierLicenseNumber: null,
       certifierFax: null,
     });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(true);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_)[6].done).toBe(true);
   });
 
   it('isDerived is true for Certifier Information, matching the terminal return-of-remains item\'s existing precedent', () => {
     const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].isDerived).toBe(true);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_)[6].isDerived).toBe(true);
   });
 
   it('isDerived is false for every other (non-requiredCaseFields) item', () => {
-    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, baseCase({}));
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, baseCase({}));
     expect(items[0].isDerived).toBe(false);
     expect(items[5].isDerived).toBe(false);
   });
@@ -223,18 +227,20 @@ describe('resolveChecklist — Certifier Information (requiredCaseFields) generi
       checklistState: { 6: true },
       fieldValues: { 6: 'something' },
     });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].done).toBe(false);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_)[6].done).toBe(false);
   });
 
   it('completing Certifier Information unlocks the next item (Family contact, index 7)', () => {
     const notDone = resolveChecklist(
       V5_RAW_STAGE_0_ITEMS,
+      0,
       baseCase({ certifierName: null, certifierPhone: null, fieldValues: { 7: 'KAREN — 555-0100' } }),
     );
     expect(notDone[7].locked).toBe(true);
 
     const done = resolveChecklist(
       V5_RAW_STAGE_0_ITEMS,
+      0,
       baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199', fieldValues: { 7: 'KAREN — 555-0100' } }),
     );
     expect(done[7].locked).toBe(false);
@@ -242,17 +248,17 @@ describe('resolveChecklist — Certifier Information (requiredCaseFields) generi
 
   it('a prior undone field-backed item (index 5, Time of death) still locks Certifier Information, exactly like any other item pair', () => {
     const case_ = baseCase({ fieldValues: {}, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
-    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, case_)[6].locked).toBe(true);
+    expect(resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, case_)[6].locked).toBe(true);
   });
 
   it('valueKind is undefined for a normal item', () => {
-    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, baseCase({}));
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, baseCase({}));
     expect(items[0].valueKind).toBeUndefined();
   });
 
   it('valueKind is "time" for Time of Death in the v5 template — driven by declarative metadata, not a label match', () => {
     expect(V5_RAW_STAGE_0_ITEMS[5].valueKind).toBe('time');
-    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, baseCase({}));
+    const items = resolveChecklist(V5_RAW_STAGE_0_ITEMS, 0, baseCase({}));
     expect(items[5].valueKind).toBe('time');
   });
 });

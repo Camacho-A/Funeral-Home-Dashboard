@@ -7,6 +7,7 @@ import { activityEventFixtures } from '@/services/__mocks__/activityEventFixture
 import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
 import { seedChartOfAccounts } from '@/services/chartOfAccountsService';
 import { findPaymentConfirmationChecklistIndex } from '@/domain/cases/paymentChecklist';
+import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
 import type { PaymentRecord } from '@/types/payment';
 import type { WebhookEventRecord } from '@/types/webhookEvent';
 
@@ -471,15 +472,16 @@ describe('POST /api/webhooks/clover — a database failure during claim never ac
 describe('POST /api/webhooks/clover — case workflow effects', () => {
   it('marks Case.paymentStatus paid and the "Payment collected" checklist item done on a verified success', async () => {
     const case_ = caseFixtures.find((c) => c.id === seededPayment.caseId)!;
-    const checklistIndex = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
+    const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
 
     const now = Math.floor(Date.now() / 1000);
     await POST(signedRequest(eventBody(), now));
 
     const updatedCase = caseFixtures.find((c) => c.id === seededPayment.caseId)!;
     expect(updatedCase.paymentStatus).toBe('paid_in_full');
-    if (checklistIndex !== null) {
-      expect(updatedCase.checklistState[checklistIndex]).toBe(true);
+    if (paymentChecklistItem !== null) {
+      const key = checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index);
+      expect(updatedCase.checklistState[key]).toBe(true);
     }
   });
 

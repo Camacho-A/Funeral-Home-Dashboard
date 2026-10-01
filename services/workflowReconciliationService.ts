@@ -5,6 +5,8 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { listForCase as listCaseFormLinks } from './caseFormLinkService';
 import { getById as getExternalFormConfigById } from './externalFormConfigService';
 import { resolveChecklist } from '../domain/workflow/resolveChecklist';
+import { checklistItemKey } from '../domain/workflow/checklistItemKey';
+import { findStageByRawStage } from '../domain/workflow/resolveStages';
 import { ARRANGEMENT_FORMS_EXTERNAL_FORM_ID } from '../domain/externalForms/fieldMapping';
 import type { Case } from '../types/case';
 import type { StageTemplate } from '../types/workflowTemplate';
@@ -69,23 +71,26 @@ async function isArrangementFormLinked(organizationId: string, caseId: string, d
 /**
  * Builds a checklistState overlay scoped to exactly one stage's own items
  * — never applied globally — so a form-linked item's derived-done override
- * can never bleed into a different stage that happens to reuse the same
- * local item index (Case.checklistState is a flat, stage-agnostic map by
- * design; see domain/workflow/resolveChecklist.ts's own doc comment on why
- * that's safe for its normal one-stage-at-a-time callers). Deliberately
- * does NOT mutate/persist this onto the real Case row — it exists only to
- * let `resolveChecklist` (itself left completely unmodified — see this
- * file's own top comment) answer "is this stage done" correctly for
- * reconciliation's purposes; once reconciliation advances `rawStage` past
- * a now-complete stage, that stage's real checklistState becomes moot (a
- * past stage always renders done via `isPastStage`, regardless of its
- * stored checklistState).
+ * can never bleed into a different stage. Keyed by this stage's own
+ * composite "{displayStage}:{index}" key (domain/workflow/checklistItemKey.ts),
+ * never a bare index, so it can never collide with another stage's own
+ * item at the same local position — the exact ambiguity that used to
+ * exist here (see this file's own git history for the incident it
+ * caused). displayStage, not rawStage: Managed Cremations' First Call
+ * (rawStage 0) and Payment (rawStage 1) intentionally share one
+ * displayStage and one combined checklist — see resolveChecklist's own
+ * doc comment. Deliberately does NOT mutate/persist this onto the real
+ * Case row — it exists only to let `resolveChecklist` answer "is this
+ * stage done" correctly for reconciliation's purposes; once reconciliation
+ * advances `rawStage` past a now-complete stage, that stage's real
+ * checklistState becomes moot (a past stage always renders done via
+ * `isPastStage`, regardless of its stored checklistState).
  */
 function buildStageOverlayCase(stage: StageTemplate, case_: Case, arrangementFormLinked: boolean): Case {
   if (!arrangementFormLinked) return case_;
   const overlay = { ...case_.checklistState };
   for (const item of stage.checklist.items) {
-    if (item.externalFormIntegrationId) overlay[item.index] = true;
+    if (item.externalFormIntegrationId) overlay[checklistItemKey(stage.displayStage, item.index)] = true;
   }
   return { ...case_, checklistState: overlay };
 }
@@ -95,14 +100,33 @@ function buildStageOverlayCase(stage: StageTemplate, case_: Case, arrangementFor
     `workflowSnapshot.stages` in ascending rawStage order — never assumes
     any particular stage count/shape, so it works for any organization's
     template. Returns the last stage's rawStage if every stage is fully
-    done. */
+    done.
+
+    A stage whose displayStage is strictly before the case's current
+    displayStage is never re-evaluated — the case already, provably
+    passed it (the same trust `Math.max(current, computed)` below already
+    places in prior progress), so there is nothing to gain by re-checking
+    it here, and doing so risks a confusing "first incomplete" answer for
+    an old stage whose legacy checklistState can no longer be confidently
+    attributed to it. Compared by displayStage, not rawStage, so First
+    Call (rawStage 0) is never skipped relative to Payment (rawStage 1) —
+    they share one displayStage and must be evaluated consistently (see
+    resolveChecklist's own doc comment). Stages at or after the case's
+    current displayStage are always evaluated for real, which is what
+    lets a historical-import case still jump forward multiple stages in
+    one call when every one of them is genuinely, evidentially complete. */
 export function computeFirstIncompleteRawStage(case_: Case, arrangementFormLinked: boolean): number {
   const stages = [...(case_.workflowSnapshot?.stages ?? [])].sort((a, b) => a.rawStage - b.rawStage);
   if (stages.length === 0) return case_.rawStage;
 
+  const currentDisplayStage = case_.workflowSnapshot
+    ? findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage
+    : case_.rawStage;
+
   for (const stage of stages) {
+    if (stage.displayStage < currentDisplayStage) continue;
     const effectiveCase = buildStageOverlayCase(stage, case_, arrangementFormLinked);
-    const resolved = resolveChecklist(stage.checklist.items, effectiveCase, { isPastStage: false });
+    const resolved = resolveChecklist(stage.checklist.items, stage.displayStage, effectiveCase, { isPastStage: false });
     if (!resolved.every((item) => item.done)) return stage.rawStage;
   }
   return stages[stages.length - 1].rawStage;

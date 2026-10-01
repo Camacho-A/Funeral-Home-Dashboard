@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case, CaseUpdate, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { findChecklistIndexForCaseField } from '@/domain/workflow/resolveIntake';
+import { writeChecklistValue } from '@/domain/workflow/checklistItemKey';
+import { findStageByRawStage } from '@/domain/workflow/resolveStages';
 import { useOrganization } from './useOrganization';
 
 /**
@@ -111,8 +113,20 @@ export function useCaseMutations(caseId: string) {
   return {
     isPending: updateCase.isPending,
 
+    /**
+     * Keyed by the case's current *display* stage, not rawStage — First
+     * Call (rawStage 0) and Payment (rawStage 1) share one displayStage
+     * and one combined checklist (see domain/workflow/checklistItemKey.ts),
+     * so a toggle made while the case is at either rawStage must write the
+     * same composite key. Only ever wired to the editable, current-stage
+     * checklist (ChecklistCard); a viewed/past stage renders read-only and
+     * never calls this.
+     */
     toggleChecklistItem(case_: Case, index: number, newDone: boolean) {
-      updateCase.mutate({ checklistState: { ...case_.checklistState, [index]: newDone } });
+      const displayStage = case_.workflowSnapshot
+        ? findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage
+        : case_.rawStage;
+      updateCase.mutate({ checklistState: writeChecklistValue(case_.checklistState, displayStage, index, newDone) });
     },
 
     setFieldValue(case_: Case, index: number, value: string) {

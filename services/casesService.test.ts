@@ -7,6 +7,7 @@ import { DEFAULT_ORGANIZATION_ID, caseFixtures, staffFixtures } from './__mocks_
 import { SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 import { buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
+import { resolveChecklist } from '../domain/workflow/resolveChecklist';
 
 const organization: OrganizationContext = { organizationId: DEFAULT_ORGANIZATION_ID };
 const template = standardCremationWorkflowTemplateFixture;
@@ -1074,6 +1075,164 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
     const second = await casesService.update(organization, case_.id, patch);
     expect(second.rawStage).toBe(4);
+  });
+});
+
+/**
+ * B2026-035 hardening (2026-10) — server-side checklistState write
+ * validation, mock-mode path (mirrors the identical check in
+ * app/api/cases/[caseId]/route.ts's PATCH handler exactly — see
+ * domain/workflow/checklistItemKey.ts#findInvalidChecklistStatePatchEntries
+ * for the shared validator both call). Seeds a case at rawStage 4 (Permit
+ * & Authorization, displayStage 3, the real B2026-035 stage) so composite
+ * keys in these tests mean something concrete, not an arbitrary number.
+ */
+describe('casesService.update — checklistState write validation (B2026-035 hardening, 2026-10)', () => {
+  const VALIDATION_VERSION = standardCremationWorkflowTemplateFixture.versions[0];
+  const pushedCaseIds: string[] = [];
+
+  afterEach(() => {
+    for (const id of pushedCaseIds.splice(0)) {
+      const index = caseFixtures.findIndex((c) => c.id === id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+
+  /** rawStage 4 = Permit & Authorization, displayStage 3, exactly 2 items
+      (local index 0, 1) — the real stage B2026-035's collision involved. */
+  function seedPermitStageCase(checklistState: Record<string, boolean> = {}): Case {
+    const id = `validation-mock-${Math.random().toString(36).slice(2)}`;
+    const case_: Case = {
+      id,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-902',
+      decedentName: 'Validation Test Decedent',
+      dateOfBirth: '01/01/1950',
+      dateOfDeath: '01/01/2026',
+      timeOfDeath: '10:00',
+      placeOfDeath: 'Test Hospital',
+      weight: '150 lb',
+      rawStage: 4,
+      assignedStaffId: null,
+      nextOfKinName: 'Test NOK',
+      nextOfKinPhone: '555-0100',
+      nextOfKinEmail: null,
+      nextOfKinRelationship: null,
+      nextOfKinRelationshipOther: null,
+      certifierName: null,
+      certifierPhone: null,
+      certifierLicenseNumber: null,
+      certifierFax: null,
+      tagNumber: null,
+      paymentStatus: 'awaiting_payment',
+      pickupStatus: 'awaiting_pickup',
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+      pickupNote: null,
+      returnMethod: 'undecided',
+      shippingCarrier: null,
+      shippingTrackingNumber: null,
+      shippingDateShipped: null,
+      shippingDeliveryStatus: null,
+      shippingDeliveredAt: null,
+      isVeteran: false,
+      vaStepsState: {},
+      vaPublishChoice: null,
+      vaNotificationResponsibility: null,
+      checklistState,
+      fieldValues: {},
+      daysWaitingInStage: 0,
+      isStalled: false,
+      stalledReason: null,
+      createdBy: null,
+      intakeOwnerId: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      isDeleted: false,
+      workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+      workflowTemplateVersion: VALIDATION_VERSION.version,
+      caseType: 'cremation',
+      workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, VALIDATION_VERSION),
+    };
+    caseFixtures.push(case_);
+    pushedCaseIds.push(id);
+    return case_;
+  }
+
+  it('1. rejects a bare legacy-shaped key being newly introduced', async () => {
+    const case_ = seedPermitStageCase({});
+    await expect(casesService.update(organization, case_.id, { checklistState: { '1': true } })).rejects.toThrow(/canonical/);
+  });
+
+  it('2. rejects a malformed composite key', async () => {
+    const case_ = seedPermitStageCase({});
+    await expect(casesService.update(organization, case_.id, { checklistState: { 'a:1': true } })).rejects.toThrow(/canonical/);
+    const case2 = seedPermitStageCase({});
+    await expect(casesService.update(organization, case2.id, { checklistState: { '3:b': true } })).rejects.toThrow(/canonical/);
+    const case3 = seedPermitStageCase({});
+    await expect(casesService.update(organization, case3.id, { checklistState: { '3:1:1': true } })).rejects.toThrow(/canonical/);
+  });
+
+  it('3. rejects a negative stage or index', async () => {
+    const case_ = seedPermitStageCase({});
+    await expect(casesService.update(organization, case_.id, { checklistState: { '-3:1': true } })).rejects.toThrow(/canonical/);
+  });
+
+  it('4. rejects a non-boolean checklist value', async () => {
+    const case_ = seedPermitStageCase({});
+    await expect(
+      casesService.update(organization, case_.id, { checklistState: { '3:1': 'true' as unknown as boolean } }),
+    ).rejects.toThrow(/boolean/);
+  });
+
+  it('5. accepts a valid composite key that exists in the case\'s own workflow snapshot', async () => {
+    const case_ = seedPermitStageCase({});
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:1': true } });
+    expect(updated.checklistState['3:1']).toBe(true);
+  });
+
+  it('rejects a well-formed composite key that does not match any real item in this case\'s own workflow snapshot (e.g. a stage/index that does not exist)', async () => {
+    const case_ = seedPermitStageCase({});
+    await expect(casesService.update(organization, case_.id, { checklistState: { '99:5': true } })).rejects.toThrow(/workflow snapshot/);
+  });
+
+  it('6. an invalid checklist patch performs no persistence — the case\'s checklistState is completely untouched', async () => {
+    const case_ = seedPermitStageCase({ '3:1': true });
+    const before = { ...caseFixtures.find((c) => c.id === case_.id)!.checklistState };
+    await expect(casesService.update(organization, case_.id, { checklistState: { '1': true } })).rejects.toThrow();
+    expect(caseFixtures.find((c) => c.id === case_.id)!.checklistState).toEqual(before);
+  });
+
+  it('7. existing legacy stored state remains readable/writable during the migration compatibility window — carrying forward an unchanged legacy key never blocks an otherwise-valid update', async () => {
+    const case_ = seedPermitStageCase({ '1': true }); // pre-migration bare key, already stored
+    const updated = await casesService.update(organization, case_.id, {
+      checklistState: { '1': true, '3:0': true }, // '1' unchanged, '3:0' is new and valid
+    });
+    expect(updated.checklistState['1']).toBe(true); // legacy key preserved, not rejected
+    expect(updated.checklistState['3:0']).toBe(true);
+  });
+
+  it('8. a valid composite CHECK remains stage-scoped — writing Permit\'s own item 1 never satisfies DC Application Sent\'s own item 1', async () => {
+    const case_ = seedPermitStageCase({});
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:1': true } });
+    const dcStage = updated.workflowSnapshot!.stages.find((s) => s.rawStage === 5)!;
+    const resolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, updated, { isPastStage: false });
+    expect(resolved[1].done).toBe(false);
+  });
+
+  it('9. a valid composite UNCHECK remains stage-scoped — unchecking Ready for Pickup\'s own item 2 never clears EDRS\'s own item 2', async () => {
+    const case_ = seedPermitStageCase({ '2:2': true }); // EDRS's own last item, genuinely done
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '2:2': true, '5:2': false } });
+    const edrsStage = updated.workflowSnapshot!.stages.find((s) => s.rawStage === 3)!;
+    const resolved = resolveChecklist(edrsStage.checklist.items, edrsStage.displayStage, updated, { isPastStage: false });
+    expect(resolved[2].done).toBe(true);
+  });
+
+  it('10. Task #6 reconciliation remains fully functional alongside the new validation — a genuinely valid, changing composite-key write still advances rawStage', async () => {
+    const case_ = seedPermitStageCase({});
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:1': true } });
+    // Permit's own 2-item stage: item 0 defaults done, item 1 now explicitly
+    // done -> fully complete -> reconciliation advances past it to Stage 5.
+    expect(updated.rawStage).toBe(5);
   });
 });
 

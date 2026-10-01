@@ -1017,7 +1017,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
       const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
       const created = caseFixtures.find((c) => c.id === newCaseId)!;
       const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
-      const resolved = resolveChecklist(items, created);
+      const resolved = resolveChecklist(items, created.rawStage, created);
       expect(resolved[6].label).toBe('Certifier Information');
       expect(resolved[6].done).toBe(false);
     });
@@ -1032,7 +1032,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
       const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
       const created = caseFixtures.find((c) => c.id === newCaseId)!;
       const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
-      expect(resolveChecklist(items, created)[6].done).toBe(false);
+      expect(resolveChecklist(items, created.rawStage, created)[6].done).toBe(false);
     });
 
     it('11. Name + Phone -> Certifier Information checklist item is complete', async () => {
@@ -1047,7 +1047,7 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
       const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
       const created = caseFixtures.find((c) => c.id === newCaseId)!;
       const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
-      expect(resolveChecklist(items, created)[6].done).toBe(true);
+      expect(resolveChecklist(items, created.rawStage, created)[6].done).toBe(true);
     });
   });
 
@@ -1278,7 +1278,7 @@ describe('NewCaseModal — Next of Kin / Certifier contact section organization 
     const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
     const created = caseFixtures.find((c) => c.id === newCaseId)!;
     const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
-    expect(resolveChecklist(items, created)[6].done).toBe(false); // Name only — still incomplete
+    expect(resolveChecklist(items, created.rawStage, created)[6].done).toBe(false); // Name only — still incomplete
   });
 });
 

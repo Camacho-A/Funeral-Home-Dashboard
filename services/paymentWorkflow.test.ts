@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { markCasePaidIfVerified } from './paymentWorkflow';
 import { caseFixtures, DEFAULT_ORGANIZATION_ID } from './__mocks__/fixtures';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
+import { checklistItemKey } from '../domain/workflow/checklistItemKey';
 import { createCaseOrder } from './pricingService';
 import { caseOrderFixtures, caseOrderLineItemFixtures, caseOrderAuditFixtures } from './__mocks__/pricingFixtures';
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
@@ -48,12 +49,13 @@ describe('markCasePaidIfVerified — mock mode', () => {
 
   it("marks the case's own 'Payment collected' checklist item done, found via its workflowSnapshot", async () => {
     const { index, original } = withKnownCase();
-    const checklistIndex = findPaymentConfirmationChecklistIndex(original.workflowSnapshot);
-    expect(checklistIndex).not.toBeNull();
+    const paymentChecklistItem = findPaymentConfirmationChecklistIndex(original.workflowSnapshot);
+    expect(paymentChecklistItem).not.toBeNull();
 
     await markCasePaidIfVerified(DEFAULT_ORGANIZATION_ID, original.id, 'mock');
 
-    expect(caseFixtures[index].checklistState[checklistIndex as number]).toBe(true);
+    const key = checklistItemKey(paymentChecklistItem!.displayStage, paymentChecklistItem!.index);
+    expect(caseFixtures[index].checklistState[key]).toBe(true);
   });
 
   it('Manors workflow reconciliation (2026-09): rawStage only advances via reconcileCaseWorkflow when every prerequisite is genuinely complete — this fixture case is not, so it does not move', async () => {
@@ -67,13 +69,14 @@ describe('markCasePaidIfVerified — mock mode', () => {
 
   it('preserves every other checklistState entry untouched', async () => {
     const { index, original } = withKnownCase();
-    const checklistIndex = findPaymentConfirmationChecklistIndex(original.workflowSnapshot) as number;
-    const otherEntries = Object.entries(original.checklistState).filter(([key]) => Number(key) !== checklistIndex);
+    const paymentChecklistItem = findPaymentConfirmationChecklistIndex(original.workflowSnapshot)!;
+    const paymentKey = checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index);
+    const otherEntries = Object.entries(original.checklistState).filter(([key]) => key !== paymentKey);
 
     await markCasePaidIfVerified(DEFAULT_ORGANIZATION_ID, original.id, 'mock');
 
     for (const [key, value] of otherEntries) {
-      expect(caseFixtures[index].checklistState[Number(key)]).toBe(value);
+      expect(caseFixtures[index].checklistState[key]).toBe(value);
     }
   });
 

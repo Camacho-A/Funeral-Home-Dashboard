@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { reconcileCaseWorkflow, computeFirstIncompleteRawStage } from './workflowReconciliationService';
+import { resolveChecklist } from '../domain/workflow/resolveChecklist';
+import { writeChecklistValue } from '../domain/workflow/checklistItemKey';
 import { caseFixtures, DEFAULT_ORGANIZATION_ID } from './__mocks__/fixtures';
 import { caseFormLinkFixtures, ARRANGEMENT_FORMS_FORM_CONFIG_ID, VITAL_STATISTICS_FORM_CONFIG_ID } from './__mocks__/externalFormFixtures';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
@@ -291,5 +293,240 @@ describe('reconcileCaseWorkflow — mock mode', () => {
     const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
     expect(result).toEqual({ rawStage: 2, changed: true });
+  });
+});
+
+/**
+ * B2026-035 regression suite (2026-10-01) — stage-scoped checklistState.
+ *
+ * Root cause (fixed): `Case.checklistState` used to be one flat
+ * `Record<number, boolean>` map, reused by raw numeric index across EVERY
+ * stage's own checklist — never namespaced per stage. An index explicitly
+ * completed for one stage could be silently reinterpreted as satisfying a
+ * DIFFERENT stage's unrelated item at that same index.
+ *
+ * Confirmed against B2026-035's real persisted data (read-only Wix query,
+ * 2026-10-01): explicitly completing "Authorization of release sent to
+ * crematory" (Permit & Authorization stage, rawStage 4, local index 1)
+ * persisted the old flat `checklistState[1] = true`. "DC Application
+ * Sent" (rawStage 5) also has exactly 2 items, and its own last item —
+ * "Sent day before ashes arrive" — is ALSO local index 1, so the same
+ * `true` incorrectly satisfied it too, skipping rawStage 5 entirely.
+ *
+ * The fix: `checklistState` is now keyed by composite
+ * "{displayStage}:{index}" (domain/workflow/checklistItemKey.ts) — scoped
+ * by *display* stage, not raw stage, so First Call (rawStage 0) and
+ * Payment (rawStage 1) keep intentionally sharing one key (both map to
+ * displayStage 0), while Permit (rawStage 4 → displayStage 3) and DC
+ * Application Sent (rawStage 5 → displayStage 4) — genuinely different
+ * work that merely shares local index 1 — can never collide. These tests
+ * assert the corrected behavior directly — no `.fails()` modifier. Display
+ * stage numbers below use this template's real raw→display mapping
+ * (`toDisplayStage(rawStage) = rawStage === 0 ? 0 : rawStage - 1`, see
+ * services/__mocks__/workflowTemplates.ts): EDRS (raw 3) → display 2,
+ * Permit (raw 4) → display 3, DC Application Sent (raw 5) → display 4,
+ * Ready for Pickup (raw 6) → display 5.
+ */
+describe('B2026-035 regression — stage-scoped checklistState prevents cross-stage index collisions', () => {
+  /** Mirrors B2026-035 exactly up through "genuinely ready to leave
+      Permit & Authorization": First Call & Payment and EDRS both fully,
+      legitimately complete via their own composite-keyed items,
+      Arrangement Form linked, Permit stage's own last item (displayStage
+      3, local index 1) explicitly done — the exact action that triggered
+      B2026-035's over-advancement, now correctly scoped to display stage
+      3 only. */
+  function caseReadyToLeavePermitStage(): Case {
+    return buildTestCase({
+      rawStage: 4,
+      ...fullyCompleteFirstCallAndPayment(),
+      checklistState: {
+        ...fullyCompleteFirstCallAndPayment().checklistState,
+        '2:2': true, // EDRS's own last item ("Hardsave for state approval…") — displayStage 2
+        '3:1': true, // Permit's own last item ("Authorization of release…") — displayStage 3
+      },
+    });
+  }
+
+  it('1. reconciliation advances exactly one stage — to DC Application Sent (5) — never past it', () => {
+    const case_ = caseReadyToLeavePermitStage();
+    expect(computeFirstIncompleteRawStage(case_, true)).toBe(5);
+  });
+
+  it('2. DC Application Sent\'s own "Sent day before ashes arrive" item is NOT done merely because Permit\'s unrelated item shares local index 1', () => {
+    const case_ = caseReadyToLeavePermitStage();
+    const dcStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 5)!;
+    const resolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, case_, { isPastStage: false });
+    expect(resolved[1].done).toBe(false); // "Sent day before ashes arrive" — never actually completed
+  });
+
+  it('3. Permit & Authorization\'s own item 1 still reads done, scoped correctly to its display stage (3)', () => {
+    const case_ = caseReadyToLeavePermitStage();
+    const permitStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 4)!;
+    const resolved = resolveChecklist(permitStage.checklist.items, permitStage.displayStage, case_, { isPastStage: false });
+    expect(resolved[1].done).toBe(true);
+  });
+
+  it('4. reconcileCaseWorkflow (full mock-mode path) advances by exactly one stage, not two', async () => {
+    const case_ = caseReadyToLeavePermitStage();
+    seedCase(case_);
+    linkArrangementForm(case_.id);
+
+    const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+    expect(result).toEqual({ rawStage: 5, changed: true });
+  });
+
+  it('5. an incomplete DC Application Sent prerequisite correctly blocks advancement to Ready for Pickup', () => {
+    const case_ = caseReadyToLeavePermitStage();
+    expect(computeFirstIncompleteRawStage(case_, true)).not.toBe(6);
+  });
+
+  it('6. a genuinely complete DC Application Sent (its own composite-keyed item explicitly done) correctly advances past it — real completion is now distinguishable from collision', () => {
+    const case_ = buildTestCase({
+      rawStage: 4,
+      ...fullyCompleteFirstCallAndPayment(),
+      checklistState: {
+        ...fullyCompleteFirstCallAndPayment().checklistState,
+        '2:2': true, // EDRS
+        '3:1': true, // Permit's own item 1
+        '4:1': true, // DC Application Sent's own item 1 — genuinely, independently completed (displayStage 4)
+      },
+    });
+    expect(computeFirstIncompleteRawStage(case_, true)).toBe(6);
+  });
+
+  it('7. repeated/idempotent PATCH of the same Permit item never advances further on a second call', async () => {
+    const case_ = caseReadyToLeavePermitStage();
+    seedCase(case_);
+    linkArrangementForm(case_.id);
+
+    const first = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+    const second = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+
+    expect(first).toEqual({ rawStage: 5, changed: true });
+    expect(second).toEqual({ rawStage: 5, changed: false });
+  });
+
+  it('8. isolated, minimal reproduction: two unrelated stages sharing local index 1 no longer collide once each writes its own composite key', () => {
+    const stageAItems = [
+      { index: 0, label: 'A - item 0 (auto-defaults done)', hasField: false },
+      { index: 1, label: 'A - item 1 (the real action taken)', hasField: false },
+    ];
+    const stageBItems = [
+      { index: 0, label: 'B - item 0 (auto-defaults done)', hasField: false },
+      { index: 1, label: 'B - item 1 (never touched by anyone)', hasField: false },
+    ];
+    // Composite keys (displayStage 100 for A, 101 for B — arbitrary, chosen
+    // to prove this is generic and not specific to Permit/DC's 3/4) — only
+    // stage A's item 1 was ever explicitly set.
+    const case_ = buildTestCase({ checklistState: { '100:1': true } });
+
+    const resolvedA = resolveChecklist(stageAItems, 100, case_, { isPastStage: false });
+    const resolvedB = resolveChecklist(stageBItems, 101, case_, { isPastStage: false });
+
+    expect(resolvedA[1].done).toBe(true); // correct: this is what was actually done
+    expect(resolvedB[1].done).toBe(false); // fixed: "never touched by anyone" no longer reads as done
+  });
+
+  it('9. a legacy bare numeric key is honored only for the case\'s own CURRENT display stage', () => {
+    const case_ = buildTestCase({ rawStage: 4, checklistState: { '1': true } });
+    const permitStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 4)!;
+    const resolved = resolveChecklist(permitStage.checklist.items, permitStage.displayStage, case_, { isPastStage: false });
+    expect(resolved[1].done).toBe(true); // rawStage 4 (displayStage 3) IS the case's current stage — legacy key confidently attributed
+  });
+
+  it('10. a legacy bare numeric key is NEVER honored for any stage other than the case\'s current one — never guessed', () => {
+    const case_ = buildTestCase({ rawStage: 4, checklistState: { '1': true } });
+    const dcStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 5)!;
+    const resolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, case_, { isPastStage: false });
+    expect(resolved[1].done).toBe(false); // ambiguous legacy key — falls back to defaultDone, never assumed
+  });
+
+  it('11. a stage strictly before the case\'s current display stage is never re-evaluated, even if its checklistState would otherwise read as incomplete', () => {
+    // rawStage sits at 6 (displayStage 5); checklistState is entirely
+    // empty, so Permit's own gating item (displayStage 3) would read as
+    // completely undone if it were ever re-evaluated — but displayStage 3
+    // is strictly before displayStage 5, so computeFirstIncompleteRawStage
+    // must skip it entirely rather than regress to reporting rawStage 4 as
+    // "first incomplete."
+    const case_ = buildTestCase({ rawStage: 6 });
+    expect(computeFirstIncompleteRawStage(case_, true)).not.toBe(4);
+    expect(computeFirstIncompleteRawStage(case_, true)).toBe(6); // Ready for Pickup itself — its own item never explicitly done
+  });
+
+  it('12. the Jotform overlay (Arrangement Form linked) writes its composite key scoped to the Jotform stage only, never bleeding into another stage\'s same local index', () => {
+    const case_ = buildTestCase({ ...fullyCompleteFirstCallAndPayment() });
+    // Jotform Application (rawStage 2, displayStage 1) has exactly 1 item
+    // at local index 0; Family picked up ashes (rawStage 7, "Completed",
+    // displayStage 6) also has exactly 1 item at local index 0 — the
+    // overlay must only ever mark the Jotform stage's own item, never
+    // Completed's.
+    expect(computeFirstIncompleteRawStage(case_, true)).toBe(3); // advances past Jotform via the overlay
+    expect(computeFirstIncompleteRawStage(case_, true)).not.toBe(7); // never jumps all the way to Completed
+  });
+
+  it('13. toggling the same item to the same value twice is idempotent and does not advance rawStage again', async () => {
+    const case_ = caseReadyToLeavePermitStage();
+    seedCase(case_);
+    linkArrangementForm(case_.id);
+
+    const first = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+    expect(first).toEqual({ rawStage: 5, changed: true });
+
+    // Simulates the UI re-sending the exact same composite-keyed patch
+    // (e.g. a duplicate/retried PATCH) — the persisted state doesn't
+    // change, so reconciliation must report no further change.
+    const stillPermit = caseFixtures.find((c) => c.id === case_.id)!;
+    stillPermit.checklistState = { ...stillPermit.checklistState, '3:1': true };
+    const second = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
+    expect(second).toEqual({ rawStage: 5, changed: false });
+  });
+
+  it('14. a multi-stage historical-import jump still works when every skipped stage is genuinely, independently complete via its own composite keys', () => {
+    const case_ = buildTestCase({
+      rawStage: 0,
+      ...fullyCompleteFirstCallAndPayment(),
+      checklistState: {
+        ...fullyCompleteFirstCallAndPayment().checklistState,
+        '2:2': true, // EDRS (displayStage 2)
+        '3:1': true, // Permit (displayStage 3)
+        '4:1': true, // DC Application Sent — genuinely complete, own key (displayStage 4)
+      },
+    });
+    // Jumps straight to Ready for Pickup (6) in one computation — every
+    // intermediate stage (2, 3, 4, 5) is independently, genuinely done.
+    expect(computeFirstIncompleteRawStage(case_, true)).toBe(6);
+  });
+
+  it('15. writeChecklistValue + resolveChecklist round-trip: toggling via the real write helper is correctly read back, scoped to the right display stage only', () => {
+    const base = buildTestCase({ rawStage: 4 }); // displayStage 3
+    const patched = writeChecklistValue(base.checklistState, 3, 1, true);
+    const case_ = { ...base, checklistState: patched };
+
+    const permitStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 4)!; // displayStage 3
+    const dcStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 5)!; // displayStage 4
+    expect(resolveChecklist(permitStage.checklist.items, permitStage.displayStage, case_, { isPastStage: false })[1].done).toBe(true);
+    expect(resolveChecklist(dcStage.checklist.items, dcStage.displayStage, case_, { isPastStage: false })[1].done).toBe(false);
+  });
+
+  it('16. UNCHECK direction — toggling a different stage\'s same-local-index item to false never collaterally clears a genuinely completed item (reproduces the EDRS collateral-corruption finding)', () => {
+    // Reproduces the real B2026-035 timeline shape: EDRS (displayStage 2,
+    // local index 2) was genuinely, independently completed. Staff later
+    // unchecked what they believed was Ready for Pickup's own item at
+    // local index 2 (reacting to the bogus Stage 6 display) — under the
+    // old flat-key architecture this used the SAME key as EDRS's own item
+    // 2 and collaterally cleared it. Under the composite-key fix, writing
+    // Ready for Pickup's own key must never touch EDRS's own key.
+    const base = caseReadyToLeavePermitStage(); // EDRS ('2:2') and Permit ('3:1') both genuinely done
+    const readyForPickupUnchecked = writeChecklistValue(base.checklistState, 5, 2, false); // Ready for Pickup's own item 2 -> false
+    const case_ = { ...base, checklistState: readyForPickupUnchecked };
+
+    const edrsStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 3)!; // displayStage 2
+    const resolvedEdrs = resolveChecklist(edrsStage.checklist.items, edrsStage.displayStage, case_, { isPastStage: false });
+    expect(resolvedEdrs[2].done).toBe(true); // EDRS's own completion survives the unrelated uncheck untouched
+
+    // Reconciliation still correctly advances to DC Application Sent (5) —
+    // the uncheck on Ready for Pickup's own item has zero effect on EDRS,
+    // Permit, or the computed first-incomplete stage.
+    expect(computeFirstIncompleteRawStage(case_, true)).toBe(5);
   });
 });

@@ -27,7 +27,7 @@ function snapshotWithItem(label: string, index: number): CaseWorkflowSnapshot {
 
 describe('findPaymentConfirmationChecklistIndex', () => {
   it('finds the "Payment collected" item in whichever stage/index it appears', () => {
-    expect(findPaymentConfirmationChecklistIndex(snapshotWithItem('Payment collected', 8))).toBe(8);
+    expect(findPaymentConfirmationChecklistIndex(snapshotWithItem('Payment collected', 8))).toEqual({ displayStage: 0, index: 8 });
   });
 
   it('searches across every stage, not just the first', () => {
@@ -40,7 +40,7 @@ describe('findPaymentConfirmationChecklistIndex', () => {
         { rawStage: 1, displayStage: 1, label: 'B', isAttentionStage: false, slaTargetDays: 1, checklist: { items: [{ index: 0, label: 'Payment collected', hasField: false }] } },
       ],
     };
-    expect(findPaymentConfirmationChecklistIndex(snapshot)).toBe(0);
+    expect(findPaymentConfirmationChecklistIndex(snapshot)).toEqual({ displayStage: 1, index: 0 });
   });
 
   it('returns null when no item has this exact label', () => {

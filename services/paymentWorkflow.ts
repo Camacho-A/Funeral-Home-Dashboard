@@ -3,6 +3,7 @@ import { queryWixDataItems, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixCaseItem, applyCaseUpdateToWixData, type WixCaseItem } from '../lib/wixCaseMapper';
 import { caseFixtures } from './__mocks__/fixtures';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
+import { checklistItemKey } from '../domain/workflow/checklistItemKey';
 import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
 import { postPaymentTransaction } from './financialTransactionService';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
@@ -99,12 +100,14 @@ export async function markCasePaidIfVerified(
     const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === organizationId);
     if (index === -1) return;
     const case_ = caseFixtures[index];
-    const checklistIndex = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
+    const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
     caseFixtures[index] = {
       ...case_,
       paymentStatus: 'paid_in_full',
       checklistState:
-        checklistIndex === null ? case_.checklistState : { ...case_.checklistState, [checklistIndex]: true },
+        paymentChecklistItem === null
+          ? case_.checklistState
+          : { ...case_.checklistState, [checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index)]: true },
     };
     await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
     return;
@@ -120,10 +123,13 @@ export async function markCasePaidIfVerified(
   const case_ = mapWixCaseItem(existingItem.data);
   if (!case_) return;
 
-  const checklistIndex = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
+  const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
   const mergedData = applyCaseUpdateToWixData(existingItem.data, {
     paymentStatus: 'paid_in_full',
-    checklistState: checklistIndex === null ? undefined : { ...case_.checklistState, [checklistIndex]: true },
+    checklistState:
+      paymentChecklistItem === null
+        ? undefined
+        : { ...case_.checklistState, [checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index)]: true },
   });
 
   await updateWixDataItem<WixCaseItem>('cases', existingItem.id, mergedData);

@@ -6,7 +6,17 @@ import { OrganizationProvider } from './useOrganization';
 import { casesService } from '@/services/casesService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
+import { findStageByRawStage } from '@/domain/workflow/resolveStages';
 import type { Case } from '@/types/case';
+
+// toggleChecklistItem now writes a "{displayStage}:{index}" composite key
+// (domain/workflow/checklistItemKey.ts) rather than a bare index — computed
+// here from the real fixture's own workflowSnapshot/rawStage, the same way
+// the hook itself does, rather than hardcoding a display stage number.
+const FIXTURE_DISPLAY_STAGE = findStageByRawStage(caseFixtures[0].workflowSnapshot!, caseFixtures[0].rawStage)!.displayStage;
+const KEY0 = checklistItemKey(FIXTURE_DISPLAY_STAGE, 0);
+const KEY1 = checklistItemKey(FIXTURE_DISPLAY_STAGE, 1);
 
 /**
  * Case field editing / field-backed checklist sync (2026-09). `setWeight`
@@ -355,9 +365,14 @@ function deferred<T>() {
 const CASE_QUERY_KEY = ['case', DEFAULT_ORGANIZATION_ID, CASE_ID];
 
 describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 2026-09)', () => {
+  // Reuses the module-level KEY0/KEY1 (derived from the real fixture's own
+  // displayStage above) rather than a second, hand-typed copy.
+  const KEY_0 = KEY0;
+  const KEY_1 = KEY1;
+
   it('1. checking an unchecked item updates the cached checked state immediately, before the server responds', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
     const { promise, resolve } = deferred<Case>();
     vi.mocked(casesService.update).mockReturnValue(promise);
@@ -366,18 +381,18 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
       result.current.toggleChecklistItem(case_, 0, true);
     });
 
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(true));
     // The server call is still pending — the cache update above happened
     // independently of, and before, any server response.
     expect(casesService.update).toHaveBeenCalledTimes(1);
 
-    resolve(testCase({ checklistState: { 0: true } }));
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(true));
+    resolve(testCase({ checklistState: { [KEY_0]: true } }));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(true));
   });
 
   it('2. unchecking a checked item updates the cached checked state immediately, before the server responds', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: true } });
+    const case_ = testCase({ checklistState: { [KEY_0]: true } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
     const { promise, resolve } = deferred<Case>();
     vi.mocked(casesService.update).mockReturnValue(promise);
@@ -386,14 +401,14 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
       result.current.toggleChecklistItem(case_, 0, false);
     });
 
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(false));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(false));
     expect(casesService.update).toHaveBeenCalledTimes(1);
-    resolve(testCase({ checklistState: { 0: false } }));
+    resolve(testCase({ checklistState: { [KEY_0]: false } }));
   });
 
   it('3. the persistence request still occurs with the correct checklistState patch', async () => {
     const { result } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false, 1: true } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false, [KEY_1]: true } });
 
     act(() => {
       result.current.toggleChecklistItem(case_, 0, true);
@@ -402,14 +417,14 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     await waitFor(() => expect(casesService.update).toHaveBeenCalled());
     const [, calledCaseId, patch] = vi.mocked(casesService.update).mock.calls[0];
     expect(calledCaseId).toBe(CASE_ID);
-    expect(patch.checklistState).toEqual({ 0: true, 1: true });
+    expect(patch.checklistState).toEqual({ [KEY_0]: true, [KEY_1]: true });
   });
 
   it('4. a server success preserves the optimistic state (and settles the cache on the authoritative response)', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
-    const serverCase = testCase({ checklistState: { 0: true }, id: 'server-confirmed' });
+    const serverCase = testCase({ checklistState: { [KEY_0]: true }, id: 'server-confirmed' });
     vi.mocked(casesService.update).mockResolvedValue(serverCase);
 
     act(() => {
@@ -421,7 +436,7 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
 
   it('5. a server failure rolls the item back to its previous state', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
     const { promise, reject } = deferred<Case>();
     vi.mocked(casesService.update).mockReturnValue(promise);
@@ -429,16 +444,16 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     act(() => {
       result.current.toggleChecklistItem(case_, 0, true);
     });
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(true));
 
     reject(new Error('Wix Data update failed.'));
 
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(false));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(false));
   });
 
   it('11. rapid check -> uncheck: an older (now-superseded) success response never overwrites the newer toggle', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
     const first = deferred<Case>();
     const second = deferred<Case>();
@@ -447,28 +462,28 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     act(() => {
       result.current.toggleChecklistItem(case_, 0, true);
     });
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(true));
 
     act(() => {
-      result.current.toggleChecklistItem(testCase({ checklistState: { 0: true } }), 0, false);
+      result.current.toggleChecklistItem(testCase({ checklistState: { [KEY_0]: true } }), 0, false);
     });
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(false));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(false));
 
     // The FIRST (now-stale) request resolves last, with data reflecting the
     // OLDER, now-superseded toggle — it must not clobber the newer one.
-    first.resolve(testCase({ checklistState: { 0: true } }));
+    first.resolve(testCase({ checklistState: { [KEY_0]: true } }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(false);
+    expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(false);
 
     // The SECOND (latest) request then resolves, settling the cache
     // authoritatively on the user's actual last action.
-    second.resolve(testCase({ checklistState: { 0: false } }));
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)).toEqual(testCase({ checklistState: { 0: false } })));
+    second.resolve(testCase({ checklistState: { [KEY_0]: false } }));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)).toEqual(testCase({ checklistState: { [KEY_0]: false } })));
   });
 
   it('12. toggling two different independent checklist items does not corrupt either item\'s state', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false, 1: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false, [KEY_1]: false } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
     vi.mocked(casesService.update).mockImplementation((_ctx, _id, patch) =>
       Promise.resolve({ ...case_, checklistState: { ...case_.checklistState, ...(patch as Partial<Case>).checklistState } }),
@@ -477,13 +492,13 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     act(() => {
       result.current.toggleChecklistItem(case_, 0, true);
     });
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(true));
-    expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[1]).toBe(false);
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(true));
+    expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_1]).toBe(false);
   });
 
   it("13. actual-employee attribution is untouched by this change — the patch carries only checklistState, never an actor/staff field", async () => {
     const { result } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false } });
 
     act(() => {
       result.current.toggleChecklistItem(case_, 0, true);
@@ -496,16 +511,16 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
 
   it('15. does not invalidate/refetch unrelated case data — the same targeted cache write as before, no page-wide refresh mechanism introduced', async () => {
     const { result, queryClient } = renderWithClient();
-    const case_ = testCase({ checklistState: { 0: false } });
+    const case_ = testCase({ checklistState: { [KEY_0]: false } });
     queryClient.setQueryData(CASE_QUERY_KEY, case_);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    vi.mocked(casesService.update).mockResolvedValue(testCase({ checklistState: { 0: true } }));
+    vi.mocked(casesService.update).mockResolvedValue(testCase({ checklistState: { [KEY_0]: true } }));
 
     act(() => {
       result.current.toggleChecklistItem(case_, 0, true);
     });
 
-    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[0]).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)?.checklistState[KEY_0]).toBe(true));
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalled());
     const invalidatedKeys = invalidateSpy.mock.calls.map((call) => call[0]?.queryKey);
     // Only the Cases *list* (unrelated to this one case's own query, and

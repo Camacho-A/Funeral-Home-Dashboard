@@ -24,6 +24,7 @@ import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
+import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Solis
@@ -247,6 +248,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid pickup release patch.';
       return NextResponse.json({ case: null, error: message }, { status: 422 });
+    }
+
+    // B2026-035 hardening (2026-10): no write path may introduce a new
+    // ambiguous bare-index checklist key — see
+    // domain/workflow/checklistItemKey.ts#findInvalidChecklistStatePatchEntries's
+    // own comment for exactly which entries this checks (only new/changed
+    // ones, never an unchanged legacy key merely carried forward). Checked
+    // before any mutation, so an invalid patch never touches the case.
+    if (patch.checklistState) {
+      const invalidEntries = findInvalidChecklistStatePatchEntries(existing.checklistState, patch.checklistState, existing.workflowSnapshot);
+      if (invalidEntries.length > 0) {
+        return NextResponse.json(
+          { case: null, error: `Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}` },
+          { status: 400 },
+        );
+      }
     }
 
     // Task #15 (2026-09, future-historical-date validation): only checks a
