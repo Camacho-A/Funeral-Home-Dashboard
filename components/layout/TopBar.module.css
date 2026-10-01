@@ -172,8 +172,22 @@
     order: 1;
   }
 
+  /* Alignment adjustment (2026-09): hamburger stays pinned left; this
+     `margin-left: auto` is what pushes New Case — and, by ordinary flex
+     flow, everything visually after it on this same line (Audit,
+     Templates, the Notifications/AC identity group) — flush to the
+     row's right edge. No wrapper container and no empty spacer element
+     needed: New Case, Audit/Templates (order 3), and identityGroup
+     (order 4) are the only items ordered between this one and search's
+     own line-break (order 5, flex-basis: 100%) — Org Switcher and the
+     module-gated overflow links (.overflowLink, order 8) sort AFTER
+     search in this row's order sequence, so they already wrap onto a
+     later line on their own and are never part of this right-aligned
+     group. The standard "margin-auto flex nav split," not a manually
+     calculated margin value. */
   .newCaseButton {
     order: 2;
+    margin-left: auto;
   }
 
   .priorityLink {
