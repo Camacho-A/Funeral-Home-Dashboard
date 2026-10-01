@@ -21,12 +21,32 @@
    padding (28px/32px/48px) is generous by design on wide screens, but on
    a narrow viewport every one of those pixels is width a card could
    otherwise use — reclaimed here for every page under this shared shell,
-   not just the Dashboard. This does NOT address the Sidebar's own fixed,
-   always-visible 216px width (components/layout/Sidebar.module.css) —
-   see this phase's own report for why that's a separate, unresolved
-   question rather than something silently patched here. */
+   not just the Dashboard. */
 @media (max-width: 560px) {
   .content {
     padding: var(--space-8) var(--space-6) var(--space-12);
   }
+}
+
+/* Mobile navigation drawer (2026-09). The backdrop only ever renders (via
+   AppShell.tsx's own conditional) while the drawer is open, and the
+   drawer only ever opens via TopBar's hamburger button — hidden above
+   this same 560px breakpoint in TopBar.module.css — so this needs no
+   media query of its own: at desktop/tablet widths nothing can set the
+   state that renders it in the first place. z-index sits just below
+   Sidebar.module.css's drawer (1000), so the open panel stays on top of
+   its own backdrop rather than under it. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 40%);
+  z-index: 999;
+}
+
+/* Prevents the background content from scrolling underneath an open
+   drawer — `.content` (not `document.body`) is this layout's one actual
+   scroll container (see its own `overflow-y: auto` above), so this is
+   the element that needs locking. */
+.contentLocked {
+  overflow: hidden;
 }

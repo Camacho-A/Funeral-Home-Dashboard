@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -22,6 +22,15 @@ import styles from './AppShell.module.css';
  * triggered from the Settings hub instead (app/(portal)/settings/
  * SettingsHub.tsx), which owns its own open/close state directly, since
  * only that one page needs it.
+ *
+ * Mobile navigation drawer (2026-09): same ownership pattern as the New
+ * Case modal above — the hamburger button that opens this lives in
+ * TopBar, the Sidebar is what visually becomes the drawer, and neither of
+ * those two components knows about the other, so the shared open/close
+ * state lives here. `isMobileNavOpen` only ever becomes true via that
+ * hamburger button, which Sidebar.module.css/TopBar.module.css both keep
+ * hidden above their shared 560px breakpoint — so this state existing has
+ * no effect at desktop/tablet widths regardless of its value.
  */
 export function AppShell({
   children,
@@ -31,13 +40,35 @@ export function AppShell({
   authAdapterMode?: AuthAdapterMode;
 }) {
   const [isNewCaseModalOpen, setNewCaseModalOpen] = useState(false);
+  const [isMobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Standard off-canvas-drawer behavior: Escape closes it, and the
+  // background (the `.content` region, the only thing in this layout
+  // that actually scrolls — see AppShell.module.css) stops scrolling
+  // while it's open, so a tap-through on the backdrop isn't needed to
+  // keep the page from scrolling underneath an open drawer.
+  useEffect(() => {
+    if (!isMobileNavOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileNavOpen]);
 
   return (
     <div className={styles.shell}>
-      <Sidebar authAdapterMode={authAdapterMode} />
+      <Sidebar authAdapterMode={authAdapterMode} mobileOpen={isMobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      {isMobileNavOpen && (
+        <div className={styles.backdrop} onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
+      )}
       <div className={styles.mainColumn}>
-        <TopBar onNewCaseClick={() => setNewCaseModalOpen(true)} authAdapterMode={authAdapterMode} />
-        <main id="main-content" className={styles.content}>
+        <TopBar
+          onNewCaseClick={() => setNewCaseModalOpen(true)}
+          authAdapterMode={authAdapterMode}
+          onMenuClick={() => setMobileNavOpen(true)}
+        />
+        <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''}`}>
           {children}
         </main>
       </div>

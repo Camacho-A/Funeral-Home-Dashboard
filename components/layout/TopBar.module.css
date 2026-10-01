@@ -59,3 +59,103 @@
   font-family: inherit;
   padding: 0;
 }
+
+/* Mobile navigation drawer (2026-09). Hidden by default (desktop/tablet)
+   — shown only below the matching 560px breakpoint Sidebar.module.css's
+   drawer itself uses, so the two can never show up independently of each
+   other. A real 40x40px button (not a bare icon glued to text) for a
+   comfortable tap target, per this phase's own touch-target requirement. */
+.menuButton {
+  display: none;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+
+.menuButton:hover {
+  background: var(--color-surface-hover);
+}
+
+.menuButton:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+/* The hamburger glyph itself — three horizontal bars via one real element
+   (the middle bar) plus its own ::before/::after (the top/bottom bars),
+   rather than three separate DOM nodes, since all three are purely
+   decorative (the button's own aria-label is the accessible name). */
+.menuIcon,
+.menuIcon::before,
+.menuIcon::after {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.menuIcon {
+  position: relative;
+}
+
+.menuIcon::before,
+.menuIcon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.menuIcon::before {
+  top: -6px;
+}
+
+.menuIcon::after {
+  top: 6px;
+}
+
+/* Dashboard mobile-friendliness pass, continued (2026-09). Below 560px
+   this bar reflows instead of clipping: `flex-wrap` + `height: auto` let
+   every existing control (search, New Case, the conditional
+   Audit/Templates/Resources/etc. links, the identity cluster) wrap onto
+   as many rows as the viewport actually needs — none of them are hidden,
+   relocated, or duplicated into a separate mobile-only component, per
+   this project's own stated preference for wrapping over that. Measured
+   empirically: at 375px, this bar's own content previously overflowed by
+   over 200px even with the Sidebar set aside entirely; wrapping is what
+   actually resolves that, not merely hiding the overflow. */
+@media (max-width: 560px) {
+  .topBar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: var(--space-5) var(--space-6);
+    row-gap: var(--space-4);
+  }
+
+  .menuButton {
+    display: flex;
+  }
+
+  /* On its own full-width row once wrapped (the search box right after
+     it already claims the rest of the first row's space via its own
+     much larger flex-grow — see SearchInput.module.css — so letting this
+     spacer keep growing on a wrapped line serves no purpose and would
+     just leave an odd gap before whatever wraps next). */
+  .spacer {
+    flex-basis: 100%;
+    flex-grow: 0;
+    height: 0;
+  }
+
+  .identityGroup {
+    padding-left: 0;
+    border-left: none;
+  }
+}

@@ -36,3 +36,19 @@ describe('SidebarNavItem — Settings active-state covers its administrative sub
     }
   });
 });
+
+describe('SidebarNavItem — mobile navigation drawer (2026-09)', () => {
+  it('calls onNavigate when clicked, so the Sidebar can close the drawer on tap', () => {
+    mockPathname = '/dashboard';
+    const onNavigate = vi.fn();
+    render(<SidebarNavItem href="/tasks" label="Tasks" onNavigate={onNavigate} />);
+    screen.getByText('Tasks').click();
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders normally with no onNavigate at all (desktop\'s unchanged default)', () => {
+    mockPathname = '/dashboard';
+    expect(() => render(<SidebarNavItem href="/tasks" label="Tasks" />)).not.toThrow();
+    screen.getByText('Tasks').click();
+  });
+});

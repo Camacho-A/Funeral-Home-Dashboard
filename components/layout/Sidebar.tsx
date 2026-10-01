@@ -63,8 +63,28 @@ import styles from './Sidebar.module.css';
  * custom role holding only that permission (no default role is shaped
  * this way today; Manager already has `case.create` too) still
  * discovers Settings via this link.
+ *
+ * Mobile navigation drawer (2026-09): `mobileOpen`/`onClose` are new and
+ * optional, defaulting to "always visible, no close control" — exactly
+ * desktop's prior, unchanged behavior when a caller doesn't pass them.
+ * AppShell is the only caller that does, since it's the component that
+ * already owns the hamburger button (in TopBar) that opens this drawer
+ * and the backdrop that closes it; Sidebar itself has no opinion on WHAT
+ * triggers open/close, only on how it looks once told. Below the 560px
+ * breakpoint (Sidebar.module.css) this becomes a fixed, full-height,
+ * slide-in panel instead of always-visible flex column; above it,
+ * `mobileOpen` has no visual effect at all (the CSS that reads it only
+ * exists inside that same media query).
  */
-export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode }) {
+export function Sidebar({
+  authAdapterMode,
+  mobileOpen = false,
+  onClose,
+}: {
+  authAdapterMode?: AuthAdapterMode;
+  mobileOpen?: boolean;
+  onClose?: () => void;
+}) {
   const { organizationId } = useOrganization();
   const { data: organization } = useOrganizationRecord();
   const organizationName = organization?.name ?? organizationId;
@@ -80,20 +100,24 @@ export function Sidebar({ authAdapterMode }: { authAdapterMode?: AuthAdapterMode
   const activeStaffCountQuery = useActiveStaffCount(organizationId, authAdapterMode === 'identity');
 
   return (
-    <nav className={styles.sidebar} aria-label="Primary">
+    <nav className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Primary">
+      <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close navigation menu">
+        ✕
+      </button>
+
       <div className={styles.brand}>
         <ProductBrand variant="vertical" markSize={96} wordmarkClassName={styles.brandWordmark} />
       </div>
 
       <div className={styles.navList}>
-        <SidebarNavItem href="/dashboard" label="Dashboard" />
-        <SidebarNavItem href="/tasks" label="Tasks" />
-        <SidebarNavItem href="/calendar" label="Calendar" />
-        <SidebarNavItem href="/reports" label="Reports" />
+        <SidebarNavItem href="/dashboard" label="Dashboard" onNavigate={onClose} />
+        <SidebarNavItem href="/tasks" label="Tasks" onNavigate={onClose} />
+        <SidebarNavItem href="/calendar" label="Calendar" onNavigate={onClose} />
+        <SidebarNavItem href="/reports" label="Reports" onNavigate={onClose} />
         {authAdapterMode === 'identity' && canViewAccounting && (
-          <SidebarNavItem href="/accounting" label="Accounting" />
+          <SidebarNavItem href="/accounting" label="Accounting" onNavigate={onClose} />
         )}
-        {canSeeSettings && <SidebarNavItem href="/settings" label="Settings" />}
+        {canSeeSettings && <SidebarNavItem href="/settings" label="Settings" onNavigate={onClose} />}
       </div>
 
       <div className={styles.footer}>

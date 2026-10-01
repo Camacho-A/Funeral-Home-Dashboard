@@ -61,12 +61,25 @@ import styles from './TopBar.module.css';
  * about their own routes/permissions/business logic changed — only where
  * staff discover them from. Audit/Templates/Resources/Merchandise/etc.
  * below are untouched; they weren't part of this item's scope.
+ *
+ * Mobile navigation drawer (2026-09): `onMenuClick` is new and optional —
+ * when provided, a hamburger button renders first (hidden above the
+ * shared 560px breakpoint in TopBar.module.css, alongside the matching
+ * Sidebar.module.css drawer it opens). Nothing else in this component
+ * changed to make room for it: below that same breakpoint, `.topBar`
+ * switches to `flex-wrap` so every existing control here (search, New
+ * Case, the conditional links, the identity cluster) simply flows onto
+ * as many rows as it needs, rather than any of them being hidden,
+ * relocated into the drawer, or duplicated into a second mobile-only
+ * component.
  */
 export function TopBar({
   onNewCaseClick,
+  onMenuClick,
   authAdapterMode,
 }: {
   onNewCaseClick?: () => void;
+  onMenuClick?: () => void;
   authAdapterMode?: AuthAdapterMode;
 }) {
   const { query, setQuery } = useCaseSearch();
@@ -78,6 +91,9 @@ export function TopBar({
 
   return (
     <div className={styles.topBar}>
+      <button type="button" className={styles.menuButton} onClick={onMenuClick} aria-label="Open navigation menu">
+        <span className={styles.menuIcon} aria-hidden="true" />
+      </button>
       <SearchInput value={query} onChange={setQuery} />
       <div className={styles.spacer} />
       <Button onClick={onNewCaseClick}>+ New Case</Button>

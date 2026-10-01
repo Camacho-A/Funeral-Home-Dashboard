@@ -8,6 +8,70 @@
   gap: var(--space-18);
 }
 
+/* Mobile navigation drawer (2026-09). Hidden by default (desktop/tablet,
+   above 560px — matching the breakpoint the Dashboard mobile-friendliness
+   pass already established for AppShell/CasesByStagePanel/
+   NeedsAttentionPanel) — shown only inside the matching TopBar.module.css
+   hamburger button's own media query. `position: fixed` + `transform` is
+   the standard, idiomatic implementation for an off-canvas drawer (not
+   the kind of ad-hoc positioning hack avoided elsewhere on the Dashboard
+   itself) — nothing else can produce "slides in over the page content
+   from off-screen" with plain flow layout. */
+.closeButton {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 260px; /* a little wider than desktop's 216px — this is now a
+                      full-height touch drawer, not a column sharing the
+                      viewport with content, so it can afford the extra
+                      room for comfortable tap targets. */
+    z-index: 1000;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-card);
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+  }
+
+  /* Absolutely positioned within `.sidebar` (itself `position: fixed` in
+     this same breakpoint, so this resolves against the drawer panel
+     itself, not the viewport) — the standard way to pin a close control
+     to a fixed-position panel's own corner, not a workaround for a
+     layout this component's normal flow already handles. */
+  .closeButton {
+    position: absolute;
+    top: var(--space-6);
+    right: var(--space-6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    font-size: var(--font-size-18);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-sm);
+  }
+
+  .closeButton:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .closeButton:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 1px;
+  }
+}
+
 /* Task #13 (2026-09, SOLIS product branding). ProductBrand
    (components/layout/ProductBrand.tsx) owns its own internal layout for
    the mark + wordmark; this wrapper only supplies the horizontal inset

@@ -124,6 +124,29 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
   });
 });
 
+describe('TopBar — mobile navigation drawer (2026-09)', () => {
+  it('renders a hamburger button that calls onMenuClick when clicked', () => {
+    const queryClient = new QueryClient();
+    const onMenuClick = vi.fn();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OrganizationProvider>
+          <SessionProvider value={TEST_SESSION}>
+            <TopBar onMenuClick={onMenuClick} />
+          </SessionProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    screen.getByRole('button', { name: 'Open navigation menu' }).click();
+    expect(onMenuClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders with no onMenuClick at all without throwing (desktop\'s unchanged default)', () => {
+    expect(() => renderTopBar()).not.toThrow();
+    expect(screen.getByRole('button', { name: 'Open navigation menu' })).toBeInTheDocument();
+  });
+});
+
 describe('TopBar — item #5 (2026-09, navigation cleanup): admin tools no longer render here', () => {
   it("2/3/4/5: Import Existing Jotform, Security, Roles, and Case Numbering are not offered here — even for a caller with every relevant permission — they've moved to Settings", async () => {
     const fetchMock = vi.fn().mockResolvedValue({

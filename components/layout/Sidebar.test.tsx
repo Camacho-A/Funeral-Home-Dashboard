@@ -24,12 +24,15 @@ function mockPermissions(permissions: string[] = []) {
   vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey: 'administrator', permissions });
 }
 
-function renderSidebar(authAdapterMode?: 'mock' | 'wix' | 'identity') {
+function renderSidebar(
+  authAdapterMode?: 'mock' | 'wix' | 'identity',
+  drawerProps: { mobileOpen?: boolean; onClose?: () => void } = {},
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
-        <Sidebar authAdapterMode={authAdapterMode} />
+        <Sidebar authAdapterMode={authAdapterMode} {...drawerProps} />
       </OrganizationProvider>
     </QueryClientProvider>,
   );
@@ -237,6 +240,45 @@ describe('Sidebar — enlarged SOLIS brand lockup (Task #13 final sizing adjustm
     expect(screen.getByText('Tasks')).toBeInTheDocument();
     expect(screen.getByText('Calendar')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
+  });
+});
+
+describe('Sidebar — mobile navigation drawer (2026-09)', () => {
+  it('defaults to closed (no sidebarOpen class) when mobileOpen is omitted — desktop\'s unchanged default', async () => {
+    mockPermissions([]);
+    renderSidebar('mock');
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
+    expect(screen.getByRole('navigation', { name: 'Primary' }).className).not.toMatch(/sidebarOpen/);
+  });
+
+  it('applies the open class when mobileOpen is true', async () => {
+    mockPermissions([]);
+    renderSidebar('mock', { mobileOpen: true });
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument());
+    expect(screen.getByRole('navigation', { name: 'Primary' }).className).toMatch(/sidebarOpen/);
+  });
+
+  it('renders a close button that calls onClose when clicked', async () => {
+    mockPermissions([]);
+    const onClose = vi.fn();
+    renderSidebar('mock', { mobileOpen: true, onClose });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeInTheDocument());
+    screen.getByRole('button', { name: 'Close navigation menu' }).click();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onClose when a nav link is clicked, so the drawer closes on navigation', async () => {
+    mockPermissions(['case.create']);
+    const onClose = vi.fn();
+    renderSidebar('mock', { mobileOpen: true, onClose });
+    await waitFor(() => expect(screen.getByText('Tasks')).toBeInTheDocument());
+    screen.getByText('Tasks').click();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('rendering with no drawer props at all does not throw — fully optional, backward compatible', async () => {
+    mockPermissions([]);
+    expect(() => renderSidebar('mock')).not.toThrow();
   });
 });
 
