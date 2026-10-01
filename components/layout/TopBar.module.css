@@ -29,6 +29,15 @@
   border-left: 1px solid var(--color-border);
 }
 
+/* Expanded case search bar (2026-09): this value is unchanged, but its
+   effect isn't — SearchInput.module.css's `.wrapper` (this div's flex
+   sibling, immediately before it) now carries a much larger flex-grow
+   weight than this spacer's `1`, so search claims the large majority of
+   any free space in this row while this spacer still keeps a nonzero
+   share, enough to keep the New Case button/identity cluster after it
+   pinned to the bar's right edge rather than sitting snug against the
+   now-wider search box. See that file's own comment for the full
+   before/after. */
 .spacer {
   flex: 1;
 }

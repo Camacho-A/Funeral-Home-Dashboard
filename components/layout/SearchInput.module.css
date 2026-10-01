@@ -1,6 +1,32 @@
+/* Expanded case search bar (2026-09). Root cause of the old cramped
+   width: `.wrapper` is a flex sibling of TopBar.module.css's `.spacer`
+   (an empty div whose only job is to push the New Case button/identity
+   cluster to the bar's right edge) inside the same `.topBar` flex row.
+   Both previously had an equal `flex: 1` grow factor, but `.wrapper`
+   additionally capped itself at `max-width: 400px` — so once it hit
+   that cap, every bit of further available width flowed entirely to the
+   invisible spacer instead. Raising the cap alone wouldn't have helped;
+   with an equal 1:1 grow ratio search could never climb past its ~50%
+   share of the free space, nowhere near the old 400px cap on most
+   desktop widths.
+   Fix: give the search wrapper a much larger flex-grow weight (4) than
+   the spacer's unchanged 1 — search now claims the large majority of
+   whatever room is free, while the spacer (TopBar.module.css, untouched)
+   still keeps a nonzero share, so the right-aligned action cluster stays
+   pinned to the bar's right edge exactly as before, never snug up
+   against the now-wider search box. `max-width` moves from 400px to
+   720px — the "use the container's own boundary as the natural max"
+   this phase asked for: 720px is comfortably short of ever going
+   full-bleed across a wide desktop topbar, while being a real, visible
+   jump from the old cramped 400px. `min-width` is new — a floor so a
+   narrow viewport's flex-shrink (unchanged behavior, same as before this
+   change) never squeezes the input down to an uncomfortable typing/tap
+   target before other, non-shrinking topbar controls start overflowing
+   instead. */
 .wrapper {
-  flex: 1;
-  max-width: 400px;
+  flex: 4 1 0%;
+  min-width: 160px;
+  max-width: 720px;
   position: relative;
 }
 
