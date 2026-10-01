@@ -100,7 +100,17 @@ export const config = {
   // session cookie already lets the request through). Same treatment as
   // `_next/static`/`_next/image`/`favicon.ico` above — public, static,
   // never session-gated.
+  //
+  // CRM favicon/browser-tab branding (2026-09) adds `icon.png`/
+  // `apple-icon.png` — Next.js's App Router file-based icon convention
+  // (app/icon.png, app/apple-icon.png) serves these at that exact root
+  // path, outside the authenticated (portal) route group, but this
+  // matcher's catch-all didn't know that and 307-redirected an
+  // unauthenticated request for either straight to /login — the identical
+  // failure mode `brand` was added above to fix, for the identical reason
+  // (the browser's own favicon fetch on the logged-out Login screen has
+  // no session cookie yet).
   matcher: [
-    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|sign|brand|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|login|forgot-password|reset-password|verify-email|accept-invitation|sign|brand|icon.png|apple-icon.png|_next/static|_next/image|favicon.ico).*)',
   ],
 };

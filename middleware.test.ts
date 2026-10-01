@@ -135,3 +135,30 @@ describe('Task #19 (2026-09) — /brand matcher exclusion (SOLIS logo on Login)'
     expect(matcherPattern.test('/settings')).toBe(true);
   });
 });
+
+describe('CRM favicon/browser-tab branding (2026-09) — /icon.png + /apple-icon.png matcher exclusion', () => {
+  // Identical root cause and identical fix to the /brand block above:
+  // Next.js's App Router file-based icon convention (app/icon.png,
+  // app/apple-icon.png) serves these at the bare root path, outside the
+  // (portal) route group — but the browser's own favicon fetch on a
+  // logged-out screen (Login, etc.) has no session cookie yet, so without
+  // this exclusion the request fell through to the catch-all and was
+  // 307-redirected to /login — an HTML page, not a PNG, which is exactly
+  // what broke the browser-tab icon before this fix (reproduced directly:
+  // see this phase's own report).
+  const matcherPattern = new RegExp(`^${config.matcher[0]}$`);
+
+  it('excludes /icon.png — no session redirect for the favicon request', () => {
+    expect(matcherPattern.test('/icon.png')).toBe(false);
+  });
+
+  it('excludes /apple-icon.png — no session redirect for the Apple touch-icon request', () => {
+    expect(matcherPattern.test('/apple-icon.png')).toBe(false);
+  });
+
+  it('still protects every other portal path exactly as before', () => {
+    expect(matcherPattern.test('/dashboard')).toBe(true);
+    expect(matcherPattern.test('/cases/1042')).toBe(true);
+    expect(matcherPattern.test('/settings')).toBe(true);
+  });
+});
