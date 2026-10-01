@@ -24,7 +24,11 @@
 }
 
 .detail {
-  min-width: 360px;
+  /* min(…, 100%) (2026-10): identical 360px floor on desktop; on a
+     mobile-width modal panel (Modal.module.css's own `max-width: 90vw`),
+     this shrinks to fit instead of forcing the panel into its own
+     horizontal scroll. */
+  min-width: min(360px, 100%);
   max-width: 480px;
 }
 

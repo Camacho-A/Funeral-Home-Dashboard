@@ -56,8 +56,9 @@
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-5);
+  gap: var(--space-3) var(--space-5);
   cursor: pointer;
   padding: var(--space-2) var(--space-3);
   margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
@@ -67,6 +68,20 @@
   background: transparent;
   text-decoration: none;
   color: inherit;
+}
+
+/* Mobile (2026-10) — `.label`'s own fixed 260px (chosen so the longest
+   canonical stage label fits on one line, see that rule's own comment)
+   plus the progress track and count no longer fit on one row below
+   ~430px. `.row`'s own `flex-wrap` already lets the label drop to its
+   own line once it can't fit; this just lets the track+count pair
+   (which would otherwise also try to claim the leftover sliver of the
+   first line) explicitly join it there instead, so the result is a
+   clean two-line row, not a three-way squeeze. */
+@media (max-width: 430px) {
+  .track {
+    flex-basis: 100%;
+  }
 }
 
 .row:hover {

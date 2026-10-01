@@ -25,11 +25,26 @@
   border-top: none;
 }
 
+/* Content-driven wrap (2026-10), not a fixed breakpoint — a form row's
+   content (label + Not Sent/Sent/Received badge + up to three action
+   buttons: Copy Link/Open Form, Import Existing Submission, Retry
+   Jotform PDF) is naturally too wide for one line well before any of
+   the app's usual page-level breakpoints kick in, so this wraps on its
+   own measured width rather than waiting for a @media rule. The name
+   column (`min-width: 0`, see its own rule below) is what makes the
+   wrap possible at all — without it, a flex item's default `min-width:
+   auto` would keep demanding its full single-line width and defeat the
+   wrap. */
 .rowMain {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-6);
+  gap: var(--space-3) var(--space-6);
+}
+
+.rowMain > :first-child {
+  min-width: 0;
 }
 
 .retryError {
@@ -52,6 +67,7 @@
 .label {
   font-weight: 500;
   color: var(--color-text-primary);
+  overflow-wrap: break-word;
 }
 
 .meta {
@@ -61,6 +77,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
 }

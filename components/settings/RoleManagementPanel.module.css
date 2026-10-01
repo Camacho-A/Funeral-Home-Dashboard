@@ -6,7 +6,19 @@
 
 .columns {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   align-items: flex-start;
   margin-bottom: 24px;
+}
+
+/* Mobile (2026-10) — RoleList's own 220px min-width (RoleList.module.css)
+   plus the permissions-detail panel beside it no longer fit side by side
+   below ~860px (this app's established mobile breakpoint — e.g.
+   TopBar.module.css, app/(portal)/cases/[caseId]/page.module.css's
+   .overviewPair); each takes the full row instead. */
+@media (max-width: 860px) {
+  .columns > * {
+    flex-basis: 100%;
+  }
 }

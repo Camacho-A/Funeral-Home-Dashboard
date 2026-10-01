@@ -1,7 +1,13 @@
 .form {
   display: flex;
+  flex-wrap: wrap;
   gap: 20px;
-  min-width: 640px;
+  /* min(…, 100%) (2026-10): identical 640px floor on desktop (100% of
+     the modal panel is always wider than that there); on a mobile-width
+     panel (Modal.module.css's own `max-width: 90vw`), 100% is the
+     smaller value, so this shrinks to fit instead of forcing the panel
+     into its own horizontal scroll. */
+  min-width: min(640px, 100%);
   max-width: 820px;
 }
 
@@ -75,6 +81,27 @@
   flex-shrink: 0;
   border-left: 1px solid var(--color-border);
   padding-left: 16px;
+}
+
+/* Mobile (2026-10) — `.mainColumn`'s flex-basis defaults to 0% (plain
+   `flex: 1`), so flex-wrap alone wouldn't reliably push this fixed-width
+   sidebar onto its own line (the wrap decision is made on hypothetical,
+   pre-grow sizes, where mainColumn "fits" in whatever's left over) —
+   this forces the actual stack once the panel is a mobile-width one
+   (Modal.module.css's own `max-width: 90vw`), matching this file's own
+   `.form { flex-wrap: wrap }`. */
+@media (max-width: 640px) {
+  .mainColumn {
+    flex-basis: 100%;
+  }
+
+  .mergeFieldBrowser {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    padding-left: 0;
+    padding-top: 16px;
+  }
 }
 
 .mergeFieldHeader {

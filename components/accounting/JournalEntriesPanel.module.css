@@ -44,9 +44,19 @@
   flex-direction: column;
 }
 
+/* Mobile (2026-10) — a ledger row (reference number / description+memo /
+   actions, each with its own min-width above) is genuinely data-dense;
+   per this phase's own guidance, an intentional component-level
+   horizontal scroll is the right call here rather than squeezing amounts
+   and references unreadably or redesigning the desktop row into a
+   stacked card. `min-width: fit-content` on `.row` keeps every row at
+   its natural width so they scroll together, never independently
+   wrapping at different points. The page itself never scrolls — only
+   this one list does. */
 .list {
   display: flex;
   flex-direction: column;
+  overflow-x: auto;
 }
 
 .row {
@@ -55,6 +65,7 @@
   gap: var(--space-7);
   padding: var(--space-5) 0;
   border-bottom: 1px solid var(--color-border);
+  min-width: fit-content;
 }
 
 .row:last-child {

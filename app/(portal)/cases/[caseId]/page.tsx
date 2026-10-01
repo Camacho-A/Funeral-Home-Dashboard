@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { useCase } from '@/hooks/useCase';
 import { useResetMainContentScrollOnChange } from '@/hooks/useResetMainContentScrollOnChange';
 import { useCaseViewModel } from '@/hooks/useCaseViewModel';
@@ -45,6 +45,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const { caseId } = use(params);
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
+  // Mobile (2026-10): the primary tab strip is a single horizontally-
+  // scrollable row below ~860px (page.module.css's own @media 860px) —
+  // this keeps the active tab actually visible after switching rather
+  // than leaving it scrolled out of view behind whichever tab happened
+  // to be in frame before. A no-op on desktop (the strip never scrolls
+  // there, so this call is always already a no-op scroll of 0).
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const activeButton = tabsRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+    activeButton?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeTab]);
 
   // Solis go-live checkpoint: Case Detail was opening scrolled to (or near)
   // the bottom — see useResetMainContentScrollOnChange's own comment for
@@ -146,7 +157,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         }
       />
 
-      <div className={styles.tabs} role="tablist">
+      <div className={styles.tabs} role="tablist" ref={tabsRef}>
         <button
           type="button"
           role="tab"

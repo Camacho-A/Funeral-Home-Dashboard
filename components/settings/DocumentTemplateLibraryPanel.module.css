@@ -1,5 +1,6 @@
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 16px;
@@ -15,13 +16,19 @@
   gap: 4px;
 }
 
+/* Mobile (2026-10) — see components/accounting/JournalEntriesPanel.module.css's
+   identical comment: a genuinely data-dense row gets an intentional,
+   component-level horizontal scroll rather than squeezing or a desktop
+   redesign. The page itself never scrolls — only this one list does. */
 .list {
   display: flex;
   flex-direction: column;
+  overflow-x: auto;
 }
 
 .row {
   display: flex;
+  min-width: fit-content;
   align-items: center;
   gap: 14px;
   padding: 10px 0;

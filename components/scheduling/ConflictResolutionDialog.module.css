@@ -2,7 +2,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  min-width: 420px;
+  /* min(…, 100%) (2026-10): identical 420px floor on desktop; on a
+     mobile-width modal panel (Modal.module.css's own `max-width: 90vw`),
+     this shrinks to fit instead of forcing the panel into its own
+     horizontal scroll. */
+  min-width: min(420px, 100%);
   max-width: 480px;
 }
 

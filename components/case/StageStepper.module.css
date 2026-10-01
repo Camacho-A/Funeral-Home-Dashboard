@@ -92,3 +92,21 @@
 .connectorUpcoming {
   background: var(--color-border);
 }
+
+/* Mobile (2026-10): `.stepper` was already horizontally scrollable
+   (`overflow-x: auto` above), but at narrow widths the last visible
+   stage was cut off hard against the card's own edge with no visual cue
+   that more content existed off-screen — indistinguishable from the
+   card clipping it outright. Scoped to the same breakpoint the rest of
+   Case Detail stacks at (page.module.css's own @media 860px) — desktop
+   widths already fit every stage, so there's nothing to scroll or fade
+   there, and this leaves it untouched. The mask-image fade signals "more
+   to scroll" at both edges; `-webkit-overflow-scrolling` gives it native
+   momentum scrolling on iOS. */
+@media (max-width: 860px) {
+  .stepper {
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(to right, transparent, black var(--space-10), black calc(100% - var(--space-10)), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black var(--space-10), black calc(100% - var(--space-10)), transparent);
+  }
+}

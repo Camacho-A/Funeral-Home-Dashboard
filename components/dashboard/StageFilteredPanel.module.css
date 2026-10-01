@@ -114,6 +114,31 @@
   white-space: nowrap;
 }
 
+/* Mobile (2026-10) — mirrors AllCasesList.module.css's own identical fix
+   and reasoning: `.progress`'s fixed ~150px (ProgressBar.module.css's
+   72px track + percent text) no longer has room beside `.main` once the
+   decedent name is realistic length, so it drops to its own full-width
+   line instead of squeezing `.main` into whatever's left. Indented to
+   roughly align under the name/case#/summary text (avatar width + the
+   row's own gap), not under the avatar itself. */
+@media (max-width: 860px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .progress {
+    flex-basis: 100%;
+    padding-left: calc(36px + var(--space-6));
+  }
+
+  .summary {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: break-word;
+  }
+}
+
 .summaryDanger {
   color: var(--color-danger-text);
   font-weight: var(--font-weight-semibold);

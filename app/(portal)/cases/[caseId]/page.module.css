@@ -19,6 +19,32 @@
   border-radius: var(--radius-xl);
   border: none;
   font-family: inherit;
+  white-space: nowrap;
+}
+
+/* Mobile (2026-10): as many as 7 tabs (Overview/Workflow/Billing/
+   Documents/Activity/Schedule/Family Portal, each conditional on role/
+   module) have no room to sit in one un-scrolled row below ~860px —
+   without this, they either wrapped onto multiple rows (confusing as a
+   tab strip — which row is "current"?) or forced the page itself wider
+   than the viewport. A single horizontally-scrollable strip keeps every
+   tab a real button (never collapsed into a dropdown, which would cost
+   a tap just to see what's available) while guaranteeing the PAGE itself
+   never has to scroll sideways — only this one strip does. Desktop is
+   unaffected: every tab already fits in one row there, so `overflow-x:
+   auto` is a no-op (nothing to scroll). */
+@media (max-width: 860px) {
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--space-2);
+    margin-bottom: calc(var(--space-9) - var(--space-2));
+  }
+
+  .tabs button {
+    flex: 0 0 auto;
+  }
 }
 
 .tabActive {

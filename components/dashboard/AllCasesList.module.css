@@ -62,6 +62,7 @@
 .name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-13-5);
+  overflow-wrap: break-word;
 }
 
 .caseNumber {
@@ -113,4 +114,44 @@
   display: flex;
   justify-content: center;
   padding: var(--space-6) 0 var(--space-2);
+}
+
+/* Mobile (2026-10) — identity-first, status-second, progress-third
+   (matches Case Detail's own 860px bucket). The identity block (name /
+   case # / summary) and the badges+progress column no longer have room
+   side by side once a stage label like "Ready for Pickup / Contact
+   Family" is long — `.main` stacks them instead of squeezing both into
+   half the row width; `.badges` moves to the left edge (matching the
+   identity column above it, same reasoning as CaseHeader's own stage
+   column) and stretches to the row's full width so the progress bar
+   isn't stranded at a tiny fixed size. `.summary` switches from
+   single-line ellipsis to real wrapping — a truncated "waiting on
+   ME release" reads fine inline next to a progress bar on desktop, but
+   stacked full-width on mobile there's no reason to hide the rest of
+   it. */
+@media (max-width: 860px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .summary {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: break-word;
+  }
+
+  .badges {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .badgeRow {
+    flex-wrap: wrap;
+  }
 }

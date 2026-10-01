@@ -44,13 +44,19 @@
   flex-direction: column;
 }
 
+/* Mobile (2026-10) — see JournalEntriesPanel.module.css's identical
+   comment: a genuinely data-dense row gets an intentional, component-
+   level horizontal scroll rather than squeezing or a desktop redesign.
+   The page itself never scrolls — only this one list does. */
 .list {
   display: flex;
   flex-direction: column;
+  overflow-x: auto;
 }
 
 .row {
   display: flex;
+  min-width: fit-content;
   align-items: center;
   gap: var(--space-7);
   padding: var(--space-5) 0;

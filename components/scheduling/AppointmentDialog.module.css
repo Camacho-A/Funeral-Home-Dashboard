@@ -2,7 +2,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-7);
-  min-width: 460px;
+  /* min(…, 100%) (2026-10): identical 460px floor on desktop; on a
+     mobile-width modal panel (Modal.module.css's own `max-width: 90vw`),
+     this shrinks to fit instead of forcing the panel into its own
+     horizontal scroll. */
+  min-width: min(460px, 100%);
   max-width: 520px;
 }
 
@@ -13,9 +17,19 @@
   flex: 1;
 }
 
+/* Mobile (2026-10) — a two-field side-by-side row (e.g. date + time)
+   collapses to one column once the modal panel is mobile-width
+   (Modal.module.css's own `max-width: 90vw`) rather than squeezing both
+   fields illegibly narrow; each `.field` already has `flex: 1`, so once
+   wrapped, either one alone naturally takes the full row width. */
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-6);
+}
+
+.row > .field {
+  min-width: 140px;
 }
 
 .label {
