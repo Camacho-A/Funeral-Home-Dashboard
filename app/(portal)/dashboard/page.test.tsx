@@ -24,8 +24,11 @@ import type { Case } from '@/types/case';
  * to app/(portal)/cases/page.test.tsx, since that behavior now lives on
  * the dedicated case-list route, not the Dashboard. What remains here
  * proves the Dashboard stayed a fixed-height summary — Needs Attention
- * full-width, Cases by Stage below it as a pure navigation hub, and
- * critically, NO case results of any kind rendered inline.
+ * and Cases by Stage side by side in one grid row (Phase 3 — layout
+ * correction, 2026-09: a brief stacked-full-width iteration was tried
+ * and then explicitly reverted back to side by side), Cases by Stage a
+ * pure navigation hub, and critically, NO case results of any kind
+ * rendered inline.
  */
 vi.mock('@/lib/reportsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/reportsClient')>('@/lib/reportsClient');
@@ -187,20 +190,33 @@ describe('DashboardPage — Financial Summary expanded layout (Manors go-live cl
 });
 
 /**
- * Case list scalability, Phase 3 — UX correction (2026-09). Cases by
- * Stage is now a pure navigation hub into the dedicated `/cases` route —
- * these tests prove the Dashboard itself never renders case results, and
- * that Needs Attention/Cases by Stage are laid out full-width/stacked
- * rather than sharing the old two-column grid.
+ * Case list scalability, Phase 3 — UX correction + layout correction
+ * (2026-09). Cases by Stage is a pure navigation hub into the dedicated
+ * `/cases` route — these tests prove the Dashboard itself never renders
+ * case results, and that Needs Attention/Cases by Stage sit side by
+ * side in one grid row (the layout correction's own requirement — a
+ * brief stacked-full-width iteration in between is superseded).
  */
 describe('DashboardPage — Cases by Stage is a navigation hub, not a case list (Case list scalability, Phase 3 — UX correction)', () => {
-  it('1. Needs Attention appears before Cases by Stage, in document order (full-width, stacked layout)', async () => {
+  it('1. Needs Attention and Cases by Stage sit side by side, as siblings in one grid row', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
 
     const needsAttentionHeading = await screen.findByText('Needs attention');
     const casesByStageHeading = await screen.findByText('Cases by stage');
+    // Document order is preserved (Needs Attention first) — the grid
+    // only changes how this pair is PAINTED, never their DOM order.
     expect(needsAttentionHeading.compareDocumentPosition(casesByStageHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Both panels are direct children of the SAME grid row container —
+    // not two separately-wrapped, independently full-width sections.
+    // NeedsAttentionPanel's heading sits inside an extra `.header` div
+    // (title + count, side by side); CasesByStagePanel's own title is a
+    // direct child of its panel root — so each needs its own number of
+    // hops up to reach that shared grid parent.
+    const needsAttentionGridParent = needsAttentionHeading.parentElement!.parentElement!.parentElement;
+    const casesByStageGridParent = casesByStageHeading.parentElement!.parentElement;
+    expect(needsAttentionGridParent).toBe(casesByStageGridParent);
+    expect(needsAttentionGridParent).not.toBeNull();
   });
 
   it('2/3. Cases by Stage contains an "All Cases" navigation link to /cases (no stage filter)', async () => {

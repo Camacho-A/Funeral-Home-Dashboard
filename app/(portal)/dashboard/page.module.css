@@ -1,14 +1,37 @@
-/* Case list scalability, Phase 3 — UX correction (2026-09): Needs
-   Attention and Cases by Stage no longer share a two-column grid — each
-   spans the Dashboard's full content width, stacked vertically, so both
-   have more room and the page keeps a fixed height regardless of case
-   count (neither section renders case results itself). */
-.attentionSection {
-  margin-bottom: var(--space-8);
+/* Case list scalability, Phase 3 — layout correction (2026-09): Needs
+   Attention and Cases by Stage sit side by side again (the prior
+   stacked-full-width iteration of this phase is superseded) — the same
+   1.3fr/1fr two-column grid this pairing originally used, restored.
+   1.3fr for Needs Attention: its rows (name/case#/reason + days/SLA) carry
+   more text per row than Cases by Stage's compact label/bar/count rows,
+   so it keeps the larger share. `align-items: start` so a short Needs
+   Attention list (or a short stage-count list) never stretches to match
+   its taller sibling — each card's height still depends only on its own
+   content, never the other column's.
+   One `margin-bottom` on the grid itself (not one per card) is the whole
+   fix for the extra vertical gap the previous stacked layout had: two
+   cards stacked needed a gap BETWEEN them (the old `.attentionSection`
+   margin) in addition to a gap below the pair; side by side, there's
+   only ever the one gap below the row, so Financial Summary and
+   everything after it move up through plain document flow — no
+   negative margins, absolute positioning, or transforms. */
+.stageOverviewGrid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: var(--space-8);
+  align-items: start;
+  margin-bottom: var(--space-12);
 }
 
-.stageOverviewSection {
-  margin-bottom: var(--space-12);
+/* Mirrors app/(portal)/cases/[caseId]/page.module.css's own
+   `.overviewPair` breakpoint (860px) — the same "two cards side by side
+   on desktop/tablet, stacked below the point where either would get
+   cramped" convention already established for this codebase's other
+   two-column card pairing, not a new one invented for this page. */
+@media (max-width: 860px) {
+  .stageOverviewGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Manors go-live cleanup (2026-09): Financial Summary's own row, now that

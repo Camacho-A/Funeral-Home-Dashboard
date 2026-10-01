@@ -23,17 +23,18 @@ import styles from './page.module.css';
  * rendered an 8-tab bar plus a full, paginated case list directly on this
  * page — that direction was explicitly reversed.
  *
- * Needs Attention now spans the full content width (it no longer shares a
- * two-column grid with Cases by Stage), with Cases by Stage immediately
- * below it, also full width. Cases by Stage (components/dashboard/
- * CasesByStagePanel.tsx) is a pure NAVIGATION HUB now — "All Cases" plus
- * each of the 7 canonical stages are links into the dedicated case-list
- * route (`/cases`, optionally `?stage=<STAGES label>`; see
- * app/(portal)/cases/page.tsx), not a local filter that renders results
- * here. No case card, AllCasesList, or StageFilteredPanel renders on this
- * page at all — Financial Summary and everything below it stays exactly
- * as reachable as before, regardless of whether the org has 20 cases or
- * 20,000.
+ * Needs Attention and Cases by Stage sit side by side in one 1.3fr/1fr
+ * grid row (styles.stageOverviewGrid), collapsing to a single stacked
+ * column under 860px — see that class's own comment for the exact
+ * layout correction history. Cases by Stage (components/dashboard/
+ * CasesByStagePanel.tsx) is a pure NAVIGATION HUB regardless of column
+ * layout — "All Cases" plus each of the 7 canonical stages are links
+ * into the dedicated case-list route (`/cases`, optionally
+ * `?stage=<STAGES label>`; see app/(portal)/cases/page.tsx), not a local
+ * filter that renders results here. No case card, AllCasesList, or
+ * StageFilteredPanel renders on this page at all — Financial Summary and
+ * everything below it stays exactly as reachable as before, regardless
+ * of whether the org has 20 cases or 20,000.
  *
  * Stage/All-Cases counts come from the Phase 2 counts endpoint
  * (useCaseCounts) — never a client-side aggregation over a fully-
@@ -82,11 +83,8 @@ export default function DashboardPage() {
     <div>
       <PageGreetingHeader todayLabel={todayLabel} activeCount={kpis.activeCases} />
 
-      <div className={styles.attentionSection}>
+      <div className={styles.stageOverviewGrid}>
         <NeedsAttentionPanel cases={urgentCases} />
-      </div>
-
-      <div className={styles.stageOverviewSection}>
         <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} />
       </div>
 
