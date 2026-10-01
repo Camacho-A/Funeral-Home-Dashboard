@@ -114,7 +114,9 @@ describe('markCasePaidIfVerified — mock mode', () => {
         ...original,
         rawStage: 0,
         fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
-        checklistState: { 9: true, 10: true },
+        // displayStage 0 (First Call & Payment) — composite-keyed per
+        // B2026-035's fix (domain/workflow/checklistItemKey.ts).
+        checklistState: { '0:9': true, '0:10': true },
       };
       const link: CaseFormLink = {
         id: `link-payment-recon-${original.id}`,

@@ -1392,10 +1392,17 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     );
   }
 
-  /** A case sitting at raw stage 3 with every earlier stage (First Call &
-      Payment, Jotform Application) already satisfied — only stage 3's own
-      checklist (passed in via `stage3ChecklistState`) varies per test. */
+  /** A case sitting at raw stage 3 (displayStage 2, EDRS) with every
+      earlier stage trusted via the computeFirstIncompleteRawStage skip
+      optimization — only EDRS's own checklist (`stage3ChecklistState`,
+      keyed by its own LOCAL index) varies per test; composite-keyed
+      internally to displayStage 2 per B2026-035's fix
+      (domain/workflow/checklistItemKey.ts). */
   function stage3CaseData(stage3ChecklistState: Record<number, boolean>): Record<string, unknown> {
+    const EDRS_DISPLAY_STAGE = 2;
+    const compositeStage3State = Object.fromEntries(
+      Object.entries(stage3ChecklistState).map(([index, value]) => [`${EDRS_DISPLAY_STAGE}:${index}`, value]),
+    );
     return {
       ...EXISTING_WIX_CASE_DATA,
       currentStage: 3,
@@ -1403,7 +1410,7 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
       workflowTemplateVersion: RECONCILIATION_TEMPLATE_VERSION.version,
       workflowSnapshot: RECONCILIATION_SNAPSHOT,
       fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
-      checklistState: { 0: true, 8: true, 9: true, 10: true, ...stage3ChecklistState },
+      checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true, ...compositeStage3State },
     };
   }
 
@@ -1411,7 +1418,7 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     mockAdminQueries(stage3CaseData({}));
     const response = await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { 0: true, 8: true, 9: true, 10: true } },
+      patch: { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } },
     });
     const body = await response.json();
     expect(response.status).toBe(200);
@@ -1422,7 +1429,7 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     mockAdminQueries(stage3CaseData({ 2: true }));
     const response = await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } },
+      patch: { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
     });
     const body = await response.json();
     expect(response.status).toBe(200);
@@ -1433,7 +1440,7 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     mockAdminQueries(stage3CaseData({}));
     const response = await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { 0: true, 8: true, 9: true, 10: true } },
+      patch: { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } },
     });
     const body = await response.json();
     expect(body.case.rawStage).toBe(3);
@@ -1443,7 +1450,7 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     mockAdminQueries(stage3CaseData({ 2: true }));
     const response = await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } },
+      patch: { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
     });
     const body = await response.json();
     expect(body.case.rawStage).toBe(4);
@@ -1467,7 +1474,7 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
   it('G. repeating the same completed checklist update is safe/idempotent — the second, identical request never double-advances past Stage 4', async () => {
     const patchBody = {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } },
+      patch: { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
     };
 
     // First request: Stage 3 -> Stage 4, mirroring test B exactly.

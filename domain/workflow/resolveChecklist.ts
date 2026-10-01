@@ -2,7 +2,6 @@ import type { Case } from '../../types/case';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
-import { findStageByRawStage } from './resolveStages';
 
 /**
  * Generic checklist resolution over a template's item list — the done/
@@ -40,9 +39,6 @@ export function resolveChecklist(
   options: { isPastStage?: boolean } = {},
 ): ChecklistItemViewModel[] {
   const { isPastStage = false } = options;
-  const currentDisplayStage = case_.workflowSnapshot
-    ? findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage
-    : case_.rawStage;
 
   // defaultDone is NOT part of the B2026-035 integrity fix and was
   // deliberately left unchanged — it operates purely on `index` within
@@ -58,8 +54,7 @@ export function resolveChecklist(
   // but that's a workflow-semantics decision, not an integrity bug, and
   // should not be mixed into this fix.
   const defaultDone = (index: number) => index < items.length - 1;
-  const isManuallyDone = (index: number) =>
-    readChecklistValue(case_.checklistState, displayStage, index, currentDisplayStage) ?? defaultDone(index);
+  const isManuallyDone = (index: number) => readChecklistValue(case_.checklistState, displayStage, index) ?? defaultDone(index);
   const fieldValueAt = (index: number) => (case_.fieldValues[index] ?? '').toString().trim();
   const isFieldDone = (index: number) => fieldValueAt(index).length > 0;
 

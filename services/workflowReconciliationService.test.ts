@@ -95,7 +95,9 @@ function buildTestCase(overrides: Partial<Case> = {}): Case {
 function fullyCompleteFirstCallAndPayment(): Pick<Case, 'fieldValues' | 'checklistState'> {
   return {
     fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
-    checklistState: { 8: true, 9: true, 10: true },
+    // displayStage 0 (First Call & Payment, combined 11-item checklist) —
+    // composite-keyed per B2026-035's fix (domain/workflow/checklistItemKey.ts).
+    checklistState: { '0:8': true, '0:9': true, '0:10': true },
   };
 }
 
@@ -427,14 +429,17 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
     expect(resolvedB[1].done).toBe(false); // fixed: "never touched by anyone" no longer reads as done
   });
 
-  it('9. a legacy bare numeric key is honored only for the case\'s own CURRENT display stage', () => {
+  it('9. a bare numeric key is NEVER honored, even for the case\'s own current display stage — the legacy read fallback has been fully retired post-migration', () => {
     const case_ = buildTestCase({ rawStage: 4, checklistState: { '1': true } });
     const permitStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 4)!;
     const resolved = resolveChecklist(permitStage.checklist.items, permitStage.displayStage, case_, { isPastStage: false });
-    expect(resolved[1].done).toBe(true); // rawStage 4 (displayStage 3) IS the case's current stage — legacy key confidently attributed
+    // Permit's item 1 is the stage's own last item (defaultDone(1)=false for
+    // a 2-item list) — with no composite key and no legacy fallback, it
+    // correctly reads NOT done, never assumed from the bare "1".
+    expect(resolved[1].done).toBe(false);
   });
 
-  it('10. a legacy bare numeric key is NEVER honored for any stage other than the case\'s current one — never guessed', () => {
+  it('10. a bare numeric key is NEVER honored for any stage, current or otherwise — never guessed, under any circumstance', () => {
     const case_ = buildTestCase({ rawStage: 4, checklistState: { '1': true } });
     const dcStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 5)!;
     const resolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, case_, { isPastStage: false });

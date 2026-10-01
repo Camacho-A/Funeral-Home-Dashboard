@@ -54,34 +54,23 @@ export function checklistItemKey(displayStage: number, index: number): string {
  * Reads a checklist item's explicitly-persisted value, or `undefined` if
  * nothing is recorded for it (the caller falls back to `defaultDone`).
  *
- * Legacy data (written before this fix) only ever has a bare numeric key
- * — e.g. `{"1": true}` — with no stage information. Such a value can only
- * be confidently attributed to whichever display stage the checklist-
- * editing UI was actually showing at write time, which was always the
- * case's *current* display stage (`currentDisplayStage`) — the checklist
- * UI has never let staff edit a past or future stage's items (see
- * ChecklistCard.tsx's own read-only-when-viewing-a-past-stage behavior).
- * For any other display stage, a bare legacy key is fundamentally
- * ambiguous — it might belong to this stage, or to any other stage that
- * happens to share the same local index — and must never be guessed; this
- * deliberately returns `undefined` (not the legacy value) for every
- * display stage except the case's current one, which is itself exactly
- * the B2026-035 bug restated as a rule: "do not assume a bare index
- * belongs to a stage it wasn't written against."
+ * Reads ONLY the canonical composite key. The temporary legacy-bare-key
+ * read fallback (which, during the migration window right after this fix
+ * shipped, reinterpreted a bare `{"1": true}` as belonging to whichever
+ * display stage was the case's current one at read time) has been
+ * retired: the 2026-10 production migration converted every active
+ * case's bare keys to composite form and a read-only organization-wide
+ * scan confirmed zero cases still carry one. A bare key is now never
+ * interpreted as checklist completion, for any stage, under any
+ * circumstance — it simply isn't a recognized key shape anymore, and
+ * `defaultDone` governs instead.
  */
 export function readChecklistValue(
   checklistState: Case['checklistState'],
   displayStage: number,
   index: number,
-  currentDisplayStage: number,
 ): boolean | undefined {
-  const scopedValue = checklistState[checklistItemKey(displayStage, index)];
-  if (scopedValue !== undefined) return scopedValue;
-
-  if (displayStage === currentDisplayStage) {
-    return checklistState[String(index)];
-  }
-  return undefined;
+  return checklistState[checklistItemKey(displayStage, index)];
 }
 
 /** Builds the patch value for setting one stage-scoped item, preserving
@@ -95,43 +84,35 @@ export function writeChecklistValue(
   return { ...checklistState, [checklistItemKey(displayStage, index)]: value };
 }
 
-/** True for a composite `"{displayStage}:{index}"` key, false for a bare
-    legacy numeric key (`"3"`) or any non-numeric-prefixed string. */
-export function isCompositeChecklistKey(key: string): boolean {
-  return /^\d+:\d+$/.test(key);
-}
+/** The one canonical key shape — defined once so isCompositeChecklistKey
+    and findInvalidChecklistStatePatchEntries can never drift apart. */
+const COMPOSITE_KEY_PATTERN = /^(\d+):(\d+)$/;
 
-/**
- * Every bare (pre-migration) legacy key present in a case's checklistState.
- * `readChecklistValue` only ever reinterprets one of these — the one
- * matching the case's *current* display stage, at read time — so every
- * other entry in this list is a value the live app now permanently
- * ignores (never deleted, just never read again). Exposed for the
- * read-only organization-wide audit and for a future human-review tool;
- * never consulted by resolveChecklist/computeFirstIncompleteRawStage
- * itself.
- */
-export function findLegacyChecklistKeys(case_: Case): string[] {
-  return Object.keys(case_.checklistState).filter((key) => !isCompositeChecklistKey(key));
+/** True for a composite `"{displayStage}:{index}"` key, false for
+    anything else (including a bare numeric string like `"3"`, which is
+    no longer a recognized shape at all — see readChecklistValue's own
+    doc comment). Used by the server-side write validator below. */
+export function isCompositeChecklistKey(key: string): boolean {
+  return COMPOSITE_KEY_PATTERN.test(key);
 }
 
 export type ChecklistStatePatchValidationError = { key: string; reason: string };
 
 /**
  * B2026-035 hardening (2026-10): server-side guard so no write path can
- * ever CREATE new ambiguous checklist state again — reads still tolerate
- * legacy bare keys during the migration window (`readChecklistValue`
- * above), but a write must not introduce one.
+ * ever write ambiguous checklist state. Only the canonical composite key
+ * is a recognized shape — a bare key is rejected unconditionally (not
+ * just "when it's new"; see below for the one carve-out).
  *
  * Only validates entries that are actually NEW or CHANGING relative to
  * `previousChecklistState` — hooks/useCaseMutations.ts always sends the
- * full map (`{...case_.checklistState, [key]: value}`), so an existing
- * case that still carries a pre-migration bare key would otherwise fail
- * every single edit, including ones unrelated to that stale key, simply
- * for carrying it forward unchanged. "Do not create new ambiguity" and
- * "do not brick every edit on a not-yet-migrated case" are both satisfied
- * by only enforcing the canonical format on what this patch is actually
- * writing.
+ * full map (`{...case_.checklistState, [key]: value}`), so if a case
+ * somehow still carried a stale non-canonical key, re-sending it
+ * unchanged on an unrelated edit must not brick that edit. The 2026-10
+ * production migration converted every active case to composite keys and
+ * a read-only scan confirmed zero remain, so this carve-out is not
+ * expected to ever trigger in practice — it stays purely as a defensive
+ * no-op guard, not a reopened compatibility window.
  *
  * For each new/changed entry, validates: the value is a boolean; the key
  * matches the canonical `"{displayStage}:{index}"` format; both numbers
@@ -155,7 +136,7 @@ export function findInvalidChecklistStatePatchEntries(
       continue;
     }
 
-    const match = /^(\d+):(\d+)$/.exec(key);
+    const match = COMPOSITE_KEY_PATTERN.exec(key);
     if (!match) {
       errors.push({ key, reason: 'checklist key must use the canonical "{displayStage}:{index}" format' });
       continue;

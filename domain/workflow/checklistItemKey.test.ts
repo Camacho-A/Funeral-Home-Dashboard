@@ -4,9 +4,8 @@ import {
   readChecklistValue,
   writeChecklistValue,
   isCompositeChecklistKey,
-  findLegacyChecklistKeys,
+  findInvalidChecklistStatePatchEntries,
 } from './checklistItemKey';
-import type { Case } from '../../types/case';
 
 /**
  * B2026-035 (2026-10) — direct unit coverage for the stage-scoped
@@ -22,6 +21,16 @@ import type { Case } from '../../types/case';
  * found during the activity-log reconstruction — the later rapid unchecks
  * on Ready for Pickup's items momentarily shared a flat key with EDRS's
  * own genuinely-completed item under the old architecture).
+ *
+ * Legacy-fallback retirement (2026-10): the temporary bare-key read
+ * compatibility window (which, for a short period, reinterpreted a bare
+ * `{"1": true}` as belonging to whichever stage was the case's current
+ * one at read time) has been removed — the production migration
+ * converted both active cases to composite keys and a read-only
+ * organization-wide scan confirmed zero cases still carry a bare one.
+ * `readChecklistValue` now takes only 3 arguments (no `currentDisplayStage`)
+ * and a bare key is simply never a recognized shape, under any
+ * circumstance — see the dedicated describe block below.
  */
 describe('checklistItemKey', () => {
   it('builds a "{displayStage}:{index}" composite key', () => {
@@ -31,7 +40,7 @@ describe('checklistItemKey', () => {
 });
 
 describe('isCompositeChecklistKey', () => {
-  it('is true for a composite key, false for a bare legacy numeric key', () => {
+  it('is true for a composite key, false for a bare numeric string or anything else', () => {
     expect(isCompositeChecklistKey('3:1')).toBe(true);
     expect(isCompositeChecklistKey('1')).toBe(false);
     expect(isCompositeChecklistKey('abc')).toBe(false);
@@ -40,24 +49,27 @@ describe('isCompositeChecklistKey', () => {
 
 describe('readChecklistValue', () => {
   it('reads the composite key when present', () => {
-    expect(readChecklistValue({ '3:1': true }, 3, 1, 3)).toBe(true);
-    expect(readChecklistValue({ '3:1': false }, 3, 1, 3)).toBe(false);
-  });
-
-  it('falls back to a bare legacy key only when the stage being read IS the case\'s own current display stage', () => {
-    expect(readChecklistValue({ '1': true }, 4, 1, 4)).toBe(true); // reading stage 4, case currently at stage 4
-  });
-
-  it('never honors a bare legacy key for any stage other than the case\'s current one — returns undefined, never guessed', () => {
-    expect(readChecklistValue({ '1': true }, 5, 1, 4)).toBeUndefined(); // reading stage 5, case currently at stage 4
+    expect(readChecklistValue({ '3:1': true }, 3, 1)).toBe(true);
+    expect(readChecklistValue({ '3:1': false }, 3, 1)).toBe(false);
   });
 
   it('returns undefined when nothing is recorded at all', () => {
-    expect(readChecklistValue({}, 3, 1, 3)).toBeUndefined();
+    expect(readChecklistValue({}, 3, 1)).toBeUndefined();
   });
 
   it('a composite key for a DIFFERENT stage never leaks into this read, even if present in the same map', () => {
-    expect(readChecklistValue({ '4:1': true }, 3, 1, 3)).toBeUndefined();
+    expect(readChecklistValue({ '4:1': true }, 3, 1)).toBeUndefined();
+  });
+
+  it('a bare numeric key is NEVER interpreted as checklist completion, for any stage, under any circumstance — the legacy fallback has been fully retired', () => {
+    // Bare "1" must never satisfy displayStage 1's own item 1 — not even
+    // when the displayStage number happens to coincide with the bare
+    // key's own digits. It is simply not a recognized key shape anymore.
+    expect(readChecklistValue({ '1': true }, 1, 1)).toBeUndefined();
+    // Nor any other stage, which was already true even during the
+    // retired fallback's compatibility window — reconfirmed here as a
+    // permanent guarantee, not a window-dependent one.
+    expect(readChecklistValue({ '1': true }, 4, 1)).toBeUndefined();
   });
 });
 
@@ -70,9 +82,9 @@ describe('writeChecklistValue', () => {
   it('CHECK direction — writing one stage\'s item never marks a different stage\'s own item at the same local index as done', () => {
     const afterCheckingStageA = writeChecklistValue({}, 3, 1, true); // Permit's own item 1
     // Reading DC Application Sent's (stage 4) own item 1 must still be unset.
-    expect(readChecklistValue(afterCheckingStageA, 4, 1, 3)).toBeUndefined();
+    expect(readChecklistValue(afterCheckingStageA, 4, 1)).toBeUndefined();
     // Reading Permit's (stage 3) own item 1 correctly reflects the write.
-    expect(readChecklistValue(afterCheckingStageA, 3, 1, 3)).toBe(true);
+    expect(readChecklistValue(afterCheckingStageA, 3, 1)).toBe(true);
   });
 
   it('UNCHECK direction — toggling one stage\'s item to false never clears a different stage\'s own, independently completed item at the same local index', () => {
@@ -83,9 +95,9 @@ describe('writeChecklistValue', () => {
     // (reacting to a bogus display, or just a genuine correction attempt).
     const afterUncheckingStageB = writeChecklistValue(base, 5, 2, false);
     // EDRS's own item must be completely unaffected.
-    expect(readChecklistValue(afterUncheckingStageB, 2, 2, 5)).toBe(true);
+    expect(readChecklistValue(afterUncheckingStageB, 2, 2)).toBe(true);
     // Ready for Pickup's own item correctly reflects the uncheck.
-    expect(readChecklistValue(afterUncheckingStageB, 5, 2, 5)).toBe(false);
+    expect(readChecklistValue(afterUncheckingStageB, 5, 2)).toBe(false);
   });
 
   it('round-trip: check then uncheck the SAME stage+index correctly toggles only that one key', () => {
@@ -95,22 +107,35 @@ describe('writeChecklistValue', () => {
   });
 });
 
-describe('findLegacyChecklistKeys', () => {
-  function caseWithChecklistState(checklistState: Case['checklistState']): Case {
-    return { checklistState } as Case;
-  }
-
-  it('returns every bare (non-composite) key present', () => {
-    const case_ = caseWithChecklistState({ '1': true, '8': false, '3:1': true });
-    expect(findLegacyChecklistKeys(case_).sort()).toEqual(['1', '8']);
+describe('findInvalidChecklistStatePatchEntries', () => {
+  it('accepts a valid new composite key with no workflowSnapshot to check against', () => {
+    expect(findInvalidChecklistStatePatchEntries({}, { '3:1': true }, null)).toEqual([]);
   });
 
-  it('returns an empty array once every key has been migrated to composite form', () => {
-    const case_ = caseWithChecklistState({ '3:1': true, '4:0': false });
-    expect(findLegacyChecklistKeys(case_)).toEqual([]);
+  it('rejects a newly-introduced bare numeric key', () => {
+    const errors = findInvalidChecklistStatePatchEntries({}, { '1': true }, null);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].key).toBe('1');
+    expect(errors[0].reason).toMatch(/canonical/);
   });
 
-  it('returns an empty array for an empty checklistState', () => {
-    expect(findLegacyChecklistKeys(caseWithChecklistState({}))).toEqual([]);
+  it('rejects a non-boolean value', () => {
+    const errors = findInvalidChecklistStatePatchEntries({}, { '3:1': 'true' as unknown as boolean }, null);
+    expect(errors[0].reason).toMatch(/boolean/);
+  });
+
+  it('rejects a malformed composite key', () => {
+    expect(findInvalidChecklistStatePatchEntries({}, { 'a:1': true }, null)[0].reason).toMatch(/canonical/);
+    expect(findInvalidChecklistStatePatchEntries({}, { '3:b': true }, null)[0].reason).toMatch(/canonical/);
+    expect(findInvalidChecklistStatePatchEntries({}, { '-1:1': true }, null)[0].reason).toMatch(/canonical/);
+  });
+
+  it('never flags a key whose value is unchanged from what is already stored — even a non-canonical one — so a carried-forward value can never brick an unrelated edit', () => {
+    expect(findInvalidChecklistStatePatchEntries({ '1': true }, { '1': true }, null)).toEqual([]);
+  });
+
+  it('still flags that same key if its value actually changes', () => {
+    const errors = findInvalidChecklistStatePatchEntries({ '1': true }, { '1': false }, null);
+    expect(errors).toHaveLength(1);
   });
 });

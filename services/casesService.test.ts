@@ -965,13 +965,19 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
     }
   });
 
-  /** A case sitting at raw stage 3 with every earlier stage (First Call &
-      Payment, Jotform Application) already satisfied via plain
-      checklistState/fieldValues — no CaseFormLink fixture needed, since
-      stage 2's own single item is satisfied directly via checklistState[0]
-      instead of the arrangementFormLinked overlay. Only stage 3's own
-      checklist (`stage3ChecklistState`) varies per test. */
+  /** A case sitting at raw stage 3 (displayStage 2, EDRS) with every
+      earlier stage already trusted via the computeFirstIncompleteRawStage
+      skip optimization (displayStage < the case's current one is never
+      re-evaluated) — no CaseFormLink fixture needed. Only EDRS's own
+      checklist (`stage3ChecklistState`, keyed by its own LOCAL index, e.g.
+      `{2: true}` for Hardsave) varies per test; this helper composite-keys
+      it internally to displayStage 2 — composite-keyed per B2026-035's fix
+      (domain/workflow/checklistItemKey.ts). */
   function seedStage3Case(stage3ChecklistState: Record<number, boolean>) {
+    const EDRS_DISPLAY_STAGE = 2;
+    const compositeStage3State = Object.fromEntries(
+      Object.entries(stage3ChecklistState).map(([index, value]) => [`${EDRS_DISPLAY_STAGE}:${index}`, value]),
+    );
     const id = `task6-mock-${Math.random().toString(36).slice(2)}`;
     const case_: Case = {
       id,
@@ -1010,7 +1016,7 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
       vaStepsState: {},
       vaPublishChoice: null,
       vaNotificationResponsibility: null,
-      checklistState: { 0: true, 8: true, 9: true, 10: true, ...stage3ChecklistState },
+      checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true, ...compositeStage3State },
       fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
       daysWaitingInStage: 0,
       isStalled: false,
@@ -1031,25 +1037,25 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
   it('A. Stage 3 with Hardsave (local index 2) still incomplete remains at rawStage 3, even though the update itself carries a checklistState patch', async () => {
     const case_ = seedStage3Case({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 8: true, 9: true, 10: true } });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(3);
   });
 
   it('B. Stage 3 with Hardsave checked and every other Stage 3 requirement already satisfied (by default) advances to Stage 4', async () => {
     const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(4);
   });
 
   it('C. Partial checklist completion (only an already-default-done item re-affirmed, Hardsave itself still false) does not advance', async () => {
     const case_ = seedStage3Case({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 8: true, 9: true, 10: true } });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(3);
   });
 
   it('D. the checklistState patch is what triggers reconciliation — Stage 4 is the observable proof (no rawStage field appears anywhere in the request)', async () => {
     const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(4);
   });
 
@@ -1062,13 +1068,13 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
   it('F. mock mode produces the exact same Stage 3 -> Stage 4 outcome as Wix mode (see app/api/cases/[caseId]/route.test.ts\'s identical test B)', async () => {
     const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } });
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(4);
   });
 
   it('G. repeating the same completed checklist update is safe/idempotent — a second, identical update never double-advances past Stage 4', async () => {
     const case_ = seedStage3Case({ 2: true });
-    const patch = { checklistState: { 0: true, 2: true, 8: true, 9: true, 10: true } };
+    const patch = { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } };
 
     const first = await casesService.update(organization, case_.id, patch);
     expect(first.rawStage).toBe(4);

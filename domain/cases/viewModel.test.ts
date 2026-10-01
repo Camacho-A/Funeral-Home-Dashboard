@@ -224,8 +224,10 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
 
 describe('buildCaseViewModel — overall progress indicator (Case list scalability, Phase 3, 2026-09)', () => {
   it('is not simply the current stage number — two cases at the same stage with different checklist completion differ', () => {
-    const fewerDone = baseCase({ rawStage: 3, checklistState: { 0: true, 1: false, 2: false } });
-    const moreDone = baseCase({ rawStage: 3, checklistState: { 0: true, 1: true, 2: true } });
+    // displayStage 2 (EDRS) — composite-keyed per B2026-035's fix
+    // (domain/workflow/checklistItemKey.ts).
+    const fewerDone = baseCase({ rawStage: 3, checklistState: { '2:0': true, '2:1': false, '2:2': false } });
+    const moreDone = baseCase({ rawStage: 3, checklistState: { '2:0': true, '2:1': true, '2:2': true } });
     expect(buildCaseViewModel(moreDone, { staffList: [] }).progressPercent).toBeGreaterThan(
       buildCaseViewModel(fewerDone, { staffList: [] }).progressPercent,
     );
@@ -296,8 +298,10 @@ describe('buildCaseViewModel — JotForm modeled as an integration, not a domain
   it('resolves done/locked identically whether or not a checklist item has an externalFormIntegrationId', () => {
     // Compare the Jotform-linked item (rawStage 2) against an ordinary item
     // (rawStage 3, no integration) — same toggle/lock mechanics either way.
-    const jotformCase = baseCase({ rawStage: 2, checklistState: { 0: true } });
-    const ordinaryCase = baseCase({ rawStage: 3, checklistState: { 0: true, 1: true } });
+    // displayStage 1 (Jotform Application) and displayStage 2 (EDRS) —
+    // composite-keyed per B2026-035's fix (domain/workflow/checklistItemKey.ts).
+    const jotformCase = baseCase({ rawStage: 2, checklistState: { '1:0': true } });
+    const ordinaryCase = baseCase({ rawStage: 3, checklistState: { '2:0': true, '2:1': true } });
 
     const jotformVm = buildCaseViewModel(jotformCase, { staffList: [] });
     const ordinaryVm = buildCaseViewModel(ordinaryCase, { staffList: [] });
