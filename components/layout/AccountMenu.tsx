@@ -23,8 +23,31 @@ import styles from './AccountMenu.module.css';
  * Reuses the exact same `logoutAction` Server Action TopBar's own
  * standalone Sign out form already posts to — not a second sign-out
  * implementation.
+ *
+ * Mobile TopBar — Audit/Templates moved into AC menu (2026-09): Audit and
+ * Templates no longer have their own mobile top-row entries at all
+ * (TopBar.module.css hides `.priorityLink` outright below the shared
+ * breakpoint, rather than reordering it into row one as before) — this
+ * menu is now their only mobile destination. `showAudit`/`showTemplates`
+ * are plain booleans TopBar.tsx computes once, from the exact same
+ * `authAdapterMode === 'identity' && permissions.includes(...)` check
+ * its own (desktop) `<a>` elements already use — this component has no
+ * permission logic of its own, and the `href`s below are the identical
+ * destinations those desktop links already point to. Not a duplicated
+ * routing/business-logic implementation, a second CSS-toggled
+ * presentation of the same one.
  */
-export function AccountMenu({ initials, displayName }: { initials: string; displayName: string }) {
+export function AccountMenu({
+  initials,
+  displayName,
+  showAudit = false,
+  showTemplates = false,
+}: {
+  initials: string;
+  displayName: string;
+  showAudit?: boolean;
+  showTemplates?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +85,22 @@ export function AccountMenu({ initials, displayName }: { initials: string; displ
       </button>
       {open && (
         <div className={styles.menu} role="menu">
+          {showAudit && (
+            <a href="/settings/audit" role="menuitem" className={styles.menuItem} onClick={() => setOpen(false)}>
+              Audit
+            </a>
+          )}
+          {showTemplates && (
+            <a
+              href="/settings/document-templates"
+              role="menuitem"
+              className={styles.menuItem}
+              onClick={() => setOpen(false)}
+            >
+              Templates
+            </a>
+          )}
+          {(showAudit || showTemplates) && <div className={styles.divider} role="separator" />}
           <form action={logoutAction}>
             <button type="submit" role="menuitem" className={styles.menuItem}>
               Sign out

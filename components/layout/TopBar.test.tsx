@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TopBar } from './TopBar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
@@ -234,6 +234,68 @@ describe('TopBar — mobile TopBar design correction (2026-09)', () => {
     // Merchandise/etc.) — distinct classes for distinct mobile rows.
     expect(audit.className).not.toMatch(/overflowLink/);
     expect(container.querySelectorAll('[class*="priorityLink"]')).toHaveLength(2);
+  });
+
+  it('opening the AC menu reveals Audit and Templates there too, pointing at the exact same destinations as the desktop links — not a duplicated route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: ['audit.read', 'document.template.manage'], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <OrganizationProvider>
+          <SessionProvider value={TEST_SESSION}>
+            <TopBar authAdapterMode="identity" />
+          </SessionProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+
+    // Closed by default: the AC menu's own Audit/Templates aren't
+    // rendered yet, so only the desktop links exist — one of each.
+    expect(screen.getAllByText('Audit')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Account menu for/ }));
+
+    const auditLinks = screen.getAllByText('Audit');
+    const templatesLinks = screen.getAllByText('Templates');
+    expect(auditLinks).toHaveLength(2);
+    expect(templatesLinks).toHaveLength(2);
+    // Every "Audit"/"Templates" instance — desktop's and the menu's —
+    // points at the identical href.
+    for (const link of auditLinks) expect(link).toHaveAttribute('href', '/settings/audit');
+    for (const link of templatesLinks) expect(link).toHaveAttribute('href', '/settings/document-templates');
+    expect(screen.getByRole('separator')).toBeInTheDocument();
+  });
+
+  it('a caller with neither permission sees no Audit/Templates anywhere, including inside the AC menu', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <OrganizationProvider>
+          <SessionProvider value={TEST_SESSION}>
+            <TopBar authAdapterMode="identity" />
+          </SessionProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole('button', { name: /^Account menu for/ }));
+    expect(screen.queryByText('Audit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Templates')).not.toBeInTheDocument();
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });
 
   it('the notification control renders both its desktop text and its mobile icon representation — one control, not two', async () => {

@@ -71,19 +71,30 @@ import styles from './TopBar.module.css';
  * Mobile TopBar design correction (2026-09): below that same breakpoint,
  * the first wrap-to-new-row pass (plain `flex-wrap`, DOM order) read as a
  * tall, awkwardly-wrapped desktop header rather than a real mobile
- * design. This replaces it with a deliberate two-row mobile layout —
- * [hamburger, New Case, Audit, Templates, Notifications, account avatar]
- * on row one, the expanded search bar alone on row two, anything else
- * (Org Switcher, Resources/Merchandise/Inventory/Suppliers/Purchase
- * Orders/Accounts Payable/Calendar Integrations — module-gated links not
- * part of the approved priority row) wrapping below that — all via CSS
- * `order` on each element's own existing class (TopBar.module.css), never
- * a different DOM order or a second mobile-only copy of this component.
- * Employee name and the standalone "Sign out" link are CSS-hidden on
- * mobile only; AccountMenu (new) is what replaces them there — see its
- * own doc comment for why two account representations exist in the DOM.
- * Desktop (above 860px) is unchanged: same DOM, same classes, same
- * visual order, `order` only even applies inside that media query.
+ * design. This replaces it with a deliberate two-row mobile layout — row
+ * one is hamburger (pinned left) plus New Case/Notifications/account
+ * avatar grouped and pushed to the right edge via a single
+ * `margin-left: auto` (no wrapper container, no spacer element — see
+ * TopBar.module.css's own comment), the expanded search bar alone on row
+ * two, anything else (Org Switcher, Resources/Merchandise/Inventory/
+ * Suppliers/Purchase Orders/Accounts Payable/Calendar Integrations —
+ * module-gated links) wrapping below that.
+ *
+ * Mobile TopBar — Audit/Templates moved into AC menu (2026-09): Audit
+ * and Templates no longer appear in the mobile top row at all (CSS-
+ * hidden, not reordered) — they're only reachable there through the
+ * AccountMenu popover now, alongside Sign out. `showAudit`/
+ * `showTemplates` are computed once, right here, from the EXACT same
+ * `authAdapterMode === 'identity' && permissions.includes(...)` checks
+ * this component's own (desktop) `<a>` elements already use just below —
+ * AccountMenu has no permission logic of its own, and its `<a href>`
+ * destinations are identical to these. Employee name and the standalone
+ * "Sign out" link are CSS-hidden on mobile only; AccountMenu is what
+ * replaces all three (name, Sign out, and now Audit/Templates) there —
+ * see its own doc comment for why these dual representations exist in
+ * the DOM. Desktop (above 860px) is unchanged: same DOM, same classes,
+ * same visual order and content — Audit/Templates still render as their
+ * original, always-visible top-row links there.
  */
 export function TopBar({
   onNewCaseClick,
@@ -169,7 +180,12 @@ export function TopBar({
           </form>
         </div>
         <div className={styles.mobileAccountSlot}>
-          <AccountMenu initials={initialsFromName(session.displayName)} displayName={session.displayName} />
+          <AccountMenu
+            initials={initialsFromName(session.displayName)}
+            displayName={session.displayName}
+            showAudit={authAdapterMode === 'identity' && permissions.includes('audit.read')}
+            showTemplates={authAdapterMode === 'identity' && permissions.includes('document.template.manage')}
+          />
         </div>
       </div>
     </div>

@@ -143,19 +143,20 @@
 /* Mobile TopBar design correction (2026-09). Supersedes this phase's own
    first pass (plain `flex-wrap`, DOM order — the "wrapped desktop
    header" the correction called out). Below 860px, `.topBar` still
-   wraps, but every participating child now gets an explicit `order` so
-   the VISUAL result is a deliberate two(-plus)-row layout instead of
+   wraps, but every participating child now gets an explicit `order` (or,
+   for Audit/Templates, is hidden outright — see `.priorityLink` below)
+   so the VISUAL result is a deliberate two(-plus)-row layout instead of
    whatever the original DOM order happened to produce:
-     row 1: hamburger(1), New Case(2), Audit/Templates(3), Notifications
-            + account avatar via .identityGroup(4)
+     row 1: hamburger(1), New Case + Notifications/account avatar via
+            .identityGroup(4), grouped and pushed to the row's right
+            edge (see `.newCaseButton`'s own `margin-left: auto` comment)
      row 2: search, alone, full width (5, forced via flex-basis: 100% —
             the same "break the line" technique `.spacer` already used)
      row 3+: anything else — Org Switcher (its own module, order 8) and
             the module-gated Resources/Merchandise/Inventory/Suppliers/
             Purchase Orders/Accounts Payable/Calendar Integrations links
-            (.overflowLink, order 8) — none of the approved priority row,
-            so none of them compete with it for space; still fully
-            present and tappable, never hidden.
+            (.overflowLink, order 8) — still fully present and tappable,
+            never hidden.
    `order` only exists inside this media query — desktop's DOM order,
    visual order, and tab order are all completely unaffected. */
 @media (max-width: 860px) {
@@ -174,24 +175,28 @@
 
   /* Alignment adjustment (2026-09): hamburger stays pinned left; this
      `margin-left: auto` is what pushes New Case — and, by ordinary flex
-     flow, everything visually after it on this same line (Audit,
-     Templates, the Notifications/AC identity group) — flush to the
-     row's right edge. No wrapper container and no empty spacer element
-     needed: New Case, Audit/Templates (order 3), and identityGroup
-     (order 4) are the only items ordered between this one and search's
-     own line-break (order 5, flex-basis: 100%) — Org Switcher and the
-     module-gated overflow links (.overflowLink, order 8) sort AFTER
-     search in this row's order sequence, so they already wrap onto a
-     later line on their own and are never part of this right-aligned
-     group. The standard "margin-auto flex nav split," not a manually
-     calculated margin value. */
+     flow, everything visually after it on this same line (the
+     Notifications/AC identity group) — flush to the row's right edge.
+     No wrapper container and no empty spacer element needed: New Case
+     and identityGroup (order 4) are the only items ordered between this
+     one and search's own line-break (order 5, flex-basis: 100%) — Org
+     Switcher and the module-gated overflow links (.overflowLink, order
+     8) sort AFTER search in this row's order sequence, so they already
+     wrap onto a later line on their own and are never part of this
+     right-aligned group. The standard "margin-auto flex nav split," not
+     a manually calculated margin value. */
   .newCaseButton {
     order: 2;
     margin-left: auto;
   }
 
+  /* Audit/Templates moved into the AC account menu (2026-09): no longer
+     reordered into row one — hidden outright. AccountMenu.tsx renders
+     its own copy of each (same href, same permission check, computed
+     once in TopBar.tsx and passed down as a prop — see that component's
+     own doc comment) inside its popover instead. */
   .priorityLink {
-    order: 3;
+    display: none;
   }
 
   .identityGroup {
@@ -231,15 +236,16 @@
   }
 }
 
-/* At the very narrowest supported width, the six priority-row controls
-   (hamburger + New Case + Audit + Templates + bell icon + AC avatar)
-   can run slightly tighter than the 860px breakpoint's default spacing
-   comfortably allows — this is the "smallest sensible adjustment"
-   mentioned in this phase's own report, verified empirically against the
-   real rendered row rather than guessed: tighter gaps and a smaller
-   New Case button so every control still gets a comfortable touch
-   target with no overlap, clipping, or horizontal overflow. Nothing is
-   hidden or removed at this width. */
+/* At the very narrowest supported width, the four priority-row controls
+   (hamburger + New Case + bell icon + AC avatar — Audit/Templates moved
+   into the AC menu, 2026-09, so they're no longer part of this row at
+   all) can run slightly tighter than the 860px breakpoint's default
+   spacing comfortably allows — this is the "smallest sensible
+   adjustment" mentioned in this phase's own report, verified empirically
+   against the real rendered row rather than guessed: tighter gaps and a
+   smaller New Case button so every control still gets a comfortable
+   touch target with no overlap, clipping, or horizontal overflow.
+   Nothing is hidden or removed at this width. */
 @media (max-width: 360px) {
   .topBar {
     column-gap: var(--space-2);
@@ -255,10 +261,6 @@
   .newCaseButton.newCaseButton {
     padding: var(--space-4) var(--space-5);
     font-size: var(--font-size-12-5);
-  }
-
-  .priorityLink {
-    font-size: var(--font-size-11-5);
   }
 
   .identityGroup {

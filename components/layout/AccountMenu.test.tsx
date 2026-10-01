@@ -92,3 +92,59 @@ describe('AccountMenu', () => {
     expect(screen.getByRole('button', { name: 'Account menu for Jordan Rivera' })).toBeInTheDocument();
   });
 });
+
+/**
+ * Mobile TopBar — Audit/Templates moved into AC menu (2026-09). Neither
+ * item appears unless explicitly told to via `showAudit`/`showTemplates`
+ * — the caller (TopBar.tsx) owns the actual permission check; this
+ * component only renders what it's told, exactly like the desktop `<a>`
+ * elements it mirrors.
+ */
+describe('AccountMenu — Audit/Templates (Mobile TopBar, 2026-09)', () => {
+  function openMenu(props: Partial<React.ComponentProps<typeof AccountMenu>> = {}) {
+    render(<AccountMenu initials="AC" displayName="Angelica Camacho" {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
+  }
+
+  it('neither Audit nor Templates appear by default (no permission granted)', () => {
+    openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Audit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Templates' })).not.toBeInTheDocument();
+  });
+
+  it('showAudit renders Audit, pointing at the existing /settings/audit destination — not a new route', () => {
+    openMenu({ showAudit: true });
+    const audit = screen.getByRole('menuitem', { name: 'Audit' });
+    expect(audit).toHaveAttribute('href', '/settings/audit');
+  });
+
+  it('showTemplates renders Templates, pointing at the existing /settings/document-templates destination', () => {
+    openMenu({ showTemplates: true });
+    const templates = screen.getByRole('menuitem', { name: 'Templates' });
+    expect(templates).toHaveAttribute('href', '/settings/document-templates');
+  });
+
+  it('both can appear together, in order, above a divider, above Sign out', () => {
+    openMenu({ showAudit: true, showTemplates: true });
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
+    expect(items).toEqual(['Audit', 'Templates', 'Sign out']);
+    expect(screen.getByRole('separator')).toBeInTheDocument();
+  });
+
+  it('the divider only renders when at least one of Audit/Templates is present — never a dangling separator above Sign out alone', () => {
+    openMenu();
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+  });
+
+  it('clicking Audit closes the menu (in addition to performing the existing navigation)', () => {
+    openMenu({ showAudit: true });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Audit' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('clicking Templates closes the menu', () => {
+    openMenu({ showTemplates: true });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Templates' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+});

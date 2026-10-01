@@ -40,8 +40,13 @@
   font-size: var(--font-size-13);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
+  text-decoration: none; /* .menuItem now also applies to the Audit/
+    Templates <a> items (2026-09) — a UA stylesheet's default anchor
+    underline/color would otherwise make them look inconsistent with the
+    Sign out <button> right below them. */
   cursor: pointer;
   border-radius: var(--radius-sm);
+  box-sizing: border-box;
 }
 
 .menuItem:hover {
@@ -51,4 +56,15 @@
 .menuItem:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: -2px;
+}
+
+/* Visual hierarchy (2026-09): Audit/Templates are navigation, Sign out
+   is a destructive-session action — this subtle rule separates them,
+   rendered only when at least one of the two nav items above it is
+   actually present (a caller with neither permission sees just Sign
+   out, with no dangling, meaningless divider above it). */
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-2) var(--space-1);
 }
