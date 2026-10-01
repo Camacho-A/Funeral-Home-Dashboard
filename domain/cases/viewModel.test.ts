@@ -221,6 +221,60 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
   });
 });
 
+describe('buildCaseViewModel — overall progress indicator (Case list scalability, Phase 3, 2026-09)', () => {
+  it('is not simply the current stage number — two cases at the same stage with different checklist completion differ', () => {
+    const fewerDone = baseCase({ rawStage: 3, checklistState: { 0: true, 1: false, 2: false } });
+    const moreDone = baseCase({ rawStage: 3, checklistState: { 0: true, 1: true, 2: true } });
+    expect(buildCaseViewModel(moreDone, { staffList: [] }).progressPercent).toBeGreaterThan(
+      buildCaseViewModel(fewerDone, { staffList: [] }).progressPercent,
+    );
+  });
+
+  it('a brand-new case (stage 0, nothing checked yet) is below 100% — never 0 simply because defaultDone credits most items', () => {
+    const case_ = baseCase({ rawStage: 0 });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.progressPercent).toBeGreaterThan(0);
+    expect(vm.progressPercent).toBeLessThan(100);
+    expect(vm.progressTotalItems).toBeGreaterThan(vm.progressCompletedItems);
+  });
+
+  it('a genuinely completed case (stageLabel "Completed") is exactly 100% — every stage passed, terminal item satisfied', () => {
+    const case_ = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.stageLabel).toBe('Completed');
+    expect(vm.progressPercent).toBe(100);
+    expect(vm.progressCompletedItems).toBe(vm.progressTotalItems);
+  });
+
+  it('a case at the terminal raw stage that never satisfied the return requirement is below 100% and never shows "Completed" — the inconsistency is surfaced, not hidden', () => {
+    const case_ = baseCase({ rawStage: 7, returnMethod: 'undecided' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.stageLabel).not.toBe('Completed');
+    expect(vm.progressPercent).toBeLessThan(100);
+    expect(vm.progressPercent).toBeGreaterThan(90); // every prior stage still counts fully — only the one terminal item is outstanding
+  });
+
+  it('percent is bounded within 0-100 at every stage, from the first to the last', () => {
+    for (let rawStage = 0; rawStage <= 7; rawStage++) {
+      const vm = buildCaseViewModel(baseCase({ rawStage }), { staffList: [] });
+      expect(vm.progressPercent).toBeGreaterThanOrEqual(0);
+      expect(vm.progressPercent).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('agrees with itself regardless of which past stage Case Detail happens to be viewing read-only — progress always reflects the TRUE current stage, never the viewed one', () => {
+    const case_ = baseCase({ rawStage: 3 });
+    const viewingCurrent = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: null });
+    const viewingPastStage = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(viewingPastStage.progressPercent).toBe(viewingCurrent.progressPercent);
+    expect(viewingPastStage.progressCompletedItems).toBe(viewingCurrent.progressCompletedItems);
+    expect(viewingPastStage.progressTotalItems).toBe(viewingCurrent.progressTotalItems);
+    // The VIEWED checklist does differ (that's the whole point of
+    // viewingDisplayStage) — confirming this isn't a trivial no-op case.
+    expect(viewingPastStage.checklist).not.toBe(viewingCurrent.checklist);
+  });
+});
+
 describe('buildCaseViewModel — JotForm modeled as an integration, not a domain concept', () => {
   it('the Jotform Application stage checklist item carries the integration reference as metadata', () => {
     const case_ = baseCase({ rawStage: 2 });

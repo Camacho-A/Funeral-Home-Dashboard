@@ -92,6 +92,13 @@
 .badges {
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.badgeRow {
+  display: flex;
   align-items: center;
   gap: var(--space-4);
 }

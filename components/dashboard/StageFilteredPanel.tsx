@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { BadgeVariant } from '@/types/caseViewModel';
 import { BulkActionBar } from './BulkActionBar';
 import styles from './StageFilteredPanel.module.css';
@@ -19,6 +20,12 @@ export type StageFilteredCase = {
   rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
   isStalled: boolean;
   selected: boolean;
+  /** Case list scalability, Phase 3 (progress indicator, 2026-09) — see
+      domain/cases/progress.ts. Every row here is already known to be in
+      the same stage (no stage badge is shown for that reason — see this
+      component's own doc comment), so this is the one piece of per-case
+      status this list adds: how much of the whole workflow is done. */
+  progressPercent: number;
 };
 
 /**
@@ -82,6 +89,9 @@ export function StageFilteredPanel({
                 {c.rowSummaryText}
               </div>
             </Link>
+            <div className={styles.progress}>
+              <ProgressBar percent={c.progressPercent} label={`${c.decedentName} workflow progress`} />
+            </div>
           </div>
         ))}
       </div>

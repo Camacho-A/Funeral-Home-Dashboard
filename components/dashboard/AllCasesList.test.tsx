@@ -12,6 +12,7 @@ const item: AllCasesListItem = {
   isOverdue: false,
   stageLabel: 'First Call & Payment',
   stageBadgeVariant: 'neutral',
+  progressPercent: 50,
 };
 
 /** Case list scalability, Phase 3 (2026-09): `searchQuery` was replaced by
@@ -127,5 +128,42 @@ describe('AllCasesList — Load More (Case list scalability, Phase 3)', () => {
   it('does not render an empty message when cases are present', () => {
     renderList({ emptyMessage: 'No cases found.' });
     expect(screen.queryByText('No cases found.')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Case list scalability, Phase 3 — progress indicator (2026-09). The row
+ * still shows its canonical current stage (via the existing Badge,
+ * covered above) — these prove the progress bar is a complementary
+ * addition, never a replacement for it.
+ */
+describe('AllCasesList — case progress indicator (Case list scalability, Phase 3)', () => {
+  it('1. still shows the current stage', () => {
+    renderList();
+    expect(screen.getByText('First Call & Payment')).toBeInTheDocument();
+  });
+
+  it('2/3. shows an accessible progress bar with the numeric percentage as real text', () => {
+    renderList({ cases: [{ ...item, progressPercent: 63 }] });
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '63');
+    expect(screen.getByText('63% Complete')).toBeInTheDocument();
+  });
+
+  it('6. a 0% case displays correctly', () => {
+    renderList({ cases: [{ ...item, progressPercent: 0 }] });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByText('0% Complete')).toBeInTheDocument();
+  });
+
+  it('8. a 100% case displays correctly', () => {
+    renderList({ cases: [{ ...item, progressPercent: 100 }] });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByText('100% Complete')).toBeInTheDocument();
+  });
+
+  it('never shows decimal precision — always a whole-number percentage', () => {
+    renderList({ cases: [{ ...item, progressPercent: 76.9230769 }] });
+    expect(screen.getByText('77% Complete')).toBeInTheDocument();
   });
 });

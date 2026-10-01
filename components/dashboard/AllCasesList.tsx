@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { BadgeVariant } from '@/types/caseViewModel';
 import styles from './AllCasesList.module.css';
 
@@ -20,6 +21,11 @@ export type AllCasesListItem = {
   isOverdue: boolean;
   stageLabel: string;
   stageBadgeVariant: BadgeVariant;
+  /** Case list scalability, Phase 3 (progress indicator, 2026-09) — see
+      domain/cases/progress.ts. All Cases spans every stage, so the stage
+      badge above stays the ONLY "where is it" signal; this is purely
+      "how much of the whole workflow is actually done." */
+  progressPercent: number;
 };
 
 /**
@@ -62,8 +68,11 @@ export function AllCasesList({
               </div>
             </div>
             <div className={styles.badges}>
-              {c.isOverdue && <span className={styles.overdueTag}>overdue</span>}
-              <Badge variant={c.stageBadgeVariant}>{c.stageLabel}</Badge>
+              <div className={styles.badgeRow}>
+                {c.isOverdue && <span className={styles.overdueTag}>overdue</span>}
+                <Badge variant={c.stageBadgeVariant}>{c.stageLabel}</Badge>
+              </div>
+              <ProgressBar percent={c.progressPercent} label={`${c.decedentName} workflow progress`} />
             </div>
           </div>
         </Link>

@@ -27,6 +27,7 @@ import { initialsFromName } from '../../utils/string';
 import { parseLegacyTimeOfDeath } from '../../utils/inputMask';
 import { normalizeNextOfKinName } from './nextOfKinName';
 import { getChecklistLabels } from './checklist';
+import { computeCaseProgress } from './progress';
 
 export type CaseViewModelContext = {
   staffList: StaffProfile[];
@@ -273,6 +274,16 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
           ...currentChecklist.slice(1),
         ]
       : currentChecklist;
+  // Case list scalability, Phase 3 (progress indicator, 2026-09). Keyed
+  // off `rawDisplayStage` — the case's TRUE current display stage from
+  // its own `rawStage` — never `effectiveDisplayStage` below, which can
+  // roll back one position purely as a stepper/label presentation choice
+  // for the terminal stage (see resolveEffectiveDisplayStage's own
+  // comment). Progress must track the real stage the checklist UI is
+  // actually resolved against (effectiveCurrentChecklist, computed from
+  // `case_.rawStage` directly above), not that presentational rollback —
+  // otherwise this would double-resolve the wrong stage's checklist.
+  const caseProgress = computeCaseProgress(snapshot, rawDisplayStage, effectiveCurrentChecklist);
   const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, lastStage, remainsReturnComplete);
   const effectiveStage = findStageByDisplayStage(snapshot, effectiveDisplayStage);
   const stageLabel = effectiveStage?.label ?? '';
@@ -387,6 +398,10 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
 
     checklist: viewedChecklist,
     viewingDisplayStage,
+
+    progressPercent: caseProgress.percent,
+    progressCompletedItems: caseProgress.completedItems,
+    progressTotalItems: caseProgress.totalItems,
 
     timeline: buildTimeline(case_, effectiveCurrentChecklist, rawDisplayStage, effectiveOwnerName, snapshot),
     requiredDocuments: buildRequiredDocuments(case_.rawStage),

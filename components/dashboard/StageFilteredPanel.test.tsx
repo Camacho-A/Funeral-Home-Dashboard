@@ -11,6 +11,7 @@ const item: StageFilteredCase = {
   rowSummaryVariant: 'neutral',
   isStalled: false,
   selected: false,
+  progressPercent: 50,
 };
 
 /** Case list scalability, Phase 3 (2026-09): `stageLabel`/`onBack` are
@@ -121,5 +122,33 @@ describe('StageFilteredPanel — Load More / empty state (Case list scalability,
   it('renders the caller-provided empty message when there are no cases', () => {
     renderPanel({ cases: [], emptyMessage: 'No cases in this stage.' });
     expect(screen.getByText('No cases in this stage.')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Case list scalability, Phase 3 — progress indicator (2026-09). A
+ * stage-filtered list shows the same progress calculation/UI as All
+ * Cases (12. "Stage-filtered lists display the same progress
+ * calculation") — this list just omits the redundant stage badge since
+ * every row here is already known to share one stage.
+ */
+describe('StageFilteredPanel — case progress indicator (Case list scalability, Phase 3)', () => {
+  it('2/3. shows an accessible progress bar with the numeric percentage as real text', () => {
+    renderPanel({ cases: [{ ...item, progressPercent: 63 }] });
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '63');
+    expect(screen.getByText('63% Complete')).toBeInTheDocument();
+  });
+
+  it('6. a 0% case displays correctly', () => {
+    renderPanel({ cases: [{ ...item, progressPercent: 0 }] });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByText('0% Complete')).toBeInTheDocument();
+  });
+
+  it('8. a 100% case displays correctly', () => {
+    renderPanel({ cases: [{ ...item, progressPercent: 100 }] });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByText('100% Complete')).toBeInTheDocument();
   });
 });

@@ -163,6 +163,16 @@ export type CaseViewModel = {
   checklist: ChecklistItemViewModel[];
   viewingDisplayStage: number | null; // non-null only when viewing a past stage read-only
 
+  /** Case list scalability, Phase 3 (progress indicator, 2026-09). Overall
+      workflow completion — see domain/cases/progress.ts#computeCaseProgress
+      for the exact definition. 0-100, whole number. NOT derived from
+      `displayStage`'s position: a case in a late stage with an unchecked
+      current-stage item reads below 100, and this can disagree with
+      `displayStage` alone implying "almost done." */
+  progressPercent: number;
+  progressCompletedItems: number;
+  progressTotalItems: number;
+
   timeline: TimelineEntryViewModel[];
   requiredDocuments: RequiredDocumentViewModel[];
 

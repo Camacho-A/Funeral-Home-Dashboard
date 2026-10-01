@@ -313,3 +313,72 @@ describe('CasesPage — mutation cache invalidation (Case list scalability, Phas
     await screen.findByText('BRAND NEW CASE');
   });
 });
+
+/**
+ * Case list scalability, Phase 3 — progress indicator (2026-09).
+ */
+describe('CasesPage — case progress indicator (Case list scalability, Phase 3)', () => {
+  it('11. All Cases shows progress for every case on a bounded page without any N+1 per-case request pattern', async () => {
+    for (let i = 0; i < 5; i++) {
+      pushCase(`p-${i}`, { caseNumber: `B2026-${100 + i}`, createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, decedentName: `PROGRESS CASE ${i}`, rawStage: 3 });
+    }
+    const listPageSpy = vi.spyOn(casesService, 'listPage');
+    const getSpy = vi.spyOn(casesService, 'get');
+    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
+
+    await screen.findByText('PROGRESS CASE 0');
+    // Every pushed case got its own progress bar...
+    expect(screen.getAllByRole('progressbar')).toHaveLength(5);
+    // ...but the list was fetched in exactly ONE request, never one per
+    // case — progress comes from the same Case records the list request
+    // already returns (each one's workflowSnapshot), not a second
+    // per-case round trip.
+    expect(listPageSpy).toHaveBeenCalledTimes(1);
+    expect(getSpy).not.toHaveBeenCalled();
+    listPageSpy.mockRestore();
+    getSpy.mockRestore();
+  });
+
+  it('13. completing a checklist item and invalidating the cache refreshes the displayed progress, without a full page refresh', async () => {
+    pushCase('checklist-case', {
+      caseNumber: 'B2026-101',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      decedentName: 'CHECKLIST CASE',
+      rawStage: 3,
+      checklistState: { 0: true, 1: false, 2: false },
+    });
+    const { queryClient } = renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
+    await screen.findByText('CHECKLIST CASE');
+    const before = Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'));
+
+    const organization = { organizationId: SECOND_MOCK_ORGANIZATION_ID, dataAdapterMode: 'mock' as const };
+    await casesService.update(organization, 'checklist-case', { checklistState: { 0: true, 1: true, 2: false } });
+    await queryClient.invalidateQueries({ queryKey: ['cases', SECOND_MOCK_ORGANIZATION_ID] });
+
+    await waitFor(() => {
+      const after = Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'));
+      expect(after).toBeGreaterThan(before);
+    });
+  });
+
+  it('12. a stage-filtered list shows the same progress as the All Cases view for the same case', async () => {
+    pushCase('same-case', {
+      caseNumber: 'B2026-101',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      decedentName: 'SAME CASE EVERYWHERE',
+      rawStage: 3,
+      checklistState: { 0: true, 1: false, 2: false },
+    });
+    const allCasesRender = renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
+    await screen.findByText('SAME CASE EVERYWHERE');
+    const allCasesPercent = screen.getByRole('progressbar').getAttribute('aria-valuenow');
+    allCasesRender.unmount();
+
+    searchParams = new URLSearchParams({ stage: 'EDRS & Doctor / Cause of Death' });
+    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
+    await screen.findByText('SAME CASE EVERYWHERE');
+    const stageFilteredPercent = screen.getByRole('progressbar').getAttribute('aria-valuenow');
+
+    expect(stageFilteredPercent).toBe(allCasesPercent);
+  });
+});

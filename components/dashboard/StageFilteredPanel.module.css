@@ -90,6 +90,10 @@
   color: inherit;
 }
 
+.progress {
+  flex-shrink: 0;
+}
+
 .name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-13-5);
