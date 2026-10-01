@@ -116,3 +116,47 @@
   font-weight: var(--font-weight-bold);
   color: var(--color-text-secondary);
 }
+
+/* Dashboard mobile-friendliness pass (2026-09). `.label`'s fixed 260px
+   (plus the row's gaps and `.count`'s fixed 32px) adds up to a ~310px
+   minimum row width that doesn't shrink — comfortably fits the desktop/
+   tablet widths this panel was sized for, but on a narrow phone
+   viewport that minimum alone can exceed the panel's own available
+   width, forcing horizontal overflow. Below this breakpoint each row
+   stacks into two lines (the long canonical stage label on its own full
+   line, wrapping naturally — "Permit & Authorization Sent to Crematory"
+   — then the bar + count beneath it) instead of fighting for one
+   cramped line. Desktop/tablet (above this breakpoint) is completely
+   unchanged. */
+@media (max-width: 560px) {
+  .panel {
+    padding: var(--space-9) var(--space-8);
+  }
+
+  .allCasesRow {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    /* Larger than the desktop 4px/6px — a full-width, two-line row is a
+       more comfortable tap target on a touch screen. */
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .label {
+    width: auto;
+  }
+
+  .track {
+    flex: none;
+    width: 100%;
+  }
+
+  .count {
+    width: auto;
+    text-align: left;
+  }
+}

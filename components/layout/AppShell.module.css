@@ -16,3 +16,17 @@
   overflow-y: auto;
   padding: var(--space-14) var(--space-16) var(--space-24);
 }
+
+/* Dashboard mobile-friendliness pass (2026-09): the desktop content
+   padding (28px/32px/48px) is generous by design on wide screens, but on
+   a narrow viewport every one of those pixels is width a card could
+   otherwise use — reclaimed here for every page under this shared shell,
+   not just the Dashboard. This does NOT address the Sidebar's own fixed,
+   always-visible 216px width (components/layout/Sidebar.module.css) —
+   see this phase's own report for why that's a separate, unresolved
+   question rather than something silently patched here. */
+@media (max-width: 560px) {
+  .content {
+    padding: var(--space-8) var(--space-6) var(--space-12);
+  }
+}

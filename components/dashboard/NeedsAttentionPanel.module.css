@@ -96,3 +96,31 @@
   color: oklch(0.5 0.08 25);
   white-space: nowrap;
 }
+
+/* Dashboard mobile-friendliness pass (2026-09). `.reason`'s single-line
+   ellipsis truncation keeps each alert compact on desktop, where `.meta`
+   sits to the right on the same line — but on a narrow phone viewport
+   that same truncation starts clipping the actual alert reason (the one
+   piece of information this panel exists to surface), and `.row`'s
+   side-by-side layout leaves `.rowMain` too little width for it anyway.
+   Below this breakpoint the row stacks (name/case#/reason on top, then
+   days/SLA beneath, both full-width) and the reason text wraps normally
+   instead of clipping. Desktop/tablet (above this breakpoint) is
+   completely unchanged — same one-line, ellipsized, side-by-side row. */
+@media (max-width: 560px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .reason {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .meta {
+    text-align: left;
+  }
+}

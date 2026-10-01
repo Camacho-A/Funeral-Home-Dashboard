@@ -41,3 +41,20 @@
 .financialSummarySection {
   margin-bottom: var(--space-12);
 }
+
+/* Dashboard mobile-friendliness pass (2026-09): a modest reduction to
+   this page's own gaps/margins on a narrow phone viewport (stacked with
+   AppShell.module.css's own matching content-padding reduction) — the
+   Dashboard should feel compact without feeling crowded, not merely
+   narrower. Purely spacing; the stacked single-column order itself
+   (already established above/in page.tsx) is unchanged. */
+@media (max-width: 560px) {
+  .stageOverviewGrid {
+    gap: var(--space-6);
+    margin-bottom: var(--space-9);
+  }
+
+  .financialSummarySection {
+    margin-bottom: var(--space-9);
+  }
+}
