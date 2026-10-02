@@ -27,6 +27,7 @@ import {
   applyOrganizationBrandingUpdateToWixData,
   type WixOrganizationBrandingItem,
 } from '../lib/wixOrganizationBrandingMapper';
+import { uploadPublicBrandingAsset } from '../lib/vercelBlob/brandingAssetStorage';
 import {
   mapWixOnboardingAuditItem,
   buildWixOnboardingAuditData,
@@ -1025,6 +1026,54 @@ export async function saveBranding(
   const mapped = mapWixOrganizationBrandingItem(inserted.data);
   if (!mapped) throw new Error('Failed to create branding.');
   return mapped;
+}
+
+export type UploadBrandingLogoInput = {
+  organizationId: string;
+  fileBuffer: Buffer;
+  mimeType: string;
+  fileExtension: string;
+  idFactory: () => string;
+};
+
+/**
+ * Organization Branding Settings phase. The real, production-capable
+ * write path onboarding's own branding step never built ("No upload
+ * endpoint is built in this phase" — `types/organizationBranding.ts`'s
+ * own header comment, Phase 20). Uploads to a PUBLIC Blob location
+ * (`uploadPublicBrandingAsset` — deliberately not the private,
+ * `DocumentStorageProvider`-mediated path case documents use; see that
+ * module's own header comment for why a logo needs a plain, directly-
+ * fetchable URL), then persists the resulting URL via the existing
+ * `saveBranding` upsert — the same function onboarding's own Branding
+ * step already calls, so mock vs. wix persistence semantics are
+ * identical to every other branding write, not a second code path.
+ * `idFactory` is caller-injected (never `crypto.randomUUID()` called
+ * directly here), matching `services/documentService.ts#upload`'s own
+ * dependency-injection convention for testability.
+ */
+export async function uploadBrandingLogo(input: UploadBrandingLogoInput, dataAdapterMode: DataAdapterMode): Promise<OrganizationBranding> {
+  const key = `branding/${input.organizationId}/logo-${input.idFactory()}.${input.fileExtension}`;
+  const { url } = await uploadPublicBrandingAsset(key, input.fileBuffer, input.mimeType);
+  return saveBranding(input.organizationId, { logoUrl: url }, dataAdapterMode);
+}
+
+/**
+ * Clears `logoUrl` back to `null` via the same `saveBranding` upsert.
+ * Deliberately does NOT attempt to delete the previously-uploaded Blob —
+ * this phase's own explicit instruction: "if uncertain, leave the
+ * previous blob orphaned and report that cleanup as future work rather
+ * than risking deletion of another resource." Confirming a stored
+ * `logoUrl` is actually one of this app's own uploaded Blobs (as opposed
+ * to, say, a hand-entered external URL) isn't something this service can
+ * verify safely today, so no deletion is attempted at all — the orphaned
+ * object (if any) is harmless, unreferenced storage, not a correctness
+ * or security issue. `lib/vercelBlob/brandingAssetStorage.ts#deletePublicBrandingAsset`
+ * exists for a future, deliberate cleanup pass once ownership can be
+ * confirmed.
+ */
+export async function removeBrandingLogo(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<OrganizationBranding> {
+  return saveBranding(organizationId, { logoUrl: null }, dataAdapterMode);
 }
 
 // ---------------------------------------------------------------------------

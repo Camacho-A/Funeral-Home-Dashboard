@@ -1,15 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationProfile, useUpdateOrganizationProfile, useUpdatePrimaryLocationProfile } from '@/hooks/useOrganizationProfile';
+import { useOrganizationBranding, useUploadBrandingLogo, useRemoveBrandingLogo } from '@/hooks/useOrganizationBranding';
 import { OrganizationProfileValidationError, type OrganizationProfileFields, type PrimaryLocationFields } from '@/lib/organizationProfileClient';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
+import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
 import styles from './OrganizationProfilePanel.module.css';
+
+const LOGO_ACCEPT = 'image/png,image/jpeg,image/webp';
 
 const LOCATION_TYPE_OPTIONS: Array<{ value: PrimaryLocationFields['locationType']; label: string }> = [
   { value: 'office', label: 'Office' },
@@ -63,6 +67,7 @@ export function OrganizationProfilePanel() {
     <div>
       <OrganizationSection organizationId={organizationId} initial={data.organization} />
       <PrimaryLocationSection organizationId={organizationId} initial={data.location} />
+      <BrandingSection organizationName={data.organization.name} />
     </div>
   );
 }
@@ -261,6 +266,128 @@ function PrimaryLocationForm({ organizationId, initial }: { organizationId: stri
           </Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+/**
+ * Organization Branding Settings phase — logo only (colors/fonts/themes/
+ * email branding/favicon/statement customization deliberately out of
+ * scope for this pass, per that phase's own instruction). Rendered only
+ * inside the already-`organization.manage`-gated parent panel above — no
+ * second permission check here, matching `OrganizationSection`/
+ * `PrimaryLocationSection`'s own precedent of trusting the parent's gate
+ * (the real enforcement is server-side on the upload/remove routes
+ * regardless of what this component renders).
+ */
+function BrandingSection({ organizationName }: { organizationName: string }) {
+  const brandingQuery = useOrganizationBranding();
+  const uploadLogo = useUploadBrandingLogo();
+  const removeLogo = useRemoveBrandingLogo();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const logoUrl = brandingQuery.data?.logoUrl ?? null;
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setLocalError(null);
+    setSavedAt(null);
+    try {
+      await uploadLogo.mutateAsync(file);
+      setSavedAt(Date.now());
+    } catch (error) {
+      // The branding record is never optimistically changed above, so a
+      // failed upload leaves the previously-displayed logo (or no-logo
+      // state) exactly as it was — never a UI that claims success while
+      // persistence failed.
+      setLocalError(error instanceof Error ? error.message : 'Failed to upload logo.');
+    }
+  }
+
+  async function handleRemove() {
+    setLocalError(null);
+    setSavedAt(null);
+    try {
+      await removeLogo.mutateAsync();
+      setSavedAt(Date.now());
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : 'Failed to remove logo.');
+      throw error; // surfaced inline by ConfirmActionDialog too
+    }
+  }
+
+  const pending = uploadLogo.isPending || removeLogo.isPending;
+
+  return (
+    <Card className={styles.section}>
+      <h2 className={styles.sectionTitle}>Organization Branding</h2>
+
+      {brandingQuery.isPending ? (
+        <p className={styles.description}>Loading…</p>
+      ) : (
+        <>
+          <p className={styles.label}>Logo</p>
+          <div className={styles.logoPreviewRow}>
+            <div className={styles.logoPreview}>
+              {logoUrl ? (
+                <img src={logoUrl} alt={`${organizationName} logo`} className={styles.logoImage} />
+              ) : (
+                <span className={styles.noLogo}>No logo</span>
+              )}
+            </div>
+            {!logoUrl && <p className={styles.noLogo}>No organization logo uploaded.</p>}
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={LOGO_ACCEPT}
+            aria-label="Upload organization logo"
+            className={styles.hiddenFileInput}
+            onChange={handleFileSelected}
+          />
+
+          <div className={styles.actionsRow}>
+            <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={pending}>
+              {uploadLogo.isPending ? 'Uploading…' : logoUrl ? 'Change Logo' : 'Upload Logo'}
+            </Button>
+            {logoUrl && (
+              <Button type="button" variant="ghost" onClick={() => setRemoveConfirmOpen(true)} disabled={pending}>
+                Remove Logo
+              </Button>
+            )}
+          </div>
+
+          <p className={styles.description} role="note">
+            PNG, JPEG, or WEBP. Up to 5MB.
+          </p>
+
+          {localError && (
+            <p className={styles.error} role="alert">
+              {localError}
+            </p>
+          )}
+          {savedAt && !localError && (
+            <p className={styles.success} role="status">
+              Logo updated.
+            </p>
+          )}
+        </>
+      )}
+
+      <ConfirmActionDialog
+        open={removeConfirmOpen}
+        onClose={() => setRemoveConfirmOpen(false)}
+        title="Remove Logo"
+        message="This organization's logo will be removed from the sidebar. You can upload a new one at any time."
+        confirmLabel="Remove"
+        onConfirm={handleRemove}
+      />
     </Card>
   );
 }

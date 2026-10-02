@@ -72,4 +72,40 @@ export async function getBranding(context: OrganizationContext): Promise<Organiz
   return body.branding;
 }
 
-export const organizationsService = { get, getForOrganization, getBranding };
+async function parseBrandingResponse(response: Response): Promise<OrganizationBranding> {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = typeof body.error === 'string' ? body.error : 'Something went wrong. Please try again.';
+    throw new Error(message);
+  }
+  return body.branding as OrganizationBranding;
+}
+
+/** Organization Branding Settings phase. `POST /api/organization/branding/logo`
+    (multipart) — the real, authenticated write path; `organizationId` is
+    sent but never trusted as authorization by the server (see that
+    route's own comment). Returns the updated `OrganizationBranding` so
+    callers can update their cache directly from the server's own
+    response, never an optimistic guess. */
+export async function uploadBrandingLogo(organizationId: string, file: File): Promise<OrganizationBranding> {
+  const formData = new FormData();
+  formData.set('organizationId', organizationId);
+  formData.set('file', file);
+  const response = await fetch('/api/organization/branding/logo', { method: 'POST', body: formData });
+  return parseBrandingResponse(response);
+}
+
+/** Organization Branding Settings phase. `DELETE /api/organization/branding/logo`
+    — clears `logoUrl` back to `null`; never deletes the underlying Blob
+    (see `services/organizationProvisioningService.ts#removeBrandingLogo`'s
+    own comment on why). */
+export async function removeBrandingLogo(organizationId: string): Promise<OrganizationBranding> {
+  const response = await fetch('/api/organization/branding/logo', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId }),
+  });
+  return parseBrandingResponse(response);
+}
+
+export const organizationsService = { get, getForOrganization, getBranding, uploadBrandingLogo, removeBrandingLogo };
