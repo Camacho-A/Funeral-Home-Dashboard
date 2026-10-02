@@ -107,7 +107,18 @@
 /* Task #14 Phase B (2026-09) — a subtle top border so the org/staff
    footer reads as its own region rather than blending directly into the
    nav list above it. Organization name, staff-online text, permissions,
-   and click behavior are all unchanged. */
+   and click behavior are all unchanged.
+   Sidebar logo centering fix (2026-10): previously a plain block with no
+   alignment of its own — `.footerLogo`'s `margin: 0 auto` centered the
+   logo in isolation, but the organization-name/staff-online text
+   directly below it were bare text nodes with no centering at all, so
+   the section read as two misaligned pieces rather than one unit. A
+   real flex column with `align-items: center` centers the logo, name,
+   and staff-online line uniformly through normal flex alignment — not
+   absolute positioning, transforms, or offsets. `gap` provides the
+   "small gap" between the organization name and staff-online count;
+   `.footerLogo` carries its own larger `margin-bottom` below it for the
+   "modest gap" called for between the logo and the name. */
 .footer {
   margin-top: auto;
   font-size: var(--font-size-12);
@@ -115,27 +126,35 @@
   line-height: var(--leading-relaxed);
   padding: var(--space-6) var(--space-4) 0;
   border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-1);
+}
+
+.footerOrgName {
+  color: var(--color-text-muted);
 }
 
 .footerStaffOnline {
   color: var(--color-text-faint);
 }
 
-/* Manors cleanup phase (Task #4) — small/professional, capped height so a
-   wide logo can never overpower the staff-online status text beneath it;
-   `max-width: 100%` keeps it contained in the mobile drawer (same width
-   the footer text itself already respects) with no overflow.
-   Branding follow-up (2026-10): bumped 28px -> 32px — the real connected
-   asset (a detailed laurel/leaf mark, not a simple wordmark) needed
-   slightly more height to stay legible, per explicit sign-off for a
-   small, restrained adjustment. Centered (not left-aligned like the text
-   below it) so a square mark reads as its own visual element, not oddly
-   indented text. */
+/* Sidebar logo centering + enlargement (2026-10). 64px — noticeably more
+   visual presence than the prior 32px while staying a identity mark, not
+   a banner. `max-width`/`max-height` both capped (not height alone) so a
+   future tenant's non-square logo is still fully contained within a
+   64px box in either dimension, never just vertically; `object-fit:
+   contain` + `width/height: auto` preserve aspect ratio and guarantee it
+   never stretches. `max-width: 100%` is still the ultimate backstop
+   against overflow in the narrower mobile drawer. */
 .footerLogo {
   display: block;
-  max-height: 32px;
-  max-width: 100%;
+  max-width: min(64px, 100%);
+  max-height: 64px;
   width: auto;
+  height: auto;
   object-fit: contain;
-  margin: 0 auto var(--space-3);
+  margin-bottom: var(--space-4);
 }

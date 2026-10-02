@@ -131,17 +131,15 @@ export function Sidebar({
           `organizationBrandingFixtures` in mock mode; a production
           (wix-mode) organization with no branding row configured yet
           simply renders nothing here, same as before — no further code
-          change needed once one is set. Small and capped by
-          `.footerLogo` so it never competes with the staff-online status
-          beneath it. */}
+          change needed once one is set. Capped at 64px by `.footerLogo`
+          so it reads as an identity mark, not a banner, and the whole
+          footer (logo, org name, staff-online) centers as one unit via
+          `.footer`'s flex column (2026-10 visual adjustment). */}
       <div className={styles.footer}>
         {branding?.logoUrl && <img src={branding.logoUrl} alt={`${organizationName} logo`} className={styles.footerLogo} />}
-        {organizationName}
+        <span className={styles.footerOrgName}>{organizationName}</span>
         {authAdapterMode === 'identity' && activeStaffCountQuery.data !== undefined && (
-          <>
-            <br />
-            <span className={styles.footerStaffOnline}>{activeStaffCountQuery.data} staff online</span>
-          </>
+          <span className={styles.footerStaffOnline}>{activeStaffCountQuery.data} staff online</span>
         )}
       </div>
     </nav>
