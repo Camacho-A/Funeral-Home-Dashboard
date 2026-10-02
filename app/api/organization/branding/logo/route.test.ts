@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { organizationBrandingFixtures } from '@/services/__mocks__/onboardingFixtures';
+import type { OrganizationBranding } from '@/types/organizationBranding';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({ getSession: async () => mockSession }));
@@ -50,18 +51,40 @@ function sampleFormData(overrides: { organizationId?: string; mimeType?: string;
   return formData;
 }
 
-let brandingLen: number;
+const ORIGINAL_BRANDING_TOKEN = process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+const ORIGINAL_DOCUMENT_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+
+// Snapshotted by VALUE (not just array length) — `saveBranding`'s
+// mock-mode branch mutates an existing fixture row IN PLACE
+// (`organizationBrandingFixtures[index] = {...}`), so truncating the
+// array back to its original length after a test leaves that row's
+// mutated content behind for the next test. Full deep copy avoids that
+// leak.
+let brandingSnapshot: OrganizationBranding[];
 beforeEach(() => {
   process.env.DATA_ADAPTER = 'mock';
   mockSession = { user: mockDefaultUser };
   mockPut.mockReset();
   mockDel.mockReset();
   mockPut.mockResolvedValue({ url: 'https://example-blob.public.blob.vercel-storage.com/branding/managed-cremations/logo-abc123.png' });
-  brandingLen = organizationBrandingFixtures.length;
+  // The branding store's token must be configured for a normal upload to
+  // succeed (production incident fix, 2026-10) — also set the document
+  // store's own token alongside it in most tests, specifically so a test
+  // asserting the branding path never used the document token is
+  // actually proving something (see "never uses the private document
+  // Blob token" below), not just testing an absent fallback.
+  process.env.BLOB_BRANDING_READ_WRITE_TOKEN = 'vercel_blob_rw_branding_test_token';
+  process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_document_test_token';
+  brandingSnapshot = organizationBrandingFixtures.map((b) => ({ ...b }));
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
-  organizationBrandingFixtures.length = brandingLen;
+  if (ORIGINAL_BRANDING_TOKEN === undefined) delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+  else process.env.BLOB_BRANDING_READ_WRITE_TOKEN = ORIGINAL_BRANDING_TOKEN;
+  if (ORIGINAL_DOCUMENT_TOKEN === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
+  else process.env.BLOB_READ_WRITE_TOKEN = ORIGINAL_DOCUMENT_TOKEN;
+  organizationBrandingFixtures.length = 0;
+  organizationBrandingFixtures.push(...brandingSnapshot);
 });
 
 describe('POST /api/organization/branding/logo', () => {
@@ -147,6 +170,41 @@ describe('POST /api/organization/branding/logo', () => {
 
     const stored = organizationBrandingFixtures.find((b) => b.organizationId === DEFAULT_ORGANIZATION_ID);
     expect(stored?.logoUrl).toBe('https://example-blob.public.blob.vercel-storage.com/branding/managed-cremations/logo-abc123.png');
+  });
+
+  /**
+   * Production incident fix (2026-10) — the exact bug this corrects:
+   * "Vercel Blob: Cannot use public access on a private store." Proves
+   * the upload call site authenticates with the BRANDING store's own
+   * token, not the (also-configured, in this test) document store's
+   * token.
+   */
+  it('uses the branding Blob token, never the document Blob token, even when both are configured', async () => {
+    await uploadRequest(sampleFormData());
+    const [, , options] = mockPut.mock.calls[0];
+    expect(options.token).toBe('vercel_blob_rw_branding_test_token');
+    expect(options.token).not.toBe('vercel_blob_rw_document_test_token');
+  });
+
+  /**
+   * Production incident fix (2026-10) — fail-safe behavior: a missing
+   * branding token must be a clear, distinct configuration error, never
+   * a silent fallback to the document store's token (which would just
+   * reintroduce the original bug) and never a generic/opaque failure.
+   */
+  it('returns a clear 503 configuration error, and never calls put(), when the branding token is not configured', async () => {
+    delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+    const response = await uploadRequest(sampleFormData());
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.error).toContain('BLOB_BRANDING_READ_WRITE_TOKEN');
+    expect(body.error).not.toContain('vercel_blob_rw_document_test_token'); // never leaks the document token value
+    expect(mockPut).not.toHaveBeenCalled();
+
+    // Still unconfigured in the branding record — a config error must
+    // never half-persist a result.
+    const stored = organizationBrandingFixtures.find((b) => b.organizationId === DEFAULT_ORGANIZATION_ID);
+    expect(stored?.logoUrl).not.toMatch(/vercel-storage\.com/);
   });
 
   it('a Blob upload failure is reported as an error, never a false success', async () => {

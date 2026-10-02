@@ -5,6 +5,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canManageOrganization } from '@/services/authorizationPolicyService';
 import { uploadBrandingLogo, removeBrandingLogo } from '@/services/organizationProvisioningService';
+import { BrandingStorageNotConfiguredError } from '@/lib/vercelBlob/vercelBlobConfig';
 import { getDataAdapterMode } from '@/lib/env';
 
 /** 5MB — generous for a web logo, well under the 15MB case-document
@@ -94,6 +95,14 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ branding }, { status: 200 });
   } catch (error) {
+    // Distinct from a transient upload failure (502 below): this means
+    // the second, PUBLIC branding Blob store has never been connected/
+    // configured at all — see vercelBlobConfig.ts's own comment. The
+    // error's own message is already safe to return as-is; it names the
+    // missing environment variable, never its value.
+    if (error instanceof BrandingStorageNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     const message = error instanceof Error ? error.message : 'Failed to upload logo.';
     return NextResponse.json({ error: `Logo upload failed: ${message}` }, { status: 502 });
   }

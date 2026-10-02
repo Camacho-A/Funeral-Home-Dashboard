@@ -1,35 +1,36 @@
 import { put, del } from '@vercel/blob';
-import { resolveStaticBlobToken } from './vercelBlobConfig';
+import { resolveBrandingBlobToken } from './vercelBlobConfig';
 
 /**
- * Organization Branding Settings phase. A deliberately SEPARATE, smaller
+ * Organization Branding Settings phase; corrected in the production
+ * storage-configuration fix (2026-10). A deliberately SEPARATE, smaller
  * counterpart to `vercelBlobStorageProvider.ts`'s `DocumentStorageProvider`
- * — not a second storage provider (same Vercel Blob account/credentials,
- * same `resolveStaticBlobToken` auth resolution), but a different ACCESS
- * MODE for a fundamentally different kind of asset. `DocumentStorageProvider`
- * is private-only by design (its own header comment: "the browser never
- * receives a Vercel Blob URL at all") because a case document needs
- * per-request authorization on every byte served. An organization's logo
- * is the opposite: `Sidebar.tsx` already renders it as a plain
- * `<img src={branding.logoUrl}>` — a public, directly-fetchable URL is
- * the correct shape, not a route-mediated private stream. Keeping this
- * in its own file (rather than overloading `DocumentStorageProvider`
- * with an access-mode parameter) keeps that interface's own "never a
- * URL" guarantee intact for every case-document caller.
+ * — and, since that fix, a genuinely separate Vercel Blob STORE too, not
+ * just a different access-mode call on the same one.
+ * `DocumentStorageProvider` is private-only by design (its own header
+ * comment: "the browser never receives a Vercel Blob URL at all") because
+ * a case document needs per-request authorization on every byte served.
+ * An organization's logo is the opposite: `Sidebar.tsx` already renders
+ * it as a plain `<img src={branding.logoUrl}>` — a public, directly-
+ * fetchable URL is the correct shape, not a route-mediated private
+ * stream. Vercel Blob has no per-upload access override — a store is
+ * public or private at connection time — so "public logo, private
+ * documents" requires two stores, each with its own token
+ * (`resolveBrandingBlobToken` here vs. `resolveStaticBlobToken` in
+ * `vercelBlobStorageProvider.ts`; see that function's own comment for
+ * the full incident writeup). Keeping this in its own file also keeps
+ * `DocumentStorageProvider`'s own "never a URL" guarantee intact for
+ * every case-document caller.
  *
  * Stored under `branding/{organizationId}/...` — a distinct key prefix
  * from case documents' own `{organizationId}/{caseId}/...` convention,
  * so the two asset classes never collide and remain trivially
- * distinguishable by key alone.
+ * distinguishable by key alone (on top of now living in entirely
+ * separate stores).
  */
 export async function uploadPublicBrandingAsset(key: string, contents: Buffer, contentType: string): Promise<{ url: string }> {
-  const token = resolveStaticBlobToken();
-  const result = await put(key, contents, {
-    access: 'public',
-    contentType,
-    addRandomSuffix: true,
-    ...(token ? { token } : {}),
-  });
+  const token = resolveBrandingBlobToken();
+  const result = await put(key, contents, { access: 'public', contentType, addRandomSuffix: true, token });
   return { url: result.url };
 }
 
@@ -40,6 +41,6 @@ export async function uploadPublicBrandingAsset(key: string, contents: Buffer, c
  * attempted here or anywhere upstream of this function.
  */
 export async function deletePublicBrandingAsset(url: string): Promise<void> {
-  const token = resolveStaticBlobToken();
-  await del(url, { ...(token ? { token } : {}) });
+  const token = resolveBrandingBlobToken();
+  await del(url, { token });
 }
