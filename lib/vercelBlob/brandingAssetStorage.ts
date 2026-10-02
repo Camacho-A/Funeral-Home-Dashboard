@@ -1,24 +1,28 @@
 import { put, del } from '@vercel/blob';
-import { resolveBrandingBlobToken } from './vercelBlobConfig';
+import { resolveBrandingBlobStoreId } from './vercelBlobConfig';
 
 /**
  * Organization Branding Settings phase; corrected in the production
- * storage-configuration fix (2026-10). A deliberately SEPARATE, smaller
+ * storage-configuration fix (2026-10, then again to use OIDC/`storeId`
+ * instead of a long-lived token). A deliberately SEPARATE, smaller
  * counterpart to `vercelBlobStorageProvider.ts`'s `DocumentStorageProvider`
- * — and, since that fix, a genuinely separate Vercel Blob STORE too, not
- * just a different access-mode call on the same one.
- * `DocumentStorageProvider` is private-only by design (its own header
- * comment: "the browser never receives a Vercel Blob URL at all") because
- * a case document needs per-request authorization on every byte served.
- * An organization's logo is the opposite: `Sidebar.tsx` already renders
- * it as a plain `<img src={branding.logoUrl}>` — a public, directly-
- * fetchable URL is the correct shape, not a route-mediated private
- * stream. Vercel Blob has no per-upload access override — a store is
- * public or private at connection time — so "public logo, private
- * documents" requires two stores, each with its own token
- * (`resolveBrandingBlobToken` here vs. `resolveStaticBlobToken` in
+ * — and a genuinely separate Vercel Blob STORE too, not just a different
+ * access-mode call on the same one. `DocumentStorageProvider` is
+ * private-only by design (its own header comment: "the browser never
+ * receives a Vercel Blob URL at all") because a case document needs
+ * per-request authorization on every byte served. An organization's logo
+ * is the opposite: `Sidebar.tsx` already renders it as a plain
+ * `<img src={branding.logoUrl}>` — a public, directly-fetchable URL is
+ * the correct shape, not a route-mediated private stream. Vercel Blob has
+ * no per-upload access override — a store is public or private at
+ * connection time — so "public logo, private documents" requires two
+ * stores. Each is targeted by its own `storeId` under Vercel OIDC — never
+ * a static token — exactly mirroring how the private document store is
+ * already authenticated via its own ambient `BLOB_STORE_ID`
+ * (`resolveBrandingBlobStoreId` here vs. `resolveStaticBlobToken` in
  * `vercelBlobStorageProvider.ts`; see that function's own comment for
- * the full incident writeup). Keeping this in its own file also keeps
+ * the full incident writeup and the `storeId` option's confirmed SDK
+ * support). Keeping this in its own file also keeps
  * `DocumentStorageProvider`'s own "never a URL" guarantee intact for
  * every case-document caller.
  *
@@ -29,8 +33,8 @@ import { resolveBrandingBlobToken } from './vercelBlobConfig';
  * separate stores).
  */
 export async function uploadPublicBrandingAsset(key: string, contents: Buffer, contentType: string): Promise<{ url: string }> {
-  const token = resolveBrandingBlobToken();
-  const result = await put(key, contents, { access: 'public', contentType, addRandomSuffix: true, token });
+  const storeId = resolveBrandingBlobStoreId();
+  const result = await put(key, contents, { access: 'public', contentType, addRandomSuffix: true, storeId });
   return { url: result.url };
 }
 
@@ -41,6 +45,6 @@ export async function uploadPublicBrandingAsset(key: string, contents: Buffer, c
  * attempted here or anywhere upstream of this function.
  */
 export async function deletePublicBrandingAsset(url: string): Promise<void> {
-  const token = resolveBrandingBlobToken();
-  await del(url, { token });
+  const storeId = resolveBrandingBlobStoreId();
+  await del(url, { storeId });
 }

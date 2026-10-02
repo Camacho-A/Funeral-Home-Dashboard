@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveStaticBlobToken, resolveBrandingBlobToken, BrandingStorageNotConfiguredError } from './vercelBlobConfig';
+import { resolveStaticBlobToken, resolveBrandingBlobStoreId, BrandingStorageNotConfiguredError } from './vercelBlobConfig';
 
 const ORIGINAL_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
-const ORIGINAL_BRANDING_TOKEN = process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+const ORIGINAL_STORE_ID = process.env.BLOB_STORE_ID;
+const ORIGINAL_BRANDING_STORE_ID = process.env.BLOB_BRANDING_STORE_ID;
 
 afterEach(() => {
   if (ORIGINAL_TOKEN === undefined) {
@@ -10,10 +11,15 @@ afterEach(() => {
   } else {
     process.env.BLOB_READ_WRITE_TOKEN = ORIGINAL_TOKEN;
   }
-  if (ORIGINAL_BRANDING_TOKEN === undefined) {
-    delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+  if (ORIGINAL_STORE_ID === undefined) {
+    delete process.env.BLOB_STORE_ID;
   } else {
-    process.env.BLOB_BRANDING_READ_WRITE_TOKEN = ORIGINAL_BRANDING_TOKEN;
+    process.env.BLOB_STORE_ID = ORIGINAL_STORE_ID;
+  }
+  if (ORIGINAL_BRANDING_STORE_ID === undefined) {
+    delete process.env.BLOB_BRANDING_STORE_ID;
+  } else {
+    process.env.BLOB_BRANDING_STORE_ID = ORIGINAL_BRANDING_STORE_ID;
   }
 });
 
@@ -30,37 +36,48 @@ describe('vercelBlobConfig (OIDC-aware, 2026-09)', () => {
 });
 
 /**
- * Production incident fix (2026-10): branding uploads must use a
- * SEPARATE, PUBLIC Blob store's token — never the private document
- * store's token (directly, or via any ambient/OIDC fallback), and never
- * silently succeed with no token configured at all.
+ * Production incident fix (2026-10), corrected to use Vercel's current
+ * OIDC/multi-store architecture: branding uploads must explicitly target
+ * the SEPARATE, PUBLIC branding store by its own storeId — never the
+ * private document store's BLOB_STORE_ID (directly, or via any ambient
+ * fallback), and never silently succeed with no store configured at all.
+ * An earlier attempt at this fix required a long-lived
+ * BLOB_BRANDING_READ_WRITE_TOKEN — wrong for how Vercel now provisions a
+ * second connected store (auto-injects a storeId, not a token); these
+ * tests cover the corrected, storeId-based contract.
  */
-describe('resolveBrandingBlobToken (branding/document store separation, 2026-10)', () => {
-  it('returns the configured branding token when set', () => {
-    process.env.BLOB_BRANDING_READ_WRITE_TOKEN = 'vercel_blob_rw_branding_test_token';
-    expect(resolveBrandingBlobToken()).toBe('vercel_blob_rw_branding_test_token');
+describe('resolveBrandingBlobStoreId (branding/document store separation via OIDC, 2026-10)', () => {
+  it('returns the configured branding store id when set', () => {
+    process.env.BLOB_BRANDING_STORE_ID = 'store_branding_test_id';
+    expect(resolveBrandingBlobStoreId()).toBe('store_branding_test_id');
   });
 
-  it('throws BrandingStorageNotConfiguredError — never returns undefined and never falls back to the document token — when unset', () => {
-    delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
-    process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_test_token'; // a configured document token must NOT satisfy this
-    expect(() => resolveBrandingBlobToken()).toThrow(BrandingStorageNotConfiguredError);
+  it('throws BrandingStorageNotConfiguredError — never returns undefined and never falls back to the document store id — when unset', () => {
+    delete process.env.BLOB_BRANDING_STORE_ID;
+    process.env.BLOB_STORE_ID = 'store_document_test_id'; // a configured document store id must NOT satisfy this
+    expect(() => resolveBrandingBlobStoreId()).toThrow(BrandingStorageNotConfiguredError);
   });
 
-  it('the thrown error message names the missing environment variable but never any token value', () => {
-    delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+  it('the thrown error message names the missing environment variable, never a store id or token value', () => {
+    delete process.env.BLOB_BRANDING_STORE_ID;
     try {
-      resolveBrandingBlobToken();
+      resolveBrandingBlobStoreId();
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(BrandingStorageNotConfiguredError);
-      expect((error as Error).message).toContain('BLOB_BRANDING_READ_WRITE_TOKEN');
+      expect((error as Error).message).toContain('BLOB_BRANDING_STORE_ID');
     }
   });
 
-  it('is never equal to resolveStaticBlobToken\'s value even when both happen to be set — distinct tokens, distinct stores', () => {
-    process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_document_token';
-    process.env.BLOB_BRANDING_READ_WRITE_TOKEN = 'vercel_blob_rw_branding_token';
-    expect(resolveBrandingBlobToken()).not.toBe(resolveStaticBlobToken());
+  it('is never equal to the document store\'s BLOB_STORE_ID even when both happen to be set — distinct ids, distinct stores', () => {
+    process.env.BLOB_STORE_ID = 'store_document_test_id';
+    process.env.BLOB_BRANDING_STORE_ID = 'store_branding_test_id';
+    expect(resolveBrandingBlobStoreId()).not.toBe(process.env.BLOB_STORE_ID);
+  });
+
+  it('no longer requires or reads BLOB_BRANDING_READ_WRITE_TOKEN at all', () => {
+    delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+    process.env.BLOB_BRANDING_STORE_ID = 'store_branding_test_id';
+    expect(resolveBrandingBlobStoreId()).toBe('store_branding_test_id');
   });
 });

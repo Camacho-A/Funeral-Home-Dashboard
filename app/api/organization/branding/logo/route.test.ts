@@ -51,8 +51,8 @@ function sampleFormData(overrides: { organizationId?: string; mimeType?: string;
   return formData;
 }
 
-const ORIGINAL_BRANDING_TOKEN = process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
-const ORIGINAL_DOCUMENT_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+const ORIGINAL_BRANDING_STORE_ID = process.env.BLOB_BRANDING_STORE_ID;
+const ORIGINAL_DOCUMENT_STORE_ID = process.env.BLOB_STORE_ID;
 
 // Snapshotted by VALUE (not just array length) — `saveBranding`'s
 // mock-mode branch mutates an existing fixture row IN PLACE
@@ -67,22 +67,23 @@ beforeEach(() => {
   mockPut.mockReset();
   mockDel.mockReset();
   mockPut.mockResolvedValue({ url: 'https://example-blob.public.blob.vercel-storage.com/branding/managed-cremations/logo-abc123.png' });
-  // The branding store's token must be configured for a normal upload to
-  // succeed (production incident fix, 2026-10) — also set the document
-  // store's own token alongside it in most tests, specifically so a test
-  // asserting the branding path never used the document token is
-  // actually proving something (see "never uses the private document
-  // Blob token" below), not just testing an absent fallback.
-  process.env.BLOB_BRANDING_READ_WRITE_TOKEN = 'vercel_blob_rw_branding_test_token';
-  process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_document_test_token';
+  // The branding store's id must be configured for a normal upload to
+  // succeed (corrected, OIDC-based production fix, 2026-10) — also set
+  // the document store's own BLOB_STORE_ID alongside it in most tests,
+  // specifically so a test asserting the branding path never targeted
+  // the document store is actually proving something (see "never
+  // targets the document store" below), not just testing an absent
+  // fallback.
+  process.env.BLOB_BRANDING_STORE_ID = 'store_branding_test_id';
+  process.env.BLOB_STORE_ID = 'store_document_test_id';
   brandingSnapshot = organizationBrandingFixtures.map((b) => ({ ...b }));
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
-  if (ORIGINAL_BRANDING_TOKEN === undefined) delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
-  else process.env.BLOB_BRANDING_READ_WRITE_TOKEN = ORIGINAL_BRANDING_TOKEN;
-  if (ORIGINAL_DOCUMENT_TOKEN === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
-  else process.env.BLOB_READ_WRITE_TOKEN = ORIGINAL_DOCUMENT_TOKEN;
+  if (ORIGINAL_BRANDING_STORE_ID === undefined) delete process.env.BLOB_BRANDING_STORE_ID;
+  else process.env.BLOB_BRANDING_STORE_ID = ORIGINAL_BRANDING_STORE_ID;
+  if (ORIGINAL_DOCUMENT_STORE_ID === undefined) delete process.env.BLOB_STORE_ID;
+  else process.env.BLOB_STORE_ID = ORIGINAL_DOCUMENT_STORE_ID;
   organizationBrandingFixtures.length = 0;
   organizationBrandingFixtures.push(...brandingSnapshot);
 });
@@ -173,32 +174,34 @@ describe('POST /api/organization/branding/logo', () => {
   });
 
   /**
-   * Production incident fix (2026-10) — the exact bug this corrects:
-   * "Vercel Blob: Cannot use public access on a private store." Proves
-   * the upload call site authenticates with the BRANDING store's own
-   * token, not the (also-configured, in this test) document store's
-   * token.
+   * Production incident fix (2026-10), corrected to Vercel's current
+   * OIDC architecture — the exact bug this corrects: "Vercel Blob:
+   * Cannot use public access on a private store." Proves the upload call
+   * site targets the BRANDING store by its own storeId, not the (also-
+   * configured, in this test) document store's storeId, and uses no
+   * static token at all.
    */
-  it('uses the branding Blob token, never the document Blob token, even when both are configured', async () => {
+  it('targets the branding store (BLOB_BRANDING_STORE_ID), never the document store, even when both store ids are configured', async () => {
     await uploadRequest(sampleFormData());
     const [, , options] = mockPut.mock.calls[0];
-    expect(options.token).toBe('vercel_blob_rw_branding_test_token');
-    expect(options.token).not.toBe('vercel_blob_rw_document_test_token');
+    expect(options.storeId).toBe('store_branding_test_id');
+    expect(options.storeId).not.toBe('store_document_test_id');
+    expect(options.token).toBeUndefined();
   });
 
   /**
    * Production incident fix (2026-10) — fail-safe behavior: a missing
-   * branding token must be a clear, distinct configuration error, never
-   * a silent fallback to the document store's token (which would just
+   * branding store id must be a clear, distinct configuration error,
+   * never a silent fallback to the document store (which would just
    * reintroduce the original bug) and never a generic/opaque failure.
    */
-  it('returns a clear 503 configuration error, and never calls put(), when the branding token is not configured', async () => {
-    delete process.env.BLOB_BRANDING_READ_WRITE_TOKEN;
+  it('returns a clear 503 configuration error, and never calls put(), when the branding store id is not configured', async () => {
+    delete process.env.BLOB_BRANDING_STORE_ID;
     const response = await uploadRequest(sampleFormData());
     expect(response.status).toBe(503);
     const body = await response.json();
-    expect(body.error).toContain('BLOB_BRANDING_READ_WRITE_TOKEN');
-    expect(body.error).not.toContain('vercel_blob_rw_document_test_token'); // never leaks the document token value
+    expect(body.error).toContain('BLOB_BRANDING_STORE_ID');
+    expect(body.error).not.toContain('store_document_test_id'); // never leaks the document store id either
     expect(mockPut).not.toHaveBeenCalled();
 
     // Still unconfigured in the branding record — a config error must
