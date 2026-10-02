@@ -74,7 +74,16 @@ export const onboardingSessionFixtures: OnboardingSession[] = [
 export const organizationBrandingFixtures: OrganizationBranding[] = [
   {
     organizationId: DEFAULT_ORGANIZATION_ID,
-    logoUrl: null,
+    // Manors branding follow-up (2026-10). The real Manors logo asset —
+    // public/brand/manors-logo.png — connected here via the one field
+    // this type exists to hold. `logoUrl` is a plain URL string by
+    // design (this type's own header comment: "no field capable of
+    // holding binary/base64 image data"), and Next.js serves everything
+    // under public/ at its own path, so the asset's existing site path
+    // is all this needs — no new upload/storage mechanism, no second
+    // branding system. Sidebar.tsx's `useOrganizationBranding()` picks
+    // this up automatically.
+    logoUrl: '/brand/manors-logo.png',
     primaryColor: null,
     secondaryColor: null,
     accentColor: null,

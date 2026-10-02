@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AccountingNav } from './AccountingNav';
 import { OrganizationProvider } from '@/hooks/useOrganization';
+import { organizationsService } from '@/services/organizationsService';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 /**
@@ -40,14 +41,32 @@ describe('AccountingNav — authorization guard (Manors go-live hardening)', () 
     expect(screen.queryByText('Journal Entries')).not.toBeInTheDocument();
   });
 
-  it('renders the full sub-nav for a caller with accounting.view', () => {
+  it('renders the full sub-nav, except Reconciliation, for a caller with accounting.view when the organization has not enabled the reconciliation module (Manors\' real state)', async () => {
     mockPermissions = ['accounting.view'];
+    vi.spyOn(organizationsService, 'get').mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: "Manor's Cremation", isActive: true });
     renderNav();
-    expect(screen.getByText('Chart of Accounts')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Chart of Accounts')).toBeInTheDocument());
     expect(screen.getByText('Journal Entries')).toBeInTheDocument();
     expect(screen.getByText('Banking')).toBeInTheDocument();
-    expect(screen.getByText('Reconciliation')).toBeInTheDocument();
     expect(screen.getByText('Invoices')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
+    expect(screen.queryByText('Reconciliation')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Manors branding/visibility follow-up (2026-10). Reconciliation is the
+   * one link additionally gated on the `reconciliation` module — every
+   * other link in this nav is unaffected by module configuration.
+   */
+  it('renders Reconciliation once the organization has enabled the reconciliation module', async () => {
+    mockPermissions = ['accounting.view'];
+    vi.spyOn(organizationsService, 'get').mockResolvedValue({
+      id: DEFAULT_ORGANIZATION_ID,
+      name: "Manor's Cremation",
+      isActive: true,
+      enabledModules: ['reconciliation'],
+    });
+    renderNav();
+    expect(await screen.findByText('Reconciliation')).toBeInTheDocument();
   });
 });

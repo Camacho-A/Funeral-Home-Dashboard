@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser, mockOrganizationFixtures } from '@/services/__mocks__/authFixtures';
 import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
 import { bankAccountFixtures, bankStatementImportFixtures, bankStatementLineFixtures } from '@/services/__mocks__/bankingFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
@@ -25,6 +25,11 @@ function postRequest(body: unknown, headers: Record<string, string> = { origin: 
   return POST(new Request('http://localhost/api/accounting/banking/statement-imports', { method: 'POST', headers, body: JSON.stringify(body) }));
 }
 
+// Manors branding/visibility follow-up (2026-10) — see
+// `reconciliations/route.test.ts`'s own comment for why this file
+// temporarily enables the module rather than touching every test below.
+const manorsOrg = mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)!;
+
 let bankAccountId = '';
 let lengths: {
   ledgerAccounts: number;
@@ -39,6 +44,7 @@ beforeEach(async () => {
   process.env.DATA_ADAPTER = 'mock';
   idCounter = 0;
   mockSession = { user: mockDefaultUser };
+  manorsOrg.enabledModules = ['reconciliation'];
   lengths = {
     ledgerAccounts: ledgerAccountFixtures.length,
     journalEntries: journalEntryFixtures.length,
@@ -55,6 +61,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
+  manorsOrg.enabledModules = undefined;
   ledgerAccountFixtures.length = lengths.ledgerAccounts;
   journalEntryFixtures.length = lengths.journalEntries;
   journalEntryLineFixtures.length = lengths.journalEntryLines;
@@ -91,5 +98,15 @@ describe('POST /api/accounting/banking/statement-imports', () => {
     const body = await response.json();
     expect(body.lines).toHaveLength(1);
     expect(body.autoMatchedCount).toBe(0);
+  });
+
+  it('returns 403 when the organization has not enabled the reconciliation module, even for an administrator', async () => {
+    manorsOrg.enabledModules = undefined;
+    const response = await postRequest({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      bankAccountId,
+      lines: [{ transactionDate: '2026-08-01T00:00:00.000Z', description: 'Deposit', amount: 5000 }],
+    });
+    expect(response.status).toBe(403);
   });
 });

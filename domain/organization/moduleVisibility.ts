@@ -24,6 +24,16 @@ export const ADVANCED_MODULE_KEYS = [
   'accountsPayable',
   'resources',
   'calendarIntegrations',
+  // Manors branding/visibility follow-up (2026-10). Bank-statement
+  // import/reconciliation — distinct from Banking itself (bank account
+  // management, deposits), which Manors actively uses via real case
+  // payments and stays unaffected. Unlike every other key above,
+  // Reconciliation's underlying API routes also enforce this (see each
+  // route's own comment) — the other keys only hide their module's nav
+  // link today; this is the first to also gate the server endpoint,
+  // because this task specifically asked for direct-URL/API access to
+  // follow the same disabled-module behavior, not just nav discovery.
+  'reconciliation',
 ] as const;
 
 export type AdvancedModuleKey = (typeof ADVANCED_MODULE_KEYS)[number];

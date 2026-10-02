@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser, mockOrganizationFixtures } from '@/services/__mocks__/authFixtures';
 import { bankAccountFixtures, bankStatementImportFixtures, bankStatementLineFixtures } from '@/services/__mocks__/bankingFixtures';
 import { ledgerAccountFixtures } from '@/services/__mocks__/ledgerFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
@@ -28,12 +28,18 @@ function getRequest(importId: string, organizationId: string) {
   });
 }
 
+// Manors branding/visibility follow-up (2026-10) — see
+// `reconciliations/route.test.ts`'s own comment for why this file
+// temporarily enables the module rather than touching every test below.
+const manorsOrg = mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)!;
+
 let importId = '';
 let lengths: { ledgerAccounts: number; bankAccounts: number; bankStatementImports: number; bankStatementLines: number; activityEvents: number };
 beforeEach(async () => {
   process.env.DATA_ADAPTER = 'mock';
   idCounter = 0;
   mockSession = { user: mockDefaultUser };
+  manorsOrg.enabledModules = ['reconciliation'];
   lengths = {
     ledgerAccounts: ledgerAccountFixtures.length,
     bankAccounts: bankAccountFixtures.length,
@@ -55,6 +61,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
+  manorsOrg.enabledModules = undefined;
   ledgerAccountFixtures.length = lengths.ledgerAccounts;
   bankAccountFixtures.length = lengths.bankAccounts;
   bankStatementImportFixtures.length = lengths.bankStatementImports;
@@ -73,5 +80,10 @@ describe('GET /api/accounting/banking/statement-imports/[importId]/lines', () =>
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.lines).toHaveLength(1);
+  });
+
+  it('returns 403 when the organization has not enabled the reconciliation module, even for an administrator', async () => {
+    manorsOrg.enabledModules = undefined;
+    expect((await getRequest(importId, DEFAULT_ORGANIZATION_ID)).status).toBe(403);
   });
 });

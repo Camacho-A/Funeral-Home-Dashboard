@@ -5,6 +5,8 @@ import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canReconcileBank } from '@/services/authorizationPolicyService';
 import { completeReconciliation, BankingServiceError } from '@/services/bankingService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
+import { getForOrganization } from '@/services/organizationsService';
+import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { getDataAdapterMode } from '@/lib/env';
 
 /** Phase 31. Completes a reconciliation if
@@ -28,6 +30,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ rec
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+
+  const organization = await getForOrganization(organizationId, dataAdapterMode);
+  if (!isModuleEnabled(organization, 'reconciliation')) {
+    return NextResponse.json({ error: 'Reconciliation is not enabled for this organization.' }, { status: 403 });
+  }
 
   if (!(await canReconcileBank({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to reconcile bank accounts for this organization.' }, { status: 403 });

@@ -4,6 +4,8 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canReconcileBank } from '@/services/authorizationPolicyService';
 import { manuallyMatchStatementLine, BankingServiceError } from '@/services/bankingService';
+import { getForOrganization } from '@/services/organizationsService';
+import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { getDataAdapterMode } from '@/lib/env';
 
 /** Phase 31. Manually matches an unmatched statement line to a given
@@ -29,6 +31,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ lin
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+
+  const organization = await getForOrganization(organizationId, dataAdapterMode);
+  if (!isModuleEnabled(organization, 'reconciliation')) {
+    return NextResponse.json({ error: 'Reconciliation is not enabled for this organization.' }, { status: 403 });
+  }
 
   if (!(await canReconcileBank({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to match bank statement lines for this organization.' }, { status: 403 });

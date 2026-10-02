@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser, mockOrganizationFixtures } from '@/services/__mocks__/authFixtures';
 import { bankAccountFixtures, bankReconciliationFixtures } from '@/services/__mocks__/bankingFixtures';
 import { ledgerAccountFixtures } from '@/services/__mocks__/ledgerFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
@@ -28,12 +28,25 @@ function postRequest(body: unknown, headers: Record<string, string> = { origin: 
   return POST(new Request('http://localhost/api/accounting/banking/reconciliations', { method: 'POST', headers, body: JSON.stringify(body) }));
 }
 
+// Manors branding/visibility follow-up (2026-10). Reconciliation is now
+// additionally gated on the `reconciliation` module (default: disabled,
+// matching Manors' own real state) — every test below predates that gate
+// and asserts on the underlying reconcile *feature*, not the new
+// visibility behavior, so the module is enabled here for the duration of
+// this file only (restored after), letting the existing tests keep
+// proving the feature itself still works end-to-end for an organization
+// that HAS opted in. The new "module disabled" 403 behavior gets its own,
+// separate test below instead of silently changing what every other test
+// here means.
+const manorsOrg = mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)!;
+
 let bankAccountId = '';
 let lengths: { ledgerAccounts: number; bankAccounts: number; bankReconciliations: number; activityEvents: number };
 beforeEach(async () => {
   process.env.DATA_ADAPTER = 'mock';
   idCounter = 0;
   mockSession = { user: mockDefaultUser };
+  manorsOrg.enabledModules = ['reconciliation'];
   lengths = {
     ledgerAccounts: ledgerAccountFixtures.length,
     bankAccounts: bankAccountFixtures.length,
@@ -47,6 +60,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   delete process.env.DATA_ADAPTER;
+  manorsOrg.enabledModules = undefined;
   ledgerAccountFixtures.length = lengths.ledgerAccounts;
   bankAccountFixtures.length = lengths.bankAccounts;
   bankReconciliationFixtures.length = lengths.bankReconciliations;
@@ -85,5 +99,18 @@ describe('POST /api/accounting/banking/reconciliations', () => {
     const body = await response.json();
     expect(body.reconciliation.bookBalanceAtStart).toBe(0);
     expect(body.reconciliation.status).toBe('in_progress');
+  });
+});
+
+describe('Reconciliation module visibility (Manors branding/visibility follow-up, 2026-10)', () => {
+  it('returns 403 for GET when the organization has not enabled the reconciliation module, even for an administrator', async () => {
+    manorsOrg.enabledModules = undefined;
+    expect((await getRequest(DEFAULT_ORGANIZATION_ID, bankAccountId)).status).toBe(403);
+  });
+
+  it('returns 403 for POST when the organization has not enabled the reconciliation module, even for an administrator', async () => {
+    manorsOrg.enabledModules = undefined;
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, bankAccountId, statementEndingDate: '2026-08-31T00:00:00.000Z', statementEndingBalance: 0 });
+    expect(response.status).toBe(403);
   });
 });

@@ -123,13 +123,19 @@
 
 /* Manors cleanup phase (Task #4) — small/professional, capped height so a
    wide logo can never overpower the staff-online status text beneath it;
-   `max-width: 100%` keeps it contained in the collapsed/mobile drawer
-   (same width the footer text itself already respects) with no overflow. */
+   `max-width: 100%` keeps it contained in the mobile drawer (same width
+   the footer text itself already respects) with no overflow.
+   Branding follow-up (2026-10): bumped 28px -> 32px — the real connected
+   asset (a detailed laurel/leaf mark, not a simple wordmark) needed
+   slightly more height to stay legible, per explicit sign-off for a
+   small, restrained adjustment. Centered (not left-aligned like the text
+   below it) so a square mark reads as its own visual element, not oddly
+   indented text. */
 .footerLogo {
   display: block;
-  max-height: 28px;
+  max-height: 32px;
   max-width: 100%;
   width: auto;
   object-fit: contain;
-  margin-bottom: var(--space-3);
+  margin: 0 auto var(--space-3);
 }

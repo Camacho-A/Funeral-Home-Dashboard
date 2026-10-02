@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useOrganization } from '@/hooks/useOrganization';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useMyPermissions } from '@/hooks/useRbac';
+import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import styles from './AccountingNav.module.css';
 
 const LINKS = [
@@ -11,7 +13,10 @@ const LINKS = [
   { href: '/accounting/chart-of-accounts', label: 'Chart of Accounts' },
   { href: '/accounting/journal-entries', label: 'Journal Entries' },
   { href: '/accounting/banking', label: 'Banking' },
-  { href: '/accounting/reconciliation', label: 'Reconciliation' },
+  // Manors branding/visibility follow-up (2026-10). Only this one link is
+  // additionally gated on the `reconciliation` module — everything else
+  // here is core ledger/payment infrastructure Manors actively uses.
+  { href: '/accounting/reconciliation', label: 'Reconciliation', requiresModule: 'reconciliation' as const },
   { href: '/accounting/invoices', label: 'Invoices' },
   { href: '/accounting/reports/trial-balance', label: 'Reports' },
 ];
@@ -32,13 +37,16 @@ export function AccountingNav() {
   const pathname = usePathname();
   const { organizationId } = useOrganization();
   const myPermissionsQuery = useMyPermissions(organizationId);
+  const { data: organization } = useOrganizationRecord();
   const canViewAccounting = (myPermissionsQuery.data?.permissions ?? []).includes('accounting.view');
 
   if (!canViewAccounting) return null;
 
+  const visibleLinks = LINKS.filter((link) => !link.requiresModule || isModuleEnabled(organization, link.requiresModule));
+
   return (
     <nav className={styles.nav} aria-label="Accounting">
-      {LINKS.map((link) => {
+      {visibleLinks.map((link) => {
         const isActive = pathname === link.href || (link.href !== '/accounting' && pathname?.startsWith(link.href));
         return (
           <Link key={link.href} href={link.href} className={`${styles.link} ${isActive ? styles.linkActive : ''}`}>

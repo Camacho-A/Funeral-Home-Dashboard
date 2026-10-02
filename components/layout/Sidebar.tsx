@@ -122,15 +122,18 @@ export function Sidebar({
         {canSeeSettings && <SidebarNavItem href="/settings" label="Settings" onNavigate={onClose} />}
       </div>
 
-      {/* Manors cleanup phase (Task #4). `branding?.logoUrl` is the
-          per-organization logo configured via onboarding's Branding step
-          (types/organizationBranding.ts) — distinct from `ProductBrand`
-          above, which is the SOLIS platform mark, not any one tenant's
-          own logo. Unset for every organization today (including
-          Manors), so nothing renders here yet; the moment an
-          administrator configures one, it appears automatically with no
-          further code change. Small and capped by `.footerLogo` so it
-          never competes with the staff-online status beneath it. */}
+      {/* Manors cleanup phase (Task #4); connected (2026-10 follow-up).
+          `branding?.logoUrl` is the per-organization logo configured via
+          onboarding's Branding step (types/organizationBranding.ts) —
+          distinct from `ProductBrand` above, which is the SOLIS platform
+          mark, not any one tenant's own logo. Manors' real logo asset
+          (public/brand/manors-logo.png) is now connected via
+          `organizationBrandingFixtures` in mock mode; a production
+          (wix-mode) organization with no branding row configured yet
+          simply renders nothing here, same as before — no further code
+          change needed once one is set. Small and capped by
+          `.footerLogo` so it never competes with the staff-online status
+          beneath it. */}
       <div className={styles.footer}>
         {branding?.logoUrl && <img src={branding.logoUrl} alt={`${organizationName} logo`} className={styles.footerLogo} />}
         {organizationName}
