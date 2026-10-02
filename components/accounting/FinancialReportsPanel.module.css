@@ -33,6 +33,13 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+/* Wave 2 (2026-10) — every other row list in the app (Accounting's own
+   `.row` pattern included) already has a hover highlight; this was the
+   one real `<table>` in Accounting without one. */
+.table tbody tr:hover td {
+  background: var(--color-surface-hover);
+}
+
 .table tfoot td {
   font-weight: var(--font-weight-bold);
   border-top: 2px solid var(--color-border);

@@ -35,29 +35,32 @@
   background: var(--color-brand-disabled);
 }
 
-/* --- primary, pill shape: "Advance N to next stage" --- */
+/* --- primary, compact shape: "Advance N to next stage". Visual
+   modernization pass (2026-10): was pill-shaped (--radius-xl, back when
+   that token doubled as "pill"); a compact action like this reads as a
+   status chip rather than a button when fully pill-rounded, and the
+   phase's own direction reserves pills for statuses/filters/chips, not
+   ordinary controls — now shares --radius-sm with every other button
+   variant, so the system has one consistent button shape, not two. --- */
 .primaryPill {
   composes: primary;
   padding: var(--space-3) var(--space-7);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-12-5);
 }
 
-/* --- secondary: always pill-shaped in practice ("Add entry", "Upload").
-   Task #14 Phase C (2026-09) — previously filled with --color-brand-tint,
-   the exact same color pair Badge's own `neutral` variant used, so a
-   supporting ACTION and a passive STATUS LABEL read as the same visual
-   object. Now a light neutral surface with a border, per the phase's own
-   "prefer a light/neutral surface with border" direction — still clearly
-   a button (bordered, not just colored text), no longer color-identical
-   to any Badge variant. Padding shrinks by the new 1px border on each
-   side so the overall box size is unchanged from before. */
+/* --- secondary ("Add entry", "Upload"). Visual modernization pass
+   (2026-10): previously pill-shaped for the same reason --primaryPill
+   was — unified onto --radius-sm so primary/secondary/danger all read as
+   one coherent "rounded-rectangle button" family. Everything else about
+   this variant (Task #14 Phase C's light-neutral-surface-with-border
+   direction) is unchanged. */
 .secondary {
   background: var(--color-surface-card);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border-input);
   padding: calc(var(--space-3) - 1px) calc(var(--space-7) - 1px);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-12-5);
 }
 

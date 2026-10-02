@@ -1,23 +1,23 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-7);
 }
 
 .message {
-  font-size: 13.5px;
+  font-size: var(--font-size-13-5);
   color: var(--color-text-primary);
   margin: 0;
 }
 
 .error {
   color: var(--color-attention);
-  font-size: 12.5px;
+  font-size: var(--font-size-12-5);
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }

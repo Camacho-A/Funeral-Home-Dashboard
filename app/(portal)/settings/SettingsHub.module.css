@@ -11,14 +11,15 @@
 
 .sectionTitle {
   font-size: var(--font-size-15);
-  font-weight: 700;
-  margin: 0 0 var(--space-3);
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 var(--space-6);
+  color: var(--color-text-secondary);
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-8);
 }
 
 .areaLink,
@@ -35,11 +36,18 @@
   cursor: pointer;
 }
 
+/* Wave 2 (2026-10) — `padding: 16px` here used to sit at equal CSS
+   specificity against Card.module.css's own `.bordered` padding (both
+   plain, single-class rules on the same element via `<Card
+   variant="bordered" className={styles.areaCard}>`), with the winner
+   decided only by unpredictable stylesheet bundling order, not intent.
+   Removed — this card's padding is now unambiguously Card's own
+   token-based value, the same restrained tier Wave 1 already applied to
+   every other panel in the app. */
 .areaCard {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px;
+  gap: var(--space-3);
   height: 100%;
   transition: border-color 0.15s ease;
 }

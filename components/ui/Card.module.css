@@ -10,9 +10,15 @@
   padding: var(--space-9) var(--space-10);
 }
 
-/* Dashboard/stat-tier: soft shadow, no border */
+/* Dashboard/stat-tier: soft shadow, no border. Visual modernization pass
+   (2026-10): padding trimmed from space-11/space-12 (22px/24px) to
+   space-9/space-10 (18px/20px) — the same padding `.bordered` already
+   uses — so elevated panels read as comfortably dense rather than
+   containing visibly more empty margin than their own content needs;
+   corner radius now comes from the same restrained --radius-xl tier
+   (see tokens.css's own radius-split note), not a separate change here. */
 .elevated {
   box-shadow: var(--shadow-card);
   border-radius: var(--radius-xl);
-  padding: var(--space-11) var(--space-12);
+  padding: var(--space-9) var(--space-10);
 }

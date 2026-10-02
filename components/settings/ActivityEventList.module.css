@@ -55,9 +55,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Wave 2 (2026-10): an internal classification tag (`cases`,
+   `documents`, `payments`, …) is the more technical of this row's
+   fields — quieted to --color-text-secondary so it recedes behind the
+   event description, matching the brief's "prioritize EVENT/ACTOR/
+   CASE/TIME, quiet the secondary technical information" direction. */
 .category {
   font-size: var(--font-size-12-5);
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
 }
 
 .actor {
@@ -65,8 +70,13 @@
   color: var(--color-text-primary);
 }
 
+/* The actual "what happened" — this row's one genuinely primary field —
+   now semibold so it visually leads, same weight tier every other list
+   in the app (AllCasesList's `.name`, NeedsAttentionPanel's `.name`)
+   already uses for its own lead field. */
 .description {
   font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;

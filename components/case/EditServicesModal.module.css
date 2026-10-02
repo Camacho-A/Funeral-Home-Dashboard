@@ -1,5 +1,10 @@
+/* Final polish (2026-10) — bumped to --font-size-18, the same "modal
+   title" size NewCaseModal/NotificationDrawer's own `.title` already use
+   — this header's text (e.g. "Set Up Services & Charges") functions as
+   this modal's title, so it should read at the same weight as every
+   other modal's title rather than a smaller body-level size. */
 .header {
-  font-size: var(--font-size-14);
+  font-size: var(--font-size-18);
   font-weight: var(--font-weight-bold);
   margin-bottom: var(--space-6);
 }
@@ -16,9 +21,15 @@
   margin-top: var(--space-5);
 }
 
+/* Final polish (2026-10) — added the same hairline divider
+   NewCaseModal.module.css's own reference `.footer` uses above its
+   actions; this one already used flex-end + the same gap, so only the
+   divider/margin-top were brought into line. */
 .footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-5);
-  margin-top: var(--space-8);
+  margin-top: var(--space-4);
+  padding-top: var(--space-8);
+  box-shadow: inset 0 1px 0 var(--color-surface-page);
 }

@@ -10,14 +10,38 @@
   font-weight: var(--font-weight-bold);
 }
 
+/* Wave 2 (2026-10) — `var(--font-size-20)` already exists in tokens.css
+   explicitly annotated "modal close glyph" but was never actually applied
+   at its own named call site until now; the prior comment claiming no
+   matching token existed was stale. Also previously had no hover/focus
+   treatment at all — a real accessibility gap for a close control — now
+   matches Button's own `.icon` variant sizing/hover convention
+   (32x32, radius-sm, neutral hover surface) rather than a bare glyph. */
 .closeButton {
   cursor: pointer;
-  font-size: 20px; /* literal — no token in the 10-18/26/28 scale lands on 20px, and it's a single-use icon-button size */
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-20);
   color: var(--color-text-secondary);
   background: none;
   border: none;
+  border-radius: var(--radius-sm);
   font-family: inherit;
   padding: 0;
+  margin: calc(var(--space-4) * -1);
+}
+
+.closeButton:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
 }
 
 .description {

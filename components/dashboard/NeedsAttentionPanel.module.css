@@ -1,21 +1,24 @@
 /*
- * Task #14 Phase D (2026-09): .panel's background and .row's divider were
- * raw literals that happen to sit almost exactly on --color-danger-bg/
- * -border (both introduced by Phase A, after this panel was written) —
- * consolidated onto those tokens below. The remaining five shades
- * (title/count/name/reason/meta) are a distinct, finer-grained typographic
- * hierarchy those three flat tokens can't reproduce — five one-off shades
- * used nowhere else in the whole file, not reused elsewhere the way
- * --color-danger-bg/-text are. Kept as local literals rather than global
- * tokens (same precedent as components/layout/UserAvatar.module.css's
- * one-off brand-text color), since promoting single-use values to global
- * tokens would just be token-catalog bloat with no reuse benefit.
+ * Visual modernization Wave 2 (2026-10). Previously this entire panel's
+ * background was --color-danger-bg — a full-bleed red/orange card, the
+ * "do NOT make the entire card red/orange" pattern the modernization
+ * brief explicitly calls out as alarming rather than restrained. The
+ * priority signal now lives in three deliberately narrow places instead:
+ * a slim left accent bar (the same inset-box-shadow technique
+ * SidebarNavItem.module.css's own `.itemActive` already uses, so it
+ * naturally clips to this panel's own border-radius rather than clashing
+ * with rounded corners the way a literal border-left would), the "Needs
+ * attention" count badge, and the per-row reason/days text — exactly the
+ * fields that actually carry the "why" and "how urgent," not the row's
+ * identity or the whole card's surface. Divider/name/case-number all move
+ * to this file's ordinary neutral tokens, matching every other dashboard
+ * panel's own row treatment.
  */
 .panel {
-  background: var(--color-danger-bg);
+  background: var(--color-surface-card);
   border-radius: var(--radius-xl);
-  padding: var(--space-11) var(--space-12);
-  box-shadow: var(--shadow-card);
+  padding: var(--space-9) var(--space-10);
+  box-shadow: var(--shadow-card), inset 3px 0 0 var(--color-danger-text);
 }
 
 .header {
@@ -28,13 +31,13 @@
 .title {
   font-size: var(--font-size-15);
   font-weight: var(--font-weight-bold);
-  color: oklch(0.4 0.1 25);
+  color: var(--color-text-primary);
 }
 
 .count {
   font-size: var(--font-size-12-5);
   font-weight: var(--font-weight-semibold);
-  color: oklch(0.48 0.1 25);
+  color: var(--color-danger-text);
 }
 
 .list {
@@ -45,13 +48,17 @@
 .row {
   cursor: pointer;
   padding: var(--space-5) 0;
-  box-shadow: inset 0 -1px 0 var(--color-danger-border);
+  box-shadow: inset 0 -1px 0 var(--color-surface-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-6);
   text-decoration: none;
   color: inherit;
+}
+
+.row:hover {
+  background: var(--color-surface-hover);
 }
 
 .rowMain {
@@ -61,7 +68,7 @@
 .name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-13-5);
-  color: oklch(0.3 0.03 25);
+  color: var(--color-text-primary);
 }
 
 .caseNumber {

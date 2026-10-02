@@ -1,7 +1,7 @@
 .panel {
   background: var(--color-surface-card);
   border-radius: var(--radius-xl);
-  padding: var(--space-9) var(--space-11);
+  padding: var(--space-9) var(--space-10);
   box-shadow: var(--shadow-card);
 }
 
@@ -13,10 +13,15 @@
 
 .grid {
   display: flex;
-  gap: var(--space-7);
+  gap: var(--space-9);
   flex-wrap: wrap;
 }
 
+/* Wave 2 (2026-10) — each stat is a real link (to its own detail report)
+   but previously had no hover or focus-visible treatment at all, a real
+   accessibility gap for a clickable element. A hairline left divider
+   (skipped on the first item) now separates the three stats as
+   intentional, distinct figures rather than a loose row of plain text. */
 .stat {
   display: flex;
   flex-direction: column;
@@ -25,6 +30,23 @@
   color: inherit;
   flex: 1;
   min-width: 140px;
+  padding-left: var(--space-9);
+  border-left: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.stat:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.stat:hover {
+  color: var(--color-primary);
+}
+
+.stat:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 .label {

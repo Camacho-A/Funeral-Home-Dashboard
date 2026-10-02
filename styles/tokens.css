@@ -152,6 +152,37 @@
   --color-surface: var(--color-surface-card); /* 1 call site — bordered stepper-button background */
 
   /* ---------------------------------------------------------------------
+   * Visual modernization pass (2026-10). Named semantic aliases for the
+   * existing brand/surface palette — no new colors invented, no existing
+   * hue changed (per the phase's own "preserve the existing SOLIS brand
+   * identity" instruction). These exist so component CSS can reach for
+   * "the primary action color" or "an elevated surface" by role rather
+   * than by the historical --color-brand / --color-surface-card names,
+   * without a second, divergent palette ever being able to form.
+   * ------------------------------------------------------------------- */
+  --color-primary: var(--color-brand);
+  --color-primary-hover: var(--color-brand-hover);
+  --color-primary-subtle: var(--color-brand-tint);
+  /* White card surfaces that carry --shadow-card (Card's own `.elevated`
+     tier, dashboard/stat panels) — identical value to --color-surface-card
+     today; kept as its own token so "flat bordered card" vs. "raised
+     shadowed card" can be told apart by name, matching how Card.module.css
+     already treats them as two distinct tiers. */
+  --color-surface-elevated: var(--color-surface-card);
+  /* A visibly darker divider than --color-border (0.9) for the rare case
+     a separator needs to read as a deliberate structural line rather than
+     a quiet hairline — e.g. a stronger section divider, never the default
+     card/input border. */
+  --color-border-strong: oklch(0.8 0 240);
+  /* New semantic — no "info" tone existed anywhere in this file. Same hue
+     family as the existing --color-link (230) rather than a fourth
+     unrelated blue, following this file's own established pattern for
+     adding a semantic tier (see --color-warning-* above). */
+  --color-info-text: oklch(0.5 0.1 230);
+  --color-info-bg: oklch(0.95 0.025 230);
+  --color-info-border: oklch(0.85 0.05 230);
+
+  /* ---------------------------------------------------------------------
    * Typography. Font family is loaded via next/font/google in app/layout.tsx
    * (see the ADR-001 rationale) rather than the prototype's literal
    * <link>/@import — --font-sans below is set to the CSS variable next/font
@@ -177,6 +208,11 @@
   --font-size-20: 20px; /* modal close glyph */
   --font-size-26: 26px; /* page / case-detail title */
   --font-size-28: 28px; /* Reports KPI stat numbers */
+
+  /* Wave 2 (2026-10) — both previously real, shipped, UN-tokenized
+     literals found during the visual-modernization audit. */
+  --font-size-16: 16px; /* 5 call sites, all Accounting panel `.title` (AccountsReceivablePanel/BankingPanel/ChartOfAccountsPanel/JournalEntriesPanel/ReconciliationPanel) — identical literal in every one, never varied */
+  --font-size-22: 22px; /* app/(portal)/reports/all-case-data/page.module.css's own `.title` already referenced `var(--font-size-22)` before this token existed anywhere in this file — it silently resolved to nothing (inherited ambient size) instead of the intended 22px; [reportKey]/page.module.css's matching `.title` used a literal 22px instead, now pointed at this same token */
 
   /* Task #14 Phase A (2026-09) — bridging additions/aliases. Every name
      below was already referenced by real components before this phase;
@@ -233,12 +269,31 @@
    * the prototype (see the Phase 1 verification notes) — six real,
    * distinct tiers, refining the Frontend Engineering Plan's approximate
    * "8-10 / 12-16 / 18-20 / 50%" description now that exact data is available.
+   *
+   * Visual modernization pass (2026-10): --radius-xl was doing two
+   * unrelated jobs — "large dashboard panel corner" AND "pill-shaped
+   * badge/button" — because at this system's actual button/badge heights
+   * (~24-36px) a 20px corner radius happens to fully round them, so the
+   * same token read as "pill" on a short control and "giant rounded card"
+   * on a tall one. Split in two: --radius-pill is now the one true pill
+   * token (badges, and the two pill-shaped Button variants), explicit and
+   * height-independent (999px always fully rounds, never just "happens
+   * to"); --radius-xl itself shrinks to the same restrained tier as
+   * --radius-md, so every dashboard/stat panel, case card, and modal that
+   * referenced it updates automatically, with zero per-component edits —
+   * this is the single highest-leverage change in the whole pass, per the
+   * phase's own "prefer design-system-first" instruction. --radius-lg
+   * (modal panel, workflow stepper container) trims from 18px to 16px,
+   * landing inside the phase's own "large dialogs: 12-16px" guidance.
+   * --radius-sm/--radius-xs are already within the phase's own "buttons/
+   * inputs: 8-10px" / "small controls: 6-8px" guidance and are unchanged.
    * ------------------------------------------------------------------- */
   --radius-xs: 5px; /* checkboxes / small square controls */
   --radius-sm: 9px; /* buttons, text inputs, selects — consolidates the 8px/9px cluster */
   --radius-md: 14px; /* detail-tier section cards — consolidates the 12px/14px/16px cluster */
-  --radius-lg: 18px; /* stepper container, modal panel */
-  --radius-xl: 20px; /* large dashboard panels + pill-shaped badges/buttons/chips — the single most common radius in the file */
+  --radius-lg: 16px; /* stepper container, modal panel */
+  --radius-xl: 14px; /* large dashboard/stat panels, case cards — same restrained tier as --radius-md; the two stay separate tokens only because Card's own bordered/elevated tiers are allowed to diverge later, not because they differ today */
+  --radius-pill: 999px; /* status badges, and the two intentionally pill-shaped Button variants — never a plain panel */
   --radius-full: 50%; /* avatars, status dots */
 
   /* ---------------------------------------------------------------------

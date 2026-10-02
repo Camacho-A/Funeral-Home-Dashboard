@@ -11,7 +11,13 @@
 /* Task #14 Phase C (2026-09) — previously no border/shadow at all,
    relying solely on the scrim behind it for separation. Reuses the same
    single --shadow-card tier every other raised surface in the app
-   already uses (Card's own `elevated` variant) — no new shadow system. */
+   already uses (Card's own `elevated` variant) — no new shadow system.
+   Visual modernization pass (2026-10): padding trimmed from
+   space-14/space-16 (28px/32px) to space-12/space-14 (24px/28px) — a
+   dialog this size doesn't need visibly more breathing room than a large
+   dashboard card, per the phase's own "avoid unnecessarily huge dialogs"
+   direction. Width/breakpoints and every caller's own header/body/footer
+   markup inside `children` are unchanged. */
 .panel {
   background: var(--color-surface-card);
   border-radius: var(--radius-md);
@@ -20,5 +26,16 @@
   max-width: 90vw;
   max-height: 85vh;
   overflow-y: auto;
-  padding: var(--space-14) var(--space-16);
+  padding: var(--space-12) var(--space-14);
+}
+
+/* Final polish (2026-10) — at `max-width: 90vw`, a 320px phone leaves
+   only ~288px for the panel; the desktop space-12/space-14 (24px/28px)
+   padding was eating a disproportionate share of that. Matches the same
+   mobile padding reduction every other card/section in the app already
+   applies at this project's usual 860px breakpoint. */
+@media (max-width: 860px) {
+  .panel {
+    padding: var(--space-8) var(--space-6);
+  }
 }

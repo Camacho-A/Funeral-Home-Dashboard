@@ -1,7 +1,7 @@
 .card {
   background: var(--color-surface-card);
   border-radius: var(--radius-xl);
-  padding: var(--space-9) var(--space-11);
+  padding: var(--space-9) var(--space-10);
   box-shadow: var(--shadow-card);
 }
 
@@ -67,8 +67,14 @@
   min-width: 0;
 }
 
+/* Wave 2 (2026-10) — this is the row's one genuinely primary field ("what
+   happened"); previously muted while .caseNumber (a secondary reference
+   tag) was the more prominent semibold/secondary-colored text — backwards
+   from "clearer activity title, quieter metadata." Flipped: the
+   description now reads as the title, the case number recedes to a quiet
+   tag in front of it. */
 .what {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .caseNumber {

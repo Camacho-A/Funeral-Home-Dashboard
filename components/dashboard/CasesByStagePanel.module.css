@@ -1,7 +1,7 @@
 .panel {
   background: var(--color-surface-card);
   border-radius: var(--radius-xl);
-  padding: var(--space-11) var(--space-12);
+  padding: var(--space-9) var(--space-10);
   box-shadow: var(--shadow-card);
 }
 

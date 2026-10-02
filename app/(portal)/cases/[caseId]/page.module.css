@@ -5,9 +5,23 @@
   color: var(--color-text-secondary);
 }
 
+/* Visual modernization pass (2026-10). Previously a row of filled pill
+   chips (both active and inactive carried a solid background,
+   border-radius: var(--radius-xl)) — reads as a row of status badges
+   rather than navigation, and the phase's own direction is explicit that
+   pills are for statuses/filters/chips, not ordinary tab controls. Now a
+   clean underline-tab strip: a shared hairline baseline on the
+   container, transparent buttons, and a 2px brand-colored underline +
+   darker text on the active tab only — the same "subtle active
+   indicator" pattern Linear/Notion/Stripe-style workspace apps use.
+   `gap` widens (space-3 -> space-8) since text-only tabs with no
+   background box need real whitespace to read as separate targets.
+   Mobile's horizontal-scroll strip (media query below) and the active
+   tab's own scrollIntoView behavior (page.tsx) are both unchanged. */
 .tabs {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-8);
+  border-bottom: 1px solid var(--color-border);
   margin-bottom: var(--space-9);
 }
 
@@ -15,9 +29,11 @@
   cursor: pointer;
   font-size: var(--font-size-13);
   font-weight: var(--font-weight-semibold);
-  padding: var(--space-3) var(--space-7);
-  border-radius: var(--radius-xl);
+  padding: var(--space-5) var(--space-1);
+  margin-bottom: -1px;
   border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
   font-family: inherit;
   white-space: nowrap;
 }
@@ -47,13 +63,18 @@
   }
 }
 
-.tabActive {
-  background: var(--color-brand-tint);
-  color: var(--color-brand-hover);
+/* `.tabs button.tabActive` (not the bare `.tabActive` class alone) — the
+   base `.tabs button` rule above is a class+element selector
+   (specificity 0,1,1), which otherwise outranks a single bare class like
+   `.tabActive` (0,1,0) regardless of source order, silently keeping the
+   underline transparent. Qualifying the selector the same way raises it
+   to 0,2,1, which reliably wins. */
+.tabs button.tabActive {
+  color: var(--color-text-primary);
+  border-bottom-color: var(--color-brand);
 }
 
 .tabInactive {
-  background: var(--color-surface-subtle);
   color: var(--color-text-muted);
 }
 
@@ -61,12 +82,12 @@
    all. Mirrors the same additions made to CaseDocumentsTab.module.css's
    own sub-tabs (an identical visual pattern already, kept in sync). */
 .tabs button:hover:not(.tabActive) {
-  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
 }
 
 .tabs button:focus-visible {
   outline: 2px solid var(--color-brand);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* Case Overview layout (2026-09) — after the old right-hand column's two
