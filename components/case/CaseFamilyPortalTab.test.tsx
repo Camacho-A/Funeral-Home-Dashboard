@@ -9,7 +9,7 @@ import * as identityAuthClient from '@/lib/identityAuthClient';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { PortalInvitation } from '@/types/portalInvitation';
 import type { PortalAccess } from '@/types/portalAccess';
-import type { CaseDocument } from '@/types/caseDocument';
+import type { CaseDocumentWithActorName } from '@/types/caseDocument';
 
 vi.mock('@/lib/portalClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/portalClient')>('@/lib/portalClient');
@@ -71,7 +71,7 @@ function makeAccess(overrides: Partial<PortalAccess> = {}): PortalAccess {
   };
 }
 
-function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
+function makeDocument(overrides: Partial<CaseDocumentWithActorName> = {}): CaseDocumentWithActorName {
   return {
     id: 'doc-1',
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -91,10 +91,11 @@ function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
     supersedesId: null,
     signatureStatus: null,
     familyVisible: false,
-    generatedBy: 'Dana',
+    generatedBy: 'identity-dana',
     uploadedBy: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     correlationId: 'corr-1',
+    actorDisplayName: 'Dana',
     ...overrides,
   };
 }

@@ -108,6 +108,12 @@ export type CaseDocument = {
   correlationId: string;
 };
 
+/** `generatedBy`/`uploadedBy` store an identity id, not a staff-facing
+    name — see `services/documentService.ts#attachDocumentActorDisplayNames`,
+    which resolves it at read time. `null` for a legacy/system row with no
+    actor, or an id that no longer resolves to a real identity. */
+export type CaseDocumentWithActorName = CaseDocument & { actorDisplayName: string | null };
+
 export type NewGeneratedDocumentInput = {
   caseId: string;
   templateId: string;

@@ -3,6 +3,8 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { hasPermission } from '@/services/permissionService';
 import { canViewReports } from '@/services/authorizationPolicyService';
 import { REPORT_REGISTRY } from '@/domain/reporting/reportRegistry';
+import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
+import { getForOrganization } from '@/services/organizationsService';
 import { getDataAdapterMode } from '@/lib/env';
 
 /**
@@ -11,6 +13,13 @@ import { getDataAdapterMode } from '@/lib/env';
  * `permission` field, never a hardcoded list. Requires the base
  * `report.view` gate (same as the pre-existing Reports page) in addition
  * to each individual report's own permission.
+ *
+ * Manors cleanup phase: a report tagged `requiresModule` is additionally
+ * hidden when the organization hasn't opted into that advanced module —
+ * the same org-level visibility mechanism already hiding that module's own
+ * nav links (components/layout/TopBar.tsx), so a report never outlives the
+ * feature it reports on. Nothing is deleted: an organization that enables
+ * the module later sees the report again automatically.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -29,8 +38,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Not authorized to view reports for this organization.' }, { status: 403 });
   }
 
+  const organization = await getForOrganization(organizationId, dataAdapterMode);
+
   const visible = [];
   for (const report of REPORT_REGISTRY) {
+    if (report.requiresModule && !isModuleEnabled(organization, report.requiresModule)) continue;
     if (await hasPermission(policyParams, dataAdapterMode, report.permission)) {
       visible.push(report);
     }

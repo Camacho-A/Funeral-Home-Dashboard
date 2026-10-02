@@ -23,8 +23,8 @@ const { upload } = await import('@/services/documentService');
 
 const TEST_CASE_ID = 'case-download-route-test';
 
-function downloadRequest(documentId: string, organizationId: string | null) {
-  const params = new URLSearchParams({ ...(organizationId ? { organizationId } : {}) });
+function downloadRequest(documentId: string, organizationId: string | null, disposition?: string) {
+  const params = new URLSearchParams({ ...(organizationId ? { organizationId } : {}), ...(disposition ? { disposition } : {}) });
   return GET(new Request(`http://localhost/api/cases/${TEST_CASE_ID}/documents/${documentId}/download?${params.toString()}`), {
     params: Promise.resolve({ caseId: TEST_CASE_ID, documentId }),
   });
@@ -81,6 +81,28 @@ describe('GET /api/cases/[caseId]/documents/[documentId]/download', () => {
     expect(bodyText).toContain('%PDF');
     expect(mockDownloadFile).toHaveBeenCalledWith(document.storageKey);
     expect(activityEventFixtures.at(-1)?.eventType).toBe('document.downloaded');
+  });
+
+  /**
+   * Manors cleanup phase (Task #5, "View" action). `disposition=inline`
+   * is the one thing the View button changes about this otherwise-
+   * identical, already-authenticated route — defaults to `attachment`
+   * (every test above, unchanged) when the caller doesn't pass it.
+   */
+  it('returns Content-Disposition: inline when disposition=inline is requested, with the same bytes/auth/Content-Type', async () => {
+    const document = await seedUploadedDocument();
+    const response = await downloadRequest(document.id, DEFAULT_ORGANIZATION_ID, 'inline');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/pdf');
+    expect(response.headers.get('Content-Disposition')).toContain('inline');
+    expect(response.headers.get('Content-Disposition')).not.toContain('attachment');
+    expect(response.headers.get('Content-Disposition')).toContain('scan.pdf');
+  });
+
+  it('ignores an unrecognized disposition value and falls back to attachment', async () => {
+    const document = await seedUploadedDocument();
+    const response = await downloadRequest(document.id, DEFAULT_ORGANIZATION_ID, 'not-a-real-value');
+    expect(response.headers.get('Content-Disposition')).toContain('attachment');
   });
 
   it('returns 404 for a document that does not exist', async () => {

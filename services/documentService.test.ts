@@ -17,7 +17,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
     deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
   },
 }));
-const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, listEligibleForBulkAction, DocumentServiceError } = await import('./documentService');
+const { list, generate, upload, archive, downloadFile, markDocumentSigned, setFamilyVisible, listEligibleForBulkAction, attachDocumentActorDisplayNames, DocumentServiceError } = await import('./documentService');
 const { createTemplate } = await import('./documentTemplatesService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { documentTemplateFixtures } = await import('./__mocks__/documentFixtures');
@@ -304,6 +304,44 @@ describe('upload', () => {
     expect(doc.status).toBe('active');
     expect(doc.checksumSha256).toHaveLength(64);
     expect(activityEventFixtures.at(-1)?.eventType).toBe('document.uploaded');
+  });
+});
+
+/**
+ * Manors cleanup phase (Task #10, "Uploaded by" shows a raw id). Mirrors
+ * `services/activityService.test.ts#attachActorDisplayNames`'s own test
+ * shape exactly — same batched-resolution, same `null`-for-unresolvable
+ * contract, now for `generatedBy`/`uploadedBy` instead of
+ * `actorIdentityId`.
+ */
+describe('attachDocumentActorDisplayNames', () => {
+  it('resolves a document whose uploadedBy is a real identity id to that identity\'s current display name', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx({ actorIdentityId: 'identity-manors-admin' }), 'mock');
+    const [resolved] = await attachDocumentActorDisplayNames([doc], 'mock');
+    expect(resolved.actorDisplayName).toBe('Dana');
+  });
+
+  it('resolves null for a document whose actor id no longer matches any real identity (deleted/never-existed)', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx({ actorIdentityId: 'identity-does-not-exist' }), 'mock');
+    const [resolved] = await attachDocumentActorDisplayNames([doc], 'mock');
+    expect(resolved.actorDisplayName).toBeNull();
+  });
+
+  it('resolves null for a document with no actor id at all (generatedBy and uploadedBy both null)', async () => {
+    const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'scan.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('raw bytes'), ctx({ actorIdentityId: null }), 'mock');
+    const [resolved] = await attachDocumentActorDisplayNames([doc], 'mock');
+    expect(resolved.actorDisplayName).toBeNull();
+  });
+
+  it('resolves each unique actor id exactly once, no matter how many documents share it (batched, not N+1)', async () => {
+    const docA = await upload({ caseId: TEST_CASE_ID, fileName: 'a.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('a'), ctx({ actorIdentityId: 'identity-manors-admin' }), 'mock');
+    const docB = await upload({ caseId: TEST_CASE_ID, fileName: 'b.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('b'), ctx({ actorIdentityId: 'identity-manors-admin' }), 'mock');
+    const resolved = await attachDocumentActorDisplayNames([docA, docB], 'mock');
+    expect(resolved.map((d) => d.actorDisplayName)).toEqual(['Dana', 'Dana']);
+  });
+
+  it('returns an empty array for an empty input, never throwing', async () => {
+    expect(await attachDocumentActorDisplayNames([], 'mock')).toEqual([]);
   });
 });
 

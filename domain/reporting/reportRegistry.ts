@@ -1,5 +1,6 @@
 import type { PermissionKey } from '../rbac/permissionCatalog';
 import type { MetricFilterKey, MetricKey } from './metricRegistry';
+import type { AdvancedModuleKey } from '../organization/moduleVisibility';
 
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). The complete,
@@ -34,6 +35,12 @@ export type ReportDefinition = {
   financialReportKey?: 'trialBalance' | 'generalLedgerDetail' | 'balanceSheet' | 'profitAndLoss' | 'arAging' | 'transactionRegister';
   defaultFilters: readonly MetricFilterKey[];
   permission: PermissionKey;
+  /** When set, this report is additionally gated on the organization having
+      that advanced module enabled (`domain/organization/moduleVisibility.ts`)
+      — the same org-level opt-in that already hides the module's own
+      sidebar/settings pages, so a report whose underlying feature is hidden
+      for an organization doesn't surface as an orphaned report anyway. */
+  requiresModule?: AdvancedModuleKey;
 };
 
 export const REPORT_REGISTRY = [
@@ -46,6 +53,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['location', 'staff'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'case-intake-volume',
@@ -56,6 +64,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange', 'location'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'case-completion',
@@ -66,6 +75,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'workflow-stage-aging',
@@ -76,6 +86,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'sla-exceptions',
@@ -86,6 +97,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['stage', 'staff'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'open-overdue-tasks',
@@ -96,6 +108,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['staff'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'upcoming-appointments',
@@ -106,6 +119,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange', 'staff', 'location'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'resource-utilization',
@@ -116,6 +130,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange', 'resource'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'va-case-status',
@@ -126,6 +141,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'revenue-summary',
@@ -136,6 +152,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'collections-summary',
@@ -146,6 +163,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'outstanding-balance',
@@ -156,6 +174,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'ar-aging',
@@ -166,6 +185,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: 'arAging',
     defaultFilters: [],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'payment-history',
@@ -176,6 +196,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'general-ledger',
@@ -186,6 +207,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: 'generalLedgerDetail',
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'trial-balance',
@@ -196,6 +218,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: 'trialBalance',
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'profit-and-loss',
@@ -206,6 +229,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: 'profitAndLoss',
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'balance-sheet',
@@ -216,6 +240,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: 'balanceSheet',
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'transaction-register',
@@ -226,6 +251,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: 'transactionRegister',
     defaultFilters: ['dateRange'],
     permission: 'accounting.report',
+    requiresModule: undefined,
   },
   {
     key: 'active-cases-by-staff',
@@ -236,6 +262,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['staff', 'dateRange'],
     permission: 'report.staff',
+    requiresModule: undefined,
   },
   {
     key: 'open-tasks-by-staff',
@@ -246,6 +273,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['staff'],
     permission: 'report.staff',
+    requiresModule: undefined,
   },
   {
     key: 'appointment-load',
@@ -256,6 +284,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['staff', 'dateRange'],
     permission: 'report.staff',
+    requiresModule: undefined,
   },
   {
     key: 'case-ownership',
@@ -266,6 +295,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['staff'],
     permission: 'report.staff',
+    requiresModule: undefined,
   },
   {
     key: 'workload-summary',
@@ -276,6 +306,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['staff', 'dateRange'],
     permission: 'report.staff',
+    requiresModule: undefined,
   },
   {
     key: 'documents-generated',
@@ -286,6 +317,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'outstanding-signatures',
@@ -296,6 +328,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
   {
     key: 'signature-completion-time',
@@ -306,6 +339,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: ['dateRange'],
     permission: 'report.operational',
+    requiresModule: undefined,
   },
 
   // Phase 35 (Merchandise, Inventory & Commerce).
@@ -318,6 +352,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'accounting.report',
+    requiresModule: 'merchandise',
   },
   {
     key: 'inventory-position',
@@ -328,6 +363,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'inventory.read',
+    requiresModule: 'inventory',
   },
 
   // Phase 36 (Procurement & Accounts Payable).
@@ -340,6 +376,7 @@ export const REPORT_REGISTRY = [
     financialReportKey: undefined,
     defaultFilters: [],
     permission: 'ap.read',
+    requiresModule: 'accountsPayable',
   },
 ] as const satisfies readonly ReportDefinition[];
 

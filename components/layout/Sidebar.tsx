@@ -3,6 +3,7 @@
 import type { AuthAdapterMode } from '@/lib/env';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { useOrganizationBranding } from '@/hooks/useOrganizationBranding';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useActiveStaffCount } from '@/hooks/useIdentitySessions';
 import { SidebarNavItem } from './SidebarNavItem';
@@ -88,6 +89,7 @@ export function Sidebar({
   const { organizationId } = useOrganization();
   const { data: organization } = useOrganizationRecord();
   const organizationName = organization?.name ?? organizationId;
+  const { data: branding } = useOrganizationBranding();
   const permissionsQuery = useMyPermissions(organizationId);
   const permissions = permissionsQuery.data?.permissions ?? [];
   const canViewAccounting = permissions.includes('accounting.view');
@@ -120,7 +122,17 @@ export function Sidebar({
         {canSeeSettings && <SidebarNavItem href="/settings" label="Settings" onNavigate={onClose} />}
       </div>
 
+      {/* Manors cleanup phase (Task #4). `branding?.logoUrl` is the
+          per-organization logo configured via onboarding's Branding step
+          (types/organizationBranding.ts) — distinct from `ProductBrand`
+          above, which is the SOLIS platform mark, not any one tenant's
+          own logo. Unset for every organization today (including
+          Manors), so nothing renders here yet; the moment an
+          administrator configures one, it appears automatically with no
+          further code change. Small and capped by `.footerLogo` so it
+          never competes with the staff-online status beneath it. */}
       <div className={styles.footer}>
+        {branding?.logoUrl && <img src={branding.logoUrl} alt={`${organizationName} logo`} className={styles.footerLogo} />}
         {organizationName}
         {authAdapterMode === 'identity' && activeStaffCountQuery.data !== undefined && (
           <>

@@ -150,17 +150,6 @@
   border-bottom: none;
 }
 
-.signatureToggle {
-  align-self: flex-start;
-  font-size: var(--font-size-11-5);
-  color: var(--color-text-faint);
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
 /* Mobile document row fix (2026-10). `.row`'s three flex children
    (`.identity`, the bare status Badge, `.actions`) share one flex line
    whenever they fit together — `.identity` is the only one with

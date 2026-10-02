@@ -27,12 +27,11 @@ import {
 } from '@/domain/documents/caseDocumentDisplay';
 import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
 import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
-import { buildCaseDocumentDownloadUrl } from '@/lib/caseDocumentsClient';
+import { buildCaseDocumentDownloadUrl, buildCaseDocumentViewUrl } from '@/lib/caseDocumentsClient';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
-import type { CaseDocument } from '@/types/caseDocument';
+import type { CaseDocument, CaseDocumentWithActorName } from '@/types/caseDocument';
 import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
-import { SignatureStatusPanel } from './SignatureStatusPanel';
 import { CaseFormsSection } from './CaseFormsSection';
 import { printStoredDocument } from '@/utils/print';
 import styles from './CaseDocumentsTab.module.css';
@@ -115,7 +114,6 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const [regeneratingDoc, setRegeneratingDoc] = useState<CaseDocument | null>(null);
   const [archivingDoc, setArchivingDoc] = useState<CaseDocument | null>(null);
   const [requestingSignatureFor, setRequestingSignatureFor] = useState<CaseDocument | null>(null);
-  const [expandedSignatureId, setExpandedSignatureId] = useState<string | null>(null);
   const [printingDocId, setPrintingDocId] = useState<string | null>(null);
   const [printError, setPrintError] = useState<{ docId: string; message: string } | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -186,8 +184,6 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   // Requests disabled (Manors) never shows Request Signature/Resend
   // regardless of the viewer's own signature.request permission.
   const canRequestSignature = (permissions === null || permissions.includes('signature.request')) && signatureRequestsEnabled;
-  const canReadSignature = permissions === null || permissions.includes('signature.read');
-  const canCancelSignature = permissions === null || permissions.includes('signature.cancel');
 
   const documents = documentsQuery.data ?? [];
   // Task #12 follow-up (2026-09, Documents/History separation) — a pure
@@ -202,13 +198,12 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const eligibleForBulkActions = documents.filter((doc) => isCaseDocumentEligibleForBulkAction(doc.status));
   const hasBulkEligibleDocuments = eligibleForBulkActions.length > 0;
 
-  function renderDocumentRow(doc: CaseDocument) {
+  function renderDocumentRow(doc: CaseDocumentWithActorName) {
     const typeLabel = doc.documentTypeKey ? (getDocumentTypeDefinition(doc.documentTypeKey)?.displayName ?? doc.documentTypeKey) : 'Uploaded file';
     const canDownload = isCaseDocumentDownloadable(doc.status);
     const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active';
     const canArchiveThis = canArchive && doc.status === 'active';
     const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed';
-    const isSignatureExpanded = expandedSignatureId === doc.id;
 
     return (
       <div key={doc.id} className={styles.rowGroup}>
@@ -217,12 +212,22 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             <span className={styles.fileName}>{doc.fileName}</span>
             <span className={styles.meta}>
               {typeLabel}
-              {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.generatedBy ?? doc.uploadedBy ?? 'unknown'} ·{' '}
+              {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.actorDisplayName ?? 'Unknown'} ·{' '}
               {formatTimestamp(doc.createdAt)}
             </span>
           </div>
           <Badge variant={caseDocumentStatusVariant(doc.status)}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</Badge>
           <div className={styles.actions}>
+            {canDownload && (
+              <a
+                href={buildCaseDocumentViewUrl(organizationId, caseId, doc.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.downloadLink}
+              >
+                View
+              </a>
+            )}
             {canDownload && (
               <a href={buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id)} className={styles.downloadLink}>
                 Download
@@ -260,22 +265,6 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
           <div className={styles.errorText} role="alert">
             {printError.message}
           </div>
-        )}
-        {canReadSignature && doc.status === 'active' && (
-          <>
-            <button type="button" className={styles.signatureToggle} onClick={() => setExpandedSignatureId(isSignatureExpanded ? null : doc.id)}>
-              {isSignatureExpanded ? 'Hide signature status' : 'Show signature status'}
-            </button>
-            {isSignatureExpanded && (
-              <SignatureStatusPanel
-                organizationId={organizationId}
-                caseId={caseId}
-                documentId={doc.id}
-                canRequest={canRequestSignature}
-                canCancel={canCancelSignature}
-              />
-            )}
-          </>
         )}
       </div>
     );

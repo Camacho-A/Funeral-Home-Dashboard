@@ -99,7 +99,15 @@ describe('Reporting routes never recompute a metric or report themselves (struct
   });
 
   it('every report/dashboard/metrics route imports from the reporting service layer (the service itself, or — for the pure listing route — its registry)', () => {
-    const reportingLayerImportPattern = /from ['"](@\/services\/(reportingService|dashboardService|reportExportService|reportPresetService)|@\/domain\/reporting\/(reportRegistry|metricRegistry))['"]/;
+    // `allCaseDataReportService` (Manors cleanup phase, Task #8) is a
+    // parallel, dedicated reporting service for the one report shaped as
+    // a row-per-case export rather than a metrics/financial-report
+    // result — it satisfies this boundary's actual intent (one
+    // first-class reporting service per surface, never an ad-hoc reach
+    // into a domain service or the concrete renderer from a route file)
+    // exactly as the other four services already do.
+    const reportingLayerImportPattern =
+      /from ['"](@\/services\/(reportingService|dashboardService|reportExportService|reportPresetService|allCaseDataReportService)|@\/domain\/reporting\/(reportRegistry|metricRegistry))['"]/;
     const offenders = reportRouteFiles.filter((filePath) => !reportingLayerImportPattern.test(readFileSync(filePath, 'utf8')));
     expect(offenders, `route(s) not delegating to the reporting service layer: ${offenders.join(', ')}`).toEqual([]);
   });

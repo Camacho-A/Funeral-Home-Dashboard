@@ -16,7 +16,7 @@ import { mapWixCaseItem, type WixCaseItem } from '../lib/wixCaseMapper';
 import { mapWixOrganizationItem, type WixOrganizationItem } from '../lib/wixOrganizationMapper';
 import { mapWixOrganizationBrandingItem, type WixOrganizationBrandingItem } from '../lib/wixOrganizationBrandingMapper';
 import { mapWixOrganizationLocationItem, type WixOrganizationLocationItem } from '../lib/wixOrganizationLocationMapper';
-import type { CaseDocument, CaseDocumentStatus, NewGeneratedDocumentInput, NewUploadedDocumentInput } from '../types/caseDocument';
+import type { CaseDocument, CaseDocumentStatus, CaseDocumentWithActorName, NewGeneratedDocumentInput, NewUploadedDocumentInput } from '../types/caseDocument';
 import type { Case } from '../types/case';
 import type { Organization } from '../types/organization';
 import { caseFixtures } from './__mocks__/fixtures';
@@ -41,6 +41,7 @@ import {
 } from './activityService';
 import { isDocumentArchivingEnabled } from '../domain/organization/documentArchiveCapability';
 import { isCaseDocumentDownloadable, isCaseDocumentEligibleForBulkAction } from '../domain/documents/caseDocumentDisplay';
+import { getIdentityById } from './identityService';
 import {
   isPrintableMimeType,
   buildBulkDownloadZipFileName,
@@ -83,6 +84,20 @@ const documentRenderer: DocumentRenderer = puppeteerDocumentRenderer;
 const documentStorageProvider: DocumentStorageProvider = vercelBlobStorageProvider;
 
 export class DocumentServiceError extends Error {}
+
+/** Manors cleanup phase (Task #8, "All Case Data" report PDF export).
+    `services/documentService.ts` is the only module allowed to import the
+    concrete `puppeteerDocumentRenderer` (enforced by this file's own
+    "DocumentService orchestration boundary" structural test) — any other
+    caller needing HTML->PDF (the new All Case Data report, not a
+    `CaseDocument` at all) goes through this thin passthrough instead of
+    reaching for the concrete renderer directly. Unlike `generate()`'s own
+    internal use, the caller's HTML is already a complete document (its
+    own `<style>`/`@page` rules), so this skips `wrapMergedHtmlDocument`
+    — that wrapper is specific to merge-template body fragments. */
+export async function renderHtmlToPdfBuffer(html: string): Promise<Buffer> {
+  return documentRenderer.renderHtmlToPdf(html);
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -342,6 +357,32 @@ export async function list(organizationId: string, caseId: string, dataAdapterMo
     .map((item) => mapWixCaseDocumentItem(item.data))
     .filter((d): d is CaseDocument => d !== null)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+/** Manors cleanup phase (Task #10, "Uploaded by" shows a raw id). Every
+    `CaseDocument` row stores the acting *identity id* in `generatedBy`/
+    `uploadedBy` (`ctx.actorIdentityId`, never a StaffProfile/membership
+    id) — correct for audit purposes, but not staff-facing on its own.
+    Resolved at read time, mirroring `services/activityService.ts#attachActorDisplayNames`
+    exactly: deduped per unique id, one `getIdentityById` lookup each,
+    `null` when there's no actor id or it no longer resolves (deleted/
+    never-existed identity) — never a second source of truth, and a later
+    name change is reflected immediately without rewriting any stored row.
+    A pre-existing document with only an id already resolves correctly;
+    nothing needs re-uploading. */
+export async function attachDocumentActorDisplayNames(
+  documents: readonly CaseDocument[],
+  dataAdapterMode: DataAdapterMode,
+): Promise<CaseDocumentWithActorName[]> {
+  const uniqueIds = Array.from(
+    new Set(documents.map((d) => d.generatedBy ?? d.uploadedBy).filter((id): id is string => id !== null)),
+  );
+  const identities = await Promise.all(uniqueIds.map((id) => getIdentityById(id, dataAdapterMode)));
+  const nameById = new Map(uniqueIds.map((id, i) => [id, identities[i]?.displayName ?? null]));
+  return documents.map((doc) => {
+    const actorId = doc.generatedBy ?? doc.uploadedBy;
+    return { ...doc, actorDisplayName: actorId ? (nameById.get(actorId) ?? null) : null };
+  });
 }
 
 /** Phase 32 (Reporting, Analytics & Executive Dashboard). The org-wide

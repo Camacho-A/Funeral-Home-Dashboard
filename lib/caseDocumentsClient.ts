@@ -1,4 +1,4 @@
-import type { CaseDocument } from '@/types/caseDocument';
+import type { CaseDocument, CaseDocumentWithActorName } from '@/types/caseDocument';
 
 /**
  * Phase 25 (Document Generation & Template Management). Client-side fetch
@@ -15,10 +15,10 @@ async function parseJsonOrThrow(response: Response): Promise<Record<string, unkn
   return body;
 }
 
-export async function fetchCaseDocuments(organizationId: string, caseId: string): Promise<CaseDocument[]> {
+export async function fetchCaseDocuments(organizationId: string, caseId: string): Promise<CaseDocumentWithActorName[]> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/documents?organizationId=${encodeURIComponent(organizationId)}`);
   const body = await parseJsonOrThrow(response);
-  return (body.documents as CaseDocument[]) ?? [];
+  return (body.documents as CaseDocumentWithActorName[]) ?? [];
 }
 
 export async function generateCaseDocument(params: {
@@ -90,6 +90,15 @@ export async function setCaseDocumentFamilyVisibility(params: {
     `lib/activityClient.ts`'s `buildActivityExportUrl` precedent. */
 export function buildCaseDocumentDownloadUrl(organizationId: string, caseId: string, documentId: string): string {
   const params = new URLSearchParams({ organizationId });
+  return `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(documentId)}/download?${params.toString()}`;
+}
+
+/** Task #5 (Manors cleanup phase) — "View" action. Same authenticated,
+    bytes-streaming download route, with `disposition=inline` so the
+    browser renders the PDF/image directly instead of forcing a save
+    prompt (see that route's own comment). Never a Blob/signed URL. */
+export function buildCaseDocumentViewUrl(organizationId: string, caseId: string, documentId: string): string {
+  const params = new URLSearchParams({ organizationId, disposition: 'inline' });
   return `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(documentId)}/download?${params.toString()}`;
 }
 

@@ -1,4 +1,5 @@
 import type { Organization, OrganizationContext } from '../types/organization';
+import type { OrganizationBranding } from '../types/organizationBranding';
 import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixOrganizationItem, type WixOrganizationItem } from '../lib/wixOrganizationMapper';
@@ -57,4 +58,18 @@ export async function getForOrganization(organizationId: string, dataAdapterMode
   return mapWixOrganizationItem(response.dataItems[0]?.data);
 }
 
-export const organizationsService = { get, getForOrganization };
+/** Manors cleanup phase (Task #4). Same client-only HTTP-wrapper shape as
+    `get()` above (`GET /api/organizations/[organizationId]/branding`) —
+    `null` for both "not found" and "no branding configured yet" (the
+    normal state for every pre-existing organization), never an error;
+    the sidebar logo simply doesn't render in either case. */
+export async function getBranding(context: OrganizationContext): Promise<OrganizationBranding | null> {
+  const response = await fetch(`/api/organizations/${encodeURIComponent(context.organizationId)}/branding`);
+  if (!response.ok) {
+    throw new Error('Failed to load organization branding.');
+  }
+  const body = (await response.json()) as { branding: OrganizationBranding | null };
+  return body.branding;
+}
+
+export const organizationsService = { get, getForOrganization, getBranding };

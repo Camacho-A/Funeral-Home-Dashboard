@@ -14,13 +14,23 @@ import { getDataAdapterMode } from '@/lib/env';
  * `lib/documentStorageProvider.ts`'s header comment) — this satisfies
  * "secure downloads"/"non-public file URLs" more strongly than a
  * short-lived signed URL would, since there is no token to leak at all.
+ *
+ * Manors cleanup phase (Task #5, "View" action). `?disposition=inline`
+ * switches the response header so the browser renders the file (PDF/image)
+ * directly in a new tab instead of forcing a save-to-disk prompt — the
+ * exact pattern `app/api/signing/[token]/document/route.ts` already
+ * established for the signing flow's own in-browser preview. Defaults to
+ * `attachment` (unchanged existing behavior) for every caller that doesn't
+ * pass it. Same bytes, same auth, same route — not a second endpoint.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ caseId: string; documentId: string }> }) {
   const { caseId, documentId } = await params;
-  const requestedOrganizationId = new URL(request.url).searchParams.get('organizationId');
+  const url = new URL(request.url);
+  const requestedOrganizationId = url.searchParams.get('organizationId');
   if (!requestedOrganizationId) {
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
+  const disposition = url.searchParams.get('disposition') === 'inline' ? 'inline' : 'attachment';
 
   const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
   if (!authResult.authorized) return authResult.response;
@@ -43,7 +53,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${fileName.replace(/"/g, '')}"`,
+        'Content-Disposition': `${disposition}; filename="${fileName.replace(/"/g, '')}"`,
       },
     });
   } catch (error) {

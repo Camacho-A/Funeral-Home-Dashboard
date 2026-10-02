@@ -120,3 +120,16 @@
 .footerStaffOnline {
   color: var(--color-text-faint);
 }
+
+/* Manors cleanup phase (Task #4) — small/professional, capped height so a
+   wide logo can never overpower the staff-online status text beneath it;
+   `max-width: 100%` keeps it contained in the collapsed/mobile drawer
+   (same width the footer text itself already respects) with no overflow. */
+.footerLogo {
+  display: block;
+  max-height: 28px;
+  max-width: 100%;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: var(--space-3);
+}

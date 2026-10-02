@@ -3,6 +3,8 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { hasPermission } from '@/services/permissionService';
 import { canViewReports, canExportReports } from '@/services/authorizationPolicyService';
 import { getReportDefinition } from '@/domain/reporting/reportRegistry';
+import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
+import { getForOrganization } from '@/services/organizationsService';
 import { exportReportCsv } from '@/services/reportExportService';
 import { ReportRunnerError } from '@/services/reportingService';
 import { getDataAdapterMode } from '@/lib/env';
@@ -35,6 +37,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ repo
 
   if (!(await canViewReports(policyParams, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to view reports for this organization.' }, { status: 403 });
+  }
+  if (definition.requiresModule) {
+    const organization = await getForOrganization(organizationId, dataAdapterMode);
+    if (!isModuleEnabled(organization, definition.requiresModule)) {
+      return NextResponse.json({ error: `The "${reportKey}" report is not enabled for this organization.` }, { status: 403 });
+    }
   }
   if (!(await hasPermission(policyParams, dataAdapterMode, definition.permission))) {
     return NextResponse.json({ error: `Not authorized to view the "${reportKey}" report.` }, { status: 403 });

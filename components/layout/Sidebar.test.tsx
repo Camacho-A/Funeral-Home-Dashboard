@@ -20,6 +20,8 @@ vi.spyOn(organizationsService, 'get').mockResolvedValue({
   isActive: true,
 });
 
+vi.spyOn(organizationsService, 'getBranding').mockResolvedValue(null);
+
 function mockPermissions(permissions: string[] = []) {
   vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey: 'administrator', permissions });
 }
@@ -279,6 +281,57 @@ describe('Sidebar — mobile navigation drawer (2026-09)', () => {
   it('rendering with no drawer props at all does not throw — fully optional, backward compatible', async () => {
     mockPermissions([]);
     expect(() => renderSidebar('mock')).not.toThrow();
+  });
+});
+
+describe('Sidebar — organization logo (Manors cleanup phase, Task #4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders no logo when the organization has no branding configured (every organization today)', async () => {
+    vi.spyOn(organizationsService, 'getBranding').mockResolvedValue(null);
+    mockPermissions([]);
+    renderSidebar('mock');
+    await waitFor(() => expect(screen.getByText('Manors Cremation')).toBeInTheDocument());
+    expect(screen.queryByRole('img', { name: /logo/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the configured logo image once branding.logoUrl is set', async () => {
+    vi.spyOn(organizationsService, 'getBranding').mockResolvedValue({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      logoUrl: 'https://example.com/manors-logo.png',
+      primaryColor: null,
+      secondaryColor: null,
+      accentColor: null,
+      emailFromName: null,
+      documentFooter: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockPermissions([]);
+    renderSidebar('mock');
+    const logo = await screen.findByRole('img', { name: 'Manors Cremation logo' });
+    expect(logo).toHaveAttribute('src', 'https://example.com/manors-logo.png');
+  });
+
+  it('still renders the staff-online status alongside the logo — the logo never replaces it', async () => {
+    vi.spyOn(organizationsService, 'getBranding').mockResolvedValue({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      logoUrl: 'https://example.com/manors-logo.png',
+      primaryColor: null,
+      secondaryColor: null,
+      accentColor: null,
+      emailFromName: null,
+      documentFooter: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockPermissions([]);
+    vi.mocked(identityAuthClient.fetchActiveStaffCount).mockResolvedValue(4);
+    renderSidebar('identity');
+    await screen.findByRole('img', { name: 'Manors Cremation logo' });
+    expect(await screen.findByText('4 staff online')).toBeInTheDocument();
   });
 });
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canViewDocument } from '@/services/authorizationPolicyService';
-import { list } from '@/services/documentService';
+import { list, attachDocumentActorDisplayNames } from '@/services/documentService';
 import { getDataAdapterMode } from '@/lib/env';
 
 /**
@@ -33,5 +33,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   }
 
   const documents = await list(organizationId, caseId, dataAdapterMode);
-  return NextResponse.json({ documents });
+  const withActorNames = await attachDocumentActorDisplayNames(documents, dataAdapterMode);
+  return NextResponse.json({ documents: withActorNames });
 }

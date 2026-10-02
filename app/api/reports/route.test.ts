@@ -46,4 +46,33 @@ describe('GET /api/reports', () => {
     const response = await getRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(403);
   });
+
+  /**
+   * Manors cleanup phase (Task #7, Reports audit). Manors has no
+   * `enabledModules` configured at all (every pre-existing organization's
+   * starting state) — `merchandise-performance`/`inventory-position`/
+   * `accounts-payable` all carry `requiresModule`, so none of the three
+   * should appear even for an administrator who holds every individual
+   * report permission. This is a visibility decision, not a deletion —
+   * the reports and their underlying services are untouched; they simply
+   * don't surface for an organization that hasn't opted into that module.
+   */
+  it('hides reports whose underlying module Manors has not enabled (merchandise, inventory, accounts payable) even for an administrator', async () => {
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const keys = body.reports.map((r: { key: string }) => r.key);
+    expect(keys).not.toContain('merchandise-performance');
+    expect(keys).not.toContain('inventory-position');
+    expect(keys).not.toContain('accounts-payable');
+  });
+
+  it('still returns every other report unaffected by module gating', async () => {
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    const body = await response.json();
+    const keys = body.reports.map((r: { key: string }) => r.key);
+    expect(keys).toContain('active-cases');
+    expect(keys).toContain('trial-balance');
+    expect(keys).toContain('outstanding-signatures');
+  });
 });

@@ -7,7 +7,7 @@ import * as caseDocumentsClient from '@/lib/caseDocumentsClient';
 import * as identityAuthClient from '@/lib/identityAuthClient';
 import { organizationsService } from '@/services/organizationsService';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import type { CaseDocument } from '@/types/caseDocument';
+import type { CaseDocumentWithActorName } from '@/types/caseDocument';
 import type { Organization } from '@/types/organization';
 
 vi.mock('@/lib/caseDocumentsClient', async () => {
@@ -52,7 +52,7 @@ vi.mock('@/lib/documentTemplatesClient', async () => {
   return { ...actual, fetchDocumentTemplates: vi.fn().mockResolvedValue([]) };
 });
 
-function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
+function makeDocument(overrides: Partial<CaseDocumentWithActorName> = {}): CaseDocumentWithActorName {
   return {
     id: 'doc-1',
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -72,10 +72,15 @@ function makeDocument(overrides: Partial<CaseDocument> = {}): CaseDocument {
     supersedesId: null,
     signatureStatus: null,
     familyVisible: false,
-    generatedBy: 'Dana',
+    generatedBy: 'identity-dana',
     uploadedBy: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     correlationId: 'corr-1',
+    // Server-resolved display name (services/documentService.ts#attachDocumentActorDisplayNames)
+    // — matches the old `generatedBy: 'Dana'` literal every pre-existing
+    // test here already expected to see rendered, now via this field
+    // instead of the raw actor id above.
+    actorDisplayName: 'Dana',
     ...overrides,
   };
 }
@@ -163,13 +168,61 @@ describe('CaseDocumentsTab — document list', () => {
 
   it('labels an uploaded document as "Uploaded file" with its uploader, not a template type', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
-      makeDocument({ origin: 'uploaded', documentTypeKey: null, category: null, templateId: null, templateVersion: null, version: null, generatedBy: null, uploadedBy: 'Chris', fileName: 'photo-id.pdf' }),
+      makeDocument({ origin: 'uploaded', documentTypeKey: null, category: null, templateId: null, templateVersion: null, version: null, generatedBy: null, uploadedBy: 'identity-chris', actorDisplayName: 'Chris', fileName: 'photo-id.pdf' }),
     ]);
     renderTab();
 
     expect(await screen.findByText('photo-id.pdf')).toBeInTheDocument();
     expect(screen.getByText(/Uploaded file/)).toBeInTheDocument();
     expect(screen.getByText(/Uploaded by Chris/)).toBeInTheDocument();
+  });
+
+  /**
+   * Manors cleanup phase (Task #1, remove Show Signature Status). The
+   * toggle and its expandable panel are gone from this tab entirely —
+   * Request Signature (a distinct, still-required action) is untouched.
+   */
+  it('never renders a "Show signature status" control, for any document', async () => {
+    vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({
+      identityId: 'identity-1',
+      roleKey: 'administrator',
+      permissions: ['document.view', 'document.generate', 'document.upload', 'document.archive', 'signature.request', 'signature.read', 'signature.cancel'],
+    });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.queryByText('Show signature status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hide signature status')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Manors cleanup phase (Task #5, "View" action). Reuses the existing
+   * authenticated download route with `disposition=inline`, opened in a
+   * new tab — never a forced download, never a blob URL.
+   */
+  it('renders a "View" action alongside Download/Print that opens the document inline in a new tab', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
+    renderTab();
+
+    const fileName = await screen.findByText('Cremation Authorization.pdf');
+    const row = fileName.closest('div')!.parentElement!;
+    const viewLink = within(row).getByRole('link', { name: 'View' });
+    expect(viewLink).toHaveAttribute('href', '/api/cases/case-1/documents/doc-1/download?organizationId=managed-cremations&disposition=inline');
+    expect(viewLink).toHaveAttribute('target', '_blank');
+    expect(viewLink).toHaveAttribute('rel', 'noopener noreferrer');
+
+    const downloadLink = within(row).getByRole('link', { name: 'Download' });
+    expect(downloadLink).toHaveAttribute('href', '/api/cases/case-1/documents/doc-1/download?organizationId=managed-cremations');
+    expect(downloadLink).not.toHaveAttribute('target');
+  });
+
+  it('does not render a "View" action for a document that is not downloadable (e.g. a failed generation)', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ status: 'failed' })]);
+    renderTab();
+
+    await screen.findByText('Cremation Authorization.pdf');
+    expect(screen.queryByRole('link', { name: 'View' })).not.toBeInTheDocument();
   });
 
   it('shows a Download link only for active/superseded/archived statuses, not pending or failed', async () => {

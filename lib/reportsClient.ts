@@ -49,6 +49,21 @@ export function exportReportCsvUrl(organizationId: string, reportKey: string, fi
   return `/api/reports/${encodeURIComponent(reportKey)}/export?${toQueryString(organizationId, filters)}`;
 }
 
+/** Manors cleanup phase (Task #8). A plain `<a href>`/`window.open` target
+    (never a `fetch`-then-blob dance) — same reasoning as every other
+    export link in this codebase: the browser's own download handling,
+    auth via the existing session cookie, nothing new invented. */
+export function allCaseDataExportUrl(
+  organizationId: string,
+  format: 'csv' | 'xlsx' | 'pdf',
+  filters: { fromDate?: string; toDate?: string } = {},
+): string {
+  const params = new URLSearchParams({ organizationId, format });
+  if (filters.fromDate) params.set('fromDate', filters.fromDate);
+  if (filters.toDate) params.set('toDate', filters.toDate);
+  return `/api/reports/all-case-data/export?${params.toString()}`;
+}
+
 export async function fetchMetricValue(organizationId: string, metricKey: string, filters: ReportFilters = {}): Promise<{ metricKey: string; displayName: string; value: unknown }> {
   const response = await fetch(`/api/metrics/${encodeURIComponent(metricKey)}?${toQueryString(organizationId, filters)}`);
   return (await parseJsonOrThrow(response)) as unknown as { metricKey: string; displayName: string; value: unknown };

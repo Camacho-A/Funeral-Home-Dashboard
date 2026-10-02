@@ -63,6 +63,19 @@ export default function ReportsPage() {
         <h1 className={styles.title}>Reports</h1>
       </div>
 
+      {permissions.includes('report.operational') && (
+        <section className={styles.section}>
+          <div className={styles.grid}>
+            <Link href="/reports/all-case-data" className={styles.cardLink}>
+              <Card variant="bordered" className={styles.reportCard}>
+                <span className={styles.reportName}>All Case Data</span>
+                <span className={styles.reportDescription}>Export every case&rsquo;s operational data — CSV, Excel, or PDF.</span>
+              </Card>
+            </Link>
+          </div>
+        </section>
+      )}
+
       {CATEGORY_ORDER.filter((category) => grouped.has(category)).map((category) => (
         <section key={category} className={styles.section}>
           <h2 className={styles.sectionTitle}>{CATEGORY_LABELS[category]}</h2>

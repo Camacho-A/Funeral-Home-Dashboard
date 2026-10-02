@@ -187,4 +187,49 @@ describe('renderStatementHtml — Manors business identity + Cash Advance suppre
       ),
     ).toThrow(StatementRenderError);
   });
+
+  it('the totals table also omits the "Cash advance items" row when the section is suppressed, not just the itemized section', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).not.toContain('<td>Cash advance items</td>');
+  });
+
+  it('the visible totals table still reconciles exactly: the goods/services row is immediately followed by the total row, with no cash-advance row between them', () => {
+    const html = renderStatementHtml(manorsModel());
+    const tbody = html.split('Total Cost of Arrangements')[1].split('</tbody>')[0];
+    expect(tbody).not.toContain('Cash advance items');
+    expect(tbody.indexOf('Funeral goods and services')).toBeGreaterThanOrEqual(0);
+    expect(tbody.indexOf('Total cost of arrangements (this statement)')).toBeGreaterThan(tbody.indexOf('Funeral goods and services'));
+  });
+
+  it('other organizations keep their "Cash advance items" totals row unchanged', () => {
+    const html = renderStatementHtml(baseModel());
+    expect(html).toContain('<td>Cash advance items</td>');
+    expect(html).toContain('$325.00'); // cashAdvanceSubtotalCents
+  });
+});
+
+describe('renderStatementHtml — redundant branding cleanup (Manors cleanup phase, Task #2)', () => {
+  it('does not render the business name as a separate text line beneath the logo', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).not.toContain(`<p style="margin:0; font-size:1.05em; font-weight:bold; letter-spacing:0.3px;">${MANORS_STATEMENT_PROVIDER_IDENTITY.name}</p>`);
+  });
+
+  it('still renders the logo, address, and contact lines (only the redundant name text was removed)', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).toContain('<img');
+    expect(html).toContain('481 E Commercial Blvd');
+    expect(html).toContain('954-884-5770');
+  });
+
+  it('does not render the redundant top heading', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).not.toContain('Statement of Funeral Goods and Services Selected');
+  });
+
+  it('still renders the decedent/case identification and required disclosures below the header', () => {
+    const html = renderStatementHtml(manorsModel());
+    expect(html).toContain('Jane Doe');
+    expect(html).toContain('C-1042');
+    expect(html).toContain('Charges are only for those items');
+  });
 });

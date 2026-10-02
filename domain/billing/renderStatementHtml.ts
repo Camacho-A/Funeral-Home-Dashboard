@@ -53,10 +53,14 @@ function renderProviderHeader(provider: BillingStatementModel['provider']): stri
     .filter((line): line is string => line !== null)
     .join('<br/>');
 
+  // Manors cleanup phase (Task #2, redundant statement branding). The logo
+  // already carries the business name — a separate text line repeating it
+  // directly underneath was redundant. Removed here only; the address and
+  // contact lines (genuinely new information, not a repeat of the logo)
+  // are unchanged.
   return `<header style="text-align:center;">
     ${logoHtml}
-    <p style="margin:0; font-size:1.05em; font-weight:bold; letter-spacing:0.3px;">${escapeHtml(provider.name)}</p>
-    <p style="margin:2px 0 0;">${addressHtml}</p>
+    <p style="margin:0;">${addressHtml}</p>
     ${contactLines ? `<p style="margin:2px 0 0;">${contactLines}</p>` : ''}
   </header>`;
 }
@@ -149,13 +153,32 @@ export function renderStatementHtml(model: BillingStatementModel): string {
       </table>`;
   }
 
+  // Manors cleanup phase (Task #3, Cash Advance Items on the generated
+  // Statement). The itemized Cash Advance Items section is already
+  // suppressed per-organization (`showCashAdvanceSection`, see
+  // organizationStatementOverrides.ts) — this is the one place a cash-
+  // advance figure could still surface even with that section hidden: a
+  // "Cash advance items" row in this totals table. Hiding it here too is
+  // provably lossless, not just visually tidier: the guard above (`!model.showCashAdvanceSection
+  // && model.cashAdvanceItems.length > 0` → throw) already guarantees
+  // `cashAdvanceSubtotalCents` is exactly 0 whenever this row would be
+  // hidden (it's summed directly from `cashAdvanceItems`, which the guard
+  // just proved is empty) — so the remaining total row's figure
+  // (`ftcStatementTotalCents = goodsAndServicesTotalCents + 0`) is
+  // unchanged, and the visible line items still sum to exactly the
+  // displayed total. For an organization where cash advances ARE shown,
+  // this row is untouched.
+  const cashAdvanceTotalsRow = model.showCashAdvanceSection
+    ? `<tr><td>Cash advance items</td>${moneyCell(model.cashAdvanceSubtotalCents)}</tr>`
+    : '';
+
   // The two-figure block that keeps the FTC total and the AR balance distinct.
   const totalsSection = `
     <h2 style="border-bottom:2px solid #333; padding-bottom:4px;">Total Cost of Arrangements</h2>
     <table style="width:100%; border-collapse:collapse;" cellpadding="6">
       <tbody>
         <tr><td>Funeral goods and services</td>${moneyCell(model.goodsAndServicesTotalCents)}</tr>
-        <tr><td>Cash advance items</td>${moneyCell(model.cashAdvanceSubtotalCents)}</tr>
+        ${cashAdvanceTotalsRow}
         <tr style="border-top:2px solid #333; font-weight:bold;"><td>Total cost of arrangements (this statement)</td>${moneyCell(model.ftcStatementTotalCents)}</tr>
       </tbody>
     </table>
@@ -192,9 +215,13 @@ export function renderStatementHtml(model: BillingStatementModel): string {
 
   const statementDateDisplay = formatStatementDate(model.generatedAt);
 
+  // Manors cleanup phase (Task #2, redundant statement branding). The
+  // top heading repeated what the logo already communicates (this IS the
+  // Statement of Funeral Goods and Services — the document's own purpose
+  // is established by the logo/header and the required disclosures that
+  // follow); removed here only, nothing below it changed.
   return `
     ${renderProviderHeader(model.provider)}
-    <h1 style="margin:10px 0 2px;">Statement of Funeral Goods and Services Selected</h1>
     <section style="margin-top:10px;">
       <table style="width:100%;" cellpadding="2"><tbody>
         <tr><td><strong>Decedent:</strong> ${escapeHtml(model.decedentName)}</td><td style="text-align:right;"><strong>Case:</strong> ${escapeHtml(model.caseNumber)}</td></tr>

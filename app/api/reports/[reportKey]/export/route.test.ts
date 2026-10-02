@@ -44,4 +44,17 @@ describe('GET /api/reports/[reportKey]/export', () => {
     const csv = await response.text();
     expect(csv.split('\n')[0]).toBe('metricKey,displayName,value');
   });
+
+  /**
+   * Manors cleanup phase (Task #7, Reports audit). An administrator holds
+   * every individual report permission (`inventory.read` included), so
+   * this 403 can only come from the module-visibility gate — proving the
+   * export route enforces the same hiding this report gets from the
+   * listing route (`app/api/reports/route.ts`), not just a UI-level
+   * omission a direct request could bypass.
+   */
+  it('returns 403 exporting a module-gated report (inventory-position) for Manors even for an administrator, since the inventory module is not enabled', async () => {
+    const response = await getRequest('inventory-position', DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(403);
+  });
 });
