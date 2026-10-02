@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import Link from 'next/link';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationActivity } from '@/hooks/useActivity';
@@ -71,8 +72,8 @@ export function RecentActivityPanel() {
         {entries.length === 0 && <div className={styles.row}>No recent activity.</div>}
         {entries.map((entry) => {
           const caseNumber = entry.caseId ? caseNumberById.get(entry.caseId) : undefined;
-          return (
-            <div key={entry.id} className={styles.row}>
+          const rowContent = (
+            <>
               <div className={styles.rowMain}>
                 {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
                 <span className={styles.what}>{resolveActivityDisplayDescription(entry)}</span>
@@ -80,6 +81,25 @@ export function RecentActivityPanel() {
               <div className={styles.when}>
                 {activityActorLabel(entry)} · {timeAgo(entry.createdAt)}
               </div>
+            </>
+          );
+          // Clickable only when caseId resolves to a Case the viewer is
+          // actually authorized to see (same `caseNumberById` lookup that
+          // already gates showing the Case Number badge, scoped to this
+          // organization's own `useCases()` — see that hook). A stale or
+          // cross-org caseId that doesn't resolve is not a "valid case
+          // destination": it stays a plain, non-interactive row rather than
+          // navigating to a fabricated/unauthorized URL.
+          if (entry.caseId && caseNumber) {
+            return (
+              <Link key={entry.id} href={`/cases/${entry.caseId}`} className={`${styles.row} ${styles.rowLink}`}>
+                {rowContent}
+              </Link>
+            );
+          }
+          return (
+            <div key={entry.id} className={styles.row}>
+              {rowContent}
             </div>
           );
         })}

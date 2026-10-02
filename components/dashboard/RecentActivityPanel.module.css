@@ -31,6 +31,27 @@
   font-size: var(--font-size-12-5);
 }
 
+/* Recent Activity case navigation (2026-10). Applied alongside `.row`
+   (never alone) on entries whose caseId resolves to an authorized Case —
+   same hover/focus convention as AllCasesList.module.css's own `.row`
+   Link, so the whole row is the click/tap target rather than just the
+   Case Number text, with no layout change from the plain (non-link) row. */
+.rowLink {
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.rowLink:hover {
+  background: var(--color-surface-hover);
+}
+
+.rowLink:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+
 /* Task #4 (2026-09, Dashboard Recent Activity spacing). Case number and
    activity description are separate flex items with an explicit `gap` —
    real layout spacing rather than a generated-content separator, so the

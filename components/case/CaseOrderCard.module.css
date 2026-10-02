@@ -82,10 +82,19 @@
   margin-bottom: var(--space-5);
 }
 
+/* `.history` is a real <ul> and was never given its own `padding`/
+   `list-style`, so the browser's default UA stylesheet
+   `padding-inline-start: 40px` on <ul> indents the whole payment list
+   ~40px right of `.historyTitle` (a plain <div>, with no such default) —
+   not any rule this file wrote. Reset at all viewport sizes (previously
+   mobile-only, 2026-10) so the list's left edge lines up with the
+   heading above it on desktop too, not just below the mobile breakpoint. */
 .history {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  padding: 0;
+  list-style: none;
 }
 
 .historyRow {
@@ -134,18 +143,6 @@
    there's room (unchanged `flex-wrap` behavior) and dropping to its own
    left-aligned line when there isn't. */
 @media (max-width: 860px) {
-  /* `.history` is a real <ul> and was never given its own `padding`/
-     `list-style`, so the browser's default UA stylesheet
-     `padding-inline-start: 40px` on <ul> is what's indenting the whole
-     payment list ~40px right of `.historyTitle` (a plain <div>, with no
-     such default) — not any rule this file wrote. Reset only here, at
-     mobile, where that 40px is a large fraction of the available card
-     width; desktop keeps its current (unrelated to this fix) appearance. */
-  .history {
-    padding: 0;
-    list-style: none;
-  }
-
   .historyDate {
     margin-left: 0;
   }

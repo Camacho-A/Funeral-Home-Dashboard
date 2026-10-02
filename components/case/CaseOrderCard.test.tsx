@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -393,5 +395,65 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     expect(screen.getByRole('button', { name: 'Additional Items & Services' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Collect Balance with Clover' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Payment History desktop left-alignment fix (2026-10). `.history` is a
+ * real `<ul>` — Chrome's UA stylesheet applies `padding-inline-start: 40px`
+ * to it by default. A prior fix (Mobile Payment History fix, 2026-10)
+ * reset `padding`/`list-style` only inside the `@media (max-width: 860px)`
+ * block, which fixed mobile but intentionally left desktop indented ~40px
+ * right of the "PAYMENT HISTORY" heading (a plain `<div>`, with no such
+ * UA default). CSS Modules aren't parsed/applied in this project's jsdom
+ * test environment (no real computed styles to assert on), so — matching
+ * the established precedent in app/(portal)/cases/[caseId]/page.test.tsx —
+ * these are source-level assertions against the actual shipped CSS file.
+ */
+describe('CaseOrderCard — Payment History list indentation (2026-10)', () => {
+  const CSS_SOURCE = fs.readFileSync(path.join(__dirname, 'CaseOrderCard.module.css'), 'utf-8');
+  const mediaIndex = CSS_SOURCE.indexOf('@media (max-width: 860px)');
+  const baseCss = CSS_SOURCE.slice(0, mediaIndex);
+  const mediaCss = CSS_SOURCE.slice(mediaIndex);
+
+  it('resets the real <ul>\'s UA padding/list-style on `.history` unconditionally, not only inside the mobile media query', () => {
+    const rule = baseCss.match(/(?<!\S)\.history\s*\{[^}]*\}/)?.[0];
+    expect(rule).toBeDefined();
+    expect(rule).toMatch(/padding:\s*0;/);
+    expect(rule).toMatch(/list-style:\s*none;/);
+  });
+
+  it('no longer duplicates the list reset inside the mobile media query (promoted to apply at all sizes instead)', () => {
+    expect(mediaCss).not.toMatch(/\.history\s*\{/);
+  });
+
+  it('preserves the desktop right-aligned date — `.historyDate { margin-left: auto }` outside the media query', () => {
+    const rule = baseCss.match(/\.historyDate\s*\{[^}]*\}/)?.[0];
+    expect(rule).toBeDefined();
+    expect(rule).toMatch(/margin-left:\s*auto;/);
+  });
+
+  it('preserves the existing mobile override — `.historyDate { margin-left: 0 }` still active inside the media query', () => {
+    const rule = mediaCss.match(/\.historyDate\s*\{[^}]*\}/)?.[0];
+    expect(rule).toBeDefined();
+    expect(rule).toMatch(/margin-left:\s*0;/);
+  });
+
+  it('Payment History is still rendered as a real <ul>/<li> list (markup unchanged by the alignment fix)', async () => {
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [
+        {
+          id: 'payment-1', organizationId: 'managed-cremations', caseId: 'case-1', caseOrderId: 'order-1', provider: 'clover',
+          providerCheckoutId: 'c1', providerPaymentId: 'pp1', idempotencyKey: 'k1', checkoutUrl: null,
+          status: 'succeeded', amount: 89_000, currency: 'usd', purpose: 'Case order balance due', cardBrand: null, cardLast4: null,
+          receiptReference: 'Clover Payment', failureCode: null, failureMessage: null,
+          createdAt: '2026-09-30T12:35:00.000Z', paidAt: '2026-09-30T12:35:00.000Z', updatedAt: '2026-09-30T12:35:00.000Z',
+        },
+      ],
+    });
+    const amount = await screen.findByText('$890.00', { selector: '[class*="historyAmount"]' });
+    expect(amount.closest('li')).not.toBeNull();
+    expect(amount.closest('ul')).not.toBeNull();
   });
 });

@@ -319,7 +319,7 @@ describe('RecentActivityPanel — Case Number / activity description spacing (Ta
     expect(screen.getByText(/Jane Smith/)).toBeInTheDocument();
   });
 
-  it('9. no case-level navigation/link was added or removed — this row remains a plain (non-link) row, as before', async () => {
+  it('9. a case-related row is rendered as a navigable link (Recent Activity case navigation, 2026-10 — supersedes the prior "remains a plain row" expectation)', async () => {
     mockPermissions(['audit.read']);
     const case_ = caseFixtures[0];
     vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
@@ -328,7 +328,7 @@ describe('RecentActivityPanel — Case Number / activity description spacing (Ta
     });
     renderPanel();
     await screen.findByText(case_.caseNumber);
-    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.queryAllByRole('link')).toHaveLength(1);
   });
 
   it('10. multiple rows retain correct Case Number ↔ description association after the layout change', async () => {
@@ -484,6 +484,107 @@ describe('RecentActivityPanel — no internal ids in Recent Activity (Task #4 fo
     expect(screen.getAllByText('Document regenerated')).toHaveLength(1);
     expect(screen.queryByText(/blob\.vercel-storage\.com/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^https?:\/\//)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Recent Activity case navigation (2026-10). Each case-related row is now
+ * clickable, navigating to that case's Case Detail page at `/cases/{id}`
+ * (the same canonical route AllCasesList/NeedsAttentionPanel/
+ * StageFilteredPanel already use — a stable Case `id`, never a case number
+ * reconstructed into a URL). An activity with no resolvable case
+ * destination (no caseId, or a caseId outside this organization's
+ * authorized Case list) stays a plain, non-interactive row.
+ */
+describe('RecentActivityPanel — case navigation (2026-10)', () => {
+  it('a case-related row renders as a link to that case\'s Case Detail page, using the Case id (not the case number) in the href', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-nav-1', caseId: case_.id, description: 'Document downloaded' })],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    const link = await screen.findByRole('link');
+    expect(link).toHaveAttribute('href', `/cases/${case_.id}`);
+    expect(link.getAttribute('href')).not.toContain(case_.caseNumber);
+  });
+
+  it('the entire row — case number, description, actor, and timestamp — is inside the single clickable link, not just the case number text', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-nav-2', caseId: case_.id, actorDisplayName: 'Angelica Camacho', description: 'Document downloaded' })],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    const link = await screen.findByRole('link');
+    expect(within(link).getByText(case_.caseNumber)).toBeInTheDocument();
+    expect(within(link).getByText('Document downloaded')).toBeInTheDocument();
+    expect(within(link).getByText(/Angelica Camacho/)).toBeInTheDocument();
+  });
+
+  it('the link is reachable and operable via the keyboard (a real <a href>, not a div with an onClick handler)', async () => {
+    mockPermissions(['audit.read']);
+    const case_ = caseFixtures[0];
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-nav-3', caseId: case_.id, description: 'Document downloaded' })],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    const link = await screen.findByRole('link');
+    expect(link.tagName).toBe('A');
+    expect(link).toHaveAttribute('href');
+    link.focus();
+    expect(link).toHaveFocus();
+  });
+
+  it('an activity with no caseId at all remains a plain, non-interactive row (no link)', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-nav-4', caseId: null, description: 'Role permissions updated' })],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    await screen.findByText('Role permissions updated');
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('an activity whose caseId does not resolve to an authorized Case (stale or cross-org) stays non-clickable — never a fabricated or unauthorized URL', async () => {
+    mockPermissions(['audit.read']);
+    const staleCaseId = 'case-does-not-exist-12345';
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-nav-5', caseId: staleCaseId, description: 'Case updated (weight)' })],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    await screen.findByText('Case updated (weight)');
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('multiple rows mix correctly: case-related rows are links, non-case rows are not, each wired to its own case', async () => {
+    mockPermissions(['audit.read']);
+    const [caseA, caseB] = caseFixtures;
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({ id: 'event-nav-mix-a', caseId: caseA.id, description: 'Payment recorded' }),
+        makeEvent({ id: 'event-nav-mix-none', caseId: null, description: 'Role permissions updated' }),
+        makeEvent({ id: 'event-nav-mix-b', caseId: caseB.id, description: 'Task completed: Call family' }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    await screen.findByText('Payment recorded');
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(2);
+    expect(links.map((l) => l.getAttribute('href')).sort()).toEqual([`/cases/${caseA.id}`, `/cases/${caseB.id}`].sort());
+    expect(screen.getByText('Role permissions updated').closest('a')).toBeNull();
   });
 });
 
