@@ -160,3 +160,32 @@
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* Mobile document row fix (2026-10). `.row`'s three flex children
+   (`.identity`, the bare status Badge, `.actions`) share one flex line
+   whenever they fit together — `.identity` is the only one with
+   flex-grow, so its rendered width is whatever's left over after the
+   Badge and `.actions` claim their own natural content width on that
+   line. `.actions`' width varies per document (Download/Print only vs.
+   every action available), so which document ends up with almost no
+   leftover space — and its filename collapsing character-by-character
+   under `.fileName`'s word-break: break-word — isn't tied to a
+   document's position, it's whichever one happens to leave `.identity`
+   the least room. Below the project's usual mobile breakpoint, stack the
+   row instead of sharing a line at all: `.identity` always gets the full
+   row width regardless of `.actions`' size, matching the existing
+   desktop/tablet order (name+meta, then badge, then actions). */
+@media (max-width: 860px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .identity {
+    width: 100%;
+  }
+
+  .actions {
+    width: 100%;
+  }
+}

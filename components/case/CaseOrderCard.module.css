@@ -122,6 +122,23 @@
   color: var(--color-danger-text);
 }
 
+/* Mobile Payment History fix (2026-10). `.historyDate`'s desktop
+   `margin-left: auto` claims the ENTIRE free space of whatever flex line
+   it lands on — including when `.historyRow`'s own `flex-wrap` gives it a
+   wrapped line all to itself at mobile widths, which pushes it to that
+   line's far-right edge and leaves a wide, unexplained gap on its left
+   where the rest of the row (badge/amount/purpose/method) is correctly
+   left-aligned at the card's own padding. Below the project's usual
+   mobile breakpoint, the date flows normally instead: left-aligned same
+   as every other field, sharing a line with the method/receipt text when
+   there's room (unchanged `flex-wrap` behavior) and dropping to its own
+   left-aligned line when there isn't. */
+@media (max-width: 860px) {
+  .historyDate {
+    margin-left: 0;
+  }
+}
+
 /* Task #14 Phase E (2026-09): the Record Payment sub-panel previously used
    raw inline style={{}} objects and a hardcoded #ddd/#666 — replaced with
    this card's own established tokens. Its native select/inputs kept their
