@@ -6,6 +6,10 @@
  */
 
 @import './tokens.css';
+@import './solis-redesign.css';
+@import './solis-system.css';
+@import './solis-workspace.css';
+@import './solis-documents.css';
 
 *,
 *::before,
@@ -57,4 +61,13 @@ a:hover {
 .skip-link:focus {
   left: var(--space-4);
   top: var(--space-4);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

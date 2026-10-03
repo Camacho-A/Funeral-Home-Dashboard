@@ -1,14 +1,17 @@
+/* SOLIS Phase 1 — Recent activity feed.
+   Row layout:  ( glyph )  B2026-034  Checklist updated        Angelica Camacho · 43 min ago
+   The glyph is a ::before pseudo-element keyed on [data-kind], so it adds
+   no text to the DOM (tests and screen readers see the same content). */
 .card {
-  background: var(--color-surface-card);
-  border-radius: var(--radius-xl);
-  padding: var(--space-9) var(--space-10);
-  box-shadow: var(--shadow-card);
+  min-width: 0;
 }
 
 .title {
-  font-size: var(--font-size-14);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--space-2);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .list {
@@ -16,76 +19,175 @@
   flex-direction: column;
 }
 
-/* Recent Activity actor-attribution fix (2026-09): a second line (actor ·
-   timestamp) was added below the case-number/description line, so `.row`
-   stacks vertically now instead of the prior single-line two-column
-   layout — the case number/description line and its own internal `gap`
-   (`.rowMain`, Task #4) are unchanged; only the row's own axis changed to
-   make room for the new line beneath it. */
 .row {
-  padding: var(--space-5) 0;
-  box-shadow: inset 0 -1px 0 var(--color-surface-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--font-size-12-5);
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 48px;
+  padding: 8px 10px;
+  margin: 0;
+  border-bottom: 1px solid var(--solis-border-soft);
+  border-radius: 0;
+  font-size: 13.5px;
+  color: var(--color-text-primary);
 }
 
-/* Recent Activity case navigation (2026-10). Applied alongside `.row`
-   (never alone) on entries whose caseId resolves to an authorized Case —
-   same hover/focus convention as AllCasesList.module.css's own `.row`
-   Link, so the whole row is the click/tap target rather than just the
-   Case Number text, with no layout change from the plain (non-link) row. */
-.rowLink {
-  cursor: pointer;
+.row::before {
+  content: '•';
+  grid-column: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0.965 0.004 255);
+  color: oklch(0.45 0.03 255);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.row[data-kind='download']::before { content: '↓'; }
+.row[data-kind='regenerate']::before { content: '↻'; }
+.row[data-kind='upload']::before { content: '↑'; }
+.row[data-kind='payment']::before { content: '$'; background: oklch(0.95 0.035 150); color: oklch(0.42 0.1 150); }
+.row[data-kind='checklist']::before { content: '✓'; background: oklch(0.95 0.035 150); color: oklch(0.42 0.1 150); }
+
+.rowEmpty {
+  grid-template-columns: minmax(0, 1fr);
+  color: var(--color-text-muted);
+  border-bottom: none;
+}
+
+.rowEmpty::before {
+  display: none;
+}
+
+/* Clickable rows. Doubled class beats globals.css `a:hover { color }`
+   (0,2,0 > 0,1,1), so hovering never recolors the whole row blue, never
+   underlines, and never shifts layout — only a soft full-width tint
+   aligned with the hairlines, plus the case number darkening. */
+.rowLink.rowLink {
   text-decoration: none;
-  color: inherit;
-  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
 }
 
-.rowLink:hover {
-  background: var(--color-surface-hover);
+.rowLink.rowLink:hover {
+  background: oklch(0.975 0.004 255);
+  color: var(--color-text-primary);
+  text-decoration: none;
 }
 
-.rowLink:focus-visible {
+.rowLink.rowLink:hover .caseNumber.caseNumber {
+  background: oklch(0.93 0.02 255);
+  color: oklch(0.3 0.08 255);
+}
+
+.rowLink.rowLink:hover::before {
+  background: oklch(0.93 0.012 255);
+}
+
+.rowLink.rowLink:active {
+  background: oklch(0.96 0.006 255);
+}
+
+.rowLink.rowLink:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: -2px;
 }
 
-/* Task #4 (2026-09, Dashboard Recent Activity spacing). Case number and
-   activity description are separate flex items with an explicit `gap` —
-   real layout spacing rather than a generated-content separator, so the
-   two never visually run together regardless of font/rendering. Stays on
-   one line without adding row height, matching this panel's existing
-   compact, single-line-per-entry design. `min-width: 0` lets the
-   description wrap/shrink within the row's available width instead of
-   forcing `.row` to overflow when it's long. */
+/* Non-clickable rows: explicitly no hover feedback. */
+.row:not(.rowLink):hover {
+  background: transparent;
+}
+
 .rowMain {
+  grid-column: 2;
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
-/* Wave 2 (2026-10) — this is the row's one genuinely primary field ("what
-   happened"); previously muted while .caseNumber (a secondary reference
-   tag) was the more prominent semibold/secondary-colored text — backwards
-   from "clearer activity title, quieter metadata." Flipped: the
-   description now reads as the title, the case number recedes to a quiet
-   tag in front of it. */
+/* Case number chip — matches the Phase 1 mockup exactly:
+   12px/500, navy text on a soft navy tint, 2px 7px padding, 5px radius. */
+.caseNumber.caseNumber {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: oklch(0.955 0.012 255);
+  color: oklch(0.36 0.06 255);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
 .what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--color-text-primary);
 }
 
-.caseNumber {
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-semibold);
-  flex-shrink: 0;
+.when {
+  grid-column: 3;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 
-.when {
-  flex-shrink: 0;
-  color: var(--color-text-faint);
-  font-size: var(--font-size-11);
+/* Mobile: glyph | (case# + label) on line 1, actor · time under it. */
+@media (max-width: 560px) {
+  .row {
+    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    row-gap: 2px;
+    align-items: start;
+    padding: 10px 6px;
+  }
+
+  .row::before {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .rowMain {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .what {
+    white-space: normal;
+  }
+
+  .caseNumber.caseNumber {
+    font-size: 11.5px;
+    padding: 1px 6px;
+  }
+
+  .when {
+    grid-column: 2;
+    grid-row: 2;
+    white-space: normal;
+  }
+}
+
+/* Visual fidelity correction (2026-10): the approved mobile spec caps
+   Recent Activity at its first 4 items — CSS-hidden beyond that (never
+   fetched differently; `useOrganizationActivity` still loads the same 8,
+   so no behavior/data change, purely a narrow-viewport display rule). */
+@media (max-width: 860px) {
+  .list > :nth-child(n + 5) {
+    display: none;
+  }
 }

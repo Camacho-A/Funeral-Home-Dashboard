@@ -1,233 +1,34 @@
-.title {
-  font-size: var(--font-size-26);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--tracking-tight);
-  margin-bottom: var(--space-8);
+/* SOLIS Tasks/Calendar/Settings phase §2 — the sx-cal-, sx-agenda-,
+   sx-week-, sx-month-, sx-chip, sx-daystrip- and sx-seg classes (used
+   directly in page.tsx) live in styles/solis-workspace.css. Only the
+   pieces with no shared sx- equivalent stay here. */
+
+.newLabelFull {
+  display: inline;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  margin-bottom: var(--space-8);
-  flex-wrap: wrap;
+.newLabelShort {
+  display: none;
 }
 
-.viewToggle {
-  display: flex;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+@media (max-width: 560px) {
+  .newButton {
+    height: 44px;
+  }
+  .newLabelFull {
+    display: none;
+  }
+  .newLabelShort {
+    display: inline;
+  }
 }
 
-.viewButton,
-.viewButtonActive {
-  padding: var(--space-3) var(--space-7);
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-semibold);
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-}
-
-.viewButton:hover {
-  background: var(--color-surface-hover);
-}
-
-.viewButton:focus-visible,
-.viewButtonActive:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: -2px;
-}
-
-.viewButtonActive {
-  background: var(--color-brand);
-  color: var(--color-surface-card);
-}
-
-.navGroup {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.resourceFilter {
-  max-width: 220px;
-}
-
-.card {
-  background: var(--color-surface-card);
-  border-radius: var(--radius-xl);
-  padding: var(--space-9) var(--space-11);
-  box-shadow: var(--shadow-card);
-}
-
-.loading {
-  color: var(--color-text-secondary);
-}
-
-/* Agenda view */
-.agenda {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.agendaGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.agendaDate {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-semibold);
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: var(--space-2);
-}
-
-.agendaList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.chip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: var(--font-size-13);
-}
-
-.chipTime {
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-faint);
-  width: 72px;
-  flex-shrink: 0;
-}
-
-.chipTitle {
-  font-weight: var(--font-weight-semibold);
-}
-
-.chipType {
-  color: var(--color-text-faint);
-  font-size: var(--font-size-11-5);
-}
-
-/* Week view */
-.weekGrid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: var(--space-4);
-}
-
-.weekColumn {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-height: 160px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-
-.weekColumnHeader {
-  font-size: var(--font-size-11-5);
-  font-weight: var(--font-weight-semibold);
-  text-align: center;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.weekColumnList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.weekChip {
-  font-size: var(--font-size-11);
-  text-align: left;
-  background: var(--color-surface-subtle);
-  border: none;
-  border-radius: 4px;
-  padding: 3px var(--space-3);
-  cursor: pointer;
-}
-
-.weekChip:hover {
-  background: var(--color-surface-hover);
-}
-
-.weekChip:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 1px;
-}
-
-.weekEmpty {
-  font-size: var(--font-size-11);
-  color: var(--color-text-faint);
-  text-align: center;
-}
-
-/* Month view */
-.monthGrid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: var(--space-2);
-}
-
-.monthWeekdayLabel {
-  font-size: var(--font-size-11);
-  font-weight: var(--font-weight-semibold);
-  text-align: center;
-  color: var(--color-text-faint);
-  padding-bottom: var(--space-2);
-}
-
-.monthCell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  min-height: 80px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: var(--space-2) var(--space-3);
-  background: none;
-  cursor: pointer;
-  text-align: left;
-}
-
-.monthCell:hover {
-  background: var(--color-surface-hover);
-}
-
-.monthCell:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: -2px;
-}
-
-.monthCellOutside {
-  opacity: 0.4;
-}
-
-.monthCellDate {
-  font-size: var(--font-size-11);
-  font-weight: var(--font-weight-semibold);
-}
-
-.monthCellChip {
-  font-size: var(--font-size-10);
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.monthCellMore {
-  font-size: var(--font-size-10);
-  color: var(--color-text-faint);
+/* §2.5: below 860px, only Day and Agenda tabs show — the narrow fallback
+   (page.tsx's `effectiveView`) renders agenda markup for week/month
+   anyway, so hiding these tabs never strands the view state itself. */
+@media (max-width: 860px) {
+  .viewTabWeek,
+  .viewTabMonth {
+    display: none;
+  }
 }

@@ -9,9 +9,7 @@ import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { initialsFromName } from '@/utils/string';
-import { logoutAction } from '@/app/login/actions';
 import { SearchInput } from './SearchInput';
-import { UserAvatar } from './UserAvatar';
 import { AccountMenu } from './AccountMenu';
 import { OrganizationSwitcher } from './OrganizationSwitcher';
 import { NotificationBell } from './NotificationBell';
@@ -80,21 +78,33 @@ import styles from './TopBar.module.css';
  * Suppliers/Purchase Orders/Accounts Payable/Calendar Integrations —
  * module-gated links) wrapping below that.
  *
- * Mobile TopBar — Audit/Templates moved into AC menu (2026-09): Audit
- * and Templates no longer appear in the mobile top row at all (CSS-
- * hidden, not reordered) — they're only reachable there through the
- * AccountMenu popover now, alongside Sign out. `showAudit`/
- * `showTemplates` are computed once, right here, from the EXACT same
- * `authAdapterMode === 'identity' && permissions.includes(...)` checks
- * this component's own (desktop) `<a>` elements already use just below —
- * AccountMenu has no permission logic of its own, and its `<a href>`
- * destinations are identical to these. Employee name and the standalone
- * "Sign out" link are CSS-hidden on mobile only; AccountMenu is what
- * replaces all three (name, Sign out, and now Audit/Templates) there —
- * see its own doc comment for why these dual representations exist in
- * the DOM. Desktop (above 860px) is unchanged: same DOM, same classes,
- * same visual order and content — Audit/Templates still render as their
- * original, always-visible top-row links there.
+ * SOLIS Final Phase (2026-10): the standalone desktop Audit/Templates
+ * `<a>` links are gone — AccountMenu's popover (`Audit Center`/
+ * `Templates`) is now their only destination, at every width.
+ * `showAudit`/`showTemplates` are still computed once, right here, from
+ * the same `authAdapterMode === 'identity' && permissions.includes(...)`
+ * checks as before — AccountMenu has no permission logic of its own.
+ *
+ * SOLIS true redesign, Phase 1 (2026-10): the prior dual identity
+ * representation (an always-visible desktop name+avatar+standalone-
+ * Sign-out-form group, CSS-hidden on mobile, alongside a second,
+ * mobile-only AccountMenu) is now just AccountMenu, rendered once, at
+ * every width — the approved design's own "compact avatar trigger, no new
+ * destinations" direction. Sign out, Audit (now labeled "Audit Center")
+ * and Templates live in its popover; nothing about `logoutAction`, the
+ * Server Action it posts to, or Audit/Templates' routes/permissions
+ * changed.
+ *
+ * SOLIS Final Phase (2026-10, §1.1): the standalone desktop Audit/
+ * Templates `<a>` links are removed outright (not just mobile-hidden) —
+ * AccountMenu's popover is their only destination at every width now.
+ * Resources/Merchandise/Inventory/Suppliers/Purchase Orders/Accounts
+ * Payable/Calendar Integrations and OrganizationSwitcher are deliberately
+ * NOT in the final-phase design spec at all (desktop screenshots only
+ * showed `authAdapterMode !== 'identity'`, module-disabled Manor's) —
+ * kept exactly as they were (own doc comment above, own `.overflowLink`/
+ * `.divider` treatment) rather than silently stripping working navigation
+ * for other organizations/modes the design wasn't exercised against.
  */
 export function TopBar({
   onNewCaseClick,
@@ -117,22 +127,14 @@ export function TopBar({
       <button type="button" className={styles.menuButton} onClick={onMenuClick} aria-label="Open navigation menu">
         <span className={styles.menuIcon} aria-hidden="true" />
       </button>
-      <SearchInput value={query} onChange={setQuery} className={styles.searchSlot} />
+      <div className={styles.mobileBrand}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/soliscode-mark.png" alt="" aria-hidden="true" className={styles.mobileBrandMark} />
+        <span className={styles.mobileBrandWordmark}>SOLIS</span>
+      </div>
+      <SearchInput value={query} onChange={setQuery} className={styles.searchSlot} hint="⌘K" />
       <div className={styles.spacer} />
-      <Button onClick={onNewCaseClick} className={styles.newCaseButton}>
-        + New Case
-      </Button>
       {authAdapterMode === 'identity' && <OrganizationSwitcher />}
-      {authAdapterMode === 'identity' && permissions.includes('audit.read') && (
-        <a href="/settings/audit" className={`${styles.signOutButton} ${styles.priorityLink}`}>
-          Audit
-        </a>
-      )}
-      {authAdapterMode === 'identity' && permissions.includes('document.template.manage') && (
-        <a href="/settings/document-templates" className={`${styles.signOutButton} ${styles.priorityLink}`}>
-          Templates
-        </a>
-      )}
       {isModuleEnabled(organization, 'resources') && (
         <a href="/settings/resources" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Resources
@@ -168,21 +170,18 @@ export function TopBar({
           Calendar
         </a>
       )}
+      <div className={styles.divider} aria-hidden="true" />
       <div className={styles.identityGroup}>
         <NotificationBell />
-        <div className={styles.desktopAccountGroup}>
-          <span className={styles.employeeName}>{session.displayName}</span>
-          <UserAvatar initials={initialsFromName(session.displayName)} />
-          <form action={logoutAction}>
-            <button type="submit" className={styles.signOutButton}>
-              Sign out
-            </button>
-          </form>
-        </div>
-        <div className={styles.mobileAccountSlot}>
+        <Button onClick={onNewCaseClick} className={styles.newCaseButton} style={{ marginLeft: 4 }}>
+          <span aria-hidden="true">+</span> <span className={styles.newCaseLabelFull}>New Case</span>
+          <span className={styles.newCaseLabelShort}>New</span>
+        </Button>
+        <div style={{ marginLeft: 6 }}>
           <AccountMenu
             initials={initialsFromName(session.displayName)}
             displayName={session.displayName}
+            email={session.email}
             showAudit={authAdapterMode === 'identity' && permissions.includes('audit.read')}
             showTemplates={authAdapterMode === 'identity' && permissions.includes('document.template.manage')}
           />

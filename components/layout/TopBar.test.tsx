@@ -56,17 +56,17 @@ function renderTopBar(session: { staffId: string | null; displayName: string } =
 }
 
 /**
- * Mobile TopBar design correction (2026-09): the account's initials now
- * render TWICE — once in the desktop-only avatar (`.desktopAccountGroup`,
- * CSS-hidden on mobile) and once inside the mobile-only AccountMenu
- * trigger (CSS-hidden on desktop) — see TopBar.tsx's own comment for why
- * both representations exist in the DOM at once. Every initials
- * assertion below that used to expect exactly one match now expects two.
+ * SOLIS true redesign, Phase 1 (2026-10): the prior dual identity
+ * representation (a desktop-only avatar+name+standalone-Sign-out group,
+ * CSS-hidden on mobile, alongside a second, mobile-only AccountMenu) is
+ * now a single AccountMenu rendered once, at every width — see
+ * TopBar.tsx's own doc comment. Every initials assertion below that used
+ * to expect two matches (one per representation) now expects exactly one.
  */
 describe('TopBar — real session identity (Manors go-live fix)', () => {
   it('displays the authenticated employee from SessionProvider, not a hardcoded fixture', () => {
     renderTopBar();
-    expect(screen.getAllByText('JR')).toHaveLength(2);
+    expect(screen.getByText('JR')).toBeInTheDocument();
     expect(screen.queryByText('DA')).not.toBeInTheDocument();
   });
 
@@ -81,7 +81,7 @@ describe('TopBar — real session identity (Manors go-live fix)', () => {
         </OrganizationProvider>
       </QueryClientProvider>,
     );
-    expect(screen.getAllByText('PN')).toHaveLength(2);
+    expect(screen.getByText('PN')).toBeInTheDocument();
   });
 });
 
@@ -95,11 +95,11 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar(ANGELICA_SESSION);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getAllByText('AC')).toHaveLength(2);
+    expect(screen.getByText('AC')).toBeInTheDocument();
     expect(screen.queryByText('AN')).not.toBeInTheDocument();
   });
 
-  it('shows the full employee name ("Angelica Camacho") alongside the initials avatar and Sign out', async () => {
+  it('shows the initials avatar trigger, and Sign out once the account menu is opened', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -108,9 +108,9 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar(ANGELICA_SESSION);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getByText('Angelica Camacho')).toBeInTheDocument();
-    expect(screen.getAllByText('AC')).toHaveLength(2);
-    expect(screen.getByText('Sign out')).toBeInTheDocument();
+    expect(screen.getByText('AC')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });
 
   it('4: other employees each receive their own correct first/last initials', async () => {
@@ -122,7 +122,7 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar({ staffId: 'staff-john', displayName: 'John Smith' });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getAllByText('JS')).toHaveLength(2);
+    expect(screen.getByText('JS')).toBeInTheDocument();
   });
 
   it('5: a single-name session falls back safely to that name\'s own initial', async () => {
@@ -134,7 +134,7 @@ describe('TopBar — item #6 clarification (2026-09): employee initials avatar',
     vi.stubGlobal('fetch', fetchMock);
     renderTopBar({ staffId: 'staff-cher', displayName: 'Cher' });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.getAllByText('C')).toHaveLength(2);
+    expect(screen.getByText('C')).toBeInTheDocument();
   });
 });
 
@@ -162,33 +162,23 @@ describe('TopBar — mobile navigation drawer (2026-09)', () => {
 });
 
 /**
- * Mobile TopBar design correction (2026-09). Whether these elements are
- * actually HIDDEN at a given width is a CSS/media-query fact jsdom can't
- * evaluate (no real layout engine) — covered instead by this phase's own
- * live-browser verification, the same way every earlier CSS-only
- * responsive change in this project's Dashboard mobile-friendliness work
- * was verified. What IS meaningfully jsdom-testable, and asserted here,
- * is the STRUCTURAL contract the CSS relies on: the employee name and
- * the standalone "Sign out" link are scoped inside the one wrapper
- * (`desktopAccountGroup`) the mobile breakpoint hides as a unit, and the
- * mobile AccountMenu control is present in the DOM unconditionally
- * (never only rendered for a specific breakpoint via JS).
+ * SOLIS true redesign, Phase 1 (2026-10): the account avatar menu
+ * (AccountMenu) is now the SOLE identity control, rendered once, at every
+ * width — there is no more separate desktop-only wrapper or employee-
+ * name/standalone-Sign-out-form group to scope tests to; see TopBar.tsx's
+ * own doc comment. What remains meaningfully jsdom-testable (whether
+ * controls are visually HIDDEN at a given width is a CSS/media-query fact
+ * covered by this phase's own live-browser verification instead) is that
+ * exactly one AccountMenu control exists, and that it's the only way to
+ * reach Sign out now.
  */
-describe('TopBar — mobile TopBar design correction (2026-09)', () => {
-  it('the employee name and the standalone Sign out form are both scoped inside the desktop-only wrapper', () => {
-    const { container } = renderTopBar(ANGELICA_SESSION);
-    const desktopGroup = container.querySelector('[class*="desktopAccountGroup"]');
-    expect(desktopGroup).not.toBeNull();
-    expect(desktopGroup).toHaveTextContent('Angelica Camacho');
-    expect(desktopGroup?.querySelector('form button[type="submit"]')).toHaveTextContent('Sign out');
-  });
-
-  it('the mobile AccountMenu control (the account avatar as a real button) is present, independent of the desktop group', () => {
+describe('TopBar — single AccountMenu identity control (SOLIS true redesign, Phase 1, 2026-10)', () => {
+  it('the account menu control (the account avatar as a real button) is present, naming the signed-in employee', () => {
     renderTopBar(ANGELICA_SESSION);
     expect(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' })).toBeInTheDocument();
   });
 
-  it('desktop account behavior does not regress: name, avatar, and a standalone, always-visible Sign out control are still all present together', async () => {
+  it('exactly one AC avatar renders — no separate desktop-only representation', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -198,45 +188,17 @@ describe('TopBar — mobile TopBar design correction (2026-09)', () => {
     renderTopBar(ANGELICA_SESSION);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    expect(screen.getByText('Angelica Camacho')).toBeInTheDocument();
-    expect(screen.getAllByText('AC')).toHaveLength(2);
-    // The standalone Sign out control — distinct from the one inside the
-    // (closed, not rendered) AccountMenu popover — is unconditionally in
-    // the DOM, exactly as before this phase.
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getByText('AC')).toBeInTheDocument();
+    // Sign out is reachable through the (closed by default) AccountMenu
+    // popover — no second, standalone Sign out control exists anymore.
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });
 
-  it('Audit and Templates carry the mobile priority-row class (order, verified live in this phase\'s own report — identity-mode auth wasn\'t reachable in this sandbox\'s test login)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ organization: null, permissions: ['audit.read', 'document.template.manage'], count: 0, organizations: [] }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const { container } = render(
-      <QueryClientProvider client={new QueryClient()}>
-        <OrganizationProvider>
-          <SessionProvider value={TEST_SESSION}>
-            <TopBar authAdapterMode="identity" />
-          </SessionProvider>
-        </OrganizationProvider>
-      </QueryClientProvider>,
-    );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await act(async () => {});
-
-    const audit = screen.getByText('Audit');
-    const templates = screen.getByText('Templates');
-    expect(audit.className).toMatch(/priorityLink/);
-    expect(templates.className).toMatch(/priorityLink/);
-    // Neither link is scoped inside the overflow group (Resources/
-    // Merchandise/etc.) — distinct classes for distinct mobile rows.
-    expect(audit.className).not.toMatch(/overflowLink/);
-    expect(container.querySelectorAll('[class*="priorityLink"]')).toHaveLength(2);
-  });
-
-  it('opening the AC menu reveals Audit and Templates there too, pointing at the exact same destinations as the desktop links — not a duplicated route', async () => {
+  it('SOLIS Final Phase (2026-10): no standalone desktop Audit/Templates links exist anymore — AccountMenu\'s popover is their only destination', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -255,21 +217,38 @@ describe('TopBar — mobile TopBar design correction (2026-09)', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await act(async () => {});
 
-    // Closed by default: the AC menu's own Audit/Templates aren't
-    // rendered yet, so only the desktop links exist — one of each.
-    expect(screen.getAllByText('Audit')).toHaveLength(1);
+    // Closed by default: neither "Audit Center" nor "Templates" is
+    // rendered anywhere until the AccountMenu popover opens.
+    expect(screen.queryByText('Audit Center')).not.toBeInTheDocument();
+    expect(screen.queryByText('Templates')).not.toBeInTheDocument();
+  });
+
+  it('opening the AC menu reveals Audit Center and Templates, pointing at the existing routes — not a duplicated route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ organization: null, permissions: ['audit.read', 'document.template.manage'], count: 0, organizations: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <OrganizationProvider>
+          <SessionProvider value={TEST_SESSION}>
+            <TopBar authAdapterMode="identity" />
+          </SessionProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await act(async () => {});
 
     fireEvent.click(screen.getByRole('button', { name: /^Account menu for/ }));
 
-    const auditLinks = screen.getAllByText('Audit');
-    const templatesLinks = screen.getAllByText('Templates');
-    expect(auditLinks).toHaveLength(2);
-    expect(templatesLinks).toHaveLength(2);
-    // Every "Audit"/"Templates" instance — desktop's and the menu's —
-    // points at the identical href.
-    for (const link of auditLinks) expect(link).toHaveAttribute('href', '/settings/audit');
-    for (const link of templatesLinks) expect(link).toHaveAttribute('href', '/settings/document-templates');
-    expect(screen.getByRole('separator')).toBeInTheDocument();
+    const audit = screen.getByText('Audit Center');
+    const templates = screen.getByText('Templates');
+    expect(audit.closest('a')).toHaveAttribute('href', '/settings/audit');
+    expect(templates.closest('a')).toHaveAttribute('href', '/settings/document-templates');
+    expect(screen.getAllByRole('separator').length).toBeGreaterThanOrEqual(1);
   });
 
   it('a caller with neither permission sees no Audit/Templates anywhere, including inside the AC menu', async () => {
@@ -294,11 +273,14 @@ describe('TopBar — mobile TopBar design correction (2026-09)', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Account menu for/ }));
     expect(screen.queryByText('Audit')).not.toBeInTheDocument();
     expect(screen.queryByText('Templates')).not.toBeInTheDocument();
-    expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+    // SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
+    // the identity block (name/email) still renders its own separator
+    // even with neither Audit nor Templates present.
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
     expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });
 
-  it('the notification control renders both its desktop text and its mobile icon representation — one control, not two', async () => {
+  it('the notification control is a single icon button, with its text label present in the DOM (CSS-hidden at every width, SOLIS true redesign Phase 1) for its accessible name', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -311,7 +293,7 @@ describe('TopBar — mobile TopBar design correction (2026-09)', () => {
     const bellButtons = screen.getAllByRole('button', { name: 'Notifications' });
     expect(bellButtons).toHaveLength(1);
     expect(bellButtons[0].querySelector('svg')).not.toBeNull();
-    expect(container.querySelector('[class*="bellLabel"]')).toHaveTextContent('Notifications');
+    expect(container.querySelector('.sr-only')).toHaveTextContent('Notifications');
   });
 });
 

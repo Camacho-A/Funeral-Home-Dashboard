@@ -1,112 +1,29 @@
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-2);
-}
-
-.title {
-  font-size: var(--font-size-18);
-  font-weight: var(--font-weight-bold);
-}
-
-/* Wave 2 (2026-10) — `var(--font-size-20)` already exists in tokens.css
-   explicitly annotated "modal close glyph" but was never actually applied
-   at its own named call site until now; the prior comment claiming no
-   matching token existed was stale. Also previously had no hover/focus
-   treatment at all — a real accessibility gap for a close control — now
-   matches Button's own `.icon` variant sizing/hover convention
-   (32x32, radius-sm, neutral hover surface) rather than a bare glyph. */
-.closeButton {
-  cursor: pointer;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-size-20);
-  color: var(--color-text-secondary);
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  padding: 0;
-  margin: calc(var(--space-4) * -1);
-}
-
-.closeButton:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text-primary);
-}
-
-.closeButton:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 1px;
-}
-
 .description {
   font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   margin-bottom: var(--space-10);
 }
 
-.group {
-  margin-bottom: var(--space-9);
-}
-
-.groupLabel {
-  font-size: var(--font-size-11-5);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-5);
-}
-
-.groupFields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-/* Manors go-live correction (2026-09): short context line under the
-   Certifier Information group heading, matching CaseInformationCard's own
-   .sectionHelperText treatment. */
-.groupHelperText {
-  font-size: var(--font-size-12-5);
-  color: var(--color-text-secondary);
-  margin-top: calc(-1 * var(--space-3));
-  margin-bottom: var(--space-5);
-}
-
-.fieldLabel {
-  font-size: var(--font-size-12-5);
-  font-weight: var(--font-weight-medium);
-  /* Same literal (0.3 0.02 60) reused for KpiTile/TimeInStagePanel values —
-     see KpiTile.module.css's comment for why --color-text-primary stands in. */
-  color: var(--color-text-primary);
-  margin-bottom: var(--space-2);
-}
-
-/* Phase 19: a pure-CSS "*" via ::after (not a JSX text node) — so a
-   `required` field's label stays exact-string-matchable by tests/queries
-   (getByText('Name of deceased')) with no trailing " *" baked into the
-   DOM's actual text content. */
-.fieldLabelRequired::after {
-  content: ' *';
-  color: var(--color-danger-text);
-}
-
+/* SOLIS Final Phase (2026-10) — the read-only "Your name (taking this
+   call)" / "Assigned Staff" fallback values stay a <div>, never an
+   <input readOnly> as the design literally shows: NewCaseModal.test.tsx
+   indexes `container.querySelectorAll('input')` by fixed position across
+   ~50 assertions, and separately asserts this value never renders inside
+   an INPUT/SELECT/TEXTAREA at all (see its "intake owner is read-only"
+   describe block). Only the visual treatment changed, to match
+   `.sx-input[readonly]`'s look (border/background/radius from the sx-
+   system's own tokens) without touching the sx- system's shared rules. */
 .readOnlyValue {
-  /* Same box shape as TextField, but --color-surface-subtle (not
-     --color-surface-input) signals non-interactive at a glance — this
-     value can never be typed into, only ever set from useSession(). */
-  padding: var(--space-5) var(--space-6);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border-input);
-  background: var(--color-surface-subtle);
-  font-size: var(--font-size-13);
-  color: var(--color-text-primary);
+  box-sizing: border-box;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sx-border-input, var(--color-border-input));
+  background: var(--sx-subtle, var(--color-surface-subtle));
+  font-size: 13.5px;
+  color: var(--sx-text-2, var(--color-text-primary));
 }
 
 .revealableFieldRow {
@@ -132,19 +49,16 @@
   white-space: nowrap;
 }
 
-.fieldError {
-  font-size: var(--font-size-12-5);
-  color: var(--color-danger-text);
-  margin-top: var(--space-2);
-}
-
 /* Time of Death — New Case 12-hour entry (2026-09): the hour/minute/AM-PM
    selects laid out in one row, always visible (no Save/Cancel shell —
-   this modal has one overall submit action). */
+   this modal has one overall submit action). SOLIS Final Phase §3.3: gap
+   tightened to 6px to match the design's row spacing; each select's width
+   is set inline (76px) on the element itself rather than here, since the
+   selects also carry the shared .sx-select class now. */
 .timeSelectRow {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -153,17 +67,9 @@
   color: var(--color-text-secondary);
 }
 
-.partialFailureBanner {
-  font-size: var(--font-size-13);
-  color: var(--color-danger-text);
-  background: var(--color-danger-bg);
-  border: 1px solid var(--color-danger-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-6);
-  margin-bottom: var(--space-8);
-}
-
-/* Phase 19A (Secure Payment Architecture) */
+/* Phase 19A (Secure Payment Architecture) — orphaned since Phase 19C
+   superseded the informational payment field (renderIntakeField returns
+   null for fieldType 'payment'); left as-is, out of this phase's scope. */
 
 .paymentSection {
   display: flex;
@@ -194,16 +100,4 @@
   background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);
   padding: var(--space-5) var(--space-6);
-}
-
-.footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-5);
-  margin-top: var(--space-4);
-  padding-top: var(--space-8);
-  /* --color-surface-page is an exact value match (oklch(0.94 0 240)) for
-     this divider line — an incidental reuse of the <body> background token,
-     not a statement that this line "is" the page background. */
-  box-shadow: inset 0 1px 0 var(--color-surface-page);
 }

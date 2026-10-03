@@ -96,7 +96,9 @@ describe('AccountingDashboardPanel — permission gating', () => {
     vi.mocked(accountingClient.fetchJournalEntries).mockResolvedValue([makeEntry()]);
     renderPanel();
 
-    expect(await screen.findByText('$1000.00')).toBeInTheDocument();
+    // SOLIS Final Phase §0.5: formatCents now uses Intl.NumberFormat, so
+    // $1000.00 (old) reads $1,000.00 (new, with a thousands separator).
+    expect(await screen.findByText('$1,000.00')).toBeInTheDocument();
     expect(screen.getByText('$250.00')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('Draft entry awaiting review')).toBeInTheDocument();

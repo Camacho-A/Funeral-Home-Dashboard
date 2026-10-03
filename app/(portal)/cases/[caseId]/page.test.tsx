@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { defaultRoleDefinition } from '@/domain/rbac/defaultRoles';
 
 /**
  * Item #2 (2026-09) — Case Detail page structural test.
@@ -98,22 +99,30 @@ describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
     expect(CSS_SOURCE).not.toMatch(/\.column\s*\{/);
   });
 
-  it('11: the primary operational cards are direct children of the new full-width .overview container, not nested inside a half-width column', () => {
-    // Everything from CaseInformationCard through ChecklistCard sits
-    // directly under styles.overview — only Case Log/Tasks (a deliberate,
-    // narrower pairing — see the CSS's own comment) are nested one level
-    // deeper, inside styles.overviewPair.
+  it('11: SOLIS Phase 3 two-column workspace — Checklist/Case Log+Tasks/Case Order sit in the main column, Case Information in its own sticky right rail, in that DOM order', () => {
+    // Visual fidelity pass (2026-10): the two-column workspace replaces
+    // the old single full-width-then-stacked layout. Main column
+    // (.overviewMain): Checklist -> Case Log/Tasks pair -> Case Order.
+    // Right rail (.overviewRail): Case Information, after the main
+    // column in DOM order (CSS alone places it visually beside it).
     const overviewOpenIndex = SOURCE.indexOf('className={styles.overview}');
-    const infoCardIndex = SOURCE.indexOf('<CaseInformationCard');
+    const mainOpenIndex = SOURCE.indexOf('className={styles.overviewMain}');
     const checklistIndex = SOURCE.indexOf('<ChecklistCard');
     const pairOpenIndex = SOURCE.indexOf('className={styles.overviewPair}');
-    expect(overviewOpenIndex).toBeGreaterThan(-1);
-    expect(pairOpenIndex).toBeGreaterThan(-1);
-    expect(overviewOpenIndex).toBeLessThan(infoCardIndex);
-    expect(infoCardIndex).toBeLessThan(checklistIndex);
-    expect(checklistIndex).toBeLessThan(pairOpenIndex);
+    const orderCardIndex = SOURCE.indexOf('<CaseOrderCard');
+    const railOpenIndex = SOURCE.indexOf('className={styles.overviewRail}');
+    const infoCardIndex = SOURCE.indexOf('<CaseInformationCard');
 
-    expect(CSS_SOURCE).toMatch(/\.overview\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/);
+    expect(overviewOpenIndex).toBeGreaterThan(-1);
+    expect(railOpenIndex).toBeGreaterThan(-1);
+    expect(overviewOpenIndex).toBeLessThan(mainOpenIndex);
+    expect(mainOpenIndex).toBeLessThan(checklistIndex);
+    expect(checklistIndex).toBeLessThan(pairOpenIndex);
+    expect(pairOpenIndex).toBeLessThan(orderCardIndex);
+    expect(orderCardIndex).toBeLessThan(railOpenIndex);
+    expect(railOpenIndex).toBeLessThan(infoCardIndex);
+
+    expect(CSS_SOURCE).toMatch(/\.overview\s*\{[^}]*display:\s*grid;/);
   });
 
   it('12: no empty right-column placeholder remains where ActivityLogCard/DocumentsCard used to be', () => {
@@ -125,20 +134,37 @@ describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
     expect(columnDivMatches).toHaveLength(0);
   });
 
-  it('13: narrower widths stack the Case Log / Tasks pair cleanly via an explicit @media rule (no app-wide redesign)', () => {
-    expect(CSS_SOURCE).toMatch(/@media \(max-width:\s*860px\)\s*\{\s*\.overviewPair\s*\{\s*grid-template-columns:\s*1fr;/);
+  it('13: narrower widths stack the Case Log / Tasks pair cleanly via an explicit @media rule, and the whole workspace drops to one column before the rail could get cramped', () => {
+    // Visual fidelity pass (2026-10): the Case Log/Tasks pair collapses
+    // at 1200px (its own, earlier breakpoint — it's the first thing to
+    // get tight in the main column); the whole two-column workspace
+    // (main + sticky rail) collapses at 1024px, matching the README's
+    // own "Below 1024px wide: one column" spec.
+    expect(CSS_SOURCE).toMatch(/@media \(max-width:\s*1200px\)\s*\{\s*\.overviewPair\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+    expect(CSS_SOURCE).toMatch(/@media \(max-width:\s*1024px\)\s*\{\s*\.overview\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   });
 
-  it('14: the new layout rules use only relative/fr sizing (no fixed pixel widths that could force horizontal overflow)', () => {
+  it('14: the sticky rail has a bounded, sane pixel width (not unbounded or fixed) — both grids still resolve to a 1-column stack below 1024px, so a bounded rail can never force horizontal overflow', () => {
+    // Visual fidelity pass (2026-10): unlike the prior layout, the new
+    // design deliberately bounds the sticky right rail's width
+    // (minmax(340px, 420px)) so Case Information reads well as a narrow
+    // column — a real, intentional constraint, not a fixed/unresponsive
+    // width, and it's still wrapped in `minmax(0, 1fr)` for the main
+    // column so the grid itself never forces overflow at any width above
+    // 1024px; below that, .overview itself collapses to one column
+    // (checked above), so the rail's own px bound stops applying at all.
     const overviewBlock = CSS_SOURCE.match(/\.overview\s*\{[^}]*\}/)?.[0] ?? '';
-    const overviewPairBlock = CSS_SOURCE.match(/\.overviewPair\s*\{[^}]*\}/)?.[0] ?? '';
-    expect(overviewBlock).not.toMatch(/\d+px/);
-    expect(overviewPairBlock).not.toMatch(/\d+px/);
+    expect(overviewBlock).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(340px,\s*420px\);/);
   });
 
   it("does not reintroduce a fixed 1fr 1fr split for the whole Overview — only the smaller Case Log/Tasks pair keeps a 2-column grid, and it's scoped to .overviewPair", () => {
-    const oneFrOneFrOccurrences = CSS_SOURCE.match(/grid-template-columns:\s*1fr 1fr;/g) ?? [];
-    expect(oneFrOneFrOccurrences).toHaveLength(1); // only inside .overviewPair
+    const pairTwoColumnOccurrences = CSS_SOURCE.match(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/g) ?? [];
+    expect(pairTwoColumnOccurrences).toHaveLength(1); // only inside .overviewPair
+    // The main .overview grid uses its own distinct, asymmetric
+    // main/rail split (minmax(0,1fr) minmax(340px,420px) — checked
+    // above), never the Case Log/Tasks pair's equal-width pattern.
+    const overviewBlock = CSS_SOURCE.match(/\.overview\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(overviewBlock).not.toMatch(/minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\)/);
   });
 });
 
@@ -190,7 +216,11 @@ describe('Case Detail page — Workflow tab (item #10, 2026-09: workflow repair 
   });
 
   it('3: CaseWorkflowRepairPanel renders inside the Workflow tab, gated on both activeTab and the same authorization check', () => {
-    expect(SOURCE).toMatch(/\{activeTab === 'workflow' && canSeeWorkflowTab && <CaseWorkflowRepairPanel caseId=\{caseId\} \/>\}/);
+    // SOLIS Final Phase §8.1: the Workflow tab now also renders
+    // WorkflowStageOverview above CaseWorkflowRepairPanel, both inside the
+    // same `activeTab === 'workflow' && canSeeWorkflowTab` gate — was a
+    // single self-closing element, now a fragment with both components.
+    expect(SOURCE).toMatch(/\{activeTab === 'workflow' && canSeeWorkflowTab && \([\s\S]*?<WorkflowStageOverview[\s\S]*?<CaseWorkflowRepairPanel caseId=\{caseId\} \/>[\s\S]*?\)\}/);
   });
 
   it('4: CaseWorkflowRepairPanel is rendered exactly once in the whole page — no duplicate instance left in Overview', () => {
@@ -260,8 +290,15 @@ describe('Case Detail page — Billing tab (2026-09, billing-tab relocation)', (
     expect(guardMatches.length).toBeGreaterThanOrEqual(3); // declaration + button guard + content guard
   });
 
-  it("22: Office Staff's role does not include payment.read, so this relocation grants it no new accounting access (documented in the page's own comment)", () => {
-    expect(SOURCE).toMatch(/Office Staff's[\s\S]{0,400}payment\.read/);
+  it("22: Office Staff's role does not include payment.read, so this relocation grants it no new accounting access", () => {
+    // Visual fidelity pass (2026-10): the new page.tsx's own comment is
+    // shorter and no longer narrates this specific role fact inline —
+    // check the real, authoritative source (domain/rbac/defaultRoles.ts)
+    // instead of page.tsx's own prose, which is a stronger guarantee
+    // against drift anyway (this now fails if the role definition itself
+    // ever changes, not just if a comment goes stale).
+    const officeStaff = defaultRoleDefinition('officeStaff');
+    expect(officeStaff.permissions).not.toContain('payment.read');
   });
 });
 

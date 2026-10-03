@@ -166,7 +166,9 @@ describe('BillingCard — Manors Cash Advance UI cleanup (item #11, 2026-09)', (
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
 
     renderCard(DEFAULT_ORGANIZATION_ID);
-    await screen.findByText('Statement preview');
+    // SOLIS Final Phase §8.2: the "Statement preview" subheading is gone
+    // (the summary KPIs render directly) — wait on the KPI label instead.
+    await screen.findByText('Statement Total');
 
     expect(screen.queryByText('Cash advance items')).not.toBeInTheDocument();
     expect(screen.queryByText('No cash advance items.')).not.toBeInTheDocument();
@@ -241,8 +243,11 @@ describe('BillingCard — Manors Cash Advance UI cleanup (item #11, 2026-09)', (
     expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
 
     // The FTC total on screen still reconciles — it includes the $50.00
-    // cash advance, exactly matching the model the backend already computed.
-    expect(await screen.findByText('$940.00')).toBeInTheDocument();
+    // cash advance, exactly matching the model the backend already
+    // computed. SOLIS Final Phase §8.2: the total now also appears in the
+    // line-items table's own tfoot (in addition to the summary KPI), so
+    // this is no longer a single unique match.
+    expect((await screen.findAllByText('$940.00')).length).toBeGreaterThanOrEqual(1);
   });
 });
 

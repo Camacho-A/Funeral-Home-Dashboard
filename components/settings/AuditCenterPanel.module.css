@@ -1,28 +1,3 @@
-.filterBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-5);
-  margin-bottom: var(--space-8);
-}
-
-.searchForm {
-  display: flex;
-  gap: var(--space-4);
-  flex: 1;
-  min-width: 220px;
-}
-
-.searchForm input {
-  flex: 1;
-}
-
-.loadMore {
-  display: flex;
-  justify-content: center;
-  margin-top: var(--space-8);
-}
-
 .detail {
   /* min(…, 100%) (2026-10): identical 360px floor on desktop; on a
      mobile-width modal panel (Modal.module.css's own `max-width: 90vw`),
@@ -38,22 +13,25 @@
   margin: 0 0 var(--space-6);
 }
 
+/* SOLIS Final Phase §6: 120px/1fr grid, 6px row gap, dt 12.5px muted /
+   dd 13.5px. */
 .detailFields {
   display: grid;
-  grid-template-columns: 100px 1fr;
-  gap: var(--space-3) var(--space-6);
-  font-size: var(--font-size-13);
+  grid-template-columns: 120px 1fr;
+  row-gap: 6px;
+  column-gap: var(--space-6);
   margin: 0 0 var(--space-6);
 }
 
 .detailFields dt {
-  color: var(--color-text-muted);
-  font-weight: var(--font-weight-semibold);
+  font-size: 12.5px;
+  color: var(--sx-muted);
 }
 
 .detailFields dd {
   margin: 0;
-  color: var(--color-text-primary);
+  font-size: 13.5px;
+  color: var(--sx-text);
 }
 
 .detailActions {

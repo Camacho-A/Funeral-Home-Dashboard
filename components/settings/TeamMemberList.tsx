@@ -1,17 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { RowMenu, type RowMenuItem } from '@/components/ui/RowMenu';
 import type { RbacMember, RbacRole } from '@/lib/identityAuthClient';
 import { useAssignRole, useSetMembershipStatus } from '@/hooks/useRbac';
 import { ConfirmActionDialog } from './ConfirmActionDialog';
-import styles from './TeamMemberList.module.css';
 
 type PendingStatusAction = { targetIdentityId: string; displayName: string; status: 'disabled' | 'removed' };
+
+function initialsFor(name: string): string {
+  const words = name.trim().split(/\s+/).slice(0, 2);
+  return words.map((w) => w[0]?.toUpperCase() ?? '').join('');
+}
 
 /**
  * Phase 23 (Team Management). The Team page's active + disabled member
@@ -25,6 +27,11 @@ type PendingStatusAction = { targetIdentityId: string; displayName: string; stat
  * last-administrator invariant, if tripped, surfaces inline in that
  * dialog); reactivate does not, since it can only ever restore access,
  * never take it away.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S2): `table.sx-table
+ * sx-table-stack`; the row-level actions move into a `RowMenu` ("Disable"/
+ * "Reactivate", then a divider, then "Remove" as danger) instead of
+ * always-visible buttons. Same handlers/conditions/confirm dialog.
  */
 export function TeamMemberList({
   organizationId,
@@ -50,63 +57,78 @@ export function TeamMemberList({
   }
 
   return (
-    <Card className={styles.card}>
-      <h2 className={styles.heading}>Team members</h2>
-      <div className={styles.list}>
-        {members.map((member) => {
-          const isSelf = currentIdentityId !== null && member.identityId === currentIdentityId;
-          const isDisabled = member.status === 'disabled';
-
-          return (
-            <div key={member.identityId} className={styles.row}>
-              <div className={styles.identity}>
-                <span className={styles.name}>{member.displayName}</span>
-                {member.email && <span className={styles.email}>{member.email}</span>}
-              </div>
-
-              {canManageRoles ? (
-                <SelectField
-                  aria-label={`Role for ${member.displayName}`}
-                  value={member.role}
-                  disabled={assignRole.isPending}
-                  onChange={(e) => assignRole.mutate({ targetIdentityId: member.identityId, roleKey: e.target.value })}
-                >
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.key}>
-                      {role.name}
-                    </option>
-                  ))}
-                </SelectField>
-              ) : (
-                <span className={styles.roleLabel}>{roles.find((r) => r.key === member.role)?.name ?? member.role}</span>
-              )}
-
-              <Badge variant={isDisabled ? 'danger' : 'success'}>{isDisabled ? 'Disabled' : 'Active'}</Badge>
-
-              {canRemove && !isSelf && (
-                <div className={styles.actions}>
-                  {isDisabled ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() => setMembershipStatus.mutate({ targetIdentityId: member.identityId, status: 'active' })}
-                      disabled={setMembershipStatus.isPending}
-                    >
-                      Reactivate
-                    </Button>
-                  ) : (
-                    <Button variant="ghost" onClick={() => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'disabled' })}>
-                      Disable
-                    </Button>
-                  )}
-                  <Button variant="danger" onClick={() => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'removed' })}>
-                    Remove
-                  </Button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+    <section className="sx-settings-section">
+      <div className="sx-settings-section-head">
+        <div>
+          <h3 className="sx-settings-section-title">Team members</h3>
+        </div>
       </div>
+      <table className="sx-table sx-table-stack">
+        <thead>
+          <tr>
+            <th>Member</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th aria-hidden="true"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {members.map((member) => {
+            const isSelf = currentIdentityId !== null && member.identityId === currentIdentityId;
+            const isDisabled = member.status === 'disabled';
+
+            const items: RowMenuItem[] = [];
+            if (isDisabled) {
+              items.push({ label: 'Reactivate', onSelect: () => setMembershipStatus.mutate({ targetIdentityId: member.identityId, status: 'active' }) });
+            } else {
+              items.push({ label: 'Disable', onSelect: () => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'disabled' }) });
+            }
+            items.push({
+              label: 'Remove',
+              danger: true,
+              dividerBefore: true,
+              onSelect: () => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'removed' }),
+            });
+
+            return (
+              <tr key={member.identityId}>
+                <td data-label="Member" data-primary>
+                  <span className="sx-avatar" style={{ width: 28, height: 28, fontSize: 11 }} aria-hidden="true">
+                    {initialsFor(member.displayName)}
+                  </span>
+                  <span className="sx-cell-title">{member.displayName}</span>
+                  {member.email && <span className="sx-cell-sub">{member.email}</span>}
+                </td>
+                <td data-label="Role">
+                  {canManageRoles ? (
+                    <SelectField
+                      className="sx-select"
+                      aria-label={`Role for ${member.displayName}`}
+                      value={member.role}
+                      disabled={assignRole.isPending}
+                      onChange={(e) => assignRole.mutate({ targetIdentityId: member.identityId, roleKey: e.target.value })}
+                    >
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.key}>
+                          {role.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                  ) : (
+                    <span>{roles.find((r) => r.key === member.role)?.name ?? member.role}</span>
+                  )}
+                </td>
+                <td data-label="Status">
+                  <span className={isDisabled ? 'sx-status' : 'sx-status sx-status-ok'}>{isDisabled ? 'Disabled' : 'Active'}</span>
+                </td>
+                <td data-label="Actions" className="sx-row-actions">
+                  {canRemove && !isSelf && <RowMenu label={`Actions for ${member.displayName}`} items={items} />}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
 
       {pendingAction && (
         <ConfirmActionDialog
@@ -122,6 +144,6 @@ export function TeamMemberList({
           onConfirm={() => setMembershipStatus.mutateAsync({ targetIdentityId: pendingAction.targetIdentityId, status: pendingAction.status })}
         />
       )}
-    </Card>
+    </section>
   );
 }

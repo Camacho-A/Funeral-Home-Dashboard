@@ -1,133 +1,145 @@
 /*
- * Visual modernization Wave 2 (2026-10). Previously this entire panel's
- * background was --color-danger-bg — a full-bleed red/orange card, the
- * "do NOT make the entire card red/orange" pattern the modernization
- * brief explicitly calls out as alarming rather than restrained. The
- * priority signal now lives in three deliberately narrow places instead:
- * a slim left accent bar (the same inset-box-shadow technique
- * SidebarNavItem.module.css's own `.itemActive` already uses, so it
- * naturally clips to this panel's own border-radius rather than clashing
- * with rounded corners the way a literal border-left would), the "Needs
- * attention" count badge, and the per-row reason/days text — exactly the
- * fields that actually carry the "why" and "how urgent," not the row's
- * identity or the whole card's surface. Divider/name/case-number all move
- * to this file's ordinary neutral tokens, matching every other dashboard
- * panel's own row treatment.
+ * SOLIS true redesign, Phase 1 (2026-10). No card wrapper, no box-shadow,
+ * no left accent bar — the approved design's own "flatten the surface
+ * system" direction; this panel is now plain content in the dashboard's
+ * left column, matching its sibling Recent Activity below it.
  */
 .panel {
-  background: var(--color-surface-card);
-  border-radius: var(--radius-xl);
-  padding: var(--space-9) var(--space-10);
-  box-shadow: var(--shadow-card), inset 3px 0 0 var(--color-danger-text);
+  display: flex;
+  flex-direction: column;
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   margin-bottom: var(--space-5);
 }
 
 .title {
   font-size: var(--font-size-15);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary-cool);
 }
 
 .count {
   font-size: var(--font-size-12-5);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-danger-text);
+  color: var(--color-text-muted-cool);
+}
+
+/* The compact "All caught up" zero-state — replacing the prior large
+   half-width "0 cases" card, which the visual audit called out as the
+   single biggest waste of Dashboard real estate. */
+.caughtUp {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-7);
+  border-radius: 9px;
+  background: var(--color-success-bg-cool);
+}
+
+.caughtUpCheck {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-success-dot-cool);
+  color: white;
+  font-size: var(--font-size-11);
+  font-weight: var(--font-weight-bold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.caughtUpTitle {
+  font-size: var(--font-size-13-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-success-text-cool);
+}
+
+.caughtUpSubtitle {
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted-cool);
 }
 
 .list {
   display: flex;
   flex-direction: column;
+  border-top: 1px solid var(--color-border-cool);
 }
 
 .row {
-  cursor: pointer;
-  padding: var(--space-5) 0;
-  box-shadow: inset 0 -1px 0 var(--color-surface-subtle);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-6);
+  min-height: 44px;
+  padding: var(--space-5) var(--space-3);
+  margin: 0 calc(var(--space-3) * -1);
+  border-bottom: 1px solid var(--color-border-cool);
   text-decoration: none;
   color: inherit;
+  cursor: pointer;
+  border-radius: 7px;
 }
 
 .row:hover {
-  background: var(--color-surface-hover);
+  background: var(--color-surface-hover-cool);
 }
 
-.rowMain {
-  min-width: 0;
+.row:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: -2px;
 }
 
-.name {
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-13-5);
-  color: var(--color-text-primary);
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-danger-dot-cool);
+  flex-shrink: 0;
 }
 
 .caseNumber {
-  font-weight: var(--font-weight-medium);
   font-size: var(--font-size-12);
-  color: var(--color-text-secondary);
-  margin-top: var(--space-1);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted-cool);
+  font-variant-numeric: tabular-nums;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.name {
+  font-size: var(--font-size-13-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary-cool);
+  flex: 1;
+  min-width: 0;
 }
 
 .reason {
-  font-size: var(--font-size-12);
-  color: oklch(0.45 0.08 25);
-  margin-top: var(--space-1);
+  font-size: var(--font-size-12-5);
+  color: var(--color-danger-text-cool);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
-.meta {
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.days {
-  font-size: var(--font-size-11-5);
-  font-weight: var(--font-weight-bold);
-  color: oklch(0.4 0.1 25);
-}
-
-.expected {
-  font-size: var(--font-size-10);
-  color: oklch(0.5 0.08 25);
-  white-space: nowrap;
-}
-
-/* Dashboard mobile-friendliness pass (2026-09). `.reason`'s single-line
-   ellipsis truncation keeps each alert compact on desktop, where `.meta`
-   sits to the right on the same line — but on a narrow phone viewport
-   that same truncation starts clipping the actual alert reason (the one
-   piece of information this panel exists to surface), and `.row`'s
-   side-by-side layout leaves `.rowMain` too little width for it anyway.
-   Below this breakpoint the row stacks (name/case#/reason on top, then
-   days/SLA beneath, both full-width) and the reason text wraps normally
-   instead of clipping. Desktop/tablet (above this breakpoint) is
-   completely unchanged — same one-line, ellipsized, side-by-side row. */
 @media (max-width: 560px) {
   .row {
-    flex-direction: column;
-    align-items: stretch;
     gap: var(--space-3);
+  }
+
+  .caseNumber {
+    width: auto;
   }
 
   .reason {
     white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-  }
-
-  .meta {
-    text-align: left;
+    flex-basis: 100%;
+    padding-left: calc(6px + var(--space-6));
   }
 }

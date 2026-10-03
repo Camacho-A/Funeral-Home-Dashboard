@@ -1,12 +1,18 @@
-import styles from './EmptyState.module.css';
-
 /**
- * Minimal version per the Frontend Engineering Plan — matches the prototype's
- * one literal instance exactly (a plain "No cases match ..." text line, see
- * docs/UI_COMPONENTS.md). Deliberately not yet the fuller icon + guidance +
- * CTA pattern Beacon-Design-System.md Section 14 describes — that's an
- * enrichment for a later phase, once a second real instance justifies it.
+ * SOLIS Final Phase §0.8 — shared empty-state primitive, restyled to the
+ * sx- system's literal markup. `message` stays the one required prop
+ * (every existing call site's string is unchanged, verbatim); `helperText`
+ * is new and optional (omitted everywhere except where this phase's spec
+ * names one, e.g. NotificationDrawer/ActivityEventList). `center` is also
+ * new and optional — only NotificationDrawer's empty state (§2) asks for
+ * the centered `.sx-empty-center` treatment; every other existing caller
+ * keeps the left-aligned default, unchanged.
  */
-export function EmptyState({ message }: { message: string }) {
-  return <div className={styles.emptyState}>{message}</div>;
+export function EmptyState({ message, helperText, center = false }: { message: string; helperText?: string; center?: boolean }) {
+  return (
+    <div className={center ? 'sx-empty sx-empty-center' : 'sx-empty'}>
+      <div className="sx-empty-title">{message}</div>
+      {helperText && <div className="sx-empty-text">{helperText}</div>}
+    </div>
+  );
 }

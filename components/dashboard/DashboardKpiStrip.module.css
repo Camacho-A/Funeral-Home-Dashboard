@@ -1,0 +1,122 @@
+/* SOLIS true redesign, Phase 1 (2026-10). One hairline-bordered KPI strip
+   — no card wrapper, no shadow — replacing the prior separate "Financial
+   summary" white card plus the greeting subtitle's own case count. Column
+   ratios (0.8fr for the two count cells, 1fr for the three currency
+   cells) match the approved design's own measured grid-template-columns. */
+.strip {
+  display: grid;
+  border-top: 1px solid var(--color-border-cool);
+  border-bottom: 1px solid var(--color-border-cool);
+}
+
+.cols5 {
+  grid-template-columns: repeat(2, minmax(0, 0.8fr)) repeat(3, minmax(0, 1fr));
+}
+
+.cols2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cell {
+  padding: var(--space-8) var(--space-10) var(--space-8) 0;
+  border-left: 1px solid var(--color-border-cool);
+  text-decoration: none;
+  color: inherit;
+}
+
+.cell:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+
+.cell:nth-child(n + 2) {
+  padding-left: var(--space-10);
+}
+
+a.cell:hover {
+  background: var(--color-surface-hover-cool);
+}
+
+a.cell:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: -2px;
+}
+
+.label {
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted-cool);
+}
+
+.value {
+  font-size: var(--font-size-24);
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--space-2);
+  color: var(--color-text-primary-cool);
+  font-variant-numeric: tabular-nums;
+}
+
+.valueAttention {
+  color: var(--color-danger-text-cool);
+}
+
+.notice {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-muted-cool);
+  padding: var(--space-5) 0 0;
+}
+
+/* Dashboard mobile-friendliness (2026-10, carried into Phase 1). Below
+   560px the strip becomes a bordered 2x2 box per the approved design's
+   own mobile mockup, which deliberately shows only 4 of the 5 numbers
+   (Active cases, Needs attention, Gross revenue, Accounts receivable) to
+   fit two tight rows — Cash collected is still real, calculated data,
+   just not repeated a third time on the narrowest layout; it remains
+   fully visible at every wider width and on the Cash Collected report
+   itself. Fixed per-position border rules (not a repeating nth-child
+   pattern) since `.cols2` (financial-less callers) only ever has 2
+   cells, never a visually-shifted 4th/5th position to account for. */
+@media (max-width: 560px) {
+  .cols5,
+  .cols2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--color-border-cool);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .strip.cols5,
+  .strip.cols2 {
+    border-top: 1px solid var(--color-border-cool);
+  }
+
+  .cell {
+    padding: var(--space-6) var(--space-7);
+    border-left: none;
+  }
+
+  .cell:nth-child(1) {
+    border-bottom: 1px solid var(--color-border-cool);
+  }
+
+  .cell:nth-child(2) {
+    border-left: 1px solid var(--color-border-cool);
+    border-bottom: 1px solid var(--color-border-cool);
+  }
+
+  .cell:nth-child(3) {
+    padding-left: var(--space-7);
+  }
+
+  /* Cash collected (4th cell) — omitted on this narrowest layout only,
+     per the approved design's own mobile mockup; still fully shown at
+     every wider width. */
+  .cell:nth-child(4) {
+    display: none;
+  }
+
+  .cell:nth-child(5) {
+    border-left: 1px solid var(--color-border-cool);
+    padding-left: var(--space-7);
+  }
+}

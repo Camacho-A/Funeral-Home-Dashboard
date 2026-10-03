@@ -1,24 +1,15 @@
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
-}
-
+/* SOLIS Tasks/Calendar/Settings phase, §3.5 (design S3) — two-column
+   Roles & Permissions layout. Stacks below 860px, role list above editor. */
 .columns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  align-items: flex-start;
-  margin-bottom: 24px;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  column-gap: 32px;
+  align-items: start;
 }
 
-/* Mobile (2026-10) — RoleList's own 220px min-width (RoleList.module.css)
-   plus the permissions-detail panel beside it no longer fit side by side
-   below ~860px (this app's established mobile breakpoint — e.g.
-   TopBar.module.css, app/(portal)/cases/[caseId]/page.module.css's
-   .overviewPair); each takes the full row instead. */
 @media (max-width: 860px) {
-  .columns > * {
-    flex-basis: 100%;
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 24px;
   }
 }

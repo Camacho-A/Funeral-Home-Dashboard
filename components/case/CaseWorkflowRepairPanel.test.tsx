@@ -77,7 +77,11 @@ describe('CaseWorkflowRepairPanel', () => {
     expect(postCall[0]).toContain('/api/cases/case-42/recalculate-workflow');
     expect(JSON.parse((postCall[1] as RequestInit).body as string)).toEqual({ organizationId: 'managed-cremations' });
 
-    expect(await screen.findByText('Workflow recalculated — case is now correctly positioned.')).toBeInTheDocument();
+    // SOLIS Final Phase §8.1: success feedback now gets a "✓ " prefix
+    // (sx-bill-success treatment) — was 'Workflow recalculated — case is
+    // now correctly positioned.', now '✓ Workflow recalculated — case is
+    // now correctly positioned.'.
+    expect(await screen.findByText('✓ Workflow recalculated — case is now correctly positioned.')).toBeInTheDocument();
   });
 
   it('E: a failed recalculation shows safe, readable feedback — no raw error object rendered', async () => {

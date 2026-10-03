@@ -6,7 +6,6 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
-import styles from './AccountingNav.module.css';
 
 const LINKS = [
   { href: '/accounting', label: 'Dashboard' },
@@ -45,11 +44,11 @@ export function AccountingNav() {
   const visibleLinks = LINKS.filter((link) => !link.requiresModule || isModuleEnabled(organization, link.requiresModule));
 
   return (
-    <nav className={styles.nav} aria-label="Accounting">
+    <nav className="sx-subnav" aria-label="Accounting">
       {visibleLinks.map((link) => {
         const isActive = pathname === link.href || (link.href !== '/accounting' && pathname?.startsWith(link.href));
         return (
-          <Link key={link.href} href={link.href} className={`${styles.link} ${isActive ? styles.linkActive : ''}`}>
+          <Link key={link.href} href={link.href} className="sx-subnav-link" aria-current={isActive ? 'page' : undefined}>
             {link.label}
           </Link>
         );

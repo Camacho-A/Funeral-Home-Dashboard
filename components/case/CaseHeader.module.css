@@ -1,16 +1,30 @@
 .backLink {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  margin-bottom: var(--space-8);
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
   text-decoration: none;
-  background: none;
-  border: none;
-  font-family: inherit;
+  border-radius: 6px;
+  transition: var(--solis-transition);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backLink {
+    transition: none;
+  }
+}
+
+.backLink:hover {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.backLink:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 .row {
@@ -18,49 +32,89 @@
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
-  gap: var(--space-8);
-  margin-bottom: var(--space-10);
+  gap: 16px 24px;
+  margin-bottom: 20px;
+}
+
+.identity {
+  min-width: 0;
 }
 
 .name {
-  font-size: var(--font-size-26);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--tracking-tight);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--color-text-primary);
   overflow-wrap: break-word;
-  word-break: break-word;
 }
 
 .meta {
-  font-size: var(--font-size-14);
+  margin-top: 6px;
+  font-size: 13.5px;
   color: var(--color-text-secondary);
-  margin-top: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+}
+
+.fact {
+  white-space: nowrap;
+}
+
+.weightNormal {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.weightOver {
+  font-weight: 600;
+  color: oklch(0.5 0.13 60);
+}
+
+.weightFlag {
+  font-size: 11px;
+  font-weight: 600;
+  color: oklch(0.45 0.12 60);
+  background: oklch(0.96 0.04 75);
+  padding: 2px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
 }
 
 .stageColumn {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--space-2);
+  gap: 5px;
 }
 
-/* Mobile (2026-10) — identical breakpoint to the page-level stack
-   (app/(portal)/cases/[caseId]/page.module.css's own @media 860px).
-   Below it, the stage badge/SLA line no longer has room to sit beside
-   the name/DOB/case# column (long stage labels like "EDRS & Doctor /
-   Cause of Death" would otherwise force the row to clip or shrink text
-   unreadably) — `.row`'s own `flex-wrap` already lets `.stageColumn`
-   drop to its own line once it can't fit; this only re-aligns it to the
-   left edge (matching the identity column above it) instead of staying
-   pinned right, which looks stray once it's no longer sharing the row. */
-@media (max-width: 860px) {
-  .stageColumn {
-    align-items: flex-start;
-  }
+/* Stage chip: navy tint, 7px radius (overrides the shared Badge look here only). */
+.stageChip > * {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: none;
+  background: oklch(0.94 0.02 255);
+  color: var(--solis-selected-fg);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .slaLine {
-  font-size: var(--font-size-11);
-  font-weight: var(--font-weight-semibold);
+  font-size: 12.5px;
+  font-weight: 400;
 }
 
 .slaNeutral {
@@ -68,5 +122,16 @@
 }
 
 .slaOverdue {
-  color: var(--color-danger-text);
+  color: var(--solis-danger);
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .stageColumn {
+    align-items: flex-start;
+  }
+
+  .name {
+    font-size: 22px;
+  }
 }

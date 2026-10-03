@@ -172,14 +172,12 @@ describe('Sidebar — SOLIS product branding (Task #13, 2026-09)', () => {
   });
 });
 
-describe('Sidebar — vertical SOLIS lockup (Task #13 final visual adjustment, 2026-09)', () => {
-  it('1: uses ProductBrand\'s vertical variant — mark stacked above centered SOLIS, not the horizontal side-by-side lockup', async () => {
+describe('Sidebar — compact horizontal brand row (SOLIS true redesign, Phase 1, 2026-10)', () => {
+  it('1: uses ProductBrand\'s default horizontal variant — a compact [mark] SOLIS row, replacing the prior stacked-vertical lockup', async () => {
     mockPermissions([]);
     renderSidebar('mock');
     const mark = await screen.findByRole('presentation', { hidden: true });
-    // The vertical variant's own wrapper class (ProductBrand.module.css's
-    // .vertical), applied alongside the shared .brand class.
-    expect(mark.parentElement?.className).toMatch(/vertical/);
+    expect(mark.parentElement?.className).not.toMatch(/vertical/);
   });
 
   it('2: still uses the exact same /brand/soliscode-mark.png asset — only size/layout changed, never the artwork', async () => {
@@ -190,27 +188,20 @@ describe('Sidebar — vertical SOLIS lockup (Task #13 final visual adjustment, 2
   });
 });
 
-describe('Sidebar — enlarged SOLIS brand lockup (Task #13 final sizing adjustment, 2026-09)', () => {
-  it('1: the mark renders at 96px', async () => {
+describe('Sidebar — compact SOLIS brand lockup sizing (SOLIS true redesign, Phase 1, 2026-10)', () => {
+  it('1: the mark renders at 26px — the approved design\'s own compact sizing, replacing the prior 96px stacked lockup', async () => {
     mockPermissions([]);
     renderSidebar('mock');
     const mark = await screen.findByRole('presentation', { hidden: true });
-    expect(mark).toHaveAttribute('width', '96');
-    expect(mark).toHaveAttribute('height', '96');
+    expect(mark).toHaveAttribute('width', '26');
+    expect(mark).toHaveAttribute('height', '26');
   });
 
-  it('2: the SOLIS wordmark uses the enlarged brandWordmark styling (24px, scoped to the Sidebar only)', async () => {
+  it('2: the SOLIS wordmark uses the Sidebar\'s own brandWordmark styling', async () => {
     mockPermissions([]);
     renderSidebar('mock');
     const wordmark = await screen.findByText('SOLIS');
     expect(wordmark.className).toMatch(/brandWordmark/);
-  });
-
-  it('3: the vertical centered layout is preserved at the new size', async () => {
-    mockPermissions([]);
-    renderSidebar('mock');
-    const mark = await screen.findByRole('presentation', { hidden: true });
-    expect(mark.parentElement?.className).toMatch(/vertical/);
   });
 
   it('5: still the same /brand/soliscode-mark.png asset', async () => {

@@ -9,11 +9,10 @@ import { computeKpis } from '@/domain/reports/calculations';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useDashboardData } from '@/hooks/useDashboard';
 import { PageGreetingHeader } from '@/components/dashboard/PageGreetingHeader';
+import { DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip';
 import { NeedsAttentionPanel } from '@/components/dashboard/NeedsAttentionPanel';
-import { CasesByStagePanel, type StageBarRow } from '@/components/dashboard/CasesByStagePanel';
+import { CasesByStagePanel, type StageBarRow, type StagePreviewCase } from '@/components/dashboard/CasesByStagePanel';
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel';
-import { FinancialSummaryPanel } from '@/components/dashboard/FinancialSummaryPanel';
-import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './page.module.css';
 
 /**
@@ -23,28 +22,27 @@ import styles from './page.module.css';
  * rendered an 8-tab bar plus a full, paginated case list directly on this
  * page — that direction was explicitly reversed.
  *
- * Needs Attention and Cases by Stage sit side by side in one 1.3fr/1fr
- * grid row (styles.stageOverviewGrid), collapsing to a single stacked
- * column under 860px — see that class's own comment for the exact
- * layout correction history. Cases by Stage (components/dashboard/
- * CasesByStagePanel.tsx) is a pure NAVIGATION HUB regardless of column
- * layout — "All Cases" plus each of the 7 canonical stages are links
- * into the dedicated case-list route (`/cases`, optionally
- * `?stage=<STAGES label>`; see app/(portal)/cases/page.tsx), not a local
- * filter that renders results here. No case card, AllCasesList, or
- * StageFilteredPanel renders on this page at all — Financial Summary and
- * everything below it stays exactly as reachable as before, regardless
- * of whether the org has 20 cases or 20,000.
+ * Cases by Stage (components/dashboard/CasesByStagePanel.tsx) remains a
+ * NAVIGATION HUB: "All cases" plus each of the 7 canonical stages are
+ * real links into the dedicated case-list route (`/cases`, optionally
+ * `?stage=<STAGES label>`; see app/(portal)/cases/page.tsx). The one
+ * explicitly approved exception (SOLIS true redesign, Phase 1, 2026-10)
+ * is the Stage Preview accordion: clicking a stage row expands an inline
+ * preview of that stage's cases directly beneath it — a Dashboard
+ * convenience layer, never a replacement for the full stage page, which
+ * remains exactly as reachable via "Open full stage list →".
  *
- * Stage/All-Cases counts come from the Phase 2 counts endpoint
- * (useCaseCounts) — never a client-side aggregation over a fully-
- * downloaded case list (the prior `groupCasesByDisplayStage(allViewModels)`
- * approach). `useCases()` (the legacy, complete-result fetch) is still
- * used for NeedsAttentionPanel and the KPI header's active-case count —
- * both genuinely need every case's ViewModel client-side today and are
- * unrelated to this phase's scope; see this phase's own report for why
- * that's an accepted, explicitly reported remaining legacy-fetch-all
- * consumer rather than something silently left in place.
+ * Stage/All-Cases counts still come from the Phase 2 counts endpoint
+ * (useCaseCounts) — never a client-side aggregation. The Stage Preview's
+ * own expanded case rows (case number, name, days-in-stage), by
+ * contrast, are grouped from `allViewModels` below — the SAME already-
+ * fetched, complete-result array `useCases()`/`useCaseViewModels()`
+ * already provide for NeedsAttentionPanel/the KPI strip, so expanding a
+ * stage never fires a new network request. An organization with more
+ * cases than that fetch's own window would see a preview that can
+ * under-count relative to the stage row's own server-side number — an
+ * accepted, reported tradeoff, the same one already documented below for
+ * NeedsAttentionPanel's identical data source.
  */
 export default function DashboardPage() {
   const { organizationId } = useOrganization();
@@ -57,17 +55,17 @@ export default function DashboardPage() {
     );
   }, []);
 
-  // Legacy, complete-result fetch — kept ONLY for NeedsAttentionPanel and
-  // the KPI header below; Cases by Stage no longer reads from this.
+  // Legacy, complete-result fetch — kept ONLY for NeedsAttentionPanel, the
+  // KPI strip, and (SOLIS true redesign, Phase 1) the Stage Preview
+  // accordion's own case rows; Cases by Stage's header counts/bar still
+  // read from the server-side counts endpoint below, never from this.
   const { data: allCases } = useCases();
   const allViewModels = useCaseViewModels(allCases);
   const kpis = useMemo(() => computeKpis(allViewModels), [allViewModels]);
   const urgentCases = useMemo(() => allViewModels.filter((c) => c.needsAttention), [allViewModels]);
 
   // Cases by Stage's navigation hub — server-side counts only (Phase 2),
-  // never every Case object. Dashboard has no search of its own (search
-  // belongs to the dedicated case-list route), so this is always the
-  // organization's unfiltered counts.
+  // never every Case object.
   const { data: countsData } = useCaseCounts({ searchQuery: '' });
   const stageBreakdownRows: StageBarRow[] = useMemo(() => {
     const counts = STAGES.map((label) => countsData?.byStage[label] ?? null);
@@ -76,46 +74,52 @@ export default function DashboardPage() {
       label,
       count: counts[index],
       pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
+      displayStage: index,
     }));
   }, [countsData]);
 
-  return (
-    <div>
-      <PageGreetingHeader todayLabel={todayLabel} activeCount={kpis.activeCases} />
+  // Stage Preview's own case rows (SOLIS true redesign, Phase 1) — grouped
+  // from the already-fetched `allViewModels`, keyed by the case's own
+  // current `stageLabel`. No new query; no business/filtering logic
+  // duplicated (`stageLabel` is computed once, in domain/cases/viewModel.ts).
+  const casesByStage: Record<string, StagePreviewCase[]> = useMemo(() => {
+    const grouped: Record<string, StagePreviewCase[]> = {};
+    for (const c of allViewModels) {
+      (grouped[c.stageLabel] ??= []).push({
+        id: c.id,
+        caseNumber: c.caseNumber,
+        decedentName: c.decedentName,
+        daysWaitingInStage: c.daysWaitingInStage,
+      });
+    }
+    return grouped;
+  }, [allViewModels]);
 
-      <div className={styles.stageOverviewGrid}>
-        <NeedsAttentionPanel cases={urgentCases} />
-        <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} />
+  return (
+    <div className={styles.pageInner}>
+      <PageGreetingHeader todayLabel={todayLabel} />
+
+      <div className={styles.kpiSection}>
+        <DashboardKpiStrip
+          activeCases={kpis.activeCases}
+          attentionCount={urgentCases.length}
+          financial={dashboardData?.financial ?? null}
+          isLoading={isDashboardLoading}
+          isError={isDashboardError}
+        />
       </div>
 
-      {/* Manors go-live cleanup (2026-09): the dashboard's own "Attention"
-          section (org-wide overdue cases/tasks/signatures/failed payments —
-          services/dashboardService.ts's DashboardAttentionSection) was
-          removed from this page for feeling redundant next to
-          NeedsAttentionPanel above (per-case, Case.isStalled-driven) — a
-          purely presentational call, not a claim the two concepts are the
-          same. AttentionPanel/dashboardData.attention/getDashboard's
-          attention computation are all untouched and still reachable via
-          the /api/dashboard response; nothing here deletes that logic.
-          Financial Summary now gets the freed row to itself, full width,
-          with an explicit loading/error placeholder so a role that DOES
-          have financial visibility never sees a bare gap while the
-          dashboard query is in flight — a role that lacks it (financial
-          resolves to null, never an error) sees nothing at all, exactly as
-          before. */}
-      {(isDashboardLoading || isDashboardError || dashboardData?.financial) && (
-        <div className={styles.financialSummarySection}>
-          {isDashboardLoading && <EmptyState message="Loading financial summary…" />}
-          {!isDashboardLoading && isDashboardError && (
-            <EmptyState message="Unable to load the financial summary right now." />
-          )}
-          {!isDashboardLoading && !isDashboardError && dashboardData?.financial && (
-            <FinancialSummaryPanel data={dashboardData.financial} />
-          )}
+      <div className={styles.mainGrid}>
+        <div className={styles.attentionArea}>
+          <NeedsAttentionPanel cases={urgentCases} />
         </div>
-      )}
-
-      <RecentActivityPanel />
+        <div className={styles.stageArea}>
+          <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} casesByStage={casesByStage} />
+        </div>
+        <div className={styles.activityArea}>
+          <RecentActivityPanel />
+        </div>
+      </div>
     </div>
   );
 }

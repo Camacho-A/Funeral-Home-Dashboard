@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useSuppliers, usePurchaseOrders, useCreatePurchaseOrder, usePurchaseOrderAction } from '@/hooks/useProcurement';
 import { useMerchandiseProducts } from '@/hooks/useMerchandise';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -54,41 +52,52 @@ export function PurchaseOrdersPanel() {
 
   return (
     <div>
-      <Card>
-        <h2>New purchase order</h2>
-        <form onSubmit={handleCreate}>
-          <SelectField value={form.supplierId} onChange={(e) => setForm({ ...form, supplierId: e.target.value })}>
-            <option value="">Select supplier…</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </SelectField>
-          <TextField placeholder="Location ID" value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} required />
-          <SelectField value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })}>
-            <option value="">Select product…</option>
-            {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
-          </SelectField>
-          <TextField type="number" placeholder="Quantity" value={form.quantityOrdered} onChange={(e) => setForm({ ...form, quantityOrdered: e.target.value })} />
-          <TextField type="number" step="0.01" placeholder="Unit cost ($)" value={form.unitCost} onChange={(e) => setForm({ ...form, unitCost: e.target.value })} />
-          {error && <p role="alert">{error}</p>}
-          <Button type="submit" disabled={createMutation.isPending || !form.supplierId || !form.productId}>Create PO</Button>
-        </form>
-      </Card>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Purchase Orders</h2>
+      </div>
 
-      <Card>
-        <h2>Purchase orders</h2>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">New purchase order</h3>
+        <form onSubmit={handleCreate}>
+          <div className="sx-form-grid">
+            <SelectField className="sx-select" value={form.supplierId} onChange={(e) => setForm({ ...form, supplierId: e.target.value })}>
+              <option value="">Select supplier…</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </SelectField>
+            <TextField className="sx-input" placeholder="Location ID" value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} required />
+            <SelectField className="sx-select" value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })}>
+              <option value="">Select product…</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+            </SelectField>
+            <TextField className="sx-input" type="number" placeholder="Quantity" value={form.quantityOrdered} onChange={(e) => setForm({ ...form, quantityOrdered: e.target.value })} />
+            <TextField className="sx-input" type="number" step="0.01" placeholder="Unit cost ($)" value={form.unitCost} onChange={(e) => setForm({ ...form, unitCost: e.target.value })} />
+          </div>
+          {error && <div className="sx-form-banner sx-form-banner-error" role="alert">{error}</div>}
+          <div className="sx-save-row">
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={createMutation.isPending || !form.supplierId || !form.productId}>Create PO</button>
+          </div>
+        </form>
+      </section>
+
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Order list</h3>
         {orders.length === 0 ? (
           <EmptyState message="No purchase orders yet." />
         ) : (
-          <ul>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {orders.map((po) => (
-              <li key={po.id}>
-                <strong>{po.poNumber}</strong> — {po.status} — ${(po.subtotalCents / 100).toFixed(2)}{' '}
-                {po.status === 'draft' && <Button type="button" onClick={() => actionMutation.mutate({ purchaseOrderId: po.id, action: 'submit' })} disabled={actionMutation.isPending}>Submit</Button>}
-                {(po.status === 'draft' || po.status === 'submitted') && <Button type="button" onClick={() => actionMutation.mutate({ purchaseOrderId: po.id, action: 'cancel' })} disabled={actionMutation.isPending}>Cancel</Button>}
+              <li key={po.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, borderBottom: '1px solid var(--sx-border-soft)' }}>
+                <span className="sx-cell-title">{po.poNumber}</span>
+                <span className="sx-cell-sub"> — {po.status} — ${(po.subtotalCents / 100).toFixed(2)}</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                  {po.status === 'draft' && <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => actionMutation.mutate({ purchaseOrderId: po.id, action: 'submit' })} disabled={actionMutation.isPending}>Submit</button>}
+                  {(po.status === 'draft' || po.status === 'submitted') && <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => actionMutation.mutate({ purchaseOrderId: po.id, action: 'cancel' })} disabled={actionMutation.isPending}>Cancel</button>}
+                </span>
               </li>
             ))}
           </ul>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

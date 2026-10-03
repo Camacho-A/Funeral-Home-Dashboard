@@ -1,37 +1,194 @@
-/* Case list scalability, Phase 3 — UX correction (2026-09): the dedicated
-   case-list route (navigated to from the Dashboard's Cases by Stage
-   panel) — mirrors components/case/CaseHeader.module.css's own
-   `.backLink` so "leaving the Dashboard" reads consistently across both
-   destinations. */
+/* SOLIS Phase 2 — Cases page (matches SOLIS Cases.dc.html). */
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Kept in the DOM (no test/route change), hidden visually — the sidebar handles navigation. */
 .backLink {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  margin-bottom: var(--space-8);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  text-decoration: none;
+  display: none;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 .heading {
-  font-size: var(--font-size-26);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--tracking-tight);
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--color-text-primary);
 }
 
+.count {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The descriptive line stays for screen readers/tests but is visually quiet. */
 .subheading {
-  font-size: var(--font-size-14);
-  color: var(--color-text-secondary);
-  margin-top: var(--space-2);
-  margin-bottom: var(--space-10);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.toolbarSpacer {
+  flex: 1;
+}
+
+.search {
+  flex: 1 1 auto;
+  max-width: 420px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid oklch(0.91 0.004 255);
+  background: #ffffff;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.search:focus-within {
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px oklch(0.32 0.08 255 / 0.12);
+}
+
+.searchIcon {
+  flex-shrink: 0;
+  color: oklch(0.55 0.01 255);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.searchInput::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.selectWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 34px;
+  max-width: 260px;
+  padding: 0 32px 0 12px;
+  border-radius: 8px;
+  border: 1px solid oklch(0.91 0.004 255);
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(0.35 0.012 255);
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition: var(--solis-transition);
+}
+
+.select:hover {
+  background: oklch(0.975 0.003 255);
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+.chevron {
+  position: absolute;
+  right: 11px;
+  pointer-events: none;
+  color: oklch(0.5 0.01 255);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .errorState {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-8) 0;
+  gap: 10px;
+  padding: 16px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search,
+  .select {
+    transition: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .search {
+    flex-basis: 100%;
+    max-width: none;
+    height: 44px;
+  }
+
+  .toolbarSpacer {
+    display: none;
+  }
+
+  .selectWrap,
+  .select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .select {
+    height: 44px;
+  }
+
+  .heading {
+    font-size: 22px;
+  }
 }

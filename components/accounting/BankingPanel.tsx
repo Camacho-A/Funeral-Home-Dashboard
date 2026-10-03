@@ -4,16 +4,13 @@ import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useBankAccounts, useCreateBankAccount, useDeactivateBankAccount, useChartOfAccounts, useBankDeposits } from '@/hooks/useAccounting';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
-import styles from './BankingPanel.module.css';
 
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 function formatCents(amount: number): string {
-  return `$${(amount / 100).toFixed(2)}`;
+  return currency.format(amount / 100);
 }
 
 /**
@@ -71,18 +68,21 @@ export function BankingPanel() {
   }
 
   return (
-    <div>
-      <div className={styles.toolbar}>
-        <h2 className={styles.title}>Bank Accounts</h2>
-        <div className={styles.spacer} />
-        {canManage && <Button onClick={() => setFormOpen((v) => !v)}>{formOpen ? 'Cancel' : '+ New Bank Account'}</Button>}
-      </div>
+    <div style={{ maxWidth: 760 }}>
+      <h2 className="sx-section-title">
+        Bank accounts
+        {canManage && (
+          <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => setFormOpen((v) => !v)}>
+            {formOpen ? 'Cancel' : '+ New Bank Account'}
+          </button>
+        )}
+      </h2>
 
       {formOpen && canManage && (
-        <Card className={styles.form}>
-          <form onSubmit={handleCreate} className={styles.formRow}>
-            <TextField placeholder="Name (e.g. Operating)" value={name} onChange={(e) => setName(e.target.value)} required />
-            <SelectField value={ledgerAccountId} onChange={(e) => setLedgerAccountId(e.target.value)} required>
+        <div style={{ border: '1px solid var(--sx-border)', borderRadius: 10, padding: '16px 18px', marginBottom: 24 }}>
+          <form onSubmit={handleCreate} className="sx-form-grid sx-form-grid-3">
+            <TextField className="sx-input" placeholder="Name (e.g. Operating)" value={name} onChange={(e) => setName(e.target.value)} required />
+            <SelectField className="sx-select" value={ledgerAccountId} onChange={(e) => setLedgerAccountId(e.target.value)} required>
               <option value="">Linked ledger account…</option>
               {assetAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -90,54 +90,67 @@ export function BankingPanel() {
                 </option>
               ))}
             </SelectField>
-            <TextField placeholder="Bank name (optional)" value={bankName} onChange={(e) => setBankName(e.target.value)} />
-            <Button type="submit">Create</Button>
+            <TextField className="sx-input" placeholder="Bank name (optional)" value={bankName} onChange={(e) => setBankName(e.target.value)} />
+            <button type="submit" className="sx-btn sx-btn-primary">
+              Create
+            </button>
           </form>
-          {error && <p className={styles.error}>{error}</p>}
-        </Card>
+          {error && <p className="sx-error">{error}</p>}
+        </div>
       )}
 
       {bankAccounts.length === 0 ? (
         <EmptyState message="No bank accounts have been added yet." />
       ) : (
-        <Card className={styles.card}>
-          <div className={styles.list}>
+        <table className="sx-table">
+          <tbody>
             {bankAccounts.map((account) => (
-              <div key={account.id} className={styles.row}>
-                <div className={styles.identity}>
-                  <span className={styles.name}>{account.name}</span>
-                  <span className={styles.meta}>{account.bankName ?? 'No bank name on file'}</span>
-                </div>
-                <Badge variant={account.isActive ? 'success' : 'neutral'}>{account.isActive ? 'Active' : 'Inactive'}</Badge>
-                {canManage && account.isActive && (
-                  <Button variant="ghost" onClick={() => deactivateBankAccount.mutate(account.id)}>
-                    Deactivate
-                  </Button>
-                )}
-              </div>
+              <tr key={account.id}>
+                <td>
+                  <span className="sx-cell-title">{account.name}</span>
+                  <span className="sx-cell-sub">{account.bankName ?? 'No bank name on file'}</span>
+                </td>
+                <td>
+                  <span className={account.isActive ? 'sx-status sx-status-ok' : 'sx-status'}>{account.isActive ? 'Active' : 'Inactive'}</span>
+                </td>
+                <td>
+                  {canManage && account.isActive && (
+                    <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => deactivateBankAccount.mutate(account.id)}>
+                      Deactivate
+                    </button>
+                  )}
+                </td>
+              </tr>
             ))}
-          </div>
-        </Card>
+          </tbody>
+        </table>
       )}
 
-      <h2 className={styles.title}>Deposit History</h2>
+      <h2 className="sx-section-title" style={{ marginTop: 28 }}>
+        Deposit history
+        <span className="sx-section-meta">{deposits.length} deposits</span>
+      </h2>
       {deposits.length === 0 ? (
         <EmptyState message="No deposits have been recorded yet." />
       ) : (
-        <Card className={styles.card}>
-          <div className={styles.list}>
+        <table className="sx-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Payments included</th>
+              <th className="sx-num">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
             {deposits.map((deposit) => (
-              <div key={deposit.id} className={styles.row}>
-                <div className={styles.identity}>
-                  <span className={styles.name}>{formatCents(deposit.totalAmount)}</span>
-                  <span className={styles.meta}>
-                    {deposit.depositDate.slice(0, 10)} · {deposit.includedPaymentRecordIds.length} payment(s)
-                  </span>
-                </div>
-              </div>
+              <tr key={deposit.id}>
+                <td className="sx-mono">{deposit.depositDate.slice(0, 10)}</td>
+                <td>{deposit.includedPaymentRecordIds.length} payment(s)</td>
+                <td className="sx-num">{formatCents(deposit.totalAmount)}</td>
+              </tr>
             ))}
-          </div>
-        </Card>
+          </tbody>
+        </table>
       )}
     </div>
   );

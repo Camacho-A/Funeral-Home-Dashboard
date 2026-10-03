@@ -1,11 +1,12 @@
-import { Card } from '@/components/ui/Card';
 import type { MetricDataType } from '@/domain/reporting/metricRegistry';
-import styles from './MetricCard.module.css';
+
+// SOLIS Final Phase §0.5 — display-only currency formatting.
+const CURRENCY = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 function formatValue(value: unknown, dataType: MetricDataType, unit: string): string {
   if (Array.isArray(value)) return `${value.length} rows`;
   if (typeof value !== 'number') return String(value);
-  if (dataType === 'currency') return `$${(value / 100).toFixed(2)}`;
+  if (dataType === 'currency') return CURRENCY.format(value / 100);
   if (dataType === 'percentage') return `${value}%`;
   if (dataType === 'days') return `${value} ${value === 1 ? 'day' : 'days'}`;
   if (dataType === 'hours') return `${value} ${value === 1 ? 'hour' : 'hours'}`;
@@ -20,6 +21,13 @@ function formatValue(value: unknown, dataType: MetricDataType, unit: string): st
  * `onDrillDown` is optional so a metric with nowhere useful to link never
  * renders as a dead-end click target (see this phase's own "no dead-end
  * dashboard numbers" rule) but also never fakes affordance it doesn't have.
+ *
+ * SOLIS Final Phase §4.2 (2026-10): renders the shared `.sx-kpi` markup —
+ * the caller wraps one or more of these in a `.sx-kpis` strip (see
+ * app/(portal)/reports/[reportKey]/page.tsx). The `Card` wrapper is
+ * removed: `.sx-kpis`/`.sx-kpi` already supply the strip's own
+ * borders/dividers, which would otherwise double up against a bordered
+ * card per item.
  */
 export function MetricCard({
   displayName,
@@ -39,21 +47,24 @@ export function MetricCard({
   const formatted = formatValue(value, dataType, unit);
   const content = (
     <>
-      <span className={styles.label}>{displayName}</span>
-      <span className={styles.value}>{formatted}</span>
-      {description ? <span className={styles.description}>{description}</span> : null}
+      <span className="sx-kpi-label">{displayName}</span>
+      <span className="sx-kpi-value">{formatted}</span>
+      {description ? <span className="sx-kpi-caption">{description}</span> : null}
     </>
   );
 
-  return (
-    <Card variant="elevated" className={styles.card}>
-      {onDrillDown ? (
-        <button type="button" onClick={onDrillDown} className={`${styles.body} ${styles.clickable}`}>
-          {content}
-        </button>
-      ) : (
-        <div className={styles.body}>{content}</div>
-      )}
-    </Card>
-  );
+  if (onDrillDown) {
+    return (
+      <button
+        type="button"
+        onClick={onDrillDown}
+        className="sx-kpi"
+        style={{ border: 'none', background: 'none', font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="sx-kpi">{content}</div>;
 }

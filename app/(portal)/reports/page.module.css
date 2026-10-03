@@ -1,56 +1,6 @@
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-12);
-}
-
-.title {
-  font-size: var(--font-size-26);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: var(--tracking-tight);
-}
-
-.section {
-  margin-bottom: var(--space-16);
-}
-
-.sectionTitle {
-  font-size: var(--font-size-15);
-  font-weight: var(--font-weight-bold);
-  margin: 0 0 var(--space-6);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-8);
-}
-
-.cardLink {
-  text-decoration: none;
-  color: inherit;
-}
-
-.reportCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-8);
-  height: 100%;
-  transition: border-color 0.15s ease;
-}
-
-.reportCard:hover {
-  border-color: var(--color-brand);
-}
-
-.reportName {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-14);
-}
-
-.reportDescription {
-  font-size: var(--font-size-12-5);
-  color: var(--color-text-muted);
+/* SOLIS Final Phase §4.1 — section spacing per spec ("section + section
+   { margin-top: 28px }"); everything else (.sx-page-header, .sx-feature,
+   .sx-dir/.sx-dir-row, .sx-section-title) comes from styles/solis-system.css. */
+.section + .section {
+  margin-top: 28px;
 }

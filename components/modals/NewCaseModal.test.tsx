@@ -659,7 +659,10 @@ describe('NewCaseModal — Next of kin email (Manors launch-prep)', () => {
     // (also a fixed field grouped with Next of Kin) — anything else
     // sitting between them would mean a Certifier (or other) field
     // leaked into this group.
-    const allLabels = Array.from(document.querySelectorAll('[class*="fieldLabel"]')).map((el) => el.textContent);
+    // SOLIS Final Phase (2026-10): field labels are now the shared,
+    // un-hashed `sx-label` class (styles.fieldLabel/.fieldLabelRequired no
+    // longer exist) — same DOM-order label collection, new selector.
+    const allLabels = Array.from(document.querySelectorAll('[class*="sx-label"]')).map((el) => el.textContent);
     const phoneIndex = allLabels.indexOf('Next of kin — phone number');
     expect(allLabels[phoneIndex + 1]).toBe('Relationship to decedent');
     expect(allLabels[phoneIndex + 2]).toBe('Next of kin — email (optional)');

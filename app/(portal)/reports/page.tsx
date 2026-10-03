@@ -1,11 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useMemo } from 'react';
+import Link from 'next/link';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useReportDefinitions } from '@/hooks/useReports';
-import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { ReportCategory, ReportDefinition } from '@/domain/reporting/reportRegistry';
 import styles from './page.module.css';
@@ -21,12 +20,27 @@ const CATEGORY_LABELS: Record<ReportCategory, string> = {
 
 const CATEGORY_ORDER: ReportCategory[] = ['operational', 'financial', 'staff', 'documents', 'commerce'];
 
+// SOLIS Final Phase §4.1 — directory-row glyph per category.
+const CATEGORY_GLYPH: Record<ReportCategory, string> = {
+  operational: '◷',
+  financial: '$',
+  staff: '◉',
+  documents: '▤',
+  commerce: '▣',
+  procurement: '⇄',
+};
+
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). Reports Library —
  * replaces the Phase 8 client-computed Reports page. Every report shown
  * here is already permission-filtered server-side (`GET /api/reports`);
  * this page only groups and renders what it received, it never decides
  * what's visible itself.
+ *
+ * SOLIS Final Phase §4.1 (2026-10): presentation only — a directory list
+ * (`.sx-dir`/`.sx-dir-row`) replacing the prior `Card`-per-report grid.
+ * Same `CATEGORY_ORDER`/`CATEGORY_LABELS`, same server-filtered `reports`
+ * list, same hrefs/permission gates.
  */
 export default function ReportsPage() {
   const { organizationId } = useOrganization();
@@ -45,7 +59,14 @@ export default function ReportsPage() {
   }, [reportsQuery.data]);
 
   if (permissionsQuery.isPending || reportsQuery.isPending) {
-    return <p>Loading reports…</p>;
+    return (
+      <div className="sx-loading" aria-busy="true">
+        <span className="sx-skeleton" style={{ width: '90%' }} />
+        <span className="sx-skeleton" style={{ width: '70%' }} />
+        <span className="sx-skeleton" style={{ width: '80%' }} />
+        <span className="sr-only">Loading reports…</span>
+      </div>
+    );
   }
 
   const permissions = permissionsQuery.data?.permissions ?? [];
@@ -59,38 +80,55 @@ export default function ReportsPage() {
 
   return (
     <div>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Reports</h1>
+      <div className="sx-page-header">
+        <div>
+          <h1 className="sx-page-title">Reports</h1>
+          <p className="sx-page-desc">Operational, financial and staff reporting for your organization.</p>
+        </div>
       </div>
 
       {permissions.includes('report.operational') && (
-        <section className={styles.section}>
-          <div className={styles.grid}>
-            <Link href="/reports/all-case-data" className={styles.cardLink}>
-              <Card variant="bordered" className={styles.reportCard}>
-                <span className={styles.reportName}>All Case Data</span>
-                <span className={styles.reportDescription}>Export every case&rsquo;s operational data — CSV, Excel, or PDF.</span>
-              </Card>
-            </Link>
-          </div>
-        </section>
+        <Link href="/reports/all-case-data" className="sx-feature">
+          <span className="sx-dir-icon" aria-hidden="true">
+            ⇩
+          </span>
+          <span>
+            <span className="sx-feature-name">All Case Data</span>
+            <span className="sx-feature-desc">Export every case&rsquo;s operational data — CSV, Excel, or PDF.</span>
+          </span>
+          <span className="sx-btn sx-btn-secondary" aria-hidden="true">
+            Open
+          </span>
+        </Link>
       )}
 
-      {CATEGORY_ORDER.filter((category) => grouped.has(category)).map((category) => (
-        <section key={category} className={styles.section}>
-          <h2 className={styles.sectionTitle}>{CATEGORY_LABELS[category]}</h2>
-          <div className={styles.grid}>
-            {grouped.get(category)!.map((report) => (
-              <Link key={report.key} href={`/reports/${report.key}`} className={styles.cardLink}>
-                <Card variant="bordered" className={styles.reportCard}>
-                  <span className={styles.reportName}>{report.displayName}</span>
-                  <span className={styles.reportDescription}>{report.description}</span>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ))}
+      {CATEGORY_ORDER.filter((category) => grouped.has(category)).map((category) => {
+        const reports = grouped.get(category)!;
+        return (
+          <section key={category} className={styles.section}>
+            <h2 className="sx-section-title">
+              {CATEGORY_LABELS[category]}
+              <span className="sx-section-meta">{reports.length} reports</span>
+            </h2>
+            <div className="sx-dir" style={{ marginBottom: 0 }}>
+              {reports.map((report) => (
+                <Link key={report.key} href={`/reports/${report.key}`} className="sx-dir-row">
+                  <span className="sx-dir-icon" aria-hidden="true">
+                    {CATEGORY_GLYPH[category]}
+                  </span>
+                  <span>
+                    <span className="sx-dir-name">{report.displayName}</span>
+                    <span className="sx-dir-desc">{report.description}</span>
+                  </span>
+                  <span className="sx-dir-arrow" aria-hidden="true">
+                    ›
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

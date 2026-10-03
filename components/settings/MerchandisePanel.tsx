@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMerchandiseProducts, useCreateMerchandiseProduct, useArchiveMerchandiseProduct } from '@/hooks/useMerchandise';
 import { listMerchandiseCategories } from '@/domain/merchandise/merchandiseCategoryRegistry';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -56,70 +54,80 @@ export function MerchandisePanel() {
 
   return (
     <div>
-      <Card>
-        <h2>Add a product</h2>
-        <form onSubmit={handleCreate}>
-          <TextField placeholder="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} required />
-          {/* SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
-              server (services/merchandiseService.ts) normalizes
-              authoritatively. */}
-          <TextField placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value.toUpperCase() })} required />
-          <SelectField value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as typeof form.category })}>
-            {categories.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.displayName}
-              </option>
-            ))}
-          </SelectField>
-          <TextField type="number" step="0.01" placeholder="Cost ($)" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} />
-          <TextField type="number" step="0.01" placeholder="Retail price ($)" value={form.retailPrice} onChange={(e) => setForm({ ...form, retailPrice: e.target.value })} />
-          <TextField type="number" placeholder="Reorder point" value={form.reorderPoint} onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })} />
-          <label>
-            <input type="checkbox" checked={form.familyVisible} onChange={(e) => setForm({ ...form, familyVisible: e.target.checked })} /> Visible to family
-          </label>
-          {error && <p role="alert">{error}</p>}
-          <Button type="submit" disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Adding…' : 'Add product'}
-          </Button>
-        </form>
-      </Card>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Merchandise</h2>
+      </div>
 
-      <Card>
-        <h2>Catalog</h2>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Add a product</h3>
+        <form onSubmit={handleCreate}>
+          <div className="sx-form-grid">
+            <TextField className="sx-input" placeholder="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} required />
+            {/* SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
+                server (services/merchandiseService.ts) normalizes
+                authoritatively. */}
+            <TextField className="sx-input" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value.toUpperCase() })} required />
+            <SelectField className="sx-select" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as typeof form.category })}>
+              {categories.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.displayName}
+                </option>
+              ))}
+            </SelectField>
+            <TextField className="sx-input" type="number" step="0.01" placeholder="Cost ($)" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} />
+            <TextField className="sx-input" type="number" step="0.01" placeholder="Retail price ($)" value={form.retailPrice} onChange={(e) => setForm({ ...form, retailPrice: e.target.value })} />
+            <TextField className="sx-input" type="number" placeholder="Reorder point" value={form.reorderPoint} onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })} />
+            <label className="sx-check">
+              <input type="checkbox" checked={form.familyVisible} onChange={(e) => setForm({ ...form, familyVisible: e.target.checked })} /> Visible to family
+            </label>
+          </div>
+          {error && <div className="sx-form-banner sx-form-banner-error" role="alert">{error}</div>}
+          <div className="sx-save-row">
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={createMutation.isPending}>
+              {createMutation.isPending ? 'Adding…' : 'Add product'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Catalog</h3>
         {products.length === 0 ? (
           <EmptyState message="No merchandise products yet." />
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>SKU</th>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Retail</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id} style={{ opacity: p.isActive ? 1 : 0.5 }}>
-                  <td>{p.sku}</td>
-                  <td>{p.name}{p.hasVariants ? ' (variant parent)' : ''}</td>
-                  <td>{p.category}</td>
-                  <td>{p.hasVariants ? '—' : `$${(p.retailPrice / 100).toFixed(2)}`}</td>
-                  <td>{p.isActive ? 'Active' : 'Archived'}</td>
-                  <td>
-                    <Button variant="secondary" onClick={() => setVariantsFor(variantsFor?.id === p.id ? null : { id: p.id, name: p.name })}>
-                      {variantsFor?.id === p.id ? 'Hide variants' : 'Variants'}
-                    </Button>
-                    {p.isActive && <Button variant="secondary" onClick={() => archiveMutation.mutate(p.id)}>Archive</Button>}
-                  </td>
+          <div className="sx-table-wrap">
+            <table className="sx-table sx-table-stack">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th className="sx-num">Retail</th>
+                  <th>Status</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {products.map((p) => (
+                  <tr key={p.id} style={{ opacity: p.isActive ? 1 : 0.5 }}>
+                    <td data-label="SKU" className="sx-mono">{p.sku}</td>
+                    <td data-label="Name" data-primary className="sx-cell-title">{p.name}{p.hasVariants ? ' (variant parent)' : ''}</td>
+                    <td data-label="Category">{p.category}</td>
+                    <td data-label="Retail" className="sx-num">{p.hasVariants ? '—' : `$${(p.retailPrice / 100).toFixed(2)}`}</td>
+                    <td data-label="Status">{p.isActive ? <span className="sx-status sx-status-ok">Active</span> : <span className="sx-status">Archived</span>}</td>
+                    <td className="sx-row-actions">
+                      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setVariantsFor(variantsFor?.id === p.id ? null : { id: p.id, name: p.name })}>
+                        {variantsFor?.id === p.id ? 'Hide variants' : 'Variants'}
+                      </button>
+                      {p.isActive && <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => archiveMutation.mutate(p.id)}>Archive</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </section>
 
       {variantsFor && <VariantsPanel productId={variantsFor.id} productName={variantsFor.name} />}
     </div>

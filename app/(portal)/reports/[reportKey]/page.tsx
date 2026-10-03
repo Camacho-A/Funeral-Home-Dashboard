@@ -8,7 +8,6 @@ import { useStaff } from '@/hooks/useStaff';
 import { useReportDefinitions, useReportRun } from '@/hooks/useReports';
 import { exportReportCsvUrl } from '@/lib/reportsClient';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Button } from '@/components/ui/Button';
 import { FilterBar, type ReportFilterValues } from '@/components/reports/FilterBar';
 import { MetricCard } from '@/components/reports/MetricCard';
 import { DataTable, type DataTableColumn } from '@/components/reports/DataTable';
@@ -20,10 +19,18 @@ import styles from './page.module.css';
 type FinancialLine = { accountNumber: string; accountName: string; amount: number };
 type FinancialLineWithSection = FinancialLine & { section: string };
 
+// SOLIS Final Phase §0.5 — display-only currency formatting, matching the
+// Intl.NumberFormat convention every other currency display in this phase
+// now uses. The underlying report values are unchanged.
+const CURRENCY = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+function formatReportCents(cents: number): string {
+  return CURRENCY.format(cents / 100);
+}
+
 const FINANCIAL_LINE_COLUMNS: DataTableColumn<FinancialLine>[] = [
   { header: 'Account #', value: (r) => r.accountNumber },
   { header: 'Account', value: (r) => r.accountName },
-  { header: 'Amount', value: (r) => `$${(r.amount / 100).toFixed(2)}` },
+  { header: 'Amount', value: (r) => formatReportCents(r.amount), numeric: true },
 ];
 const FINANCIAL_SECTION_COLUMNS: DataTableColumn<FinancialLineWithSection>[] = [
   { header: 'Section', value: (r) => r.section },
@@ -42,8 +49,8 @@ function renderFinancialData(financialReportKey: string, data: unknown) {
             { header: 'Account #', value: (r) => r.accountNumber },
             { header: 'Account', value: (r) => r.accountName },
             { header: 'Type', value: (r) => r.accountType },
-            { header: 'Debit', value: (r) => `$${(r.debitTotal / 100).toFixed(2)}` },
-            { header: 'Credit', value: (r) => `$${(r.creditTotal / 100).toFixed(2)}` },
+            { header: 'Debit', value: (r) => formatReportCents(r.debitTotal), numeric: true },
+            { header: 'Credit', value: (r) => formatReportCents(r.creditTotal), numeric: true },
           ]}
         />
       );
@@ -70,8 +77,8 @@ function renderFinancialData(financialReportKey: string, data: unknown) {
           rows={rows}
           columns={[
             { header: 'Case', value: (r) => r.caseId },
-            { header: 'Balance Due', value: (r) => `$${(r.balanceDue / 100).toFixed(2)}` },
-            { header: 'Age (days)', value: (r) => String(r.ageDays) },
+            { header: 'Balance Due', value: (r) => formatReportCents(r.balanceDue), numeric: true },
+            { header: 'Age (days)', value: (r) => String(r.ageDays), numeric: true },
             { header: 'Bucket', value: (r) => r.bucket },
           ]}
         />
@@ -87,7 +94,7 @@ function renderFinancialData(financialReportKey: string, data: unknown) {
             { header: 'Entry #', value: (r) => r.entryNumber },
             { header: 'Source', value: (r) => r.sourceType },
             { header: 'Memo', value: (r) => r.memo },
-            { header: 'Amount', value: (r) => `$${(r.totalAmount / 100).toFixed(2)}` },
+            { header: 'Amount', value: (r) => formatReportCents(r.totalAmount), numeric: true },
           ]}
         />
       );
@@ -102,7 +109,7 @@ function renderFinancialData(financialReportKey: string, data: unknown) {
             { header: 'Entry #', value: (r) => r.entryNumber },
             { header: 'Memo', value: (r) => r.memo },
             { header: 'Direction', value: (r) => r.direction },
-            { header: 'Amount', value: (r) => `$${(r.amount / 100).toFixed(2)}` },
+            { header: 'Amount', value: (r) => formatReportCents(r.amount), numeric: true },
           ]}
         />
       );
@@ -161,7 +168,14 @@ export default function ReportViewerPage({ params }: { params: Promise<{ reportK
   const runQuery = useReportRun(organizationId, definition ? reportKey : null, filters);
 
   if (permissionsQuery.isPending || definitionsQuery.isPending) {
-    return <p>Loading report…</p>;
+    return (
+      <div className="sx-loading" aria-busy="true">
+        <span className="sx-skeleton" style={{ width: '90%' }} />
+        <span className="sx-skeleton" style={{ width: '70%' }} />
+        <span className="sx-skeleton" style={{ width: '80%' }} />
+        <span className="sr-only">Loading report…</span>
+      </div>
+    );
   }
 
   const permissions = permissionsQuery.data?.permissions ?? [];
@@ -176,41 +190,80 @@ export default function ReportViewerPage({ params }: { params: Promise<{ reportK
 
   return (
     <div>
-      <div className={styles.header}>
+      <Link href="/reports" className="sx-back">
+        ← Reports
+      </Link>
+      <div className="sx-page-header">
         <div>
-          <Link href="/reports" className={styles.backLink}>
-            ← Reports
-          </Link>
-          <h1 className={styles.title}>{definition.displayName}</h1>
-          <p className={styles.description}>{definition.description}</p>
+          <h1 className="sx-page-title">{definition.displayName}</h1>
+          {definition.description && <p className="sx-page-desc">{definition.description}</p>}
         </div>
         {canExport && (
-          <a href={exportReportCsvUrl(organizationId, reportKey, filters)}>
-            <Button variant="secondary">Export CSV</Button>
+          <a href={exportReportCsvUrl(organizationId, reportKey, filters)} className="sx-btn sx-btn-secondary">
+            Export CSV
           </a>
         )}
       </div>
 
       <FilterBar allowedFilters={definition.defaultFilters} values={filters} onChange={setFilters} staffList={staffList} />
 
-      {runQuery.isPending && <p>Loading…</p>}
-      {runQuery.isError && <EmptyState message="Something went wrong loading this report." />}
+      {runQuery.isPending && (
+        <div className="sx-loading" aria-busy="true">
+          <span className="sx-skeleton" style={{ width: '90%' }} />
+          <span className="sx-skeleton" style={{ width: '70%' }} />
+          <span className="sr-only">Loading…</span>
+        </div>
+      )}
+      {runQuery.isError && (
+        <div className="sx-error-state" role="alert">
+          Something went wrong loading this report.
+        </div>
+      )}
 
       {runQuery.data?.kind === 'financial' && (
         <div className={styles.body}>{renderFinancialData(runQuery.data.financialReportKey, runQuery.data.data)}</div>
       )}
 
       {runQuery.data?.kind === 'metrics' && (
-        <div className={styles.metricsGrid}>
-          {runQuery.data.metrics.map((metric) => {
-            const metricDef = getMetricDefinition(metric.metricKey);
-            return (
-              <div key={metric.metricKey} className={styles.metricSlot}>
-                {renderMetricValue(metric.metricKey, metric.value, metricDef?.dataType ?? 'count', metricDef?.unit ?? '', metric.displayName)}
-              </div>
-            );
-          })}
-        </div>
+        <>
+          {/* SOLIS Final Phase §4.2: scalar metrics (MetricCard output) go
+              in the shared .sx-kpis strip, max-width 640px, per spec.
+              Array-shaped metrics (charts/tables — not plain stat cards)
+              keep the pre-existing grid, since .sx-kpis is a fixed-height
+              strip layout that was never meant to host a bar/donut chart
+              or a data table — the spec's own "Known gaps" section (§11)
+              notes it wasn't built from a live session, so this scoping
+              is a deliberate, conservative read rather than forcing every
+              shape into the KPI strip. */}
+          {runQuery.data.metrics.some((m) => !Array.isArray(m.value)) && (
+            <div className="sx-kpis" style={{ maxWidth: 640 }}>
+              {runQuery.data.metrics
+                .filter((m) => !Array.isArray(m.value))
+                .map((metric) => {
+                  const metricDef = getMetricDefinition(metric.metricKey);
+                  return (
+                    <div key={metric.metricKey} className={styles.metricSlot}>
+                      {renderMetricValue(metric.metricKey, metric.value, metricDef?.dataType ?? 'count', metricDef?.unit ?? '', metric.displayName)}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+          {runQuery.data.metrics.some((m) => Array.isArray(m.value)) && (
+            <div className={styles.metricsGrid}>
+              {runQuery.data.metrics
+                .filter((m) => Array.isArray(m.value))
+                .map((metric) => {
+                  const metricDef = getMetricDefinition(metric.metricKey);
+                  return (
+                    <div key={metric.metricKey} className={styles.metricSlot}>
+                      {renderMetricValue(metric.metricKey, metric.value, metricDef?.dataType ?? 'count', metricDef?.unit ?? '', metric.displayName)}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

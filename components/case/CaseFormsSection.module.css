@@ -47,21 +47,9 @@
   min-width: 0;
 }
 
-.retryError {
-  color: var(--color-danger-text);
-  font-size: var(--font-size-sm);
-}
-
 .retrySuccess {
   color: var(--color-success-text);
   font-size: var(--font-size-sm);
-}
-
-.confirmActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-4);
-  margin-top: var(--space-6);
 }
 
 .label {

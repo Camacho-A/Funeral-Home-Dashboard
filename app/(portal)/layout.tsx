@@ -59,7 +59,7 @@ export default async function PortalLayout({ children }: { children: React.React
       redirect(`/login?error=${membershipResult.reason}`);
     }
 
-    const currentSession = await resolveCurrentSession(membershipResult.context, session.user.displayName, dataAdapterMode);
+    const currentSession = await resolveCurrentSession(membershipResult.context, session.user.displayName, session.user.email, dataAdapterMode);
 
     return (
       <CaseSearchProvider>
@@ -77,7 +77,7 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect(`/login?error=${result.reason}`);
   }
 
-  const currentSession = await resolveCurrentSession(result.context, session.user.displayName, dataAdapterMode);
+  const currentSession = await resolveCurrentSession(result.context, session.user.displayName, session.user.email, dataAdapterMode);
 
   return (
     <CaseSearchProvider>
@@ -105,8 +105,9 @@ export default async function PortalLayout({ children }: { children: React.React
 async function resolveCurrentSession(
   context: { userId: string; organizationId: string; role: string },
   displayName: string,
+  email: string,
   dataAdapterMode: ReturnType<typeof getDataAdapterMode>,
 ): Promise<Session> {
   const staffProfile = await resolveStaffProfileForCaller(context, dataAdapterMode);
-  return { staffId: staffProfile?.id ?? null, displayName };
+  return { staffId: staffProfile?.id ?? null, displayName, email };
 }

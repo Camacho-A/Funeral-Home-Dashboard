@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DashboardPage from './page';
 import * as reportsClient from '@/lib/reportsClient';
@@ -19,16 +19,16 @@ import type { Case } from '@/types/case';
  * fixtures, matching how the rest of this app's page-level tests already
  * run.
  *
- * Case list scalability, Phase 3 — UX correction (2026-09): this file's
- * tab/pagination/search/Load-More/mutation-invalidation coverage moved
- * to app/(portal)/cases/page.test.tsx, since that behavior now lives on
- * the dedicated case-list route, not the Dashboard. What remains here
- * proves the Dashboard stayed a fixed-height summary — Needs Attention
- * and Cases by Stage side by side in one grid row (Phase 3 — layout
- * correction, 2026-09: a brief stacked-full-width iteration was tried
- * and then explicitly reverted back to side by side), Cases by Stage a
- * pure navigation hub, and critically, NO case results of any kind
- * rendered inline.
+ * SOLIS true redesign, Phase 1 (2026-10): rewritten for the new
+ * composition (a KPI strip + a two-column briefing layout, replacing the
+ * prior side-by-side Needs-Attention/Cases-by-Stage grid and the
+ * separate full-width Financial Summary section) and for Cases by
+ * Stage's new Stage Preview accordion. What this file still proves is
+ * unchanged in substance: the Dashboard stays a fixed-height summary — no
+ * case results render inline until a stage is explicitly expanded, Cases
+ * by Stage's own counts/links are unchanged navigation, and Financial
+ * Summary's figures (now cells in the KPI strip) are unchanged, correctly
+ * formatted, and correctly gated by permission/loading/error state.
  */
 vi.mock('@/lib/reportsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/reportsClient')>('@/lib/reportsClient');
@@ -92,165 +92,113 @@ afterEach(() => {
   }
 });
 
-describe('DashboardPage — lower "Attention" section removed (Manors go-live cleanup, 2026-09)', () => {
-  it('1. never renders the lower "Attention" card, even when the API returns attention data', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
-      ...BASE_DASHBOARD,
-      attention: { overdueCases: 3, overdueTasks: 2, outstandingSignatures: 1, failedPayments: 1 },
-    });
-    renderPage();
-
-    await waitFor(() => expect(screen.queryByText('Loading financial summary…')).not.toBeInTheDocument());
-    expect(screen.queryByText('Attention')).not.toBeInTheDocument();
-    expect(screen.queryByText('Overdue tasks')).not.toBeInTheDocument();
-    expect(screen.queryByText('Outstanding signatures')).not.toBeInTheDocument();
-    expect(screen.queryByText('Failed payments')).not.toBeInTheDocument();
-  });
-
-  it('2. the upper "Needs Attention" panel remains present regardless of the lower section', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
-    renderPage();
-    expect(await screen.findByText('Needs attention')).toBeInTheDocument();
-  });
-});
-
-describe('DashboardPage — Financial Summary expanded layout (Manors go-live cleanup, 2026-09)', () => {
-  it('4/5. renders the real Financial Summary figures unchanged, in their own full-width section', async () => {
+describe('DashboardPage — KPI strip (SOLIS true redesign, Phase 1)', () => {
+  it('renders the real financial figures, correctly comma-formatted (fixes the pre-existing no-thousands-separator bug)', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
       ...BASE_DASHBOARD,
       financial: { grossRevenue: 500000, cashCollected: 350000, accountsReceivableTotal: 150000 },
     });
     renderPage();
 
-    expect(await screen.findByText('Financial summary')).toBeInTheDocument();
-    expect(screen.getByText('$5000.00')).toBeInTheDocument();
-    expect(screen.getByText('$3500.00')).toBeInTheDocument();
-    expect(screen.getByText('$1500.00')).toBeInTheDocument();
+    expect(await screen.findByText('$5,000.00')).toBeInTheDocument();
+    expect(screen.getByText('$3,500.00')).toBeInTheDocument();
+    expect(screen.getByText('$1,500.00')).toBeInTheDocument();
   });
 
-  it('6. shows a loading placeholder while the dashboard query is still pending', async () => {
-    let resolveFetch!: (value: DashboardResult) => void;
-    vi.mocked(reportsClient.fetchDashboard).mockReturnValue(
-      new Promise((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
+  it('shows no financial cells, and no error notice, while a role without financial access is viewing (financial: null)', async () => {
+    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
 
-    expect(screen.getByText('Loading financial summary…')).toBeInTheDocument();
-    expect(screen.queryByText('Financial summary')).not.toBeInTheDocument();
-
-    resolveFetch({ ...BASE_DASHBOARD, financial: { grossRevenue: 100, cashCollected: 100, accountsReceivableTotal: 0 } });
-    await waitFor(() => expect(screen.getByText('Financial summary')).toBeInTheDocument());
+    // "Active cases" renders immediately, before the mocked dashboard
+    // promise resolves — wait for the financial cells to actually settle
+    // (absent, once `financial` resolves to null) rather than asserting
+    // their absence mid-flight, while the KPI strip is still in its
+    // loading placeholder state.
+    await waitFor(() => expect(screen.queryByText('Gross revenue')).not.toBeInTheDocument());
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Unable to load the financial summary right now.')).not.toBeInTheDocument();
   });
 
-  it('8. shows an error placeholder if the dashboard query fails, without leaving a broken layout', async () => {
+  it('shows a quiet inline notice, not a missing section with no explanation, if the dashboard query fails', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockRejectedValue(new Error('network error'));
     renderPage();
 
     expect(await screen.findByText('Unable to load the financial summary right now.')).toBeInTheDocument();
-    expect(screen.queryByText('Financial summary')).not.toBeInTheDocument();
   });
 
-  it('7/9/10. a role without financial access (financial: null) shows no panel and no empty box — the section collapses entirely', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD); // financial: null, as an Office Staff caller would receive
+  it('always shows Active cases and Needs attention, regardless of financial access', async () => {
+    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
-
-    await waitFor(() => expect(screen.queryByText('Loading financial summary…')).not.toBeInTheDocument());
-    expect(screen.queryByText('Financial summary')).not.toBeInTheDocument();
-    expect(screen.queryByText('Unable to load the financial summary right now.')).not.toBeInTheDocument();
-  });
-
-  it('9. a role without financial access never gains it merely because the layout changed — same null-gated visibility as before', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
-      ...BASE_DASHBOARD,
-      attention: { overdueCases: 1, overdueTasks: 0, outstandingSignatures: 0, failedPayments: 0 },
-      financial: null,
-    });
-    renderPage();
-
-    await waitFor(() => expect(screen.queryByText('Loading financial summary…')).not.toBeInTheDocument());
-    expect(screen.queryByText('Financial summary')).not.toBeInTheDocument();
-    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
-  });
-
-  it('11. the expanded section imposes no fixed/desktop-only width — FinancialSummaryPanel\'s own responsive flex-wrap stats render unchanged', async () => {
-    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
-      ...BASE_DASHBOARD,
-      financial: { grossRevenue: 100, cashCollected: 100, accountsReceivableTotal: 0 },
-    });
-    renderPage();
-
-    const heading = await screen.findByText('Financial summary');
-    const panel = heading.parentElement!;
-    const section = panel.parentElement;
-    expect(section?.getAttribute('style')).toBeNull(); // no inline width/fixed sizing introduced
-    expect(within(panel).getAllByRole('link')).toHaveLength(3);
+    expect(await screen.findByText('Active cases')).toBeInTheDocument();
+    // "Needs attention" legitimately appears twice — once as the KPI
+    // strip's own cell label, once as the Needs Attention panel's
+    // heading — both per the approved design.
+    expect(screen.getAllByText('Needs attention').length).toBeGreaterThanOrEqual(2);
   });
 });
 
-/**
- * Case list scalability, Phase 3 — UX correction + layout correction
- * (2026-09). Cases by Stage is a pure navigation hub into the dedicated
- * `/cases` route — these tests prove the Dashboard itself never renders
- * case results, and that Needs Attention/Cases by Stage sit side by
- * side in one grid row (the layout correction's own requirement — a
- * brief stacked-full-width iteration in between is superseded).
- */
-describe('DashboardPage — Cases by Stage is a navigation hub, not a case list (Case list scalability, Phase 3 — UX correction)', () => {
-  it('1. Needs Attention and Cases by Stage sit side by side, as siblings in one grid row', async () => {
+describe('DashboardPage — Needs Attention remains present (Manors go-live cleanup, 2026-09)', () => {
+  it('the "Needs attention" panel remains present regardless of financial/attention section state', async () => {
+    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
+      ...BASE_DASHBOARD,
+      attention: { overdueCases: 3, overdueTasks: 2, outstandingSignatures: 1, failedPayments: 1 },
+    });
+    renderPage();
+
+    expect(await screen.findByText('All caught up')).toBeInTheDocument();
+    // The lower, org-wide "Attention" card (a distinct, unrelated concept —
+    // see dashboardService.ts's own DashboardAttentionSection) was removed
+    // from this page well before this phase and stays removed.
+    expect(screen.queryByText('Overdue tasks')).not.toBeInTheDocument();
+    expect(screen.queryByText('Outstanding signatures')).not.toBeInTheDocument();
+  });
+});
+
+describe('DashboardPage — Cases by Stage is a navigation hub with a Stage Preview accordion (SOLIS true redesign, Phase 1)', () => {
+  it('Needs Attention and Cases by Stage render in the two-column briefing layout, Needs Attention first in DOM order', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
 
-    const needsAttentionHeading = await screen.findByText('Needs attention');
+    // "Needs attention" legitimately appears twice (the KPI strip's own
+    // cell label, and the panel's own heading, which carries the
+    // `.title` class the KPI strip's `.label` cell does not) — the panel
+    // heading is the one this test cares about.
+    await screen.findByText('Active cases');
+    const needsAttentionHeading = screen.getAllByText('Needs attention').find((el) => el.className.includes('title'))!;
     const casesByStageHeading = await screen.findByText('Cases by stage');
-    // Document order is preserved (Needs Attention first) — the grid
-    // only changes how this pair is PAINTED, never their DOM order.
     expect(needsAttentionHeading.compareDocumentPosition(casesByStageHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // Both panels are direct children of the SAME grid row container —
-    // not two separately-wrapped, independently full-width sections.
-    // NeedsAttentionPanel's heading sits inside an extra `.header` div
-    // (title + count, side by side); CasesByStagePanel's own title is a
-    // direct child of its panel root — so each needs its own number of
-    // hops up to reach that shared grid parent.
-    const needsAttentionGridParent = needsAttentionHeading.parentElement!.parentElement!.parentElement;
-    const casesByStageGridParent = casesByStageHeading.parentElement!.parentElement;
-    expect(needsAttentionGridParent).toBe(casesByStageGridParent);
-    expect(needsAttentionGridParent).not.toBeNull();
   });
 
-  it('2/3. Cases by Stage contains an "All Cases" navigation link to /cases (no stage filter)', async () => {
+  it('contains an "All cases" navigation link to /cases (no stage filter)', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
 
-    const allCasesLink = await screen.findByRole('link', { name: /All Cases/ });
+    const allCasesLink = await screen.findByRole('link', { name: /All cases/ });
     expect(allCasesLink).toHaveAttribute('href', '/cases');
   });
 
-  it('4. every canonical stage remains present as a navigation link, filtering the /cases route to that stage', async () => {
+  it('every canonical stage remains present as a collapsed toggle button', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
 
     for (const label of STAGES) {
-      const link = await screen.findByRole('link', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
-      const url = new URL(link.getAttribute('href')!, 'http://localhost');
-      expect(url.pathname).toBe('/cases');
-      expect(url.searchParams.get('stage')).toBe(label);
+      const button = await screen.findByRole('button', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
+      expect(button).toHaveAttribute('aria-expanded', 'false');
     }
   });
 
-  it('5. renders stage counts from the server-side counts endpoint, not a client-side aggregation', async () => {
+  it('renders stage counts from the server-side counts endpoint, not a client-side aggregation', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     for (let i = 0; i < 3; i++) {
       pushCase(`c-${i}`, { caseNumber: `B2026-${100 + i}`, createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, rawStage: 7 });
     }
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
 
-    const completedLink = await screen.findByRole('link', { name: /^Completed/ });
-    await waitFor(() => expect(completedLink.textContent).toContain('3'));
+    const completedButton = await screen.findByRole('button', { name: /^Completed/ });
+    await waitFor(() => expect(completedButton.textContent).toContain('3'));
   });
 
-  it('6. 5/6/7. the Dashboard never renders individual case rows or cards, regardless of how many cases exist', async () => {
+  it('never renders individual case rows or cards while every stage is collapsed, regardless of how many cases exist', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     for (let i = 0; i < 10; i++) {
       pushCase(`bulk-${i}`, {
@@ -264,17 +212,36 @@ describe('DashboardPage — Cases by Stage is a navigation hub, not a case list 
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
 
     await screen.findByText('Cases by stage');
-    // None of the pushed decedents' names ever appear anywhere on the
-    // Dashboard — there is no case list/card UI left to render them.
     for (let i = 0; i < 10; i++) {
       expect(screen.queryByText(`BULK DECEDENT ${i}`)).not.toBeInTheDocument();
     }
-    // No "Load More" control either — that belongs exclusively to the
-    // dedicated case-list route's pagination, never the Dashboard.
     expect(screen.queryByRole('button', { name: 'Load More' })).not.toBeInTheDocument();
   });
 
-  it('8. Financial Summary and the rest of the Dashboard remain in the normal page flow, reachable without scrolling past any case list', async () => {
+  it('clicking a stage with real cases expands its Stage Preview, showing those cases by name — the one approved Dashboard interaction change', async () => {
+    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
+    // rawStage 3 -> displayStage 2 ("EDRS & Doctor / Cause of Death") — a
+    // non-terminal stage, so CaseViewModel's own effective-stage rollback
+    // (for the terminal return-of-remains requirement, see
+    // domain/cases/transitions.ts) can never apply and shift this case to
+    // a different displayed stage than its raw stage would suggest.
+    pushCase('preview-1', { caseNumber: 'B2026-900', createdAt: '2026-03-01T00:00:00.000Z', decedentName: 'PREVIEW DECEDENT', rawStage: 3 });
+    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
+
+    const stageButton = await screen.findByRole('button', { name: /^EDRS & Doctor \/ Cause of Death/ });
+    fireEvent.click(stageButton);
+
+    expect(stageButton).toHaveAttribute('aria-expanded', 'true');
+    // Visual fidelity correction (2026-10): the Stage Preview applies the
+    // same presentation-only title-case helper the approved design's
+    // typography rules call for (utils/string.ts#toDisplayTitleCase) —
+    // the stored decedentName ("PREVIEW DECEDENT") is never rewritten,
+    // only rendered differently.
+    expect(await screen.findByText('Preview Decedent')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Preview Decedent/ })).toHaveAttribute('href', '/cases/preview-1');
+  });
+
+  it('Financial Summary cells and the rest of the Dashboard remain in the normal page flow, reachable without scrolling past any case list', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue({
       ...BASE_DASHBOARD,
       financial: { grossRevenue: 100, cashCollected: 100, accountsReceivableTotal: 0 },
@@ -282,6 +249,6 @@ describe('DashboardPage — Cases by Stage is a navigation hub, not a case list 
     renderPage();
 
     await screen.findByText('Cases by stage');
-    expect(await screen.findByText('Financial summary')).toBeInTheDocument();
+    expect(await screen.findByText('Gross revenue')).toBeInTheDocument();
   });
 });

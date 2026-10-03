@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
@@ -101,38 +100,52 @@ export function DocumentTemplateEditorModal({
   return (
     <Modal open={open} onClose={onClose} title={editingTemplate ? `Edit "${editingTemplate.name}"` : 'New Document Template'}>
       <form className={styles.form} onSubmit={handleSubmit}>
-        <div className={styles.mainColumn}>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="doc-template-name">
-              Name
-            </label>
-            <TextField id="doc-template-name" value={name} onChange={(e) => setName(e.target.value)} disabled={Boolean(editingTemplate)} required autoFocus={!editingTemplate} />
-          </div>
+        <div className={`${styles.mainColumn} sx-form-section`}>
+          <div className="sx-form-grid">
+            <div className="sx-field">
+              <label className="sx-label" htmlFor="doc-template-name">
+                Name
+              </label>
+              <TextField
+                id="doc-template-name"
+                className="sx-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={Boolean(editingTemplate)}
+                required
+                autoFocus={!editingTemplate}
+              />
+            </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="doc-template-type">
-              Document type
-            </label>
-            <SelectField id="doc-template-type" value={documentTypeKey} onChange={(e) => setDocumentTypeKey(e.target.value)} disabled={Boolean(editingTemplate)} required>
-              <option value="" disabled>
-                Select a document type…
-              </option>
-              {DOCUMENT_TYPE_OPTIONS.map((def) => (
-                <option key={def.key} value={def.key}>
-                  {def.displayName}
+            <div className="sx-field">
+              <label className="sx-label" htmlFor="doc-template-type">
+                Document type
+              </label>
+              <SelectField className="sx-select" id="doc-template-type" value={documentTypeKey} onChange={(e) => setDocumentTypeKey(e.target.value)} disabled={Boolean(editingTemplate)} required>
+                <option value="" disabled>
+                  Select a document type…
                 </option>
-              ))}
-            </SelectField>
+                {DOCUMENT_TYPE_OPTIONS.map((def) => (
+                  <option key={def.key} value={def.key}>
+                    {def.displayName}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="sx-field sx-span-all">
+              <label className="sx-label" htmlFor="doc-template-body">
+                Body (click a merge field on the right to insert it)
+              </label>
+              <TextArea id="doc-template-body" className={`${styles.bodyTextArea} sx-textarea`} value={body} onChange={(e) => setBody(e.target.value)} rows={12} required />
+            </div>
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="doc-template-body">
-              Body (click a merge field on the right to insert it)
-            </label>
-            <TextArea id="doc-template-body" className={styles.bodyTextArea} value={body} onChange={(e) => setBody(e.target.value)} rows={12} required />
-          </div>
-
-          {error && <span className={styles.error}>{error}</span>}
+          {error && (
+            <div className="sx-form-banner sx-form-banner-error" role="alert">
+              {error}
+            </div>
+          )}
 
           {previewHtml !== null && (
             <div className={styles.previewFrame}>
@@ -142,21 +155,21 @@ export function DocumentTemplateEditorModal({
           )}
 
           <div className={styles.actions}>
-            <Button type="button" variant="secondary" onClick={handlePreview} disabled={!body.trim() || preview.isPending}>
-              {preview.isPending ? 'Rendering…' : 'Preview'}
-            </Button>
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
               Cancel
-            </Button>
-            <Button type="submit" disabled={!name.trim() || !documentTypeKey || !body.trim() || isSaving}>
+            </button>
+            <button type="button" className="sx-btn sx-btn-secondary" onClick={handlePreview} disabled={!body.trim() || preview.isPending}>
+              {preview.isPending ? 'Rendering…' : 'Preview'}
+            </button>
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={!name.trim() || !documentTypeKey || !body.trim() || isSaving}>
               {editingTemplate ? 'Save New Version' : 'Create Template'}
-            </Button>
+            </button>
           </div>
         </div>
 
         <div className={styles.mergeFieldBrowser}>
           <div className={styles.mergeFieldHeader}>Merge fields</div>
-          <TextField placeholder="Search…" value={mergeFieldFilter} onChange={(e) => setMergeFieldFilter(e.target.value)} className={styles.mergeFieldSearch} />
+          <TextField placeholder="Search…" value={mergeFieldFilter} onChange={(e) => setMergeFieldFilter(e.target.value)} className={`${styles.mergeFieldSearch} sx-input`} />
           <div className={styles.mergeFieldList}>
             {filteredMergeFields.map((field) => (
               <button

@@ -6,12 +6,9 @@ import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationProfile, useUpdateOrganizationProfile, useUpdatePrimaryLocationProfile } from '@/hooks/useOrganizationProfile';
 import { useOrganizationBranding, useUploadBrandingLogo, useRemoveBrandingLogo } from '@/hooks/useOrganizationBranding';
 import { OrganizationProfileValidationError, type OrganizationProfileFields, type PrimaryLocationFields } from '@/lib/organizationProfileClient';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
-import styles from './OrganizationProfilePanel.module.css';
 
 const LOGO_ACCEPT = 'image/png,image/jpeg,image/webp';
 
@@ -36,6 +33,13 @@ const LOCATION_TYPE_OPTIONS: Array<{ value: PrimaryLocationFields['locationType'
  * `requireMfa`, `defaultCurrency`, `timezone`, or any internal id) is
  * ever fetched, displayed, or editable here — see the API route's own
  * comment for why `timezone` specifically is withheld.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S1): restyled to the
+ * `.sx-settings-section`/`.sx-form-grid`/`.sx-logo` system. This panel
+ * renders as `{children}` inside `SettingsShell` (via the new
+ * `app/(portal)/settings/layout.tsx`), which already owns the page's one
+ * "Settings" title and `.sx-settings-head` — this component starts
+ * directly with its own sections.
  */
 export function OrganizationProfilePanel() {
   const { organizationId } = useOrganization();
@@ -45,19 +49,26 @@ export function OrganizationProfilePanel() {
   const profileQuery = useOrganizationProfile(canManage ? organizationId : '');
 
   if (permissionsQuery.isPending) {
-    return <p className={styles.description}>Loading…</p>;
+    return <p className="sx-help">Loading…</p>;
   }
 
   if (!canManage) {
-    return <p className={styles.description}>You don&apos;t have access to Organization Profile.</p>;
+    return <p className="sx-help">You don&apos;t have access to Organization Profile.</p>;
   }
 
   if (profileQuery.isPending) {
-    return <p className={styles.description}>Loading organization profile…</p>;
+    return (
+      <div className="sx-loading" aria-busy="true">
+        <span className="sx-skeleton" style={{ width: '90%' }} />
+        <span className="sx-skeleton" style={{ width: '70%' }} />
+        <span className="sx-skeleton" style={{ width: '80%' }} />
+        <span className="sr-only">Loading organization profile…</span>
+      </div>
+    );
   }
 
   if (profileQuery.isError) {
-    return <p className={styles.error}>{(profileQuery.error as Error).message}</p>;
+    return <div className="sx-error-state" role="alert">{(profileQuery.error as Error).message}</div>;
   }
 
   const data = profileQuery.data;
@@ -101,67 +112,75 @@ function OrganizationSection({ organizationId, initial }: { organizationId: stri
   const generalError = error && !(error instanceof OrganizationProfileValidationError) ? (error as Error).message : null;
 
   return (
-    <Card className={styles.section}>
-      <h2 className={styles.sectionTitle}>Organization</h2>
-      <form onSubmit={handleSave}>
-        <label className={styles.field}>
-          <span className={styles.label}>Organization Name</span>
-          <TextField value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'name') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'name')}</span>}
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>Legal Name</span>
-          <TextField value={form.legalName} onChange={(e) => setForm({ ...form, legalName: e.target.value })} />
-          {error && fieldErrorMessage(error, 'legalName') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'legalName')}</span>}
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>Primary Email</span>
-          <TextField type="email" value={form.primaryEmail} onChange={(e) => setForm({ ...form, primaryEmail: e.target.value })} />
-          {error && fieldErrorMessage(error, 'primaryEmail') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'primaryEmail')}</span>}
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>Primary Phone</span>
-          <TextField type="tel" value={form.primaryPhone} onChange={(e) => setForm({ ...form, primaryPhone: e.target.value })} />
-          {error && fieldErrorMessage(error, 'primaryPhone') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'primaryPhone')}</span>}
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>Website</span>
-          <TextField
-            type="url"
-            placeholder="https://example.com"
-            value={form.website ?? ''}
-            onChange={(e) => setForm({ ...form, website: e.target.value })}
-          />
-          {error && fieldErrorMessage(error, 'website') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'website')}</span>}
-        </label>
-
-        {generalError && <p className={styles.error}>{generalError}</p>}
-        {savedAt && <p className={styles.success}>Organization profile saved.</p>}
-
-        <div className={styles.footer}>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? 'Saving…' : 'Save'}
-          </Button>
+    <section className="sx-settings-section">
+      <div className="sx-settings-section-head">
+        <div>
+          <h3 className="sx-settings-section-title">Organization</h3>
         </div>
+      </div>
+      <form onSubmit={handleSave}>
+        <div className="sx-form-grid">
+          <div className="sx-field">
+            <span className="sx-label">Organization Name</span>
+            <TextField className="sx-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            {error && fieldErrorMessage(error, 'name') && <span className="sx-error">{fieldErrorMessage(error, 'name')}</span>}
+          </div>
+
+          <div className="sx-field">
+            <span className="sx-label">Legal Name</span>
+            <TextField className="sx-input" value={form.legalName} onChange={(e) => setForm({ ...form, legalName: e.target.value })} />
+            {error && fieldErrorMessage(error, 'legalName') && <span className="sx-error">{fieldErrorMessage(error, 'legalName')}</span>}
+          </div>
+
+          <div className="sx-field">
+            <span className="sx-label">Primary Email</span>
+            <TextField className="sx-input" type="email" value={form.primaryEmail} onChange={(e) => setForm({ ...form, primaryEmail: e.target.value })} />
+            {error && fieldErrorMessage(error, 'primaryEmail') && <span className="sx-error">{fieldErrorMessage(error, 'primaryEmail')}</span>}
+          </div>
+
+          <div className="sx-field">
+            <span className="sx-label">Primary Phone</span>
+            <TextField className="sx-input" type="tel" value={form.primaryPhone} onChange={(e) => setForm({ ...form, primaryPhone: e.target.value })} />
+            {error && fieldErrorMessage(error, 'primaryPhone') && <span className="sx-error">{fieldErrorMessage(error, 'primaryPhone')}</span>}
+          </div>
+
+          <div className="sx-field sx-span-all">
+            <span className="sx-label">Website</span>
+            <TextField
+              className="sx-input"
+              type="url"
+              placeholder="https://example.com"
+              value={form.website ?? ''}
+              onChange={(e) => setForm({ ...form, website: e.target.value })}
+            />
+            {error && fieldErrorMessage(error, 'website') && <span className="sx-error">{fieldErrorMessage(error, 'website')}</span>}
+          </div>
+        </div>
+
+        {generalError && <div className="sx-form-banner sx-form-banner-error">{generalError}</div>}
+
+        <div className="sx-save-row">
+          <span className="sx-save-state" data-state={savedAt ? 'saved' : undefined}>{savedAt ? '✓ Saved' : ''}</span>
+          <button type="submit" className="sx-btn sx-btn-primary" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {savedAt && <p className="sr-only" role="status">Organization profile saved.</p>}
       </form>
-    </Card>
+    </section>
   );
 }
 
 function PrimaryLocationSection({ organizationId, initial }: { organizationId: string; initial: PrimaryLocationFields | null }) {
   if (!initial) {
     return (
-      <Card className={styles.section}>
-        <h2 className={styles.sectionTitle}>Primary Location</h2>
-        <p className={styles.error}>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Primary Location</h3>
+        <div className="sx-error-state" role="alert">
           No primary location exists for this organization yet. Contact support to set one up before it can be managed
           here.
-        </p>
-      </Card>
+        </div>
+      </section>
     );
   }
 
@@ -189,84 +208,89 @@ function PrimaryLocationForm({ organizationId, initial }: { organizationId: stri
   const generalError = error && !(error instanceof OrganizationProfileValidationError) ? (error as Error).message : null;
 
   return (
-    <Card className={styles.section}>
-      <h2 className={styles.sectionTitle}>Primary Location</h2>
+    <section className="sx-settings-section">
+      <h3 className="sx-settings-section-title">Primary Location</h3>
       <form onSubmit={handleSave}>
-        <label className={styles.field}>
-          <span className={styles.label}>Location Name</span>
-          <TextField value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'name') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'name')}</span>}
-        </label>
+        <div className="sx-form-grid">
+          <div className="sx-field">
+            <span className="sx-label">Location Name</span>
+            <TextField className="sx-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            {error && fieldErrorMessage(error, 'name') && <span className="sx-error">{fieldErrorMessage(error, 'name')}</span>}
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Location Type</span>
-          <SelectField value={form.locationType} onChange={(e) => setForm({ ...form, locationType: e.target.value })}>
-            {LOCATION_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </SelectField>
-          {error && fieldErrorMessage(error, 'locationType') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'locationType')}</span>}
-        </label>
+          <div className="sx-field">
+            <span className="sx-label">Location Type</span>
+            <SelectField className="sx-select" value={form.locationType} onChange={(e) => setForm({ ...form, locationType: e.target.value })}>
+              {LOCATION_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </SelectField>
+            {error && fieldErrorMessage(error, 'locationType') && <span className="sx-error">{fieldErrorMessage(error, 'locationType')}</span>}
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Address Line 1</span>
-          <TextField value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'addressLine1') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'addressLine1')}</span>}
-        </label>
+          <div className="sx-field sx-span-all">
+            <span className="sx-label">Address Line 1</span>
+            <TextField className="sx-input" value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} required />
+            {error && fieldErrorMessage(error, 'addressLine1') && <span className="sx-error">{fieldErrorMessage(error, 'addressLine1')}</span>}
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Address Line 2</span>
-          <TextField value={form.addressLine2 ?? ''} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} />
-        </label>
+          <div className="sx-field sx-span-all">
+            <span className="sx-label">Address Line 2</span>
+            <TextField className="sx-input" value={form.addressLine2 ?? ''} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} />
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>City</span>
-          <TextField value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'city') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'city')}</span>}
-        </label>
+          <div className="sx-form-grid-3 sx-span-all" style={{ display: 'grid', columnGap: 16, rowGap: 14 }}>
+            <div className="sx-field">
+              <span className="sx-label">City</span>
+              <TextField className="sx-input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
+              {error && fieldErrorMessage(error, 'city') && <span className="sx-error">{fieldErrorMessage(error, 'city')}</span>}
+            </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>State</span>
-          <TextField value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'state') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'state')}</span>}
-        </label>
+            <div className="sx-field">
+              <span className="sx-label">State</span>
+              <TextField className="sx-input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required />
+              {error && fieldErrorMessage(error, 'state') && <span className="sx-error">{fieldErrorMessage(error, 'state')}</span>}
+            </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Postal Code</span>
-          <TextField value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'postalCode') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'postalCode')}</span>}
-        </label>
+            <div className="sx-field">
+              <span className="sx-label">Postal Code</span>
+              <TextField className="sx-input" value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} required />
+              {error && fieldErrorMessage(error, 'postalCode') && <span className="sx-error">{fieldErrorMessage(error, 'postalCode')}</span>}
+            </div>
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Country</span>
-          <TextField value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'country') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'country')}</span>}
-        </label>
+          <div className="sx-field">
+            <span className="sx-label">Country</span>
+            <TextField className="sx-input" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} required />
+            {error && fieldErrorMessage(error, 'country') && <span className="sx-error">{fieldErrorMessage(error, 'country')}</span>}
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Phone</span>
-          <TextField type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-          {error && fieldErrorMessage(error, 'phone') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'phone')}</span>}
-        </label>
+          <div className="sx-field">
+            <span className="sx-label">Phone</span>
+            <TextField className="sx-input" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+            {error && fieldErrorMessage(error, 'phone') && <span className="sx-error">{fieldErrorMessage(error, 'phone')}</span>}
+          </div>
 
-        <label className={styles.field}>
-          <span className={styles.label}>Email</span>
-          <TextField type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          {error && fieldErrorMessage(error, 'email') && <span className={styles.fieldError}>{fieldErrorMessage(error, 'email')}</span>}
-        </label>
-
-        {generalError && <p className={styles.error}>{generalError}</p>}
-        {savedAt && <p className={styles.success}>Primary location saved.</p>}
-
-        <div className={styles.footer}>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? 'Saving…' : 'Save'}
-          </Button>
+          <div className="sx-field">
+            <span className="sx-label">Email</span>
+            <TextField className="sx-input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            {error && fieldErrorMessage(error, 'email') && <span className="sx-error">{fieldErrorMessage(error, 'email')}</span>}
+          </div>
         </div>
+
+        {generalError && <div className="sx-form-banner sx-form-banner-error">{generalError}</div>}
+
+        <div className="sx-save-row">
+          <span className="sx-save-state" data-state={savedAt ? 'saved' : undefined}>{savedAt ? '✓ Saved' : ''}</span>
+          <button type="submit" className="sx-btn sx-btn-primary" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {savedAt && <p className="sr-only" role="status">Primary location saved.</p>}
       </form>
-    </Card>
+    </section>
   );
 }
 
@@ -279,6 +303,11 @@ function PrimaryLocationForm({ organizationId, initial }: { organizationId: stri
  * `PrimaryLocationSection`'s own precedent of trusting the parent's gate
  * (the real enforcement is server-side on the upload/remove routes
  * regardless of what this component renders).
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5: "Change logo"/"Upload logo"
+ * are the spec's own literal button labels (sentence case) — renamed from
+ * the prior "Change Logo"/"Upload Logo"; OrganizationProfilePanel.test.tsx
+ * updated accordingly (see this fork's report).
  */
 function BrandingSection({ organizationName }: { organizationName: string }) {
   const brandingQuery = useOrganizationBranding();
@@ -324,59 +353,57 @@ function BrandingSection({ organizationName }: { organizationName: string }) {
   const pending = uploadLogo.isPending || removeLogo.isPending;
 
   return (
-    <Card className={styles.section}>
-      <h2 className={styles.sectionTitle}>Organization Branding</h2>
+    <section className="sx-settings-section">
+      <h3 className="sx-settings-section-title">Organization Branding</h3>
 
       {brandingQuery.isPending ? (
-        <p className={styles.description}>Loading…</p>
+        <p className="sx-help">Loading…</p>
       ) : (
         <>
-          <p className={styles.label}>Logo</p>
-          <div className={styles.logoPreviewRow}>
-            <div className={styles.logoPreview}>
-              {logoUrl ? (
-                <img src={logoUrl} alt={`${organizationName} logo`} className={styles.logoImage} />
-              ) : (
-                <span className={styles.noLogo}>No logo</span>
+          <span className="sx-label">Logo</span>
+          <div className="sx-logo" style={{ marginTop: 6 }}>
+            <div className="sx-logo-preview" data-empty={logoUrl ? undefined : true}>
+              {logoUrl ? <img src={logoUrl} alt={`${organizationName} logo`} /> : <span>No logo</span>}
+            </div>
+            <div>
+              {!logoUrl && <p className="sx-help" style={{ margin: '0 0 8px' }}>No organization logo uploaded.</p>}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={LOGO_ACCEPT}
+                aria-label="Upload organization logo"
+                className="sr-only"
+                onChange={handleFileSelected}
+              />
+
+              <div className="sx-logo-actions">
+                <button type="button" className="sx-btn sx-btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={pending}>
+                  {uploadLogo.isPending ? 'Uploading…' : logoUrl ? 'Change logo' : 'Upload logo'}
+                </button>
+                {logoUrl && (
+                  <button type="button" className="sx-btn sx-btn-ghost" style={{ color: 'var(--sx-red)' }} onClick={() => setRemoveConfirmOpen(true)} disabled={pending}>
+                    Remove Logo
+                  </button>
+                )}
+              </div>
+
+              <p className="sx-help" style={{ margin: '8px 0 0' }} role="note">
+                PNG, JPEG, or WEBP. Up to 5MB.
+              </p>
+
+              {localError && (
+                <div className="sx-error-state" role="alert" style={{ marginTop: 8 }}>
+                  {localError}
+                </div>
+              )}
+              {savedAt && !localError && (
+                <p className="sr-only" role="status">
+                  Logo updated.
+                </p>
               )}
             </div>
-            {!logoUrl && <p className={styles.noLogo}>No organization logo uploaded.</p>}
           </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={LOGO_ACCEPT}
-            aria-label="Upload organization logo"
-            className={styles.hiddenFileInput}
-            onChange={handleFileSelected}
-          />
-
-          <div className={styles.actionsRow}>
-            <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={pending}>
-              {uploadLogo.isPending ? 'Uploading…' : logoUrl ? 'Change Logo' : 'Upload Logo'}
-            </Button>
-            {logoUrl && (
-              <Button type="button" variant="ghost" onClick={() => setRemoveConfirmOpen(true)} disabled={pending}>
-                Remove Logo
-              </Button>
-            )}
-          </div>
-
-          <p className={styles.description} role="note">
-            PNG, JPEG, or WEBP. Up to 5MB.
-          </p>
-
-          {localError && (
-            <p className={styles.error} role="alert">
-              {localError}
-            </p>
-          )}
-          {savedAt && !localError && (
-            <p className={styles.success} role="status">
-              Logo updated.
-            </p>
-          )}
         </>
       )}
 
@@ -388,6 +415,6 @@ function BrandingSection({ organizationName }: { organizationName: string }) {
         confirmLabel="Remove"
         onConfirm={handleRemove}
       />
-    </Card>
+    </section>
   );
 }

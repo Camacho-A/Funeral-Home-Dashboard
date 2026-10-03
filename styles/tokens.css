@@ -301,4 +301,41 @@
    * Section 9: "two-tier system only — flat-with-border or shadow-no-border").
    * ------------------------------------------------------------------- */
   --shadow-card: 0 1px 2px oklch(0 0 0 / 0.03), 0 2px 12px oklch(0 0 0 / 0.03);
+
+  /* ---------------------------------------------------------------------
+   * SOLIS true redesign, Phase 1 (2026-10) — application shell + dashboard.
+   * Additive only: every token below is a NEW name, measured from the
+   * approved design/solis-phase1-handoff/SOLIS Phase 1.dc.html mockup
+   * (hue 255, near-zero chroma — a crisp cool neutral, replacing the warm
+   * hue-60 text/surface tokens above for this phase's own components
+   * only). No existing token's value changes, so Case Detail/Reports/
+   * Settings/Accounting/Audit Center — none of which are in this phase's
+   * scope — render exactly as before. Only Sidebar/TopBar/Dashboard CSS
+   * may reference these.
+   * ------------------------------------------------------------------- */
+  --color-text-primary-cool: oklch(0.22 0.012 255);
+  --color-text-secondary-cool: oklch(0.38 0.012 255);
+  --color-text-muted-cool: oklch(0.5 0.012 255);
+  --color-text-faint-cool: oklch(0.6 0.008 255);
+  --color-surface-sidebar-cool: oklch(0.982 0.003 255);
+  --color-surface-muted-cool: oklch(0.97 0.004 255);
+  --color-surface-hover-cool: oklch(0.96 0.004 255);
+  --color-border-cool: oklch(0.925 0.004 255);
+  --color-brand-tint-cool: oklch(0.935 0.014 255);
+  --color-brand-text-cool: oklch(0.28 0.08 255);
+  --color-brand-solid-cool: oklch(0.32 0.08 255);
+  --color-brand-solid-hover-cool: oklch(0.27 0.08 255);
+  --color-link-cool: oklch(0.36 0.09 255);
+  --color-success-text-cool: oklch(0.36 0.08 150);
+  --color-success-bg-cool: oklch(0.975 0.012 150);
+  --color-success-dot-cool: oklch(0.62 0.14 150);
+  --color-danger-text-cool: oklch(0.5 0.15 25);
+  --color-danger-dot-cool: oklch(0.58 0.17 25);
 }
+
+/* The "--solis-*" token family (SOLIS Cases page, Recent Activity, and
+   Case Detail visual fidelity passes) lives in its own file now — see
+   styles/solis-redesign.css, imported from styles/globals.css right
+   after this file. Moved out of here (2026-10) once a third unrelated
+   page started referencing the family, so it has one obvious home
+   instead of accumulating piecemeal inside tokens.css. */

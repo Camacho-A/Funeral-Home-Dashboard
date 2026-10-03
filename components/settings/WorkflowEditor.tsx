@@ -9,7 +9,6 @@ import {
   moveIntakeField,
   validateIntakeFields,
 } from '@/domain/workflow/editing';
-import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
@@ -218,7 +217,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
           <div key={index} className={styles.stageCard}>
             <div className={styles.stageHeader}>
               <TextField
-                className={styles.stageLabelInput}
+                className={`${styles.stageLabelInput} sx-input`}
                 value={stage.label}
                 onChange={(e) => updateStage(index, { label: e.target.value })}
                 aria-label={`Stage ${index + 1} name`}
@@ -247,6 +246,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
               <label className={styles.slaField}>
                 SLA target (days)
                 <TextField
+                  className="sx-input"
                   type="number"
                   min={0}
                   value={stage.slaTargetDays ?? ''}
@@ -273,7 +273,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
               {stage.checklist.items.map((item, itemIndex) => (
                 <TextField
                   key={itemIndex}
-                  className={styles.checklistItemInput}
+                  className={`${styles.checklistItemInput} sx-input`}
                   value={item.label}
                   onChange={(e) => updateChecklistItemLabel(index, itemIndex, e.target.value)}
                   aria-label={`"${stage.label}" checklist item ${itemIndex + 1}`}
@@ -293,12 +293,13 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
               <div key={field.key} className={styles.intakeFieldRow}>
                 <div className={styles.intakeFieldRowTop}>
                   <TextField
-                    className={styles.intakeFieldLabelInput}
+                    className={`${styles.intakeFieldLabelInput} sx-input`}
                     value={field.label}
                     onChange={(e) => updateIntakeField(sectionIndex, fieldIndex, { label: e.target.value })}
                     aria-label={`Intake field ${fieldIndex + 1} label in "${section.label}"`}
                   />
                   <SelectField
+                    className="sx-select"
                     value={field.fieldType ?? 'text'}
                     onChange={(e) =>
                       updateIntakeField(sectionIndex, fieldIndex, { fieldType: e.target.value as IntakeFieldType })
@@ -348,6 +349,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
                   // secure section rather than an ordinary data field.
                   <div className={styles.intakeFieldRowBottom}>
                     <TextField
+                      className="sx-input"
                       value={field.paymentPurpose ?? ''}
                       onChange={(e) =>
                         updateIntakeField(sectionIndex, fieldIndex, { paymentPurpose: e.target.value })
@@ -356,6 +358,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
                       aria-label={`"${field.label}" payment purpose`}
                     />
                     <TextField
+                      className="sx-input"
                       value={field.paymentAmount ?? ''}
                       onChange={(e) =>
                         updateIntakeField(sectionIndex, fieldIndex, { paymentAmount: e.target.value })
@@ -364,6 +367,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
                       aria-label={`"${field.label}" payment amount`}
                     />
                     <TextField
+                      className="sx-input"
                       value={field.paymentDescription ?? ''}
                       onChange={(e) =>
                         updateIntakeField(sectionIndex, fieldIndex, { paymentDescription: e.target.value })
@@ -386,12 +390,14 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
                 ) : (
                   <div className={styles.intakeFieldRowBottom}>
                     <TextField
+                      className="sx-input"
                       value={field.placeholder ?? ''}
                       onChange={(e) => updateIntakeField(sectionIndex, fieldIndex, { placeholder: e.target.value })}
                       placeholder="Placeholder text"
                       aria-label={`"${field.label}" placeholder`}
                     />
                     <SelectField
+                      className="sx-select"
                       value={field.validationType ?? 'none'}
                       onChange={(e) =>
                         updateIntakeField(sectionIndex, fieldIndex, {
@@ -448,7 +454,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
 
                 {field.fieldType === 'select' && (
                   <TextField
-                    className={styles.intakeFieldOptionsInput}
+                    className={`${styles.intakeFieldOptionsInput} sx-input`}
                     value={(field.options ?? []).join(', ')}
                     onChange={(e) =>
                       updateIntakeField(sectionIndex, fieldIndex, {
@@ -461,34 +467,36 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
                 )}
               </div>
             ))}
-            <Button variant="secondary" onClick={() => addIntakeField(sectionIndex)}>
-              Add field
-            </Button>
+            <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => addIntakeField(sectionIndex)}>
+              + Add intake field
+            </button>
           </div>
         ))}
       </div>
 
       {isDirty && validationErrors.length > 0 && (
-        <div className={styles.saveError} role="alert">
+        <div className={`${styles.saveError} sx-error`} role="alert">
           {validationErrors[0]}
         </div>
       )}
       {createVersion.isError && (
-        <div className={styles.saveError} role="alert">
+        <div className={`${styles.saveError} sx-error`} role="alert">
           {(createVersion.error as Error).message}
         </div>
       )}
 
-      <div className={styles.footer}>
-        <Button variant="secondary" onClick={handleDiscard} disabled={!isDirty || createVersion.isPending}>
+      <div className="sx-save-row">
+        <button type="button" className="sx-btn sx-btn-ghost" onClick={handleDiscard} disabled={!isDirty || createVersion.isPending}>
           Discard changes
-        </Button>
-        <Button
+        </button>
+        <button
+          type="button"
+          className="sx-btn sx-btn-primary"
           onClick={handleSave}
           disabled={!isDirty || validationErrors.length > 0 || createVersion.isPending}
         >
           {createVersion.isPending ? 'Saving…' : 'Save as new version'}
-        </Button>
+        </button>
       </div>
     </div>
   );

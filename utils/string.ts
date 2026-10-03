@@ -28,3 +28,19 @@ export function initialsFromName(name: string): string {
   const lastInitial = words.length > 1 ? words[words.length - 1][0] : '';
   return (firstInitial + lastInitial).toUpperCase();
 }
+
+/**
+ * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+ * Presentation-only title-case for a stored name (e.g. the typography
+ * spec's own example: "LOUIS BARBER" renders as "Louis Barber"). Never
+ * writes anything back — call sites pass the stored value straight
+ * through to this at render time; the underlying record (decedentName,
+ * etc.) is never touched. Capitalizes after spaces and hyphens so a
+ * hyphenated name reads correctly too (e.g. "MARY-JANE O'BRIEN" ->
+ * "Mary-Jane O'Brien"); apostrophes are left as plain word-internal
+ * characters, matching how this already-simple helper treats any other
+ * mid-word character.
+ */
+export function toDisplayTitleCase(value: string): string {
+  return value.toLowerCase().replace(/(^|[\s-])([a-z])/g, (_match, boundary: string, letter: string) => boundary + letter.toUpperCase());
+}

@@ -84,13 +84,37 @@ const CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE: Partial<Record<ActivityEventT
   'document.regenerated': 'Document regenerated',
 };
 
+/**
+ * SOLIS true redesign, Phase 1 (2026-10). "Case updated (checklistState)"
+ * — services/activityService.ts#recordCaseUpdated's own description when
+ * the ONLY changed field is `checklistState` — exposed the internal field
+ * name verbatim on the Dashboard's Recent Activity feed (the visual
+ * audit's own finding). `recordCaseUpdated`'s description varies by which
+ * fields changed ("Case updated (checklistState)" vs. e.g. "Case updated
+ * (decedentName, dateOfBirth)"), so this can't key on `eventType` alone
+ * the way `document.regenerated` above does — every CASE_UPDATED event
+ * shares one eventType regardless of which fields changed. Keyed on the
+ * exact persisted description text instead, per the approved design's own
+ * "a display map keyed on the existing label string" — matches only the
+ * checklist-only case, never relabeling a multi-field update that isn't
+ * actually "Checklist updated". No event is filtered; only this one
+ * exact, already-existing string renders differently.
+ */
+const CANONICAL_DISPLAY_DESCRIPTION_BY_EXACT_TEXT: Record<string, string> = {
+  'Case updated (checklistState)': 'Checklist updated',
+};
+
 export function resolveActivityDisplayDescription(event: Pick<ActivityEvent, 'eventType' | 'description'>): string {
   // ActivityEvent.eventType is persisted/read back as a plain `string`
   // (see its own field comment — never assumed to still match the
   // current ActivityEventType union). The cast is read-only/safe here: an
   // event type outside the union simply finds no match below and falls
   // through to the event's own persisted description, unchanged.
-  return CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE[event.eventType as ActivityEventType] ?? event.description;
+  return (
+    CANONICAL_DISPLAY_DESCRIPTION_BY_EXACT_TEXT[event.description] ??
+    CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE[event.eventType as ActivityEventType] ??
+    event.description
+  );
 }
 
 export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {

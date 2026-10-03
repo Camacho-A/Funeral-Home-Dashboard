@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
@@ -136,153 +135,162 @@ export function AppointmentDialog({
   return (
     <>
       <Modal open={open && !pendingConflicts} onClose={onClose} title="New Appointment">
-        <div className={styles.form}>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="appointment-type">
-              Appointment type
-            </label>
-            <SelectField id="appointment-type" value={appointmentType} onChange={(e) => setAppointmentType(e.target.value)}>
-              {CATEGORIES.map((category) => (
-                <optgroup key={category} label={APPOINTMENT_TYPE_CATEGORY_LABEL[category]}>
-                  {Object.values(APPOINTMENT_TYPES)
-                    .filter((def) => def.category === category)
-                    .map((def) => (
-                      <option key={def.key} value={def.key}>
-                        {def.displayName}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </SelectField>
-          </div>
-
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="appointment-title">
-              Title
-            </label>
-            {/* SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
-                server (services/schedulingService.ts) normalizes
-                authoritatively. */}
-            <TextField id="appointment-title" value={title} onChange={(e) => setTitle(e.target.value.toUpperCase())} required />
-          </div>
-
-          {!caseId && (
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="appointment-case-id">
-                Case ID (optional)
+        <div className="sx-modal-header">
+          <h2 className="sx-modal-title">New Appointment</h2>
+          <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="sx-modal-body">
+          <div className="sx-form-grid">
+            <div className="sx-field sx-span-all">
+              <label className="sx-label" htmlFor="appointment-type">
+                Appointment type
               </label>
-              <TextField id="appointment-case-id" value={freeCaseId} onChange={(e) => setFreeCaseId(e.target.value)} placeholder="Leave blank for an internal appointment" />
+              <SelectField id="appointment-type" className="sx-select" value={appointmentType} onChange={(e) => setAppointmentType(e.target.value)}>
+                {CATEGORIES.map((category) => (
+                  <optgroup key={category} label={APPOINTMENT_TYPE_CATEGORY_LABEL[category]}>
+                    {Object.values(APPOINTMENT_TYPES)
+                      .filter((def) => def.category === category)
+                      .map((def) => (
+                        <option key={def.key} value={def.key}>
+                          {def.displayName}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </SelectField>
             </div>
-          )}
 
-          <div className={styles.row}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="appointment-start">
+            <div className="sx-field sx-span-all">
+              <label className="sx-label sx-label-required" htmlFor="appointment-title">
+                Title
+              </label>
+              {/* SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
+                  server (services/schedulingService.ts) normalizes
+                  authoritatively. */}
+              <TextField id="appointment-title" className="sx-input" value={title} onChange={(e) => setTitle(e.target.value.toUpperCase())} required />
+            </div>
+
+            {!caseId && (
+              <div className="sx-field">
+                <label className="sx-label" htmlFor="appointment-case-id">
+                  Case ID (optional)
+                </label>
+                <TextField id="appointment-case-id" className="sx-input" value={freeCaseId} onChange={(e) => setFreeCaseId(e.target.value)} placeholder="Leave blank for an internal appointment" />
+              </div>
+            )}
+
+            <div className="sx-field">
+              <label className="sx-label sx-label-required" htmlFor="appointment-start">
                 Starts
               </label>
-              <TextField id="appointment-start" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} required />
+              <TextField id="appointment-start" type="datetime-local" className="sx-input" value={startAt} onChange={(e) => setStartAt(e.target.value)} required />
             </div>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="appointment-end">
+            <div className="sx-field">
+              <label className="sx-label sx-label-required" htmlFor="appointment-end">
                 Ends
               </label>
-              <TextField id="appointment-end" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} required />
+              <TextField id="appointment-end" type="datetime-local" className="sx-input" value={endAt} onChange={(e) => setEndAt(e.target.value)} required />
             </div>
-          </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="appointment-notes">
-              Notes
-            </label>
-            <TextArea id="appointment-notes" value={notes} onChange={(e) => setNotes(e.target.value.toUpperCase())} rows={2} />
-          </div>
+            <div className="sx-field sx-span-all">
+              <label className="sx-label" htmlFor="appointment-notes">
+                Notes
+              </label>
+              <TextArea id="appointment-notes" className="sx-textarea" value={notes} onChange={(e) => setNotes(e.target.value.toUpperCase())} rows={2} />
+            </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="appointment-owner">
-              Owner (optional)
-            </label>
-            <SelectField id="appointment-owner" value={ownerStaffProfileId} onChange={(e) => setOwnerStaffProfileId(e.target.value)}>
-              <option value="">No owner</option>
-              {staffOptions.map((staff) => (
-                <option key={staff.id} value={staff.id}>
-                  {staff.displayName}
-                </option>
-              ))}
-            </SelectField>
-          </div>
-
-          <div className={styles.field}>
-            <span className={styles.label}>Resources</span>
-            {resourcesQuery.isPending ? (
-              <span className={styles.hint}>Loading resources…</span>
-            ) : resources.length === 0 ? (
-              <span className={styles.hint}>No resources have been created for this organization yet.</span>
-            ) : (
-              <div className={styles.resourceList}>
-                {resources.map((resource) => (
-                  <label key={resource.id} className={styles.resourceRow}>
-                    <Checkbox
-                      checked={selectedResourceIds.includes(resource.id)}
-                      onChange={() => toggleResource(resource.id)}
-                      aria-label={`Assign ${resource.name}`}
-                    />
-                    <span className={styles.resourceName}>{resource.name}</span>
-                    <Badge variant={resourceStatusVariant(resource.status)}>{RESOURCE_STATUS_LABEL[resource.status]}</Badge>
-                  </label>
+            <div className="sx-field">
+              <label className="sx-label" htmlFor="appointment-owner">
+                Owner (optional)
+              </label>
+              <SelectField id="appointment-owner" className="sx-select" value={ownerStaffProfileId} onChange={(e) => setOwnerStaffProfileId(e.target.value)}>
+                <option value="">No owner</option>
+                {staffOptions.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.displayName}
+                  </option>
                 ))}
+              </SelectField>
+            </div>
+
+            <div className="sx-field sx-span-all">
+              <span className="sx-label">Resources</span>
+              {resourcesQuery.isPending ? (
+                <span className={styles.hint}>Loading resources…</span>
+              ) : resources.length === 0 ? (
+                <span className={styles.hint}>No resources have been created for this organization yet.</span>
+              ) : (
+                <div className={styles.resourceList}>
+                  {resources.map((resource) => (
+                    <label key={resource.id} className={`sx-check ${styles.resourceRow}`}>
+                      <Checkbox
+                        checked={selectedResourceIds.includes(resource.id)}
+                        onChange={() => toggleResource(resource.id)}
+                        aria-label={`Assign ${resource.name}`}
+                      />
+                      <span className={styles.resourceName}>{resource.name}</span>
+                      <Badge variant={resourceStatusVariant(resource.status)}>{RESOURCE_STATUS_LABEL[resource.status]}</Badge>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <label className="sx-check sx-span-all">
+              <Checkbox checked={saveAsDraft} onChange={() => setSaveAsDraft((v) => !v)} aria-label="Save as draft" />
+              <span>Save as draft (no conflict check yet — resources can be finalized later)</span>
+            </label>
+
+            <label className="sx-check sx-span-all">
+              <Checkbox checked={isRecurring} onChange={() => setIsRecurring((v) => !v)} aria-label="Make this a recurring appointment" />
+              <span>Recurring</span>
+            </label>
+
+            {isRecurring && (
+              <>
+                <div className="sx-field">
+                  <label className="sx-label" htmlFor="recurrence-frequency">
+                    Frequency
+                  </label>
+                  <SelectField id="recurrence-frequency" className="sx-select" value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)}>
+                    {RECURRENCE_FREQUENCIES.map((f) => (
+                      <option key={f} value={f}>
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </option>
+                    ))}
+                  </SelectField>
+                </div>
+                <div className="sx-field">
+                  <label className="sx-label" htmlFor="recurrence-interval">
+                    Every
+                  </label>
+                  <TextField id="recurrence-interval" type="number" min={1} className="sx-input" value={interval} onChange={(e) => setInterval_(Number(e.target.value) || 1)} />
+                </div>
+                <div className="sx-field">
+                  <label className="sx-label" htmlFor="recurrence-count">
+                    Occurrences
+                  </label>
+                  <TextField id="recurrence-count" type="number" min={1} max={104} className="sx-input" value={count} onChange={(e) => setCount(Number(e.target.value) || 1)} />
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="sx-form-banner sx-form-banner-error sx-span-all" role="alert">
+                {error}
               </div>
             )}
           </div>
-
-          <label className={styles.inlineCheckbox}>
-            <Checkbox checked={saveAsDraft} onChange={() => setSaveAsDraft((v) => !v)} aria-label="Save as draft" />
-            <span>Save as draft (no conflict check yet — resources can be finalized later)</span>
-          </label>
-
-          <label className={styles.inlineCheckbox}>
-            <Checkbox checked={isRecurring} onChange={() => setIsRecurring((v) => !v)} aria-label="Make this a recurring appointment" />
-            <span>Recurring</span>
-          </label>
-
-          {isRecurring && (
-            <div className={styles.row}>
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="recurrence-frequency">
-                  Frequency
-                </label>
-                <SelectField id="recurrence-frequency" value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)}>
-                  {RECURRENCE_FREQUENCIES.map((f) => (
-                    <option key={f} value={f}>
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </option>
-                  ))}
-                </SelectField>
-              </div>
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="recurrence-interval">
-                  Every
-                </label>
-                <TextField id="recurrence-interval" type="number" min={1} value={interval} onChange={(e) => setInterval_(Number(e.target.value) || 1)} />
-              </div>
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="recurrence-count">
-                  Occurrences
-                </label>
-                <TextField id="recurrence-count" type="number" min={1} max={104} value={count} onChange={(e) => setCount(Number(e.target.value) || 1)} />
-              </div>
-            </div>
-          )}
-
-          {error && <span className={styles.error}>{error}</span>}
-
-          <div className={styles.actions}>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={() => submit()} disabled={!title.trim() || !startAt || !endAt || createAppointment.isPending}>
-              {createAppointment.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
+        </div>
+        <div className="sx-modal-footer">
+          <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={() => submit()} disabled={!title.trim() || !startAt || !endAt || createAppointment.isPending}>
+            {createAppointment.isPending ? 'Saving…' : 'Save'}
+          </button>
         </div>
       </Modal>
 

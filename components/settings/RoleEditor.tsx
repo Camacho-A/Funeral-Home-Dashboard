@@ -1,13 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { PermissionMatrix, type PermissionMatrixEntry } from './PermissionMatrix';
 import type { RbacRole } from '@/lib/identityAuthClient';
 import { useUpdateRole, useDeleteRole, useCloneRole } from '@/hooks/useRbac';
-import styles from './RoleEditor.module.css';
 
 /**
  * Phase 22 (Role-Based Access Control). Edits one role: for a platform
@@ -16,6 +13,12 @@ import styles from './RoleEditor.module.css';
  * immutable"); for a custom role, an editable name/description and
  * Permission Matrix, plus "Delete" (refused server-side, surfaced here as
  * an error, if the role is still assigned to anyone).
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S3): name/description
+ * in a two-column form grid; footer Cancel (implicit — no explicit
+ * Cancel button existed before, so none is added) replaced by Delete
+ * (ghost-danger) / Save (primary). Permissions render via PermissionMatrix,
+ * restyled separately to `.sx-perm-group`/`.sx-perm-row`.
  */
 export function RoleEditor({
   organizationId,
@@ -90,44 +93,58 @@ export function RoleEditor({
   }
 
   return (
-    <Card className={styles.editor}>
-      <div className={styles.header}>
-        <div className={styles.titleGroup}>
-          {editable ? (
-            <TextField value={name} onChange={(e) => setName(e.target.value)} aria-label="Role name" />
-          ) : (
-            <span className={styles.name}>{role.name}</span>
-          )}
-          <span className={styles.badge}>{role.isSystemDefault ? 'Platform default — immutable' : 'Custom role'}</span>
-        </div>
-        <div className={styles.actions}>
-          {role.isSystemDefault && canManageRoles && (
-            <Button variant="secondary" onClick={handleClone} disabled={cloneRole.isPending}>
-              Clone
-            </Button>
-          )}
-          {editable && (
-            <>
-              <Button variant="danger" onClick={handleDelete} disabled={deleteRole.isPending}>
-                Delete
-              </Button>
-              <Button onClick={handleSave} disabled={!isDirty || updateRole.isPending}>
-                Save
-              </Button>
-            </>
-          )}
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
+        <div className="sx-form-grid" style={{ flex: 1 }}>
+          <div className="sx-field">
+            <span className="sx-label">Name</span>
+            {editable ? (
+              <TextField className="sx-input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Role name" />
+            ) : (
+              <span style={{ fontSize: 14.5, fontWeight: 600 }}>{role.name}</span>
+            )}
+          </div>
+          <div className="sx-field">
+            <span className="sx-label">Status</span>
+            <span className="sx-tag">{role.isSystemDefault ? 'Platform default — immutable' : 'Custom role'}</span>
+          </div>
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {role.isSystemDefault && canManageRoles && (
+          <button type="button" className="sx-btn sx-btn-secondary" onClick={handleClone} disabled={cloneRole.isPending}>
+            Clone
+          </button>
+        )}
+        {editable && (
+          <>
+            <button type="button" className="sx-btn sx-btn-ghost" style={{ color: 'var(--sx-red)' }} onClick={handleDelete} disabled={deleteRole.isPending}>
+              Delete
+            </button>
+            <button type="button" className="sx-btn sx-btn-primary" onClick={handleSave} disabled={!isDirty || updateRole.isPending}>
+              Save
+            </button>
+          </>
+        )}
+      </div>
+
       {editable ? (
-        <TextField value={description} onChange={(e) => setDescription(e.target.value)} aria-label="Role description" placeholder="Description" />
+        <div className="sx-field" style={{ marginBottom: 16 }}>
+          <span className="sx-label">Description</span>
+          <TextField className="sx-input" value={description} onChange={(e) => setDescription(e.target.value)} aria-label="Role description" placeholder="Description" />
+        </div>
       ) : (
-        <p className={styles.description}>{role.description}</p>
+        <p className="sx-help" style={{ marginBottom: 16 }}>{role.description}</p>
       )}
 
-      {error && <span className={styles.error}>{error}</span>}
+      {error && (
+        <div className="sx-form-banner sx-form-banner-error" role="alert">
+          {error}
+        </div>
+      )}
 
       <PermissionMatrix permissions={permissionCatalog} grantedKeys={grantedKeys} onToggle={editable ? togglePermission : undefined} />
-    </Card>
+    </div>
   );
 }

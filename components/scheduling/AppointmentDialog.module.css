@@ -1,51 +1,6 @@
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-7);
-  /* min(…, 100%) (2026-10): identical 460px floor on desktop; on a
-     mobile-width modal panel (Modal.module.css's own `max-width: 90vw`),
-     this shrinks to fit instead of forcing the panel into its own
-     horizontal scroll. */
-  min-width: min(460px, 100%);
-  max-width: 520px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex: 1;
-}
-
-/* Mobile (2026-10) — a two-field side-by-side row (e.g. date + time)
-   collapses to one column once the modal panel is mobile-width
-   (Modal.module.css's own `max-width: 90vw`) rather than squeezing both
-   fields illegibly narrow; each `.field` already has `flex: 1`, so once
-   wrapped, either one alone naturally takes the full row width. */
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-6);
-}
-
-.row > .field {
-  min-width: 140px;
-}
-
-.label {
-  font-size: var(--font-size-12);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-muted);
-}
-
 .hint {
   font-size: var(--font-size-12);
   color: var(--color-text-muted);
-}
-
-.error {
-  color: var(--color-attention);
-  font-size: var(--font-size-12-5);
 }
 
 .resourceList {
@@ -54,34 +9,16 @@
   gap: var(--space-3);
   max-height: 160px;
   overflow-y: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--sx-border, var(--color-border));
   border-radius: var(--radius-md);
   padding: var(--space-4) var(--space-5);
 }
 
 .resourceRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  cursor: pointer;
+  justify-content: flex-start;
 }
 
 .resourceName {
   font-size: var(--font-size-13);
   flex: 1;
-}
-
-.inlineCheckbox {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: var(--font-size-13);
-  cursor: pointer;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
 }

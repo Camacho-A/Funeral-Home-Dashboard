@@ -72,7 +72,7 @@ describe('DocumentTemplateLibraryPanel — permission gating', () => {
     mockPermissions(['document.template.read']);
     vi.mocked(documentTemplatesClient.fetchDocumentTemplates).mockResolvedValue([makeTemplate()]);
     renderPanel();
-    await screen.findByText('Cremation Authorization');
+    await screen.findByText('Cremation Authorization', { selector: '[data-primary]' });
     expect(screen.queryByRole('button', { name: '+ New Template' })).not.toBeInTheDocument();
     expect(screen.queryByText('Edit')).not.toBeInTheDocument();
     expect(screen.queryByText('Duplicate')).not.toBeInTheDocument();
@@ -91,11 +91,16 @@ describe('DocumentTemplateLibraryPanel — template list', () => {
   });
 
   it("lists a template's type, category, latest version, and status badge", async () => {
+    // SOLIS Final Phase §7 (2026-10): the list is a real <table> now
+    // (sx-table-stack), one <td> per column instead of one "·"-joined
+    // text node — locate the row via its <tr>, not a "·"-joined string.
     vi.mocked(documentTemplatesClient.fetchDocumentTemplates).mockResolvedValue([makeTemplate()]);
     renderPanel();
-    const name = await screen.findByText('Cremation Authorization');
-    const row = name.closest('div')!.parentElement!;
-    expect(row).toHaveTextContent('Cremation Authorization · Authorizations · v1');
+    const name = await screen.findByText('Cremation Authorization', { selector: '[data-primary]' });
+    const row = name.closest('tr')!;
+    expect(row).toHaveTextContent('Cremation Authorization');
+    expect(row).toHaveTextContent('Authorizations');
+    expect(row).toHaveTextContent('v1');
     expect(row).toHaveTextContent('Active');
   });
 
@@ -114,13 +119,18 @@ describe('DocumentTemplateLibraryPanel — template list', () => {
     expect(screen.queryByText('Active One')).not.toBeInTheDocument();
   });
 
+  // SOLIS Final Phase §0.7 (2026-10): Duplicate/Archive/Restore moved into
+  // a shared RowMenu ("⋯") — these now open the row's menu before
+  // clicking the menuitem, rather than clicking a directly-visible button.
+
   it('archives an active template', async () => {
     vi.mocked(documentTemplatesClient.fetchDocumentTemplates).mockResolvedValue([makeTemplate()]);
     vi.mocked(documentTemplatesClient.archiveDocumentTemplate).mockResolvedValue(undefined);
     renderPanel();
-    await screen.findByText('Cremation Authorization');
+    await screen.findByText('Cremation Authorization', { selector: '[data-primary]' });
 
-    fireEvent.click(screen.getByText('Archive'));
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Cremation Authorization' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
 
     await waitFor(() =>
       expect(documentTemplatesClient.archiveDocumentTemplate).toHaveBeenCalledWith(
@@ -134,9 +144,10 @@ describe('DocumentTemplateLibraryPanel — template list', () => {
     vi.mocked(documentTemplatesClient.restoreDocumentTemplate).mockResolvedValue(undefined);
     renderPanel();
     fireEvent.change(await screen.findByLabelText('Status'), { target: { value: 'archived' } });
-    await screen.findByText('Cremation Authorization');
+    await screen.findByText('Cremation Authorization', { selector: '[data-primary]' });
 
-    fireEvent.click(screen.getByText('Restore'));
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Cremation Authorization' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Restore' }));
 
     await waitFor(() =>
       expect(documentTemplatesClient.restoreDocumentTemplate).toHaveBeenCalledWith(
@@ -150,9 +161,10 @@ describe('DocumentTemplateLibraryPanel — template list', () => {
     vi.mocked(documentTemplatesClient.cloneDocumentTemplate).mockResolvedValue(makeTemplate({ id: 'template-2', name: 'Copy of Cremation Authorization' }));
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Copy of Cremation Authorization');
     renderPanel();
-    await screen.findByText('Cremation Authorization');
+    await screen.findByText('Cremation Authorization', { selector: '[data-primary]' });
 
-    fireEvent.click(screen.getByText('Duplicate'));
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Cremation Authorization' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate…' }));
 
     await waitFor(() =>
       expect(documentTemplatesClient.cloneDocumentTemplate).toHaveBeenCalledWith(
@@ -201,7 +213,7 @@ describe('DocumentTemplateLibraryPanel — editor modal', () => {
     vi.mocked(documentTemplatesClient.fetchDocumentTemplates).mockResolvedValue([template]);
     vi.mocked(documentTemplatesClient.createDocumentTemplateVersion).mockResolvedValue(template);
     renderPanel();
-    await screen.findByText('Cremation Authorization');
+    await screen.findByText('Cremation Authorization', { selector: '[data-primary]' });
 
     fireEvent.click(screen.getByText('Edit'));
     await screen.findByRole('dialog', { name: 'Edit "Cremation Authorization"' });

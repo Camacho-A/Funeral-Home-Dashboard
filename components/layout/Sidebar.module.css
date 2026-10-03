@@ -1,11 +1,16 @@
+/* SOLIS true redesign, Phase 1 (2026-10): compact 236px shell (was 216px),
+   tighter padding — the approved design's own measured values. Cool-
+   neutral sidebar surface/border (tokens.css's Phase 1 additive block),
+   replacing the old warm-hue surface/border tokens for this component
+   only — no other page's surfaces change. */
 .sidebar {
-  width: 216px;
+  width: 236px;
   flex-shrink: 0;
-  background: var(--color-surface-sidebar);
+  background: var(--color-surface-sidebar-cool);
+  border-right: 1px solid var(--color-border-cool);
   display: flex;
   flex-direction: column;
-  padding: var(--space-14) var(--space-9);
-  gap: var(--space-18);
+  padding: var(--space-7) var(--space-6);
 }
 
 /* Mobile navigation drawer (2026-09). Hidden by default (desktop/tablet,
@@ -25,7 +30,7 @@
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
-    width: 260px; /* a little wider than desktop's 216px — this is now a
+    width: 260px; /* a little wider than desktop's 236px — this is now a
                       full-height touch drawer, not a column sharing the
                       viewport with content, so it can afford the extra
                       room for comfortable tap targets. */
@@ -34,6 +39,12 @@
     transform: translateX(-100%);
     transition: transform 0.2s ease;
     box-shadow: var(--shadow-card);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar {
+      transition: none;
+    }
   }
 
   .sidebarOpen {
@@ -58,103 +69,119 @@
     cursor: pointer;
     background: transparent;
     border: none;
-    color: var(--color-text-secondary);
+    color: var(--color-text-secondary-cool);
     border-radius: var(--radius-sm);
   }
 
   .closeButton:hover {
-    background: var(--color-surface-hover);
+    background: var(--color-surface-hover-cool);
   }
 
   .closeButton:focus-visible {
-    outline: 2px solid var(--color-brand);
+    outline: 2px solid var(--color-brand-solid-cool);
     outline-offset: 1px;
   }
 }
 
-/* Task #13 (2026-09, SOLIS product branding). ProductBrand
-   (components/layout/ProductBrand.tsx) owns its own internal layout for
-   the mark + wordmark; this wrapper only supplies the horizontal inset
-   and, since the Sidebar final adjustment moved to ProductBrand's
-   `vertical` variant (a taller mark stacked above centered "SOLIS"),
-   centers that whole stack within the Sidebar's own width. The old
-   CSS-only `.brandMark` placeholder square is gone entirely, replaced by
-   the real SolisCode mark. */
+/* SOLIS true redesign, Phase 1 (2026-10): a compact 40px horizontal brand
+   row ([mark] SOLIS), replacing the prior ~230px stacked-vertical lockup
+   the visual audit called out as pushing navigation a third of the way
+   down the sidebar. ProductBrand's existing `horizontal` variant (already
+   used by Login) is reused as-is — no new brand component. */
 .brand {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  height: 40px;
   padding: 0 var(--space-4);
+  margin-bottom: var(--space-9);
 }
 
-/* Task #13 final sizing adjustment (2026-09) — 24px, enlarged from the
-   original 18px placeholder-era size for more visual presence in the
-   vertical lockup. Scoped to this Sidebar-only class (passed to
-   ProductBrand via `wordmarkClassName`) — Login's own wordmark uses its
-   own page.module.css `.title` sizing entirely separately, so this never
-   affects it. */
 .brandWordmark {
-  font-size: 24px;
+  font-size: var(--font-size-15);
   font-weight: var(--font-weight-bold);
-  letter-spacing: var(--tracking-tight);
+  letter-spacing: 0.02em;
+  color: var(--color-text-primary-cool);
 }
 
 .navList {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 2px;
 }
 
-/* Task #14 Phase B (2026-09) — a subtle top border so the org/staff
-   footer reads as its own region rather than blending directly into the
-   nav list above it. Organization name, staff-online text, permissions,
-   and click behavior are all unchanged.
-   Sidebar logo centering fix (2026-10): previously a plain block with no
-   alignment of its own — `.footerLogo`'s `margin: 0 auto` centered the
-   logo in isolation, but the organization-name/staff-online text
-   directly below it were bare text nodes with no centering at all, so
-   the section read as two misaligned pieces rather than one unit. A
-   real flex column with `align-items: center` centers the logo, name,
-   and staff-online line uniformly through normal flex alignment — not
-   absolute positioning, transforms, or offsets. `gap` provides the
-   "small gap" between the organization name and staff-online count;
-   `.footerLogo` carries its own larger `margin-bottom` below it for the
-   "modest gap" called for between the logo and the name. */
+/* The quiet "Insights" grouping label above Reports/Accounting — visual
+   grouping only, matching the approved design's own wording/sizing. */
+.groupLabel {
+  font-size: var(--font-size-11-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-faint-cool);
+  padding: var(--space-10) var(--space-5) var(--space-3);
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border-cool);
+  margin: var(--space-8) var(--space-3);
+}
+
+/* SOLIS true redesign, Phase 1 (2026-10): a compact horizontal org-identity
+   card (logo left, name + staff-online stacked right) — the approved
+   design's own treatment, replacing the prior centered-column footer.
+   Still the active org's own identity, never a second competing SOLIS
+   brand (SOLIS itself only ever appears in `.brand` above). */
 .footer {
   margin-top: auto;
-  font-size: var(--font-size-12);
-  color: var(--color-text-muted);
-  line-height: var(--leading-relaxed);
-  padding: var(--space-6) var(--space-4) 0;
-  border-top: 1px solid var(--color-border);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: var(--space-1);
+  gap: var(--space-5);
+  padding: var(--space-5);
+  margin-top: var(--space-8);
+  border: 1px solid var(--color-border-cool);
+  border-radius: 9px;
+  background: var(--color-surface-card);
+}
+
+.footerText {
+  min-width: 0;
 }
 
 .footerOrgName {
-  color: var(--color-text-muted);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary-cool);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .footerStaffOnline {
-  color: var(--color-text-faint);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-12);
+  color: var(--color-text-muted-cool);
+  margin-top: 1px;
 }
 
-/* Sidebar logo centering + enlargement (2026-10). 64px — noticeably more
-   visual presence than the prior 32px while staying a identity mark, not
-   a banner. `max-width`/`max-height` both capped (not height alone) so a
-   future tenant's non-square logo is still fully contained within a
-   64px box in either dimension, never just vertically; `object-fit:
-   contain` + `width/height: auto` preserve aspect ratio and guarantee it
-   never stretches. `max-width: 100%` is still the ultimate backstop
-   against overflow in the narrower mobile drawer. */
+.footerStaffDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success-dot-cool);
+  flex-shrink: 0;
+}
+
+/* Sidebar logo centering + enlargement (2026-10, carried into Phase 1's
+   horizontal card): capped so a future tenant's non-square logo is still
+   fully contained, `object-fit: contain` + auto width/height preserve
+   aspect ratio. 30px matches the approved design's own org-card mark
+   size — smaller than the old 64px since the mark now sits beside text
+   rather than centered above it. */
 .footerLogo {
   display: block;
-  max-width: min(64px, 100%);
-  max-height: 64px;
-  width: auto;
-  height: auto;
+  width: 30px;
+  height: 30px;
+  max-width: 30px;
   object-fit: contain;
-  margin-bottom: var(--space-4);
+  flex-shrink: 0;
 }

@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
@@ -12,7 +10,6 @@ import { useIdentitySessions, useRevokeSession, useSignOutEverywhere } from '@/h
 import { useChangePassword } from '@/hooks/useChangePassword';
 import { useMyIdentityProfile, useUpdateMyPhone } from '@/hooks/useIdentityProfile';
 import { MfaPanel } from './MfaPanel';
-import styles from './SecuritySettingsPanel.module.css';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). "Security
@@ -28,10 +25,17 @@ import styles from './SecuritySettingsPanel.module.css';
  * Phase 33 (Real Notification Delivery) adds the one editable profile
  * field this page never had before this phase: `phone`, the gate for the
  * SMS notification channel (`components/settings/NotificationPreferencesPanel.tsx`).
- * No prior phase actually built a display-name/email editing surface here
- * despite ADR-021's own plan text assuming one existed — that assumption
- * was wrong, corrected by this phase's own new `/api/auth/profile` route
- * rather than silently papered over.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S4): each block
+ * becomes a `.sx-settings-section`. The "Profile" section here is just
+ * the editable phone field (no other static read-only identity fields
+ * exist in this component) — the spec's literal `<dl class="sx-kv">`
+ * read-only example doesn't apply; restyled with the form system
+ * instead, per §6's "if something doesn't match, production is the
+ * source of truth." Active sessions: rows with `min-height:52px` and a
+ * `--sx-border-soft` divider, device/browser as `.sx-cell-title`,
+ * location/last-active as `.sx-cell-sub`, "Current" in muted text, and
+ * the per-session sign-out as `sx-btn-ghost sx-btn-sm` in red.
  */
 export function SecuritySettingsPanel() {
   const router = useRouter();
@@ -106,15 +110,26 @@ export function SecuritySettingsPanel() {
 
   return (
     <div>
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Profile</h2>
-        <Card>
-          <form className={styles.form} onSubmit={handleSavePhone}>
-            {phoneError && <div className={styles.error} role="alert">{phoneError}</div>}
-            {phoneSuccess && <div className={styles.success} role="status">Phone number saved.</div>}
-            <label className={styles.label}>
-              Phone number
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Security</h2>
+        <p className="sx-settings-desc">Change your password and manage active sessions.</p>
+      </div>
+
+      <section className="sx-settings-section">
+        <div className="sx-settings-section-head">
+          <div>
+            <h3 className="sx-settings-section-title">Profile</h3>
+          </div>
+        </div>
+        <form onSubmit={handleSavePhone}>
+          <div className="sx-form-grid">
+            <div className="sx-field">
+              <label className="sx-label" htmlFor="security-phone">
+                Phone number
+              </label>
               <TextField
+                className="sx-input"
+                id="security-phone"
                 type="tel"
                 autoComplete="tel"
                 placeholder="+1 555 555 0100"
@@ -122,34 +137,59 @@ export function SecuritySettingsPanel() {
                 onChange={(e) => setPhoneDraft(e.target.value)}
                 disabled={profileQuery.isPending}
               />
-            </label>
-            <p className={styles.hint}>Used only for SMS notifications, if you enable them in Notification settings. Leave blank to remove it.</p>
-            <Button type="submit" disabled={updatePhone.isPending}>
+              <p className="sx-help">Used only for SMS notifications, if you enable them in Notification settings. Leave blank to remove it.</p>
+            </div>
+          </div>
+          <div className="sx-save-row">
+            <span className="sx-save-state" data-state={phoneError ? 'error' : phoneSuccess ? 'saved' : undefined} role={phoneError ? 'alert' : phoneSuccess ? 'status' : undefined}>
+              {phoneError ? phoneError : phoneSuccess ? 'Phone number saved.' : ''}
+            </span>
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={updatePhone.isPending}>
               {updatePhone.isPending ? 'Saving…' : 'Save phone number'}
-            </Button>
-          </form>
-        </Card>
+            </button>
+          </div>
+        </form>
       </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Change password</h2>
-        <Card>
-          <form className={styles.form} onSubmit={handleChangePassword}>
-            {formError && <div className={styles.error} role="alert">{formError}</div>}
-            {formSuccess && <div className={styles.success} role="status">{formSuccess}</div>}
-            <label className={styles.label}>
-              Current password
+      <section className="sx-settings-section">
+        <div className="sx-settings-section-head">
+          <div>
+            <h3 className="sx-settings-section-title">Change password</h3>
+          </div>
+        </div>
+        <form onSubmit={handleChangePassword}>
+          {formError && (
+            <div className="sx-form-banner sx-form-banner-error" role="alert">
+              {formError}
+            </div>
+          )}
+          {formSuccess && (
+            <div className="sx-form-banner sx-form-banner-info" role="status">
+              {formSuccess}
+            </div>
+          )}
+          <div className="sx-form-grid">
+            <div className="sx-field sx-span-all">
+              <label className="sx-label" htmlFor="security-current-password">
+                Current password
+              </label>
               <TextField
+                className="sx-input"
+                id="security-current-password"
                 type="password"
                 autoComplete="current-password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 required
               />
-            </label>
-            <label className={styles.label}>
-              New password
+            </div>
+            <div className="sx-field">
+              <label className="sx-label" htmlFor="security-new-password">
+                New password
+              </label>
               <TextField
+                className="sx-input"
+                id="security-new-password"
                 type="password"
                 autoComplete="new-password"
                 value={newPassword}
@@ -157,10 +197,14 @@ export function SecuritySettingsPanel() {
                 minLength={8}
                 required
               />
-            </label>
-            <label className={styles.label}>
-              Confirm new password
+            </div>
+            <div className="sx-field">
+              <label className="sx-label" htmlFor="security-confirm-password">
+                Confirm new password
+              </label>
               <TextField
+                className="sx-input"
+                id="security-confirm-password"
                 type="password"
                 autoComplete="new-password"
                 value={confirmPassword}
@@ -168,62 +212,69 @@ export function SecuritySettingsPanel() {
                 minLength={8}
                 required
               />
-            </label>
-            <label className={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={keepCurrentSession}
-                onChange={(e) => setKeepCurrentSession(e.target.checked)}
-              />
-              Keep me signed in on this device
-            </label>
-            <Button type="submit" disabled={changePassword.isPending}>
-              {changePassword.isPending ? 'Changing password…' : 'Change password'}
-            </Button>
-          </form>
-        </Card>
-      </section>
-
-      <section className={styles.section}>
-        <Card>
-          <MfaPanel />
-        </Card>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sessionsHeader}>
-          <h2 className={styles.sectionTitle}>Active sessions</h2>
-          <Button variant="danger" onClick={handleSignOutEverywhere} disabled={signOutEverywhere.isPending}>
-            Sign out everywhere
-          </Button>
-        </div>
-        <Card>
-          {sessionsQuery.isPending && <p>Loading sessions…</p>}
-          {sessionsQuery.data && sessionsQuery.data.length === 0 && (
-            <EmptyState message="No active sessions." />
-          )}
-          {sessionsQuery.data?.map((session) => (
-            <div key={session.id} className={styles.sessionRow}>
-              <div className={styles.sessionInfo}>
-                <div className={styles.sessionDevice}>
-                  {session.deviceName ?? 'Unknown device'} {session.isCurrent && '· This device'}
-                </div>
-                <div className={styles.sessionMeta}>
-                  {session.ipAddress ?? 'Unknown location'} · Last seen {formatTimestamp(session.lastSeenAt)}
-                </div>
-              </div>
-              {!session.isCurrent && (
-                <Button
-                  variant="secondary"
-                  onClick={() => revokeSession.mutate(session.id)}
-                  disabled={revokeSession.isPending}
-                >
-                  Revoke
-                </Button>
-              )}
             </div>
-          ))}
-        </Card>
+            <div className="sx-span-all">
+              <label className="sx-check">
+                <input type="checkbox" checked={keepCurrentSession} onChange={(e) => setKeepCurrentSession(e.target.checked)} />
+                Keep me signed in on this device
+              </label>
+            </div>
+          </div>
+          <div className="sx-save-row">
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={changePassword.isPending}>
+              {changePassword.isPending ? 'Changing password…' : 'Change password'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="sx-settings-section">
+        <MfaPanel />
+      </section>
+
+      <section className="sx-settings-section">
+        <div className="sx-settings-section-head">
+          <div>
+            <h3 className="sx-settings-section-title">Active sessions</h3>
+          </div>
+          <button type="button" className="sx-btn sx-btn-danger" onClick={handleSignOutEverywhere} disabled={signOutEverywhere.isPending}>
+            Sign out everywhere
+          </button>
+        </div>
+        {sessionsQuery.isPending && (
+          <div className="sx-loading" aria-busy="true">
+            <span className="sx-skeleton" style={{ width: '90%' }} />
+            <span className="sx-skeleton" style={{ width: '70%' }} />
+            <span className="sr-only">Loading sessions…</span>
+          </div>
+        )}
+        {sessionsQuery.data && sessionsQuery.data.length === 0 && <EmptyState message="No active sessions." />}
+        {sessionsQuery.data?.map((session) => (
+          <div
+            key={session.id}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, minHeight: 52, borderBottom: '1px solid var(--sx-border-soft)' }}
+          >
+            <div>
+              <div className="sx-cell-title">
+                {session.deviceName ?? 'Unknown device'} {session.isCurrent && <span style={{ color: 'var(--sx-muted)', fontWeight: 400 }}>· Current</span>}
+              </div>
+              <div className="sx-cell-sub">
+                {session.ipAddress ?? 'Unknown location'} · Last seen {formatTimestamp(session.lastSeenAt)}
+              </div>
+            </div>
+            {!session.isCurrent && (
+              <button
+                type="button"
+                className="sx-btn sx-btn-ghost sx-btn-sm"
+                style={{ color: 'var(--sx-red)' }}
+                onClick={() => revokeSession.mutate(session.id)}
+                disabled={revokeSession.isPending}
+              >
+                Revoke
+              </button>
+            )}
+          </div>
+        ))}
       </section>
     </div>
   );

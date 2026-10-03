@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { logoutAction } from '@/app/login/actions';
-import { UserAvatar } from './UserAvatar';
+import { AuditIcon, TemplatesIcon, SignOutIcon } from './navIcons';
 import styles from './AccountMenu.module.css';
 
 /**
@@ -24,32 +24,35 @@ import styles from './AccountMenu.module.css';
  * standalone Sign out form already posts to — not a second sign-out
  * implementation.
  *
- * Mobile TopBar — Audit/Templates moved into AC menu (2026-09): Audit and
- * Templates no longer have their own mobile top-row entries at all
- * (TopBar.module.css hides `.priorityLink` outright below the shared
- * breakpoint, rather than reordering it into row one as before) — this
- * menu is now their only mobile destination. `showAudit`/`showTemplates`
- * are plain booleans TopBar.tsx computes once, from the exact same
- * `authAdapterMode === 'identity' && permissions.includes(...)` check
- * its own (desktop) `<a>` elements already use — this component has no
- * permission logic of its own, and the `href`s below are the identical
- * destinations those desktop links already point to. Not a duplicated
- * routing/business-logic implementation, a second CSS-toggled
- * presentation of the same one.
+ * SOLIS Final Phase (2026-10), §1.2: this is now the ONLY identity control
+ * (TopBar's standalone desktop Audit/Templates links are gone — see
+ * TopBar.tsx) — the trigger/menu/identity block/icons below render the
+ * sx- design system's literal markup. "Audit" is relabeled "Audit Center"
+ * here (AccountMenu.test.tsx updated accordingly — see this phase's own
+ * report). ArrowUp/ArrowDown menuitem navigation and focusing the first
+ * menuitem on open are new, presentation-adjacent keyboard behavior the
+ * spec asks for; Escape/outside-click dismissal and `showAudit`/
+ * `showTemplates`'s permission source are unchanged.
  */
 export function AccountMenu({
   initials,
   displayName,
+  email,
   showAudit = false,
   showTemplates = false,
 }: {
   initials: string;
   displayName: string;
+  /** SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+      Shown in the popover header when available (real session data, see
+      types/session.ts#Session.email) — never a fabricated address. */
+  email?: string;
   showAudit?: boolean;
   showTemplates?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +63,21 @@ export function AccountMenu({
       }
     }
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      const items = menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+      if (!items || items.length === 0) return;
+      event.preventDefault();
+      const list = Array.from(items);
+      const currentIndex = list.indexOf(document.activeElement as HTMLElement);
+      const nextIndex =
+        event.key === 'ArrowDown'
+          ? Math.min(currentIndex + 1, list.length - 1)
+          : Math.max(currentIndex - 1, 0);
+      list[currentIndex === -1 && event.key === 'ArrowDown' ? 0 : nextIndex]?.focus();
     }
 
     document.addEventListener('mousedown', handlePointerDown);
@@ -69,6 +86,12 @@ export function AccountMenu({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const first = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    first?.focus();
   }, [open]);
 
   return (
@@ -81,28 +104,41 @@ export function AccountMenu({
         aria-expanded={open}
         aria-label={`Account menu for ${displayName}`}
       >
-        <UserAvatar initials={initials} />
+        <span className="sx-avatar sx-avatar-sm" aria-hidden="true">
+          {initials}
+        </span>
+        <span className={styles.chevron} aria-hidden="true">
+          ▾
+        </span>
       </button>
       {open && (
-        <div className={styles.menu} role="menu">
+        <div className="sx-menu" style={{ width: 240 }} role="menu" ref={menuRef}>
+          <div className="sx-menu-identity">
+            <span className="sx-avatar" aria-hidden="true">
+              {initials}
+            </span>
+            <div>
+              <div className="sx-menu-identity-name">{displayName}</div>
+              <div className="sx-menu-identity-sub">{email ?? 'Signed in'}</div>
+            </div>
+          </div>
+          <div className="sx-menu-divider" role="separator" />
           {showAudit && (
-            <a href="/settings/audit" role="menuitem" className={styles.menuItem} onClick={() => setOpen(false)}>
-              Audit
+            <a href="/settings/audit" role="menuitem" className="sx-menu-item" onClick={() => setOpen(false)}>
+              <AuditIcon />
+              Audit Center
             </a>
           )}
           {showTemplates && (
-            <a
-              href="/settings/document-templates"
-              role="menuitem"
-              className={styles.menuItem}
-              onClick={() => setOpen(false)}
-            >
+            <a href="/settings/document-templates" role="menuitem" className="sx-menu-item" onClick={() => setOpen(false)}>
+              <TemplatesIcon />
               Templates
             </a>
           )}
-          {(showAudit || showTemplates) && <div className={styles.divider} role="separator" />}
+          {(showAudit || showTemplates) && <div className="sx-menu-divider" role="separator" />}
           <form action={logoutAction}>
-            <button type="submit" role="menuitem" className={styles.menuItem}>
+            <button type="submit" role="menuitem" className="sx-menu-item">
+              <SignOutIcon />
               Sign out
             </button>
           </form>

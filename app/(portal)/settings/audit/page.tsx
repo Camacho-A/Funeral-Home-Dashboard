@@ -16,10 +16,9 @@ export default async function AuditCenterPage() {
     redirect('/settings');
   }
 
-  return (
-    <div>
-      <h1>Audit Log</h1>
-      <AuditCenterPanel />
-    </div>
-  );
+  // SOLIS Final Phase §6 (2026-10): AuditCenterPanel now renders its own
+  // `.sx-page-header` (title "Audit Center" + description + Export CSV
+  // action) — see that component's own doc comment for why it moved
+  // there instead of living here.
+  return <AuditCenterPanel />;
 }

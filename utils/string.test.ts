@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialsFromName } from './string';
+import { initialsFromName, toDisplayTitleCase } from './string';
 
 /**
  * Item #6 clarification (2026-09): the previous `initialsFromName` sliced
@@ -54,5 +54,37 @@ describe('initialsFromName', () => {
 
   it('returns an empty string for an empty name rather than throwing', () => {
     expect(initialsFromName('')).toBe('');
+  });
+});
+
+/**
+ * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+ * Presentation-only title-case for stored names (the typography spec's
+ * own "LOUIS BARBER" -> "Louis Barber" example) — never mutates the
+ * underlying value, purely a render-time transform callers apply.
+ */
+describe('toDisplayTitleCase', () => {
+  it('converts an all-caps name to title case', () => {
+    expect(toDisplayTitleCase('LOUIS BARBER')).toBe('Louis Barber');
+  });
+
+  it('converts an all-lowercase name to title case', () => {
+    expect(toDisplayTitleCase('louis barber')).toBe('Louis Barber');
+  });
+
+  it('leaves an already-correct title-case name unchanged', () => {
+    expect(toDisplayTitleCase('Louis Barber')).toBe('Louis Barber');
+  });
+
+  it('capitalizes after a hyphen', () => {
+    expect(toDisplayTitleCase('MARY-JANE SMITH')).toBe('Mary-Jane Smith');
+  });
+
+  it('handles a three-word name', () => {
+    expect(toDisplayTitleCase('EVARISTA SILVA RIVERO')).toBe('Evarista Silva Rivero');
+  });
+
+  it('does not throw on an empty string', () => {
+    expect(toDisplayTitleCase('')).toBe('');
   });
 });

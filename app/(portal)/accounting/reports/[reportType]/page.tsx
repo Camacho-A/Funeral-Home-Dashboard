@@ -10,6 +10,9 @@ export default async function FinancialReportPage({ params }: { params: Promise<
 
   return (
     <div>
+      <h1 className="sx-page-title" style={{ marginBottom: 16 }}>
+        Accounting
+      </h1>
       <AccountingNav />
       <FinancialReportsPanel reportType={reportType as FinancialReportType} />
     </div>

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
-import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RoleList } from './RoleList';
 import { RoleEditor } from './RoleEditor';
@@ -20,6 +19,11 @@ import styles from './RoleManagementPanel.module.css';
  * selected," everything below is presentational/data-fetching-by-id.
  * Only rendered for `AUTH_ADAPTER=identity` — see
  * app/(portal)/settings/roles/page.tsx.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S3): two-column
+ * layout (`grid-template-columns:220px minmax(0,1fr)`), renders inside
+ * SettingsShell now. "Assign Role" moved below RoleList as "Assign role
+ * to member" (same dialog/trigger, new label/placement) — see RoleList.tsx.
  */
 export function RoleManagementPanel() {
   const { organizationId } = useOrganization();
@@ -32,7 +36,14 @@ export function RoleManagementPanel() {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
   if (rolesQuery.isPending || catalogQuery.isPending || myPermissionsQuery.isPending) {
-    return <p>Loading roles…</p>;
+    return (
+      <div className="sx-loading" aria-busy="true">
+        <span className="sx-skeleton" style={{ width: '90%' }} />
+        <span className="sx-skeleton" style={{ width: '70%' }} />
+        <span className="sx-skeleton" style={{ width: '80%' }} />
+        <span className="sr-only">Loading roles…</span>
+      </div>
+    );
   }
 
   const canManageRoles = (myPermissionsQuery.data?.permissions ?? []).includes('user.manageRoles');
@@ -58,17 +69,23 @@ export function RoleManagementPanel() {
 
   return (
     <div>
-      <div className={styles.toolbar}>
+      <div className="sx-settings-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <h2 className="sx-settings-title">Roles &amp; Permissions</h2>
+          <p className="sx-settings-desc">Manage roles and what each one can access.</p>
+        </div>
         <RbacHealthBadge organizationId={organizationId} />
-        {canManageRoles && (
-          <Button variant="secondary" onClick={() => setAssignDialogOpen(true)}>
-            Assign Role
-          </Button>
-        )}
       </div>
 
       <div className={styles.columns}>
-        <RoleList organizationId={organizationId} roles={roles} selectedRoleId={activeRoleId} onSelect={setSelectedRoleId} canManageRoles={canManageRoles} />
+        <RoleList
+          organizationId={organizationId}
+          roles={roles}
+          selectedRoleId={activeRoleId}
+          onSelect={setSelectedRoleId}
+          canManageRoles={canManageRoles}
+          onAssignClick={() => setAssignDialogOpen(true)}
+        />
         {activeRole ? (
           <RoleEditor
             key={activeRole.id}

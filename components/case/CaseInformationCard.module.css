@@ -1,244 +1,185 @@
+/* SOLIS Phase 3 — Case Information as a right-rail panel.
+   Same classes/markup; restyled: no card box, sentence-case labels,
+   1–2 column field grid that fits the ~380px rail, quieter section heads. */
 .card {
-  background: var(--color-surface-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-9) var(--space-10);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .title {
-  font-size: var(--font-size-14);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--space-7);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: oklch(0.55 0.01 255);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* Case Overview layout (2026-09): this card is now full-width (see
-   page.module.css's .overview) instead of sharing a fixed 1fr/1fr split
-   with a second column — auto-fill lets each field group reflow into as
-   many ~200-260px columns as actually fit the available width, rather
-   than either two columns stretched edge-to-edge (too wide for a short
-   date/phone value) or staying pinned at two regardless of how much room
-   there now is. A row that doesn't fill all the way just leaves blank
-   space at the end rather than stretching its last field wider. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
-  gap: var(--space-7);
-  font-size: var(--font-size-13);
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px 16px;
+  font-size: 13.5px;
 }
 
-/* Task #16 spacing follow-up (2026-09): the lower operational rows (Tag #/
-   Payment, Owner/Return method, and Return method's own conditional
-   pickup/shipping fields) previously ran together with zero separation —
-   every .grid block is a sibling <div> with no margin of its own, so
-   nothing but a .sectionHeading (DOB/NOK/Certifier already have one)
-   created a visible gap between one row and the next. Deliberately NOT a
-   change to .grid's own gap (that's the *intra-row* field-to-field
-   spacing shared by every grid on this card, including DOB/DOD/Time of
-   Death/Location and the NOK fields — widening it there would space out
-   rows that were never reported as cramped). This is a *inter-row*
-   top-margin applied only to the specific operational grids below,
-   closest-token match to the requested ~20-28px separation. */
 .operationalRow {
-  margin-top: var(--space-12);
+  margin-top: 18px;
 }
 
-/* Structured Certifier data (2026-09): the first grouped sub-section
-   heading this card has ever needed — every prior grid ran unlabelled,
-   directly under the card's own .title.
-   Task #18 (2026-09): previously font-weight-semibold/font-size-11-5,
-   nearly identical to .fieldLabel below and reported as blending into the
-   surrounding field labels. Now bold + a full size step up, so it reads as
-   a section break rather than another field label — while staying well
-   short of .title's 14px (this is a sub-section of the card, not a second
-   card title).
-   Task #18 left-align follow-up (2026-09): briefly centered, reverted to
-   left per explicit feedback — every other typographic/spacing change from
-   the centered pass (13px/bold/primary color/uppercase/28px-above/12px-
-   below) is kept as-is. */
 .sectionHeading {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  color: oklch(0.55 0.01 255);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0.06em;
   text-align: left;
-  margin-top: var(--space-14);
-  margin-bottom: var(--space-6);
+  margin-top: 28px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* Structured Certifier data (2026-09, ADR-041): a short context line under
-   a section heading — currently only Certifier information's, to make
-   explicit it's the medical certifier, never the family/NOK contact.
-   Task #18 left-align follow-up (2026-09): left-aligned under the
-   left-aligned heading; remains visually secondary via its smaller size
-   and secondary text color. */
 .sectionHelperText {
-  font-size: var(--font-size-12-5);
-  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  color: var(--color-text-muted);
   text-align: left;
-  margin-top: 0;
-  margin-bottom: var(--space-6);
+  margin-top: -6px;
+  margin-bottom: 12px;
 }
 
 .fieldLabel {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-11-5);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .fieldValue {
-  margin-top: 3px; /* literal — between --space-1 (2px) and --space-2 (4px) */
-  font-weight: var(--font-weight-medium);
+  margin-top: 2px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
 }
 
-/* Phase 17: click-to-edit trigger for Case Information fields — visually
-   matches .fieldValue (same margin/weight) but is a real <button>, with a
-   dashed underline to hint it's interactive without permanently looking
-   like a form control. */
 .editableValue {
-  margin-top: 3px;
+  margin-top: 2px;
   display: block;
   width: 100%;
   text-align: left;
   font-family: inherit;
   font-size: inherit;
-  font-weight: var(--font-weight-medium);
+  font-weight: 500;
   color: var(--color-text-primary);
   background: none;
   border: none;
   border-bottom: 1px dashed transparent;
   padding: 0;
   cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: border-color 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editableValue {
+    transition: none;
+  }
 }
 
 .editableValue:hover,
 .editableValue:focus-visible {
-  border-bottom-color: var(--color-border);
+  border-bottom-color: oklch(0.8 0.006 255);
+  outline: none;
 }
 
-/* Notify Crematory badge spacing fix (2026-09): .editableValue's own
-   width: 100% is correct for every plain field (the whole grid cell
-   becomes a comfortable click target) but is exactly wrong once a
-   trailing badge is present — width: 100% sets the button's flex-basis
-   to the *entire* row, so even though flex-shrink then hands the badge
-   (flex-shrink: 0) its full needed width, the button's own box still
-   stretches to fill everything up to the badge. Its text stays
-   left-aligned inside that oversized, invisible (no background/border)
-   box, which is what actually produced the large visual gap — the
-   badge's own var(--space-3) margin was never the problem, only ever a
-   small addition on top of the button's own leftover width. Overriding
-   to width: auto here — applied only via EditableField's own
-   trailingBadge-present branch (see the component), never globally —
-   shrinks the button to its own text's width, so the badge (still
-   flex-shrink: 0 + white-space: nowrap, unchanged) lands immediately
-   after the visible value with only its own margin-left as the real,
-   intended gap. Every field without a trailing badge (the overwhelming
-   majority) is completely unaffected — still width: 100%, still the
-   same full-cell click target as before. */
 .editableValueCompact {
   width: auto;
 }
 
-/* Case field editing (2026-09): lets a trailing badge (e.g. Weight's
-   "Notify crematory") sit next to the click-to-edit value without
-   affecting the button's own click target. */
 .editableValueRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 0;
 }
 
 .fieldError {
-  font-size: var(--font-size-12-5);
-  color: var(--color-danger-text);
-  margin-top: var(--space-2);
+  font-size: 12.5px;
+  color: var(--solis-danger, var(--color-danger-text));
+  margin-top: 4px;
 }
 
-/* Time of Death 12-hour entry (2026-09): the hour/minute/AM-PM selects
-   plus Save/Cancel, laid out in one row while editing. */
 .timeEditRow {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-top: 3px;
+  gap: 6px;
+  margin-top: 4px;
   flex-wrap: wrap;
 }
 
 .timeColon {
-  font-weight: var(--font-weight-bold);
+  font-weight: 600;
   color: var(--color-text-secondary);
 }
 
 .timeSaveButton,
 .timeCancelButton {
   font-family: inherit;
-  font-size: var(--font-size-12-5);
-  font-weight: var(--font-weight-semibold);
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
   cursor: pointer;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-card);
+  border: 1px solid oklch(0.91 0.004 255);
+  background: #ffffff;
   color: var(--color-text-primary);
 }
 
 .timeSaveButton {
   border-color: var(--color-brand);
   background: var(--color-brand);
-  color: var(--color-surface-card);
+  color: #ffffff;
 }
 
 .paymentSelect {
-  margin-top: var(--space-2);
-  font-weight: var(--font-weight-medium);
+  margin-top: 4px;
+  font-weight: 500;
+  max-width: 100%;
 }
 
 .weightValue {
-  margin-top: 3px;
-  font-weight: var(--font-weight-bold);
+  margin-top: 2px;
+  font-weight: 600;
 }
 
 .weightNormal {
   color: var(--color-text-primary);
 }
 
+/* Over 200 lb: amber, consistent with the header flag. */
 .weightOver {
-  color: var(--color-danger-text);
+  color: oklch(0.5 0.13 60);
 }
 
-/* Notify Crematory warning layout correction (2026-09): a prior attempt
-   (since reverted) tried to fix the badge feeling cramped by making
-   Weight's whole grid cell span 2 tracks — the wrong layer entirely, since
-   Weight itself was never actually short on room (its value, e.g.
-   "242 lb", is only a few characters). The real cause: .editableValue
-   (the value button) is width: 100% of .editableValueRow's flex box, so
-   its flex-basis is effectively the *entire* row — forcing .notifyBadge,
-   a sibling flex item with default flex-shrink: 1 and no white-space
-   override, to shrink below its own natural one-line content width and
-   wrap "Notify crematory" onto two cramped lines inside the pill. Fixing
-   it here, on the badge itself, is the correct layer: flex-shrink: 0
-   stops the flex algorithm from ever taking room away from the badge
-   (the value button absorbs any squeeze instead, exactly as the button
-   already can via ordinary text wrapping if truly starved — never
-   observed in practice since the badge's natural width comfortably fits
-   Weight's existing single 200-260px grid track), and white-space: nowrap
-   guarantees the badge is measured at — and always rendered at — its
-   full one-line content width, never wrapping regardless of available
-   space. Weight remains a completely normal single-grid-track field. */
 .notifyBadge {
-  margin-left: var(--space-3);
-  font-size: var(--font-size-10-5);
-  font-weight: var(--font-weight-bold);
-  padding: var(--space-1) var(--space-4);
-  border-radius: var(--radius-xl);
-  background: var(--color-danger-bg);
-  color: var(--color-danger-text);
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: oklch(0.96 0.04 75);
+  color: oklch(0.45 0.12 60);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .paymentSuccess {
-  color: var(--color-success-text);
+  color: oklch(0.45 0.12 150);
 }
 
 .paymentPending {
@@ -246,17 +187,20 @@
 }
 
 .ownerSelect {
-  margin-top: var(--space-2);
+  margin-top: 4px;
+  max-width: 100%;
 }
 
 .veteranRow {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
-  margin-top: var(--space-8);
-  padding: var(--space-5) var(--space-6);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-page);
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: oklch(0.975 0.003 255);
+  border: 1px solid var(--solis-border-soft, var(--color-border));
 }
 
 .veteranRowLocked {
@@ -268,12 +212,37 @@
 }
 
 .veteranLabel {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-medium);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .veteranLockedNote {
-  font-size: var(--font-size-11);
+  font-size: 11.5px;
   color: var(--color-text-muted);
   margin-left: auto;
+}
+
+/* Inline selects inside the rail: compact, consistent with Phase 1 inputs. */
+.card select {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  border-radius: 7px;
+  border: 1px solid oklch(0.91 0.004 255);
+  background-color: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.card select:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+/* Below 1024px the rail becomes full width again (page.module.css), so
+   let fields spread back into more columns. */
+@media (max-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
 }

@@ -46,7 +46,7 @@ export function NotificationBell() {
           />
           <path d="M8.1 16a1.9 1.9 0 0 0 3.8 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
-        <span className={styles.bellLabel}>Notifications</span>
+        <span className="sr-only">Notifications</span>
         {count > 0 && (
           <Badge variant="brand" className={styles.countBadge}>
             {count > 99 ? '99+' : count}

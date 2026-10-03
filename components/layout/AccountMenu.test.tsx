@@ -94,6 +94,32 @@ describe('AccountMenu', () => {
 });
 
 /**
+ * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+ * The popover now shows the signed-in name and (when available, real
+ * session data — never fabricated) email above Sign out, per the
+ * approved design's own avatar-menu spec.
+ */
+describe('AccountMenu — identity block (SOLIS true redesign, Phase 1, visual fidelity correction)', () => {
+  it('shows the display name in the open menu', () => {
+    render(<AccountMenu initials="AC" displayName="Angelica Camacho" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
+    expect(screen.getByText('Angelica Camacho')).toBeInTheDocument();
+  });
+
+  it('shows the email when provided', () => {
+    render(<AccountMenu initials="AC" displayName="Angelica Camacho" email="angelica@manorscremation.com" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
+    expect(screen.getByText('angelica@manorscremation.com')).toBeInTheDocument();
+  });
+
+  it('omits the email line entirely when none is available — never a fabricated placeholder', () => {
+    render(<AccountMenu initials="AC" displayName="Angelica Camacho" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
+    expect(screen.queryByText(/@/)).not.toBeInTheDocument();
+  });
+});
+
+/**
  * Mobile TopBar — Audit/Templates moved into AC menu (2026-09). Neither
  * item appears unless explicitly told to via `showAudit`/`showTemplates`
  * — the caller (TopBar.tsx) owns the actual permission check; this
@@ -108,13 +134,13 @@ describe('AccountMenu — Audit/Templates (Mobile TopBar, 2026-09)', () => {
 
   it('neither Audit nor Templates appear by default (no permission granted)', () => {
     openMenu();
-    expect(screen.queryByRole('menuitem', { name: 'Audit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Audit Center' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Templates' })).not.toBeInTheDocument();
   });
 
   it('showAudit renders Audit, pointing at the existing /settings/audit destination — not a new route', () => {
     openMenu({ showAudit: true });
-    const audit = screen.getByRole('menuitem', { name: 'Audit' });
+    const audit = screen.getByRole('menuitem', { name: 'Audit Center' });
     expect(audit).toHaveAttribute('href', '/settings/audit');
   });
 
@@ -127,18 +153,26 @@ describe('AccountMenu — Audit/Templates (Mobile TopBar, 2026-09)', () => {
   it('both can appear together, in order, above a divider, above Sign out', () => {
     openMenu({ showAudit: true, showTemplates: true });
     const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
-    expect(items).toEqual(['Audit', 'Templates', 'Sign out']);
-    expect(screen.getByRole('separator')).toBeInTheDocument();
+    expect(items).toEqual(['Audit Center', 'Templates', 'Sign out']);
+    // SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
+    // the identity block (name/email) now always renders its own
+    // separator above the menu items, so there are two when Audit/
+    // Templates are also present — at least one, never zero.
+    expect(screen.getAllByRole('separator').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('the divider only renders when at least one of Audit/Templates is present — never a dangling separator above Sign out alone', () => {
+  it('the Audit/Templates divider only renders when at least one of them is present — the identity block\'s own separator still renders regardless', () => {
     openMenu();
-    expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+    // SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
+    // the identity block (name/email) always renders above Sign out, with
+    // its own separator — exactly one when neither Audit nor Templates
+    // is shown.
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
   });
 
   it('clicking Audit closes the menu (in addition to performing the existing navigation)', () => {
     openMenu({ showAudit: true });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Audit' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Audit Center' }));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 

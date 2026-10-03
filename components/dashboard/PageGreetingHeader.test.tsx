@@ -15,7 +15,7 @@ function renderGreeting(displayName: string, hour: number) {
   vi.setSystemTime(new Date(2026, 0, 1, hour, 0, 0));
   return render(
     <SessionProvider value={{ staffId: 'staff-test', displayName }}>
-      <PageGreetingHeader todayLabel="Thursday, January 1" activeCount={5} />
+      <PageGreetingHeader todayLabel="Thursday, January 1" />
     </SessionProvider>,
   );
 }
@@ -60,8 +60,8 @@ describe('PageGreetingHeader', () => {
     expect(screen.queryByText('staff-test')).not.toBeInTheDocument();
   });
 
-  it('still renders the existing date/active-case subtitle unchanged', () => {
+  it('renders the date subtitle alone — SOLIS true redesign, Phase 1 drops the "· N active cases" suffix now that Active cases has its own KPI strip cell', () => {
     renderGreeting('Jordan Rivera', 10);
-    expect(screen.getByText('Thursday, January 1 · 5 active cases')).toBeInTheDocument();
+    expect(screen.getByText('Thursday, January 1')).toBeInTheDocument();
   });
 });

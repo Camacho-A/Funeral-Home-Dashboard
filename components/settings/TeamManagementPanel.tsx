@@ -2,13 +2,11 @@
 
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
-import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useOrganizationMembers, usePendingInvitations, useRoles, useMyPermissions } from '@/hooks/useRbac';
 import { TeamMemberList } from './TeamMemberList';
 import { PendingInvitationList } from './PendingInvitationList';
 import { InviteTeamMemberModal } from './InviteTeamMemberModal';
-import styles from './TeamManagementPanel.module.css';
 
 /**
  * Phase 23 (Team Management). "Settings > Team" — the orchestration
@@ -19,6 +17,9 @@ import styles from './TeamManagementPanel.module.css';
  * `useOrganizationMembers` is what lets this page (unlike the Roles
  * page's own member picker) show disabled members with a reactivate
  * action.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S2): renders inside
+ * SettingsShell now — the page title/back-link/nav come from there.
  */
 export function TeamManagementPanel() {
   const { organizationId } = useOrganization();
@@ -30,7 +31,14 @@ export function TeamManagementPanel() {
   const [inviteOpen, setInviteOpen] = useState(false);
 
   if (membersQuery.isPending || invitationsQuery.isPending || rolesQuery.isPending || myPermissionsQuery.isPending) {
-    return <p>Loading team…</p>;
+    return (
+      <div className="sx-loading" aria-busy="true">
+        <span className="sx-skeleton" style={{ width: '90%' }} />
+        <span className="sx-skeleton" style={{ width: '70%' }} />
+        <span className="sx-skeleton" style={{ width: '80%' }} />
+        <span className="sr-only">Loading team…</span>
+      </div>
+    );
   }
 
   const permissions = myPermissionsQuery.data?.permissions ?? [];
@@ -53,8 +61,16 @@ export function TeamManagementPanel() {
 
   return (
     <div>
-      <div className={styles.toolbar}>
-        {canInvite && <Button onClick={() => setInviteOpen(true)}>+ Invite Team Member</Button>}
+      <div className="sx-settings-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <h2 className="sx-settings-title">Team</h2>
+          <p className="sx-settings-desc">Manage staff accounts and invitations.</p>
+        </div>
+        {canInvite && (
+          <button type="button" className="sx-btn sx-btn-primary" onClick={() => setInviteOpen(true)}>
+            + Invite Team Member
+          </button>
+        )}
       </div>
 
       <TeamMemberList

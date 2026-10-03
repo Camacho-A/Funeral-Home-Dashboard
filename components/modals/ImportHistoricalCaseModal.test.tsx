@@ -77,8 +77,8 @@ async function lookUpValidSubmission() {
   await waitFor(() => expect(screen.getByText('Arrangement Form')).toBeInTheDocument());
   fireEvent.change(screen.getByLabelText('Form'), { target: { value: 'config-1' } });
   fireEvent.change(screen.getByLabelText('Jotform submission ID'), { target: { value: 'sub-001' } });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Look Up' })).not.toBeDisabled());
-  fireEvent.click(screen.getByRole('button', { name: 'Look Up' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Look up' })).not.toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
   await waitFor(() => expect(screen.getByText(/JOHN TESTPERSON/)).toBeInTheDocument());
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Karen Ellison' } });
   fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '555-0199' } });
@@ -177,8 +177,8 @@ describe('ImportHistoricalCaseModal — open/close lifecycle', () => {
     await waitFor(() => expect(screen.getByText('Arrangement Form')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText('Form'), { target: { value: 'config-1' } });
     fireEvent.change(screen.getByLabelText('Jotform submission ID'), { target: { value: 'sub-001' } });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Look Up' })).not.toBeDisabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Look Up' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Look up' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
 
     await waitFor(() => expect(screen.getByText(/does not belong to the selected form/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Create Case' })).toBeDisabled();

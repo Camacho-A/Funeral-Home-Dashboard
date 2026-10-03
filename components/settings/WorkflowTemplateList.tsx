@@ -1,7 +1,6 @@
 'use client';
 
 import { EmptyState } from '@/components/ui/EmptyState';
-import styles from './WorkflowTemplateList.module.css';
 
 export type WorkflowTemplateListItem = {
   id: string;
@@ -15,6 +14,12 @@ export type WorkflowTemplateListItem = {
  * purely presentational, selection state is owned by the page. No template
  * name or case type here is hardcoded; whatever the organization's own
  * templates are named is what renders.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5: this list has no per-item
+ * "version"/"open" columns (that's WorkflowEditor's own version history,
+ * not a property of the list item) — per §6, restyled as a simple
+ * `.sx-cell-title`/`.sx-status` row list (same shape as RoleList) rather
+ * than inventing a table column the real data doesn't have.
  */
 export function WorkflowTemplateList({
   templates,
@@ -30,17 +35,27 @@ export function WorkflowTemplateList({
   }
 
   return (
-    <div className={styles.list}>
+    <div>
       {templates.map((template) => (
         <button
           key={template.id}
           type="button"
-          className={`${styles.item} ${template.id === selectedTemplateId ? styles.itemActive : ''}`}
           onClick={() => onSelect(template.id)}
+          style={{
+            display: 'block',
+            width: '100%',
+            textAlign: 'left',
+            padding: '8px 10px',
+            border: 'none',
+            borderRadius: 7,
+            background: template.id === selectedTemplateId ? 'var(--sx-navy-tint)' : 'transparent',
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+          }}
         >
-          <div className={styles.name}>{template.name}</div>
-          <div className={styles.meta}>
-            {template.caseTypes.join(', ')} · {template.isEnabled ? 'Enabled' : 'Disabled'}
+          <div className="sx-cell-title">{template.name}</div>
+          <div className="sx-cell-sub">
+            {template.caseTypes.join(', ')} · <span className={template.isEnabled ? 'sx-status sx-status-ok' : 'sx-status'}>{template.isEnabled ? 'Enabled' : 'Disabled'}</span>
           </div>
         </button>
       ))}

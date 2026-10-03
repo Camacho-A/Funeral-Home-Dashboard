@@ -2,7 +2,6 @@ import { SelectField } from '@/components/ui/SelectField';
 import { TextField } from '@/components/ui/TextField';
 import type { StaffProfile } from '@/types/staffProfile';
 import type { MetricFilterKey } from '@/domain/reporting/metricRegistry';
-import styles from './FilterBar.module.css';
 
 export type ReportFilterValues = {
   fromDate?: string;
@@ -34,23 +33,33 @@ export function FilterBar({
   if (allowedFilters.length === 0) return null;
 
   return (
-    <div className={styles.bar}>
+    <div className="sx-filterbar">
       {allowedFilters.includes('dateRange') && (
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>From</span>
-          <TextField type="date" value={values.fromDate ? values.fromDate.slice(0, 10) : ''} onChange={(e) => onChange({ ...values, fromDate: e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined })} />
+        <label className="sx-filter">
+          <span className="sx-filter-label">From</span>
+          <TextField
+            type="date"
+            className="sx-input"
+            value={values.fromDate ? values.fromDate.slice(0, 10) : ''}
+            onChange={(e) => onChange({ ...values, fromDate: e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined })}
+          />
         </label>
       )}
       {allowedFilters.includes('dateRange') && (
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>To</span>
-          <TextField type="date" value={values.toDate ? values.toDate.slice(0, 10) : ''} onChange={(e) => onChange({ ...values, toDate: e.target.value ? `${e.target.value}T23:59:59.999Z` : undefined })} />
+        <label className="sx-filter">
+          <span className="sx-filter-label">To</span>
+          <TextField
+            type="date"
+            className="sx-input"
+            value={values.toDate ? values.toDate.slice(0, 10) : ''}
+            onChange={(e) => onChange({ ...values, toDate: e.target.value ? `${e.target.value}T23:59:59.999Z` : undefined })}
+          />
         </label>
       )}
       {allowedFilters.includes('staff') && staffList.length > 0 && (
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Staff</span>
-          <SelectField value={values.staffProfileId ?? ''} onChange={(e) => onChange({ ...values, staffProfileId: e.target.value || undefined })}>
+        <label className="sx-filter">
+          <span className="sx-filter-label">Staff</span>
+          <SelectField className="sx-select" value={values.staffProfileId ?? ''} onChange={(e) => onChange({ ...values, staffProfileId: e.target.value || undefined })}>
             <option value="">All staff</option>
             {staffList.map((staff) => (
               <option key={staff.id} value={staff.id}>

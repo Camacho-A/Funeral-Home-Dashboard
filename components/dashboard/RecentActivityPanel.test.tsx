@@ -241,13 +241,12 @@ describe('RecentActivityPanel — Case Number / activity description spacing (Ta
     expect(caseNumberEl.textContent).toBe(case_.caseNumber); // never merged with the description text
     expect(whatEl.textContent).toBe('Case updated');
     // No literal repeated-space hack anywhere in the text content — real
-    // layout spacing (a `gap` on their shared flex parent, see
-    // RecentActivityPanel.module.css's .rowMain) provides the separation
-    // instead. Both elements share the same immediate parent, which
-    // carries the layout class responsible for that spacing.
-    const rowMain = caseNumberEl.parentElement!;
-    expect(rowMain).toBe(whatEl.parentElement);
-    expect(rowMain.className).toMatch(/rowMain/);
+    // layout spacing (a `gap` on their shared `.rowMain` flex wrapper, see
+    // RecentActivityPanel.module.css) provides the separation instead.
+    // Both elements share the same immediate parent.
+    const rowEl = caseNumberEl.parentElement!;
+    expect(rowEl).toBe(whatEl.parentElement);
+    expect(rowEl.className).toMatch(/row/);
     expect(caseNumberEl.textContent).not.toMatch(/\s{2,}/);
   });
 
@@ -447,9 +446,9 @@ describe('RecentActivityPanel — no internal ids in Recent Activity (Task #4 fo
     const caseNumberEl = container.querySelector('[class*="caseNumber"]')!;
     const whatEl = container.querySelector('[class*="what"]')!;
     expect(whatEl.textContent).toBe('Document regenerated');
-    const rowMain = caseNumberEl.parentElement!;
-    expect(rowMain).toBe(whatEl.parentElement);
-    expect(rowMain.className).toMatch(/rowMain/);
+    const rowEl = caseNumberEl.parentElement!;
+    expect(rowEl).toBe(whatEl.parentElement);
+    expect(rowEl.className).toMatch(/row/);
   });
 
   it('9. an ordinary, non-document.regenerated activity description is completely unaffected', async () => {
@@ -761,14 +760,66 @@ describe('RecentActivityPanel — actual employee name attribution (Recent Activ
 
     const caseNumberEl = container.querySelector('[class*="caseNumber"]')!;
     const whatEl = container.querySelector('[class*="what"]')!;
-    const rowMain = caseNumberEl.parentElement!;
-    expect(rowMain).toBe(whatEl.parentElement);
-    expect(rowMain.className).toMatch(/rowMain/);
+    const rowEl = caseNumberEl.parentElement!;
+    expect(rowEl).toBe(whatEl.parentElement);
+    expect(rowEl.className).toMatch(/row/);
     expect(caseNumberEl.textContent).toBe(case_.caseNumber);
     expect(whatEl.textContent).toBe('Case updated');
 
+    // `.when` (actor · time) is a sibling of `.rowMain` (case number +
+    // description) under the same outer row — not nested inside it.
     const whenEl = container.querySelector('[class*="when"]')!;
     expect(whenEl.textContent).toMatch(/Angelica Camacho/);
-    expect(whenEl).not.toBe(rowMain);
+    expect(whenEl.parentElement).toBe(rowEl.parentElement);
+  });
+});
+
+/**
+ * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+ * The glyph is a CSS `::before` pseudo-element keyed on a `data-kind`
+ * attribute (RecentActivityPanel.module.css) rather than a rendered DOM
+ * node — these tests cover the classification, not the pseudo-element
+ * itself (jsdom doesn't render `content`, so that part is covered by
+ * this phase's own live-browser verification).
+ */
+describe('RecentActivityPanel — glyph classification via data-kind (SOLIS true redesign, Phase 1, visual fidelity correction)', () => {
+  it.each([
+    ['Document downloaded', 'download'],
+    ['Document regenerated', 'regenerate'],
+    ['Document uploaded: contract.pdf', 'upload'],
+    ['Payment recorded for $150.00', 'payment'],
+    ['Checklist updated', 'checklist'],
+  ])('description %s gets data-kind=%s', async (description, kind) => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: `event-kind-${kind}`, description })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText(description);
+    expect(container.querySelector(`[data-kind="${kind}"]`)).not.toBeNull();
+  });
+
+  it('an unmatched description renders no data-kind attribute at all, falling back to the CSS default glyph', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-kind-none', description: 'Role permissions updated' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText('Role permissions updated');
+    const row = container.querySelector('[class*="list"]')!.children[0] as HTMLElement;
+    expect(row.hasAttribute('data-kind')).toBe(false);
+  });
+
+  it('"Case updated (checklistState)" is first relabeled "Checklist updated", then classified as checklist — the mapping and the glyph never disagree', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-kind-mapped', description: 'Case updated (checklistState)' })],
+      nextCursor: null,
+    });
+    const { container } = renderPanel();
+    await screen.findByText('Checklist updated');
+    expect(container.querySelector('[data-kind="checklist"]')).not.toBeNull();
   });
 });

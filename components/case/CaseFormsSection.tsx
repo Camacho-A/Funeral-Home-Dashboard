@@ -3,8 +3,6 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useCaseForms, useGenerateFormLink, useRetryFormPdf } from '@/hooks/useExternalForms';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { formatTimestamp } from '@/utils/format';
 import { ReconciliationModal } from '@/components/externalForms/ReconciliationModal';
@@ -38,10 +36,10 @@ const STATUS_LABEL: Record<CaseFormLinkStatus, string> = {
   reviewed: 'Reviewed',
 };
 
-function statusBadgeVariant(status: CaseFormLinkStatus): 'neutral' | 'brand' | 'success' {
-  if (status === 'received') return 'brand';
-  if (status === 'reviewed') return 'success';
-  return 'neutral';
+function statusModifierClass(status: CaseFormLinkStatus): string {
+  if (status === 'received') return 'sx-status-info';
+  if (status === 'reviewed') return 'sx-status-ok';
+  return '';
 }
 
 /** Case repair UI (2026-09) — "Retry Jotform PDF" only ever appears for a
@@ -110,10 +108,11 @@ export function CaseFormsSection({ caseId }: { caseId: string }) {
             {row.sentAt && <div className={styles.meta}>Sent {formatTimestamp(row.sentAt)}</div>}
           </div>
           <div className={styles.actions}>
-            <Badge variant={statusBadgeVariant(row.status)}>{STATUS_LABEL[row.status]}</Badge>
+            <span className={`sx-status ${statusModifierClass(row.status)}`}>{STATUS_LABEL[row.status]}</span>
             {(row.status === 'not_sent' || row.status === 'sent') && (
-              <Button
-                variant="secondary"
+              <button
+                type="button"
+                className="sx-btn sx-btn-secondary"
                 disabled={generateLink.isPending}
                 onClick={() => handleGetLink(row.config.id, row.config.audience)}
               >
@@ -124,48 +123,54 @@ export function CaseFormsSection({ caseId }: { caseId: string }) {
                     : row.status === 'sent'
                       ? 'Regenerate Link'
                       : 'Copy Link'}
-              </Button>
+              </button>
             )}
             {(row.status === 'received' || row.status === 'reviewed') && row.submissionId && (
-              <Button variant="secondary" onClick={() => setReviewingSubmissionId(row.submissionId)}>
+              <button type="button" className="sx-btn sx-btn-secondary" onClick={() => setReviewingSubmissionId(row.submissionId)}>
                 {row.status === 'received' ? 'Review Submission' : 'View Submission'}
-              </Button>
+              </button>
             )}
             {(row.status === 'not_sent' || row.status === 'sent') && (
-              <Button variant="ghost" onClick={() => setImportingConfig({ id: row.config.id, label: row.config.label })}>
+              <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setImportingConfig({ id: row.config.id, label: row.config.label })}>
                 Import Existing Submission
-              </Button>
+              </button>
             )}
             {canRetryPdf(row) && (
-              <Button
-                variant="ghost"
+              <button
+                type="button"
+                className="sx-btn sx-btn-ghost"
                 disabled={retryPdf.isPending}
                 onClick={() => setRetryConfirming({ submissionId: row.submissionId as string, configId: row.config.id, label: row.config.label })}
               >
                 Retry Jotform PDF
-              </Button>
+              </button>
             )}
           </div>
           </div>
           {retryFeedback && retryFeedback.configId === row.config.id && (
-            <div className={retryFeedback.isError ? styles.retryError : styles.retrySuccess}>{retryFeedback.message}</div>
+            <div className={retryFeedback.isError ? 'sx-error' : styles.retrySuccess}>{retryFeedback.message}</div>
           )}
         </div>
       ))}
 
       {retryConfirming && (
         <Modal open onClose={() => setRetryConfirming(null)} title="Retry Jotform PDF">
-          <p>
-            Retry retrieving the exact {retryConfirming.label} Smart PDF from Jotform for this submission? This does
-            not change any case data, does not create a case, and does not affect case numbering.
-          </p>
-          <div className={styles.confirmActions}>
-            <Button variant="secondary" onClick={() => setRetryConfirming(null)} disabled={retryPdf.isPending}>
+          <div className="sx-modal-header">
+            <h2 className="sx-modal-title">Retry Jotform PDF</h2>
+          </div>
+          <div className="sx-modal-body">
+            <p className="sx-help">
+              Retry retrieving the exact {retryConfirming.label} Smart PDF from Jotform for this submission? This does
+              not change any case data, does not create a case, and does not affect case numbering.
+            </p>
+          </div>
+          <div className="sx-modal-footer">
+            <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setRetryConfirming(null)} disabled={retryPdf.isPending}>
               Cancel
-            </Button>
-            <Button onClick={handleRetryPdf} disabled={retryPdf.isPending}>
+            </button>
+            <button type="button" className="sx-btn sx-btn-primary" onClick={handleRetryPdf} disabled={retryPdf.isPending}>
               {retryPdf.isPending ? 'Retrying…' : 'Retry'}
-            </Button>
+            </button>
           </div>
         </Modal>
       )}

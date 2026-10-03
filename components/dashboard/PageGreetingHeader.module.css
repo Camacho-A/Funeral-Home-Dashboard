@@ -1,15 +1,16 @@
 .wrapper {
-  margin-bottom: var(--space-14);
+  margin-bottom: var(--space-10);
 }
 
 .title {
   font-size: var(--font-size-26);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary-cool);
 }
 
 .subtitle {
   font-size: var(--font-size-14);
-  color: var(--color-text-muted);
+  color: var(--color-text-muted-cool);
   margin-top: var(--space-2);
 }

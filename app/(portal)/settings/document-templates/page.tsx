@@ -14,10 +14,5 @@ export default async function DocumentTemplateLibraryPage() {
     redirect('/settings');
   }
 
-  return (
-    <div>
-      <h1>Document Templates</h1>
-      <DocumentTemplateLibraryPanel />
-    </div>
-  );
+  return <DocumentTemplateLibraryPanel />;
 }

@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { usePriceLists, useGeneratePriceList } from '@/hooks/useBilling';
-import { Button } from '@/components/ui/Button';
 
 /**
  * Phase 39 (Family Billing & FTC Compliance). Focused Settings panel for the
@@ -18,39 +17,43 @@ export function PriceListPanel() {
   const [effectiveDate, setEffectiveDate] = useState('');
 
   return (
-    <section aria-labelledby="gpl-heading" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <h2 id="gpl-heading">General Price List</h2>
-      <p style={{ fontSize: '0.85rem', color: '#555', marginTop: 0 }}>
-        Generate an FTC General Price List from your current catalog. Each version is immutable and records its effective date. Required federal disclosures are system-controlled.
-      </p>
-
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: '0.85rem' }}>
-          Effective date{' '}
-          <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
-        </label>
-        <Button onClick={() => generate.mutate(effectiveDate)} disabled={generate.isPending || effectiveDate.length === 0}>
-          {generate.isPending ? 'Generating…' : 'Generate Price List'}
-        </Button>
-        {generate.isError && <span style={{ color: '#a00' }}>{(generate.error as Error).message}</span>}
+    <div>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">General Price List</h2>
+        <p className="sx-settings-desc">
+          Generate an FTC General Price List from your current catalog. Each version is immutable and records its effective date. Required federal disclosures are system-controlled.
+        </p>
       </div>
 
-      <div>
-        <h3 style={{ marginBottom: '0.5rem' }}>Versions</h3>
-        {priceLists.isPending && <p>Loading…</p>}
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+      <section className="sx-settings-section" aria-labelledby="gpl-heading">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label className="sx-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <span className="sx-label">Effective date</span>
+            <input type="date" className="sx-input" style={{ width: 'auto' }} value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
+          </label>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={() => generate.mutate(effectiveDate)} disabled={generate.isPending || effectiveDate.length === 0}>
+            {generate.isPending ? 'Generating…' : 'Generate Price List'}
+          </button>
+          {generate.isError && <span className="sx-error">{(generate.error as Error).message}</span>}
+        </div>
+      </section>
+
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Versions</h3>
+        {priceLists.isPending && <p className="sx-help">Loading…</p>}
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {(priceLists.data ?? []).map((doc) => (
-            <li key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-              <span>
+            <li key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minHeight: 36 }}>
+              <span className="sx-body" style={{ fontSize: 13.5 }}>
                 v{doc.version} · effective {doc.effectiveDate}
-                {doc.status !== 'active' && <em style={{ color: '#777' }}> ({doc.status})</em>}
+                {doc.status !== 'active' && <em className="sx-help"> ({doc.status})</em>}
               </span>
-              <a href={`/api/settings/price-list/${encodeURIComponent(doc.id)}/download?organizationId=${encodeURIComponent(organizationId)}`}>Download</a>
+              <a className="sx-link" href={`/api/settings/price-list/${encodeURIComponent(doc.id)}/download?organizationId=${encodeURIComponent(organizationId)}`}>Download</a>
             </li>
           ))}
-          {(priceLists.data ?? []).length === 0 && <li style={{ color: '#777', fontStyle: 'italic' }}>No price lists generated yet.</li>}
+          {(priceLists.data ?? []).length === 0 && <li className="sx-help" style={{ fontStyle: 'italic' }}>No price lists generated yet.</li>}
         </ul>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

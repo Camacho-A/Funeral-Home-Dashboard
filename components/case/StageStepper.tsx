@@ -4,18 +4,15 @@ export type StepperStage = {
   label: string;
   done: boolean;
   current: boolean;
-  /** A stage is viewable (clickable to see its checklist read-only) only if
-      the case has already reached it — ported from design/support.js's
-      `viewable = idx <= selected.displayStage`. */
+  /** Viewable (clickable to see its checklist read-only) only if the case has reached it. */
   viewable: boolean;
 };
 
 /**
- * Purely presentational: `stages` (done/current/viewable per stage) is
- * computed by the page from CaseViewModel.displayStage — the stepper's own
- * dots never change based on which past stage is being *viewed* read-only
- * (that only affects ChecklistCard); clicking a viewable dot just reports
- * the index back via onStepClick.
+ * Purely presentational stage stepper. SOLIS Phase 3: compact full-width
+ * row (no card, no horizontal scrollbar, no cut-off last stage). Labels
+ * truncate with an ellipsis; the full label is available as a tooltip
+ * (`title`) and to assistive tech (`aria-label`). Click behavior unchanged.
  */
 export function StageStepper({
   stages,
@@ -25,14 +22,16 @@ export function StageStepper({
   onStepClick: (index: number) => void;
 }) {
   return (
-    <div className={styles.stepper}>
+    <ol className={styles.stepper} aria-label="Workflow stages">
       {stages.map((stage, index) => (
-        <div key={stage.label} className={styles.stage}>
+        <li key={stage.label} className={`${styles.stage} ${index < stages.length - 1 ? styles.stageWithConnector : ''}`}>
           <button
             type="button"
             className={`${styles.stepButton} ${stage.viewable ? styles.stepButtonViewable : styles.stepButtonDisabled}`}
             onClick={stage.viewable ? () => onStepClick(index) : undefined}
             disabled={!stage.viewable}
+            title={stage.label}
+            aria-current={stage.current ? 'step' : undefined}
           >
             <span
               className={`${styles.dot} ${stage.done ? styles.dotDone : stage.current ? styles.dotCurrent : styles.dotUpcoming}`}
@@ -44,10 +43,10 @@ export function StageStepper({
             </span>
           </button>
           {index < stages.length - 1 && (
-            <div className={`${styles.connector} ${stage.done ? styles.connectorDone : styles.connectorUpcoming}`} />
+            <div className={`${styles.connector} ${stage.done ? styles.connectorDone : styles.connectorUpcoming}`} aria-hidden="true" />
           )}
-        </div>
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }

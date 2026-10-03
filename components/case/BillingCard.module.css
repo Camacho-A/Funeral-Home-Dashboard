@@ -1,165 +1,11 @@
 /*
- * Task #14 Phase E (2026-09): BillingCard previously had no module.css at
- * all — every value below replaces a raw inline style={{}} object with the
- * same detail-tier recipe every other Case Detail card already uses
- * (1px border, --radius-md, --space-9/--space-10 padding — see
- * CaseOrderCard.module.css/CaseInformationCard.module.css). Sizes below
- * that had no matching token (the prototype was hand-authored rem/px, not
- * measured against this system) use the closest existing token rather than
- * inventing a new one; see the Phase E final report for the mapping.
+ * SOLIS Final Phase §8.2 — restyled onto the shared `.sx-bill`/`.sx-kpis`/
+ * `.sx-table` system (styles/solis-system.css). Only layout wrappers that
+ * have no sx- equivalent stay as local module classes.
  */
-.card {
-  background: var(--color-surface-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-9) var(--space-10);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.heading {
-  font-size: var(--font-size-14);
-  font-weight: var(--font-weight-bold);
-  margin: 0;
-}
-
 .subsection {
   display: flex;
   flex-direction: column;
-}
-
-.subsectionTitle {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-semibold);
-  margin: 0 0 var(--space-5) 0;
-}
-
-.subsectionDescription {
-  font-size: var(--font-size-13-5);
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--space-5) 0;
-}
-
-.loading,
-.error {
-  font-size: var(--font-size-13);
-}
-
-.error {
-  color: var(--color-danger-text);
-}
-
-.cashAdvanceList {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-5) 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.cashAdvanceRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: var(--font-size-13);
-}
-
-.cashAdvanceRowReadOnly {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
-  font-size: var(--font-size-13);
-}
-
-.estimatedNote {
-  font-size: var(--font-size-10-5);
-  color: var(--color-warning-text);
-}
-
-.markupNote {
-  font-size: var(--font-size-10-5);
-  color: var(--color-text-secondary);
-}
-
-.cashAdvanceAmountGroup {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.tabularAmount {
-  font-variant-numeric: tabular-nums;
-}
-
-.removeButton {
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--color-danger-text);
-  font-size: var(--font-size-13);
-  line-height: 1;
-  padding: var(--space-1);
-}
-
-.removeButton:hover {
-  opacity: 0.75;
-}
-
-.removeButton:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-  border-radius: var(--radius-xs);
-}
-
-.emptyNote {
-  color: var(--color-text-muted);
-  font-style: italic;
-  font-size: var(--font-size-13);
-}
-
-.cashAdvanceForm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
-}
-
-.descriptionField {
-  flex: 1 1 200px;
-  min-width: 160px;
-}
-
-.amountField {
-  width: 6rem;
-  flex: 0 0 auto;
-}
-
-.checkboxLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-13-5);
-}
-
-.warningBox {
-  border: 1px solid var(--color-warning-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-6);
-  background: var(--color-warning-bg);
-}
-
-.warningTitle {
-  color: var(--color-warning-text);
-}
-
-.warningText {
-  font-size: var(--font-size-13-5);
-  color: var(--color-text-secondary);
-  margin: var(--space-2) 0 var(--space-4);
 }
 
 .statementBody {
@@ -168,54 +14,13 @@
   gap: var(--space-6);
 }
 
-.lineItemsTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-13);
-}
-
-.lineItemAmount {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.totalsGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-6);
-}
-
-.totalBox {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-4);
-}
-
-.totalBoxEmphasis {
-  background: var(--color-surface-muted);
-}
-
-.totalCaption {
-  font-size: var(--font-size-12);
-  color: var(--color-text-secondary);
-}
-
-.totalFigure {
-  font-size: var(--font-size-20);
-  font-variant-numeric: tabular-nums;
-}
-
-.generateRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.generateError {
-  color: var(--color-danger-text);
-}
-
-.generateSuccess {
-  color: var(--color-success-text);
+/* §8.2 Mobile: the primary Generate/Regenerate button moves to its own
+   full-width row at <=560px (the summary itself stays 2 columns per the
+   CSS contract — no mobile override needed there). */
+@media (max-width: 560px) {
+  .billingHeaderAction {
+    order: 3;
+    width: 100%;
+    height: 44px;
+  }
 }

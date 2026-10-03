@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
 import { TextArea } from '@/components/ui/TextArea';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
@@ -49,35 +48,42 @@ export function ConflictResolutionDialog({
 
   return (
     <Modal open={open} onClose={onClose} title="Scheduling Conflict">
-      <div className={styles.body}>
-        <p className={styles.intro}>The following resources can&rsquo;t be booked for this time:</p>
-        <ul className={styles.list}>
-          {conflicts.map((conflict, index) => (
-            <li key={`${conflict.resourceId}-${index}`} className={styles.item}>
-              <span className={styles.resourceName}>{conflict.resourceName}</span> — {CONFLICT_REASON_LABEL[conflict.reason] ?? conflict.reason}
-            </li>
-          ))}
-        </ul>
+      <div className="sx-modal-header">
+        <h2 className="sx-modal-title">Scheduling Conflict</h2>
+        <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onClose} disabled={isSubmitting}>
+          ×
+        </button>
+      </div>
+      <div className="sx-modal-body">
+        <div className="sx-form-banner" style={{ display: 'block', background: 'var(--sx-amber-bg)', border: '1px solid oklch(0.88 0.06 75)', color: 'var(--sx-amber-text)' }}>
+          <p className={styles.intro}>The following resources can&rsquo;t be booked for this time:</p>
+          <ul className={styles.list}>
+            {conflicts.map((conflict, index) => (
+              <li key={`${conflict.resourceId}-${index}`} className={styles.item}>
+                <span className={styles.resourceName}>{conflict.resourceName}</span> — {CONFLICT_REASON_LABEL[conflict.reason] ?? conflict.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
 
         {canOverride && (
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="conflict-override-reason">
+          <div className="sx-field">
+            <label className="sx-label" htmlFor="conflict-override-reason">
               Override reason (required to proceed anyway)
             </label>
-            <TextArea id="conflict-override-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+            <TextArea id="conflict-override-reason" className="sx-textarea" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
           </div>
         )}
-
-        <div className={styles.actions}>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>
-            Choose a different resource or time
-          </Button>
-          {canOverride && (
-            <Button type="button" variant="danger" onClick={() => onOverride(reason.trim())} disabled={!reason.trim() || isSubmitting}>
-              {isSubmitting ? 'Overriding…' : 'Override anyway'}
-            </Button>
-          )}
-        </div>
+      </div>
+      <div className="sx-modal-footer">
+        <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose} disabled={isSubmitting}>
+          Choose a different resource or time
+        </button>
+        {canOverride && (
+          <button type="button" className="sx-btn sx-btn-danger" onClick={() => onOverride(reason.trim())} disabled={!reason.trim() || isSubmitting}>
+            {isSubmitting ? 'Overriding…' : 'Override anyway'}
+          </button>
+        )}
       </div>
     </Modal>
   );

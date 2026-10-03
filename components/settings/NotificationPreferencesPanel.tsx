@@ -3,11 +3,9 @@
 import { useOrganization } from '@/hooks/useOrganization';
 import { useNotificationPreferences, useUpdateNotificationPreferences } from '@/hooks/useNotifications';
 import { useMyIdentityProfile } from '@/hooks/useIdentityProfile';
-import { Card } from '@/components/ui/Card';
 import { SelectField } from '@/components/ui/SelectField';
 import type { NotificationCategory } from '@/domain/notifications/notificationTypeRegistry';
 import type { DigestFrequency, NotificationCategoryOverride } from '@/types/notificationPreference';
-import styles from './NotificationPreferencesPanel.module.css';
 
 /**
  * Phase 28 (Communications & Notifications), extended in Phase 33 (Real
@@ -44,8 +42,8 @@ export function NotificationPreferencesPanel() {
   const updatePreferences = useUpdateNotificationPreferences(organizationId);
   const profileQuery = useMyIdentityProfile(organizationId);
 
-  if (preferencesQuery.isPending) return <p className={styles.loading}>Loading preferences…</p>;
-  if (preferencesQuery.isError) return <p className={styles.errorText}>Couldn&rsquo;t load preferences. Please try again.</p>;
+  if (preferencesQuery.isPending) return <p className="sx-help">Loading preferences…</p>;
+  if (preferencesQuery.isError) return <div className="sx-error-state" role="alert">Couldn&rsquo;t load preferences. Please try again.</div>;
 
   const preferences = preferencesQuery.data!;
   const hasPhone = Boolean(profileQuery.data?.phone);
@@ -66,10 +64,14 @@ export function NotificationPreferencesPanel() {
   }
 
   return (
-    <div className={styles.sections}>
-      <Card className={styles.card}>
-        <h3 className={styles.sectionTitle}>Global channels</h3>
-        <label className={styles.checkboxLabel}>
+    <div>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Notifications</h2>
+      </div>
+
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Global channels</h3>
+        <label className="sx-check">
           <input
             type="checkbox"
             checked={preferences.inAppEnabled}
@@ -78,7 +80,7 @@ export function NotificationPreferencesPanel() {
           />
           In-app notifications
         </label>
-        <label className={styles.checkboxLabel}>
+        <label className="sx-check">
           <input
             type="checkbox"
             checked={preferences.emailEnabled}
@@ -87,7 +89,7 @@ export function NotificationPreferencesPanel() {
           />
           Email notifications
         </label>
-        <label className={styles.checkboxLabel}>
+        <label className="sx-check">
           <input
             type="checkbox"
             checked={preferences.smsEnabled}
@@ -97,54 +99,57 @@ export function NotificationPreferencesPanel() {
           SMS notifications
         </label>
         {preferences.smsEnabled && !hasPhone && (
-          <p className={styles.hint}>Add a phone number in Security settings to actually receive SMS notifications.</p>
+          <p className="sx-help">Add a phone number in Security settings to actually receive SMS notifications.</p>
         )}
-      </Card>
+      </section>
 
-      <Card className={styles.card}>
-        <h3 className={styles.sectionTitle}>Email timing</h3>
-        <label className={styles.fieldLabel}>
-          Digest frequency
-          <SelectField
-            value={preferences.digestFrequency}
-            disabled={updatePreferences.isPending}
-            onChange={(e) => updatePreferences.mutate({ digestFrequency: e.target.value as DigestFrequency })}
-          >
-            <option value="instant">Instant — send each email right away</option>
-            <option value="daily">Daily digest — one combined email per day</option>
-            <option value="weekly">Weekly digest — one combined email per week</option>
-          </SelectField>
-        </label>
-        <p className={styles.hint}>In-app and SMS notifications are never batched — this only affects email.</p>
-        <div className={styles.quietHoursRow}>
-          <label className={styles.fieldLabel}>
-            Quiet hours start
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Email timing</h3>
+        <div className="sx-form-grid">
+          <label className="sx-field">
+            <span className="sx-label">Digest frequency</span>
+            <SelectField
+              className="sx-select"
+              value={preferences.digestFrequency}
+              disabled={updatePreferences.isPending}
+              onChange={(e) => updatePreferences.mutate({ digestFrequency: e.target.value as DigestFrequency })}
+            >
+              <option value="instant">Instant — send each email right away</option>
+              <option value="daily">Daily digest — one combined email per day</option>
+              <option value="weekly">Weekly digest — one combined email per week</option>
+            </SelectField>
+          </label>
+        </div>
+        <p className="sx-help">In-app and SMS notifications are never batched — this only affects email.</p>
+        <div className="sx-form-grid" style={{ marginTop: 10 }}>
+          <label className="sx-field">
+            <span className="sx-label">Quiet hours start</span>
             <input
               type="time"
-              className={styles.timeInput}
+              className="sx-input"
               value={preferences.quietHoursStart ?? ''}
               disabled={updatePreferences.isPending}
               onChange={(e) => updatePreferences.mutate({ quietHoursStart: e.target.value || null })}
             />
           </label>
-          <label className={styles.fieldLabel}>
-            Quiet hours end
+          <label className="sx-field">
+            <span className="sx-label">Quiet hours end</span>
             <input
               type="time"
-              className={styles.timeInput}
+              className="sx-input"
               value={preferences.quietHoursEnd ?? ''}
               disabled={updatePreferences.isPending}
               onChange={(e) => updatePreferences.mutate({ quietHoursEnd: e.target.value || null })}
             />
           </label>
         </div>
-        <p className={styles.hint}>An email that would otherwise send during quiet hours is held and delivered right after they end.</p>
-      </Card>
+        <p className="sx-help">An email that would otherwise send during quiet hours is held and delivered right after they end.</p>
+      </section>
 
-      <Card className={styles.card}>
-        <h3 className={styles.sectionTitle}>Per-category overrides</h3>
-        <p className={styles.hint}>Override the global channels above for one notification category. A category with no override uses the global settings.</p>
-        <table className={styles.overrideTable}>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Per-category overrides</h3>
+        <p className="sx-help">Override the global channels above for one notification category. A category with no override uses the global settings.</p>
+        <table className="sx-table">
           <thead>
             <tr>
               <th>Category</th>
@@ -203,7 +208,7 @@ export function NotificationPreferencesPanel() {
             })}
           </tbody>
         </table>
-      </Card>
+      </section>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import styles from './SidebarNavItem.module.css';
 
 /**
@@ -15,14 +16,21 @@ import styles from './SidebarNavItem.module.css';
  * here so tapping any link also closes the mobile drawer, instead of
  * leaving staff to navigate underneath it. Nothing about desktop's
  * always-visible Sidebar calls this.
+ *
+ * SOLIS true redesign, Phase 1 (2026-10): `icon` is new — a 16px line glyph
+ * (components/ui/Icon.tsx) rendered before the label, per the approved
+ * design. Optional so any future caller without an icon still renders a
+ * plain text row rather than a broken layout.
  */
 export function SidebarNavItem({
   href,
   label,
+  icon,
   onNavigate,
 }: {
   href: string;
   label: string;
+  icon?: IconName;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -30,6 +38,7 @@ export function SidebarNavItem({
 
   return (
     <Link href={href} className={`${styles.item} ${isActive ? styles.itemActive : ''}`} onClick={onNavigate}>
+      {icon && <Icon name={icon} size={16} className={styles.icon} />}
       {label}
     </Link>
   );

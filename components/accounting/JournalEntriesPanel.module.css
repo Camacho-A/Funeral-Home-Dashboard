@@ -1,104 +1,10 @@
 .toolbar {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: var(--space-5);
-  margin-bottom: var(--space-8);
-}
-
-.title {
-  font-size: var(--font-size-16);
-  font-weight: var(--font-weight-semibold);
-  margin: 0;
+  margin-bottom: 16px;
 }
 
 .spacer {
   flex: 1;
-}
-
-.form {
-  margin-bottom: var(--space-8);
-  padding: var(--space-7);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-.formRow {
-  display: flex;
-  gap: var(--space-5);
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.memoField {
-  flex: 1;
-}
-
-.error {
-  color: var(--color-danger);
-  font-size: var(--font-size-12-5);
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-}
-
-/* Mobile (2026-10) — a ledger row (reference number / description+memo /
-   actions, each with its own min-width above) is genuinely data-dense;
-   per this phase's own guidance, an intentional component-level
-   horizontal scroll is the right call here rather than squeezing amounts
-   and references unreadably or redesigning the desktop row into a
-   stacked card. `min-width: fit-content` on `.row` keeps every row at
-   its natural width so they scroll together, never independently
-   wrapping at different points. The page itself never scrolls — only
-   this one list does. */
-.list {
-  display: flex;
-  flex-direction: column;
-  overflow-x: auto;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-7);
-  padding: var(--space-5) 0;
-  border-bottom: 1px solid var(--color-border);
-  min-width: fit-content;
-}
-
-.row:last-child {
-  border-bottom: none;
-}
-
-.number {
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--font-weight-semibold);
-  min-width: 90px;
-  color: var(--color-text-muted);
-}
-
-.identity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 200px;
-  flex: 1;
-}
-
-.name {
-  font-size: var(--font-size-13-5);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-}
-
-.meta {
-  font-size: var(--font-size-11-5);
-  color: var(--color-text-muted);
-}
-
-.actions {
-  display: flex;
-  gap: var(--space-4);
 }

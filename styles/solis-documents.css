@@ -1,0 +1,43 @@
+/*
+ * SOLIS: Case Detail → Documents presentation contract.
+ * Requires solis-system.css. Import after it:
+ *   @import './solis-documents.css';
+ * Presentation only.
+ */
+.sx-docs { max-width: 920px; }
+.sx-docs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
+.sx-docs-title { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; color: var(--sx-text); }
+.sx-docs-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 24px; }
+.sx-docs-toolbar-spacer { flex: 1; }
+.sx-docs-group { margin: 0 0 28px; }
+.sx-doc-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; min-height: 56px; padding: 8px 8px; margin: 0 -8px; border-bottom: 1px solid var(--sx-border-soft); border-radius: 7px; transition: background-color var(--sx-ease); }
+.sx-doc-row:hover { background: var(--sx-subtle); }
+.sx-doc-type { width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--sx-border); background: #fff; display: flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--sx-text-2); }
+.sx-doc-type[data-ext='pdf'] { color: var(--sx-red); }
+.sx-doc-type[data-ext='docx'] { color: var(--sx-navy); }
+.sx-doc-type[data-ext='png'], .sx-doc-type[data-ext='jpg'], .sx-doc-type[data-ext='jpeg'] { color: var(--sx-green-text); }
+.sx-doc-id { min-width: 0; }
+.sx-doc-name { display: block; font-size: 13.5px; line-height: 20px; font-weight: 500; color: var(--sx-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-doc-meta { display: block; font-size: 12.5px; line-height: 18px; color: var(--sx-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.sx-doc-status { flex-shrink: 0; }
+.sx-doc-status-quiet { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sx-doc-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.sx-doc-error { grid-column: 2 / -1; margin-top: 4px; font-size: 12px; color: var(--sx-red); }
+.sx-doc-progress { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 12px; align-items: center; min-height: 56px; padding: 8px 0; border-bottom: 1px solid var(--sx-border-soft); }
+.sx-doc-progress-bar { height: 4px; margin-top: 6px; border-radius: 2px; background: oklch(0.93 0.004 255); overflow: hidden; }
+.sx-doc-progress-bar > span { display: block; height: 100%; width: 40%; background: var(--sx-navy); border-radius: 2px; animation: sx-indet 1.2s ease-in-out infinite; }
+@keyframes sx-indet { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+.sx-docs-bulk-note { margin: 0 0 16px; }
+@media (max-width: 860px) {
+  .sx-docs-toolbar > .sx-btn-primary { flex: 1 1 100%; height: 44px; }
+  .sx-docs-toolbar > .sx-btn-secondary { flex: 1 1 calc(50% - 4px); height: 44px; }
+  .sx-docs-toolbar-spacer { display: none; }
+  .sx-doc-row { grid-template-columns: 32px minmax(0, 1fr) 44px; row-gap: 4px; align-items: start; padding: 12px 0; margin: 0; border-radius: 0; }
+  .sx-doc-name { white-space: normal; overflow-wrap: anywhere; }
+  .sx-doc-meta { white-space: normal; }
+  .sx-doc-status { grid-column: 2; grid-row: 2; }
+  .sx-doc-actions { grid-column: 3; grid-row: 1 / span 2; flex-direction: column; }
+  .sx-doc-actions .sx-doc-view { display: none; }
+  .sx-doc-actions .sx-icon-btn { width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .sx-doc-progress-bar > span { animation: none; width: 100%; opacity: 0.4; } .sx-doc-row { transition: none; } }

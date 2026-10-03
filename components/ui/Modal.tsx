@@ -20,11 +20,17 @@ export function Modal({
   onClose,
   title,
   children,
+  size = 'md',
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  /** SOLIS Final Phase §3.1 — 'lg' is 760px wide with no panel padding (the
+      caller renders its own .sx-modal-header/.sx-modal-body/.sx-modal-footer
+      instead). Default 'md' is unchanged — every other existing caller's
+      width/padding stays exactly as before. */
+  size?: 'md' | 'lg';
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -86,7 +92,7 @@ export function Modal({
     <div className={styles.overlay} onClick={onClose} role="presentation">
       <div
         ref={panelRef}
-        className={styles.panel}
+        className={size === 'lg' ? `${styles.panel} ${styles.panelLg}` : styles.panel}
         role="dialog"
         aria-modal="true"
         aria-label={title}

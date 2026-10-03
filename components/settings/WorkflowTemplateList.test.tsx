@@ -16,8 +16,11 @@ describe('WorkflowTemplateList (Phase 18)', () => {
   it('renders every template with its name, case types, and enabled/disabled state', () => {
     render(<WorkflowTemplateList templates={TEMPLATES} selectedTemplateId={null} onSelect={vi.fn()} />);
     expect(screen.getByText('Standard Cremation Workflow')).toBeInTheDocument();
-    expect(screen.getByText(/cremation.*Enabled/)).toBeInTheDocument();
-    expect(screen.getByText(/burial.*Disabled/)).toBeInTheDocument();
+    // SOLIS Tasks/Calendar/Settings phase: case types and status are now
+    // separate text/element nodes within one `.sx-cell-sub` row (status is
+    // its own `.sx-status` span) — match across both with a function matcher.
+    expect(screen.getByText((_, element) => element?.className === 'sx-cell-sub' && /cremation/.test(element.textContent ?? '') && /Enabled/.test(element.textContent ?? ''))).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.className === 'sx-cell-sub' && /burial/.test(element.textContent ?? '') && /Disabled/.test(element.textContent ?? ''))).toBeInTheDocument();
   });
 
   it('calls onSelect with the clicked template id', () => {

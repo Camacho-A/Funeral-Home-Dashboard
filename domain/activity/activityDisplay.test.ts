@@ -129,3 +129,33 @@ describe('resolveActivityDisplayDescription (Task #4 follow-up, 2026-09)', () =>
     );
   });
 });
+
+/**
+ * SOLIS true redesign, Phase 1 (2026-10). "Case updated (checklistState)"
+ * — services/activityService.ts#recordCaseUpdated's description when the
+ * only changed field is `checklistState` — exposed that internal field
+ * name on the Dashboard's Recent Activity feed (the visual audit's own
+ * finding). Keyed on the exact description text (not `eventType`, which
+ * `case.updated` shares with every other field-change combination), so
+ * only this one exact string is relabeled — never a multi-field update
+ * that happens to include checklistState alongside something else.
+ */
+describe('resolveActivityDisplayDescription — "Checklist updated" presentation label (SOLIS true redesign, Phase 1)', () => {
+  it('renders "Case updated (checklistState)" as "Checklist updated"', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (checklistState)' })).toBe(
+      'Checklist updated',
+    );
+  });
+
+  it('does not relabel a multi-field case.updated event that is not checklist-only', () => {
+    expect(
+      resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (decedentName, dateOfBirth)' }),
+    ).toBe('Case updated (decedentName, dateOfBirth)');
+  });
+
+  it('no event is filtered — an ordinary case.updated event for an unrelated field still renders', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (weight)' })).toBe(
+      'Case updated (weight)',
+    );
+  });
+});

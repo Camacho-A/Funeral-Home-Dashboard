@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
 import { useDocumentTemplates, usePreviewDocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useGenerateCaseDocument } from '@/hooks/useCaseDocumentLibrary';
@@ -84,68 +83,80 @@ export function GenerateDocumentDialog({
 
   return (
     <Modal open={open} onClose={onClose} title={regenerating ? 'Regenerate Document' : 'Generate Document'}>
-      <div className={styles.form}>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="generate-doc-template">
-            Template
-          </label>
-          <SelectField
-            id="generate-doc-template"
-            value={templateId}
-            onChange={(e) => {
-              setTemplateId(e.target.value);
-              setTemplateVersion('');
-              setPreviewHtml(null);
-            }}
-            disabled={Boolean(regenerating)}
-            required
-          >
-            <option value="" disabled>
-              Select a template…
-            </option>
-            {activeTemplates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-
-        {selectedTemplate && (
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="generate-doc-version">
-              Template version
+      <div className="sx-modal-header">
+        <h2 className="sx-modal-title">{regenerating ? 'Regenerate Document' : 'Generate Document'}</h2>
+        <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onClose}>
+          ×
+        </button>
+      </div>
+      <div className="sx-modal-body">
+        <div className="sx-form-grid">
+          <div className="sx-span-all sx-field">
+            <label className="sx-label sx-label-required" htmlFor="generate-doc-template">
+              Template
             </label>
-            <SelectField id="generate-doc-version" value={templateVersion} onChange={(e) => setTemplateVersion(e.target.value ? Number(e.target.value) : '')}>
-              <option value="">Current latest (v{selectedTemplate.versions[selectedTemplate.versions.length - 1].version})</option>
-              {selectedTemplate.versions.map((v) => (
-                <option key={v.version} value={v.version}>
-                  v{v.version}
+            <SelectField
+              id="generate-doc-template"
+              className="sx-select"
+              value={templateId}
+              onChange={(e) => {
+                setTemplateId(e.target.value);
+                setTemplateVersion('');
+                setPreviewHtml(null);
+              }}
+              disabled={Boolean(regenerating)}
+              required
+            >
+              <option value="" disabled>
+                Select a template…
+              </option>
+              {activeTemplates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
                 </option>
               ))}
             </SelectField>
           </div>
-        )}
 
-        {error && <span className={styles.error}>{error}</span>}
+          {selectedTemplate && (
+            <div className="sx-span-all sx-field">
+              <label className="sx-label" htmlFor="generate-doc-version">
+                Template version
+              </label>
+              <SelectField id="generate-doc-version" className="sx-select" value={templateVersion} onChange={(e) => setTemplateVersion(e.target.value ? Number(e.target.value) : '')}>
+                <option value="">Current latest (v{selectedTemplate.versions[selectedTemplate.versions.length - 1].version})</option>
+                {selectedTemplate.versions.map((v) => (
+                  <option key={v.version} value={v.version}>
+                    v{v.version}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
+        </div>
 
-        {previewHtml !== null && (
-          <div className={styles.previewFrame}>
-            <div className={styles.previewContent} dangerouslySetInnerHTML={{ __html: previewHtml }} />
+        {error && (
+          <div className="sx-error" style={{ marginTop: 12 }}>
+            {error}
           </div>
         )}
 
-        <div className={styles.actions}>
-          <Button type="button" variant="secondary" onClick={handlePreview} disabled={!selectedTemplate || preview.isPending}>
-            {preview.isPending ? 'Rendering…' : 'Preview'}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={handleGenerate} disabled={!templateId || generate.isPending}>
-            {generate.isPending ? 'Generating…' : regenerating ? 'Regenerate' : 'Generate'}
-          </Button>
-        </div>
+        {previewHtml !== null && (
+          <div className={styles.previewFrame} style={{ marginTop: 14 }}>
+            <div className={styles.previewContent} dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          </div>
+        )}
+      </div>
+      <div className="sx-modal-footer">
+        <button type="button" className="sx-btn sx-btn-ghost" onClick={handlePreview} disabled={!selectedTemplate || preview.isPending}>
+          {preview.isPending ? 'Rendering…' : 'Preview'}
+        </button>
+        <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" className="sx-btn sx-btn-primary" onClick={handleGenerate} disabled={!templateId || generate.isPending}>
+          {generate.isPending ? 'Generating…' : regenerating ? 'Regenerate' : 'Generate'}
+        </button>
       </div>
     </Modal>
   );

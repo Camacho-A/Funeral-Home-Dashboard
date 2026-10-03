@@ -17,9 +17,10 @@ import { defaultAssigneeForCase } from '@/domain/tasks/rules';
 import { printTextLog } from '@/utils/print';
 import { formatTimestamp } from '@/utils/format';
 import { CaseHeader } from '@/components/case/CaseHeader';
-import { StageStepper, type StepperStage } from '@/components/case/StageStepper';
+import type { StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
 import { CaseWorkflowRepairPanel } from '@/components/case/CaseWorkflowRepairPanel';
+import { WorkflowStageOverview } from '@/components/case/WorkflowStageOverview';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
 import { BillingCard } from '@/components/case/BillingCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
@@ -34,35 +35,34 @@ import styles from './page.module.css';
 type CaseDetailTab = 'overview' | 'workflow' | 'billing' | 'documents' | 'activity' | 'schedule' | 'portal';
 
 /**
- * Case Detail page (Frontend Engineering Plan, Phase 6) — the orchestration
- * layer. `params` is a Promise per Next.js 15's Client Component convention
- * (unwrapped with React's `use`, since a Client Component can't be async);
- * this is the only file in the case-detail feature that ever reads a route
- * param — everything below receives a plain `caseId: string`, per the
- * Route/feature decoupling principle.
+ * Case Detail page — the orchestration layer. `params` is a Promise per
+ * Next.js 15's Client Component convention (unwrapped with React's `use`).
+ *
+ * SOLIS Phase 3 (presentation only): the Overview tab is a two-column
+ * workspace — main column (Checklist → Case Log + Tasks → Case Order) and a
+ * sticky right rail (Case Information). Every component receives EXACTLY
+ * the same props as before; only their position in the tree changed.
+ * CaseHeader additionally receives the existing weight/weightOver200 view-
+ * model values for its facts line. Tabs, permission gates, mutations,
+ * hooks, and routing are unchanged.
+ *
+ * Compact stage progress (supersedes the full-width <StageStepper> row):
+ * the same `stepperStages`/`onStepClick` the old stepper used are now
+ * passed into CaseHeader, which renders the compact <StageProgress>
+ * popover under the stage chip instead. StageStepper.tsx itself is
+ * untouched and still exported for any other future caller — it's simply
+ * no longer rendered on this page.
  */
 export default function CaseDetailPage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = use(params);
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
-  // Mobile (2026-10): the primary tab strip is a single horizontally-
-  // scrollable row below ~860px (page.module.css's own @media 860px) —
-  // this keeps the active tab actually visible after switching rather
-  // than leaving it scrolled out of view behind whichever tab happened
-  // to be in frame before. A no-op on desktop (the strip never scrolls
-  // there, so this call is always already a no-op scroll of 0).
   const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const activeButton = tabsRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
     activeButton?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [activeTab]);
 
-  // Solis go-live checkpoint: Case Detail was opening scrolled to (or near)
-  // the bottom — see useResetMainContentScrollOnChange's own comment for
-  // the root cause. Keyed on caseId so this also covers navigating
-  // directly from one case's detail page to another's, without touching
-  // the Case List page's own scroll position (Case List -> Case -> Back
-  // still restores where the list was).
   useResetMainContentScrollOnChange(caseId);
 
   const { data: case_, isPending } = useCase(caseId);
@@ -71,27 +71,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const familyPortalEnabled = isFamilyPortalEnabled(organizationRecord ?? null);
   const { organizationId } = useOrganization();
   const permissionsQuery = useMyPermissions(organizationId);
-  // Item #10 (2026-09, workflow repair relocation): the Workflow tab
-  // contains only the Administrator-only repair/recalculation control
-  // (CaseWorkflowRepairPanel, self-gated on `user.manageRoles` — see its
-  // own comment). Since it has no other content, the tab itself is hidden
-  // from anyone who can't use that control, rather than showing an empty
-  // administrative tab. This mirrors the Family Portal tab's own
-  // capability-gating pattern above; the underlying route independently
-  // re-enforces authorization server-side regardless of this UI check.
   const canSeeWorkflowTab = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
-  // Billing-tab relocation (2026-09): the Billing tab contains BillingCard's
-  // financial content (Cash Advance items, Statement preview/total,
-  // Generate/Regenerate Statement PDF) — the same "case financial
-  // total/balance/history" tier CaseOrderCard already reserves behind
-  // `payment.read` (narrower than `caseOrder.read`, which every case-
-  // working role holds). BillingCard itself never self-gated this before
-  // (it simply rendered unconditionally inside Overview) — gating the tab
-  // here closes that gap using the one existing permission that already
-  // means exactly this, rather than inventing a new one. Office Staff's
-  // own role definition explicitly excludes `payment.read` ("without
-  // payment, accounting, or workflow access"), so this relocation cannot
-  // grant it new financial visibility.
   const canSeeBillingTab = Boolean(permissionsQuery.data?.permissions.includes('payment.read'));
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
@@ -100,18 +80,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   if (isPending) return <p className={styles.loading}>Loading case…</p>;
 
-  // casesService.get resolves to null when the case doesn't exist or belongs
-  // to a different organization — thrown here so the route's error.tsx
-  // (built in Phase 0 for exactly this) renders instead of a blank page.
   if (case_ === null) {
     throw new Error(`Case ${caseId} not found for this organization`);
   }
   if (!case_ || !viewModel) return null;
 
-  // Phase 11: sourced from viewModel.stageLabels (the case's own
-  // workflowSnapshot) instead of a hardcoded STAGES import, so a case
-  // belonging to a different organization's workflow template renders its
-  // own stages correctly through this exact same page.
   const stepperStages: StepperStage[] = viewModel.stageLabels.map((label, index) => ({
     label,
     done: index < viewModel.displayStage,
@@ -121,9 +94,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   const staffOptions = staffList.map((staff) => ({ id: staff.id, name: staff.displayName }));
 
-  // Phase 17: newest first — a single sort shared by the on-screen list and
-  // the Print callback below, so print output never disagrees with what's
-  // actually on screen.
   const logEntries = [...(caseLog.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const caseLinkedTasks = caseTasks.data ?? [];
 
@@ -143,14 +113,13 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         dateOfBirth={viewModel.dateOfBirth}
         dateOfDeath={viewModel.dateOfDeath}
         tagNumber={case_.tagNumber}
+        weight={viewModel.weight}
+        weightOver200={viewModel.weightOver200}
         caseDetailStageHeading={viewModel.caseDetailStageHeading}
         stageBadgeVariant={viewModel.stageBadgeVariant}
         daysWaitingInStage={viewModel.daysWaitingInStage}
         slaTargetLabel={viewModel.slaTargetLabel}
         isOverdue={viewModel.isOverdue}
-      />
-
-      <StageStepper
         stages={stepperStages}
         onStepClick={(index) =>
           setViewingDisplayStage(index === viewModel.displayStage ? null : index)
@@ -229,7 +198,21 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         )}
       </div>
 
-      {activeTab === 'workflow' && canSeeWorkflowTab && <CaseWorkflowRepairPanel caseId={caseId} />}
+      {activeTab === 'workflow' && canSeeWorkflowTab && (
+        <>
+          <WorkflowStageOverview
+            stages={stepperStages}
+            daysWaitingInStage={viewModel.daysWaitingInStage}
+            slaTargetLabel={viewModel.slaTargetLabel}
+            currentChecklist={viewModel.checklist.map((item) => ({ label: item.label, done: item.done }))}
+            onViewStage={(index) => {
+              setViewingDisplayStage(index === viewModel.displayStage ? null : index);
+              setActiveTab('overview');
+            }}
+          />
+          <CaseWorkflowRepairPanel caseId={caseId} />
+        </>
+      )}
       {activeTab === 'billing' && canSeeBillingTab && <BillingCard caseId={caseId} />}
       {activeTab === 'documents' && (
         <CaseDocumentsTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
@@ -241,100 +224,107 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       {activeTab === 'portal' && familyPortalEnabled && <CaseFamilyPortalTab caseId={caseId} />}
 
       {activeTab === 'overview' && (
-      <div className={styles.overview}>
-          <CaseInformationCard
-            dateOfBirth={viewModel.dateOfBirth}
-            dateOfDeath={viewModel.dateOfDeath}
-            timeOfDeath={viewModel.timeOfDeath}
-            placeOfDeath={viewModel.placeOfDeath}
-            weight={viewModel.weight}
-            weightOver200={viewModel.weightOver200}
-            nextOfKinName={case_.nextOfKinName}
-            nextOfKinPhone={case_.nextOfKinPhone}
-            nextOfKinEmail={case_.nextOfKinEmail}
-            nextOfKinRelationship={case_.nextOfKinRelationship}
-            nextOfKinRelationshipOther={case_.nextOfKinRelationshipOther}
-            certifierName={case_.certifierName}
-            certifierPhone={case_.certifierPhone}
-            certifierLicenseNumber={case_.certifierLicenseNumber}
-            certifierFax={case_.certifierFax}
-            onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
-            onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
-            onSaveCertifierLicenseNumber={(value) => mutations.setCertifierLicenseNumber(case_, value)}
-            onSaveCertifierFax={(value) => mutations.setCertifierFax(case_, value)}
-            tagNumber={case_.tagNumber}
-            paymentStatus={viewModel.paymentStatus}
-            pickupStatus={case_.pickupStatus}
-            pickupReleasedTo={case_.pickupReleasedTo}
-            pickupReleasedAt={case_.pickupReleasedAt}
-            pickupNote={case_.pickupNote}
-            returnMethod={case_.returnMethod}
-            shippingCarrier={case_.shippingCarrier}
-            shippingTrackingNumber={case_.shippingTrackingNumber}
-            shippingDateShipped={case_.shippingDateShipped}
-            shippingDeliveryStatus={case_.shippingDeliveryStatus}
-            shippingDeliveredAt={case_.shippingDeliveredAt}
-            ownerStaffId={viewModel.ownerStaffId}
-            staffOptions={staffOptions}
-            onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
-            showOwner={shouldShowCaseOwner(organizationId)}
-            onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
-            onSaveWeight={(value) => mutations.setWeight(case_, value)}
-            onSaveTimeOfDeath={(value) => mutations.setTimeOfDeath(case_, value)}
-            isVeteran={viewModel.isVeteran}
-            veteranFlagLocked={viewModel.veteranFlagLocked}
-            onToggleVeteran={(newValue) => mutations.setVeteranFlag(newValue)}
-            vaSteps={viewModel.vaSteps}
-            vaCallbackDone={viewModel.vaCallbackDone}
-            vaPublishChoice={viewModel.vaPublishChoice}
-            vaNotificationResponsibility={viewModel.vaNotificationResponsibility}
-            onToggleVaStep={(index, newDone) => mutations.toggleVaStep(case_, index, newDone)}
-            onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
-            onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
-          />
+        <div className={styles.overview}>
+          <div className={styles.overviewMain}>
+            <section aria-label="Next step">
+              <div className={styles.eyebrow}>Next step</div>
+              <ChecklistCard
+                checklist={viewModel.checklist}
+                viewingStageLabel={viewingDisplayStage != null ? viewModel.stageLabels[viewingDisplayStage] : null}
+                onBackToCurrentStage={() => setViewingDisplayStage(null)}
+                onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone)}
+                onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}
+                onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
+                onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
+                onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
+              />
+            </section>
 
-          <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
+            <div className={styles.overviewPair}>
+              <CaseLogCard
+                entries={logEntries}
+                authorName={viewModel.effectiveOwnerName}
+                onAddEntry={(input, options) => caseLog.addEntry(input, options)}
+                onPrint={() =>
+                  printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
+                    const headline =
+                      entry.type === 'contact'
+                        ? `<div style="font-weight:600">Called ${entry.contactedWho} — spoke with ${entry.contactedSpoke}</div>`
+                        : '';
+                    const body = entry.type === 'contact' ? entry.contactSummary : entry.text;
+                    return `<div style="margin-bottom:12px">${headline}${body ? `<div>${body}</div>` : ''}<div style="font-size:12px;color:#888">${entry.author} · ${formatTimestamp(entry.createdAt)}</div></div>`;
+                  })
+                }
+              />
 
-          <ChecklistCard
-            checklist={viewModel.checklist}
-            viewingStageLabel={viewingDisplayStage != null ? viewModel.stageLabels[viewingDisplayStage] : null}
-            onBackToCurrentStage={() => setViewingDisplayStage(null)}
-            onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone)}
-            onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}
-            onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
-            onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
-            onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
-          />
+              <CaseTasksCard
+                tasks={caseTaskItems}
+                onToggleTask={(taskId, newDone) => caseTasks.toggleTask({ taskId, isDone: newDone })}
+                onAddTask={(text) =>
+                  caseTasks.addTask({
+                    text,
+                    assigneeStaffId: defaultAssigneeForCase(case_, staffList),
+                  })
+                }
+              />
+            </div>
 
-          <div className={styles.overviewPair}>
-            <CaseLogCard
-              entries={logEntries}
-              authorName={viewModel.effectiveOwnerName}
-              onAddEntry={(input, options) => caseLog.addEntry(input, options)}
-              onPrint={() =>
-                printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
-                  const headline =
-                    entry.type === 'contact'
-                      ? `<div style="font-weight:600">Called ${entry.contactedWho} — spoke with ${entry.contactedSpoke}</div>`
-                      : '';
-                  const body = entry.type === 'contact' ? entry.contactSummary : entry.text;
-                  return `<div style="margin-bottom:12px">${headline}${body ? `<div>${body}</div>` : ''}<div style="font-size:12px;color:#888">${entry.author} · ${formatTimestamp(entry.createdAt)}</div></div>`;
-                })
-              }
-            />
-
-            <CaseTasksCard
-              tasks={caseTaskItems}
-              onToggleTask={(taskId, newDone) => caseTasks.toggleTask({ taskId, isDone: newDone })}
-              onAddTask={(text) =>
-                caseTasks.addTask({
-                  text,
-                  assigneeStaffId: defaultAssigneeForCase(case_, staffList),
-                })
-              }
-            />
+            <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
           </div>
-      </div>
+
+          <aside className={styles.overviewRail} aria-label="Case details">
+            <CaseInformationCard
+              dateOfBirth={viewModel.dateOfBirth}
+              dateOfDeath={viewModel.dateOfDeath}
+              timeOfDeath={viewModel.timeOfDeath}
+              placeOfDeath={viewModel.placeOfDeath}
+              weight={viewModel.weight}
+              weightOver200={viewModel.weightOver200}
+              nextOfKinName={case_.nextOfKinName}
+              nextOfKinPhone={case_.nextOfKinPhone}
+              nextOfKinEmail={case_.nextOfKinEmail}
+              nextOfKinRelationship={case_.nextOfKinRelationship}
+              nextOfKinRelationshipOther={case_.nextOfKinRelationshipOther}
+              certifierName={case_.certifierName}
+              certifierPhone={case_.certifierPhone}
+              certifierLicenseNumber={case_.certifierLicenseNumber}
+              certifierFax={case_.certifierFax}
+              onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
+              onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
+              onSaveCertifierLicenseNumber={(value) => mutations.setCertifierLicenseNumber(case_, value)}
+              onSaveCertifierFax={(value) => mutations.setCertifierFax(case_, value)}
+              tagNumber={case_.tagNumber}
+              paymentStatus={viewModel.paymentStatus}
+              pickupStatus={case_.pickupStatus}
+              pickupReleasedTo={case_.pickupReleasedTo}
+              pickupReleasedAt={case_.pickupReleasedAt}
+              pickupNote={case_.pickupNote}
+              returnMethod={case_.returnMethod}
+              shippingCarrier={case_.shippingCarrier}
+              shippingTrackingNumber={case_.shippingTrackingNumber}
+              shippingDateShipped={case_.shippingDateShipped}
+              shippingDeliveryStatus={case_.shippingDeliveryStatus}
+              shippingDeliveredAt={case_.shippingDeliveredAt}
+              ownerStaffId={viewModel.ownerStaffId}
+              staffOptions={staffOptions}
+              onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
+              showOwner={shouldShowCaseOwner(organizationId)}
+              onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
+              onSaveWeight={(value) => mutations.setWeight(case_, value)}
+              onSaveTimeOfDeath={(value) => mutations.setTimeOfDeath(case_, value)}
+              isVeteran={viewModel.isVeteran}
+              veteranFlagLocked={viewModel.veteranFlagLocked}
+              onToggleVeteran={(newValue) => mutations.setVeteranFlag(newValue)}
+              vaSteps={viewModel.vaSteps}
+              vaCallbackDone={viewModel.vaCallbackDone}
+              vaPublishChoice={viewModel.vaPublishChoice}
+              vaNotificationResponsibility={viewModel.vaNotificationResponsibility}
+              onToggleVaStep={(index, newDone) => mutations.toggleVaStep(case_, index, newDone)}
+              onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
+              onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
+            />
+          </aside>
+        </div>
       )}
     </div>
   );

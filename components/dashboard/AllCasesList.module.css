@@ -1,34 +1,55 @@
+/* SOLIS Phase 2 — hairline work-queue table. No card wrapper. */
 .sectionLabel {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-bold);
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0.06em;
   color: var(--color-text-muted);
-  margin-bottom: var(--space-6);
+  margin-bottom: 12px;
 }
 
 .card {
-  background: var(--color-surface-card);
-  border-radius: var(--radius-xl);
-  padding: var(--space-4) var(--space-7);
-  box-shadow: var(--shadow-card);
-  margin-bottom: var(--space-12);
+  margin-bottom: 48px;
+}
+
+.headerRow,
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 260px;
+  gap: 24px;
+  align-items: center;
+}
+
+.headerRow {
+  padding: 10px 12px 10px 56px; /* 56 = avatar 32 + gap 12 + row pad 12 */
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.headerRight {
+  text-align: right;
 }
 
 .row {
   cursor: pointer;
-  padding: var(--space-6) var(--space-3);
-  border-radius: var(--radius-sm);
-  box-shadow: inset 0 -1px 0 var(--color-surface-subtle);
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: 12px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--solis-border-soft);
   text-decoration: none;
   color: inherit;
+  transition: var(--solis-transition);
 }
 
 .row:hover {
-  background: var(--color-surface-hover);
+  background: oklch(0.98 0.003 255);
+  text-decoration: none;
 }
 
 .row:focus-visible {
@@ -39,119 +60,149 @@
 .avatar {
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-subtle);
+  border-radius: 50%;
+  background: oklch(0.94 0.02 255);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-11);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-brand);
   flex-shrink: 0;
 }
 
 .main {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
+}
+
+.identityCol {
+  min-width: 0;
 }
 
 .name {
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-13-5);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--color-text-primary);
   overflow-wrap: break-word;
 }
 
 .caseNumber {
-  font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-12);
-  color: var(--color-text-secondary);
-  margin-top: var(--space-1);
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 .summary {
-  margin-top: var(--space-1);
-  font-size: var(--font-size-12);
+  margin-top: 2px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .summaryDanger {
-  color: var(--color-danger-text);
-  font-weight: var(--font-weight-semibold);
+  color: var(--solis-danger);
+  font-weight: 500;
 }
 
 .summaryNeutral {
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  font-weight: 400;
 }
 
+/* Stage + progress become columns 2 and 3 of the grid. */
 .badges {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-2);
+  display: contents;
 }
 
 .badgeRow {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Stage shown as plain text, not a pill. */
+.badgeRow > :last-child {
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: oklch(0.3 0.012 255);
+  white-space: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.progressCol {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.progressCol > * {
+  width: 100%;
+  max-width: 240px;
 }
 
 .overdueTag {
-  font-size: var(--font-size-10-5);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-danger-text);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--solis-danger);
 }
 
 .loadMoreRow {
   display: flex;
   justify-content: center;
-  padding: var(--space-6) 0 var(--space-2);
+  padding: 20px 0 4px;
 }
 
-/* Mobile (2026-10) — identity-first, status-second, progress-third
-   (matches Case Detail's own 860px bucket). The identity block (name /
-   case # / summary) and the badges+progress column no longer have room
-   side by side once a stage label like "Ready for Pickup / Contact
-   Family" is long — `.main` stacks them instead of squeezing both into
-   half the row width; `.badges` moves to the left edge (matching the
-   identity column above it, same reasoning as CaseHeader's own stage
-   column) and stretches to the row's full width so the progress bar
-   isn't stranded at a tiny fixed size. `.summary` switches from
-   single-line ellipsis to real wrapping — a truncated "waiting on
-   ME release" reads fine inline next to a progress bar on desktop, but
-   stacked full-width on mobile there's no reason to hide the rest of
-   it. */
-@media (max-width: 860px) {
+@media (prefers-reduced-motion: reduce) {
   .row {
-    flex-wrap: wrap;
+    transition: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .headerRow {
+    display: none;
+  }
+
+  .row {
+    align-items: flex-start;
+    padding: 14px 4px;
   }
 
   .main {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    gap: 8px;
   }
 
   .summary {
     white-space: normal;
     overflow: visible;
-    text-overflow: unset;
-    overflow-wrap: break-word;
   }
 
   .badges {
-    align-items: flex-start;
-    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
-  .badgeRow {
-    flex-wrap: wrap;
+  .progressCol {
+    justify-content: flex-start;
+  }
+
+  .progressCol > * {
+    max-width: none;
   }
 }

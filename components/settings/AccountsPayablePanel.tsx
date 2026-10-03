@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useSuppliers, useBills, useCreateBill, useVoidBill, useRecordPayment } from '@/hooks/useProcurement';
 import { useMyPermissions } from '@/hooks/useRbac';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -88,49 +86,65 @@ export function AccountsPayablePanel() {
 
   return (
     <div>
-      <Card>
-        <h2>New expense bill (non-PO)</h2>
-        <form onSubmit={handleCreateExpenseBill}>
-          <SelectField value={billForm.supplierId} onChange={(e) => setBillForm({ ...billForm, supplierId: e.target.value })}>
-            <option value="">Select supplier…</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </SelectField>
-          <TextField placeholder="Bill / invoice number" value={billForm.billNumber} onChange={(e) => setBillForm({ ...billForm, billNumber: e.target.value })} required />
-          <TextField type="date" placeholder="Due date" value={billForm.dueDate} onChange={(e) => setBillForm({ ...billForm, dueDate: e.target.value })} />
-          <TextField placeholder="Expense account #" value={billForm.accountNumber} onChange={(e) => setBillForm({ ...billForm, accountNumber: e.target.value })} />
-          <TextField type="number" step="0.01" placeholder="Amount ($)" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} />
-          {error && <p role="alert">{error}</p>}
-          <Button type="submit" disabled={createBill.isPending || !billForm.supplierId}>Enter bill</Button>
-        </form>
-      </Card>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Accounts Payable</h2>
+      </div>
 
-      <Card>
-        <h2>Vendor bills</h2>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">New expense bill (non-PO)</h3>
+        <form onSubmit={handleCreateExpenseBill}>
+          <div className="sx-form-grid">
+            <SelectField className="sx-select" value={billForm.supplierId} onChange={(e) => setBillForm({ ...billForm, supplierId: e.target.value })}>
+              <option value="">Select supplier…</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </SelectField>
+            <TextField className="sx-input" placeholder="Bill / invoice number" value={billForm.billNumber} onChange={(e) => setBillForm({ ...billForm, billNumber: e.target.value })} required />
+            <TextField className="sx-input" type="date" placeholder="Due date" value={billForm.dueDate} onChange={(e) => setBillForm({ ...billForm, dueDate: e.target.value })} />
+            <TextField className="sx-input" placeholder="Expense account #" value={billForm.accountNumber} onChange={(e) => setBillForm({ ...billForm, accountNumber: e.target.value })} />
+            <TextField className="sx-input" type="number" step="0.01" placeholder="Amount ($)" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} />
+          </div>
+          {error && <div className="sx-form-banner sx-form-banner-error" role="alert">{error}</div>}
+          <div className="sx-save-row">
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={createBill.isPending || !billForm.supplierId}>Enter bill</button>
+          </div>
+        </form>
+      </section>
+
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Vendor bills</h3>
         {bills.length === 0 ? (
           <EmptyState message="No vendor bills yet." />
         ) : (
-          <ul>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {bills.map((b) => {
               const outstanding = b.totalAmountCents - b.amountPaidCents;
               return (
-                <li key={b.id}>
-                  <strong>{b.billNumber}</strong> — {b.status} — total {money(b.totalAmountCents)}, outstanding {money(outstanding)}
-                  {b.netVarianceCents !== 0 && <span> — variance {money(b.netVarianceCents)}</span>}{' '}
-                  {b.status !== 'void' && b.status !== 'paid' && <Button type="button" onClick={() => setPayFor(payFor === b.id ? null : b.id)}>Record payment</Button>}
-                  {b.status !== 'void' && b.amountPaidCents === 0 && <Button type="button" onClick={() => voidBill.mutate({ billId: b.id })} disabled={voidBill.isPending}>Void</Button>}
+                <li key={b.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--sx-border-soft)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span className="sx-cell-title">{b.billNumber}</span>
+                    <span className="sx-cell-sub"> — {b.status} — total {money(b.totalAmountCents)}, outstanding {money(outstanding)}
+                      {b.netVarianceCents !== 0 && ` — variance ${money(b.netVarianceCents)}`}
+                    </span>
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                      {b.status !== 'void' && b.status !== 'paid' && <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setPayFor(payFor === b.id ? null : b.id)}>Record payment</button>}
+                      {b.status !== 'void' && b.amountPaidCents === 0 && <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => voidBill.mutate({ billId: b.id })} disabled={voidBill.isPending}>Void</button>}
+                    </span>
+                  </div>
                   {payFor === b.id && (
-                    <div>
-                      <TextField type="number" step="0.01" placeholder="Amount ($)" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
-                      <SelectField value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                    <div className="sx-form-grid" style={{ marginTop: 10 }}>
+                      <TextField className="sx-input" type="number" step="0.01" placeholder="Amount ($)" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+                      <SelectField className="sx-select" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
                         <option value="check">Check</option>
                         <option value="ach">ACH</option>
                         <option value="card">Card</option>
                         <option value="cash">Cash</option>
                         <option value="other">Other</option>
                       </SelectField>
-                      <TextField placeholder="Cash account #" value={payForm.cashAccountNumber} onChange={(e) => setPayForm({ ...payForm, cashAccountNumber: e.target.value })} />
-                      <TextField placeholder="Reference #" value={payForm.referenceNumber} onChange={(e) => setPayForm({ ...payForm, referenceNumber: e.target.value })} />
-                      <Button type="button" onClick={() => handlePay(b.id)} disabled={recordPayment.isPending}>Save payment</Button>
+                      <TextField className="sx-input" placeholder="Cash account #" value={payForm.cashAccountNumber} onChange={(e) => setPayForm({ ...payForm, cashAccountNumber: e.target.value })} />
+                      <TextField className="sx-input" placeholder="Reference #" value={payForm.referenceNumber} onChange={(e) => setPayForm({ ...payForm, referenceNumber: e.target.value })} />
+                      <div className="sx-span-all">
+                        <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" onClick={() => handlePay(b.id)} disabled={recordPayment.isPending}>Save payment</button>
+                      </div>
                     </div>
                   )}
                 </li>
@@ -138,7 +152,7 @@ export function AccountsPayablePanel() {
             })}
           </ul>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

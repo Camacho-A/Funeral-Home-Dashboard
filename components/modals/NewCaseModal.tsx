@@ -7,7 +7,6 @@ import { TextField } from '@/components/ui/TextField';
 import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { Button } from '@/components/ui/Button';
 import { ServicesAndChargesSelector } from '@/components/case/ServicesAndChargesSelector';
 import { useSession } from '@/hooks/useSession';
 import { useCreateCase } from '@/hooks/useCreateCase';
@@ -93,6 +92,15 @@ import styles from './NewCaseModal.module.css';
  * An optional multiline Notes field (Phase 16A) is unrelated to the
  * configurable intake system — it's this modal's own initial-note capture
  * feature, saved via caseLogService, untouched by this phase.
+ *
+ * SOLIS Final Phase (2026-10) — presentation only: the Modal shell gets a
+ * fixed header/sticky footer and a 760px width (`size="lg"`), every field
+ * section renders through the shared `.sx-form-section`/`.sx-form-grid`
+ * system instead of this file's old `.group`/`.groupFields` classes, and
+ * Cancel/Create/Collect render as plain `.sx-btn` buttons instead of the
+ * shared `<Button>` (avoids doubling up conflicting box styles on the same
+ * element — see the final-phase report for why). No hook, handler,
+ * mutation call, or conditional render below changed.
  */
 const NOTES_KEY = 'notes';
 
@@ -132,6 +140,21 @@ const FALLBACK_INTAKE: IntakeTemplate = {
     },
   ],
 };
+
+/**
+ * SOLIS Final Phase, §3.3 — which fields span both grid columns. Not a new
+ * derivation: `multiline` already exists on ResolvedIntakeField (the
+ * `fieldType: 'textarea'` signal); decedent name/place of death are matched
+ * by the same `mapsToCaseField` convention this file already uses elsewhere
+ * (see dobField/dodField above); "address" has no mapsToCaseField of its
+ * own in types/case.ts, so it's matched by label text — presentation only.
+ */
+function isSpanAllField(field: ResolvedIntakeField): boolean {
+  if (field.multiline) return true;
+  if (field.mapsToCaseField === 'decedentName') return true;
+  if (field.mapsToCaseField === 'placeOfDeath') return true;
+  return field.label.toLowerCase().includes('address');
+}
 
 export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -505,14 +528,19 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // which still surfaces as an ordinary disabled/retry-the-whole-form state
   // via the Create Case button below.
   const noteSaveFailed = Boolean(createdCase) && addNote.isError;
+  const showPartialFailure = noteSaveFailed && createdCase;
 
   function renderNextOfKinEmailFields(): ReactNode {
+    const errorId = nextOfKinEmailError ? 'nok-email-error' : undefined;
     return (
       <div>
-        <div className={styles.fieldLabel}>Next of kin — email (optional)</div>
+        <div className="sx-label">Next of kin — email (optional)</div>
         <TextField
           type="email"
+          className="sx-input"
           value={nextOfKinEmailInput}
+          aria-invalid={nextOfKinEmailError ? true : undefined}
+          aria-describedby={errorId}
           onChange={(e) => {
             setNextOfKinEmailInput(e.target.value);
             setNextOfKinEmailError(null);
@@ -526,7 +554,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
           aria-label="Next of kin — email (optional)"
         />
         {nextOfKinEmailError && (
-          <div className={styles.fieldError} role="alert">
+          <div id={errorId} className="sx-error" role="alert">
             {nextOfKinEmailError}
           </div>
         )}
@@ -536,8 +564,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
   function renderNextOfKinEmailField(): ReactNode {
     return (
-      <div className={styles.group}>
-        <div className={styles.groupFields}>{renderNextOfKinEmailFields()}</div>
+      <div className="sx-form-section">
+        <div className="sx-form-grid">{renderNextOfKinEmailFields()}</div>
       </div>
     );
   }
@@ -551,14 +579,15 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
    * a real intake field would mean editing Production Workflow v5's
    * persisted `intake` JSON, which this correction explicitly must not do.
    * Reuses CaseInformationCard's own relationship model/options
-   * (domain/cases/nextOfKinRelationship.ts) — never a second list.
+   * (domain/cases/nextOfKinRelationship.ts), never a second list.
    */
   function renderNextOfKinRelationshipFields(): ReactNode {
     return (
       <>
         <div>
-          <div className={styles.fieldLabel}>Relationship to decedent</div>
+          <div className="sx-label">Relationship to decedent</div>
           <SelectField
+            className="sx-select"
             value={nextOfKinRelationshipInput}
             onChange={(e) => setNextOfKinRelationshipInput(e.target.value as NextOfKinRelationship | '')}
             aria-label="Relationship to decedent"
@@ -573,8 +602,9 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         </div>
         {nextOfKinRelationshipInput === 'other' && (
           <div>
-            <div className={styles.fieldLabel}>Relationship (describe)</div>
+            <div className="sx-label">Relationship (describe)</div>
             <TextField
+              className="sx-input"
               value={nextOfKinRelationshipOtherInput}
               onChange={(e) => setNextOfKinRelationshipOtherInput(e.target.value.toUpperCase())}
               aria-label="Relationship (describe)"
@@ -587,8 +617,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
   function renderNextOfKinRelationshipField(): ReactNode {
     return (
-      <div className={styles.group}>
-        <div className={styles.groupFields}>{renderNextOfKinRelationshipFields()}</div>
+      <div className="sx-form-section">
+        <div className="sx-form-grid">{renderNextOfKinRelationshipFields()}</div>
       </div>
     );
   }
@@ -614,15 +644,17 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
       else if (field.mapsToCaseField === 'dateOfDeath') error = dodFutureError ?? dobDodOrderError;
     }
     const isRevealed = revealedFields[field.key];
-    const labelClassName = field.required
-      ? `${styles.fieldLabel} ${styles.fieldLabelRequired}`
-      : styles.fieldLabel;
+    const labelClassName = field.required ? 'sx-label sx-label-required' : 'sx-label';
+    const errorId = error ? `field-error-${field.key}` : undefined;
 
     let control: ReactNode;
     if (field.fieldType === 'select') {
       control = (
         <SelectField
+          className="sx-select"
           value={value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
           onChange={(e) => setDraftValue(field.key, e.target.value)}
           onBlur={() => handleFieldBlur(field)}
           aria-label={field.label}
@@ -653,6 +685,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
       control = (
         <div className={styles.timeSelectRow}>
           <SelectField
+            className="sx-select"
+            style={{ width: 76 }}
             aria-label={`${field.label} — hour`}
             value={parts.hour}
             onChange={(e) => updateTimePart(field, { hour: e.target.value })}
@@ -667,6 +701,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
           </SelectField>
           <span className={styles.timeColon}>:</span>
           <SelectField
+            className="sx-select"
+            style={{ width: 76 }}
             aria-label={`${field.label} — minute`}
             value={parts.minute}
             onChange={(e) => updateTimePart(field, { minute: e.target.value })}
@@ -680,6 +716,8 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
             ))}
           </SelectField>
           <SelectField
+            className="sx-select"
+            style={{ width: 76 }}
             aria-label={`${field.label} — AM or PM`}
             value={parts.period}
             onChange={(e) => updateTimePart(field, { period: e.target.value as '' | 'AM' | 'PM' })}
@@ -694,7 +732,10 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     } else if (field.multiline) {
       control = (
         <TextArea
+          className="sx-textarea"
           value={value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
           onChange={(e) => setIntakeFieldValue(field, e.target.value)}
           onBlur={() => handleFieldBlur(field)}
           placeholder={field.placeholder}
@@ -705,8 +746,11 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
       control = (
         <div className={field.masked ? styles.revealableFieldRow : undefined}>
           <TextField
+            className="sx-input"
             type={field.masked && !isRevealed ? 'password' : 'text'}
             value={value}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={errorId}
             onChange={(e) => setIntakeFieldValue(field, e.target.value)}
             onBlur={() => handleFieldBlur(field)}
             placeholder={field.placeholder}
@@ -726,11 +770,11 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     }
 
     return (
-      <div key={field.key}>
+      <div key={field.key} className={isSpanAllField(field) ? 'sx-span-all' : undefined}>
         <div className={labelClassName}>{field.label}</div>
         {control}
         {error && (
-          <div className={styles.fieldError} role="alert">
+          <div id={errorId} className="sx-error" role="alert">
             {error}
           </div>
         )}
@@ -739,223 +783,250 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   return (
-    <Modal open={open} onClose={handleClose} title="New Case — First Call">
-      <div className={styles.header}>
-        <div className={styles.title}>New Case — First Call</div>
-        <button type="button" className={styles.closeButton} onClick={handleClose} aria-label="Close">
+    <Modal open={open} onClose={handleClose} title="New Case — First Call" size="lg">
+      <div className="sx-modal-header">
+        <h2 className="sx-modal-title">New Case — First Call</h2>
+        <button type="button" className="sx-icon-btn" onClick={handleClose} aria-label="Close">
           ×
         </button>
       </div>
 
-      {noteSaveFailed && createdCase ? (
-        <>
-          <div className={styles.partialFailureBanner} role="alert">
-            Case created successfully. We couldn&apos;t save your note — you can try again, or continue
-            to the case without it.
-          </div>
-          <div className={styles.group}>
-            <div className={styles.groupLabel}>Notes</div>
-            <div className={styles.groupFields}>
-              <TextArea
-                value={draft[NOTES_KEY] ?? ''}
-                onChange={(e) => setDraftValue(NOTES_KEY, e.target.value)}
-                placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin."
-              />
+      <div className="sx-modal-body">
+        {showPartialFailure && createdCase ? (
+          <>
+            <div className="sx-form-banner sx-form-banner-error" role="alert">
+              Case created successfully. We couldn&apos;t save your note — you can try again, or continue
+              to the case without it.
             </div>
-          </div>
-          <div className={styles.footer}>
-            <Button variant="secondary" onClick={() => goToCase(createdCase.id)}>
+            <div className="sx-form-section">
+              <div className="sx-form-section-title">Notes</div>
+              <div className="sx-form-grid">
+                <div className="sx-span-all">
+                  <TextArea
+                    className="sx-textarea"
+                    value={draft[NOTES_KEY] ?? ''}
+                    onChange={(e) => setDraftValue(NOTES_KEY, e.target.value)}
+                    placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin."
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={styles.description}>
+              Whatever you enter here carries straight into the case&apos;s First Call &amp; Payment
+              checklist — no retyping. Anything left blank stays open there, and the case can&apos;t move
+              past this stage until every item is complete.
+            </div>
+
+            <div className="sx-form-section">
+              <div className="sx-form-section-title">Intake</div>
+              <div className="sx-form-grid">
+                <div>
+                  <div className="sx-label">Your name (taking this call)</div>
+                  {/* Read-only by design — the intake owner is the authenticated
+                      session's staff member, never a form choice. See
+                      types/case.ts's intakeOwnerId comment. Deliberately a
+                      <div>, not an <input readOnly> as SOLIS Final Phase §3.3
+                      literally shows: this file's own test suite indexes
+                      `container.querySelectorAll('input')` by fixed position
+                      across ~50 assertions, and also explicitly asserts this
+                      value never renders inside an INPUT/SELECT/TEXTAREA (see
+                      NewCaseModal.test.tsx's "intake owner is read-only"
+                      describe block) — only the CSS Module's own
+                      `.readOnlyValue` rule was updated to match sx-input's
+                      readonly look. */}
+                  <div className={styles.readOnlyValue}>{session.displayName}</div>
+                </div>
+                <div>
+                  <div className="sx-label">Assigned Staff</div>
+                  {/* Manors go-live fix: defaults to yourself, always — only
+                      editable if the server would actually accept a different
+                      value (case.reassign). Office Staff (and everyone else
+                      without that permission) sees a read-only confirmation
+                      instead of a control they can't actually use — the real
+                      boundary is enforced server-side either way. */}
+                  {canReassign ? (
+                    <SelectField className="sx-select" value={assignedStaffId ?? ''} onChange={(e) => setAssignedStaffId(e.target.value)}>
+                      {!staffList.some((s) => s.id === assignedStaffId) && <option value="">—</option>}
+                      {staffList.map((staff) => (
+                        <option key={staff.id} value={staff.id}>
+                          {staff.displayName}
+                        </option>
+                      ))}
+                    </SelectField>
+                  ) : (
+                    <div className={styles.readOnlyValue}>{session.displayName}</div>
+                  )}
+                </div>
+                <div>
+                  <div className="sx-label">Return method</div>
+                  {/* Conditional shipping/tracking (2026-09): defaults to
+                      Undecided — no shipping detail fields (carrier/tracking
+                      number/date shipped) are ever shown here, by
+                      construction; selecting Shipping is enough to create the
+                      case, and those details are entered later on Case
+                      Detail once known. */}
+                  <SelectField className="sx-select" value={returnMethod} onChange={(e) => setReturnMethod(e.target.value as ReturnMethod)}>
+                    <option value="undecided">Undecided</option>
+                    <option value="pickup">Pickup</option>
+                    <option value="shipping">Shipping</option>
+                  </SelectField>
+                </div>
+              </div>
+            </div>
+
+            {resolvedSections.map(({ section, fields }, index) => {
+              // Manors go-live correction (2026-09): the one section mixing
+              // NOK and Certifier fields (contactsSplitIndex, see its own
+              // comment above) renders as two distinct visual groups instead
+              // of the generic single-heading branch below — Certifier
+              // fields must never appear grouped under Next of Kin, and vice
+              // versa.
+              if (index === contactsSplitIndex) {
+                const nokFields = fields.filter(
+                  (field) => field.mapsToCaseField === 'nextOfKinName' || field.mapsToCaseField === 'nextOfKinPhone',
+                );
+                const certifierFields = fields.filter((field) => field.key.startsWith('certifier'));
+                return (
+                  <Fragment key={section.key}>
+                    <div className="sx-form-section">
+                      <div className="sx-form-section-title">Next of Kin / Primary Contact</div>
+                      <div className="sx-form-grid">
+                        {nokFields.map((field) => renderIntakeField(field))}
+                        {renderNextOfKinRelationshipFields()}
+                        {renderNextOfKinEmailFields()}
+                      </div>
+                    </div>
+                    <div className="sx-form-section">
+                      <div className="sx-form-section-title">Certifier Information</div>
+                      <div className="sx-form-section-help">
+                        Medical certifier responsible for signing the death certificate.
+                      </div>
+                      <div className="sx-form-grid">{certifierFields.map((field) => renderIntakeField(field))}</div>
+                    </div>
+                  </Fragment>
+                );
+              }
+
+              // A section made up entirely of fieldType 'payment' fields
+              // renders no visible fields at all (renderIntakeField returns
+              // null for 'payment' — see its own comment) — skip the section
+              // header too, rather than showing an empty-looking labeled box.
+              const visibleFields = fields.filter((field) => field.fieldType !== 'payment');
+              // Manors launch-prep: place the fixed NOK-email/relationship
+              // fields (below) right after the section holding this org's
+              // own next-of-kin fields — see nextOfKinSectionIndex's own
+              // comment above — rather than always dead-last, so they read
+              // as part of that grouping instead of landing after whatever
+              // section happens to be configured last (e.g. a 'payment'
+              // section, which would otherwise leave them stranded under an
+              // empty-looking label). Never fires for contactsSplitIndex's
+              // own section — that one is fully handled by the branch above,
+              // which already includes both fixed fields.
+              const showNextOfKinFixedFieldsHere =
+                templatesLoaded &&
+                contactsSplitIndex === -1 &&
+                (index === nextOfKinSectionIndex ||
+                  (nextOfKinSectionIndex === -1 && index === resolvedSections.length - 1));
+              return (
+                <Fragment key={section.key}>
+                  {visibleFields.length > 0 && (
+                    <div className="sx-form-section">
+                      <div className="sx-form-section-title">{section.label}</div>
+                      <div className="sx-form-grid">{fields.map((field) => renderIntakeField(field))}</div>
+                    </div>
+                  )}
+                  {showNextOfKinFixedFieldsHere && renderNextOfKinRelationshipField()}
+                  {showNextOfKinFixedFieldsHere && renderNextOfKinEmailField()}
+                </Fragment>
+              );
+            })}
+            {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinRelationshipField()}
+            {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinEmailField()}
+
+            {/* Phase 19C (Service Catalog, Case Order & Pricing Engine):
+                replaces the old informational-only payment intake field.
+                Solis calculates every total server-side once the case is
+                created — this preview is for the staff member's benefit
+                only, never submitted as a trusted amount. See
+                ServicesAndChargesSelector's own comment and
+                docs/adr/ADR-023-case-order-pricing-engine.md.
+
+                Gated on the catalog fetch having genuinely resolved with
+                data — same anti-flicker principle as `intake` above: never
+                show a lone/partial control set (e.g. just the always-on
+                "Under 200 lb" weight radio with nothing else) while the
+                real catalog is still loading. */}
+            {catalogLoaded && serviceCatalog.length > 0 && (
+              <div className="sx-form-section">
+                <div className="sx-form-section-title">Services &amp; Charges</div>
+                <div className="sx-form-grid">
+                  <div className="sx-span-all">
+                    <ServicesAndChargesSelector
+                      catalog={serviceCatalog}
+                      selections={servicesSelections}
+                      onChange={setServicesSelections}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="sx-form-section">
+              <div className="sx-form-section-title">Notes (optional)</div>
+              <div className="sx-form-grid">
+                <div className="sx-span-all">
+                  <TextArea
+                    className="sx-textarea"
+                    value={draft[NOTES_KEY] ?? ''}
+                    onChange={(e) => setDraftValue(NOTES_KEY, e.target.value)}
+                    placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {submitError && (
+              <div className="sx-form-banner sx-form-banner-error" role="alert">
+                {submitError}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="sx-modal-footer">
+        {showPartialFailure && createdCase ? (
+          <>
+            <button type="button" className="sx-btn sx-btn-ghost" onClick={() => goToCase(createdCase.id)}>
               Continue without note
-            </Button>
-            <Button
+            </button>
+            <button
+              type="button"
+              className="sx-btn sx-btn-primary"
               onClick={() => saveNoteThenNavigate(createdCase.id, (draft[NOTES_KEY] ?? '').trim())}
               disabled={addNote.isPending || !(draft[NOTES_KEY] ?? '').trim()}
             >
               Retry saving note
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className={styles.description}>
-            Whatever you enter here carries straight into the case&apos;s First Call &amp; Payment
-            checklist — no retyping. Anything left blank stays open there, and the case can&apos;t move
-            past this stage until every item is complete.
-          </div>
-
-          <div className={styles.group}>
-            <div className={styles.groupLabel}>Intake</div>
-            <div className={styles.groupFields}>
-              <div>
-                <div className={styles.fieldLabel}>Your name (taking this call)</div>
-                {/* Read-only by design — the intake owner is the authenticated
-                    session's staff member, never a form choice. See
-                    types/case.ts's intakeOwnerId comment. */}
-                <div className={styles.readOnlyValue}>{session.displayName}</div>
-              </div>
-              <div>
-                <div className={styles.fieldLabel}>Assigned Staff</div>
-                {/* Manors go-live fix: defaults to yourself, always — only
-                    editable if the server would actually accept a different
-                    value (case.reassign). Office Staff (and everyone else
-                    without that permission) sees a read-only confirmation
-                    instead of a control they can't actually use — the real
-                    boundary is enforced server-side either way. */}
-                {canReassign ? (
-                  <SelectField value={assignedStaffId ?? ''} onChange={(e) => setAssignedStaffId(e.target.value)}>
-                    {!staffList.some((s) => s.id === assignedStaffId) && <option value="">—</option>}
-                    {staffList.map((staff) => (
-                      <option key={staff.id} value={staff.id}>
-                        {staff.displayName}
-                      </option>
-                    ))}
-                  </SelectField>
-                ) : (
-                  <div className={styles.readOnlyValue}>{session.displayName}</div>
-                )}
-              </div>
-              <div>
-                <div className={styles.fieldLabel}>Return method</div>
-                {/* Conditional shipping/tracking (2026-09): defaults to
-                    Undecided — no shipping detail fields (carrier/tracking
-                    number/date shipped) are ever shown here, by
-                    construction; selecting Shipping is enough to create the
-                    case, and those details are entered later on Case
-                    Detail once known. */}
-                <SelectField value={returnMethod} onChange={(e) => setReturnMethod(e.target.value as ReturnMethod)}>
-                  <option value="undecided">Undecided</option>
-                  <option value="pickup">Pickup</option>
-                  <option value="shipping">Shipping</option>
-                </SelectField>
-              </div>
-            </div>
-          </div>
-
-          {resolvedSections.map(({ section, fields }, index) => {
-            // Manors go-live correction (2026-09): the one section mixing
-            // NOK and Certifier fields (contactsSplitIndex, see its own
-            // comment above) renders as two distinct visual groups instead
-            // of the generic single-heading branch below — Certifier
-            // fields must never appear grouped under Next of Kin, and vice
-            // versa.
-            if (index === contactsSplitIndex) {
-              const nokFields = fields.filter(
-                (field) => field.mapsToCaseField === 'nextOfKinName' || field.mapsToCaseField === 'nextOfKinPhone',
-              );
-              const certifierFields = fields.filter((field) => field.key.startsWith('certifier'));
-              return (
-                <Fragment key={section.key}>
-                  <div className={styles.group}>
-                    <div className={styles.groupLabel}>Next of Kin / Primary Contact</div>
-                    <div className={styles.groupFields}>
-                      {nokFields.map((field) => renderIntakeField(field))}
-                      {renderNextOfKinRelationshipFields()}
-                      {renderNextOfKinEmailFields()}
-                    </div>
-                  </div>
-                  <div className={styles.group}>
-                    <div className={styles.groupLabel}>Certifier Information</div>
-                    <div className={styles.groupHelperText}>
-                      Medical certifier responsible for signing the death certificate.
-                    </div>
-                    <div className={styles.groupFields}>{certifierFields.map((field) => renderIntakeField(field))}</div>
-                  </div>
-                </Fragment>
-              );
-            }
-
-            // A section made up entirely of fieldType 'payment' fields
-            // renders no visible fields at all (renderIntakeField returns
-            // null for 'payment' — see its own comment) — skip the section
-            // header too, rather than showing an empty-looking labeled box.
-            const visibleFields = fields.filter((field) => field.fieldType !== 'payment');
-            // Manors launch-prep: place the fixed NOK-email/relationship
-            // fields (below) right after the section holding this org's
-            // own next-of-kin fields — see nextOfKinSectionIndex's own
-            // comment above — rather than always dead-last, so they read
-            // as part of that grouping instead of landing after whatever
-            // section happens to be configured last (e.g. a 'payment'
-            // section, which would otherwise leave them stranded under an
-            // empty-looking label). Never fires for contactsSplitIndex's
-            // own section — that one is fully handled by the branch above,
-            // which already includes both fixed fields.
-            const showNextOfKinFixedFieldsHere =
-              templatesLoaded &&
-              contactsSplitIndex === -1 &&
-              (index === nextOfKinSectionIndex ||
-                (nextOfKinSectionIndex === -1 && index === resolvedSections.length - 1));
-            return (
-              <Fragment key={section.key}>
-                {visibleFields.length > 0 && (
-                  <div className={styles.group}>
-                    <div className={styles.groupLabel}>{section.label}</div>
-                    <div className={styles.groupFields}>{fields.map((field) => renderIntakeField(field))}</div>
-                  </div>
-                )}
-                {showNextOfKinFixedFieldsHere && renderNextOfKinRelationshipField()}
-                {showNextOfKinFixedFieldsHere && renderNextOfKinEmailField()}
-              </Fragment>
-            );
-          })}
-          {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinRelationshipField()}
-          {templatesLoaded && resolvedSections.length === 0 && renderNextOfKinEmailField()}
-
-          {/* Phase 19C (Service Catalog, Case Order & Pricing Engine):
-              replaces the old informational-only payment intake field.
-              Solis calculates every total server-side once the case is
-              created — this preview is for the staff member's benefit
-              only, never submitted as a trusted amount. See
-              ServicesAndChargesSelector's own comment and
-              docs/adr/ADR-023-case-order-pricing-engine.md.
-
-              Gated on the catalog fetch having genuinely resolved with
-              data — same anti-flicker principle as `intake` above: never
-              show a lone/partial control set (e.g. just the always-on
-              "Under 200 lb" weight radio with nothing else) while the
-              real catalog is still loading. */}
-          {catalogLoaded && serviceCatalog.length > 0 && (
-            <div className={styles.group}>
-              <div className={styles.groupLabel}>Services &amp; Charges</div>
-              <div className={styles.groupFields}>
-                <ServicesAndChargesSelector
-                  catalog={serviceCatalog}
-                  selections={servicesSelections}
-                  onChange={setServicesSelections}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className={styles.group}>
-            <div className={styles.groupLabel}>Notes (optional)</div>
-            <div className={styles.groupFields}>
-              <TextArea
-                value={draft[NOTES_KEY] ?? ''}
-                onChange={(e) => setDraftValue(NOTES_KEY, e.target.value)}
-                placeholder="e.g. Family requested a biodegradable urn. Mail death certificate copy to next of kin."
-              />
-            </div>
-          </div>
-
-          {submitError && (
-            <div className={styles.fieldError} role="alert">
-              {submitError}
-            </div>
-          )}
-
-          <div className={styles.footer}>
-            <Button variant="secondary" onClick={handleClose}>
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="sx-modal-footer-note">* Required to create the case</span>
+            <button type="button" className="sx-btn sx-btn-ghost" onClick={handleClose}>
               Cancel
-            </Button>
-            <Button variant="secondary" onClick={() => handleSubmit(false)} disabled={!canSubmit || isSubmitting}>
+            </button>
+            <button type="button" className="sx-btn sx-btn-secondary" onClick={() => handleSubmit(false)} disabled={!canSubmit || isSubmitting}>
               Create case
-            </Button>
-            <Button onClick={() => handleSubmit(true)} disabled={!canSubmit || isSubmitting}>
+            </button>
+            <button type="button" className="sx-btn sx-btn-primary" onClick={() => handleSubmit(true)} disabled={!canSubmit || isSubmitting}>
               {isSubmitting ? 'Working…' : 'Create Case & Collect with Clover'}
-            </Button>
-          </div>
-        </>
-      )}
+            </button>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }

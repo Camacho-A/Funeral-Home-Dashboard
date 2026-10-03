@@ -39,3 +39,31 @@
     padding: var(--space-8) var(--space-6);
   }
 }
+
+/* SOLIS Final Phase §3.1 — New Case's 760px, header/body/footer layout.
+   Zero padding here: the caller's own .sx-modal-header/.sx-modal-body/
+   .sx-modal-footer (styles/solis-system.css) provide it, so this must not
+   double up. Scoped to size="lg" only — every other Modal caller keeps
+   the default .panel exactly as before. */
+.panelLg {
+  width: 760px;
+  max-width: 90vw;
+  max-height: calc(100vh - 96px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 860px) {
+  .panelLg {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    padding: 0;
+  }
+}

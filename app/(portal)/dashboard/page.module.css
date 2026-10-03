@@ -1,60 +1,106 @@
-/* Case list scalability, Phase 3 — layout correction (2026-09): Needs
-   Attention and Cases by Stage sit side by side again (the prior
-   stacked-full-width iteration of this phase is superseded) — the same
-   1.3fr/1fr two-column grid this pairing originally used, restored.
-   1.3fr for Needs Attention: its rows (name/case#/reason + days/SLA) carry
-   more text per row than Cases by Stage's compact label/bar/count rows,
-   so it keeps the larger share. `align-items: start` so a short Needs
-   Attention list (or a short stage-count list) never stretches to match
-   its taller sibling — each card's height still depends only on its own
-   content, never the other column's.
-   One `margin-bottom` on the grid itself (not one per card) is the whole
-   fix for the extra vertical gap the previous stacked layout had: two
-   cards stacked needed a gap BETWEEN them (the old `.attentionSection`
-   margin) in addition to a gap below the pair; side by side, there's
-   only ever the one gap below the row, so Financial Summary and
-   everything after it move up through plain document flow — no
-   negative margins, absolute positioning, or transforms. */
-.stageOverviewGrid {
+/* SOLIS true redesign, Phase 1 (2026-10). Replaces the prior
+ * side-by-side Needs-Attention/Cases-by-Stage grid plus a separate
+ * full-width Financial Summary section below it, with: a KPI strip
+ * (DashboardKpiStrip, below PageGreetingHeader), then an asymmetric
+ * two-column "briefing" layout — left (wider): Needs Attention stacked
+ * above Recent Activity; right (narrower): the Cases by Stage pipeline
+ * with its Stage Preview accordion. Column ratio (1.6fr/1fr) and gap
+ * (48px) match the approved design's own measured grid.
+ *
+ * Visual fidelity correction pass (2026-10): the approved design's own
+ * `<main>` wraps an inner `max-width:1320px; margin:0 auto` container —
+ * AppShell's shared `.content` padding (32px/40px) alone doesn't bound
+ * content width on wide screens. `.pageInner` reproduces that inner
+ * container, scoped to the Dashboard page only (AppShell.module.css and
+ * every other portal page are untouched).
+ *
+ * Named grid areas (not two wrapper divs) so the mobile stacking order
+ * — Needs attention, Cases by stage, Recent activity (the approved
+ * mobile spec's own explicit order, Needs attention above Cases by
+ * stage above Recent activity) — can differ from the desktop DOM
+ * grouping (Needs attention + Recent activity sharing the left column)
+ * purely via `grid-template-areas`, with no JS reordering and no DOM
+ * duplication.
+ */
+.pageInner {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.kpiSection {
+  margin-bottom: var(--space-14);
+}
+
+.mainGrid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: var(--space-8);
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-areas:
+    'attention stage'
+    'activity stage';
+  gap: var(--space-24) var(--space-24);
   align-items: start;
-  margin-bottom: var(--space-12);
+}
+
+.attentionArea {
+  grid-area: attention;
+  min-width: 0;
+}
+
+.stageArea {
+  grid-area: stage;
+  min-width: 0;
+}
+
+.activityArea {
+  grid-area: activity;
+  min-width: 0;
+  margin-top: var(--space-14);
 }
 
 /* Mirrors app/(portal)/cases/[caseId]/page.module.css's own
-   `.overviewPair` breakpoint (860px) — the same "two cards side by side
-   on desktop/tablet, stacked below the point where either would get
+   `.overviewPair` breakpoint (860px) — the same "two columns on
+   desktop/tablet, stacked below the point where either would get
    cramped" convention already established for this codebase's other
-   two-column card pairing, not a new one invented for this page. */
+   two-column layouts. Stacking order matches the approved mobile
+   spec's own explicit order: Needs attention, Cases by stage, Recent
+   activity. */
 @media (max-width: 860px) {
-  .stageOverviewGrid {
+  .mainGrid {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'attention'
+      'stage'
+      'activity';
+    gap: 0;
+  }
+
+  .attentionArea,
+  .stageArea,
+  .activityArea {
+    margin-top: var(--space-14);
+  }
+
+  .attentionArea {
+    margin-top: 0;
   }
 }
 
-/* Manors go-live cleanup (2026-09): Financial Summary's own row, now that
-   the redundant lower Attention card is gone — full dashboard width on
-   desktop rather than sharing a two-column grid, so the reclaimed space
-   goes somewhere intentional instead of shrinking to fit a column. */
-.financialSummarySection {
-  margin-bottom: var(--space-12);
-}
-
-/* Dashboard mobile-friendliness pass (2026-09): a modest reduction to
-   this page's own gaps/margins on a narrow phone viewport (stacked with
-   AppShell.module.css's own matching content-padding reduction) — the
-   Dashboard should feel compact without feeling crowded, not merely
-   narrower. Purely spacing; the stacked single-column order itself
-   (already established above/in page.tsx) is unchanged. */
+/* Dashboard mobile-friendliness pass (2026-09), carried into Phase 1:
+   a modest reduction to this page's own gaps/margins on a narrow phone
+   viewport (stacked with AppShell.module.css's own matching content-
+   padding reduction) — compact without feeling crowded. */
 @media (max-width: 560px) {
-  .stageOverviewGrid {
-    gap: var(--space-6);
+  .kpiSection {
     margin-bottom: var(--space-9);
   }
 
-  .financialSummarySection {
-    margin-bottom: var(--space-9);
+  .attentionArea,
+  .stageArea,
+  .activityArea {
+    margin-top: var(--space-9);
+  }
+
+  .attentionArea {
+    margin-top: 0;
   }
 }

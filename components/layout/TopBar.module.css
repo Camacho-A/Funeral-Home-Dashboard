@@ -1,62 +1,72 @@
-/* Task #14 Phase B (2026-09) — the audit confirmed the TopBar had no
-   surface/border of its own and visually floated on the page background.
-   A restrained card-white surface + a single hairline bottom border is
-   sufficient separation on its own; no shadow was added (default choice
-   per the phase's own instruction — a shadow wasn't demonstrated to be
-   necessary once the border was in place). Height/padding/gap unchanged. */
+/* SOLIS true redesign, Phase 1 (2026-10): 56px compact bar (was 72px),
+   cool-neutral surface/border (tokens.css's Phase 1 additive block). */
 .topBar {
-  height: 72px;
+  height: 56px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 var(--space-16);
-  gap: var(--space-8);
+  padding: 0 var(--space-12);
+  gap: var(--space-6);
   background: var(--color-surface-card);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-cool);
 }
 
-/* Task #14 Phase B — a subtle divider between the navigation/module
-   links above and the user-identity/session cluster (notifications,
-   name, avatar, sign out), so the two groups read as visually distinct
-   without any new icons or a toolbar redesign. Purely a grouping
-   wrapper — no change to which actions appear, their routes, or their
-   handlers. */
+/* A slim vertical divider between the navigation/module links and the
+   notifications/New Case/avatar cluster — the approved design's own
+   treatment, replacing the prior border-left-on-a-padded-wrapper
+   approach now that the identity cluster is pushed flush right by
+   `.spacer` rather than wrapped in its own bordered group. */
+.divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border-cool);
+  flex-shrink: 0;
+}
+
+/* The identity cluster: notifications, New Case, avatar menu — a single
+   flex group pushed to the bar's right edge by `.spacer` below. */
 .identityGroup {
   display: flex;
   align-items: center;
-  gap: var(--space-8);
-  padding-left: var(--space-8);
-  border-left: 1px solid var(--color-border);
+  gap: var(--space-5);
+  flex-shrink: 0;
 }
 
-/* Mobile TopBar design correction (2026-09). The original employee-name/
-   avatar/Sign-out trio, now in their own wrapper so they can be hidden as
-   one unit on mobile (AccountMenu takes over there — see TopBar.tsx's
-   own comment) while still reproducing this exact `display:flex;
-   align-items:center; gap` arrangement on desktop, pixel-identical to
-   before this wrapper existed. */
-.desktopAccountGroup {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
+/* SOLIS true redesign, Phase 1 (2026-10): a compact 34px-tall filled
+   button (the approved design's own sizing) — same onClick/behavior,
+   only height/padding/font-size changed from Button's own default
+   `.primary` sizing. */
+.newCaseButton.newCaseButton {
+  height: 34px;
+  padding: 0 var(--space-7);
+  font-size: var(--font-size-13);
+  border-radius: 8px;
+  transition: background 0.12s ease;
 }
 
-/* Hidden on desktop — AccountMenu (components/layout/AccountMenu.tsx)
-   only renders here; shown only below 860px (see that media query
-   below), where it's the mobile replacement for `.desktopAccountGroup`. */
-.mobileAccountSlot {
+.newCaseButton.newCaseButton:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .newCaseButton.newCaseButton {
+    transition: none;
+  }
+}
+
+/* Mobile short label (SOLIS true redesign, Phase 1 — visual fidelity
+   correction, 2026-10): the approved mobile spec wants a compact
+   "+ New" button, not the full "+ New Case" desktop copy. Two text
+   nodes, one CSS-hidden per breakpoint — same button/onClick, never a
+   second control. */
+.newCaseLabelFull {
+  display: inline;
+}
+
+.newCaseLabelShort {
   display: none;
 }
 
-/* Expanded case search bar (2026-09): this value is unchanged, but its
-   effect isn't — SearchInput.module.css's `.wrapper` (this div's flex
-   sibling, immediately before it) now carries a much larger flex-grow
-   weight than this spacer's `1`, so search claims the large majority of
-   any free space in this row while this spacer still keeps a nonzero
-   share, enough to keep the New Case button/identity cluster after it
-   pinned to the bar's right edge rather than sitting snug against the
-   now-wider search box. See that file's own comment for the full
-   before/after. */
 .spacer {
   flex: 1;
 }
@@ -72,11 +82,18 @@
   cursor: pointer;
   font-size: var(--font-size-12);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
+  color: var(--color-text-secondary-cool);
   background: none;
   border: none;
   font-family: inherit;
-  padding: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: 7px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.signOutButton:hover {
+  background: var(--color-surface-hover-cool);
 }
 
 /* Mobile navigation drawer (2026-09). Hidden by default (desktop/tablet)
@@ -87,23 +104,32 @@
 .menuButton {
   display: none;
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  color: var(--color-text-primary);
+  color: var(--color-text-primary-cool);
+}
+
+/* Mobile-only SOLIS brand row (SOLIS true redesign, Phase 1 — visual
+   fidelity correction, 2026-10): the collapsed mobile header has no
+   visible sidebar, so the approved mobile design shows the mark +
+   wordmark inline here instead — hidden on desktop/tablet, where the
+   Sidebar's own brand row already carries it. */
+.mobileBrand {
+  display: none;
 }
 
 .menuButton:hover {
-  background: var(--color-surface-hover);
+  background: var(--color-surface-hover-cool);
 }
 
 .menuButton:focus-visible {
-  outline: 2px solid var(--color-brand);
+  outline: 2px solid var(--color-brand-solid-cool);
   outline-offset: 1px;
 }
 
@@ -140,23 +166,18 @@
   top: 6px;
 }
 
-/* Mobile TopBar design correction (2026-09). Supersedes this phase's own
-   first pass (plain `flex-wrap`, DOM order — the "wrapped desktop
-   header" the correction called out). Below 860px, `.topBar` still
-   wraps, but every participating child now gets an explicit `order` (or,
-   for Audit/Templates, is hidden outright — see `.priorityLink` below)
-   so the VISUAL result is a deliberate two(-plus)-row layout instead of
-   whatever the original DOM order happened to produce:
-     row 1: hamburger(1), New Case + Notifications/account avatar via
-            .identityGroup(4), grouped and pushed to the row's right
-            edge (see `.newCaseButton`'s own `margin-left: auto` comment)
-     row 2: search, alone, full width (5, forced via flex-basis: 100% —
-            the same "break the line" technique `.spacer` already used)
-     row 3+: anything else — Org Switcher (its own module, order 8) and
-            the module-gated Resources/Merchandise/Inventory/Suppliers/
-            Purchase Orders/Accounts Payable/Calendar Integrations links
-            (.overflowLink, order 8) — still fully present and tappable,
-            never hidden.
+/* Mobile TopBar design correction (2026-09), updated for Phase 1's new
+   single-identityGroup structure (2026-10). Below 860px, `.topBar` still
+   wraps, with every participating child given an explicit `order` so the
+   VISUAL result is a deliberate two(-plus)-row layout:
+     row 1: hamburger(1), identityGroup (bell + New Case + avatar menu,
+            order 2) pushed to the row's right edge via its own
+            `margin-left: auto` (no wrapper container, no spacer element)
+     row 2: search, alone, full width (order 5, flex-basis: 100%)
+     row 3+: anything else — Org Switcher and the module-gated Resources/
+            Merchandise/Inventory/Suppliers/Purchase Orders/Accounts
+            Payable/Calendar Integrations links (.overflowLink, order 8)
+            — still fully present and tappable, never hidden.
    `order` only exists inside this media query — desktop's DOM order,
    visual order, and tab order are all completely unaffected. */
 @media (max-width: 860px) {
@@ -173,46 +194,41 @@
     order: 1;
   }
 
-  /* Alignment adjustment (2026-09): hamburger stays pinned left; this
-     `margin-left: auto` is what pushes New Case — and, by ordinary flex
-     flow, everything visually after it on this same line (the
-     Notifications/AC identity group) — flush to the row's right edge.
-     No wrapper container and no empty spacer element needed: New Case
-     and identityGroup (order 4) are the only items ordered between this
-     one and search's own line-break (order 5, flex-basis: 100%) — Org
-     Switcher and the module-gated overflow links (.overflowLink, order
-     8) sort AFTER search in this row's order sequence, so they already
-     wrap onto a later line on their own and are never part of this
-     right-aligned group. The standard "margin-auto flex nav split," not
-     a manually calculated margin value. */
-  .newCaseButton {
+  .mobileBrand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
     order: 2;
-    margin-left: auto;
   }
 
-  /* Audit/Templates moved into the AC account menu (2026-09): no longer
-     reordered into row one — hidden outright. AccountMenu.tsx renders
-     its own copy of each (same href, same permission check, computed
-     once in TopBar.tsx and passed down as a prop — see that component's
-     own doc comment) inside its popover instead. */
-  .priorityLink {
-    display: none;
+  .mobileBrandMark {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+
+  .mobileBrandWordmark {
+    font-size: var(--font-size-14);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.02em;
+    color: var(--color-text-primary-cool);
   }
 
   .identityGroup {
-    order: 4;
-    padding-left: 0;
-    border-left: none;
-    gap: var(--space-5);
+    order: 3;
+    margin-left: auto;
   }
 
-  .desktopAccountGroup {
+  .newCaseLabelFull {
     display: none;
   }
 
-  .mobileAccountSlot {
-    display: flex;
-    align-items: center;
+  .newCaseLabelShort {
+    display: inline;
+  }
+
+  .divider {
+    display: none;
   }
 
   .searchSlot {
@@ -236,30 +252,21 @@
   }
 }
 
-/* At the very narrowest supported width, the four priority-row controls
-   (hamburger + New Case + bell icon + AC avatar — Audit/Templates moved
-   into the AC menu, 2026-09, so they're no longer part of this row at
-   all) can run slightly tighter than the 860px breakpoint's default
-   spacing comfortably allows — this is the "smallest sensible
-   adjustment" mentioned in this phase's own report, verified empirically
-   against the real rendered row rather than guessed: tighter gaps and a
-   smaller New Case button so every control still gets a comfortable
-   touch target with no overlap, clipping, or horizontal overflow.
-   Nothing is hidden or removed at this width. */
+/* At the very narrowest supported width, the priority-row controls
+   (hamburger + identityGroup) can run slightly tighter than the 860px
+   breakpoint's default spacing comfortably allows — this is the
+   "smallest sensible adjustment" mentioned in this phase's own report,
+   verified empirically against the real rendered row rather than
+   guessed: tighter gaps and a smaller New Case button so every control
+   still gets a comfortable touch target with no overlap, clipping, or
+   horizontal overflow. Nothing is hidden or removed at this width. */
 @media (max-width: 360px) {
   .topBar {
     column-gap: var(--space-2);
   }
 
-  /* Doubled selector: `.newCaseButton` and Button.module.css's own
-     `.primary` are two plain classes on the same <button>, from two
-     different stylesheets — which one "wins" a conflicting property at
-     equal (0,1,0) specificity depends on CSS Module bundling/import
-     order, which this project has no existing guarantee about. Repeating
-     the class raises this to (0,2,0), guaranteed to beat `.primary`
-     regardless of source order, without `!important`. */
   .newCaseButton.newCaseButton {
-    padding: var(--space-4) var(--space-5);
+    padding: 0 var(--space-5);
     font-size: var(--font-size-12-5);
   }
 

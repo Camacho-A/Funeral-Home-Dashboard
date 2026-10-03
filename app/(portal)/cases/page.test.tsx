@@ -22,8 +22,14 @@ import type { Case } from '@/types/case';
  * `next/navigation` for a client-component page reading `useSearchParams`.
  */
 let searchParams = new URLSearchParams();
+// SOLIS Cases page visual fidelity pass (2026-10): the new Stage <select>
+// navigates via useRouter().push — a real dependency the prior page.tsx
+// never had, so this mock now needs to return something for it too (a
+// no-op stub; which stage was pushed is never this test file's concern,
+// only that the existing routes/params logic above it is unchanged).
 vi.mock('next/navigation', () => ({
   useSearchParams: () => searchParams,
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn(), back: vi.fn(), forward: vi.fn() }),
 }));
 
 function renderPageForOrg(organizationId: string) {
@@ -80,7 +86,11 @@ describe('CasesPage — heading / navigation context', () => {
     const listPageSpy = vi.spyOn(casesService, 'listPage');
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
 
-    expect(await screen.findByText('Completed')).toBeInTheDocument();
+    // SOLIS Cases page visual fidelity pass (2026-10): the new Stage
+    // <select> also contains an `<option>Completed</option>` now, so a
+    // plain text match is ambiguous — scope to the page's own `<h1>`
+    // heading specifically, same real "Completed" text either way.
+    expect(await screen.findByRole('heading', { name: 'Completed' })).toBeInTheDocument();
     await waitFor(() => expect(listPageSpy.mock.calls.some((call) => call[1]?.stage === 'Completed')).toBe(true));
     listPageSpy.mockRestore();
   });
@@ -242,7 +252,9 @@ describe('CasesPage — server-side search (Case list scalability, Phase 3)', ()
     searchParams = new URLSearchParams({ stage: 'Completed' });
     const listPageSpy = vi.spyOn(casesService, 'listPage');
     const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByText('Completed');
+    // SOLIS Cases page visual fidelity pass (2026-10): scoped to the
+    // heading — the new Stage <select> also has a "Completed" option now.
+    await screen.findByRole('heading', { name: 'Completed' });
     search('morales');
 
     await waitFor(() =>
@@ -255,12 +267,16 @@ describe('CasesPage — server-side search (Case list scalability, Phase 3)', ()
     pushCase('match', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'MORALES FAMILY' });
     pushCase('no-match', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'SMITH FAMILY' });
     const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByText('SMITH FAMILY');
+    // SOLIS Cases page visual fidelity pass (2026-10): AllCasesList now
+    // renders decedentName through toDisplayName (title case, display
+    // only — the stored value above is untouched) — "SMITH FAMILY"
+    // renders as "Smith Family".
+    await screen.findByText('Smith Family');
 
     search('morales');
     await waitFor(() => {
-      expect(screen.queryByText('SMITH FAMILY')).not.toBeInTheDocument();
-      expect(screen.getByText('MORALES FAMILY')).toBeInTheDocument();
+      expect(screen.queryByText('Smith Family')).not.toBeInTheDocument();
+      expect(screen.getByText('Morales Family')).toBeInTheDocument();
     });
   });
 
@@ -269,17 +285,19 @@ describe('CasesPage — server-side search (Case list scalability, Phase 3)', ()
     pushCase('no-match', { caseNumber: 'B2026-102', createdAt: '2026-01-02T00:00:00.000Z', decedentName: 'SMITH FAMILY' });
     const { search } = renderPageWithSearch(SECOND_MOCK_ORGANIZATION_ID);
     search('morales');
-    await waitFor(() => expect(screen.queryByText('SMITH FAMILY')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Smith Family')).not.toBeInTheDocument());
 
     search('');
-    await waitFor(() => expect(screen.getByText('SMITH FAMILY')).toBeInTheDocument());
-    expect(screen.getByText('MORALES FAMILY')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Smith Family')).toBeInTheDocument());
+    expect(screen.getByText('Morales Family')).toBeInTheDocument();
   });
 
   it('6. All Cases results expose each case\'s current stage', async () => {
     pushCase('x', { caseNumber: 'B2026-101', createdAt: '2026-01-01T00:00:00.000Z', decedentName: 'STAGE VISIBLE CASE', rawStage: 7 });
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    const row = (await screen.findByText('STAGE VISIBLE CASE')).closest('a')!;
+    // "STAGE VISIBLE CASE" renders as "Stage Visible Case" via
+    // toDisplayName (display only; the stored value is unchanged).
+    const row = (await screen.findByText('Stage Visible Case')).closest('a')!;
     // A stage badge is rendered alongside the case (AllCasesList's
     // existing per-row stageLabel Badge) — the one canonical label it
     // shows depends on the mock fixture's own workflowSnapshot, not
@@ -310,7 +328,8 @@ describe('CasesPage — mutation cache invalidation (Case list scalability, Phas
     pushCase('brand-new', { caseNumber: 'B2026-999', createdAt: '2026-05-01T00:00:00.000Z', decedentName: 'BRAND NEW CASE', rawStage: 0 });
     await queryClient.invalidateQueries({ queryKey: ['cases', SECOND_MOCK_ORGANIZATION_ID] });
 
-    await screen.findByText('BRAND NEW CASE');
+    // "BRAND NEW CASE" renders as "Brand New Case" via toDisplayName.
+    await screen.findByText('Brand New Case');
   });
 });
 
@@ -326,7 +345,8 @@ describe('CasesPage — case progress indicator (Case list scalability, Phase 3)
     const getSpy = vi.spyOn(casesService, 'get');
     renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
 
-    await screen.findByText('PROGRESS CASE 0');
+    // "PROGRESS CASE 0" renders as "Progress Case 0" via toDisplayName.
+    await screen.findByText('Progress Case 0');
     // Every pushed case got its own progress bar...
     expect(screen.getAllByRole('progressbar')).toHaveLength(5);
     // ...but the list was fetched in exactly ONE request, never one per
@@ -351,7 +371,8 @@ describe('CasesPage — case progress indicator (Case list scalability, Phase 3)
       checklistState: { '2:0': true, '2:1': false, '2:2': false },
     });
     const { queryClient } = renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByText('CHECKLIST CASE');
+    // "CHECKLIST CASE" renders as "Checklist Case" via toDisplayName.
+    await screen.findByText('Checklist Case');
     const before = Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'));
 
     const organization = { organizationId: SECOND_MOCK_ORGANIZATION_ID, dataAdapterMode: 'mock' as const };
@@ -373,7 +394,10 @@ describe('CasesPage — case progress indicator (Case list scalability, Phase 3)
       checklistState: { 0: true, 1: false, 2: false },
     });
     const allCasesRender = renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
-    await screen.findByText('SAME CASE EVERYWHERE');
+    // AllCasesList renders decedentName through toDisplayName (title
+    // case); StageFilteredPanel below (unchanged by this pass) does not —
+    // same underlying stored value, two different real presentations.
+    await screen.findByText('Same Case Everywhere');
     const allCasesPercent = screen.getByRole('progressbar').getAttribute('aria-valuenow');
     allCasesRender.unmount();
 

@@ -108,19 +108,34 @@ export function Sidebar({
       </button>
 
       <div className={styles.brand}>
-        <ProductBrand variant="vertical" markSize={96} wordmarkClassName={styles.brandWordmark} />
+        <ProductBrand markSize={26} wordmarkClassName={styles.brandWordmark} />
       </div>
 
       <div className={styles.navList}>
-        <SidebarNavItem href="/dashboard" label="Dashboard" onNavigate={onClose} />
-        <SidebarNavItem href="/tasks" label="Tasks" onNavigate={onClose} />
-        <SidebarNavItem href="/calendar" label="Calendar" onNavigate={onClose} />
-        <SidebarNavItem href="/reports" label="Reports" onNavigate={onClose} />
-        {authAdapterMode === 'identity' && canViewAccounting && (
-          <SidebarNavItem href="/accounting" label="Accounting" onNavigate={onClose} />
-        )}
-        {canSeeSettings && <SidebarNavItem href="/settings" label="Settings" onNavigate={onClose} />}
+        <SidebarNavItem href="/dashboard" label="Dashboard" icon="dashboard" onNavigate={onClose} />
+        <SidebarNavItem href="/tasks" label="Tasks" icon="tasks" onNavigate={onClose} />
+        <SidebarNavItem href="/calendar" label="Calendar" icon="calendar" onNavigate={onClose} />
       </div>
+
+      {/* SOLIS true redesign, Phase 1 (2026-10): Reports/Accounting grouped
+          under a quiet "Insights" label, per the approved design — purely
+          a visual grouping heading, not a new nav level/route. */}
+      <div className={styles.groupLabel}>Insights</div>
+      <div className={styles.navList}>
+        <SidebarNavItem href="/reports" label="Reports" icon="reports" onNavigate={onClose} />
+        {authAdapterMode === 'identity' && canViewAccounting && (
+          <SidebarNavItem href="/accounting" label="Accounting" icon="accounting" onNavigate={onClose} />
+        )}
+      </div>
+
+      {canSeeSettings && (
+        <>
+          <div className={styles.divider} />
+          <div className={styles.navList}>
+            <SidebarNavItem href="/settings" label="Settings" icon="settings" onNavigate={onClose} />
+          </div>
+        </>
+      )}
 
       {/* Manors cleanup phase (Task #4); connected (2026-10 follow-up).
           `branding?.logoUrl` is the per-organization logo configured via
@@ -131,16 +146,24 @@ export function Sidebar({
           `organizationBrandingFixtures` in mock mode; a production
           (wix-mode) organization with no branding row configured yet
           simply renders nothing here, same as before — no further code
-          change needed once one is set. Capped at 64px by `.footerLogo`
-          so it reads as an identity mark, not a banner, and the whole
-          footer (logo, org name, staff-online) centers as one unit via
-          `.footer`'s flex column (2026-10 visual adjustment). */}
+          change needed once one is set.
+          SOLIS true redesign, Phase 1 (2026-10): the footer is now a
+          compact horizontal card (logo left, name + staff-online stacked
+          right) per the approved design, instead of the prior centered
+          column — presentation only; the same `branding?.logoUrl`/
+          `organizationName`/`activeStaffCountQuery` data, the same
+          identity-mode gate. */}
       <div className={styles.footer}>
         {branding?.logoUrl && <img src={branding.logoUrl} alt={`${organizationName} logo`} className={styles.footerLogo} />}
-        <span className={styles.footerOrgName}>{organizationName}</span>
-        {authAdapterMode === 'identity' && activeStaffCountQuery.data !== undefined && (
-          <span className={styles.footerStaffOnline}>{activeStaffCountQuery.data} staff online</span>
-        )}
+        <div className={styles.footerText}>
+          <div className={styles.footerOrgName}>{organizationName}</div>
+          {authAdapterMode === 'identity' && activeStaffCountQuery.data !== undefined && (
+            <div className={styles.footerStaffOnline}>
+              <span className={styles.footerStaffDot} aria-hidden="true" />
+              {activeStaffCountQuery.data} staff online
+            </div>
+          )}
+        </div>
       </div>
     </nav>
   );

@@ -1,13 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import type { PendingInvitation } from '@/lib/identityAuthClient';
 import { useResendInvitation, useRevokeInvitation } from '@/hooks/useRbac';
 import { ConfirmActionDialog } from './ConfirmActionDialog';
-import styles from './PendingInvitationList.module.css';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -21,6 +17,11 @@ function formatDate(iso: string | null): string {
  * `status: 'expired'` (derived server-side from the invitation's latest
  * token) gets its own badge, but behaves identically to `'pending'` for
  * both resend and revoke.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S2): `.sx-section-title`
+ * with a count, then a table (email / invited date if present / role if
+ * present / status `.sx-status-warn` "Pending"). "Revoke" stays a
+ * VISIBLE `sx-btn-danger sx-btn-sm` action (not in a RowMenu), same confirm.
  */
 export function PendingInvitationList({
   organizationId,
@@ -38,55 +39,67 @@ export function PendingInvitationList({
   if (invitations.length === 0) return null;
 
   return (
-    <Card className={styles.card}>
-      <h2 className={styles.heading}>Pending invitations</h2>
-      <div className={styles.list}>
-        {invitations.map((invitation) => (
-          <div key={invitation.membershipId} className={styles.row}>
-            <div className={styles.identity}>
-              <span className={styles.name}>{invitation.displayName}</span>
-              <span className={styles.email}>{invitation.email}</span>
-            </div>
-
-            <span className={styles.role}>{invitation.role}</span>
-
-            <Badge variant={invitation.status === 'expired' ? 'danger' : 'brand'}>{invitation.status === 'expired' ? 'Expired' : 'Pending'}</Badge>
-
-            <div className={styles.meta}>
-              <span>Invited {formatDate(invitation.createdAt)}</span>
-              {invitation.lastResentAt && <span>Resent {formatDate(invitation.lastResentAt)}</span>}
-              <span>Expires {formatDate(invitation.expiresAt)}</span>
-            </div>
-
-            {canInvite && (
-              <div className={styles.actions}>
-                <div className={styles.actionButtons}>
-                  <Button
-                    variant="secondary"
+    <section className="sx-settings-section">
+      <h3 className="sx-section-title">
+        Pending invitations<span className="sx-section-meta">{invitations.length} invitation(s)</span>
+      </h3>
+      <table className="sx-table sx-table-stack">
+        <thead>
+          <tr>
+            <th>Invitee</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Dates</th>
+            {canInvite && <th aria-hidden="true"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {invitations.map((invitation) => (
+            <tr key={invitation.membershipId}>
+              <td data-label="Invitee" data-primary>
+                <span className="sx-cell-title">{invitation.displayName}</span>
+                <span className="sx-cell-sub">{invitation.email}</span>
+              </td>
+              <td data-label="Role">{invitation.role}</td>
+              <td data-label="Status">
+                <span className={invitation.status === 'expired' ? 'sx-status sx-status-bad' : 'sx-status sx-status-warn'}>
+                  {invitation.status === 'expired' ? 'Expired' : 'Pending'}
+                </span>
+              </td>
+              <td data-label="Dates" className="sx-mono">
+                <span>Invited {formatDate(invitation.createdAt)}</span>
+                {invitation.lastResentAt && <span> · Resent {formatDate(invitation.lastResentAt)}</span>}
+                <span> · Expires {formatDate(invitation.expiresAt)}</span>
+              </td>
+              {canInvite && (
+                <td data-label="Actions" className="sx-row-actions">
+                  <button
+                    type="button"
+                    className="sx-btn sx-btn-secondary sx-btn-sm"
                     onClick={() => resendInvitation.mutate({ membershipId: invitation.membershipId, invitedIdentityId: invitation.identityId })}
                     disabled={resendInvitation.isPending}
                   >
                     Resend
-                  </Button>
-                  <Button variant="danger" onClick={() => setPendingRevoke(invitation)}>
+                  </button>
+                  <button type="button" className="sx-btn sx-btn-danger sx-btn-sm" onClick={() => setPendingRevoke(invitation)}>
                     Revoke
-                  </Button>
-                </div>
-                {/* Manors go-live invitation-lifecycle fix (Fix C): a
-                    resend failure (wrong membership state, or the email
-                    provider rejecting/erroring) must be visible here, not
-                    silently swallowed — the mutation already carries the
-                    server's real error message. */}
-                {resendInvitation.isError && resendInvitation.variables?.membershipId === invitation.membershipId && (
-                  <span className={styles.error} role="alert">
-                    {resendInvitation.error instanceof Error ? resendInvitation.error.message : 'Failed to resend invitation.'}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+                  </button>
+                  {/* Manors go-live invitation-lifecycle fix (Fix C): a
+                      resend failure (wrong membership state, or the email
+                      provider rejecting/erroring) must be visible here, not
+                      silently swallowed — the mutation already carries the
+                      server's real error message. */}
+                  {resendInvitation.isError && resendInvitation.variables?.membershipId === invitation.membershipId && (
+                    <span className="sx-error" role="alert">
+                      {resendInvitation.error instanceof Error ? resendInvitation.error.message : 'Failed to resend invitation.'}
+                    </span>
+                  )}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {pendingRevoke && (
         <ConfirmActionDialog
@@ -98,6 +111,6 @@ export function PendingInvitationList({
           onConfirm={() => revokeInvitation.mutateAsync({ membershipId: pendingRevoke.membershipId })}
         />
       )}
-    </Card>
+    </section>
   );
 }

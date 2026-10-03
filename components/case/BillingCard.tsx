@@ -1,15 +1,29 @@
 'use client';
 
 import { useState } from 'react';
-import { formatCents } from '@/domain/billing/renderUtil';
 import { useOrganization } from '@/hooks/useOrganization';
 import { shouldShowCashAdvanceSection } from '@/domain/billing/organizationStatementOverrides';
 import { useStatementPreview, useCashAdvances, useCreateCashAdvance, useDeleteCashAdvance, useGenerateStatement } from '@/hooks/useBilling';
 import { useCaseDocumentLibrary } from '@/hooks/useCaseDocumentLibrary';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import styles from './BillingCard.module.css';
+
+/**
+ * SOLIS Final Phase §0.5 — display-only currency formatting. The shared
+ * `domain/billing/renderUtil.ts#formatCents` stays untouched: both
+ * domain/billing/renderGeneralPriceListHtml.ts and
+ * domain/billing/renderStatementHtml.ts depend on its exact output for the
+ * generated Statement PDF/HTML. This local formatter is for on-screen
+ * display only — same numeric output for any amount already covered by
+ * this file's own tests (renderUtil's hand-rolled grouping produces the
+ * identical string Intl.NumberFormat does), just the standard Intl path
+ * per §0.5.
+ */
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+function formatCents(amount: number): string {
+  return currency.format(amount / 100);
+}
 
 /**
  * Phase 39 (Family Billing & FTC Compliance). Focused case Billing panel:
@@ -91,10 +105,28 @@ export function BillingCard({ caseId }: { caseId: string }) {
   }
 
   return (
-    <section aria-labelledby="billing-heading" className={styles.card}>
-      <h2 id="billing-heading" className={styles.heading}>
-        Billing &amp; Statement
-      </h2>
+    <section aria-labelledby="billing-heading" className="sx-bill">
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h2 id="billing-heading" style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>
+            Billing &amp; Statement
+          </h2>
+          {/* SOLIS Final Phase §8.2's literal copy says "FTC Statement" —
+              deliberately not reproduced verbatim: a prior, documented
+              decision (see this file's own test describe block "staff-
+              facing 'FTC Statement' simplified to 'Statement'") removed
+              that term from every staff-facing string here. Kept the
+              description, dropped "FTC". */}
+          <p className="sx-page-desc" style={{ marginTop: 2 }}>
+            Live preview of the Statement for this case.
+          </p>
+        </div>
+        {model && (
+          <button type="button" className={`sx-btn sx-btn-primary ${styles.billingHeaderAction}`} onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
+            {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
+          </button>
+        )}
+      </div>
 
       {/* Cash advance editor — omitted entirely for an organization that
           doesn't use this workflow (see showCashAdvanceSection above),
@@ -102,41 +134,39 @@ export function BillingCard({ caseId }: { caseId: string }) {
           the read-only fallback just below). */}
       {showCashAdvanceSection && (
         <div className={styles.subsection}>
-          <h3 className={styles.subsectionTitle}>Cash advance items</h3>
-          <p className={styles.subsectionDescription}>
+          <h3 className="sx-section-title">Cash advance items</h3>
+          <p className="sx-help">
             Third-party items obtained on the family&rsquo;s behalf. These appear on the Statement but are{' '}
             <strong>not</strong> part of the account balance owed to the funeral home.
           </p>
-          <ul className={styles.cashAdvanceList}>
-            {existingCashAdvances.map((c) => (
-              <li key={c.id} className={styles.cashAdvanceRow}>
-                <span>
-                  {c.description}
-                  {c.isEstimated && <em className={styles.estimatedNote}> (estimated)</em>}
-                  {c.hasMarkup && <em className={styles.markupNote}> (incl. service charge)</em>}
-                </span>
-                <span className={styles.cashAdvanceAmountGroup}>
-                  <span className={styles.tabularAmount}>{formatCents(c.amountCents)}</span>
-                  <button
-                    type="button"
-                    onClick={() => deleteCa.mutate(c.id)}
-                    aria-label={`Remove ${c.description}`}
-                    className={styles.removeButton}
-                  >
-                    ×
-                  </button>
-                </span>
-              </li>
-            ))}
-            {existingCashAdvances.length === 0 && <li className={styles.emptyNote}>No cash advance items.</li>}
-          </ul>
-          <div className={styles.cashAdvanceForm}>
+          <table className="sx-table">
+            <tbody>
+              {existingCashAdvances.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    {c.description}
+                    {c.isEstimated && <span className="sx-cell-sub"> (estimated)</span>}
+                    {c.hasMarkup && <span className="sx-cell-sub"> (incl. service charge)</span>}
+                  </td>
+                  <td className="sx-num">{formatCents(c.amountCents)}</td>
+                  <td className="sx-row-actions">
+                    <button type="button" onClick={() => deleteCa.mutate(c.id)} aria-label={`Remove ${c.description}`} className="sx-icon-btn">
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {existingCashAdvances.length === 0 && <div className="sx-empty-text">No cash advance items.</div>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
             <TextField
               aria-label="Cash advance description"
               placeholder="Description"
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
-              className={styles.descriptionField}
+              className="sx-input"
+              style={{ flex: 1, minWidth: 200 }}
             />
             <TextField
               aria-label="Cash advance amount (dollars)"
@@ -144,17 +174,18 @@ export function BillingCard({ caseId }: { caseId: string }) {
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className={styles.amountField}
+              className="sx-input"
+              style={{ width: 120, textAlign: 'right' }}
             />
-            <label className={styles.checkboxLabel}>
+            <label className="sx-check">
               <input type="checkbox" checked={isEstimated} onChange={(e) => setIsEstimated(e.target.checked)} /> Estimate
             </label>
-            <label className={styles.checkboxLabel}>
+            <label className="sx-check">
               <input type="checkbox" checked={hasMarkup} onChange={(e) => setHasMarkup(e.target.checked)} /> Has markup
             </label>
-            <Button variant="secondary" onClick={addCashAdvance} disabled={createCa.isPending || !desc.trim() || dollarsToCents(amount) === null}>
+            <button type="button" className="sx-btn sx-btn-secondary" onClick={addCashAdvance} disabled={createCa.isPending || !desc.trim() || dollarsToCents(amount) === null}>
               Add
-            </Button>
+            </button>
           </div>
         </div>
       )}
@@ -167,17 +198,17 @@ export function BillingCard({ caseId }: { caseId: string }) {
           since this organization's normal workflow doesn't use this
           mechanism at all. */}
       {hasUnexpectedCashAdvances && (
-        <div className={styles.warningBox}>
-          <strong className={styles.warningTitle}>Cash advance items on this case</strong>
-          <p className={styles.warningText}>
+        <div className="sx-form-banner" style={{ background: 'var(--sx-amber-bg)', border: '1px solid oklch(0.88 0.06 75)', color: 'var(--sx-amber-text)', flexDirection: 'column' }}>
+          <strong>Cash advance items on this case</strong>
+          <p>
             This organization doesn&rsquo;t use Cash Advance Items in its normal workflow, but this case already has{' '}
             {existingCashAdvances.length} recorded. They remain included in the Statement Total below and are shown here read-only.
           </p>
-          <ul className={styles.cashAdvanceList}>
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
             {existingCashAdvances.map((c) => (
-              <li key={c.id} className={styles.cashAdvanceRowReadOnly}>
+              <li key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <span>{c.description}</span>
-                <span className={styles.tabularAmount}>{formatCents(c.amountCents)}</span>
+                <span className="sx-num">{formatCents(c.amountCents)}</span>
               </li>
             ))}
           </ul>
@@ -186,46 +217,65 @@ export function BillingCard({ caseId }: { caseId: string }) {
 
       {/* Statement preview with the FTC-total vs AR-balance distinction */}
       <div className={styles.subsection}>
-        <h3 className={styles.subsectionTitle}>Statement preview</h3>
-        {preview.isPending && <p className={styles.loading}>Loading preview…</p>}
+        {preview.isPending && (
+          <div className="sx-loading" aria-busy="true">
+            <span className="sx-skeleton" style={{ width: '90%' }} />
+            <span className="sx-skeleton" style={{ width: '70%' }} />
+            <span className="sx-skeleton" style={{ width: '80%' }} />
+            <span className="sr-only">Loading preview…</span>
+          </div>
+        )}
         {preview.isError && (
-          <p className={styles.error}>{(preview.error as Error)?.message ?? 'No active order — create an order first.'}</p>
+          <div className="sx-form-banner sx-form-banner-info">{(preview.error as Error)?.message ?? 'No active order — create an order first.'}</div>
         )}
         {model && (
           <div className={styles.statementBody}>
-            <table className={styles.lineItemsTable}>
+            <div className="sx-kpis" style={{ gridTemplateColumns: 'repeat(2,minmax(0,1fr))' }}>
+              <div className="sx-kpi">
+                <span className="sx-kpi-label">Statement Total</span>
+                <span className="sx-kpi-value">{formatCents(model.ftcStatementTotalCents)}</span>
+                <span className="sx-kpi-caption">Goods/services + cash advances</span>
+              </div>
+              <div className="sx-kpi sx-kpi-emph">
+                <span className="sx-kpi-label">Account balance due</span>
+                <span className="sx-kpi-value">{formatCents(model.authoritativeArBalanceDueCents)}</span>
+                <span className="sx-kpi-caption">Owed to funeral home (cash advances excluded)</span>
+              </div>
+            </div>
+
+            <h3 className="sx-section-title">
+              Statement line items<span className="sx-section-meta">{model.lineItems.length} items</span>
+            </h3>
+            <table className="sx-table">
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th className="sx-num">Amount</th>
+                </tr>
+              </thead>
               <tbody>
                 {model.lineItems.map((l, i) => (
                   <tr key={i}>
                     <td>
                       {l.description}
-                      {l.includesBasicServicesFee && <em className={styles.markupNote}> (incl. basic services fee)</em>}
+                      {l.includesBasicServicesFee && <span className="sx-cell-sub"> (incl. basic services fee)</span>}
                     </td>
-                    <td className={styles.lineItemAmount}>{formatCents(l.lineTotalCents)}</td>
+                    <td className="sx-num">{formatCents(l.lineTotalCents)}</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td>Statement total</td>
+                  <td className="sx-num">{formatCents(model.ftcStatementTotalCents)}</td>
+                </tr>
+              </tfoot>
             </table>
 
-            <div className={styles.totalsGrid}>
-              <div className={styles.totalBox}>
-                <strong>Statement Total</strong>
-                <div className={styles.totalCaption}>Goods/services + cash advances</div>
-                <div className={styles.totalFigure}>{formatCents(model.ftcStatementTotalCents)}</div>
-              </div>
-              <div className={`${styles.totalBox} ${styles.totalBoxEmphasis}`}>
-                <strong>Account balance due</strong>
-                <div className={styles.totalCaption}>Owed to funeral home (cash advances excluded)</div>
-                <div className={styles.totalFigure}>{formatCents(model.authoritativeArBalanceDueCents)}</div>
-              </div>
-            </div>
-
-            <div className={styles.generateRow}>
-              <Button onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
-                {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
-              </Button>
-              {generate.isError && <span className={styles.generateError}>{(generate.error as Error).message}</span>}
-              {generate.isSuccess && <span className={styles.generateSuccess}>Generated — see the Documents tab.</span>}
+            <div className="sx-bill-actions">
+              {generate.isSuccess && <span className="sx-bill-success">✓ Generated — see the Documents tab.</span>}
+              {generate.isError && <span className="sx-bill-err">{(generate.error as Error).message}</span>}
+              <span className="sx-bill-note">Statements are saved as case documents.</span>
             </div>
           </div>
         )}

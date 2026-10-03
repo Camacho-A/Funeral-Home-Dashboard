@@ -36,14 +36,15 @@ function firstNameFrom(displayName: string): string {
  * mirroring `todayLabel`'s own established pattern exactly, so the
  * server-rendered HTML and the client's first paint never disagree about
  * the visitor's local clock.
+ *
+ * SOLIS true redesign, Phase 1 (2026-10). Dropped the "· N active cases"
+ * suffix from the subtitle, per the approved design's own plain
+ * "{greeting}" / "{date}" header — Active cases now has its own cell in
+ * the Dashboard's KPI strip (DashboardKpiStrip.tsx) directly below, so
+ * repeating the same number here was redundant, not a second source of
+ * truth removed from anywhere real.
  */
-export function PageGreetingHeader({
-  todayLabel,
-  activeCount,
-}: {
-  todayLabel: string;
-  activeCount: number;
-}) {
+export function PageGreetingHeader({ todayLabel }: { todayLabel: string }) {
   const { displayName } = useSession();
   const [greeting, setGreeting] = useState('');
 
@@ -57,9 +58,7 @@ export function PageGreetingHeader({
   return (
     <div className={styles.wrapper}>
       <div className={styles.title}>{title}</div>
-      <div className={styles.subtitle}>
-        {todayLabel} · {activeCount} active cases
-      </div>
+      <div className={styles.subtitle}>{todayLabel}</div>
     </div>
   );
 }

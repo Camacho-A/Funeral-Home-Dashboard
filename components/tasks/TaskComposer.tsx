@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { Button } from '@/components/ui/Button';
-import styles from './TaskComposer.module.css';
 
 export type StaffOption = { id: string; name: string };
 export type CaseOption = { id: string; name: string };
@@ -14,6 +13,13 @@ export type CaseOption = { id: string; name: string };
  * outside this card needs it. `staffOptions`/`caseOptions` are supplied by
  * the page (via useStaff/useCases) since sourcing that data isn't this
  * component's job; submitting calls onAddTask with a resolved input.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §1.3: presentation only —
+ * `.sx-composer` grid root, `sx-input`/`sx-select` controls, the button
+ * relabeled "Add task" and restyled `sx-btn sx-btn-primary`, plus an Enter
+ * handler on the text field (the field had none before — Enter just typed
+ * a newline-less default; this is additive, not a change to an existing
+ * submit behavior). Same handler, same default-assignee effect, same reset.
  */
 export function TaskComposer({
   staffOptions,
@@ -46,20 +52,28 @@ export function TaskComposer({
     setCaseId(null);
   }
 
+  function handleTextKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter') handleAdd();
+  }
+
   return (
-    <div className={styles.composer}>
+    <div className="sx-composer">
       <TextField
-        className={styles.textInput}
+        className="sx-input"
         value={text}
         // SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
         // server (lib/wixTaskMapper.ts) normalizes authoritatively
         // regardless of what reaches it.
         onChange={(e) => setText(e.target.value.toUpperCase())}
+        onKeyDown={handleTextKeyDown}
         placeholder="Add a follow-up, reminder, or to-do…"
+        aria-label="Task"
       />
       <SelectField
+        className="sx-select"
         value={assigneeStaffId ?? ''}
         onChange={(e) => setAssigneeStaffId(e.target.value || null)}
+        aria-label="Assignee"
       >
         {staffOptions.map((staff) => (
           <option key={staff.id} value={staff.id}>
@@ -68,9 +82,10 @@ export function TaskComposer({
         ))}
       </SelectField>
       <SelectField
-        className={styles.caseSelect}
+        className="sx-select"
         value={caseId ?? ''}
         onChange={(e) => setCaseId(e.target.value || null)}
+        aria-label="Linked case"
       >
         <option value="">No linked case</option>
         {caseOptions.map((option) => (
@@ -79,7 +94,9 @@ export function TaskComposer({
           </option>
         ))}
       </SelectField>
-      <Button onClick={handleAdd}>Add</Button>
+      <Button className="sx-btn sx-btn-primary" onClick={handleAdd}>
+        Add task
+      </Button>
     </div>
   );
 }

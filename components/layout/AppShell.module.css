@@ -11,10 +11,25 @@
   flex-direction: column;
 }
 
+/* SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+   Root cause of the gray production canvas: `body` (styles/globals.css)
+   sets `background: var(--color-surface-page)` (a visible warm gray),
+   and this scroll container never overrode it — every portal page
+   rendered on that gray, not the approved design's white workspace.
+   `body` itself is intentionally left untouched (login, family portal,
+   and onboarding all still render on it, and none of those are Phase 1
+   scope) — this is the one shared element every portal page (D. "Main
+   content canvas," already Phase 1 scope) actually sits on, so painting
+   it white here is the real fix, not a white div layered on top. */
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-14) var(--space-16) var(--space-24);
+  /* 40px has no matching token in the --space-N scale (which jumps
+     18->24, i.e. 36px->48px) — a literal, matching this project's own
+     convention of using a literal value when no exact token exists
+     (e.g. CasesByStagePanel.module.css's own "9px"/"7px"). */
+  padding: var(--space-16) 40px;
+  background: var(--color-surface-card);
 }
 
 /* Dashboard mobile-friendliness pass (2026-09): the desktop content

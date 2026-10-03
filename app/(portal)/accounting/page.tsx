@@ -4,6 +4,9 @@ import { AccountingDashboardPanel } from '@/components/accounting/AccountingDash
 export default function AccountingPage() {
   return (
     <div>
+      <h1 className="sx-page-title" style={{ marginBottom: 16 }}>
+        Accounting
+      </h1>
       <AccountingNav />
       <AccountingDashboardPanel />
     </div>

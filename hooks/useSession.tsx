@@ -24,7 +24,7 @@ export type { Session };
  * server-side resolution logic was invented for this — it reuses what
  * already existed.
  */
-export const DEFAULT_SESSION: Session = { staffId: null, displayName: '' };
+export const DEFAULT_SESSION: Session = { staffId: null, displayName: '', email: undefined };
 
 const SessionContext = createContext<Session>(DEFAULT_SESSION);
 

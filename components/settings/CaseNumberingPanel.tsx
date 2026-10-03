@@ -7,8 +7,6 @@ import { useManorsCutoverEligibility, useExecuteManorsCutover } from '@/hooks/us
 import { useManorsCaseNumberManageMigrationStatus, useExecuteManorsCaseNumberManageMigration } from '@/hooks/useManorsRbacMigration';
 import { formatCaseNumber } from '@/domain/cases/caseNumber';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
-import styles from './CaseNumberingPanel.module.css';
 
 /**
  * Manors go-live case-number cutover (2026-09). "Settings > Case
@@ -34,6 +32,10 @@ import styles from './CaseNumberingPanel.module.css';
  * early-returned on that 403 before ever reaching the migration control,
  * which meant Administrator had no way to reach the very control that
  * fixes the underlying gap. See TopBar.tsx's matching nav-link fix.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S4): restyled to the
+ * sx- form/settings-section system. Renders as `{children}` inside
+ * `SettingsShell` — no own page-level `<h1>`.
  */
 export function CaseNumberingPanel() {
   const { organizationId } = useOrganization();
@@ -62,7 +64,7 @@ export function CaseNumberingPanel() {
   }
 
   if (permissionsQuery.isPending) {
-    return <p>Loading case numbering…</p>;
+    return <p className="sx-help">Loading case numbering…</p>;
   }
 
   // Neither the normal permission nor the bootstrap permission — nothing
@@ -71,7 +73,7 @@ export function CaseNumberingPanel() {
   // through the nav link). No protected data is fetched or shown; the
   // underlying APIs still independently 403 regardless of this message.
   if (!canManageCaseNumber && !canSeeMigrationAction) {
-    return <p className={styles.description}>You don&apos;t have access to Case Numbering.</p>;
+    return <div className="sx-empty"><div className="sx-empty-title">You don&apos;t have access to Case Numbering.</div></div>;
   }
 
   const migrationData = migrationStatusQuery.data;
@@ -80,33 +82,35 @@ export function CaseNumberingPanel() {
   return (
     <div>
       {showMigrationAction && (
-        <div className={styles.cutoverBox}>
-          <div className={styles.sectionTitle}>Enable Case Numbering Access</div>
-          <p className={styles.description}>
+        <section className="sx-settings-section">
+          <h3 className="sx-settings-section-title">Enable Case Numbering Access</h3>
+          <p className="sx-help">
             Grants Case Numbering access to Administrator and Funeral Director for Manors Cremations.
           </p>
-          <Button onClick={() => setMigrationConfirmOpen(true)}>Enable Case Numbering Access</Button>
-          {migration.isError && <p className={styles.error}>{(migration.error as Error).message}</p>}
-        </div>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={() => setMigrationConfirmOpen(true)}>
+            Enable Case Numbering Access
+          </button>
+          {migration.isError && <div className="sx-error-state" role="alert" style={{ marginTop: 8 }}>{(migration.error as Error).message}</div>}
+        </section>
       )}
 
       <Modal open={migrationConfirmOpen} onClose={() => setMigrationConfirmOpen(false)} title="Enable Case Numbering Access">
-        <p className={styles.description}>
+        <p className="sx-help">
           Grants Case Numbering access to Administrator and Funeral Director for Manors Cremations. This does not
           change any other permission and does not affect any other role.
         </p>
-        <div className={styles.footer}>
-          <Button variant="secondary" onClick={() => setMigrationConfirmOpen(false)} disabled={migration.isPending}>
+        <div className="sx-modal-footer" style={{ padding: 0, border: 'none', height: 'auto', marginTop: 16 }}>
+          <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setMigrationConfirmOpen(false)} disabled={migration.isPending}>
             Cancel
-          </Button>
-          <Button onClick={handleMigrationConfirm} disabled={migration.isPending}>
+          </button>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={handleMigrationConfirm} disabled={migration.isPending}>
             {migration.isPending ? 'Enabling…' : 'Confirm'}
-          </Button>
+          </button>
         </div>
       </Modal>
 
       {!canManageCaseNumber && (
-        <p className={styles.description}>Case Numbering access must be enabled before this section is available.</p>
+        <p className="sx-help">Case Numbering access must be enabled before this section is available.</p>
       )}
 
       {canManageCaseNumber && <NormalCaseNumberingContent eligibilityQuery={eligibilityQuery} cutover={cutover} result={result} confirmOpen={confirmOpen} setConfirmOpen={setConfirmOpen} handleConfirm={handleConfirm} />}
@@ -134,10 +138,10 @@ function NormalCaseNumberingContent({
   handleConfirm: () => Promise<void>;
 }) {
   if (eligibilityQuery.isPending) {
-    return <p>Loading case numbering…</p>;
+    return <p className="sx-help">Loading case numbering…</p>;
   }
   if (eligibilityQuery.isError) {
-    return <p className={styles.error}>{(eligibilityQuery.error as Error).message}</p>;
+    return <div className="sx-error-state" role="alert">{(eligibilityQuery.error as Error).message}</div>;
   }
 
   const data = eligibilityQuery.data;
@@ -147,56 +151,57 @@ function NormalCaseNumberingContent({
 
   return (
     <>
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>{data.year} Case Numbering</div>
-        <div className={styles.currentNumber}>Next Case Number: {currentCaseNumber ?? '—'}</div>
-      </div>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">{data.year} Case Numbering</h3>
+        <div style={{ display: 'inline-block', border: '1px solid var(--sx-border)', borderRadius: 10, padding: '16px 18px' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--sx-muted)' }}>Next Case Number:</div>
+          <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--sx-text)' }}>{currentCaseNumber ?? '—'}</div>
+        </div>
+      </section>
 
       {result && (
-        <p className={styles.success}>
+        <p className="sx-help" style={{ color: 'var(--sx-green-text)' }}>
           Case numbering is ready. The next new SOLIS case will be {formatCaseNumber(data.year, result.nextSequence)}.
         </p>
       )}
 
       {!result && data.eligible && (
-        <div className={styles.cutoverBox}>
-          <div className={styles.sectionTitle}>Prepare SOLIS Case Numbering</div>
-          <p className={styles.description}>
+        <section className="sx-settings-section">
+          <h3 className="sx-settings-section-title">Prepare SOLIS Case Numbering</h3>
+          <p className="sx-help">
             Manors cases {data.historicalCaseNumbers.join(' and ')} already exist outside SOLIS and will be imported
             separately. This will make {data.firstNormalCaseNumber} the next case number assigned to a new SOLIS case.
           </p>
-          <Button onClick={() => setConfirmOpen(true)}>Prepare SOLIS Case Numbering</Button>
-        </div>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={() => setConfirmOpen(true)}>
+            Prepare SOLIS Case Numbering
+          </button>
+        </section>
       )}
 
-      {!result && !data.eligible && data.reason && <p className={styles.description}>{data.reason}</p>}
+      {!result && !data.eligible && data.reason && <p className="sx-help">{data.reason}</p>}
 
-      {cutover.isError && <p className={styles.error}>{(cutover.error as Error).message}</p>}
+      {cutover.isError && <div className="sx-error-state" role="alert">{(cutover.error as Error).message}</div>}
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Prepare SOLIS Case Numbering">
-        <div className={styles.summaryRow}>
-          <span>Current next new-case number:</span>
-          <strong>{currentCaseNumber}</strong>
-        </div>
-        <div className={styles.summaryRow}>
-          <span>After cutover:</span>
-          <strong>{data.firstNormalCaseNumber}</strong>
-        </div>
-        <div className={styles.summaryRow}>
-          <span>Historical numbers preserved for import:</span>
-          <strong>{data.historicalCaseNumbers.join(', ')}</strong>
-        </div>
-        <p className={styles.description}>
+        <dl className="sx-kv">
+          <dt>Current next new-case number:</dt>
+          <dd>{currentCaseNumber}</dd>
+          <dt>After cutover:</dt>
+          <dd>{data.firstNormalCaseNumber}</dd>
+          <dt>Historical numbers preserved for import:</dt>
+          <dd>{data.historicalCaseNumbers.join(', ')}</dd>
+        </dl>
+        <p className="sx-help" style={{ marginTop: 12 }}>
           This does not create either historical case. It only changes the next number SOLIS will assign to a newly
           created case.
         </p>
-        <div className={styles.footer}>
-          <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={cutover.isPending}>
+        <div className="sx-modal-footer" style={{ padding: 0, border: 'none', height: 'auto', marginTop: 16 }}>
+          <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setConfirmOpen(false)} disabled={cutover.isPending}>
             Cancel
-          </Button>
-          <Button onClick={handleConfirm} disabled={cutover.isPending}>
+          </button>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={handleConfirm} disabled={cutover.isPending}>
             {cutover.isPending ? 'Preparing…' : 'Confirm'}
-          </Button>
+          </button>
         </div>
       </Modal>
     </>

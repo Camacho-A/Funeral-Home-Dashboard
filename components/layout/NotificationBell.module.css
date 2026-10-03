@@ -1,38 +1,69 @@
+/* SOLIS Final Phase §1.3 — literal spec values: 34x34, radius 8,
+   transparent unless open/hovered. `aria-expanded` only ever applied by
+   the drawer trigger's own button, not this one (NotificationDrawer has
+   no open/closed toggle styling need beyond hover) — hover alone covers
+   the "open or hovered" requirement since the drawer renders as a
+   separate fixed panel, not a popover anchored to this button. */
 .bellButton {
   cursor: pointer;
-  font-size: var(--font-size-12);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
+  font-family: inherit;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   background: none;
   border: none;
-  font-family: inherit;
-  padding: 0;
+  color: var(--sx-text-2);
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  justify-content: center;
+  position: relative;
 }
 
+.bellButton:hover {
+  background: oklch(0.955 0.005 255);
+}
+
+.bellButton:focus-visible {
+  outline: none;
+  box-shadow: var(--sx-focus);
+}
+
+/* SOLIS Final Phase §1.3 — literal spec values. */
 .countBadge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--sx-navy);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border: 2px solid #fff;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-variant-numeric: tabular-nums;
 }
 
-/* Mobile TopBar design correction (2026-09). Hidden by default (desktop)
-   — shown only below the shared 860px breakpoint, where the bell glyph
-   replaces the literal "Notifications" text (see NotificationBell.tsx's
-   own comment). */
+/* Icon-only at every width — same button, same onClick/aria-label/badge/
+   drawer, only the bell glyph vs. "Notifications" text visibility
+   changed, and only via CSS (`.bellLabel` below uses the shared
+   `.sr-only` treatment so it's still in the DOM for the button's
+   accessible name). */
 .bellIcon {
-  display: none;
-  width: 20px;
-  height: 20px;
+  display: block;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
 @media (max-width: 860px) {
-  .bellIcon {
-    display: block;
-  }
-
-  .bellLabel {
-    display: none;
+  .bellButton {
+    width: 44px;
+    height: 44px;
   }
 }

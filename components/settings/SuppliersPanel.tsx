@@ -3,8 +3,6 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useSuppliers, useCreateSupplier, useArchiveSupplier } from '@/hooks/useProcurement';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -44,36 +42,46 @@ export function SuppliersPanel() {
 
   return (
     <div>
-      <Card>
-        <h2>New supplier</h2>
-        <form onSubmit={handleCreate}>
-          <TextField placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          <TextField placeholder="Contact name" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
-          <TextField placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <TextField placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          <TextField type="number" placeholder="Payment terms (net days)" value={form.paymentTermsDays} onChange={(e) => setForm({ ...form, paymentTermsDays: e.target.value })} />
-          {error && <p role="alert">{error}</p>}
-          <Button type="submit" disabled={createMutation.isPending || form.name.trim().length === 0}>Add supplier</Button>
-        </form>
-      </Card>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Suppliers</h2>
+      </div>
 
-      <Card>
-        <h2>Suppliers</h2>
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">New supplier</h3>
+        <form onSubmit={handleCreate}>
+          <div className="sx-form-grid">
+            <TextField className="sx-input" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            <TextField className="sx-input" placeholder="Contact name" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
+            <TextField className="sx-input" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <TextField className="sx-input" placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <TextField className="sx-input" type="number" placeholder="Payment terms (net days)" value={form.paymentTermsDays} onChange={(e) => setForm({ ...form, paymentTermsDays: e.target.value })} />
+          </div>
+          {error && <div className="sx-form-banner sx-form-banner-error" role="alert">{error}</div>}
+          <div className="sx-save-row">
+            <button type="submit" className="sx-btn sx-btn-primary" disabled={createMutation.isPending || form.name.trim().length === 0}>Add supplier</button>
+          </div>
+        </form>
+      </section>
+
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Supplier list</h3>
         {suppliers.length === 0 ? (
           <EmptyState message="No suppliers yet — add your first supplier above." />
         ) : (
-          <ul>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {suppliers.map((s) => (
-              <li key={s.id}>
-                <strong>{s.name}</strong>
-                {s.paymentTermsDays != null && <span> — Net {s.paymentTermsDays}</span>}
-                {s.email && <span> · {s.email}</span>}{' '}
-                <Button type="button" onClick={() => archiveMutation.mutate(s.id)} disabled={archiveMutation.isPending}>Archive</Button>
+              <li key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, borderBottom: '1px solid var(--sx-border-soft)' }}>
+                <span className="sx-cell-title">{s.name}</span>
+                {s.paymentTermsDays != null && <span className="sx-cell-sub"> — Net {s.paymentTermsDays}</span>}
+                {s.email && <span className="sx-cell-sub"> · {s.email}</span>}
+                <span style={{ marginLeft: 'auto' }}>
+                  <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => archiveMutation.mutate(s.id)} disabled={archiveMutation.isPending}>Archive</button>
+                </span>
               </li>
             ))}
           </ul>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

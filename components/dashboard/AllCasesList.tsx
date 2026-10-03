@@ -3,37 +3,28 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { toDisplayName } from '@/utils/displayName';
 import type { BadgeVariant } from '@/types/caseViewModel';
 import styles from './AllCasesList.module.css';
 
 export type AllCasesListItem = {
   id: string;
-  /** Phase 16B (Case Number Generation) — displayed in every case list per
-      "display the Case Number in all case lists and tables." */
   caseNumber: string;
   decedentName: string;
-  /** Item #7 (2026-09, decedent avatar fix): the decedent's own initials —
-      never the assigned staff owner's. See domain/cases/viewModel.ts's
-      resolveDecedentInitials. */
   decedentInitials: string;
   rowSummaryText: string;
   rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
   isOverdue: boolean;
   stageLabel: string;
   stageBadgeVariant: BadgeVariant;
-  /** Case list scalability, Phase 3 (progress indicator, 2026-09) — see
-      domain/cases/progress.ts. All Cases spans every stage, so the stage
-      badge above stays the ONLY "where is it" signal; this is purely
-      "how much of the whole workflow is actually done." */
   progressPercent: number;
 };
 
 /**
- * The "All Cases" tab's case list (Case list scalability, Phase 3,
- * 2026-09) — renders one bounded, server-paginated page at a time
- * (hooks/useCaseListPage.ts), never a client-side-filtered full dataset.
- * All filtering/sorting/pagination happens server-side; this only renders
- * what it's given plus the "Load More" control for the next page.
+ * All Cases list — SOLIS Phase 2 (presentation only). Same data, same
+ * server pagination, same Load More. Renders as a hairline table:
+ * CASE | STAGE | PROGRESS. Names shown in title case via toDisplayName
+ * (display only; stored values untouched).
  */
 export function AllCasesList({
   cases,
@@ -43,10 +34,6 @@ export function AllCasesList({
   onLoadMore,
 }: {
   cases: AllCasesListItem[];
-  /** Shown only when `cases` is empty — the page decides the exact
-      wording (search-no-matches vs. genuinely-empty), since that
-      distinction depends on state (searchQuery) this component doesn't
-      otherwise need to know about. */
   emptyMessage: string;
   hasMore: boolean;
   isLoadingMore: boolean;
@@ -54,12 +41,19 @@ export function AllCasesList({
 }) {
   return (
     <div className={styles.card}>
+      {cases.length > 0 && (
+        <div className={styles.headerRow} aria-hidden="true">
+          <span>Case</span>
+          <span>Stage</span>
+          <span className={styles.headerRight}>Progress</span>
+        </div>
+      )}
       {cases.map((c) => (
         <Link key={c.id} href={`/cases/${c.id}`} className={styles.row}>
           <div className={styles.avatar}>{c.decedentInitials}</div>
           <div className={styles.main}>
-            <div>
-              <div className={styles.name}>{c.decedentName}</div>
+            <div className={styles.identityCol}>
+              <div className={styles.name}>{toDisplayName(c.decedentName)}</div>
               <div className={styles.caseNumber}>#{c.caseNumber}</div>
               <div
                 className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
@@ -72,7 +66,9 @@ export function AllCasesList({
                 {c.isOverdue && <span className={styles.overdueTag}>overdue</span>}
                 <Badge variant={c.stageBadgeVariant}>{c.stageLabel}</Badge>
               </div>
-              <ProgressBar percent={c.progressPercent} label={`${c.decedentName} workflow progress`} />
+              <div className={styles.progressCol}>
+                <ProgressBar percent={c.progressPercent} label={`${c.decedentName} workflow progress`} />
+              </div>
             </div>
           </div>
         </Link>

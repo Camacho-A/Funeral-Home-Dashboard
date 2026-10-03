@@ -1,55 +1,104 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { CasesByStagePanel, type StageBarRow } from './CasesByStagePanel';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import { CasesByStagePanel, type StageBarRow, type StagePreviewCase } from './CasesByStagePanel';
 import { STAGES } from '@/domain/cases/stages';
 
-const ROWS: StageBarRow[] = STAGES.map((label, i) => ({ label, count: i, pct: (i / 6) * 100 }));
+const ROWS: StageBarRow[] = STAGES.map((label, i) => ({ label, count: i, pct: (i / 6) * 100, displayStage: i }));
+
+const CASES_BY_STAGE: Record<string, StagePreviewCase[]> = {
+  Completed: [
+    { id: 'case-1', caseNumber: 'B2026-001', decedentName: 'Robert Ellison', daysWaitingInStage: 0 },
+    { id: 'case-2', caseNumber: 'B2026-002', decedentName: 'Maria Gomez', daysWaitingInStage: 3 },
+  ],
+};
 
 /**
- * Case list scalability, Phase 3 — UX correction (2026-09). Cases by
- * Stage is now a pure navigation hub (every row is a `<Link>` into the
- * dedicated `/cases` route) rather than a local filter — these tests
- * cover that contract directly, replacing the old onSelectStage/
- * `selected`-prop coverage this component used to have.
+ * SOLIS true redesign, Phase 1 (2026-10). Cases by Stage remains a pure
+ * navigation hub ("All cases" and "Open full stage list →" are real
+ * links into the existing `/cases` route, unchanged) but each stage row
+ * is now an accordion toggle — replacing the old Case list scalability,
+ * Phase 3 contract where every row was itself a `<Link>`. These tests
+ * replace that file's coverage with the new accordion contract: this is
+ * the one explicitly approved Dashboard interaction change in this
+ * phase.
  */
-describe('CasesByStagePanel (Case list scalability, Phase 3 — UX correction)', () => {
-  it('renders an "All Cases" link pointing at /cases, with no stage filter', () => {
-    render(<CasesByStagePanel allCasesCount={142} rows={ROWS} />);
-    const link = screen.getByRole('link', { name: /All Cases/ });
+describe('CasesByStagePanel — Stage Preview accordion (SOLIS true redesign, Phase 1)', () => {
+  it('renders an "All cases" link pointing at /cases, with the server-provided count', () => {
+    render(<CasesByStagePanel allCasesCount={142} rows={ROWS} casesByStage={{}} />);
+    const link = screen.getByRole('link', { name: /All cases/ });
     expect(link).toHaveAttribute('href', '/cases');
     expect(link.textContent).toContain('142');
   });
 
-  it('renders no count suffix on "All Cases" while the count is still loading (null)', () => {
-    render(<CasesByStagePanel allCasesCount={null} rows={ROWS} />);
-    expect(screen.getByRole('link', { name: 'All Cases' }).textContent).toBe('All Cases');
+  it('renders no count suffix on "All cases" while the count is still loading (null)', () => {
+    render(<CasesByStagePanel allCasesCount={null} rows={ROWS} casesByStage={{}} />);
+    expect(screen.getByRole('link', { name: 'All cases' }).textContent).toBe('All cases');
   });
 
-  it('renders all 7 canonical stages, in order, each linking to /cases?stage=<label>', () => {
-    render(<CasesByStagePanel allCasesCount={142} rows={ROWS} />);
-    const links = screen.getAllByRole('link').filter((l) => l.getAttribute('href') !== '/cases');
-    expect(links).toHaveLength(7);
-    links.forEach((link, index) => {
-      const url = new URL(link.getAttribute('href')!, 'http://localhost');
-      expect(url.pathname).toBe('/cases');
-      expect(url.searchParams.get('stage')).toBe(STAGES[index]);
+  it('renders all 7 canonical stages, in order, as collapsed toggle buttons', () => {
+    render(<CasesByStagePanel allCasesCount={142} rows={ROWS} casesByStage={{}} />);
+    STAGES.forEach((label, index) => {
+      const button = screen.getByRole('button', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      expect(button.textContent).toContain(String(index));
     });
   });
 
-  it("renders each stage's server-provided count", () => {
-    render(<CasesByStagePanel allCasesCount={142} rows={ROWS} />);
-    expect(screen.getByRole('link', { name: /^Completed/ }).textContent).toContain('6');
+  it('clicking a closed stage expands it, showing its real cases and "Open full stage list →"', () => {
+    render(<CasesByStagePanel allCasesCount={2} rows={ROWS} casesByStage={CASES_BY_STAGE} />);
+    const toggle = screen.getByRole('button', { name: /^Completed/ });
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Robert Ellison')).toBeInTheDocument();
+    expect(screen.getByText('Maria Gomez')).toBeInTheDocument();
+    const openFull = screen.getByRole('link', { name: 'Open full stage list →' });
+    const url = new URL(openFull.getAttribute('href')!, 'http://localhost');
+    expect(url.pathname).toBe('/cases');
+    expect(url.searchParams.get('stage')).toBe('Completed');
   });
 
-  it('renders no count suffix for a stage while counts are still loading (count: null)', () => {
-    const loadingRows: StageBarRow[] = [{ label: 'Completed', count: null, pct: 0 }];
-    render(<CasesByStagePanel allCasesCount={null} rows={loadingRows} />);
-    expect(screen.getByRole('link', { name: 'Completed' }).textContent).toBe('Completed');
+  it('each preview case row links to its own existing Case Detail route', () => {
+    render(<CasesByStagePanel allCasesCount={2} rows={ROWS} casesByStage={CASES_BY_STAGE} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
+    expect(screen.getByRole('link', { name: /Robert Ellison/ })).toHaveAttribute('href', '/cases/case-1');
+    expect(screen.getByRole('link', { name: /Maria Gomez/ })).toHaveAttribute('href', '/cases/case-2');
   });
 
-  it('never renders a bar fill for a zero-count stage', () => {
-    const zeroRows: StageBarRow[] = [{ label: 'Completed', count: 0, pct: 0 }];
-    const { container } = render(<CasesByStagePanel allCasesCount={0} rows={zeroRows} />);
-    expect(container.querySelector('[style*="width"]')).toBeNull();
+  it('clicking a different stage closes the previously open one — only one stage open at a time', () => {
+    render(<CasesByStagePanel allCasesCount={2} rows={ROWS} casesByStage={CASES_BY_STAGE} />);
+    const completed = screen.getByRole('button', { name: /^Completed/ });
+    const firstCall = screen.getByRole('button', { name: /^First Call & Payment/ });
+
+    fireEvent.click(completed);
+    expect(completed).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(firstCall);
+    expect(firstCall).toHaveAttribute('aria-expanded', 'true');
+    expect(completed).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Robert Ellison')).not.toBeInTheDocument();
+  });
+
+  it('clicking the open stage again collapses it', () => {
+    render(<CasesByStagePanel allCasesCount={2} rows={ROWS} casesByStage={CASES_BY_STAGE} />);
+    const toggle = screen.getByRole('button', { name: /^Completed/ });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Robert Ellison')).not.toBeInTheDocument();
+  });
+
+  it('opening a stage with no cases shows the compact empty state, never a case list or large empty card', () => {
+    render(<CasesByStagePanel allCasesCount={0} rows={ROWS} casesByStage={{}} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
+    expect(screen.getByText('No cases in this stage')).toBeInTheDocument();
+  });
+
+  it('renders no count for a stage while counts are still loading (count: null)', () => {
+    const loadingRows: StageBarRow[] = [{ label: 'Completed', count: null, pct: 0, displayStage: 6 }];
+    render(<CasesByStagePanel allCasesCount={null} rows={loadingRows} casesByStage={{}} />);
+    const button = screen.getByRole('button', { name: /^Completed/ });
+    expect(within(button).getByText('—')).toBeInTheDocument();
   });
 });

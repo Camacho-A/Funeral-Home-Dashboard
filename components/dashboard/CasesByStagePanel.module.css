@@ -1,177 +1,258 @@
+/* SOLIS true redesign, Phase 1 (2026-10): no card wrapper (the approved
+   design's own "cards kept only for true objects" direction) — this
+   panel is now plain content inside the dashboard's right column,
+   separated from its sibling by the page grid's own gap alone. */
 .panel {
-  background: var(--color-surface-card);
-  border-radius: var(--radius-xl);
-  padding: var(--space-9) var(--space-10);
-  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
 }
 
 .title {
   font-size: var(--font-size-15);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--space-7);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary-cool);
 }
 
-/* The "All Cases" navigation row (Case list scalability, Phase 3 — UX
-   correction) — visually distinct from the stage rows below it since it
-   isn't a workflow stage, just the entry point into the unfiltered case
-   directory. */
-.allCasesRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-4) var(--space-3);
-  margin: 0 calc(var(--space-3) * -1) var(--space-6);
-  border-radius: var(--radius-sm);
-  background: var(--color-brand-tint);
+.allCasesLink {
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-link-cool);
   text-decoration: none;
-  color: inherit;
+  cursor: pointer;
 }
 
-.allCasesRow:hover {
-  background: var(--color-surface-hover);
+.allCasesLink:hover {
+  text-decoration: underline;
 }
 
-.allCasesRow:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 1px;
+.allCasesLink:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: 2px;
 }
 
-.allCasesLabel {
-  font-size: var(--font-size-13-5);
-  font-weight: var(--font-weight-bold);
+/* A compact presence overview — one equal-width segment per stage that
+   currently has cases (see CasesByStagePanel.tsx's own comment on why
+   this isn't a magnitude-proportional bar). */
+.overviewBar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--color-surface-muted-cool);
+  margin-bottom: var(--space-7);
+  gap: 2px;
 }
 
-.allCasesCount {
-  font-size: var(--font-size-13-5);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-secondary);
+.overviewBarEmpty {
+  flex: 1;
+}
+
+.overviewSegment {
+  flex: 1;
+  background: var(--color-brand-solid-cool);
+}
+
+.overviewSegmentDanger {
+  flex: 1;
+  background: var(--color-danger-dot-cool);
 }
 
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 9px; /* literal — sits exactly between --space-4 (8px) and --space-5 (10px), no existing step matches it */
 }
 
 .row {
   display: flex;
-  flex-wrap: wrap;
+  width: 100%;
   align-items: center;
-  gap: var(--space-3) var(--space-5);
-  cursor: pointer;
-  padding: var(--space-2) var(--space-3);
-  margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
-  border-radius: var(
-    --radius-sm
-  ); /* literal 8px in the prototype, consolidated into --radius-sm per the Phase 1 8px/9px cluster */
+  gap: var(--space-5);
+  padding: 9px var(--space-4);
+  margin: 0 calc(var(--space-4) * -1);
+  border-radius: 7px;
   background: transparent;
-  text-decoration: none;
-  color: inherit;
-}
-
-/* Mobile (2026-10) — `.label`'s own fixed 260px (chosen so the longest
-   canonical stage label fits on one line, see that rule's own comment)
-   plus the progress track and count no longer fit on one row below
-   ~430px. `.row`'s own `flex-wrap` already lets the label drop to its
-   own line once it can't fit; this just lets the track+count pair
-   (which would otherwise also try to claim the leftover sliver of the
-   first line) explicitly join it there instead, so the result is a
-   clean two-line row, not a three-way squeeze. */
-@media (max-width: 430px) {
-  .track {
-    flex-basis: 100%;
-  }
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
 }
 
 .row:hover {
-  background: var(--color-surface-hover);
+  background: var(--color-surface-hover-cool);
+}
+
+.rowOpen {
+  background: var(--color-surface-muted-cool);
 }
 
 .row:focus-visible {
-  outline: 2px solid var(--color-brand);
+  outline: 2px solid var(--color-brand-solid-cool);
   outline-offset: 1px;
 }
 
-.label {
-  /* Widened from the old 150px two-column layout (Case list scalability,
-     Phase 3 — UX correction): this panel now spans the Dashboard's full
-     content width, so the longest canonical stage label ("Permit &
-     Authorization Sent to Crematory") has room to sit on one line. */
-  width: 260px;
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   flex-shrink: 0;
-  font-size: var(--font-size-11);
-  color: var(--color-text-secondary);
-  line-height: var(--leading-tight);
+  background: var(--color-border-cool);
 }
 
-.track {
+.dot[data-variant='active'] {
+  background: var(--color-brand-solid-cool);
+}
+
+.dot[data-variant='danger'] {
+  background: var(--color-danger-dot-cool);
+}
+
+.label {
   flex: 1;
-  height: 6px;
-  border-radius: var(--space-2);
-  background: var(--color-surface-page);
+  font-size: var(--font-size-13);
+  color: var(--color-text-primary-cool);
+  min-width: 0;
 }
 
-.fill {
-  /* `.fill` is a <span>, not a flex item of `.row` (only `.track` is) — it
-     defaults to display:inline, which makes browsers ignore the width/height
-     set here entirely. Without this, the fill silently renders at 0×0 no
-     matter what percentage is passed in. */
-  display: block;
-  height: 100%;
-  border-radius: var(--space-2);
-  background: var(--color-brand);
+.labelMuted {
+  color: var(--color-text-faint-cool);
+  font-weight: var(--font-weight-regular);
 }
 
 .count {
-  width: 32px; /* was 16px — wide enough for 3-digit counts (e.g. "142") */
-  flex-shrink: 0;
-  text-align: right;
-  font-size: var(--font-size-12);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary-cool);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Dashboard mobile-friendliness pass (2026-09). `.label`'s fixed 260px
-   (plus the row's gaps and `.count`'s fixed 32px) adds up to a ~310px
-   minimum row width that doesn't shrink — comfortably fits the desktop/
-   tablet widths this panel was sized for, but on a narrow phone
-   viewport that minimum alone can exceed the panel's own available
-   width, forcing horizontal overflow. Below this breakpoint each row
-   stacks into two lines (the long canonical stage label on its own full
-   line, wrapping naturally — "Permit & Authorization Sent to Crematory"
-   — then the bar + count beneath it) instead of fighting for one
-   cramped line. Desktop/tablet (above this breakpoint) is completely
-   unchanged. */
+/* Doubled selector to beat `.count`'s own weight at equal specificity
+   regardless of source order (same technique TopBar.module.css's
+   `.newCaseButton.newCaseButton` already uses) — a zero-count stage
+   reads as --text-faint at regular weight, per the approved design. */
+.count.labelMuted {
+  font-weight: var(--font-weight-regular);
+}
+
+.chevron {
+  width: 12px;
+  flex-shrink: 0;
+  font-size: var(--font-size-10);
+  color: var(--color-text-faint-cool);
+  transition: transform 0.15s;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
+/* The Stage Preview — visually connected to its parent stage via a quiet
+   left rule + indent, never a second boxed card. */
+.preview {
+  margin: 2px 0 var(--space-5) 18px;
+  padding-left: var(--space-6);
+  border-left: 1px solid var(--color-border-cool);
+  display: flex;
+  flex-direction: column;
+}
+
+.empty {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-faint-cool);
+  padding: var(--space-3) 0;
+}
+
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  margin: 0 calc(var(--space-4) * -1);
+  border-radius: 7px;
+  text-decoration: none;
+  color: inherit;
+  min-height: 44px;
+}
+
+.previewRow:hover {
+  background: var(--color-surface-hover-cool);
+}
+
+.previewRow:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: -2px;
+}
+
+.previewCaseNo {
+  font-size: var(--font-size-11-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted-cool);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.previewName {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-13);
+  color: var(--color-text-primary-cool);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewUpdated {
+  flex-shrink: 0;
+  font-size: var(--font-size-12);
+  color: var(--color-text-faint-cool);
+}
+
+.openFull {
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-link-cool);
+  text-decoration: none;
+  padding: var(--space-3) var(--space-4);
+  margin: 0 calc(var(--space-4) * -1);
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.openFull:hover {
+  text-decoration: underline;
+}
+
+.openFull:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: -2px;
+}
+
+/* Dashboard mobile-friendliness pass, carried into Phase 1 (2026-10):
+   full 44px touch targets for both the stage toggle and preview rows —
+   this phase's own explicit mobile requirement for the Stage Preview. */
 @media (max-width: 560px) {
-  .panel {
-    padding: var(--space-9) var(--space-8);
-  }
-
-  .allCasesRow {
-    padding: var(--space-5) var(--space-4);
-  }
-
   .row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-    /* Larger than the desktop 4px/6px — a full-width, two-line row is a
-       more comfortable tap target on a touch screen. */
-    padding: var(--space-4) var(--space-4);
+    min-height: 44px;
   }
 
   .label {
-    width: auto;
+    white-space: normal;
   }
 
-  .track {
-    flex: none;
-    width: 100%;
-  }
-
-  .count {
-    width: auto;
-    text-align: left;
+  .openFull {
+    min-height: 44px;
   }
 }

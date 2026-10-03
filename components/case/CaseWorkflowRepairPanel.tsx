@@ -49,12 +49,20 @@ export function CaseWorkflowRepairPanel({ caseId }: { caseId: string }) {
   }
 
   return (
-    <div className={styles.panel}>
-      <span className={styles.label}>Case stuck or missing prerequisites?</span>
-      <Button variant="ghost" disabled={recalculate.isPending} onClick={() => setConfirmOpen(true)}>
+    <div className="sx-wf-repair">
+      <div>
+        <div style={{ fontSize: 13.5, fontWeight: 500 }}>Workflow repair</div>
+        <div className={styles.repairText}>Case stuck or missing prerequisites? Recalculate from its current form, payment and case data.</div>
+      </div>
+      <button type="button" className="sx-btn sx-btn-secondary" disabled={recalculate.isPending} onClick={() => setConfirmOpen(true)}>
         Recalculate Workflow
-      </Button>
-      {feedback && <div className={feedback.isError ? styles.error : styles.success}>{feedback.message}</div>}
+      </button>
+      {feedback && (
+        <div className={feedback.isError ? 'sx-bill-err' : 'sx-bill-success'}>
+          {!feedback.isError && '✓ '}
+          {feedback.message}
+        </div>
+      )}
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Recalculate Workflow">
         <p>Recalculate this case&apos;s workflow from its current form, payment, and case data?</p>

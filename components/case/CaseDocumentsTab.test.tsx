@@ -104,6 +104,17 @@ function mockOrganization(overrides: Partial<Organization> & { id: string }) {
   vi.mocked(organizationsService.get).mockResolvedValue({ name: 'Test Org', isActive: true, ...overrides });
 }
 
+/**
+ * SOLIS Tasks/Calendar/Settings phase, Addendum — every row action except
+ * the desktop "View" link now lives inside a RowMenu ("More actions for
+ * {fileName}"), closed by default. Opens it so the row's action items
+ * (role="menuitem") become queryable.
+ */
+function openRowMenu(fileName: string) {
+  const trigger = screen.getByRole('button', { name: `More actions for ${fileName}` });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+}
+
 beforeEach(() => {
   mockPermissions(['document.view', 'document.generate', 'document.upload', 'document.archive', 'signature.request', 'signature.read', 'signature.cancel']);
   mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
@@ -173,7 +184,11 @@ describe('CaseDocumentsTab — document list', () => {
     renderTab();
 
     expect(await screen.findByText('photo-id.pdf')).toBeInTheDocument();
-    expect(screen.getByText(/Uploaded file/)).toBeInTheDocument();
+    // SOLIS Tasks/Calendar/Settings phase: the "Uploaded files" group
+    // header's own text also contains the substring "Uploaded file", so a
+    // bare /Uploaded file/ regex now matches two nodes — scoped to the
+    // row's meta line specifically.
+    expect(screen.getByText(/^Uploaded file ·/)).toBeInTheDocument();
     expect(screen.getByText(/Uploaded by Chris/)).toBeInTheDocument();
   });
 
@@ -212,7 +227,8 @@ describe('CaseDocumentsTab — document list', () => {
     expect(viewLink).toHaveAttribute('target', '_blank');
     expect(viewLink).toHaveAttribute('rel', 'noopener noreferrer');
 
-    const downloadLink = within(row).getByRole('link', { name: 'Download' });
+    openRowMenu('Cremation Authorization.pdf');
+    const downloadLink = screen.getByRole('menuitem', { name: 'Download' });
     expect(downloadLink).toHaveAttribute('href', '/api/cases/case-1/documents/doc-1/download?organizationId=managed-cremations');
     expect(downloadLink).not.toHaveAttribute('target');
   });
@@ -234,6 +250,7 @@ describe('CaseDocumentsTab — document list', () => {
     renderTab();
 
     await screen.findByText('active.pdf');
+    openRowMenu('active.pdf');
     expect(screen.getAllByText('Download')).toHaveLength(1);
   });
 
@@ -246,6 +263,7 @@ describe('CaseDocumentsTab — document list', () => {
     renderTab();
 
     await screen.findByText('active.pdf');
+    openRowMenu('active.pdf');
     expect(screen.getAllByText('Regenerate')).toHaveLength(1);
   });
 
@@ -257,6 +275,10 @@ describe('CaseDocumentsTab — document list', () => {
     await screen.findByText('Cremation Authorization.pdf');
     expect(screen.queryByRole('button', { name: 'Generate Document' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Upload File' })).not.toBeInTheDocument();
+    // document.view only: the row still has a downloadable doc (View/
+    // Download/Print), so its "More actions" menu exists — Archive is
+    // simply never one of its items.
+    openRowMenu('Cremation Authorization.pdf');
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
 });
@@ -269,6 +291,7 @@ describe('CaseDocumentsTab — archive flow', () => {
     renderTab(SECOND_MOCK_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
+    openRowMenu('Cremation Authorization.pdf');
     fireEvent.click(screen.getByText('Archive'));
 
     const dialog = await screen.findByRole('dialog');
@@ -300,9 +323,10 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
     renderTab();
 
     await screen.findByText('Cremation Authorization.pdf');
-    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    openRowMenu('Cremation Authorization.pdf');
+    expect(screen.getByRole('menuitem', { name: 'Print' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Print' }));
     await waitFor(() => expect(mockPrintStoredDocument).toHaveBeenCalledTimes(1));
   });
 
@@ -312,8 +336,9 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
     renderTab();
 
     await screen.findByText('Cremation Authorization.pdf');
-    const downloadLink = screen.getByRole('link', { name: 'Download' }) as HTMLAnchorElement;
-    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    openRowMenu('Cremation Authorization.pdf');
+    const downloadLink = screen.getByRole('menuitem', { name: 'Download' }) as HTMLAnchorElement;
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Print' }));
 
     await waitFor(() => expect(mockPrintStoredDocument).toHaveBeenCalledTimes(1));
     expect(mockPrintStoredDocument).toHaveBeenCalledWith(downloadLink.getAttribute('href'), 'Cremation Authorization.pdf', 'Jane Doe', 'B2026-001');
@@ -333,7 +358,8 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
     renderTab();
 
     await screen.findByText('Cremation Authorization.pdf');
-    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    openRowMenu('Cremation Authorization.pdf');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Print' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/retrieve the document to print/);
   });
@@ -502,7 +528,8 @@ describe('Task #3 (2026-09) — Print All / Download All bulk case document acti
     renderTab();
 
     await screen.findByText('Statement.pdf');
-    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
+    openRowMenu('Statement.pdf');
+    expect(screen.getByRole('menuitem', { name: 'Download' })).toHaveAttribute(
       'href',
       expect.stringContaining('/api/cases/case-1/documents/doc-1/download'),
     );
@@ -513,7 +540,8 @@ describe('Task #3 (2026-09) — Print All / Download All bulk case document acti
     renderTab();
 
     await screen.findByText('Statement.pdf');
-    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    openRowMenu('Statement.pdf');
+    expect(screen.getByRole('menuitem', { name: 'Print' })).toBeInTheDocument();
   });
 });
 
@@ -524,7 +552,12 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     renderTab(DEFAULT_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Request Signature' })).not.toBeInTheDocument());
+    // The capability resolves asynchronously (useOrganizationRecord) — wait
+    // for the menu button itself to exist before opening it, so the menu's
+    // item list reflects the settled capability rather than a mid-fetch one.
+    await screen.findByRole('button', { name: 'More actions for Cremation Authorization.pdf' });
+    openRowMenu('Cremation Authorization.pdf');
+    expect(screen.queryByRole('menuitem', { name: 'Request Signature' })).not.toBeInTheDocument();
   });
 
   it('4: another organization with the capability absent (default) retains Request Signature', async () => {
@@ -533,7 +566,10 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     renderTab('org-other-signature-test');
 
     await screen.findByText('Cremation Authorization.pdf');
-    expect(await screen.findByRole('button', { name: 'Request Signature' })).toBeInTheDocument();
+    await waitFor(() => {
+      openRowMenu('Cremation Authorization.pdf');
+      expect(screen.getByRole('menuitem', { name: 'Request Signature' })).toBeInTheDocument();
+    });
   });
 
   it('5: another organization with the capability explicitly enabled retains Request Signature', async () => {
@@ -542,7 +578,10 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     renderTab('org-other-signature-test-2');
 
     await screen.findByText('Cremation Authorization.pdf');
-    expect(await screen.findByRole('button', { name: 'Request Signature' })).toBeInTheDocument();
+    await waitFor(() => {
+      openRowMenu('Cremation Authorization.pdf');
+      expect(screen.getByRole('menuitem', { name: 'Request Signature' })).toBeInTheDocument();
+    });
   });
 
   it("3/12/13/14: all other Documents actions (Download, Print, Regenerate) and document viewing remain available for Manors — Archive is the one action disabled (item #12, 2026-09)", async () => {
@@ -553,12 +592,16 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     renderTab(DEFAULT_ORGANIZATION_ID);
 
     await screen.findByText('Statement of Funeral Goods and Services Selected.pdf');
-    expect(screen.getByRole('link', { name: 'Download' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Request Signature' })).not.toBeInTheDocument());
+    await waitFor(() => {
+      openRowMenu('Statement of Funeral Goods and Services Selected.pdf');
+      expect(screen.getByRole('menuitem', { name: 'Download' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('menuitem', { name: 'Print' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Regenerate' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Request Signature' })).not.toBeInTheDocument();
   });
 
   it('no disabled/placeholder Request Signature button is left behind for Manors — the action is either fully available or fully absent', async () => {
@@ -568,8 +611,10 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
 
     await screen.findByText('Cremation Authorization.pdf');
     await waitFor(() => {
-      const disabledSignatureButtons = screen.queryAllByRole('button', { name: /signature/i }).filter((btn) => (btn as HTMLButtonElement).disabled);
-      expect(disabledSignatureButtons).toHaveLength(0);
+      openRowMenu('Cremation Authorization.pdf');
+      const disabledSignatureItems = screen.queryAllByRole('menuitem', { name: /signature/i }).filter((el) => (el as HTMLButtonElement).disabled);
+      expect(disabledSignatureItems).toHaveLength(0);
+      expect(screen.queryByRole('menuitem', { name: /signature/i })).not.toBeInTheDocument();
     });
   });
 });
@@ -582,6 +627,7 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     renderTab(DEFAULT_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
+    openRowMenu('Cremation Authorization.pdf');
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
 
@@ -592,6 +638,7 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     renderTab(DEFAULT_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
+    openRowMenu('Cremation Authorization.pdf');
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
 
@@ -602,6 +649,7 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     renderTab(DEFAULT_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
+    openRowMenu('Cremation Authorization.pdf');
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
 
@@ -612,6 +660,7 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     renderTab(SECOND_MOCK_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
+    openRowMenu('Cremation Authorization.pdf');
     expect(await screen.findByText('Archive')).toBeInTheDocument();
   });
 
@@ -622,6 +671,7 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     renderTab(SECOND_MOCK_ORGANIZATION_ID);
 
     await screen.findByText('Cremation Authorization.pdf');
+    openRowMenu('Cremation Authorization.pdf');
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
 
@@ -640,8 +690,9 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
     fireEvent.click(screen.getByRole('tab', { name: 'History' }));
     expect(await screen.findByText('old-scan.pdf')).toBeInTheDocument();
     expect(screen.getByText('Archived')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Download' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    openRowMenu('old-scan.pdf');
+    expect(screen.getByRole('menuitem', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Print' })).toBeInTheDocument();
     // Never re-offered for archiving again (it's already archived, not active).
     expect(screen.queryByText('Archive')).not.toBeInTheDocument();
   });
@@ -653,6 +704,7 @@ describe('CaseDocumentsTab — document Archive disabled for Manors (handwritten
 
     await screen.findByText('Cremation Authorization.pdf');
     await waitFor(() => {
+      openRowMenu('Cremation Authorization.pdf');
       const disabledArchiveButtons = screen.queryAllByText('Archive').filter((el) => (el as HTMLButtonElement).disabled);
       expect(disabledArchiveButtons).toHaveLength(0);
     });

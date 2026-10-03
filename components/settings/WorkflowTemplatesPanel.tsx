@@ -15,6 +15,9 @@ import styles from './WorkflowTemplatesPanel.module.css';
  * Organization Profile, Resources, ...). No behavior change: still the
  * same useWorkflowTemplates query, the same WorkflowTemplateList/
  * WorkflowEditor pairing, the same selection state shape.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5: renders inside SettingsShell
+ * now — own `.sx-settings-head` instead of relying on a page-level `<h1>`.
  */
 export function WorkflowTemplatesPanel() {
   const { data: templates = [], isPending: templatesPending } = useWorkflowTemplates();
@@ -24,12 +27,18 @@ export function WorkflowTemplatesPanel() {
 
   return (
     <div>
-      <p className={styles.description}>
-        Manage this organization&rsquo;s workflow stages and intake fields. Saving always creates a new version —
-        existing cases keep the version they were created under and are never affected.
-      </p>
+      <div className="sx-settings-head">
+        <h2 className="sx-settings-title">Workflow Templates</h2>
+        <p className="sx-settings-desc">
+          Manage this organization&rsquo;s workflow stages and intake fields. Saving always creates a new version — existing cases keep the version they were created under and are never affected.
+        </p>
+      </div>
       {templatesPending ? (
-        <p className={styles.loading}>Loading workflow templates…</p>
+        <div className="sx-loading" aria-busy="true">
+          <span className="sx-skeleton" style={{ width: '90%' }} />
+          <span className="sx-skeleton" style={{ width: '70%' }} />
+          <span className="sr-only">Loading workflow templates…</span>
+        </div>
       ) : (
         <div className={styles.columns}>
           <WorkflowTemplateList

@@ -1,0 +1,48 @@
+/*
+ * SOLIS true redesign — the "--solis-*" additive token family.
+ *
+ * Distinct from styles/tokens.css's own long-standing design-system
+ * tokens (--color-*, --font-*, --space-*, --radius-*): these are the
+ * small set of new custom properties introduced across the SOLIS Cases
+ * page, Recent Activity, and Case Detail visual fidelity passes
+ * (2026-10) — additive only, nothing here overrides an existing token's
+ * value, so no page outside those explicitly-touched components is
+ * affected by this file existing.
+ *
+ * Imported once, globally, from styles/globals.css (same mechanism that
+ * file already uses for tokens.css) — not scoped per-component, so every
+ * one of these only ever needs to be named here once.
+ */
+
+:root {
+  /* A lighter row-divider than --color-border (0.9 0 240) — "soft"
+     distinguishes it from that harder-edged default. Hue-240
+     zero-chroma, matching the existing neutral-surface family these
+     components' own text/link colors (--color-text-primary, etc.)
+     already use, rather than the separate Phase 1 cool-hue (255) shell
+     palette in tokens.css. */
+  --solis-border-soft: oklch(0.95 0 240);
+
+  /* The standard hover/interaction transition these components share —
+     named once rather than repeating the literal across each
+     .module.css. */
+  --solis-transition: background 0.12s ease;
+
+  /* Attention/overdue text — same value as tokens.css's own
+     --color-danger-text-cool, named separately since these components
+     don't otherwise pull from the cool-hue (255) shell palette. */
+  --solis-danger: oklch(0.5 0.15 25);
+
+  /* Positive/complete state (StageStepper's done dot/connector) — same
+     hue family as tokens.css's --color-success-dot-cool. Always
+     referenced with a `var(--solis-success, var(--color-success))`
+     fallback in the files that use it, so this definition is a refinement,
+     not a hard dependency. */
+  --solis-success: oklch(0.6 0.13 150);
+
+  /* The navy "selected"/active foreground text color — e.g. the Case
+     Detail header's stage chip — matching the same navy text tone
+     Sidebar's own selected nav-item state (--color-brand-text-cool)
+     already uses. */
+  --solis-selected-fg: oklch(0.28 0.08 255);
+}

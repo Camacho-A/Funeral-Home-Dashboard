@@ -103,7 +103,10 @@ describe('CaseScheduleTab', () => {
   it('shows a Cancelled section only when a cancelled appointment exists', async () => {
     vi.mocked(appointmentsClient.fetchCaseAppointments).mockResolvedValue([makeAppointment({ id: 'appt-2', status: 'cancelled', title: 'Cancelled Meeting' })]);
     renderTab();
-    expect(await screen.findByRole('heading', { name: 'Cancelled' })).toBeInTheDocument();
+    // SOLIS Final Phase §8.4: the section heading now also carries a
+    // "{n} appointment(s)" meta span, so its accessible name is no longer
+    // the bare word "Cancelled".
+    expect(await screen.findByRole('heading', { name: /^Cancelled/ })).toBeInTheDocument();
     expect(screen.getByText('Cancelled Meeting')).toBeInTheDocument();
   });
 
@@ -123,7 +126,11 @@ describe('CaseScheduleTab', () => {
     renderTab();
     await screen.findByText('Family Meeting');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    // SOLIS Final Phase §8.4: row actions (besides the inline "Confirm")
+    // moved into a shared "⋯" RowMenu — "Cancel" is now the menuitem
+    // "Cancel appointment", reached by opening the menu first.
+    fireEvent.click(screen.getByRole('button', { name: 'Family Meeting actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Cancel appointment' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel Appointment' }));
     await waitFor(() => expect(appointmentsClient.cancelAppointment).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'appt-1', undefined));
   });
@@ -133,7 +140,8 @@ describe('CaseScheduleTab', () => {
     vi.mocked(appointmentsClient.fetchCaseAppointments).mockResolvedValue([makeAppointment()]);
     renderTab();
     await screen.findByText('Family Meeting');
-    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Family Meeting actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Cancel appointment' })).not.toBeInTheDocument();
   });
 
   it('hides the Schedule Appointment button when the caller lacks schedule.create', async () => {
@@ -150,6 +158,7 @@ describe('CaseScheduleTab', () => {
     renderTab();
     await screen.findByText('Family Meeting');
     expect(screen.getByRole('button', { name: 'Schedule Appointment' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Family Meeting actions' }));
+    expect(screen.getByRole('menuitem', { name: 'Cancel appointment' })).toBeInTheDocument();
   });
 });

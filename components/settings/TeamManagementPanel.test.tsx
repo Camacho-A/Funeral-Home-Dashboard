@@ -44,6 +44,12 @@ const PENDING_INVITATION: PendingInvitation = {
   lastResentAt: null,
 };
 
+// SOLIS Tasks/Calendar/Settings phase, §3.5: row actions now live behind
+// a RowMenu ("Actions for {name}") instead of always-visible buttons.
+function openRowMenu(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }));
+}
+
 function renderPanel() {
   const queryClient = new QueryClient();
   return render(
@@ -83,13 +89,12 @@ describe('TeamManagementPanel — member list', () => {
   it("hides status-change controls for the caller's own row (self-disable/removal blocked in the UI)", async () => {
     renderPanel();
     await screen.findByText('Self Admin');
-    const selfRow = screen.getByText('Self Admin').closest('div')!.parentElement!;
-    expect(within(selfRow).queryByText('Disable')).not.toBeInTheDocument();
-    expect(within(selfRow).queryByText('Remove')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Actions for Self Admin' })).not.toBeInTheDocument();
 
-    const otherRow = screen.getByText('Other Member').closest('div')!.parentElement!;
-    expect(within(otherRow).getByText('Disable')).toBeInTheDocument();
-    expect(within(otherRow).getByText('Remove')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Actions for Other Member' })).toBeInTheDocument();
+    openRowMenu('Other Member');
+    expect(screen.getByRole('menuitem', { name: 'Disable' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Remove' })).toBeInTheDocument();
   });
 
   it('changes a member\'s role via the inline role select', async () => {
@@ -112,8 +117,8 @@ describe('TeamManagementPanel — member list', () => {
     renderPanel();
     await screen.findByText('Other Member');
 
-    const otherRow = screen.getByText('Other Member').closest('div')!.parentElement!;
-    fireEvent.click(within(otherRow).getByText('Disable'));
+    openRowMenu('Other Member');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Disable' }));
 
     expect(await screen.findByText(/will lose access to this organization/i)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Disable' }));
@@ -130,7 +135,8 @@ describe('TeamManagementPanel — member list', () => {
     renderPanel();
     await screen.findByText('Disabled Member');
 
-    fireEvent.click(screen.getByText('Reactivate'));
+    openRowMenu('Disabled Member');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reactivate' }));
 
     await waitFor(() =>
       expect(identityAuthClient.setMembershipStatusRequest).toHaveBeenCalledWith(
@@ -144,8 +150,8 @@ describe('TeamManagementPanel — member list', () => {
     renderPanel();
     await screen.findByText('Other Member');
 
-    const otherRow = screen.getByText('Other Member').closest('div')!.parentElement!;
-    fireEvent.click(within(otherRow).getByText('Remove'));
+    openRowMenu('Other Member');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
 
     expect(await screen.findByText(/will be permanently removed/i)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }));
@@ -162,8 +168,8 @@ describe('TeamManagementPanel — member list', () => {
     renderPanel();
     await screen.findByText('Other Member');
 
-    const otherRow = screen.getByText('Other Member').closest('div')!.parentElement!;
-    fireEvent.click(within(otherRow).getByText('Remove'));
+    openRowMenu('Other Member');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
 

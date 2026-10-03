@@ -17,6 +17,31 @@ function timeAgo(createdAt: string): string {
   return new Date(createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+type GlyphKind = 'download' | 'regenerate' | 'upload' | 'payment' | 'checklist';
+
+/**
+ * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+ * Each row's glyph is now a CSS `::before` pseudo-element keyed on a
+ * `data-kind` attribute (see RecentActivityPanel.module.css) rather than
+ * a rendered DOM node — adds no text, so screen readers/tests see only
+ * the real content. Classified from the already-resolved DISPLAY
+ * description (after resolveActivityDisplayDescription's own "Checklist
+ * updated" mapping), matching the exact persisted description prefixes
+ * services/activityService.ts actually writes ("Document downloaded",
+ * "Document regenerated", "Document uploaded: …", "Payment …"). An
+ * unmatched description renders no `data-kind` at all, falling back to
+ * the CSS's own default bullet glyph — never filtering which events
+ * appear, only choosing a glyph for the ones already shown.
+ */
+function glyphKindFor(description: string): GlyphKind | undefined {
+  if (description.startsWith('Document downloaded')) return 'download';
+  if (description.startsWith('Document regenerated')) return 'regenerate';
+  if (description.startsWith('Document uploaded')) return 'upload';
+  if (description.startsWith('Payment')) return 'payment';
+  if (description === 'Checklist updated') return 'checklist';
+  return undefined;
+}
+
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). Previously
  * rendered `services/__mocks__/fixtures.ts`'s static `activityFeedFixtures`
@@ -47,6 +72,13 @@ function timeAgo(createdAt: string): string {
  * `services/activityService.ts#attachActorDisplayNames`), never from the
  * signed-in viewer, so a historical entry always shows who actually
  * performed it rather than whoever is currently looking at the Dashboard.
+ *
+ * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
+ * a CSS grid row (glyph | case#+description | actor · time), the case
+ * number as a `--color-link`-colored tag, and a dedicated `.rowEmpty`
+ * state — replacing the prior flex row/tinted-chip treatment. Same data,
+ * same `resolveActivityDisplayDescription`/`activityActorLabel` calls,
+ * same click-safety rule below — only the layout changed.
  */
 export function RecentActivityPanel() {
   const { organizationId } = useOrganization();
@@ -69,18 +101,20 @@ export function RecentActivityPanel() {
     <div className={styles.card}>
       <div className={styles.title}>Recent activity</div>
       <div className={styles.list}>
-        {entries.length === 0 && <div className={styles.row}>No recent activity.</div>}
+        {entries.length === 0 && <div className={`${styles.row} ${styles.rowEmpty}`}>No recent activity.</div>}
         {entries.map((entry) => {
           const caseNumber = entry.caseId ? caseNumberById.get(entry.caseId) : undefined;
+          const description = resolveActivityDisplayDescription(entry);
+          const kind = glyphKindFor(description);
           const rowContent = (
             <>
               <div className={styles.rowMain}>
                 {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
-                <span className={styles.what}>{resolveActivityDisplayDescription(entry)}</span>
+                <span className={styles.what}>{description}</span>
               </div>
-              <div className={styles.when}>
+              <span className={styles.when}>
                 {activityActorLabel(entry)} · {timeAgo(entry.createdAt)}
-              </div>
+              </span>
             </>
           );
           // Clickable only when caseId resolves to a Case the viewer is
@@ -92,13 +126,13 @@ export function RecentActivityPanel() {
           // navigating to a fabricated/unauthorized URL.
           if (entry.caseId && caseNumber) {
             return (
-              <Link key={entry.id} href={`/cases/${entry.caseId}`} className={`${styles.row} ${styles.rowLink}`}>
+              <Link key={entry.id} href={`/cases/${entry.caseId}`} data-kind={kind} className={`${styles.row} ${styles.rowLink}`}>
                 {rowContent}
               </Link>
             );
           }
           return (
-            <div key={entry.id} className={styles.row}>
+            <div key={entry.id} data-kind={kind} className={styles.row}>
               {rowContent}
             </div>
           );

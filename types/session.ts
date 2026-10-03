@@ -21,4 +21,12 @@
 export type Session = {
   staffId: string | null;
   displayName: string;
+  /** SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
+      The approved design's avatar menu shows the signed-in email
+      alongside the name. Already-trusted, already-available data —
+      `AuthSession.user.email` — threaded through from
+      app/(portal)/layout.tsx; never fabricated. Optional (not every
+      existing call site/test constructs one) so a caller with no email
+      simply omits the line, never a placeholder. */
+  email?: string;
 };

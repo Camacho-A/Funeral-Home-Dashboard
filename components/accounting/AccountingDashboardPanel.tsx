@@ -3,13 +3,11 @@
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useBalanceSheetReport, useArAgingReport, useJournalEntries } from '@/hooks/useAccounting';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import styles from './AccountingDashboardPanel.module.css';
 
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 function formatCents(amount: number): string {
-  return `$${(amount / 100).toFixed(2)}`;
+  return currency.format(amount / 100);
 }
 
 /**
@@ -41,39 +39,43 @@ export function AccountingDashboardPanel() {
 
   return (
     <div>
-      <h2 className={styles.title}>Accounting</h2>
-      <div className={styles.stats}>
-        <Card variant="elevated" className={styles.statCard}>
-          <span className={styles.statLabel}>Cash position</span>
-          <span className={styles.statValue}>{formatCents(cashPosition)}</span>
-        </Card>
-        <Card variant="elevated" className={styles.statCard}>
-          <span className={styles.statLabel}>Open accounts receivable</span>
-          <span className={styles.statValue}>{formatCents(openAr)}</span>
-        </Card>
-        <Card variant="elevated" className={styles.statCard}>
-          <span className={styles.statLabel}>Entries pending review</span>
-          <span className={styles.statValue}>{draftEntries.length}</span>
-        </Card>
+      <div className="sx-kpis">
+        <div className="sx-kpi">
+          <span className="sx-kpi-label">Cash position</span>
+          <span className="sx-kpi-value">{formatCents(cashPosition)}</span>
+        </div>
+        <div className="sx-kpi">
+          <span className="sx-kpi-label">Open accounts receivable</span>
+          <span className="sx-kpi-value">{formatCents(openAr)}</span>
+        </div>
+        <div className="sx-kpi">
+          <span className="sx-kpi-label">Entries pending review</span>
+          <span className="sx-kpi-value">{draftEntries.length}</span>
+        </div>
       </div>
 
-      <h3 className={styles.sectionTitle}>Drafts pending review</h3>
+      <h2 className="sx-section-title">
+        Drafts pending review
+        <a href="/accounting/journal-entries" className="sx-link" style={{ fontSize: 12.5, fontWeight: 500 }}>
+          Journal entries →
+        </a>
+      </h2>
       {draftEntries.length === 0 ? (
         <EmptyState message="No manual entries are waiting for review." />
       ) : (
-        <Card className={styles.card}>
-          <div className={styles.list}>
+        <table className="sx-table">
+          <tbody>
             {draftEntries.map((entry) => (
-              <div key={entry.id} className={styles.row}>
-                <div className={styles.identity}>
-                  <span className={styles.name}>{entry.memo}</span>
-                  <span className={styles.meta}>{entry.entryDate.slice(0, 10)}</span>
-                </div>
-                <Badge variant="neutral">draft</Badge>
-              </div>
+              <tr key={entry.id}>
+                <td className="sx-mono">{entry.entryDate.slice(0, 10)}</td>
+                <td>{entry.memo}</td>
+                <td>
+                  <span className="sx-status">Draft</span>
+                </td>
+              </tr>
             ))}
-          </div>
-        </Card>
+          </tbody>
+        </table>
       )}
     </div>
   );

@@ -2,11 +2,9 @@
 
 import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
 import type { RbacRole, RbacMember } from '@/lib/identityAuthClient';
 import { useAssignRole } from '@/hooks/useRbac';
-import styles from './AssignRoleDialog.module.css';
 
 /**
  * Phase 22 (Role-Based Access Control). "Assign Role Dialog" — picks a
@@ -15,6 +13,9 @@ import styles from './AssignRoleDialog.module.css';
  * the target role actually resolves for this organization; a rejected
  * request surfaces its message here rather than the dialog assuming
  * success.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S3): restyled with
+ * the previous phase's form system (§3.3) — same fields/validation/handler.
  */
 export function AssignRoleDialog({
   open,
@@ -48,48 +49,62 @@ export function AssignRoleDialog({
 
   return (
     <Modal open={open} onClose={onClose} title="Assign Role">
-      <form className={styles.form} onSubmit={handleSubmit}>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="assign-role-member">
-            Member
-          </label>
-          <SelectField id="assign-role-member" value={targetIdentityId} onChange={(e) => setTargetIdentityId(e.target.value)} required>
-            <option value="" disabled>
-              Select a member…
-            </option>
-            {members.map((member) => (
-              <option key={member.identityId} value={member.identityId}>
-                {member.displayName} — currently {member.role}
-              </option>
-            ))}
-          </SelectField>
+      <div className="sx-modal-header">
+        <h2 className="sx-modal-title">Assign Role</h2>
+        <button type="button" className="sx-icon-btn" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </div>
+      <form onSubmit={handleSubmit}>
+        <div className="sx-modal-body">
+          <div className="sx-form-grid">
+            <div className="sx-field sx-span-all">
+              <label className="sx-label" htmlFor="assign-role-member">
+                Member
+              </label>
+              <SelectField className="sx-select" id="assign-role-member" value={targetIdentityId} onChange={(e) => setTargetIdentityId(e.target.value)} required>
+                <option value="" disabled>
+                  Select a member…
+                </option>
+                {members.map((member) => (
+                  <option key={member.identityId} value={member.identityId}>
+                    {member.displayName} — currently {member.role}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="sx-field sx-span-all">
+              <label className="sx-label" htmlFor="assign-role-role">
+                Role
+              </label>
+              <SelectField className="sx-select" id="assign-role-role" value={roleKey} onChange={(e) => setRoleKey(e.target.value)} required>
+                <option value="" disabled>
+                  Select a role…
+                </option>
+                {roles.map((role) => (
+                  <option key={role.id} value={role.key}>
+                    {role.name}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          </div>
+
+          {error && (
+            <div className="sx-form-banner sx-form-banner-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="assign-role-role">
-            Role
-          </label>
-          <SelectField id="assign-role-role" value={roleKey} onChange={(e) => setRoleKey(e.target.value)} required>
-            <option value="" disabled>
-              Select a role…
-            </option>
-            {roles.map((role) => (
-              <option key={role.id} value={role.key}>
-                {role.name}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-
-        {error && <span className={styles.error}>{error}</span>}
-
-        <div className={styles.actions}>
-          <Button type="button" variant="ghost" onClick={onClose}>
+        <div className="sx-modal-footer">
+          <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
             Cancel
-          </Button>
-          <Button type="submit" disabled={!targetIdentityId || !roleKey || assignRole.isPending}>
+          </button>
+          <button type="submit" className="sx-btn sx-btn-primary" disabled={!targetIdentityId || !roleKey || assignRole.isPending}>
             Assign
-          </Button>
+          </button>
         </div>
       </form>
     </Modal>

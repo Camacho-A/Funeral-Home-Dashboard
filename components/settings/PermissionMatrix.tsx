@@ -1,7 +1,6 @@
 'use client';
 
 import { Checkbox } from '@/components/ui/Checkbox';
-import styles from './PermissionMatrix.module.css';
 
 export type PermissionMatrixEntry = { key: string; category: string; description: string };
 
@@ -12,6 +11,11 @@ export type PermissionMatrixEntry = { key: string; category: string; description
  * default role) and interactive (Role Editor, editing a custom role's
  * permission set) — `onToggle` being provided at all is what switches
  * between the two; this component never knows *why* it's read-only.
+ *
+ * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S3): `.sx-perm-group`/
+ * `.sx-perm-row`, each row showing the label plus its key in `.sx-perm-key`
+ * — same grouping (by category, the only grouping this component ever
+ * had), same checkbox inputs/handlers.
  */
 export function PermissionMatrix({
   permissions,
@@ -27,24 +31,25 @@ export function PermissionMatrix({
   const categories = Array.from(new Set(permissions.map((p) => p.category))).sort();
 
   return (
-    <div className={styles.matrix}>
+    <div>
       {categories.map((category) => (
-        <div key={category} className={styles.category}>
-          <span className={styles.categoryLabel}>{category}</span>
+        <div key={category} className="sx-perm-group">
+          <div className="sx-perm-group-title">{category}</div>
           {permissions
             .filter((p) => p.category === category)
             .map((permission) => {
               const granted = grantedKeys.has(permission.key);
               return (
-                <label key={permission.key} className={styles.row}>
+                <label key={permission.key} className="sx-perm-row">
                   <Checkbox
                     checked={granted}
                     onChange={onToggle ? () => onToggle(permission.key) : undefined}
                     disabled={disabled || !onToggle}
                     aria-label={permission.description}
                   />
-                  <span className={[styles.rowLabel, !onToggle && !granted ? styles.rowLabelDisabled : ''].filter(Boolean).join(' ')}>
+                  <span>
                     {permission.description}
+                    <span className="sx-perm-key">{permission.key}</span>
                   </span>
                 </label>
               );

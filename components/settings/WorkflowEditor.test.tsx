@@ -305,7 +305,7 @@ describe('WorkflowEditor — intake field builder (Phase 19)', () => {
     renderEditor();
     await screen.findByText('Standard Cremation Workflow');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add intake field' }));
     fireEvent.click(screen.getByRole('button', { name: /save as new version/i }));
 
     await waitFor(() => expect(workflowTemplatesService.createVersion).toHaveBeenCalled());
@@ -319,7 +319,7 @@ describe('WorkflowEditor — intake field builder (Phase 19)', () => {
     renderEditor();
     await screen.findByText('Standard Cremation Workflow');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add intake field' }));
     fireEvent.click(screen.getByRole('button', { name: /save as new version/i }));
 
     await waitFor(() => expect(workflowTemplatesService.createVersion).toHaveBeenCalled());

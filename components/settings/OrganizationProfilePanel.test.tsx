@@ -193,7 +193,7 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
     renderPanel();
 
     expect(await screen.findByText('No organization logo uploaded.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upload Logo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload logo' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remove Logo' })).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /logo/i })).not.toBeInTheDocument();
   });
@@ -206,7 +206,7 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
 
     const img = await screen.findByRole('img', { name: "MANOR'S CREMATION logo" });
     expect(img).toHaveAttribute('src', 'https://example.com/manors-logo.png');
-    expect(screen.getByRole('button', { name: 'Change Logo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change logo' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Logo' })).toBeInTheDocument();
     expect(screen.queryByText('No organization logo uploaded.')).not.toBeInTheDocument();
   });
@@ -228,7 +228,7 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
     });
     renderPanel();
 
-    await screen.findByRole('button', { name: 'Upload Logo' });
+    await screen.findByRole('button', { name: 'Upload logo' });
     const fileInput = screen.getByLabelText('Upload organization logo') as HTMLInputElement;
     const file = new File(['fake bytes'], 'logo.png', { type: 'image/png' });
     fireEvent.change(fileInput, { target: { files: [file] } });

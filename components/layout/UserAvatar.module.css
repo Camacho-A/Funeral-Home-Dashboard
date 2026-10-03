@@ -1,15 +1,17 @@
+/* SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
+   26px circle, cool-neutral palette, matching the approved design's
+   exact avatar sizing (was 36px / warm-hue brand tint). Only consumer is
+   AccountMenu's own trigger. */
 .avatar {
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--radius-full);
-  background: var(--color-brand-tint);
+  background: oklch(0.9 0.03 255);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-size-12-5);
-  font-weight: var(--font-weight-bold);
-  color: oklch(
-    0.3 0.09 265
-  ); /* single-use variant of the brand hue, distinct enough from --color-brand/--color-brand-hover to keep as-is rather than force a third brand text token */
+  font-size: var(--font-size-11);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-brand-text-cool, oklch(0.28 0.08 255));
   flex-shrink: 0;
 }
