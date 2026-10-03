@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:oklch(0.95 0.003 255);font-family:'Work Sans',system-ui,sans-serif;color:oklch(0.22 0.012 255);-webkit-font-smoothing:antialiased}
+a{color:oklch(0.36 0.09 255);text-decoration:none}
+a:hover{color:oklch(0.28 0.09 255);text-decoration:underline}
+*{box-sizing:border-box}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</helmet>
+
+
+<section style="padding:48px;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:900px">
+    <div style="font-size:13px;font-weight:600;color:oklch(0.5 0.012 255)">SOLIS true redesign · Phase 2</div>
+    <div style="font-size:28px;font-weight:600;letter-spacing:-0.02em">Cases list</div>
+    <div style="font-size:14px;line-height:1.55;color:oklch(0.45 0.012 255);text-wrap:pretty">Built from your sketch, on the Phase 1 shell. Try the search box.</div>
+  </div>
+  <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+    <div id="2a" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:white;background:oklch(0.32 0.08 255);padding:3px 8px;border-radius:6px">2a</span><span style="font-size:13px;font-weight:500;color:oklch(0.45 0.012 255)">Desktop · 1512px</span></div>
+      <div style="width:1512px;height:760px;background:white;display:flex;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px oklch(0 0 0 / 0.06),0 12px 40px oklch(0 0 0 / 0.06)">
+        <aside style="width:236px;flex-shrink:0;background:oklch(0.982 0.003 255);border-right:1px solid oklch(0.925 0.004 255);display:flex;flex-direction:column;padding:14px 12px">
+          <div style="display:flex;align-items:center;gap:10px;height:40px;padding:0 8px;margin-bottom:18px">
+            <img src="public/brand/soliscode-mark.png" alt="SOLIS" style="width:26px;height:26px;object-fit:contain">
+            <div style="font-size:15px;font-weight:700;letter-spacing:0.02em">SOLIS</div>
+          </div>
+
+          <nav style="display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;background:oklch(0.935 0.014 255);color:oklch(0.28 0.08 255);font-size:13.5px;font-weight:600;cursor:pointer">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"></rect><rect x="9" y="2" width="5" height="5" rx="1"></rect><rect x="2" y="9" width="5" height="5" rx="1"></rect><rect x="9" y="9" width="5" height="5" rx="1"></rect></svg>Dashboard
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;color:oklch(0.38 0.012 255);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s" style-hover="background:oklch(0.955 0.005 255)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"></rect><path d="M5.5 8l2 2 3-4"></path></svg>Tasks
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;color:oklch(0.38 0.012 255);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s" style-hover="background:oklch(0.955 0.005 255)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="3.5" width="11" height="10" rx="2"></rect><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"></path></svg>Calendar
+            </div>
+          </nav>
+
+          <div style="font-size:11.5px;font-weight:500;color:oklch(0.58 0.01 255);padding:20px 10px 6px">Insights</div>
+          <nav style="display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;color:oklch(0.38 0.012 255);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s" style-hover="background:oklch(0.955 0.005 255)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13V8M8 13V3M13 13V6"></path></svg>Reports
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;color:oklch(0.38 0.012 255);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s" style-hover="background:oklch(0.955 0.005 255)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8.5" rx="1.5"></rect><path d="M2 7h12"></path></svg>Accounting
+            </div>
+          </nav>
+
+          <div style="height:1px;background:oklch(0.925 0.004 255);margin:16px 6px"></div>
+          <div style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;color:oklch(0.38 0.012 255);font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s" style-hover="background:oklch(0.955 0.005 255)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"></circle><circle cx="8" cy="8" r="5.5"></circle></svg>Settings
+          </div>
+
+          <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;border:1px solid oklch(0.925 0.004 255);background:white">
+            <img src="public/brand/manors-logo.png" alt="Manor's Cremation" style="width:30px;height:30px;object-fit:contain;flex-shrink:0">
+            <div style="min-width:0">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Manor's Cremation</div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:oklch(0.52 0.012 255);margin-top:1px"><span style="width:6px;height:6px;border-radius:50%;background:oklch(0.62 0.14 150)"></span>1 staff online</div>
+            </div>
+          </div>
+        </aside>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+          <header style="height:56px;flex-shrink:0;border-bottom:1px solid oklch(0.925 0.004 255);display:flex;align-items:center;gap:12px;padding:0 24px">
+            <div style="flex:1;max-width:460px;height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:8px;background:oklch(0.97 0.003 255);border:1px solid oklch(0.93 0.004 255);color:oklch(0.55 0.01 255);font-size:13px">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+              <span style="flex:1">Search by name, phone, tag number…</span>
+              <span style="font-size:11px;font-weight:500;padding:1px 6px;border-radius:5px;border:1px solid oklch(0.9 0.004 255);background:white">⌘K</span>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex;align-items:center;gap:2px">
+              <span style="font-size:13px;font-weight:500;color:oklch(0.4 0.012 255);padding:7px 10px;border-radius:7px;cursor:pointer" style-hover="background:oklch(0.96 0.004 255)">Audit</span>
+              <span style="font-size:13px;font-weight:500;color:oklch(0.4 0.012 255);padding:7px 10px;border-radius:7px;cursor:pointer" style-hover="background:oklch(0.96 0.004 255)">Templates</span>
+            </div>
+            <div style="width:1px;height:20px;background:oklch(0.91 0.004 255)"></div>
+            <div title="Notifications" style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:oklch(0.42 0.012 255);cursor:pointer" style-hover="background:oklch(0.96 0.004 255)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 11V7a4 4 0 018 0v4l1 1.5H3L4 11z"></path><path d="M6.5 14h3"></path></svg>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:oklch(0.32 0.08 255);color:white;font-size:13px;font-weight:600;cursor:pointer;transition:background .12s" style-hover="background:oklch(0.27 0.08 255)" style-active="transform:translateY(1px)">
+              <span style="font-size:15px;line-height:1">+</span>New Case
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 6px 0 4px;border-radius:8px;cursor:pointer" style-hover="background:oklch(0.96 0.004 255)">
+              <div style="width:26px;height:26px;border-radius:50%;background:oklch(0.9 0.03 255);color:oklch(0.3 0.08 255);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center">AC</div>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="oklch(0.5 0.01 255)" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"></path></svg>
+            </div>
+          </header>
+          <main style="flex:1;overflow:hidden;padding:32px 40px">
+            <div style="max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:20px">
+              <div style="display:flex;align-items:baseline;gap:12px">
+                <div style="font-size:26px;font-weight:600;letter-spacing:-0.02em">Cases</div>
+                <div style="font-size:14px;color:oklch(0.52 0.012 255)">{{ activeCount }} active</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;max-width:420px;height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:8px;border:1px solid oklch(0.91 0.004 255);background:white">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="oklch(0.55 0.01 255)" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+                  <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Search cases…" style="flex:1;border:none;outline:none;font-family:inherit;font-size:13px;background:transparent;color:oklch(0.22 0.012 255)">
+                </div>
+                <div style="flex:1"></div>
+                <div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;border:1px solid oklch(0.91 0.004 255);background:white;font-size:13px;font-weight:500;color:oklch(0.35 0.012 255);cursor:pointer;transition:background .12s" style-hover="background:oklch(0.975 0.003 255)">Stage<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="oklch(0.5 0.01 255)" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"></path></svg></div>
+                <div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;border:1px solid oklch(0.91 0.004 255);background:white;font-size:13px;font-weight:500;color:oklch(0.35 0.012 255);cursor:pointer;transition:background .12s" style-hover="background:oklch(0.975 0.003 255)">Status<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="oklch(0.5 0.01 255)" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"></path></svg></div>
+              </div>
+              <div>
+                <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 260px;gap:24px;padding:10px 12px;border-top:1px solid oklch(0.925 0.004 255);border-bottom:1px solid oklch(0.925 0.004 255)">
+                  <span style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 255)">Case</span><span style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 255)">Stage</span><span style="text-align:right"><span style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 255)">Progress</span></span>
+                </div>
+                <sc-for list="{{ rows }}" as="r" hint-placeholder-count="2">
+                  <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 260px;gap:24px;align-items:center;padding:14px 12px;border-bottom:1px solid oklch(0.95 0.003 255);cursor:pointer;transition:background .12s" style-hover="background:oklch(0.98 0.003 255)">
+                    <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                      <div style="width:32px;height:32px;border-radius:50%;background:oklch(0.94 0.02 255);color:oklch(0.32 0.08 255);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ r.initials }}</div>
+                      <div style="min-width:0">
+                        <div style="font-size:14px;font-weight:500">{{ r.name }}</div>
+                        <div style="font-size:12.5px;color:oklch(0.55 0.01 255);margin-top:2px;font-variant-numeric:tabular-nums">{{ r.caseNo }}</div>
+                      </div>
+                    </div>
+                    <div style="font-size:13.5px;color:oklch(0.3 0.012 255);line-height:1.4;text-wrap:pretty">{{ r.stage }}</div>
+                    <div style="display:flex;align-items:center;gap:12px;justify-content:flex-end">
+                      <div style="width:180px;height:6px;border-radius:3px;background:oklch(0.94 0.004 255);overflow:hidden"><div style="height:100%;width:{{ r.pctW }};background:oklch(0.42 0.09 255);border-radius:3px"></div></div>
+                      <span style="width:36px;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">{{ r.pctLabel }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ noRows }}" hint-placeholder-val="{{ false }}"><div style="padding:32px 12px;font-size:13.5px;color:oklch(0.55 0.01 255)">No cases match "{{ query }}"</div></sc-if>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <div id="2b" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:white;background:oklch(0.32 0.08 255);padding:3px 8px;border-radius:6px">2b</span><span style="font-size:13px;font-weight:500;color:oklch(0.45 0.012 255)">Mobile · 390px</span></div>
+      <div style="width:390px;height:760px;background:white;border-radius:22px;overflow:hidden;box-shadow:0 1px 3px oklch(0 0 0 / 0.06),0 12px 40px oklch(0 0 0 / 0.06);display:flex;flex-direction:column">
+        <div style="height:52px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid oklch(0.925 0.004 255)">
+          <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="oklch(0.3 0.012 255)" stroke-width="1.6"><path d="M3 5h12M3 9h12M3 13h12"></path></svg></div>
+          <img src="public/brand/soliscode-mark.png" alt="SOLIS" style="width:22px;height:22px;object-fit:contain">
+          <div style="font-size:14px;font-weight:700;letter-spacing:0.02em;flex:1">SOLIS</div>
+          <div style="height:34px;padding:0 12px;border-radius:8px;background:oklch(0.32 0.08 255);color:white;font-size:13px;font-weight:600;display:flex;align-items:center">+ New</div>
+        </div>
+        <div style="padding:20px 16px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:baseline;gap:10px"><div style="font-size:22px;font-weight:600;letter-spacing:-0.02em">Cases</div><div style="font-size:13.5px;color:oklch(0.52 0.012 255)">{{ activeCount }} active</div></div>
+          <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;border-radius:9px;border:1px solid oklch(0.91 0.004 255)">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="oklch(0.55 0.01 255)" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+            <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Search cases…" style="flex:1;border:none;outline:none;font-family:inherit;font-size:14px;background:transparent">
+          </div>
+          <div style="display:flex;gap:8px"><div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;border:1px solid oklch(0.91 0.004 255);background:white;font-size:13px;font-weight:500;color:oklch(0.35 0.012 255);cursor:pointer;transition:background .12s" style-hover="background:oklch(0.975 0.003 255)">Stage<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="oklch(0.5 0.01 255)" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"></path></svg></div><div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;border:1px solid oklch(0.91 0.004 255);background:white;font-size:13px;font-weight:500;color:oklch(0.35 0.012 255);cursor:pointer;transition:background .12s" style-hover="background:oklch(0.975 0.003 255)">Status<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="oklch(0.5 0.01 255)" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"></path></svg></div></div>
+          <div style="display:flex;flex-direction:column;border-top:1px solid oklch(0.925 0.004 255)">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="2">
+              <div style="display:flex;flex-direction:column;gap:10px;padding:14px 0;border-bottom:1px solid oklch(0.95 0.003 255)">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div style="width:32px;height:32px;border-radius:50%;background:oklch(0.94 0.02 255);color:oklch(0.32 0.08 255);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ r.initials }}</div>
+                  <div style="flex:1;min-width:0"><div style="font-size:14.5px;font-weight:500">{{ r.name }}</div><div style="font-size:12.5px;color:oklch(0.55 0.01 255)">{{ r.caseNo }}</div></div>
+                  <span style="font-size:13px;font-weight:600">{{ r.pctLabel }}</span>
+                </div>
+                <div style="font-size:13px;color:oklch(0.35 0.012 255);padding-left:44px">{{ r.stage }}</div>
+                <div style="margin-left:44px;height:5px;border-radius:3px;background:oklch(0.94 0.004 255);overflow:hidden"><div style="height:100%;width:{{ r.pctW }};background:oklch(0.42 0.09 255)"></div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="width:340px;display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.55;color:oklch(0.35 0.012 255);padding-top:34px">
+      <div style="font-size:14px;font-weight:600;color:oklch(0.22 0.012 255)">Implementation notes</div>
+      <div><b style="font-weight:600">Data.</b> Only existing fields: name, case number, current stage, and the progress % SOLIS already shows. No owner, next action or SLA columns.</div>
+      <div><b style="font-weight:600">Names.</b> Shown in title case through a presentation helper. Stored values are untouched.</div>
+      <div><b style="font-weight:600">Initials.</b> Taken from the displayed name. Neutral navy tint, not color-coded.</div>
+      <div><b style="font-weight:600">Search.</b> Filters by name or case number using the existing search.</div>
+      <div><b style="font-weight:600">Stage ▾.</b> Lists the existing stages and navigates to the existing stage route. Routes don't change.</div>
+      <div><b style="font-weight:600">Status ▾.</b> Include only if SOLIS already has a status field (e.g. active / completed). Otherwise omit it.</div>
+      <div><b style="font-weight:600">Rows.</b> The whole row opens Case Detail as today. The "← Back to Dashboard" link is removed, since the sidebar handles navigation.</div>
+      <div><b style="font-weight:600">Layout.</b> A table with hairline dividers, no card wrapper, and a 1320px max width. On mobile, rows stack, with 44px touch targets.</div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { query: '' };
+  renderVals() {
+    const data = [
+      { name:'LOUIS BARBER', caseNo:'B2026-034', stage:'EDRS & Doctor / Cause of Death', pct:50 },
+      { name:'EMMA MORALES SILVA', caseNo:'B2026-035', stage:'DC Application Sent', pct:69 },
+    ];
+    const title = s => s.toLowerCase().replace(/(^|[\s'-])\S/g, m => m.toUpperCase());
+    const q = this.state.query.trim().toLowerCase();
+    const rows = data.filter(d => !q || d.name.toLowerCase().includes(q) || d.caseNo.toLowerCase().includes(q)).map(d => {
+      const name = title(d.name); const parts = name.split(' ');
+      return { ...d, name, initials: (parts[0][0] + parts[parts.length-1][0]).toUpperCase(), pctW: d.pct + '%', pctLabel: d.pct + '%' };
+    });
+    return { rows, noRows: rows.length === 0, activeCount: data.length, query: this.state.query, onQuery: e => this.setState({ query: e.target.value }) };
+  }
+}
+</script>
+</body>
+</html>
