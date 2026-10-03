@@ -131,31 +131,69 @@ describe('resolveActivityDisplayDescription (Task #4 follow-up, 2026-09)', () =>
 });
 
 /**
- * SOLIS true redesign, Phase 1 (2026-10). "Case updated (checklistState)"
- * — services/activityService.ts#recordCaseUpdated's description when the
- * only changed field is `checklistState` — exposed that internal field
- * name on the Dashboard's Recent Activity feed (the visual audit's own
- * finding). Keyed on the exact description text (not `eventType`, which
- * `case.updated` shares with every other field-change combination), so
- * only this one exact string is relabeled — never a multi-field update
- * that happens to include checklistState alongside something else.
+ * Raw-field-name leak fix (2026-10). `recordCaseUpdated` persists
+ * "Case updated (<field>[, <field>...])" for any field
+ * `validateAndPickCaseUpdate` accepts — the original fix here only ever
+ * relabeled the one exact string "Case updated (checklistState)", so
+ * every OTHER field (certifierPhone included — the production example
+ * that surfaced this bug) still rendered its raw camelCase key on
+ * Dashboard → Recent Activity. `resolveActivityDisplayDescription` now
+ * parses the "Case updated (...)" shape generically: a single curated
+ * field gets its own sentence, and anything uncurated (or more than one
+ * changed field at once) falls back to the safe generic "Case updated" —
+ * never the raw key, never a decoded guess at an unknown field's name.
+ *
+ * NOTE: the two cases below ("not checklist-only" and "an unrelated
+ * field") previously asserted the raw string stayed on screen unchanged —
+ * that was the bug, not a guaranteed contract. Old → new:
+ *   - "Case updated (decedentName, dateOfBirth)" → was left raw, now "Case updated"
+ *   - "Case updated (weight)" → was left raw, now "Weight updated" (weight is curated)
  */
-describe('resolveActivityDisplayDescription — "Checklist updated" presentation label (SOLIS true redesign, Phase 1)', () => {
+describe('resolveActivityDisplayDescription — "Case updated (<field>)" presentation labels', () => {
   it('renders "Case updated (checklistState)" as "Checklist updated"', () => {
     expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (checklistState)' })).toBe(
       'Checklist updated',
     );
   });
 
-  it('does not relabel a multi-field case.updated event that is not checklist-only', () => {
+  it('renders "Case updated (certifierPhone)" as "Certifier phone updated" — the production regression this fix closes', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (certifierPhone)' })).toBe(
+      'Certifier phone updated',
+    );
     expect(
-      resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (decedentName, dateOfBirth)' }),
-    ).toBe('Case updated (decedentName, dateOfBirth)');
+      resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (certifierPhone)' }),
+    ).not.toContain('certifierPhone');
   });
 
-  it('no event is filtered — an ordinary case.updated event for an unrelated field still renders', () => {
-    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (weight)' })).toBe(
-      'Case updated (weight)',
+  it('a second, independently curated field also renders its own sentence, never the raw key', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (nextOfKinPhone)' })).toBe(
+      'Next of kin phone updated',
     );
+    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated (weight)' })).toBe(
+      'Weight updated',
+    );
+  });
+
+  it('an uncurated/unknown internal field name falls back to generic "Case updated" — never the raw key', () => {
+    const result = resolveActivityDisplayDescription({
+      eventType: 'case.updated',
+      description: 'Case updated (someUnknownInternalField)',
+    });
+    expect(result).toBe('Case updated');
+    expect(result).not.toContain('someUnknownInternalField');
+  });
+
+  it('a multi-field update falls back to generic "Case updated" — never any raw key from the list', () => {
+    const result = resolveActivityDisplayDescription({
+      eventType: 'case.updated',
+      description: 'Case updated (decedentName, dateOfBirth)',
+    });
+    expect(result).toBe('Case updated');
+    expect(result).not.toContain('decedentName');
+    expect(result).not.toContain('dateOfBirth');
+  });
+
+  it('an unrelated case.updated-shaped description that never matches the pattern passes through unchanged', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated' })).toBe('Case updated');
   });
 });

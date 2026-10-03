@@ -85,36 +85,87 @@ const CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE: Partial<Record<ActivityEventT
 };
 
 /**
- * SOLIS true redesign, Phase 1 (2026-10). "Case updated (checklistState)"
- * — services/activityService.ts#recordCaseUpdated's own description when
- * the ONLY changed field is `checklistState` — exposed the internal field
- * name verbatim on the Dashboard's Recent Activity feed (the visual
- * audit's own finding). `recordCaseUpdated`'s description varies by which
- * fields changed ("Case updated (checklistState)" vs. e.g. "Case updated
- * (decedentName, dateOfBirth)"), so this can't key on `eventType` alone
- * the way `document.regenerated` above does — every CASE_UPDATED event
- * shares one eventType regardless of which fields changed. Keyed on the
- * exact persisted description text instead, per the approved design's own
- * "a display map keyed on the existing label string" — matches only the
- * checklist-only case, never relabeling a multi-field update that isn't
- * actually "Checklist updated". No event is filtered; only this one
- * exact, already-existing string renders differently.
+ * Raw-field-name leak fix (2026-10). `services/activityService.ts#recordCaseUpdated`
+ * persists `Case updated (<field>[, <field>...])`, where each `<field>` is
+ * literally `Object.keys(changedFields)` from `PATCH /api/cases/[caseId]`
+ * — i.e. any key `lib/wixCaseMapper.ts#validateAndPickCaseUpdate` accepts
+ * (`certifierPhone`, `nextOfKinEmail`, `tagNumber`, etc.), joined verbatim.
+ * The previous fix here only relabeled the single exact string "Case
+ * updated (checklistState)" — every OTHER field name (certifierPhone
+ * included) still rendered raw on Recent Activity, which is the bug this
+ * closes. `CASE_UPDATED_FIELD_LABEL` is the single curated list for every
+ * field name `validateAndPickCaseUpdate` actually accepts and that isn't
+ * already carved out into its own specific event (the
+ * stage/returnMethod/shipping-* fields never reach this generic bucket at
+ * all — see that route's own `SHIPPING_EVENT_FIELDS` set). `daysWaitingInStage`
+ * and `isDeleted` are deliberately NOT curated — they're system/internal-
+ * leaning fields a staff member never directly edits via a form, so they
+ * fall through to the safe generic fallback below rather than guessing at
+ * user-facing wording for them.
  */
-const CANONICAL_DISPLAY_DESCRIPTION_BY_EXACT_TEXT: Record<string, string> = {
-  'Case updated (checklistState)': 'Checklist updated',
+const CASE_UPDATED_FIELD_LABEL: Partial<Record<string, string>> = {
+  decedentName: 'Decedent name updated',
+  dateOfBirth: 'Date of birth updated',
+  dateOfDeath: 'Date of death updated',
+  timeOfDeath: 'Time of death updated',
+  placeOfDeath: 'Place of death updated',
+  weight: 'Weight updated',
+  nextOfKinName: 'Next of kin name updated',
+  nextOfKinPhone: 'Next of kin phone updated',
+  nextOfKinEmail: 'Next of kin email updated',
+  nextOfKinRelationship: 'Next of kin relationship updated',
+  nextOfKinRelationshipOther: 'Next of kin relationship updated',
+  certifierName: 'Certifier name updated',
+  certifierPhone: 'Certifier phone updated',
+  certifierLicenseNumber: 'Certifier license number updated',
+  certifierFax: 'Certifier fax updated',
+  tagNumber: 'Tag number updated',
+  pickupStatus: 'Pickup status updated',
+  pickupReleasedTo: 'Pickup release info updated',
+  pickupReleasedAt: 'Pickup release info updated',
+  pickupNote: 'Pickup note updated',
+  isVeteran: 'Veteran status updated',
+  isStalled: 'Stalled status updated',
+  stalledReason: 'Stalled reason updated',
+  assignedStaffId: 'Assigned staff updated',
+  checklistState: 'Checklist updated',
+  fieldValues: 'Case details updated',
+  vaStepsState: 'VA steps updated',
+  vaPublishChoice: 'VA publish preference updated',
+  vaNotificationResponsibility: 'VA notification responsibility updated',
+  paymentStatus: 'Payment status updated',
 };
 
+const CASE_UPDATED_PATTERN = /^Case updated \((.+)\)$/;
+
+/**
+ * Presentation-only parse of the persisted "Case updated (<fields>)"
+ * description — never touches the stored event. A single curated field
+ * gets its specific sentence ("Certifier phone updated"); a field with no
+ * curated mapping, or more than one changed field at once, falls back to
+ * the generic "Case updated" — safe either way, since neither path can
+ * ever render a raw field key. Returns `null` when the description isn't
+ * this shape at all, so the caller can fall through to its other rules.
+ */
+function resolveCaseUpdatedDisplay(description: string): string | null {
+  const match = CASE_UPDATED_PATTERN.exec(description);
+  if (!match) return null;
+  const fields = match[1].split(',').map((field) => field.trim());
+  if (fields.length === 1) {
+    return CASE_UPDATED_FIELD_LABEL[fields[0]] ?? 'Case updated';
+  }
+  return 'Case updated';
+}
+
 export function resolveActivityDisplayDescription(event: Pick<ActivityEvent, 'eventType' | 'description'>): string {
+  const caseUpdatedDisplay = resolveCaseUpdatedDisplay(event.description);
+  if (caseUpdatedDisplay !== null) return caseUpdatedDisplay;
   // ActivityEvent.eventType is persisted/read back as a plain `string`
   // (see its own field comment — never assumed to still match the
   // current ActivityEventType union). The cast is read-only/safe here: an
   // event type outside the union simply finds no match below and falls
   // through to the event's own persisted description, unchanged.
-  return (
-    CANONICAL_DISPLAY_DESCRIPTION_BY_EXACT_TEXT[event.description] ??
-    CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE[event.eventType as ActivityEventType] ??
-    event.description
-  );
+  return CANONICAL_DISPLAY_DESCRIPTION_BY_EVENT_TYPE[event.eventType as ActivityEventType] ?? event.description;
 }
 
 export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {

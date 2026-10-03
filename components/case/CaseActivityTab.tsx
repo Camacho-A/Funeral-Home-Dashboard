@@ -6,8 +6,7 @@ import { useCaseActivity } from '@/hooks/useActivity';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
 import { printTextLog } from '@/utils/print';
-import { activityActorLabel } from '@/domain/activity/activityDisplay';
-import { activityDisplayLabel } from '@/domain/activity/activityDisplayLabel';
+import { activityActorLabel, resolveActivityDisplayDescription } from '@/domain/activity/activityDisplay';
 import { ActivityEventDiff } from '@/components/activity/ActivityEventDiff';
 import type { ActivityEvent, ActivityEventCategory } from '@/types/activityEvent';
 
@@ -31,11 +30,11 @@ import type { ActivityEvent, ActivityEventCategory } from '@/types/activityEvent
  * only — `events` passed to `printTextLog` stays the flat, un-grouped
  * array (see this file's own test "the exact array reference passed to
  * printTextLog... never a separately-built... shape"), grouping only
- * happens in render. `activityDisplayLabel` now maps the one known
- * "Case updated (checklistState)" → "Checklist updated" remap, used both
- * on screen and in the printed row — this tab previously rendered
- * `event.description` raw, so this closes a real gap (RecentActivityPanel/
- * ActivityEventList's own equivalent remap didn't cover this surface).
+ * happens in render. `resolveActivityDisplayDescription` (shared with
+ * RecentActivityPanel/AuditCenterPanel/ActivityEventList — one formatter,
+ * not a per-surface duplicate) now maps every curated "Case updated
+ * (<field>)" combination and safely falls back to generic "Case updated"
+ * for anything uncurated, used both on screen and in the printed row.
  * Glyphs are keyed on the real `ActivityEventCategory` union values
  * (`cases`/`payments`/`documents`/`workflow`/`scheduling`/...), not the
  * spec's singular placeholder names (`case`/`payment`/`document`) — this
@@ -96,7 +95,7 @@ export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: stri
 
   function handlePrint() {
     printTextLog('Case Activity', caseName, caseNumber, events, (event: ActivityEvent) => {
-      return `<div style="margin-bottom:12px"><div>${activityDisplayLabel(event.description)}</div><div style="font-size:12px;color:#888">${activityActorLabel(event)} · ${formatTimestamp(event.createdAt)}</div></div>`;
+      return `<div style="margin-bottom:12px"><div>${resolveActivityDisplayDescription(event)}</div><div style="font-size:12px;color:#888">${activityActorLabel(event)} · ${formatTimestamp(event.createdAt)}</div></div>`;
     });
   }
 
@@ -131,7 +130,7 @@ export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: stri
             {group.events.map((event) => {
               const hasDetail = event.previousValue !== null || event.newValue !== null;
               const isExpanded = expandedId === event.id;
-              const label = activityDisplayLabel(event.description);
+              const label = resolveActivityDisplayDescription(event);
 
               const descriptionContent = (
                 <>

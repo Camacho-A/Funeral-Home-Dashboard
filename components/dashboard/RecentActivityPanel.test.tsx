@@ -151,7 +151,10 @@ describe('RecentActivityPanel — Case Number display (2026-09)', () => {
     });
     renderPanel();
 
-    expect(await screen.findByText('Case updated (weight)')).toBeInTheDocument();
+    // "Case updated (weight)" is now relabeled "Weight updated" (raw-field-name
+    // leak fix, 2026-10) — this test's own subject is the stale-caseId safety
+    // behavior below, unaffected by the label text.
+    expect(await screen.findByText('Weight updated')).toBeInTheDocument();
     expect(screen.queryByText(staleCaseId)).not.toBeInTheDocument();
     expect(screen.queryByText(/^B\d{4}-/)).not.toBeInTheDocument(); // no fabricated case number
   });
@@ -562,7 +565,10 @@ describe('RecentActivityPanel — case navigation (2026-10)', () => {
     });
     renderPanel();
 
-    await screen.findByText('Case updated (weight)');
+    // "Case updated (weight)" is now relabeled "Weight updated" (raw-field-name
+    // leak fix, 2026-10) — this test's own subject is the non-clickable-row
+    // safety behavior below, unaffected by the label text.
+    await screen.findByText('Weight updated');
     expect(screen.queryAllByRole('link')).toHaveLength(0);
   });
 
