@@ -8,7 +8,7 @@ import { staffFixtures, caseFixtures } from '@/services/__mocks__/fixtures';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { caseLogService } from '@/services/caseLogService';
+import { createCaseLogEntry } from '@/lib/caseLogClient';
 import { resolveChecklist } from '@/domain/workflow/resolveChecklist';
 import type { WorkflowTemplate } from '@/types/workflowTemplate';
 
@@ -42,15 +42,18 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-// Phase 16A: case notes are saved through the *existing*
-// services/caseLogService.ts (see NewCaseModal.tsx's own architecture
-// comment on why this doesn't yet reach Wix). Mocked here so individual
-// tests can make it resolve or reject on demand, independent of case
-// creation itself (which stays on the real mock casesService.create path
-// — OrganizationProvider defaults dataAdapterMode to "mock", so that path
-// never calls fetch either).
-vi.mock('@/services/caseLogService', () => ({
-  caseLogService: { create: vi.fn(), list: vi.fn() },
+// Phase 16A: case notes are saved through lib/caseLogClient.ts's
+// createCaseLogEntry (real `/api/cases/[caseId]/log` round trip as of the
+// raw-field-name leak fix follow-up, 2026-10). Mocked here, same as every
+// other lib/*Client.ts boundary, so individual tests can make it resolve
+// or reject on demand, independent of case creation itself (which stays
+// on the real mock casesService.create path — OrganizationProvider
+// defaults dataAdapterMode to "mock", so that path never calls fetch
+// either) and independent of this file's generic fetch stub (which only
+// ever answers the workflow-templates/catalog shape, never case-log's).
+vi.mock('@/lib/caseLogClient', () => ({
+  createCaseLogEntry: vi.fn(),
+  fetchCaseLog: vi.fn(),
 }));
 
 // NewCaseModal calls useRouter() (next/navigation) unconditionally on every
@@ -76,7 +79,7 @@ beforeEach(() => {
     }),
   );
   pushMock.mockClear();
-  vi.mocked(caseLogService.create).mockReset().mockResolvedValue({
+  vi.mocked(createCaseLogEntry).mockReset().mockResolvedValue({
     id: 'log-test',
     organizationId: DEFAULT_ORGANIZATION_ID,
     caseId: 'test-case',
@@ -1286,17 +1289,17 @@ describe('NewCaseModal — Next of Kin / Certifier contact section organization 
 });
 
 describe('NewCaseModal — initial case note', () => {
-  it('does not call caseLogService.create when the note is left blank', async () => {
+  it('does not call createCaseLogEntry when the note is left blank', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
 
-    expect(caseLogService.create).not.toHaveBeenCalled();
+    expect(createCaseLogEntry).not.toHaveBeenCalled();
   });
 
-  it('does not call caseLogService.create when the note is only whitespace', async () => {
+  it('does not call createCaseLogEntry when the note is only whitespace', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     fireEvent.change(container.querySelector('textarea')!, { target: { value: '   \n  ' } });
@@ -1304,20 +1307,20 @@ describe('NewCaseModal — initial case note', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
 
-    expect(caseLogService.create).not.toHaveBeenCalled();
+    expect(createCaseLogEntry).not.toHaveBeenCalled();
   });
 
-  it('saves a non-blank note through caseLogService with the new caseId, trusted organizationId, and session author — preserving internal line breaks, trimming only the outer whitespace', async () => {
+  it('saves a non-blank note through createCaseLogEntry with the new caseId, trusted organizationId, and session author — preserving internal line breaks, trimming only the outer whitespace', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const noteText = '  Family requested a biodegradable urn.\nMail death certificate to next of kin.  ';
     fireEvent.change(container.querySelector('textarea')!, { target: { value: noteText } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
-    await waitFor(() => expect(caseLogService.create).toHaveBeenCalled());
+    await waitFor(() => expect(createCaseLogEntry).toHaveBeenCalled());
 
-    const [orgContext, caseId, input] = vi.mocked(caseLogService.create).mock.calls[0];
-    expect(orgContext.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+    const [caseId, organizationId, input] = vi.mocked(createCaseLogEntry).mock.calls[0];
+    expect(organizationId).toBe(DEFAULT_ORGANIZATION_ID);
     expect(typeof caseId).toBe('string');
     expect(caseId.length).toBeGreaterThan(0);
     expect(input).toEqual({
@@ -1332,7 +1335,7 @@ describe('NewCaseModal — initial case note', () => {
 
 describe('NewCaseModal — partial-failure handling when the note fails to save', () => {
   it('shows a partial-success message, keeps the note text, and does not navigate away automatically', async () => {
-    vi.mocked(caseLogService.create).mockRejectedValueOnce(new Error('network error'));
+    vi.mocked(createCaseLogEntry).mockRejectedValueOnce(new Error('network error'));
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     fireEvent.change(container.querySelector('textarea')!, { target: { value: 'Important note' } });
@@ -1345,37 +1348,37 @@ describe('NewCaseModal — partial-failure handling when the note fails to save'
   });
 
   it('"Retry saving note" re-attempts only the note, never re-creates the case, and navigates once it succeeds', async () => {
-    vi.mocked(caseLogService.create).mockRejectedValueOnce(new Error('network error'));
+    vi.mocked(createCaseLogEntry).mockRejectedValueOnce(new Error('network error'));
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     fireEvent.change(container.querySelector('textarea')!, { target: { value: 'Important note' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await screen.findByRole('alert');
 
-    const callsBeforeRetry = vi.mocked(caseLogService.create).mock.calls.length;
+    const callsBeforeRetry = vi.mocked(createCaseLogEntry).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Retry saving note' }));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
-    expect(vi.mocked(caseLogService.create).mock.calls.length).toBe(callsBeforeRetry + 1);
+    expect(vi.mocked(createCaseLogEntry).mock.calls.length).toBe(callsBeforeRetry + 1);
     // Same caseId on both the failed attempt and the retry — proof no second case was created.
-    const firstCaseId = vi.mocked(caseLogService.create).mock.calls[0][1];
-    const retryCaseId = vi.mocked(caseLogService.create).mock.calls[1][1];
+    const firstCaseId = vi.mocked(createCaseLogEntry).mock.calls[0][0];
+    const retryCaseId = vi.mocked(createCaseLogEntry).mock.calls[1][0];
     expect(retryCaseId).toBe(firstCaseId);
   });
 
   it('"Continue without note" navigates to the created case without retrying the note', async () => {
-    vi.mocked(caseLogService.create).mockRejectedValueOnce(new Error('network error'));
+    vi.mocked(createCaseLogEntry).mockRejectedValueOnce(new Error('network error'));
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     fireEvent.change(container.querySelector('textarea')!, { target: { value: 'Important note' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
     await screen.findByRole('alert');
 
-    const callsBeforeContinue = vi.mocked(caseLogService.create).mock.calls.length;
+    const callsBeforeContinue = vi.mocked(createCaseLogEntry).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Continue without note' }));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalled());
-    expect(vi.mocked(caseLogService.create).mock.calls.length).toBe(callsBeforeContinue);
+    expect(vi.mocked(createCaseLogEntry).mock.calls.length).toBe(callsBeforeContinue);
   });
 });
 

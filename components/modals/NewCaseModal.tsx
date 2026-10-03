@@ -16,7 +16,7 @@ import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useStaff } from '@/hooks/useStaff';
 import { useMutation } from '@tanstack/react-query';
-import { caseLogService } from '@/services/caseLogService';
+import { createCaseLogEntry } from '@/lib/caseLogClient';
 import { pricingClient } from '@/services/pricingClient';
 import { paymentsClient } from '@/services/paymentsClient';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
@@ -91,7 +91,8 @@ import styles from './NewCaseModal.module.css';
  *
  * An optional multiline Notes field (Phase 16A) is unrelated to the
  * configurable intake system — it's this modal's own initial-note capture
- * feature, saved via caseLogService, untouched by this phase.
+ * feature, saved via `lib/caseLogClient.ts` (real persistence as of the
+ * raw-field-name leak fix follow-up, 2026-10), untouched by this phase.
  *
  * SOLIS Final Phase (2026-10) — presentation only: the Modal shell gets a
  * fixed header/sticky footer and a 760px width (`size="lg"`), every field
@@ -253,7 +254,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
   const addNote = useMutation({
     mutationFn: ({ caseId, text }: { caseId: string; text: string }) =>
-      caseLogService.create(organization, caseId, { type: 'note', text, author: session.displayName }),
+      createCaseLogEntry(caseId, organization.organizationId, { type: 'note', text, author: session.displayName }),
   });
 
   const createOrder = useMutation({

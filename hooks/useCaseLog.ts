@@ -1,8 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NewCaseLogEntryInput } from '@/types/caseLogEntry';
-import { caseLogService } from '@/services/caseLogService';
+import { fetchCaseLog, createCaseLogEntry } from '@/lib/caseLogClient';
 import { useOrganization } from './useOrganization';
 
+/**
+ * Raw-field-name leak fix follow-up (2026-10) — now fetches/mutates via
+ * `lib/caseLogClient.ts` (real `/api/cases/[caseId]/log` round trip)
+ * instead of calling `services/caseLogService.ts` directly; that service
+ * is server-only now (imports `lib/wixDataApi.ts`). Same public shape as
+ * before — `{ ...query, addEntry: addEntry.mutate }` — so
+ * `app/(portal)/cases/[caseId]/page.tsx`'s own call site is unchanged.
+ */
 export function useCaseLog(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
@@ -10,11 +18,11 @@ export function useCaseLog(caseId: string) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => caseLogService.list(organization, caseId),
+    queryFn: () => fetchCaseLog(caseId, organization.organizationId),
   });
 
   const addEntry = useMutation({
-    mutationFn: (input: NewCaseLogEntryInput) => caseLogService.create(organization, caseId, input),
+    mutationFn: (input: NewCaseLogEntryInput) => createCaseLogEntry(caseId, organization.organizationId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 

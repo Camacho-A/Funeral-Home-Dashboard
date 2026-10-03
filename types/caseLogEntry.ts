@@ -2,11 +2,13 @@
  * Backs Phase 6's CaseLogCard, via services/caseLogService.ts. Matches
  * docs/CMS_SCHEMA.md's CaseLogEntries collection.
  */
+export type CaseLogEntryType = 'note' | 'contact';
+
 export type CaseLogEntry = {
   id: string;
   organizationId: string;
   caseId: string;
-  type: 'note' | 'contact';
+  type: CaseLogEntryType;
   text: string | null; // populated when type = 'note'
   contactedWho: string | null; // populated when type = 'contact'
   contactedSpoke: string | null;
@@ -16,7 +18,7 @@ export type CaseLogEntry = {
 };
 
 export type NewCaseLogEntryInput = {
-  type: 'note' | 'contact';
+  type: CaseLogEntryType;
   text?: string;
   contactedWho?: string;
   contactedSpoke?: string;
