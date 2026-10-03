@@ -1425,11 +1425,11 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     expect(body.case.rawStage).toBe(3);
   });
 
-  it('B. Stage 3 with Hardsave checked and every other Stage 3 requirement already satisfied (by default) advances to Stage 4 — and the SAME response already reflects it', async () => {
-    mockAdminQueries(stage3CaseData({ 2: true }));
+  it('B. Stage 3 with every Stage 3 requirement, including Hardsave, explicitly satisfied advances to Stage 4 — and the SAME response already reflects it', async () => {
+    mockAdminQueries(stage3CaseData({ 0: true, 1: true, 2: true }));
     const response = await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
+      patch: { checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
     });
     const body = await response.json();
     expect(response.status).toBe(200);
@@ -1447,10 +1447,10 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
   });
 
   it('D. the checklistState patch is what triggers reconciliation — Stage 4 is the observable proof (no rawStage field appears anywhere in the request body)', async () => {
-    mockAdminQueries(stage3CaseData({ 2: true }));
+    mockAdminQueries(stage3CaseData({ 0: true, 1: true, 2: true }));
     const response = await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
+      patch: { checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
     });
     const body = await response.json();
     expect(body.case.rawStage).toBe(4);
@@ -1474,11 +1474,11 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
   it('G. repeating the same completed checklist update is safe/idempotent — the second, identical request never double-advances past Stage 4', async () => {
     const patchBody = {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
+      patch: { checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } },
     };
 
     // First request: Stage 3 -> Stage 4, mirroring test B exactly.
-    mockAdminQueries(stage3CaseData({ 2: true }));
+    mockAdminQueries(stage3CaseData({ 0: true, 1: true, 2: true }));
     const first = await patchRequest('1042', patchBody);
     const firstBody = await first.json();
     expect(firstBody.case.rawStage).toBe(4);
@@ -1588,10 +1588,12 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
   it('10. Task #6 reconciliation remains functional alongside validation — a valid, changing composite-key write still advances rawStage', async () => {
     // mockWixQueries returns one static snapshot for every query, including
     // reconcileCaseWorkflow's own re-fetch — so (mirroring the existing
-    // Task #6 suite's stage3CaseData({2: true}) pattern above) the mocked
-    // "existing" data must already reflect the post-patch checklistState,
-    // not the pre-patch one, or reconciliation re-reads stale state.
-    mockAdminQueries(permitStageCaseData({ '3:1': true }));
+    // Task #6 suite's stage3CaseData pattern above) the mocked "existing"
+    // data must already reflect the post-patch checklistState, not the
+    // pre-patch one, or reconciliation re-reads stale state. Permit has 2
+    // items, and the checklist default-done fix (2026-10) means both now
+    // need an explicit composite key — not just the stage's last one.
+    mockAdminQueries(permitStageCaseData({ '3:0': true, '3:1': true }));
     const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:1': true } } });
     expect(response.status).toBe(200);
     const body = await response.json();

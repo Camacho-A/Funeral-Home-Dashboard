@@ -91,13 +91,34 @@ function buildTestCase(overrides: Partial<Case> = {}): Case {
 /** Every index needed to fully satisfy the "First Call & Payment" stage
     (raw 0 AND its redundant raw-1 twin — see workflowTemplates.ts's own
     comment on why both exist with identical 11-item lists), regardless of
-    which of the two hasField variants is active for a given rawStage. */
+    which of the two hasField variants is active for a given rawStage.
+    Checklist default-done fix (2026-10): rawStage 0's StageTemplate has
+    hasField:true for items 0-7 (isFirstCallStage(0)), satisfied below via
+    fieldValues — but rawStage 1's StageTemplate carries the SAME 11
+    labels with hasField:false for all of them (isFirstCallStage(1) is
+    false), and `computeFirstIncompleteRawStage` evaluates both
+    StageTemplate entries (same displayStage 0, same composite keys).
+    Previously items 0-7 of the rawStage-1 variant were credited for free
+    by defaultDone; now every index needs an explicit checklistState
+    entry, not just the historical 8/9/10. */
 function fullyCompleteFirstCallAndPayment(): Pick<Case, 'fieldValues' | 'checklistState'> {
   return {
     fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
     // displayStage 0 (First Call & Payment, combined 11-item checklist) —
     // composite-keyed per B2026-035's fix (domain/workflow/checklistItemKey.ts).
-    checklistState: { '0:8': true, '0:9': true, '0:10': true },
+    checklistState: {
+      '0:0': true,
+      '0:1': true,
+      '0:2': true,
+      '0:3': true,
+      '0:4': true,
+      '0:5': true,
+      '0:6': true,
+      '0:7': true,
+      '0:8': true,
+      '0:9': true,
+      '0:10': true,
+    },
   };
 }
 
@@ -343,8 +364,15 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
       ...fullyCompleteFirstCallAndPayment(),
       checklistState: {
         ...fullyCompleteFirstCallAndPayment().checklistState,
-        '2:2': true, // EDRS's own last item ("Hardsave for state approval…") — displayStage 2
-        '3:1': true, // Permit's own last item ("Authorization of release…") — displayStage 3
+        // EDRS (displayStage 2) and Permit (displayStage 3) each require
+        // EVERY item explicitly done now, not just their own last one —
+        // checklist default-done fix (2026-10) retired the old free credit
+        // for non-last items.
+        '2:0': true,
+        '2:1': true,
+        '2:2': true, // EDRS's own last item ("Hardsave for state approval…")
+        '3:0': true,
+        '3:1': true, // Permit's own last item ("Authorization of release…")
       },
     });
   }
@@ -388,9 +416,13 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
       ...fullyCompleteFirstCallAndPayment(),
       checklistState: {
         ...fullyCompleteFirstCallAndPayment().checklistState,
+        '2:0': true,
+        '2:1': true,
         '2:2': true, // EDRS
-        '3:1': true, // Permit's own item 1
-        '4:1': true, // DC Application Sent's own item 1 — genuinely, independently completed (displayStage 4)
+        '3:0': true,
+        '3:1': true, // Permit
+        '4:0': true,
+        '4:1': true, // DC Application Sent — genuinely, independently completed (displayStage 4)
       },
     });
     expect(computeFirstIncompleteRawStage(case_, true)).toBe(6);
@@ -410,11 +442,11 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
 
   it('8. isolated, minimal reproduction: two unrelated stages sharing local index 1 no longer collide once each writes its own composite key', () => {
     const stageAItems = [
-      { index: 0, label: 'A - item 0 (auto-defaults done)', hasField: false },
+      { index: 0, label: 'A - item 0 (never touched)', hasField: false },
       { index: 1, label: 'A - item 1 (the real action taken)', hasField: false },
     ];
     const stageBItems = [
-      { index: 0, label: 'B - item 0 (auto-defaults done)', hasField: false },
+      { index: 0, label: 'B - item 0 (never touched)', hasField: false },
       { index: 1, label: 'B - item 1 (never touched by anyone)', hasField: false },
     ];
     // Composite keys (displayStage 100 for A, 101 for B — arbitrary, chosen
@@ -433,9 +465,10 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
     const case_ = buildTestCase({ rawStage: 4, checklistState: { '1': true } });
     const permitStage = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 4)!;
     const resolved = resolveChecklist(permitStage.checklist.items, permitStage.displayStage, case_, { isPastStage: false });
-    // Permit's item 1 is the stage's own last item (defaultDone(1)=false for
-    // a 2-item list) — with no composite key and no legacy fallback, it
-    // correctly reads NOT done, never assumed from the bare "1".
+    // Every item now requires explicit evidence of completion (checklist
+    // default-done fix, 2026-10) — with no composite key and no legacy
+    // fallback, Permit's item 1 correctly reads NOT done, never assumed
+    // from the bare "1".
     expect(resolved[1].done).toBe(false);
   });
 
@@ -492,8 +525,12 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
       ...fullyCompleteFirstCallAndPayment(),
       checklistState: {
         ...fullyCompleteFirstCallAndPayment().checklistState,
+        '2:0': true,
+        '2:1': true,
         '2:2': true, // EDRS (displayStage 2)
+        '3:0': true,
         '3:1': true, // Permit (displayStage 3)
+        '4:0': true,
         '4:1': true, // DC Application Sent — genuinely complete, own key (displayStage 4)
       },
     });

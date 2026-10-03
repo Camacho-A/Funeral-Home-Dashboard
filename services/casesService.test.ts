@@ -1042,8 +1042,10 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
   });
 
   it('B. Stage 3 with Hardsave checked and every other Stage 3 requirement already satisfied (by default) advances to Stage 4', async () => {
-    const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } });
+    const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
+    const updated = await casesService.update(organization, case_.id, {
+      checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true },
+    });
     expect(updated.rawStage).toBe(4);
   });
 
@@ -1054,8 +1056,10 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
   });
 
   it('D. the checklistState patch is what triggers reconciliation — Stage 4 is the observable proof (no rawStage field appears anywhere in the request)', async () => {
-    const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } });
+    const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
+    const updated = await casesService.update(organization, case_.id, {
+      checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true },
+    });
     expect(updated.rawStage).toBe(4);
   });
 
@@ -1067,14 +1071,16 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
   });
 
   it('F. mock mode produces the exact same Stage 3 -> Stage 4 outcome as Wix mode (see app/api/cases/[caseId]/route.test.ts\'s identical test B)', async () => {
-    const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } });
+    const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
+    const updated = await casesService.update(organization, case_.id, {
+      checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true },
+    });
     expect(updated.rawStage).toBe(4);
   });
 
   it('G. repeating the same completed checklist update is safe/idempotent — a second, identical update never double-advances past Stage 4', async () => {
-    const case_ = seedStage3Case({ 2: true });
-    const patch = { checklistState: { '0:0': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } };
+    const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
+    const patch = { checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } };
 
     const first = await casesService.update(organization, case_.id, patch);
     expect(first.rawStage).toBe(4);
@@ -1234,10 +1240,16 @@ describe('casesService.update — checklistState write validation (B2026-035 har
   });
 
   it('10. Task #6 reconciliation remains fully functional alongside the new validation — a genuinely valid, changing composite-key write still advances rawStage', async () => {
-    const case_ = seedPermitStageCase({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:1': true } });
-    // Permit's own 2-item stage: item 0 defaults done, item 1 now explicitly
-    // done -> fully complete -> reconciliation advances past it to Stage 5.
+    const case_ = seedPermitStageCase({ '3:0': true });
+    // casesService.update's mock path replaces checklistState wholesale
+    // rather than merging it (see test 7's identical "'1' unchanged"
+    // pattern above) — the patch itself must carry the full desired state,
+    // same as a real UI PATCH would send.
+    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:0': true, '3:1': true } });
+    // Permit's own 2-item stage: item 0 already explicitly done, item 1 now
+    // explicitly done too -> fully complete -> reconciliation advances past
+    // it to Stage 5. Checklist default-done fix (2026-10) retired the old
+    // free credit for item 0.
     expect(updated.rawStage).toBe(5);
   });
 });

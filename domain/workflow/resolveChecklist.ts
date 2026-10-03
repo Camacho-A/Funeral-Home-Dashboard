@@ -40,20 +40,22 @@ export function resolveChecklist(
 ): ChecklistItemViewModel[] {
   const { isPastStage = false } = options;
 
-  // defaultDone is NOT part of the B2026-035 integrity fix and was
-  // deliberately left unchanged — it operates purely on `index` within
-  // this one `items` list and never touches `checklistState`, so it was
-  // never the mechanism behind the cross-stage collision (see
-  // domain/workflow/checklistItemKey.ts's own doc comment for the actual
-  // root cause). TODO(workflow semantics, separate from this fix): a
-  // non-gating item's "done" here is "no explicit false," not a verified
-  // true — a pre-existing, long-standing tradeoff (it's also what lets a
-  // historical-import case advance multiple stages in one reconciliation
-  // call without every non-gating item having been explicitly clicked).
-  // Worth a dedicated review of whether that's still the right default,
-  // but that's a workflow-semantics decision, not an integrity bug, and
-  // should not be mixed into this fix.
-  const defaultDone = (index: number) => index < items.length - 1;
+  // Checklist default-done fix (2026-10). Previously every item except a
+  // stage's last defaulted to "done" the moment a case entered that stage
+  // — a freshly-entered stage's checklist showed most of its items
+  // pre-checked, including the first one, with nothing actually clicked.
+  // That was deliberate at the time (see this file's own git history) so
+  // that a stage only truly gated advancement on its last item, which is
+  // also what let a historical-import case jump forward through several
+  // stages in one `workflowReconciliationService.ts` call without every
+  // non-gating item being explicitly set. Changed, by explicit product
+  // decision: every item (manual, field-backed, or requiredCaseFields)
+  // now requires actual, explicit evidence of completion — "no explicit
+  // false" is no longer treated as "done." A historical-import case must
+  // now carry (or reconciliation's own form/payment overlays must supply)
+  // real completion for every non-gating item, the same as any other
+  // case, to advance past a stage.
+  const defaultDone = (_index: number) => false;
   const isManuallyDone = (index: number) => readChecklistValue(case_.checklistState, displayStage, index) ?? defaultDone(index);
   const fieldValueAt = (index: number) => (case_.fieldValues[index] ?? '').toString().trim();
   const isFieldDone = (index: number) => fieldValueAt(index).length > 0;

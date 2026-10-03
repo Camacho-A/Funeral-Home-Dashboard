@@ -233,11 +233,11 @@ describe('buildCaseViewModel — overall progress indicator (Case list scalabili
     );
   });
 
-  it('a brand-new case (stage 0, nothing checked yet) is below 100% — never 0 simply because defaultDone credits most items', () => {
+  it('a brand-new case (stage 0, nothing checked yet) is genuinely 0% — checklist default-done fix (2026-10) retired the old free credit for non-last items', () => {
     const case_ = baseCase({ rawStage: 0 });
     const vm = buildCaseViewModel(case_, { staffList: [] });
-    expect(vm.progressPercent).toBeGreaterThan(0);
-    expect(vm.progressPercent).toBeLessThan(100);
+    expect(vm.progressPercent).toBe(0);
+    expect(vm.progressCompletedItems).toBe(0);
     expect(vm.progressTotalItems).toBeGreaterThan(vm.progressCompletedItems);
   });
 
@@ -1083,7 +1083,10 @@ describe('buildCaseViewModel — progress is immune to the cross-stage checklist
 
     const case_ = baseCase({
       rawStage: 4,
-      checklistState: { '3:1': true }, // Permit's own last item, explicitly done — composite-keyed
+      // Permit's own current stage is meant to read as fully done, so both
+      // of its 2 items need an explicit composite key now — checklist
+      // default-done fix (2026-10) retired the old free credit for item 0.
+      checklistState: { '3:0': true, '3:1': true },
     });
     const vm = buildCaseViewModel(case_, { staffList: [] });
 

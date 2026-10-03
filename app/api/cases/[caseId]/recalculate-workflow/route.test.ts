@@ -79,8 +79,23 @@ function seedTestCase(): Case {
     vaPublishChoice: null,
     vaNotificationResponsibility: null,
     // displayStage 0 — composite-keyed per B2026-035's fix
-    // (domain/workflow/checklistItemKey.ts).
-    checklistState: { '0:8': true, '0:9': true, '0:10': true },
+    // (domain/workflow/checklistItemKey.ts). Checklist default-done fix
+    // (2026-10): displayStage 0's rawStage-1 StageTemplate twin treats
+    // these same local indices 0-7 as manual, so they need an explicit
+    // composite key too — not just the historical 8/9/10.
+    checklistState: {
+      '0:0': true,
+      '0:1': true,
+      '0:2': true,
+      '0:3': true,
+      '0:4': true,
+      '0:5': true,
+      '0:6': true,
+      '0:7': true,
+      '0:8': true,
+      '0:9': true,
+      '0:10': true,
+    },
     fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
     daysWaitingInStage: 0,
     isStalled: false,
