@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { CasesByStagePanel, type StageBarRow, type StagePreviewCase } from './CasesByStagePanel';
 import { STAGES } from '@/domain/cases/stages';
+import { stageColor } from '@/domain/cases/stageColors';
 
 const ROWS: StageBarRow[] = STAGES.map((label, i) => ({ label, count: i, pct: (i / 6) * 100, displayStage: i }));
 
@@ -100,5 +101,52 @@ describe('CasesByStagePanel — Stage Preview accordion (SOLIS true redesign, Ph
     render(<CasesByStagePanel allCasesCount={null} rows={loadingRows} casesByStage={{}} />);
     const button = screen.getByRole('button', { name: /^Completed/ });
     expect(within(button).getByText('—')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Stage colors (2026-10). Each non-bottleneck stage's overview-bar
+ * segment, row dot, and open-preview border use `stageColor` — the
+ * bottleneck stage (EDRS & Doctor / Cause of Death) keeps the existing
+ * CSS-driven danger (red) treatment instead, with no inline color
+ * override, since red stays reserved for "needs attention."
+ */
+describe('CasesByStagePanel — stage colors (2026-10)', () => {
+  it('applies the correct stage color to a non-bottleneck row\'s dot', () => {
+    render(<CasesByStagePanel allCasesCount={142} rows={ROWS} casesByStage={{}} />);
+    const button = screen.getByRole('button', { name: /^Completed/ });
+    const dot = button.querySelector('[data-variant]')!;
+    expect(dot).toHaveStyle({ background: stageColor(6) });
+  });
+
+  it('fades a zero-count stage\'s dot (opacity 0.35) without changing its color', () => {
+    const zeroCountRows: StageBarRow[] = [{ label: 'Completed', count: 0, pct: 0, displayStage: 6 }];
+    render(<CasesByStagePanel allCasesCount={0} rows={zeroCountRows} casesByStage={{}} />);
+    const button = screen.getByRole('button', { name: /^Completed/ });
+    const dot = button.querySelector('[data-variant]')!;
+    expect(dot).toHaveStyle({ background: stageColor(6), opacity: '0.35' });
+  });
+
+  it('a bottleneck stage with cases keeps the CSS-driven danger treatment — no inline stage color override', () => {
+    const bottleneckRows: StageBarRow[] = [{ label: 'EDRS & Doctor / Cause of Death', count: 3, pct: 0, displayStage: 2 }];
+    render(<CasesByStagePanel allCasesCount={3} rows={bottleneckRows} casesByStage={{}} />);
+    const button = screen.getByRole('button', { name: /^EDRS/ });
+    const dot = button.querySelector('[data-variant="danger"]')!;
+    expect(dot).toBeInTheDocument();
+    expect(dot.getAttribute('style')).toBeNull();
+  });
+
+  it('the open preview\'s left border matches its stage color', () => {
+    const { container } = render(<CasesByStagePanel allCasesCount={2} rows={ROWS} casesByStage={CASES_BY_STAGE} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Completed/ }));
+    const preview = container.querySelector('[id^="stage-preview-"]')!;
+    expect(preview).toHaveStyle({ borderLeftColor: stageColor(6) });
+  });
+
+  it('a non-bottleneck overview-bar segment uses its stage color', () => {
+    const singleRow: StageBarRow[] = [{ label: 'First Call & Payment', count: 5, pct: 100, displayStage: 0 }];
+    const { container } = render(<CasesByStagePanel allCasesCount={5} rows={singleRow} casesByStage={{}} />);
+    const segment = container.querySelector('[class*="overviewSegment"]')!;
+    expect(segment).toHaveStyle({ background: stageColor(0) });
   });
 });

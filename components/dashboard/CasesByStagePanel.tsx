@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { isBottleneckStage } from '@/domain/cases/stages';
+import { stageColor } from '@/domain/cases/stageColors';
 import { formatDaysAgo } from '@/utils/format';
 import { toDisplayTitleCase } from '@/utils/string';
 import styles from './CasesByStagePanel.module.css';
@@ -45,6 +46,13 @@ export type StagePreviewCase = { id: string; caseNumber: string; decedentName: s
  * list →" are real links into the existing `/cases` route (optionally
  * `?stage=<label>`), unchanged from before this phase. Clicking a preview
  * case opens the existing Case Detail route exactly as today.
+ *
+ * Stage colors (2026-10): each stage now has its own color
+ * (`domain/cases/stageColors.ts#stageColor`), applied to the overview bar
+ * segment, the row dot, and the open preview's left border. A bottleneck
+ * stage with cases keeps the existing danger (red) treatment instead —
+ * red stays reserved for "needs attention," never doubling as a stage
+ * identity color. Presentation only; no other behavior changed.
  */
 export function CasesByStagePanel({
   allCasesCount,
@@ -80,6 +88,7 @@ export function CasesByStagePanel({
             <div
               key={row.label}
               className={isBottleneckStage(row.displayStage) ? styles.overviewSegmentDanger : styles.overviewSegment}
+              style={isBottleneckStage(row.displayStage) ? undefined : { background: stageColor(row.displayStage) }}
             />
           ))
         )}
@@ -102,7 +111,11 @@ export function CasesByStagePanel({
                 aria-controls={previewId}
                 onClick={() => setOpenStage(isOpen ? null : row.label)}
               >
-                <span className={styles.dot} data-variant={count === 0 ? 'empty' : isDanger ? 'danger' : 'active'} />
+                <span
+                  className={styles.dot}
+                  data-variant={count === 0 ? 'empty' : isDanger ? 'danger' : 'active'}
+                  style={isDanger ? undefined : { background: stageColor(row.displayStage), opacity: count === 0 ? 0.35 : 1 }}
+                />
                 <span className={`${styles.label} ${count === 0 ? styles.labelMuted : ''}`}>{row.label}</span>
                 <span className={`${styles.count} ${count === 0 ? styles.labelMuted : ''}`}>{row.count ?? '—'}</span>
                 <span className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ''}`} aria-hidden="true">
@@ -110,7 +123,7 @@ export function CasesByStagePanel({
                 </span>
               </button>
               {isOpen && (
-                <div id={previewId} className={styles.preview}>
+                <div id={previewId} className={styles.preview} style={{ borderLeftColor: stageColor(row.displayStage) }}>
                   {cases.length === 0 && <div className={styles.empty}>No cases in this stage</div>}
                   {cases.map((c) => (
                     <Link key={c.id} href={`/cases/${c.id}`} className={styles.previewRow}>
