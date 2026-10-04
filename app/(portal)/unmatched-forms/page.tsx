@@ -1,4 +1,3 @@
-import { getAuthAdapterMode } from '@/lib/env';
 import { SettingsShell } from '@/components/settings/SettingsShell';
 import { UnmatchedFormsPanel } from '@/components/externalForms/UnmatchedFormsPanel';
 
@@ -12,14 +11,18 @@ import { UnmatchedFormsPanel } from '@/components/externalForms/UnmatchedFormsPa
  * Settings menu stays visible here too — this route lives outside
  * `/settings` (unchanged; it's reached from elsewhere besides Settings)
  * and the page's own content below is unchanged, just no longer
- * unwrapped. `SettingsNav`'s existing `pathname === area.href` check
- * already highlights Unmatched Forms as selected once this page's own
- * pathname is `/unmatched-forms` — no separate "selected" logic needed.
+ * unwrapped. The main app Sidebar's own `pathname === area.href` check
+ * (Addendum 2, item #6) already highlights Unmatched Forms as selected
+ * once this page's own pathname is `/unmatched-forms` — no separate
+ * "selected" logic needed here.
+ *
+ * Addendum 2 follow-up (2026-10): no longer resolves/passes
+ * `authAdapterMode` — `SettingsShell` no longer takes it, since its
+ * only use was threading through to the now-removed `SettingsNav`.
  */
 export default function UnmatchedFormsPage() {
-  const authAdapterMode = getAuthAdapterMode();
   return (
-    <SettingsShell authAdapterMode={authAdapterMode}>
+    <SettingsShell>
       <div>
         <h1>Unmatched Forms</h1>
         <UnmatchedFormsPanel />

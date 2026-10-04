@@ -123,14 +123,11 @@
 }
 
 /* ================= SETTINGS ================= */
-.sx-settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); column-gap: 40px; align-items: start; }
-.sx-settings-nav { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 2px; }
-.sx-settings-group { padding: 16px 10px 6px; font-size: 11.5px; font-weight: 500; color: var(--sx-faint); }
-.sx-settings-group:first-child { padding-top: 0; }
-.sx-settings-link { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 10px; border: none; border-radius: 7px; background: transparent; font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--sx-text-2); text-align: left; text-decoration: none; cursor: pointer; transition: background-color var(--sx-ease); }
-.sx-settings-link:hover { background: var(--sx-hover); color: var(--sx-text); text-decoration: none; }
-.sx-settings-link[aria-current='page'] { background: var(--sx-navy-tint); color: oklch(0.28 0.08 255); font-weight: 600; }
-.sx-settings-link:focus-visible { outline: none; box-shadow: var(--sx-focus); }
+/* Addendum 2 follow-up (2026-10): the persistent left nav this grid used
+   to hold alongside `.sx-settings-main` (`.sx-settings-nav`/
+   `.sx-settings-group`/`.sx-settings-link`) is gone — the main app
+   Sidebar shows the same list now (Addendum 2, item #6), so the in-page
+   copy was pure duplication. `.sx-settings-main` is the only child now. */
 .sx-settings-main { min-width: 0; max-width: 760px; }
 .sx-settings-head { margin: 0 0 24px; }
 .sx-settings-title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; color: var(--sx-text); }
@@ -169,11 +166,6 @@
 .sx-perm-key { display: block; font-size: 12px; color: var(--sx-muted); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 860px) {
-  .sx-settings { grid-template-columns: minmax(0, 1fr); }
-  .sx-settings-nav { display: none; }            /* sub-pages: nav replaced by .sx-back "← Settings" */
-  .sx-settings-hub .sx-settings-nav { display: flex; position: static; } /* hub: nav IS the page */
-  .sx-settings-link { height: 48px; font-size: 15px; border-bottom: 1px solid var(--sx-border-soft); border-radius: 0; padding: 0 4px; }
-  .sx-settings-link::after { content: '›'; margin-left: auto; color: var(--sx-faint); }
   .sx-kv { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
   .sx-kv dd { margin-bottom: 10px; }
   .sx-logo { grid-template-columns: 72px minmax(0, 1fr); column-gap: 14px; }
@@ -183,9 +175,6 @@
   .sx-save-row .sx-btn { height: 44px; flex: 1; }
 }
 
-@media (min-width: 861px) { .sx-settings-back { display: none; } }
-@media (max-width: 860px) { .sx-settings-hub .sx-settings-main { display: none; } }
-
 @media (prefers-reduced-motion: reduce) {
-  .sx-task-row, .sx-settings-link { transition: none; }
+  .sx-task-row { transition: none; }
 }
