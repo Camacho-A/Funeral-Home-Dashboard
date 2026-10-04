@@ -120,7 +120,8 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
       };
     }
     case 'invitation': {
-      // Staff invitation email copy (2026-10). Sent for BOTH a fresh
+      // Staff invitation email copy (2026-10, finalized after the
+      // invitation deliverability investigation). Sent for BOTH a fresh
       // invite and a Resend (app/api/auth/invitations/route.ts's POST and
       // PATCH handlers both construct this exact same message kind) — by
       // design there is no separate "resend" copy; a resent invitation
@@ -139,13 +140,13 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
             <p style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: #6b7280; margin: 0 0 24px;">SOLIS</p>
             <p style="margin: 0 0 16px;">Hello,</p>
             <p style="margin: 0 0 24px; line-height: 1.5;">${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.</p>
-            <p style="margin: 0 0 24px; line-height: 1.5;">Use the button below to set up your account and access your workspace.</p>
             <p style="margin: 0 0 24px;"><a href="${link}" style="display: inline-block; background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Accept Invitation</a></p>
-            <p style="margin: 0 0 24px; font-size: 13px; color: #6b7280; line-height: 1.5;">This invitation was sent to ${message.to}. If you weren't expecting this invitation, you can ignore this email.</p>
-            <p style="margin: 24px 0 0; font-size: 12px; color: #9ca3af;">SOLIS<br>Case Management</p>
+            <p style="margin: 0 0 24px; line-height: 1.5;">Use the button above to set up your account and access your workspace.</p>
+            <p style="margin: 0 0 24px; font-size: 13px; color: #6b7280; line-height: 1.5;">This invitation was sent to ${message.to}. If you weren't expecting this invitation, you can safely ignore this email.</p>
+            <p style="margin: 24px 0 0; font-size: 12px; color: #9ca3af;">SOLIS<br>Service Operations, Logistics, Intake &amp; Scheduling</p>
           </div>
         `.trim(),
-        text: `Hello,\n\n${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.\n\nAccept your invitation: ${link}\n\nThis invitation was sent to ${message.to}. If you weren't expecting this invitation, you can ignore this email.\n\nSOLIS\nCase Management`,
+        text: `Hello,\n\n${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.\n\nAccept your invitation:\n${link}\n\nUse the link above to set up your account and access your workspace.\n\nThis invitation was sent to ${message.to}. If you weren't expecting this invitation, you can safely ignore this email.\n\nSOLIS\nService Operations, Logistics, Intake & Scheduling`,
       };
     }
     case 'mfa_recovery_codes': {

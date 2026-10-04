@@ -211,6 +211,24 @@ describe('resendIdentityMessageSender (Phase 33)', () => {
       const [, htmlLink] = body.html.match(/href="([^"]+)"/) as [string, string];
       expect(body.text).toContain(htmlLink);
     });
+
+    it('the reassurance text says "safely ignore", the final approved wording', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.html).toContain('you can safely ignore this email');
+      expect(body.text).toContain('you can safely ignore this email');
+    });
+
+    it('the footer spells out what SOLIS stands for, in both HTML and plain text', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.html).toContain('SOLIS');
+      expect(body.html).toContain('Service Operations, Logistics, Intake &amp; Scheduling');
+      expect(body.text).toContain('SOLIS');
+      expect(body.text).toContain('Service Operations, Logistics, Intake & Scheduling');
+    });
   });
 
   it('builds a family-portal accept-invitation link for portal_invitation', async () => {

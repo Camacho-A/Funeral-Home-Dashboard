@@ -20,6 +20,8 @@
  * capability. See docs/adr/ADR-037-real-notification-delivery.md.
  */
 
+import { isValidEmail } from '../../utils/inputMask';
+
 export class ResendApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -51,13 +53,40 @@ function getResendApiKey(): string {
 
 /** The one "from" address every Resend-sent email uses — Resend requires
     a domain-verified sender, so this is deliberately a single configured
-    value, never per-message-supplied. */
+    value, never per-message-supplied. Production always sources this
+    from `RESEND_FROM_ADDRESS` (the deliverability investigation
+    confirmed the sending domain there is already verified and passing
+    DMARC — this function never changes how that's sourced). The literal
+    fallback below only ever runs when `RESEND_FROM_ADDRESS` is unset
+    (local/dev, where sends go through `consoleIdentityMessageSender`
+    instead and this string is never actually used to send real mail) —
+    display name corrected 2026-10 ("Solis" -> "SOLIS", matching the
+    product's current branding everywhere else). */
 function getResendFromAddress(): string {
-  return process.env.RESEND_FROM_ADDRESS || 'Solis <notifications@beacon.app>';
+  return process.env.RESEND_FROM_ADDRESS || 'SOLIS <notifications@beacon.app>';
+}
+
+/** Reply-To (2026-10, invitation deliverability follow-up). A single,
+    platform-level, optional value — mirrors `getResendFromAddress()`'s
+    own "one configured value, not per-tenant/per-message" posture, since
+    no existing organization-level or support-inbox concept already
+    served this purpose (checked: no env var, no `Organization` field
+    used for transactional-email infrastructure — `Organization.primaryEmail`
+    is tenant business-profile data, editable per-org and often empty,
+    not an ops-managed monitored inbox). Returns `undefined` — never an
+    empty string — whenever the value is unset or not a well-formed
+    email, so a malformed/missing `RESEND_REPLY_TO_ADDRESS` can never
+    turn into a reason a send fails; `sendResendEmail` below simply omits
+    `reply_to` from the request in that case. */
+function getResendReplyToAddress(): string | undefined {
+  const value = process.env.RESEND_REPLY_TO_ADDRESS;
+  if (!value || !isValidEmail(value)) return undefined;
+  return value;
 }
 
 export async function sendResendEmail(request: ResendEmailRequest): Promise<void> {
   const apiKey = getResendApiKey();
+  const replyTo = getResendReplyToAddress();
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -70,6 +99,7 @@ export async function sendResendEmail(request: ResendEmailRequest): Promise<void
       subject: request.subject,
       html: request.html,
       text: request.text,
+      ...(replyTo ? { reply_to: replyTo } : {}),
     }),
   });
 
