@@ -51,19 +51,36 @@ function getResendApiKey(): string {
   return value;
 }
 
-/** The one "from" address every Resend-sent email uses — Resend requires
-    a domain-verified sender, so this is deliberately a single configured
-    value, never per-message-supplied. Production always sources this
-    from `RESEND_FROM_ADDRESS` (the deliverability investigation
-    confirmed the sending domain there is already verified and passing
-    DMARC — this function never changes how that's sourced). The literal
-    fallback below only ever runs when `RESEND_FROM_ADDRESS` is unset
-    (local/dev, where sends go through `consoleIdentityMessageSender`
-    instead and this string is never actually used to send real mail) —
-    display name corrected 2026-10 ("Solis" -> "SOLIS", matching the
-    product's current branding everywhere else). */
+/** Pulls just the email address out of a "from" value — either
+    `Name <email>` or a bare `email`. Used so the display name below is
+    never at the mercy of whatever happened to already be baked into
+    `RESEND_FROM_ADDRESS`'s own configured value. */
+function extractSenderEmail(fromValue: string): string {
+  const match = fromValue.match(/<([^>]+)>/);
+  return (match ? match[1] : fromValue).trim();
+}
+
+/** Display-name determinism fix (2026-10). `RESEND_FROM_ADDRESS` is
+    still the one place the sending EMAIL ADDRESS comes from — this
+    function never hardcodes or bypasses it, and the deliverability
+    investigation already confirmed that domain is verified and passing
+    DMARC. What changed: the DISPLAY NAME is no longer whatever happens
+    to be configured inside that same env var — it's always, literally,
+    "SOLIS", extracted and rebuilt here regardless of whether
+    `RESEND_FROM_ADDRESS` is a bare address, already correctly says
+    "SOLIS", or still carries an old/wrong display name (e.g. "Solis")
+    from before this fix existed. That's what makes this deterministic:
+    no possible value of `RESEND_FROM_ADDRESS` can ever produce anything
+    but "SOLIS <that address>" — fixing it no longer requires editing
+    the env var itself, only the actual email address portion if that
+    ever needs to change. The literal fallback address below only ever
+    applies when `RESEND_FROM_ADDRESS` is unset entirely (local/dev,
+    where sends go through `consoleIdentityMessageSender` instead and
+    this value is never actually used to send real mail). */
 function getResendFromAddress(): string {
-  return process.env.RESEND_FROM_ADDRESS || 'SOLIS <notifications@beacon.app>';
+  const configured = process.env.RESEND_FROM_ADDRESS;
+  const email = configured ? extractSenderEmail(configured) : 'notifications@beacon.app';
+  return `SOLIS <${email}>`;
 }
 
 /** Reply-To (2026-10, invitation deliverability follow-up). A single,

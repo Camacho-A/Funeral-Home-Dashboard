@@ -3,7 +3,7 @@ import { sendResendEmail, isResendConfigured, ResendApiError } from './resendCli
 
 beforeEach(() => {
   process.env.RESEND_API_KEY = 'fake-resend-key';
-  process.env.RESEND_FROM_ADDRESS = 'Beacon <test@beacon.app>';
+  process.env.RESEND_FROM_ADDRESS = 'test@beacon.app';
 });
 
 afterEach(() => {
@@ -36,7 +36,7 @@ describe('sendResendEmail', () => {
     );
     const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(sentBody).toEqual({
-      from: 'Beacon <test@beacon.app>',
+      from: 'SOLIS <test@beacon.app>',
       to: 'family@example.com',
       subject: 'Test',
       html: '<p>Hi</p>',
@@ -55,17 +55,6 @@ describe('sendResendEmail', () => {
     expect(sentBody.from).toBe('SOLIS <notifications@beacon.app>');
   });
 
-  it('preserves a configured RESEND_FROM_ADDRESS verbatim — the display-name fix never overrides a real production value', async () => {
-    process.env.RESEND_FROM_ADDRESS = 'SOLIS <notifications@mail.manorscremation.com>';
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
-
-    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(sentBody.from).toBe('SOLIS <notifications@mail.manorscremation.com>');
-  });
-
   it('throws ResendApiError with the real HTTP status on a non-ok response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 422 }));
 
@@ -80,6 +69,74 @@ describe('sendResendEmail', () => {
 
     await expect(sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' })).rejects.toThrow(/RESEND_API_KEY/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Display-name determinism (2026-10). `RESEND_FROM_ADDRESS` still
+ * sources the sending EMAIL ADDRESS exactly as before — these tests
+ * prove the DISPLAY NAME is now always, literally, "SOLIS" regardless
+ * of what's configured there, so a stale/wrong display name baked into
+ * the env var's own value can never leak through again.
+ */
+describe('sendResendEmail — display name is always "SOLIS"', () => {
+  it('the exact production scenario: RESEND_FROM_ADDRESS is the bare configured sender address', async () => {
+    process.env.RESEND_FROM_ADDRESS = 'notifications@mail.manorscremation.com';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.from).toBe('SOLIS <notifications@mail.manorscremation.com>');
+  });
+
+  it('an old/wrong display name already baked into RESEND_FROM_ADDRESS is overridden, never left to leak through', async () => {
+    process.env.RESEND_FROM_ADDRESS = 'Solis <notifications@mail.manorscremation.com>';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.from).toBe('SOLIS <notifications@mail.manorscremation.com>');
+  });
+
+  it('even an unrelated display name is overridden — only the email address portion is preserved', async () => {
+    process.env.RESEND_FROM_ADDRESS = 'Manor Cremations <notifications@mail.manorscremation.com>';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.from).toBe('SOLIS <notifications@mail.manorscremation.com>');
+  });
+
+  it('changing the configured email address changes the from value — the address itself still comes from RESEND_FROM_ADDRESS, never hardcoded', async () => {
+    process.env.RESEND_FROM_ADDRESS = 'someone-else@another-domain.com';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.from).toBe('SOLIS <someone-else@another-domain.com>');
+  });
+
+  it('end-to-end: production From and Reply-To together', async () => {
+    process.env.RESEND_FROM_ADDRESS = 'notifications@mail.manorscremation.com';
+    process.env.RESEND_REPLY_TO_ADDRESS = 'angelica@manorscremation.com';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.from).toBe('SOLIS <notifications@mail.manorscremation.com>');
+    expect(sentBody.reply_to).toBe('angelica@manorscremation.com');
+
+    delete process.env.RESEND_REPLY_TO_ADDRESS;
   });
 });
 
