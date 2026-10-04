@@ -104,6 +104,16 @@ export type Organization = {
       new SignatureRequests for that organization. Does not delete or
       otherwise affect any existing SignatureRequest/SignatureRecord data. */
   signatureRequestsEnabled?: boolean;
+  /** Manors accounting/reports cleanup (2026-10). The OPPOSITE allowlist
+      polarity from `enabledModules` above: these are core features shown
+      by DEFAULT to every organization (same default-preserve posture as
+      `familyPortalEnabled`/`signatureRequestsEnabled`) — an opt-OUT
+      denylist an organization can use to hide specific ones it doesn't
+      currently need, not an opt-in list that defaults everyone to
+      hidden. `null`/absent means nothing is additionally hidden. See
+      `domain/organization/moduleVisibility.ts`'s `isModuleHidden` and
+      `HIDEABLE_MODULE_KEYS` — the sole place this field is read/written. */
+  hiddenModules?: string[] | null;
   createdAt?: string;
   updatedAt?: string;
 };

@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { hasPermission } from '@/services/permissionService';
 import { canViewReports } from '@/services/authorizationPolicyService';
-import { getReportDefinition } from '@/domain/reporting/reportRegistry';
+import { getReportDefinition, isReportVisibleForOrganization } from '@/domain/reporting/reportRegistry';
+import { getForOrganization } from '@/services/organizationsService';
 import { runReport, ReportRunnerError } from '@/services/reportingService';
 import { getDataAdapterMode } from '@/lib/env';
 
@@ -11,6 +12,16 @@ import { getDataAdapterMode } from '@/lib/env';
  * — this route never computes a metric or reimplements a financial
  * report itself, it only forwards query-string filters to
  * `reportingService.runReport` and returns whatever it computed.
+ *
+ * Manors accounting/reports cleanup (2026-10): this route previously had
+ * no `requiresModule`/category-hidden check at all — a report excluded
+ * from `GET /api/reports`'s own list was still fully runnable by direct
+ * key, a genuine pre-existing gap (the CSV export route,
+ * app/api/reports/[reportKey]/export/route.ts, already enforced
+ * `requiresModule`; this route didn't). Now uses the same
+ * `isReportVisibleForOrganization` both other report routes use, closing
+ * that gap for every `requiresModule`-gated report and this task's new
+ * category-hidden ones alike.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ reportKey: string }> }) {
   const { reportKey } = await params;
@@ -33,6 +44,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ repo
 
   if (!(await canViewReports(policyParams, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to view reports for this organization.' }, { status: 403 });
+  }
+  const organization = await getForOrganization(organizationId, dataAdapterMode);
+  if (!isReportVisibleForOrganization(definition, organization)) {
+    return NextResponse.json({ error: `The "${reportKey}" report is not available for this organization.` }, { status: 403 });
   }
   if (!(await hasPermission(policyParams, dataAdapterMode, definition.permission))) {
     return NextResponse.json({ error: `Not authorized to view the "${reportKey}" report.` }, { status: 403 });

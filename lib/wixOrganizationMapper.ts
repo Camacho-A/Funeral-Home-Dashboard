@@ -49,11 +49,18 @@ export type WixOrganizationItem = {
   /** JSON-encoded string[] — mirrors the existing `categoryOverrides`-style
       JSON-in-text-field convention for a small array on a single-row entity. */
   enabledModulesJson?: unknown;
+  /** Manors accounting/reports cleanup (2026-10). Same JSON-in-text-field
+      convention as `enabledModulesJson` above, for the opposite-polarity
+      `Organization.hiddenModules` — not a live field yet (see
+      `domain/organization/moduleVisibility.ts`'s own TEMPORARY comment),
+      but wired here so reading an already-live row that predates it
+      simply yields `undefined`, not an error. */
+  hiddenModulesJson?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
 
-function parseEnabledModules(value: unknown): string[] | undefined {
+function parseStringArrayJson(value: unknown): string[] | undefined {
   if (typeof value !== 'string' || value.length === 0) return undefined;
   try {
     const parsed = JSON.parse(value);
@@ -91,7 +98,8 @@ export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): O
     requireMfa: typeof item.requireMfa === 'boolean' ? item.requireMfa : undefined,
     familyPortalEnabled: typeof item.familyPortalEnabled === 'boolean' ? item.familyPortalEnabled : undefined,
     signatureRequestsEnabled: typeof item.signatureRequestsEnabled === 'boolean' ? item.signatureRequestsEnabled : undefined,
-    enabledModules: parseEnabledModules(item.enabledModulesJson),
+    enabledModules: parseStringArrayJson(item.enabledModulesJson),
+    hiddenModules: parseStringArrayJson(item.hiddenModulesJson),
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
   };
@@ -114,6 +122,7 @@ export function buildWixOrganizationData(organization: Organization): WixOrganiz
     familyPortalEnabled: organization.familyPortalEnabled,
     signatureRequestsEnabled: organization.signatureRequestsEnabled,
     enabledModulesJson: organization.enabledModules ? JSON.stringify(organization.enabledModules) : null,
+    hiddenModulesJson: organization.hiddenModules ? JSON.stringify(organization.hiddenModules) : null,
     createdAt: organization.createdAt,
     updatedAt: organization.updatedAt,
   };
@@ -142,6 +151,9 @@ export function applyOrganizationUpdateToWixData(
   if (patch.signatureRequestsEnabled !== undefined) next.signatureRequestsEnabled = patch.signatureRequestsEnabled;
   if (patch.enabledModules !== undefined) {
     next.enabledModulesJson = patch.enabledModules ? JSON.stringify(patch.enabledModules) : null;
+  }
+  if (patch.hiddenModules !== undefined) {
+    next.hiddenModulesJson = patch.hiddenModules ? JSON.stringify(patch.hiddenModules) : null;
   }
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;

@@ -1,6 +1,8 @@
 import type { PermissionKey } from '../rbac/permissionCatalog';
 import type { MetricFilterKey, MetricKey } from './metricRegistry';
-import type { AdvancedModuleKey } from '../organization/moduleVisibility';
+import type { AdvancedModuleKey, HideableModuleKey } from '../organization/moduleVisibility';
+import { isModuleEnabled, isModuleHidden } from '../organization/moduleVisibility';
+import type { Organization } from '../../types/organization';
 
 /**
  * Phase 32 (Reporting, Analytics & Executive Dashboard). The complete,
@@ -390,4 +392,31 @@ export function getReportDefinition(key: string): ReportDefinition | undefined {
 
 export function listReportDefinitionsForPermissions(grantedPermissions: ReadonlySet<PermissionKey>): readonly ReportDefinition[] {
   return REPORT_REGISTRY.filter((r) => grantedPermissions.has(r.permission));
+}
+
+/** Manors accounting/reports cleanup (2026-10). Maps an entire
+    `ReportCategory` onto the `HideableModuleKey` that hides every report
+    in it — only categories this task actually hides have an entry; every
+    other category (operational, financial, commerce, procurement) is
+    intentionally absent, so it's never affected by `hiddenModules`. */
+const CATEGORY_HIDDEN_MODULE_KEY: Partial<Record<ReportCategory, HideableModuleKey>> = {
+  staff: 'reports-staff',
+  documents: 'reports-documents',
+};
+
+/** The one place "is this report visible to this organization" is
+    decided — combines the pre-existing `requiresModule` gate (hidden
+    until opted into) with the new category-level `hiddenModules` gate
+    (visible until explicitly hidden). Reused by every report-serving
+    route (list, single-report view, CSV export) so the three can never
+    drift out of agreement about which reports actually exist for a
+    given organization. */
+export function isReportVisibleForOrganization(
+  report: Pick<ReportDefinition, 'category' | 'requiresModule'>,
+  organization: (Pick<Organization, 'enabledModules' | 'hiddenModules'> & { id: string }) | null | undefined,
+): boolean {
+  if (report.requiresModule && !isModuleEnabled(organization, report.requiresModule)) return false;
+  const hideKey = CATEGORY_HIDDEN_MODULE_KEY[report.category];
+  if (hideKey && isModuleHidden(organization, hideKey)) return false;
+  return true;
 }

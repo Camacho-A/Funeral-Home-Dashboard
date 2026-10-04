@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { REPORT_REGISTRY, getReportDefinition, listReportDefinitionsForPermissions } from './reportRegistry';
+import { REPORT_REGISTRY, getReportDefinition, listReportDefinitionsForPermissions, isReportVisibleForOrganization } from './reportRegistry';
 import { getMetricDefinition } from './metricRegistry';
 import { isPermissionKey } from '../rbac/permissionCatalog';
+import { MANORS_ORGANIZATION_ID } from '../organization/moduleVisibility';
 
 describe('reportRegistry', () => {
   it('has no duplicate report keys', () => {
@@ -57,6 +58,55 @@ describe('reportRegistry', () => {
 
     it('returns nothing for an empty permission set', () => {
       expect(listReportDefinitionsForPermissions(new Set())).toEqual([]);
+    });
+  });
+
+  /**
+   * Manors accounting/reports cleanup (2026-10). Definitions themselves
+   * are never removed — every key still resolves via `getReportDefinition`
+   * regardless of visibility. `isReportVisibleForOrganization` is the one
+   * function every report-serving route (list/view/export) calls.
+   */
+  describe('isReportVisibleForOrganization', () => {
+    const staffReport = getReportDefinition('case-ownership')!;
+    const documentsReport = getReportDefinition('outstanding-signatures')!;
+    const operationalReport = getReportDefinition('active-cases')!;
+    const financialReport = getReportDefinition('trial-balance')!;
+    const MANORS = { id: MANORS_ORGANIZATION_ID, enabledModules: null, hiddenModules: null };
+    const OTHER_ORG = { id: 'some-other-org', enabledModules: null, hiddenModules: null };
+
+    it('a Staff-category report is NOT visible for Manors', () => {
+      expect(isReportVisibleForOrganization(staffReport, MANORS)).toBe(false);
+    });
+
+    it('a Documents-category report is NOT visible for Manors', () => {
+      expect(isReportVisibleForOrganization(documentsReport, MANORS)).toBe(false);
+    });
+
+    it('Operational and Financial reports remain visible for Manors', () => {
+      expect(isReportVisibleForOrganization(operationalReport, MANORS)).toBe(true);
+      expect(isReportVisibleForOrganization(financialReport, MANORS)).toBe(true);
+    });
+
+    it('every report definition still exists — this never deletes anything, only filters display', () => {
+      expect(getReportDefinition('case-ownership')).toBeDefined();
+      expect(getReportDefinition('outstanding-signatures')).toBeDefined();
+    });
+
+    it('an unrestricted organization sees Staff and Documents reports exactly as before', () => {
+      expect(isReportVisibleForOrganization(staffReport, OTHER_ORG)).toBe(true);
+      expect(isReportVisibleForOrganization(documentsReport, OTHER_ORG)).toBe(true);
+    });
+
+    it('still respects the pre-existing requiresModule gate independently of category hiding', () => {
+      const merchandiseReport = getReportDefinition('merchandise-performance')!;
+      expect(isReportVisibleForOrganization(merchandiseReport, { id: 'any-org', enabledModules: null, hiddenModules: null })).toBe(false);
+      expect(isReportVisibleForOrganization(merchandiseReport, { id: 'any-org', enabledModules: ['merchandise'], hiddenModules: null })).toBe(true);
+    });
+
+    it('a null/undefined organization never hides a category-gated report — only requiresModule can hide it in that case', () => {
+      expect(isReportVisibleForOrganization(staffReport, null)).toBe(true);
+      expect(isReportVisibleForOrganization(documentsReport, undefined)).toBe(true);
     });
   });
 });

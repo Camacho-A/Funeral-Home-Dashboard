@@ -73,6 +73,46 @@ describe('GET /api/reports', () => {
     const keys = body.reports.map((r: { key: string }) => r.key);
     expect(keys).toContain('active-cases');
     expect(keys).toContain('trial-balance');
-    expect(keys).toContain('outstanding-signatures');
+    expect(keys).toContain('sla-exceptions');
+  });
+});
+
+/**
+ * Manors accounting/reports cleanup (2026-10). Manors (DEFAULT_ORGANIZATION_ID
+ * === 'managed-cremations') has the Staff and Documents report categories
+ * hidden via the `MANORS_ORGANIZATION_ID` override in
+ * domain/organization/moduleVisibility.ts — a visibility decision, not a
+ * deletion: the report definitions and underlying services are untouched,
+ * they simply don't surface for this one organization. Operational and
+ * Financial categories are explicitly unaffected.
+ */
+describe('GET /api/reports — Manors Staff/Documents category hiding (2026-10)', () => {
+  it('hides every Staff-category report for Manors, even for an administrator', async () => {
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const keys = body.reports.map((r: { key: string }) => r.key);
+    for (const staffReportKey of ['active-cases-by-staff', 'open-tasks-by-staff', 'appointment-load', 'case-ownership', 'workload-summary']) {
+      expect(keys).not.toContain(staffReportKey);
+    }
+  });
+
+  it('hides every Documents-category report for Manors, even for an administrator', async () => {
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const keys = body.reports.map((r: { key: string }) => r.key);
+    for (const documentsReportKey of ['documents-generated', 'outstanding-signatures', 'signature-completion-time']) {
+      expect(keys).not.toContain(documentsReportKey);
+    }
+  });
+
+  it('does NOT hide Operational or Financial reports for Manors', async () => {
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID);
+    const body = await response.json();
+    const keys = body.reports.map((r: { key: string }) => r.key);
+    for (const stillVisibleKey of ['active-cases', 'case-intake-volume', 'revenue-summary', 'general-ledger', 'trial-balance']) {
+      expect(keys).toContain(stillVisibleKey);
+    }
   });
 });

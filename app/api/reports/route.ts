@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { hasPermission } from '@/services/permissionService';
 import { canViewReports } from '@/services/authorizationPolicyService';
-import { REPORT_REGISTRY } from '@/domain/reporting/reportRegistry';
-import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
+import { REPORT_REGISTRY, isReportVisibleForOrganization } from '@/domain/reporting/reportRegistry';
 import { getForOrganization } from '@/services/organizationsService';
 import { getDataAdapterMode } from '@/lib/env';
 
@@ -20,6 +19,11 @@ import { getDataAdapterMode } from '@/lib/env';
  * nav links (components/layout/TopBar.tsx), so a report never outlives the
  * feature it reports on. Nothing is deleted: an organization that enables
  * the module later sees the report again automatically.
+ *
+ * Manors accounting/reports cleanup (2026-10): `isReportVisibleForOrganization`
+ * also excludes an entire report category an organization has explicitly
+ * hidden (domain/reporting/reportRegistry.ts's own `CATEGORY_HIDDEN_MODULE_KEY`)
+ * — same reversible, organization-specific mechanism, opposite polarity.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -42,7 +46,7 @@ export async function GET(request: Request) {
 
   const visible = [];
   for (const report of REPORT_REGISTRY) {
-    if (report.requiresModule && !isModuleEnabled(organization, report.requiresModule)) continue;
+    if (!isReportVisibleForOrganization(report, organization)) continue;
     if (await hasPermission(policyParams, dataAdapterMode, report.permission)) {
       visible.push(report);
     }

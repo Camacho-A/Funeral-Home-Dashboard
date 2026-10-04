@@ -41,15 +41,44 @@ describe('AccountingNav — authorization guard (Manors go-live hardening)', () 
     expect(screen.queryByText('Journal Entries')).not.toBeInTheDocument();
   });
 
-  it('renders the full sub-nav, except Reconciliation, for a caller with accounting.view when the organization has not enabled the reconciliation module (Manors\' real state)', async () => {
+  /**
+   * Manors accounting/reports cleanup (2026-10). Chart of Accounts/
+   * Journal Entries/Banking are now hidden for Manors specifically (via
+   * the MANORS_ORGANIZATION_ID override in moduleVisibility.ts) — this
+   * replaces the prior "renders the full sub-nav" expectation, which
+   * described exactly the state this task changes. Dashboard/Invoices/
+   * Reports remain, same as Reconciliation staying hidden.
+   */
+  it('renders only Dashboard/Invoices/Reports for Manors — Chart of Accounts/Journal Entries/Banking/Reconciliation are all hidden ("Manors\' real state")', async () => {
     mockPermissions = ['accounting.view'];
     vi.spyOn(organizationsService, 'get').mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: "Manor's Cremation", isActive: true });
+    renderNav();
+    expect(await screen.findByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Invoices')).toBeInTheDocument();
+    expect(screen.getByText('Reports')).toBeInTheDocument();
+    // The organization-record query must actually resolve before the
+    // negative assertions mean anything — querying immediately would
+    // pass vacuously while it's still pending (isModuleHidden treats an
+    // unloaded organization as "not hidden" by design, see its own
+    // null-safety).
+    await waitFor(() => expect(screen.queryByText('Chart of Accounts')).not.toBeInTheDocument());
+    expect(screen.queryByText('Journal Entries')).not.toBeInTheDocument();
+    expect(screen.queryByText('Banking')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reconciliation')).not.toBeInTheDocument();
+  });
+
+  it('an unrestricted organization (not Manors) still sees Chart of Accounts/Journal Entries/Banking — multi-tenant safety', async () => {
+    mockPermissions = ['accounting.view'];
+    vi.spyOn(organizationsService, 'get').mockResolvedValue({ id: 'some-other-organization', name: 'Evergreen Memorial Group', isActive: true });
     renderNav();
     await waitFor(() => expect(screen.getByText('Chart of Accounts')).toBeInTheDocument());
     expect(screen.getByText('Journal Entries')).toBeInTheDocument();
     expect(screen.getByText('Banking')).toBeInTheDocument();
     expect(screen.getByText('Invoices')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
+    // Reconciliation is still hidden here too, but for the pre-existing,
+    // unrelated reason (enabledModules not opted into) — not this task's
+    // hiddenModules mechanism.
     expect(screen.queryByText('Reconciliation')).not.toBeInTheDocument();
   });
 

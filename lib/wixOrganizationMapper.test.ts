@@ -131,6 +131,39 @@ describe('mapWixOrganizationItem — enabledModules (Manors launch-prep)', () =>
   });
 });
 
+/** Manors accounting/reports cleanup (2026-10). Same JSON-in-text-field
+    convention as enabledModules above, opposite polarity. */
+describe('mapWixOrganizationItem — hiddenModules (Manors accounting/reports cleanup)', () => {
+  it('maps a row with no hiddenModulesJson at all to hiddenModules: undefined', () => {
+    const result = mapWixOrganizationItem({
+      beaconOrganizationId: 'x',
+      name: 'x',
+      isActive: true,
+    } as never);
+    expect(result?.hiddenModules).toBeUndefined();
+  });
+
+  it('parses a well-formed JSON array', () => {
+    const result = mapWixOrganizationItem({
+      beaconOrganizationId: 'x',
+      name: 'x',
+      isActive: true,
+      hiddenModulesJson: JSON.stringify(['accounting-banking', 'reports-staff']),
+    } as never);
+    expect(result?.hiddenModules).toEqual(['accounting-banking', 'reports-staff']);
+  });
+
+  it('falls back to undefined on malformed JSON rather than throwing', () => {
+    const result = mapWixOrganizationItem({
+      beaconOrganizationId: 'x',
+      name: 'x',
+      isActive: true,
+      hiddenModulesJson: 'not json',
+    } as never);
+    expect(result?.hiddenModules).toBeUndefined();
+  });
+});
+
 describe('buildWixOrganizationData / applyOrganizationUpdateToWixData', () => {
   const ORG: Organization = {
     id: 'org-1',
@@ -174,6 +207,21 @@ describe('buildWixOrganizationData / applyOrganizationUpdateToWixData', () => {
 
     const cleared = applyOrganizationUpdateToWixData(withModules, { enabledModules: null });
     expect(mapWixOrganizationItem(cleared)?.enabledModules).toBeUndefined();
+  });
+
+  it('round-trips hiddenModules through build then map', () => {
+    const withHidden: Organization = { ...ORG, hiddenModules: ['accounting-banking', 'reports-documents'] };
+    const wixData = buildWixOrganizationData(withHidden);
+    expect(mapWixOrganizationItem(wixData)?.hiddenModules).toEqual(['accounting-banking', 'reports-documents']);
+  });
+
+  it('applyOrganizationUpdateToWixData patches hiddenModules, including clearing it to null', () => {
+    const existing = buildWixOrganizationData(ORG);
+    const withHidden = applyOrganizationUpdateToWixData(existing, { hiddenModules: ['reports-staff'] });
+    expect(mapWixOrganizationItem(withHidden)?.hiddenModules).toEqual(['reports-staff']);
+
+    const cleared = applyOrganizationUpdateToWixData(withHidden, { hiddenModules: null });
+    expect(mapWixOrganizationItem(cleared)?.hiddenModules).toBeUndefined();
   });
 
   /**

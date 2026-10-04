@@ -75,4 +75,27 @@ describe('ReportsPage (Reports Library)', () => {
     await waitFor(() => expect(reportsClient.fetchReportDefinitions).toHaveBeenCalled());
     expect(await screen.findByText('No reports are available to you.')).toBeInTheDocument();
   });
+
+  /**
+   * Manors accounting/reports cleanup (2026-10). The server
+   * (GET /api/reports) is what actually excludes hidden-category
+   * reports — this page only groups/renders whatever it received. When
+   * the response (as it would be for Manors) contains no Staff/Documents
+   * reports at all, this proves the existing `grouped.has(category)`
+   * filter already omits that category's section heading entirely —
+   * no empty "Staff"/"Documents" heading, no orphan divider.
+   */
+  it('renders no section heading for a category with zero visible reports (e.g. Manors\' filtered Staff/Documents response)', async () => {
+    mockPermissions(['report.view']);
+    vi.mocked(reportsClient.fetchReportDefinitions).mockResolvedValue([
+      makeReport({ key: 'active-cases', displayName: 'Active Cases', category: 'operational' }),
+      makeReport({ key: 'trial-balance', displayName: 'Trial Balance', category: 'financial', permission: 'accounting.report' }),
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Operational')).toBeInTheDocument();
+    expect(screen.getByText('Financial')).toBeInTheDocument();
+    expect(screen.queryByText('Staff')).not.toBeInTheDocument();
+    expect(screen.queryByText('Documents & Signatures')).not.toBeInTheDocument();
+  });
 });
