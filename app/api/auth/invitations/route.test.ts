@@ -125,6 +125,11 @@ describe('POST /api/auth/invitations', () => {
     const sent = capturedIdentityMessages.find((m) => m.kind === 'invitation' && m.to === 'new.staff@example.com');
     expect(sent).toBeDefined();
     expect(typeof (sent as { token: string }).token).toBe('string');
+    // Staff invitation email copy (2026-10): the real inviting
+    // organization's own name is resolved and attached to the message —
+    // DEFAULT_ORGANIZATION_ID's mock fixture is named "Manor's Cremation"
+    // (see services/__mocks__/authFixtures.ts), never a hardcoded string.
+    expect((sent as { organizationName: string }).organizationName).toBe("Manor's Cremation");
   });
 
   it('is idempotent — inviting an already-invited email again never duplicates the membership, never re-issues a token, and returns an explicit 409 rather than a false success', async () => {
@@ -255,6 +260,12 @@ describe('PATCH /api/auth/invitations (regenerate)', () => {
 
     const sent = capturedIdentityMessages.filter((m) => m.kind === 'invitation' && m.to === 'regen.me@example.com');
     expect(sent).toHaveLength(2); // one from the original invite, one from regeneration
+    // Staff invitation email copy (2026-10): Resend uses the exact same
+    // message-generation path (getIdentityMessageSender().send({kind:
+    // 'invitation', ...})) as the initial invite — same professional
+    // copy, same organization-name resolution, never a distinct
+    // "resend"-flavored message.
+    expect((sent[1] as unknown as { organizationName: string }).organizationName).toBe("Manor's Cremation");
   });
 
   it('rejects a membershipId/invitedIdentityId pair that does not actually belong to the caller\'s organization', async () => {

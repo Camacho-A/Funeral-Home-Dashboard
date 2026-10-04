@@ -23,7 +23,7 @@ import { sendResendEmail, isResendConfigured } from '../email/resendClient';
 export type IdentityMessage =
   | { kind: 'password_reset'; to: string; token: string }
   | { kind: 'email_verification'; to: string; token: string }
-  | { kind: 'invitation'; to: string; token: string; organizationId: string; membershipId: string }
+  | { kind: 'invitation'; to: string; token: string; organizationId: string; membershipId: string; organizationName: string }
   | { kind: 'mfa_recovery_codes'; to: string; codes: string[] }
   /** Phase 26 (Electronic Signatures & Authorization Workflows). Reached
       only through `lib/signatureNotifier.ts`'s `SignatureNotifier`
@@ -120,11 +120,32 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
       };
     }
     case 'invitation': {
+      // Staff invitation email copy (2026-10). Sent for BOTH a fresh
+      // invite and a Resend (app/api/auth/invitations/route.ts's POST and
+      // PATCH handlers both construct this exact same message kind) — by
+      // design there is no separate "resend" copy; a resent invitation
+      // must read as a normal, legitimate invitation, never a second
+      // notice. `Identity` has no dedicated first-name field (see
+      // components/dashboard/PageGreetingHeader.tsx's own comment on this
+      // same gap) — only `displayName`, a full name typed by whoever sent
+      // the invitation, not the invitee themselves — so this always uses
+      // a plain "Hello," greeting rather than guessing a first name from
+      // it.
       const link = `${base}/accept-invitation?token=${encodeURIComponent(message.token)}&membershipId=${encodeURIComponent(message.membershipId)}`;
       return {
-        subject: "You've been invited to join a Solis organization",
-        html: `<p>Click the link below to accept your invitation.</p><p><a href="${link}">${link}</a></p>`,
-        text: `Accept your invitation: ${link}`,
+        subject: `You've been invited to join ${message.organizationName} on SOLIS`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2328; max-width: 480px; margin: 0 auto;">
+            <p style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: #6b7280; margin: 0 0 24px;">SOLIS</p>
+            <p style="margin: 0 0 16px;">Hello,</p>
+            <p style="margin: 0 0 24px; line-height: 1.5;">${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.</p>
+            <p style="margin: 0 0 24px; line-height: 1.5;">Use the button below to set up your account and access your workspace.</p>
+            <p style="margin: 0 0 24px;"><a href="${link}" style="display: inline-block; background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Accept Invitation</a></p>
+            <p style="margin: 0 0 24px; font-size: 13px; color: #6b7280; line-height: 1.5;">This invitation was sent to ${message.to}. If you weren't expecting this invitation, you can ignore this email.</p>
+            <p style="margin: 24px 0 0; font-size: 12px; color: #9ca3af;">SOLIS<br>Case Management</p>
+          </div>
+        `.trim(),
+        text: `Hello,\n\n${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.\n\nAccept your invitation: ${link}\n\nThis invitation was sent to ${message.to}. If you weren't expecting this invitation, you can ignore this email.\n\nSOLIS\nCase Management`,
       };
     }
     case 'mfa_recovery_codes': {

@@ -118,10 +118,99 @@ describe('resendIdentityMessageSender (Phase 33)', () => {
 
   it('builds an accept-invitation link carrying both token and membershipId', async () => {
     const fetchMock = stubFetch();
-    await resendIdentityMessageSender.send({ kind: 'invitation', to: 'x@example.com', token: 'raw-token', organizationId: 'org-1', membershipId: 'membership-1' });
+    await resendIdentityMessageSender.send({
+      kind: 'invitation',
+      to: 'x@example.com',
+      token: 'raw-token',
+      organizationId: 'org-1',
+      membershipId: 'membership-1',
+      organizationName: "Manor's Cremation",
+    });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.html).toContain('/accept-invitation?token=raw-token&membershipId=membership-1');
+  });
+
+  /** Staff invitation email copy (2026-10) — see
+      lib/identity/messageSender.ts's own comment on why initial invite
+      and Resend share this exact message kind/copy. */
+  describe('invitation email copy', () => {
+    function sendInvitation(overrides: Partial<{ to: string; organizationName: string }> = {}) {
+      return resendIdentityMessageSender.send({
+        kind: 'invitation',
+        to: overrides.to ?? 'new.hire@example.com',
+        token: 'raw-token',
+        organizationId: 'org-1',
+        membershipId: 'membership-1',
+        organizationName: overrides.organizationName ?? "Manor's Cremation",
+      });
+    }
+
+    it('subject includes both the real organization name and SOLIS', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ organizationName: "Manor's Cremation" });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to join Manor's Cremation on SOLIS");
+    });
+
+    it('a different organization name renders correctly — never hardcoded', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ organizationName: 'Evergreen Memorial Group' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to join Evergreen Memorial Group on SOLIS");
+      expect(body.html).toContain('Evergreen Memorial Group');
+      expect(body.text).toContain('Evergreen Memorial Group');
+    });
+
+    it('organization name appears in the body, not just the subject', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ organizationName: "Manor's Cremation" });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.html).toContain("Manor's Cremation has invited you to join their team on SOLIS");
+      expect(body.text).toContain("Manor's Cremation has invited you to join their team on SOLIS");
+    });
+
+    it('uses a safe "Hello," greeting — Identity has no first-name field to address the invitee by', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.html).toContain('Hello,');
+      expect(body.text).toContain('Hello,');
+    });
+
+    it('the CTA reads exactly "Accept Invitation"', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.html).toContain('>Accept Invitation<');
+    });
+
+    it('the reassurance text names the exact recipient address, not a generic placeholder', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ to: 'specific.recipient@example.com' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.html).toContain('This invitation was sent to specific.recipient@example.com');
+      expect(body.text).toContain('This invitation was sent to specific.recipient@example.com');
+    });
+
+    it('never contains resend/urgency language — a resent invitation must read identically to a fresh one', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      for (const forbidden of [/resend/i, /second notice/i, /reminder/i, /urgent/i, /action required/i, /congratulations/i, /don'?t miss out/i, /act now/i]) {
+        expect(body.subject).not.toMatch(forbidden);
+        expect(body.html).not.toMatch(forbidden);
+        expect(body.text).not.toMatch(forbidden);
+      }
+    });
+
+    it('the invitation URL in the plain-text fallback matches the HTML link exactly', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      const [, htmlLink] = body.html.match(/href="([^"]+)"/) as [string, string];
+      expect(body.text).toContain(htmlLink);
+    });
   });
 
   it('builds a family-portal accept-invitation link for portal_invitation', async () => {
@@ -176,9 +265,18 @@ describe('resendIdentityMessageSender (Phase 33)', () => {
 
     it('invitation', async () => {
       const fetchMock = stubFetch();
-      await resendIdentityMessageSender.send({ kind: 'invitation', to: 'x@example.com', token: 'raw-token', organizationId: 'org-1', membershipId: 'membership-1' });
+      await resendIdentityMessageSender.send({
+        kind: 'invitation',
+        to: 'x@example.com',
+        token: 'raw-token',
+        organizationId: 'org-1',
+        membershipId: 'membership-1',
+        organizationName: "Manor's Cremation",
+      });
       const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-      expect(body.subject).toBe("You've been invited to join a Solis organization");
+      // Staff invitation email copy (2026-10): the subject now names the
+      // real inviting organization, never a generic "a Solis organization".
+      expect(body.subject).toBe("You've been invited to join Manor's Cremation on SOLIS");
     });
 
     it('mfa_recovery_codes', async () => {
@@ -200,7 +298,7 @@ describe('resendIdentityMessageSender (Phase 33)', () => {
       const messages = [
         { kind: 'password_reset' as const, to: 'x@example.com', token: 't' },
         { kind: 'email_verification' as const, to: 'x@example.com', token: 't' },
-        { kind: 'invitation' as const, to: 'x@example.com', token: 't', organizationId: 'org-1', membershipId: 'm-1' },
+        { kind: 'invitation' as const, to: 'x@example.com', token: 't', organizationId: 'org-1', membershipId: 'm-1', organizationName: "Manor's Cremation" },
         { kind: 'mfa_recovery_codes' as const, to: 'x@example.com', codes: ['c'] },
         { kind: 'portal_invitation' as const, to: 'x@example.com', token: 't', organizationId: 'org-1', caseId: 'case-1', invitationId: 'inv-1' },
       ];

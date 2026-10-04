@@ -7,6 +7,7 @@ import { resolveMembershipAuthorizationContext } from '@/lib/auth/resolveMembers
 import { inviteToOrganization, regenerateInvitation, listPendingInvitations, revokeInvitation } from '@/services/invitationService';
 import { getMembership } from '@/services/membershipService';
 import { getIdentityById } from '@/services/identityService';
+import { getForOrganization } from '@/services/organizationsService';
 import { getIdentityMessageSender } from '@/lib/identity/messageSender';
 import { resolveEnabledRoleForKey } from '@/services/roleService';
 import { canInviteUser } from '@/services/authorizationPolicyService';
@@ -151,12 +152,14 @@ export async function POST(request: Request) {
   // (that's real, correct state — the row is ready for a future Resend),
   // but this specific response has to say so honestly.
   try {
+    const organization = await getForOrganization(authz.context.organizationId, dataAdapterMode);
     await getIdentityMessageSender().send({
       kind: 'invitation',
       to: result.identity.email,
       token: result.verificationToken,
       organizationId: authz.context.organizationId,
       membershipId: result.membership.id,
+      organizationName: organization?.name ?? 'your organization',
     });
   } catch (error) {
     console.error('Failed to send invitation message:', error instanceof Error ? error.message : error);
@@ -236,12 +239,14 @@ export async function PATCH(request: Request) {
   const invitedIdentity = await getIdentityById(invitedIdentityId, dataAdapterMode);
   if (invitedIdentity) {
     try {
+      const organization = await getForOrganization(authz.context.organizationId, dataAdapterMode);
       await getIdentityMessageSender().send({
         kind: 'invitation',
         to: invitedIdentity.email,
         token,
         organizationId: authz.context.organizationId,
         membershipId,
+        organizationName: organization?.name ?? 'your organization',
       });
     } catch (error) {
       console.error('Failed to send invitation message:', error instanceof Error ? error.message : error);
