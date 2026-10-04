@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialsFromName, toDisplayTitleCase } from './string';
+import { initialsFromName, toDisplayTitleCase, toDisplayCasingIfAllCaps } from './string';
 
 /**
  * Item #6 clarification (2026-09): the previous `initialsFromName` sliced
@@ -86,5 +86,46 @@ describe('toDisplayTitleCase', () => {
 
   it('does not throw on an empty string', () => {
     expect(toDisplayTitleCase('')).toBe('');
+  });
+});
+
+/**
+ * Invitation email organization-name casing (2026-10). Only an entirely
+ * ALL-CAPS stored name is normalized — anything with even one existing
+ * lowercase letter is left completely untouched, since there is no
+ * reliable way to tell "all-caps by data-entry habit" apart from
+ * "genuinely all-caps by design" from the stored string alone.
+ */
+describe('toDisplayCasingIfAllCaps', () => {
+  it('"MANORS CREMATION" -> "Manors Cremation"', () => {
+    expect(toDisplayCasingIfAllCaps('MANORS CREMATION')).toBe('Manors Cremation');
+  });
+
+  it('leaves an already normally-cased organization name unchanged', () => {
+    expect(toDisplayCasingIfAllCaps('Manors Cremation')).toBe('Manors Cremation');
+  });
+
+  it('leaves a name with intentional mixed casing / an embedded acronym untouched — not entirely uppercase', () => {
+    expect(toDisplayCasingIfAllCaps('Acme HVAC Co.')).toBe('Acme HVAC Co.');
+  });
+
+  it('leaves a lowercase-stylized brand name untouched', () => {
+    expect(toDisplayCasingIfAllCaps('manorsCremation')).toBe('manorsCremation');
+  });
+
+  it('capitalizes after a hyphen in an all-caps name, same as toDisplayTitleCase', () => {
+    expect(toDisplayCasingIfAllCaps('MARY-JANE CREMATORY')).toBe('Mary-Jane Crematory');
+  });
+
+  it('a value with no letters at all is left untouched — nothing to normalize', () => {
+    expect(toDisplayCasingIfAllCaps('12345')).toBe('12345');
+  });
+
+  it('an all-caps value mixed with digits/punctuation still normalizes its letters', () => {
+    expect(toDisplayCasingIfAllCaps('1-800-CREMATE')).toBe('1-800-Cremate');
+  });
+
+  it('does not throw on an empty string', () => {
+    expect(toDisplayCasingIfAllCaps('')).toBe('');
   });
 });

@@ -170,6 +170,39 @@ describe('resendIdentityMessageSender (Phase 33)', () => {
       expect(body.text).toContain("Manor's Cremation has invited you to join their team on SOLIS");
     });
 
+    /** Organization name display casing (2026-10). Presentation only — a
+        stored ALL-CAPS organization name ("MANORS CREMATION") renders in
+        normal title case here, in both subject and body; the real
+        Organization record/organizationName value passed in is never
+        touched (see toDisplayCasingIfAllCaps's own comment, utils/string.ts). */
+    it('an entirely ALL-CAPS organization name renders in normal title case: "MANORS CREMATION" -> "Manors Cremation"', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ organizationName: 'MANORS CREMATION' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to join Manors Cremation on SOLIS");
+      expect(body.html).toContain('Manors Cremation has invited you to join their team on SOLIS');
+      expect(body.text).toContain('Manors Cremation has invited you to join their team on SOLIS');
+      expect(body.subject).not.toContain('MANORS CREMATION');
+      expect(body.html).not.toContain('MANORS CREMATION');
+      expect(body.text).not.toContain('MANORS CREMATION');
+    });
+
+    it('an already normally-cased organization name is left unchanged', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ organizationName: 'Evergreen Memorial Group' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to join Evergreen Memorial Group on SOLIS");
+      expect(body.html).toContain('Evergreen Memorial Group has invited you to join their team on SOLIS');
+    });
+
+    it('an organization name with intentional mixed casing / an embedded acronym is never reformatted', async () => {
+      const fetchMock = stubFetch();
+      await sendInvitation({ organizationName: 'Acme HVAC Co.' });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.subject).toBe("You've been invited to join Acme HVAC Co. on SOLIS");
+      expect(body.html).toContain('Acme HVAC Co. has invited you to join their team on SOLIS');
+    });
+
     it('uses a safe "Hello," greeting — Identity has no first-name field to address the invitee by', async () => {
       const fetchMock = stubFetch();
       await sendInvitation();

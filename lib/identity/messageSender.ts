@@ -19,6 +19,7 @@
  */
 import { getAppBaseUrl } from '../env';
 import { sendResendEmail, isResendConfigured } from '../email/resendClient';
+import { toDisplayCasingIfAllCaps } from '../../utils/string';
 
 export type IdentityMessage =
   | { kind: 'password_reset'; to: string; token: string }
@@ -132,21 +133,32 @@ function formatIdentityMessage(message: IdentityMessage): { subject: string; htm
       // the invitation, not the invitee themselves — so this always uses
       // a plain "Hello," greeting rather than guessing a first name from
       // it.
+      //
+      // Organization-name casing (2026-10): presentation only, at this
+      // one render point — `message.organizationName` itself (and the
+      // real Organization record it came from) is never touched. Only
+      // an entirely-ALL-CAPS stored name ("MANORS CREMATION") is
+      // normalized to ordinary title case ("Manors Cremation"); any
+      // name with so much as one already-intentional lowercase letter
+      // is left exactly as stored. See toDisplayCasingIfAllCaps's own
+      // comment (utils/string.ts) for why that's the one safe,
+      // unambiguous case to act on.
       const link = `${base}/accept-invitation?token=${encodeURIComponent(message.token)}&membershipId=${encodeURIComponent(message.membershipId)}`;
+      const organizationName = toDisplayCasingIfAllCaps(message.organizationName);
       return {
-        subject: `You've been invited to join ${message.organizationName} on SOLIS`,
+        subject: `You've been invited to join ${organizationName} on SOLIS`,
         html: `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2328; max-width: 480px; margin: 0 auto;">
             <p style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: #6b7280; margin: 0 0 24px;">SOLIS</p>
             <p style="margin: 0 0 16px;">Hello,</p>
-            <p style="margin: 0 0 24px; line-height: 1.5;">${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.</p>
+            <p style="margin: 0 0 24px; line-height: 1.5;">${organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.</p>
             <p style="margin: 0 0 24px;"><a href="${link}" style="display: inline-block; background-color: #111827; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600;">Accept Invitation</a></p>
             <p style="margin: 0 0 24px; line-height: 1.5;">Use the button above to set up your account and access your workspace.</p>
             <p style="margin: 0 0 24px; font-size: 13px; color: #6b7280; line-height: 1.5;">This invitation was sent to ${message.to}. If you weren't expecting this invitation, you can safely ignore this email.</p>
             <p style="margin: 24px 0 0; font-size: 12px; color: #9ca3af;">SOLIS<br>Service Operations, Logistics, Intake &amp; Scheduling</p>
           </div>
         `.trim(),
-        text: `Hello,\n\n${message.organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.\n\nAccept your invitation:\n${link}\n\nUse the link above to set up your account and access your workspace.\n\nThis invitation was sent to ${message.to}. If you weren't expecting this invitation, you can safely ignore this email.\n\nSOLIS\nService Operations, Logistics, Intake & Scheduling`,
+        text: `Hello,\n\n${organizationName} has invited you to join their team on SOLIS, the system used to manage cases and day-to-day operations.\n\nAccept your invitation:\n${link}\n\nUse the link above to set up your account and access your workspace.\n\nThis invitation was sent to ${message.to}. If you weren't expecting this invitation, you can safely ignore this email.\n\nSOLIS\nService Operations, Logistics, Intake & Scheduling`,
       };
     }
     case 'mfa_recovery_codes': {

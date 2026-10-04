@@ -44,3 +44,27 @@ export function initialsFromName(name: string): string {
 export function toDisplayTitleCase(value: string): string {
   return value.toLowerCase().replace(/(^|[\s-])([a-z])/g, (_match, boundary: string, letter: string) => boundary + letter.toUpperCase());
 }
+
+/**
+ * Invitation email organization-name casing (2026-10). Presentation-only,
+ * same "never writes anything back, call site passes the stored value
+ * straight through at render time" posture as `toDisplayTitleCase` above
+ * — reuses that exact algorithm once gated by the all-caps check below.
+ *
+ * Deliberately narrower than `toDisplayTitleCase`: only acts when the
+ * value has NO lowercase letters at all. A value that already has even
+ * one intentionally-cased letter (a stylized brand name, an acronym
+ * spelled with lowercase elsewhere, an apostrophe-cased name) is left
+ * completely untouched — there is no reliable way to tell "entirely
+ * uppercase by data-entry habit" (e.g. "MANORS CREMATION") apart from
+ * "genuinely all-caps by design" from the stored string alone, so this
+ * only acts on the unambiguous case and never touches anything already
+ * mixed-case. A value with no letters at all (nothing to normalize) is
+ * also left untouched.
+ */
+export function toDisplayCasingIfAllCaps(value: string): string {
+  const hasLowercase = /[a-z]/.test(value);
+  const hasUppercase = /[A-Z]/.test(value);
+  if (hasLowercase || !hasUppercase) return value;
+  return toDisplayTitleCase(value);
+}
