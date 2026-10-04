@@ -52,6 +52,65 @@
   }
 }
 
+/* Case Detail tabs on mobile (2026-10). Below 560px the six (seven with
+   Family Portal) tabs no longer fit in one scrollable row without
+   cutting off "Schedule" and sometimes hiding the selected tab entirely
+   off-screen, with no visible scroll affordance. Replaces the row with
+   a compact 3-column grid of segmented buttons instead — every tab one
+   tap away, the selected one always visible, no sideways scrolling.
+   Same tab names/order/count/ARIA roles/click handlers; a 7th tab
+   (Family Portal) simply wraps onto a third row. Desktop/tablet (above
+   560px) are unchanged.
+
+   `.tabs.tabs > *` repeats the class to raise specificity above the
+   pre-existing `.tabs button`/`.tabs button.tabActive` rules (which
+   otherwise still win below 560px despite this media query coming
+   later — they're MORE specific, not just earlier) — without this, the
+   desktop `border-bottom: 2px solid transparent`/`margin-bottom: -1px`
+   would still apply here. */
+@media (max-width: 560px) {
+  .tabs.tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    margin: 8px 0 20px;
+    border: 1px solid var(--sx-border, oklch(0.925 0.004 255));
+    border-bottom: 1px solid var(--sx-border, oklch(0.925 0.004 255));
+    border-radius: 10px;
+    background: var(--sx-subtle, oklch(0.975 0.003 255));
+    overflow: visible;
+  }
+  .tabs.tabs > * {
+    height: 40px;
+    margin: 0;
+    padding: 0 6px;
+    border: none;
+    border-bottom: none;
+    border-radius: 7px;
+    background: transparent;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--sx-muted, oklch(0.52 0.012 255));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tabs.tabs > [aria-selected='true'] {
+    background: #fff;
+    color: var(--sx-text, oklch(0.22 0.012 255));
+    font-weight: 600;
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.08);
+  }
+  .tabs.tabs > *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px oklch(0.32 0.08 255 / 0.18);
+  }
+}
+
 .tabs button.tabActive {
   color: var(--sx-text);
   font-weight: 600;
