@@ -82,7 +82,7 @@ export function TeamManagementPanel() {
         canRemove={canRemove}
       />
 
-      <PendingInvitationList organizationId={organizationId} invitations={invitations} canInvite={canInvite} />
+      <PendingInvitationList organizationId={organizationId} invitations={invitations} roles={roles} canInvite={canInvite} />
 
       {canInvite && <InviteTeamMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} organizationId={organizationId} roles={roles} />}
     </div>

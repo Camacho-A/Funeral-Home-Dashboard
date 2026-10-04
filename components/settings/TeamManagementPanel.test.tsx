@@ -185,6 +185,18 @@ describe('TeamManagementPanel — pending invitations', () => {
     expect(screen.getByText('Pending')).toBeInTheDocument();
   });
 
+  // Raw role display fix (2026-10): proves the fix end-to-end through the
+  // real panel wiring (TeamManagementPanel -> PendingInvitationList),
+  // not just PendingInvitationList in isolation
+  // (PendingInvitationList.test.tsx covers that directly).
+  it('raw role display fix: the pending invitation\'s role renders as its human label ("Read Only"), never the raw key', async () => {
+    renderPanel();
+    await screen.findByText('Invited Person');
+    const invitedRow = screen.getByText('Invited Person').closest('tr')!;
+    expect(within(invitedRow).getByText('Read Only')).toBeInTheDocument();
+    expect(within(invitedRow).queryByText('readOnly')).not.toBeInTheDocument();
+  });
+
   it('invites a new team member — the invite modal submits and the list refetches', async () => {
     vi.mocked(identityAuthClient.inviteTeamMember).mockResolvedValue({ membershipId: 'membership-new', outcome: 'invited' });
     renderPanel();

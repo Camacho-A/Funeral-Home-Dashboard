@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { PendingInvitation } from '@/lib/identityAuthClient';
+import type { PendingInvitation, RbacRole } from '@/lib/identityAuthClient';
 import { useResendInvitation, useRevokeInvitation } from '@/hooks/useRbac';
 import { ConfirmActionDialog } from './ConfirmActionDialog';
 
@@ -22,14 +22,26 @@ function formatDate(iso: string | null): string {
  * with a count, then a table (email / invited date if present / role if
  * present / status `.sx-status-warn` "Pending"). "Revoke" stays a
  * VISIBLE `sx-btn-danger sx-btn-sm` action (not in a RowMenu), same confirm.
+ *
+ * Raw role display fix (2026-10): the Role column used to render
+ * `invitation.role` (the internal key, e.g. "officeStaff") directly —
+ * `roles` is the same canonical `RbacRole[]` list (id/key/name)
+ * `TeamManagementPanel` already fetches and already passes to
+ * `TeamMemberList`/`InviteTeamMemberModal`; this just reuses it with the
+ * same `roles.find((r) => r.key === ...)?.name ?? ...` lookup
+ * `TeamMemberList` established, rather than inventing a second mapping.
+ * `invitation.role` itself — and everything Resend/Revoke send to the
+ * server — is completely unchanged; only the rendered text differs.
  */
 export function PendingInvitationList({
   organizationId,
   invitations,
+  roles,
   canInvite,
 }: {
   organizationId: string;
   invitations: PendingInvitation[];
+  roles: RbacRole[];
   canInvite: boolean;
 }) {
   const resendInvitation = useResendInvitation(organizationId);
@@ -60,7 +72,7 @@ export function PendingInvitationList({
                 <span className="sx-cell-title">{invitation.displayName}</span>
                 <span className="sx-cell-sub">{invitation.email}</span>
               </td>
-              <td data-label="Role">{invitation.role}</td>
+              <td data-label="Role">{roles.find((r) => r.key === invitation.role)?.name ?? invitation.role}</td>
               <td data-label="Status">
                 <span className={invitation.status === 'expired' ? 'sx-status sx-status-bad' : 'sx-status sx-status-warn'}>
                   {invitation.status === 'expired' ? 'Expired' : 'Pending'}

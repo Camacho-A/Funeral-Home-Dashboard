@@ -16,6 +16,13 @@ import { useAssignRole } from '@/hooks/useRbac';
  *
  * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S3): restyled with
  * the previous phase's form system (§3.3) — same fields/validation/handler.
+ *
+ * Raw role display fix (2026-10): the member picker's "— currently X"
+ * text used to render `member.role` (the internal key) directly — now
+ * looks it up against the `roles` prop already passed in here, same
+ * `roles.find((r) => r.key === ...)?.name ?? ...` pattern established
+ * by TeamMemberList. `member.role` itself and the actual role-assignment
+ * submission are unchanged.
  */
 export function AssignRoleDialog({
   open,
@@ -68,7 +75,7 @@ export function AssignRoleDialog({
                 </option>
                 {members.map((member) => (
                   <option key={member.identityId} value={member.identityId}>
-                    {member.displayName} — currently {member.role}
+                    {member.displayName} — currently {roles.find((r) => r.key === member.role)?.name ?? member.role}
                   </option>
                 ))}
               </SelectField>
