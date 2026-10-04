@@ -1,17 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as identityAuthClient from '@/lib/identityAuthClient';
 import { organizationsService } from '@/services/organizationsService';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard' }));
+// Addendum 2, item #6 (2026-10): a mutable vi.fn (not a plain arrow
+// function) so the new "Settings expanded" describe block below can
+// override the pathname per test — every pre-existing test in this file
+// relies on the '/dashboard' default and never touches this itself.
+vi.mock('next/navigation', () => ({ usePathname: vi.fn(() => '/dashboard') }));
 
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');
-  return { ...actual, fetchMyPermissions: vi.fn(), fetchActiveStaffCount: vi.fn() };
+  return { ...actual, fetchMyPermissions: vi.fn(), fetchActiveStaffCount: vi.fn(), fetchActiveStaffList: vi.fn().mockResolvedValue([]) };
 });
 
 vi.spyOn(organizationsService, 'get').mockResolvedValue({
@@ -323,6 +328,106 @@ describe('Sidebar — organization logo (Manors cleanup phase, Task #4)', () => 
     renderSidebar('identity');
     await screen.findByRole('img', { name: 'Manors Cremation logo' });
     expect(await screen.findByText('4 staff online')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Addendum 2, item #6 (2026-10). "Settings" expands in place to show its
+ * own sub-pages, using the exact same `useSettingsAreas` list/visibility
+ * rules the Settings menu itself uses — see settingsAreas.ts. Only
+ * renders while on a Settings page (`/settings`, `/settings/*`, or
+ * `/unmatched-forms` — item #4's own route, outside `/settings` but
+ * still part of this same menu).
+ */
+describe('Sidebar — Settings expanded submenu (Addendum 2, item #6, 2026-10)', () => {
+  afterEach(() => {
+    vi.mocked(usePathname).mockReturnValue('/dashboard');
+  });
+
+  it('does not expand on an unrelated page (the default "/dashboard" every other test in this file uses)', async () => {
+    mockPermissions(['case.create']);
+    renderSidebar('mock');
+    await screen.findByText('Settings');
+    expect(screen.queryByText('Import Existing Jotform')).not.toBeInTheDocument();
+  });
+
+  it('expands to show visible sub-areas while on a /settings/* page', async () => {
+    vi.mocked(usePathname).mockReturnValue('/settings/team');
+    mockPermissions(['case.create', 'caseNumber.manage']);
+    renderSidebar('mock');
+    await screen.findByText('Settings');
+    expect(await screen.findByText('Import Existing Jotform')).toBeInTheDocument();
+    expect(screen.getByText('Case Numbering')).toBeInTheDocument();
+  });
+
+  it('expands to show visible sub-areas while on /unmatched-forms too, even though that route is outside /settings', async () => {
+    vi.mocked(usePathname).mockReturnValue('/unmatched-forms');
+    // case.create so canSeeSettings (the top-level "Settings" item's own
+    // gate) is satisfied — case.update is what makes Unmatched Forms
+    // itself visible within the expanded list.
+    mockPermissions(['case.create', 'case.update']);
+    renderSidebar('mock');
+    await screen.findByText('Settings');
+    expect(await screen.findByText('Unmatched Forms')).toBeInTheDocument();
+  });
+
+  it('includes item #5\'s Document Templates/Audit Center, with the same identity-mode + permission gate', async () => {
+    vi.mocked(usePathname).mockReturnValue('/settings/document-templates');
+    mockPermissions(['document.template.manage', 'audit.read']);
+    renderSidebar('identity');
+    await screen.findByText('Settings');
+    expect(await screen.findByText('Document Templates')).toBeInTheDocument();
+    expect(screen.getByText('Audit Center')).toBeInTheDocument();
+  });
+
+  it('highlights the current sub-page with the selected style, and only that one', async () => {
+    vi.mocked(usePathname).mockReturnValue('/settings/case-numbering');
+    mockPermissions(['case.create', 'caseNumber.manage']);
+    renderSidebar('mock');
+    const caseNumbering = await screen.findByText('Case Numbering');
+    const importJotform = screen.getByText('Import Existing Jotform');
+    expect(caseNumbering.className).toMatch(/settingsSubItemActive/);
+    expect(importJotform.className).not.toMatch(/settingsSubItemActive/);
+  });
+
+  it('never expands when the caller has no visible sub-areas at all, even while on /settings', async () => {
+    vi.mocked(usePathname).mockReturnValue('/settings');
+    mockPermissions([]);
+    renderSidebar('identity');
+    await screen.findByText('Settings');
+    // Security is always visible in identity mode, so this caller DOES
+    // have a sub-area — confirm it renders instead, proving the describe
+    // block's premise (an identity-mode caller always sees Security).
+    expect(await screen.findByText('Security')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Addendum 2, item #1 (2026-10). The "N staff online" hover/focus
+ * popover. `fetchActiveStaffList` is mocked to resolve `[]` by default
+ * (see the top-of-file `identityAuthClient` mock) — these tests override
+ * it per case. The full grouping/visibility logic itself is unit-tested
+ * directly in StaffOnlinePopover.test.tsx; this file only confirms it's
+ * correctly wired into the sidebar footer.
+ */
+describe('Sidebar — staff online popover (Addendum 2, item #1, 2026-10)', () => {
+  it('does not fetch the staff list until the card is hovered/focused', async () => {
+    mockPermissions([]);
+    vi.mocked(identityAuthClient.fetchActiveStaffCount).mockResolvedValue(2);
+    renderSidebar('identity');
+    await screen.findByText('2 staff online');
+    expect(identityAuthClient.fetchActiveStaffList).not.toHaveBeenCalled();
+  });
+
+  it('fetches and shows the list once the card is hovered', async () => {
+    mockPermissions([]);
+    vi.mocked(identityAuthClient.fetchActiveStaffCount).mockResolvedValue(1);
+    vi.mocked(identityAuthClient.fetchActiveStaffList).mockResolvedValue([{ displayName: 'Dana Reyes', roleKey: 'manager' }]);
+    renderSidebar('identity');
+    const card = await screen.findByText('1 staff online');
+    fireEvent.mouseEnter(card);
+    expect(await screen.findByText('Dana Reyes')).toBeInTheDocument();
+    expect(identityAuthClient.fetchActiveStaffList).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID);
   });
 });
 

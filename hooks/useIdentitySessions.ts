@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchActiveSessions, fetchActiveStaffCount, revokeSessionById, signOutEverywhere } from '@/lib/identityAuthClient';
+import { fetchActiveSessions, fetchActiveStaffCount, fetchActiveStaffList, revokeSessionById, signOutEverywhere } from '@/lib/identityAuthClient';
 
 const SESSIONS_QUERY_KEY = ['identitySessions'];
 const activeStaffCountKey = (organizationId: string) => ['activeStaffCount', organizationId];
+const activeStaffListKey = (organizationId: string) => ['activeStaffList', organizationId];
 
 export function useIdentitySessions() {
   return useQuery({ queryKey: SESSIONS_QUERY_KEY, queryFn: fetchActiveSessions });
@@ -20,6 +21,18 @@ export function useActiveStaffCount(organizationId: string, enabled = true) {
     queryFn: () => fetchActiveStaffCount(organizationId),
     enabled: Boolean(organizationId) && enabled,
     refetchInterval: 60_000,
+  });
+}
+
+/** Backs the "N staff online" hover popover's list — unlike
+    `useActiveStaffCount`, this is deliberately NOT always-enabled: `open`
+    gates the query so the list is only ever fetched while the popover is
+    actually open, never on every sidebar render. */
+export function useActiveStaffList(organizationId: string, open: boolean) {
+  return useQuery({
+    queryKey: activeStaffListKey(organizationId),
+    queryFn: () => fetchActiveStaffList(organizationId),
+    enabled: Boolean(organizationId) && open,
   });
 }
 

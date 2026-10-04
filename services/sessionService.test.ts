@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { identitySessionFixtures } from './__mocks__/identityFixtures';
+import { identitySessionFixtures, identityFixtures, membershipFixtures } from './__mocks__/identityFixtures';
 
 let idCounter = 0;
 function idFactory(): string {
@@ -220,6 +220,88 @@ describe('countDistinctActiveStaffForOrganization ("N staff online")', () => {
 
     expect(await countDistinctActiveStaffForOrganization('org-a', 'mock')).toBe(1);
     expect(await countDistinctActiveStaffForOrganization('org-b', 'mock')).toBe(0);
+  });
+});
+
+/** Addendum 2, item #1 (2026-10). Backs the sidebar's "N staff online"
+    hover popover — same distinct-active-identity set
+    `countDistinctActiveStaffForOrganization` counts, resolved to
+    `{ displayName, roleKey }`. Unlike that describe block's sessions
+    (whose `identityId` values are bare strings with no backing
+    Identity/Membership row — fine for a pure session-count test), these
+    need a genuine Identity (for displayName) and Membership (for
+    roleKey) in the same organization, since this function resolves
+    both. */
+describe('listDistinctActiveStaffForOrganization ("N staff online" popover)', () => {
+  let identityLengthBefore: number;
+  let membershipLengthBefore: number;
+  beforeEach(() => {
+    identityLengthBefore = identityFixtures.length;
+    membershipLengthBefore = membershipFixtures.length;
+  });
+  afterEach(() => {
+    identityFixtures.length = identityLengthBefore;
+    membershipFixtures.length = membershipLengthBefore;
+  });
+
+  async function seedActiveStaffMember(organizationId: string, params: { email: string; displayName: string; role: string }) {
+    const { findOrCreateIdentity } = await import('./identityService');
+    const { createMembership } = await import('./membershipService');
+    const { createIdentitySession, setSessionOrganization } = await import('./sessionService');
+
+    const { identity } = await findOrCreateIdentity({ email: params.email, displayName: params.displayName, idFactory }, 'mock');
+    await createMembership(
+      { identityId: identity.id, organizationId, role: params.role, status: 'active', invitedBy: null, idFactory },
+      'mock',
+    );
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: identity.id }, 'mock');
+    await setSessionOrganization(session.id, organizationId, 'mock');
+    return identity;
+  }
+
+  it('is empty when no session has selected this organization', async () => {
+    const { listDistinctActiveStaffForOrganization } = await import('./sessionService');
+    expect(await listDistinctActiveStaffForOrganization('org-staff-list-empty', 'mock')).toEqual([]);
+  });
+
+  it('returns displayName and roleKey for a single active staff member, never email or id', async () => {
+    const { listDistinctActiveStaffForOrganization } = await import('./sessionService');
+    await seedActiveStaffMember('org-staff-list-solo', { email: 'solo@example.com', displayName: 'Dana Reyes', role: 'manager' });
+
+    const result = await listDistinctActiveStaffForOrganization('org-staff-list-solo', 'mock');
+    expect(result).toEqual([{ displayName: 'Dana Reyes', roleKey: 'manager' }]);
+  });
+
+  it('returns one entry per distinct active identity, each with its own role', async () => {
+    const { listDistinctActiveStaffForOrganization } = await import('./sessionService');
+    await seedActiveStaffMember('org-staff-list-multi', { email: 'admin@example.com', displayName: 'Jordan Rivera', role: 'administrator' });
+    await seedActiveStaffMember('org-staff-list-multi', { email: 'fd@example.com', displayName: 'Casey Nguyen', role: 'funeralDirector' });
+
+    const result = await listDistinctActiveStaffForOrganization('org-staff-list-multi', 'mock');
+    expect(result).toHaveLength(2);
+    expect(result).toEqual(
+      expect.arrayContaining([
+        { displayName: 'Jordan Rivera', roleKey: 'administrator' },
+        { displayName: 'Casey Nguyen', roleKey: 'funeralDirector' },
+      ]),
+    );
+  });
+
+  it('excludes an identity with an active session but no membership row in this organization', async () => {
+    const { createIdentitySession, setSessionOrganization, listDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const session = await createIdentitySession({ ...BASE_PARAMS, identityId: 'no-membership-identity' }, 'mock');
+    await setSessionOrganization(session.id, 'org-staff-list-no-membership', 'mock');
+
+    expect(await listDistinctActiveStaffForOrganization('org-staff-list-no-membership', 'mock')).toEqual([]);
+  });
+
+  it('excludes an expired session, mirroring the count\'s own "active" definition', async () => {
+    const { listDistinctActiveStaffForOrganization } = await import('./sessionService');
+    const identity = await seedActiveStaffMember('org-staff-list-expired', { email: 'expired@example.com', displayName: 'Expired Staffer', role: 'staff' });
+    const expiredSession = identitySessionFixtures.find((s) => s.identityId === identity.id)!;
+    expiredSession.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+    expect(await listDistinctActiveStaffForOrganization('org-staff-list-expired', 'mock')).toEqual([]);
   });
 });
 

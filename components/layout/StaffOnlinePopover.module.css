@@ -1,0 +1,73 @@
+/* Addendum 2, item #1 (2026-10). `.root` adds only positioning/focusability
+   to the existing "N staff online" card — its own visual styling
+   (Sidebar.module.css's `.footerStaffOnline`) is passed in via `className`
+   and untouched. */
+.root {
+  position: relative;
+  cursor: default;
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: 1px;
+}
+
+/* Exact values from the task spec — box 260px wide, white, 1px border
+   oklch(0.92 0.004 255), 10px radius, 0 8px 24px oklch(0 0 0 / 0.1)
+   shadow, 6px padding, placed above the card. */
+.popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 260px;
+  background: #fff;
+  border: 1px solid oklch(0.92 0.004 255);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.1);
+  padding: 6px;
+  z-index: 20;
+}
+
+.title {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 6px 6px;
+}
+
+.groupLabel {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-muted-cool);
+  padding: 6px 6px 2px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 7px;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: oklch(0.9 0.03 255);
+  color: oklch(0.28 0.08 255);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.name {
+  font-size: 13px;
+  color: var(--color-text-primary-cool);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

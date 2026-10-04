@@ -151,6 +151,71 @@ describe('SettingsHub — Organization Profile (2026-09)', () => {
   });
 });
 
+/**
+ * Addendum 2, item #5 (2026-10): "Document Templates" and "Audit Center"
+ * moved here from the AccountMenu initials-dropdown popover — same
+ * routes, same visibility rule (`isIdentityMode && document.template.manage`/
+ * `audit.read`, mirroring TopBar.tsx's old `showTemplates`/`showAudit`
+ * computation) as they had there.
+ */
+describe('SettingsHub — Document Templates (Addendum 2, item #5, 2026-10)', () => {
+  it('shows Document Templates for an identity-mode caller holding document.template.manage', async () => {
+    mockPermissions(['document.template.manage']);
+    renderHub('identity');
+    expect(await screen.findByText('Document Templates')).toBeInTheDocument();
+  });
+
+  it('hides Document Templates outside identity mode, even holding document.template.manage', async () => {
+    mockPermissions(['document.template.manage']);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Document Templates')).not.toBeInTheDocument();
+  });
+
+  it('hides Document Templates for an identity-mode caller without document.template.manage', async () => {
+    mockPermissions([]);
+    renderHub('identity');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Document Templates')).not.toBeInTheDocument();
+  });
+
+  it('links to the existing /settings/document-templates route — not a new one', async () => {
+    mockPermissions(['document.template.manage']);
+    renderHub('identity');
+    const link = (await screen.findByText('Document Templates')).closest('a');
+    expect(link).toHaveAttribute('href', '/settings/document-templates');
+  });
+});
+
+describe('SettingsHub — Audit Center (Addendum 2, item #5, 2026-10)', () => {
+  it('shows Audit Center for an identity-mode caller holding audit.read', async () => {
+    mockPermissions(['audit.read']);
+    renderHub('identity');
+    expect(await screen.findByText('Audit Center')).toBeInTheDocument();
+  });
+
+  it('hides Audit Center outside identity mode, even holding audit.read', async () => {
+    mockPermissions(['audit.read']);
+    renderHub('mock');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Audit Center')).not.toBeInTheDocument();
+  });
+
+  it('hides Audit Center for an identity-mode caller without audit.read', async () => {
+    mockPermissions([]);
+    renderHub('identity');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Audit Center')).not.toBeInTheDocument();
+  });
+
+  it('links to the existing /settings/audit route — not a new one', async () => {
+    mockPermissions(['audit.read']);
+    renderHub('identity');
+    const link = (await screen.findByText('Audit Center')).closest('a');
+    expect(link).toHaveAttribute('href', '/settings/audit');
+  });
+});
+
 describe('SettingsHub — no empty sections (item #5, 2026-09)', () => {
   it('renders no Administration or Security & Roles section heading when the caller has none of those permissions', async () => {
     mockPermissions([]);

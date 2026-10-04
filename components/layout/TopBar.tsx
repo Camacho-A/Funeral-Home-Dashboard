@@ -4,9 +4,7 @@ import type { AuthAdapterMode } from '@/lib/env';
 import { Button } from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
 import { useCaseSearch } from '@/hooks/useCaseSearch';
-import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
-import { useMyPermissions } from '@/hooks/useRbac';
 import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { initialsFromName } from '@/utils/string';
 import { SearchInput } from './SearchInput';
@@ -105,6 +103,14 @@ import styles from './TopBar.module.css';
  * kept exactly as they were (own doc comment above, own `.overflowLink`/
  * `.divider` treatment) rather than silently stripping working navigation
  * for other organizations/modes the design wasn't exercised against.
+ *
+ * Addendum 2, item #5 (2026-10): "Audit Center" and "Templates" moved out
+ * of AccountMenu's popover entirely, into the Settings menu (see
+ * `app/(portal)/settings/settingsAreas.ts`) — every mention of them above
+ * describes history, not current behavior. This component no longer
+ * computes their visibility at all; `useMyPermissions`/`organizationId`
+ * were removed here along with the `showAudit`/`showTemplates` props,
+ * since nothing else in this file used them.
  */
 export function TopBar({
   onNewCaseClick,
@@ -117,10 +123,7 @@ export function TopBar({
 }) {
   const { query, setQuery } = useCaseSearch();
   const session = useSession();
-  const { organizationId } = useOrganization();
   const { data: organization } = useOrganizationRecord();
-  const { data: myPermissions } = useMyPermissions(organizationId);
-  const permissions = myPermissions?.permissions ?? [];
 
   return (
     <div className={styles.topBar}>
@@ -178,13 +181,7 @@ export function TopBar({
           <span className={styles.newCaseLabelShort}>New</span>
         </Button>
         <div style={{ marginLeft: 6 }}>
-          <AccountMenu
-            initials={initialsFromName(session.displayName)}
-            displayName={session.displayName}
-            email={session.email}
-            showAudit={authAdapterMode === 'identity' && permissions.includes('audit.read')}
-            showTemplates={authAdapterMode === 'identity' && permissions.includes('document.template.manage')}
-          />
+          <AccountMenu initials={initialsFromName(session.displayName)} displayName={session.displayName} email={session.email} />
         </div>
       </div>
     </div>

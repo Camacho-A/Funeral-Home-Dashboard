@@ -21,12 +21,14 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
  * services/__mocks__/fixtures.ts staff record, so a pass here can only
  * mean the value came from SessionProvider, not from any fixture.
  *
- * TopBar also calls useOrganizationRecord()/useMyPermissions()/
- * useUnreadNotificationCount()/useMyMemberships() — all real `fetch`-based
- * hooks regardless of OrganizationProvider's dataAdapterMode (see each
- * service's own comment on why). A single generic fetch stub satisfies
- * every one of their expected response shapes at once; none of their
- * resolved data affects the assertion this file cares about.
+ * TopBar also calls useOrganizationRecord()/useUnreadNotificationCount()/
+ * useMyMemberships() — all real `fetch`-based hooks regardless of
+ * OrganizationProvider's dataAdapterMode (see each service's own comment
+ * on why). A single generic fetch stub satisfies every one of their
+ * expected response shapes at once; none of their resolved data affects
+ * the assertion this file cares about. (Addendum 2, item #5, 2026-10:
+ * TopBar no longer calls useMyPermissions() itself — Audit/Templates
+ * moved to the Settings menu, see below.)
  */
 beforeEach(() => {
   vi.stubGlobal(
@@ -198,7 +200,7 @@ describe('TopBar — single AccountMenu identity control (SOLIS true redesign, P
     expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });
 
-  it('SOLIS Final Phase (2026-10): no standalone desktop Audit/Templates links exist anymore — AccountMenu\'s popover is their only destination', async () => {
+  it('Addendum 2, item #5 (2026-10): Audit Center/Templates never appear anywhere in TopBar, including inside the AC menu, regardless of permissions — both moved to the Settings menu', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -217,65 +219,14 @@ describe('TopBar — single AccountMenu identity control (SOLIS true redesign, P
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await act(async () => {});
 
-    // Closed by default: neither "Audit Center" nor "Templates" is
-    // rendered anywhere until the AccountMenu popover opens.
     expect(screen.queryByText('Audit Center')).not.toBeInTheDocument();
     expect(screen.queryByText('Templates')).not.toBeInTheDocument();
-  });
-
-  it('opening the AC menu reveals Audit Center and Templates, pointing at the existing routes — not a duplicated route', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ organization: null, permissions: ['audit.read', 'document.template.manage'], count: 0, organizations: [] }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <OrganizationProvider>
-          <SessionProvider value={TEST_SESSION}>
-            <TopBar authAdapterMode="identity" />
-          </SessionProvider>
-        </OrganizationProvider>
-      </QueryClientProvider>,
-    );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await act(async () => {});
 
     fireEvent.click(screen.getByRole('button', { name: /^Account menu for/ }));
-
-    const audit = screen.getByText('Audit Center');
-    const templates = screen.getByText('Templates');
-    expect(audit.closest('a')).toHaveAttribute('href', '/settings/audit');
-    expect(templates.closest('a')).toHaveAttribute('href', '/settings/document-templates');
-    expect(screen.getAllByRole('separator').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('a caller with neither permission sees no Audit/Templates anywhere, including inside the AC menu', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ organization: null, permissions: [], count: 0, organizations: [] }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <OrganizationProvider>
-          <SessionProvider value={TEST_SESSION}>
-            <TopBar authAdapterMode="identity" />
-          </SessionProvider>
-        </OrganizationProvider>
-      </QueryClientProvider>,
-    );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await act(async () => {});
-
-    fireEvent.click(screen.getByRole('button', { name: /^Account menu for/ }));
-    expect(screen.queryByText('Audit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Audit Center')).not.toBeInTheDocument();
     expect(screen.queryByText('Templates')).not.toBeInTheDocument();
-    // SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
-    // the identity block (name/email) still renders its own separator
-    // even with neither Audit nor Templates present.
+    // Identity block (name/email) still renders its own one separator
+    // above Sign out.
     expect(screen.getAllByRole('separator')).toHaveLength(1);
     expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
   });

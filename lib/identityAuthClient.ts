@@ -48,6 +48,17 @@ export async function fetchActiveStaffCount(organizationId: string): Promise<num
   return (body.count as number) ?? 0;
 }
 
+export type ActiveStaffListItem = { displayName: string; roleKey: string };
+
+/** Backs the sidebar's "N staff online" hover popover — fetched only
+    when the popover opens, never alongside the count. */
+export async function fetchActiveStaffList(organizationId: string): Promise<ActiveStaffListItem[]> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(`/api/staff/active-list?${params.toString()}`);
+  const body = await parseJsonOrThrow(response);
+  return (body.staff as ActiveStaffListItem[]) ?? [];
+}
+
 export async function signOutEverywhere(): Promise<void> {
   const response = await fetch('/api/auth/sessions/sign-out-everywhere', { method: 'POST' });
   await parseJsonOrThrow(response);

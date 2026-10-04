@@ -19,6 +19,18 @@
   background: var(--color-surface-card);
   color: var(--color-text-primary);
   cursor: pointer;
+  /* Addendum 2, item #2 (2026-10): the vertical padding above combined
+     with the native select's own line-height clipped descenders in some
+     browsers. Zeroing vertical padding and fixing the height to exactly
+     what this element already rendered at (measured: 40px, border-box —
+     10px padding-top/bottom + 13px/normal line-height + 2px border)
+     keeps the box the same size while letting line-height center the
+     text instead. Horizontal padding, border, arrow, and font are
+     unchanged. */
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: normal;
+  height: 40px;
 }
 
 .field:focus-visible {

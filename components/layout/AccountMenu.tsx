@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { logoutAction } from '@/app/login/actions';
-import { AuditIcon, TemplatesIcon, SignOutIcon } from './navIcons';
+import { SignOutIcon } from './navIcons';
 import styles from './AccountMenu.module.css';
 
 /**
@@ -27,19 +27,23 @@ import styles from './AccountMenu.module.css';
  * SOLIS Final Phase (2026-10), §1.2: this is now the ONLY identity control
  * (TopBar's standalone desktop Audit/Templates links are gone — see
  * TopBar.tsx) — the trigger/menu/identity block/icons below render the
- * sx- design system's literal markup. "Audit" is relabeled "Audit Center"
- * here (AccountMenu.test.tsx updated accordingly — see this phase's own
- * report). ArrowUp/ArrowDown menuitem navigation and focusing the first
- * menuitem on open are new, presentation-adjacent keyboard behavior the
- * spec asks for; Escape/outside-click dismissal and `showAudit`/
- * `showTemplates`'s permission source are unchanged.
+ * sx- design system's literal markup. ArrowUp/ArrowDown menuitem
+ * navigation and focusing the first menuitem on open are new,
+ * presentation-adjacent keyboard behavior the spec asks for;
+ * Escape/outside-click dismissal is unchanged.
+ *
+ * Addendum 2, item #5 (2026-10): "Audit Center" and "Templates" removed
+ * from this popover — both now live in the Settings menu instead (see
+ * `app/(portal)/settings/settingsAreas.ts`), using the exact same
+ * `showAudit`/`showTemplates` visibility rule (`isIdentityMode &&
+ * audit.read`/`document.template.manage`) this component used to take as
+ * props. Routes and permissions are unchanged; only where staff discover
+ * them from.
  */
 export function AccountMenu({
   initials,
   displayName,
   email,
-  showAudit = false,
-  showTemplates = false,
 }: {
   initials: string;
   displayName: string;
@@ -47,8 +51,6 @@ export function AccountMenu({
       Shown in the popover header when available (real session data, see
       types/session.ts#Session.email) — never a fabricated address. */
   email?: string;
-  showAudit?: boolean;
-  showTemplates?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -123,19 +125,6 @@ export function AccountMenu({
             </div>
           </div>
           <div className="sx-menu-divider" role="separator" />
-          {showAudit && (
-            <a href="/settings/audit" role="menuitem" className="sx-menu-item" onClick={() => setOpen(false)}>
-              <AuditIcon />
-              Audit Center
-            </a>
-          )}
-          {showTemplates && (
-            <a href="/settings/document-templates" role="menuitem" className="sx-menu-item" onClick={() => setOpen(false)}>
-              <TemplatesIcon />
-              Templates
-            </a>
-          )}
-          {(showAudit || showTemplates) && <div className="sx-menu-divider" role="separator" />}
           <form action={logoutAction}>
             <button type="submit" role="menuitem" className="sx-menu-item">
               <SignOutIcon />

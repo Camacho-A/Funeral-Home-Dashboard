@@ -60,6 +60,17 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       visible: permissions.includes('workflow.publish'),
     },
     {
+      // Addendum 2, item #5 (2026-10): moved here from the initials
+      // (AccountMenu) dropdown — same route, same visibility rule
+      // (`isIdentityMode && document.template.manage`, mirroring
+      // TopBar.tsx's own `showTemplates` computation) as it had there.
+      key: 'document-templates',
+      label: 'Document Templates',
+      description: 'Manage document templates used for case paperwork and forms.',
+      href: '/settings/document-templates',
+      visible: isIdentityMode && permissions.includes('document.template.manage'),
+    },
+    {
       key: 'import-jotform',
       label: 'Import Existing Jotform',
       description: 'Import a historical case from an existing Jotform submission.',
@@ -89,6 +100,17 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       description: 'Manage roles and what each one can access.',
       href: '/settings/roles',
       visible: isIdentityMode && permissions.includes('user.manageRoles'),
+    },
+    {
+      // Addendum 2, item #5 (2026-10): moved here from the initials
+      // (AccountMenu) dropdown — same route, same visibility rule
+      // (`isIdentityMode && audit.read`, mirroring TopBar.tsx's own
+      // `showAudit` computation) as it had there.
+      key: 'audit',
+      label: 'Audit Center',
+      description: 'Review the organization’s activity and audit trail.',
+      href: '/settings/audit',
+      visible: isIdentityMode && permissions.includes('audit.read'),
     },
   ];
 

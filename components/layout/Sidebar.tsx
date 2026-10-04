@@ -1,12 +1,18 @@
 'use client';
 
+import { useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import type { AuthAdapterMode } from '@/lib/env';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useOrganizationBranding } from '@/hooks/useOrganizationBranding';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useActiveStaffCount } from '@/hooks/useIdentitySessions';
+import { useSettingsAreas } from '@/app/(portal)/settings/settingsAreas';
+import { ImportHistoricalCaseModal } from '@/components/modals/ImportHistoricalCaseModal';
 import { SidebarNavItem } from './SidebarNavItem';
+import { StaffOnlinePopover } from './StaffOnlinePopover';
 import { ProductBrand } from './ProductBrand';
 import styles from './Sidebar.module.css';
 
@@ -101,6 +107,21 @@ export function Sidebar({
     permissions.includes('workflow.publish');
   const activeStaffCountQuery = useActiveStaffCount(organizationId, authAdapterMode === 'identity');
 
+  // Addendum 2, item #6 (2026-10): "Settings" expands in place to show its
+  // own sub-pages, on any Settings page — `/settings`/`/settings/*` plus
+  // `/unmatched-forms`, which lives outside `/settings` but is reached
+  // from, and shown as selected within, the Settings menu (item #4). Same
+  // list/visibility rules as the Settings menu itself (`useSettingsAreas`
+  // — single source of truth, see settingsAreas.ts), including item #5's
+  // Document Templates/Audit Center. `isImportModalOpen` mirrors
+  // SettingsNav's own independent modal instance (see settingsAreas.ts's
+  // comment on why each caller keeps its own).
+  const pathname = usePathname();
+  const isOnSettingsPage = pathname === '/settings' || pathname.startsWith('/settings/') || pathname === '/unmatched-forms';
+  const [isImportModalOpen, setImportModalOpen] = useState(false);
+  const { administration, securityAndRoles } = useSettingsAreas(authAdapterMode ?? 'mock', () => setImportModalOpen(true));
+  const settingsSubItems = [...administration, ...securityAndRoles].filter((area) => area.visible);
+
   return (
     <nav className={`${styles.sidebar} ${mobileOpen ? styles.sidebarOpen : ''}`} aria-label="Primary">
       <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close navigation menu">
@@ -133,9 +154,30 @@ export function Sidebar({
           <div className={styles.divider} />
           <div className={styles.navList}>
             <SidebarNavItem href="/settings" label="Settings" icon="settings" onNavigate={onClose} />
+            {isOnSettingsPage && settingsSubItems.length > 0 && (
+              <div className={styles.settingsSubList}>
+                {settingsSubItems.map((area) =>
+                  'href' in area ? (
+                    <Link
+                      key={area.key}
+                      href={area.href}
+                      className={`${styles.settingsSubItem} ${pathname === area.href ? styles.settingsSubItemActive : ''}`}
+                      onClick={onClose}
+                    >
+                      {area.label}
+                    </Link>
+                  ) : (
+                    <button key={area.key} type="button" className={styles.settingsSubItem} onClick={area.onClick}>
+                      {area.label}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
+      <ImportHistoricalCaseModal open={isImportModalOpen} onClose={() => setImportModalOpen(false)} />
 
       {/* Manors cleanup phase (Task #4); connected (2026-10 follow-up).
           `branding?.logoUrl` is the per-organization logo configured via
@@ -158,10 +200,10 @@ export function Sidebar({
         <div className={styles.footerText}>
           <div className={styles.footerOrgName}>{organizationName}</div>
           {authAdapterMode === 'identity' && activeStaffCountQuery.data !== undefined && (
-            <div className={styles.footerStaffOnline}>
+            <StaffOnlinePopover organizationId={organizationId} count={activeStaffCountQuery.data} className={styles.footerStaffOnline}>
               <span className={styles.footerStaffDot} aria-hidden="true" />
               {activeStaffCountQuery.data} staff online
-            </div>
+            </StaffOnlinePopover>
           )}
         </div>
       </div>

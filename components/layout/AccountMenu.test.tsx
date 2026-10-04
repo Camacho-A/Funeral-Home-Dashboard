@@ -120,65 +120,22 @@ describe('AccountMenu — identity block (SOLIS true redesign, Phase 1, visual f
 });
 
 /**
- * Mobile TopBar — Audit/Templates moved into AC menu (2026-09). Neither
- * item appears unless explicitly told to via `showAudit`/`showTemplates`
- * — the caller (TopBar.tsx) owns the actual permission check; this
- * component only renders what it's told, exactly like the desktop `<a>`
- * elements it mirrors.
+ * Addendum 2, item #5 (2026-10): "Audit Center" and "Templates" were
+ * removed from this popover entirely (moved to the Settings menu — see
+ * app/(portal)/settings/settingsAreas.ts) — replaces the old "Mobile
+ * TopBar — Audit/Templates (2026-09)" describe block, which asserted
+ * `showAudit`/`showTemplates` rendered them here. This only needs to
+ * confirm the popover never renders them anymore, under any props.
  */
-describe('AccountMenu — Audit/Templates (Mobile TopBar, 2026-09)', () => {
-  function openMenu(props: Partial<React.ComponentProps<typeof AccountMenu>> = {}) {
-    render(<AccountMenu initials="AC" displayName="Angelica Camacho" {...props} />);
+describe('AccountMenu — Audit/Templates removed (Addendum 2, item #5, 2026-10)', () => {
+  it('never renders Audit Center or Templates — they live in Settings now, not here', () => {
+    render(<AccountMenu initials="AC" displayName="Angelica Camacho" />);
     fireEvent.click(screen.getByRole('button', { name: 'Account menu for Angelica Camacho' }));
-  }
-
-  it('neither Audit nor Templates appear by default (no permission granted)', () => {
-    openMenu();
     expect(screen.queryByRole('menuitem', { name: 'Audit Center' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Templates' })).not.toBeInTheDocument();
-  });
-
-  it('showAudit renders Audit, pointing at the existing /settings/audit destination — not a new route', () => {
-    openMenu({ showAudit: true });
-    const audit = screen.getByRole('menuitem', { name: 'Audit Center' });
-    expect(audit).toHaveAttribute('href', '/settings/audit');
-  });
-
-  it('showTemplates renders Templates, pointing at the existing /settings/document-templates destination', () => {
-    openMenu({ showTemplates: true });
-    const templates = screen.getByRole('menuitem', { name: 'Templates' });
-    expect(templates).toHaveAttribute('href', '/settings/document-templates');
-  });
-
-  it('both can appear together, in order, above a divider, above Sign out', () => {
-    openMenu({ showAudit: true, showTemplates: true });
-    const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
-    expect(items).toEqual(['Audit Center', 'Templates', 'Sign out']);
-    // SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
-    // the identity block (name/email) now always renders its own
-    // separator above the menu items, so there are two when Audit/
-    // Templates are also present — at least one, never zero.
-    expect(screen.getAllByRole('separator').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('the Audit/Templates divider only renders when at least one of them is present — the identity block\'s own separator still renders regardless', () => {
-    openMenu();
-    // SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10):
-    // the identity block (name/email) always renders above Sign out, with
-    // its own separator — exactly one when neither Audit nor Templates
-    // is shown.
+    // Identity block (name/email) still renders its own one separator
+    // above Sign out — exactly one, now that there's nothing else to add
+    // a second.
     expect(screen.getAllByRole('separator')).toHaveLength(1);
-  });
-
-  it('clicking Audit closes the menu (in addition to performing the existing navigation)', () => {
-    openMenu({ showAudit: true });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Audit Center' }));
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-  });
-
-  it('clicking Templates closes the menu', () => {
-    openMenu({ showTemplates: true });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Templates' }));
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 });

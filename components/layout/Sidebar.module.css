@@ -124,6 +124,56 @@
   margin: var(--space-8) var(--space-3);
 }
 
+/* Addendum 2, item #6 (2026-10): "Settings" expanded in place, matching
+   the reference screenshot — a thin left line (the same border token
+   `.divider` already uses) indents this list under the Settings row
+   above it. Selected-row treatment literally duplicates
+   SidebarNavItem.module.css's own `.itemActive` values ("the same
+   selected style as the main nav") rather than importing that module —
+   the same small, deliberate per-component duplication this codebase
+   already uses elsewhere for near-identical small helpers. */
+.settingsSubList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0 var(--space-8);
+  padding-left: var(--space-6);
+  border-left: 1px solid var(--color-border-cool);
+}
+
+.settingsSubItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--space-5);
+  border: none;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  background: transparent;
+  color: var(--color-text-secondary-cool);
+  cursor: pointer;
+  text-align: left;
+}
+
+.settingsSubItem:hover:not(.settingsSubItemActive) {
+  background: var(--color-surface-hover-cool);
+}
+
+.settingsSubItem:focus-visible {
+  outline: 2px solid var(--color-brand-solid-cool);
+  outline-offset: 1px;
+}
+
+.settingsSubItemActive {
+  background: var(--color-brand-tint-cool);
+  color: var(--color-brand-text-cool);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* SOLIS true redesign, Phase 1 (2026-10): a compact horizontal org-identity
    card (logo left, name + staff-online stacked right) — the approved
    design's own treatment, replacing the prior centered-column footer.

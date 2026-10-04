@@ -93,11 +93,13 @@ export function TeamMemberList({
             return (
               <tr key={member.identityId}>
                 <td data-label="Member" data-primary>
-                  <span className="sx-avatar" style={{ width: 28, height: 28, fontSize: 11 }} aria-hidden="true">
-                    {initialsFor(member.displayName)}
-                  </span>
-                  <span className="sx-cell-title">{member.displayName}</span>
-                  {member.email && <span className="sx-cell-sub">{member.email}</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span className="sx-avatar" style={{ width: 28, height: 28, fontSize: 11 }} aria-hidden="true">
+                      {initialsFor(member.displayName)}
+                    </span>
+                    <span className="sx-cell-title">{member.displayName}</span>
+                  </div>
+                  {member.email && <span className="sx-cell-sub" style={{ marginLeft: 40 }}>{member.email}</span>}
                 </td>
                 <td data-label="Role">
                   {canManageRoles ? (

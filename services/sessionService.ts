@@ -8,6 +8,8 @@ import {
 } from '../lib/wixIdentitySessionMapper';
 import type { IdentitySession } from '../types/identitySession';
 import { identitySessionFixtures } from './__mocks__/identityFixtures';
+import { getIdentityById } from './identityService';
+import { listMembershipsForOrganization } from './membershipService';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). The
@@ -187,8 +189,8 @@ export async function touchSession(sessionId: string, dataAdapterMode: DataAdapt
   );
 }
 
-/** Distinct active-staff count for the sidebar's "N staff online" — an
-    identity with sessions on two devices counts once. "Active" is exactly
+/** Shared by `countDistinctActiveStaffForOrganization` and
+    `listDistinctActiveStaffForOrganization` below — "active" is exactly
     `listActiveSessionsForIdentity`'s own definition (`revokedAt === null`
     and `expiresAt` in the future), scoped by `organizationId` instead of
     `identityId`. A session's `organizationId` is only set once the
@@ -198,7 +200,7 @@ export async function touchSession(sessionId: string, dataAdapterMode: DataAdapt
     *different* organization can never contribute to this one's total.
     Family Portal sessions live in an entirely separate `portalSessions`
     collection/service and never appear here. */
-export async function countDistinctActiveStaffForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
+async function listDistinctActiveStaffIdentityIds(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<string[]> {
   const now = Date.now();
   const all =
     dataAdapterMode === 'mock'
@@ -209,7 +211,49 @@ export async function countDistinctActiveStaffForOrganization(organizationId: st
         })();
 
   const active = all.filter((s) => s.revokedAt === null && new Date(s.expiresAt).getTime() > now);
-  return new Set(active.map((s) => s.identityId)).size;
+  return Array.from(new Set(active.map((s) => s.identityId)));
+}
+
+/** Distinct active-staff count for the sidebar's "N staff online" — an
+    identity with sessions on two devices counts once. See
+    `listDistinctActiveStaffIdentityIds` for exactly what "active" means
+    here. */
+export async function countDistinctActiveStaffForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
+  const identityIds = await listDistinctActiveStaffIdentityIds(organizationId, dataAdapterMode);
+  return identityIds.length;
+}
+
+/** Backs the "N staff online" hover popover — the same distinct active
+    identities `countDistinctActiveStaffForOrganization` counts, resolved
+    to just `{ displayName, roleKey }` per identity. Deliberately excludes
+    email/id/every other `Identity`/`Membership` field — the popover shows
+    who's online, not a staff directory. `roleKey` is this organization's
+    own `Membership.role` (a Phase 22 default role key, a legacy value, or
+    a custom-role key — see `types/membership.ts`); the caller decides how
+    to group/label it, this function makes no assumption about which keys
+    exist. An identity with no membership row in this organization (should
+    not happen for a session scoped to it, but not assumed) is skipped
+    rather than guessed. */
+export async function listDistinctActiveStaffForOrganization(
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<Array<{ displayName: string; roleKey: string }>> {
+  const identityIds = await listDistinctActiveStaffIdentityIds(organizationId, dataAdapterMode);
+  if (identityIds.length === 0) return [];
+
+  const memberships = await listMembershipsForOrganization(organizationId, dataAdapterMode);
+  const roleKeyByIdentityId = new Map(memberships.map((m) => [m.identityId, m.role]));
+
+  const staff = await Promise.all(
+    identityIds.map(async (identityId) => {
+      const roleKey = roleKeyByIdentityId.get(identityId);
+      if (roleKey === undefined) return null;
+      const identity = await getIdentityById(identityId, dataAdapterMode);
+      if (!identity) return null;
+      return { displayName: identity.displayName, roleKey };
+    }),
+  );
+  return staff.filter((entry): entry is { displayName: string; roleKey: string } => entry !== null);
 }
 
 /** Never trusts a client-supplied organizationId as proof of membership —
