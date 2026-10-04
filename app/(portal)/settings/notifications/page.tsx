@@ -9,10 +9,5 @@ import { NotificationPreferencesPanel } from '@/components/settings/Notification
  * `AUTH_ADAPTER` — matching `/settings/resources`'s own precedent.
  */
 export default function NotificationsSettingsPage() {
-  return (
-    <div>
-      <h1>Notifications</h1>
-      <NotificationPreferencesPanel />
-    </div>
-  );
+  return <NotificationPreferencesPanel />;
 }
