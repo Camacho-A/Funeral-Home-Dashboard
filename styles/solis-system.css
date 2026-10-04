@@ -135,8 +135,10 @@
 .sx-table { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 20px; color: var(--sx-text); }
 .sx-table th { height: 36px; padding: 0 12px; text-align: left; vertical-align: middle; font-size: 12px; font-weight: 500; color: var(--sx-muted); white-space: nowrap; border-bottom: 1px solid var(--sx-border); background: #fff; }
 .sx-table td { height: 44px; padding: 10px 12px; vertical-align: middle; border-bottom: 1px solid var(--sx-border-soft); }
-.sx-table th:first-child, .sx-table td:first-child { padding-left: 0; }
-.sx-table th:last-child, .sx-table td:last-child { padding-right: 0; }
+.sx-table th:first-child, .sx-table td:first-child { padding-left: 12px; }
+.sx-table th:last-child, .sx-table td:last-child { padding-right: 12px; }
+.sx-table tbody tr:hover td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.sx-table tbody tr:hover td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
 .sx-table tbody tr { transition: background-color var(--sx-ease); }
 .sx-table tbody tr:hover { background: var(--sx-subtle); }
 .sx-table tbody tr[data-clickable] { cursor: pointer; }

@@ -149,10 +149,12 @@ export function BillingCard({ caseId }: { caseId: string }) {
                     {c.hasMarkup && <span className="sx-cell-sub"> (incl. service charge)</span>}
                   </td>
                   <td className="sx-num">{formatCents(c.amountCents)}</td>
-                  <td className="sx-row-actions">
-                    <button type="button" onClick={() => deleteCa.mutate(c.id)} aria-label={`Remove ${c.description}`} className="sx-icon-btn">
-                      ×
-                    </button>
+                  <td style={{ width: 48 }}>
+                    <div className="sx-row-actions">
+                      <button type="button" onClick={() => deleteCa.mutate(c.id)} aria-label={`Remove ${c.description}`} className="sx-icon-btn">
+                        ×
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

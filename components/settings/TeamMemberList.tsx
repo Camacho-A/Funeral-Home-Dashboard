@@ -93,13 +93,13 @@ export function TeamMemberList({
             return (
               <tr key={member.identityId}>
                 <td data-label="Member" data-primary>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
                     <span className="sx-avatar" style={{ width: 28, height: 28, fontSize: 11 }} aria-hidden="true">
                       {initialsFor(member.displayName)}
                     </span>
                     <span className="sx-cell-title">{member.displayName}</span>
                   </div>
-                  {member.email && <span className="sx-cell-sub" style={{ marginLeft: 40 }}>{member.email}</span>}
+                  {member.email && <span className="sx-cell-sub" style={{ display: 'block', marginLeft: 40, paddingBottom: 4 }}>{member.email}</span>}
                 </td>
                 <td data-label="Role">
                   {canManageRoles ? (
@@ -123,8 +123,8 @@ export function TeamMemberList({
                 <td data-label="Status">
                   <span className={isDisabled ? 'sx-status' : 'sx-status sx-status-ok'}>{isDisabled ? 'Disabled' : 'Active'}</span>
                 </td>
-                <td data-label="Actions" className="sx-row-actions">
-                  {canRemove && !isSelf && <RowMenu label={`Actions for ${member.displayName}`} items={items} />}
+                <td data-label="Actions" style={{ width: 48 }}>
+                  <div className="sx-row-actions">{canRemove && !isSelf && <RowMenu label={`Actions for ${member.displayName}`} items={items} />}</div>
                 </td>
               </tr>
             );

@@ -72,28 +72,30 @@ export function PendingInvitationList({
                 <span> · Expires {formatDate(invitation.expiresAt)}</span>
               </td>
               {canInvite && (
-                <td data-label="Actions" className="sx-row-actions">
-                  <button
-                    type="button"
-                    className="sx-btn sx-btn-secondary sx-btn-sm"
-                    onClick={() => resendInvitation.mutate({ membershipId: invitation.membershipId, invitedIdentityId: invitation.identityId })}
-                    disabled={resendInvitation.isPending}
-                  >
-                    Resend
-                  </button>
-                  <button type="button" className="sx-btn sx-btn-danger sx-btn-sm" onClick={() => setPendingRevoke(invitation)}>
-                    Revoke
-                  </button>
-                  {/* Manors go-live invitation-lifecycle fix (Fix C): a
-                      resend failure (wrong membership state, or the email
-                      provider rejecting/erroring) must be visible here, not
-                      silently swallowed — the mutation already carries the
-                      server's real error message. */}
-                  {resendInvitation.isError && resendInvitation.variables?.membershipId === invitation.membershipId && (
-                    <span className="sx-error" role="alert">
-                      {resendInvitation.error instanceof Error ? resendInvitation.error.message : 'Failed to resend invitation.'}
-                    </span>
-                  )}
+                <td data-label="Actions">
+                  <div className="sx-row-actions">
+                    <button
+                      type="button"
+                      className="sx-btn sx-btn-secondary sx-btn-sm"
+                      onClick={() => resendInvitation.mutate({ membershipId: invitation.membershipId, invitedIdentityId: invitation.identityId })}
+                      disabled={resendInvitation.isPending}
+                    >
+                      Resend
+                    </button>
+                    <button type="button" className="sx-btn sx-btn-danger sx-btn-sm" onClick={() => setPendingRevoke(invitation)}>
+                      Revoke
+                    </button>
+                    {/* Manors go-live invitation-lifecycle fix (Fix C): a
+                        resend failure (wrong membership state, or the email
+                        provider rejecting/erroring) must be visible here, not
+                        silently swallowed — the mutation already carries the
+                        server's real error message. */}
+                    {resendInvitation.isError && resendInvitation.variables?.membershipId === invitation.membershipId && (
+                      <span className="sx-error" role="alert">
+                        {resendInvitation.error instanceof Error ? resendInvitation.error.message : 'Failed to resend invitation.'}
+                      </span>
+                    )}
+                  </div>
                 </td>
               )}
             </tr>

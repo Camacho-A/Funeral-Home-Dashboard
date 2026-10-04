@@ -115,11 +115,13 @@ export function MerchandisePanel() {
                     <td data-label="Category">{p.category}</td>
                     <td data-label="Retail" className="sx-num">{p.hasVariants ? '—' : `$${(p.retailPrice / 100).toFixed(2)}`}</td>
                     <td data-label="Status">{p.isActive ? <span className="sx-status sx-status-ok">Active</span> : <span className="sx-status">Archived</span>}</td>
-                    <td className="sx-row-actions">
-                      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setVariantsFor(variantsFor?.id === p.id ? null : { id: p.id, name: p.name })}>
-                        {variantsFor?.id === p.id ? 'Hide variants' : 'Variants'}
-                      </button>
-                      {p.isActive && <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => archiveMutation.mutate(p.id)}>Archive</button>}
+                    <td>
+                      <div className="sx-row-actions">
+                        <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setVariantsFor(variantsFor?.id === p.id ? null : { id: p.id, name: p.name })}>
+                          {variantsFor?.id === p.id ? 'Hide variants' : 'Variants'}
+                        </button>
+                        {p.isActive && <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => archiveMutation.mutate(p.id)}>Archive</button>}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -177,11 +177,13 @@ export function DocumentTemplateLibraryPanel() {
                       <span className={isActive ? 'sx-status sx-status-ok' : 'sx-status'}>{isActive ? 'Active' : 'Archived'}</span>
                     </td>
                     {canManage && (
-                      <td className="sx-row-actions">
-                        <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" style={{ color: 'var(--sx-link)' }} onClick={() => openEdit(template)}>
-                          Edit
-                        </button>
-                        <RowMenu label={`Actions for ${template.name}`} items={menuItems} />
+                      <td>
+                        <div className="sx-row-actions">
+                          <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" style={{ color: 'var(--sx-link)' }} onClick={() => openEdit(template)}>
+                            Edit
+                          </button>
+                          <RowMenu label={`Actions for ${template.name}`} items={menuItems} />
+                        </div>
                       </td>
                     )}
                   </tr>

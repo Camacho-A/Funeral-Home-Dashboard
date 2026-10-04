@@ -105,21 +105,23 @@ export function InventoryPanel() {
                       <td data-label="Reserved" className="sx-num">{b.reserved}</td>
                       <td data-label="Available" className="sx-num">{availableUnits(b.onHand, b.reserved)}</td>
                       <td data-label="Status">{low ? <span className="sx-status sx-status-bad">Low stock</span> : <span className="sx-status sx-status-ok">OK</span>}</td>
-                      <td className="sx-row-actions">
-                        <button
-                          type="button"
-                          className="sx-btn sx-btn-ghost sx-btn-sm"
-                          onClick={() => {
-                            const reason = window.prompt('Adjustment reason (required):');
-                            const deltaStr = window.prompt('Quantity change (e.g. -1 for shrinkage):');
-                            if (!reason || !deltaStr) return;
-                            const quantityDelta = Math.trunc(Number(deltaStr));
-                            if (!quantityDelta) return;
-                            adjustMutation.mutate({ organizationId, productId: b.productId, locationId: b.locationId, quantityDelta, movementType: quantityDelta < 0 ? 'shrinkage' : 'correction', reason });
-                          }}
-                        >
-                          Adjust
-                        </button>
+                      <td>
+                        <div className="sx-row-actions">
+                          <button
+                            type="button"
+                            className="sx-btn sx-btn-ghost sx-btn-sm"
+                            onClick={() => {
+                              const reason = window.prompt('Adjustment reason (required):');
+                              const deltaStr = window.prompt('Quantity change (e.g. -1 for shrinkage):');
+                              if (!reason || !deltaStr) return;
+                              const quantityDelta = Math.trunc(Number(deltaStr));
+                              if (!quantityDelta) return;
+                              adjustMutation.mutate({ organizationId, productId: b.productId, locationId: b.locationId, quantityDelta, movementType: quantityDelta < 0 ? 'shrinkage' : 'correction', reason });
+                            }}
+                          >
+                            Adjust
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
