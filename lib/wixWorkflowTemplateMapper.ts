@@ -275,6 +275,22 @@ function validateChecklistItemPayload(value: unknown, path: string, errors: stri
   ) {
     errors.push(`${path}.externalFormIntegrationId must be a string or null if present.`);
   }
+  // Structured-field items (2026-10). This validator previously neither
+  // checked nor returned `requiredCaseFields`, so the field was silently
+  // dropped on every read of a persisted template. That is how live
+  // template version 6 came to exist without it: v6 was created by
+  // round-tripping v5 through this mapper, and v5's Certifier Information
+  // item lost its ['certifierName', 'certifierPhone'] on the way through
+  // — leaving every v6 Case with a frozen snapshot whose Certifier
+  // Information item has no editable surface at all (hasField is false
+  // and there are no required fields to render), which is exactly the
+  // reported "certifier information is not showing" on First Call.
+  const requiredCaseFieldsValid =
+    value.requiredCaseFields === undefined ||
+    (Array.isArray(value.requiredCaseFields) && value.requiredCaseFields.every((field) => typeof field === 'string'));
+  if (!requiredCaseFieldsValid) {
+    errors.push(`${path}.requiredCaseFields must be an array of strings if present.`);
+  }
 
   if (typeof value.index !== 'number' || typeof value.label !== 'string' || typeof value.hasField !== 'boolean') {
     return null;
@@ -286,6 +302,10 @@ function validateChecklistItemPayload(value: unknown, path: string, errors: stri
     isPasswordField: typeof value.isPasswordField === 'boolean' ? value.isPasswordField : undefined,
     externalFormIntegrationId:
       typeof value.externalFormIntegrationId === 'string' ? value.externalFormIntegrationId : null,
+    requiredCaseFields:
+      requiredCaseFieldsValid && Array.isArray(value.requiredCaseFields)
+        ? (value.requiredCaseFields as string[])
+        : undefined,
   };
 }
 

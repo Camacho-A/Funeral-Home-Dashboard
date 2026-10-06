@@ -357,3 +357,58 @@ describe('validateIntakeTemplatePayload — payment field rejection (Phase 19A)'
     expect(result.errors.some((e) => e.includes('paymentAmount must be a string'))).toBe(true);
   });
 });
+
+/**
+ * Live template version 6 regression (2026-10). validateChecklistItemPayload
+ * neither validated nor returned `requiredCaseFields`, so it was dropped on
+ * every read of a persisted template. v6 was created by round-tripping v5
+ * through this mapper, which is how the live v6 Certifier Information item
+ * lost its ['certifierName', 'certifierPhone'] — leaving every v6 Case's
+ * frozen snapshot with a Certifier Information item that has no editable
+ * surface at all (hasField:false and no required fields).
+ */
+describe('validateChecklistItemPayload — requiredCaseFields round-trip', () => {
+  function stageWithItem(item: Record<string, unknown>) {
+    return { ...validStage, checklist: { items: [item] } };
+  }
+
+  const certifierItem = {
+    index: 6,
+    label: 'Certifier Information',
+    hasField: false,
+    isPasswordField: false,
+    externalFormIntegrationId: null,
+    requiredCaseFields: ['certifierName', 'certifierPhone'],
+  };
+
+  it('preserves requiredCaseFields instead of silently dropping it', () => {
+    const result = validateWorkflowStagesPayload({ stages: [stageWithItem(certifierItem)] });
+    expect(result.errors).toEqual([]);
+    expect(result.stages?.[0].checklist.items[0].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+  });
+
+  it('survives a full read -> write round trip, the exact path that produced the broken v6', () => {
+    const first = validateWorkflowStagesPayload({ stages: [stageWithItem(certifierItem)] });
+    const second = validateWorkflowStagesPayload({ stages: first.stages! });
+    expect(second.errors).toEqual([]);
+    expect(second.stages?.[0].checklist.items[0].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+  });
+
+  it('leaves requiredCaseFields undefined for an ordinary item that has none', () => {
+    const result = validateWorkflowStagesPayload({ stages: [validStage] });
+    expect(result.errors).toEqual([]);
+    expect(result.stages?.[0].checklist.items[0].requiredCaseFields).toBeUndefined();
+  });
+
+  it('rejects a non-array requiredCaseFields rather than passing it through', () => {
+    const result = validateWorkflowStagesPayload({ stages: [stageWithItem({ ...certifierItem, requiredCaseFields: 'certifierName' })] });
+    expect(result.errors.some((e) => e.includes('requiredCaseFields must be an array of strings'))).toBe(true);
+    expect(result.stages?.[0].checklist.items[0].requiredCaseFields).toBeUndefined();
+  });
+
+  it('rejects an array containing a non-string entry', () => {
+    const result = validateWorkflowStagesPayload({ stages: [stageWithItem({ ...certifierItem, requiredCaseFields: ['certifierName', 7] })] });
+    expect(result.errors.some((e) => e.includes('requiredCaseFields must be an array of strings'))).toBe(true);
+    expect(result.stages?.[0].checklist.items[0].requiredCaseFields).toBeUndefined();
+  });
+});

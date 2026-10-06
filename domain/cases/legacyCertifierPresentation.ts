@@ -14,11 +14,20 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
  * is surfaced to staff, so the terminology staff see is consistent with the
  * New Case form and v5 Cases, without migrating any persisted data.
  *
+ * Extended (2026-10) to cover a second, non-legacy shape: an item already
+ * labelled "Certifier Information" but carrying no `requiredCaseFields`,
+ * which is what live template version 6 persisted after
+ * lib/wixWorkflowTemplateMapper.ts silently dropped that field while v6
+ * was being derived from v5. The module name still says "legacy" for
+ * continuity with its call sites; see
+ * `isCertifierItemNeedingStructuredEditor` for both shapes and why a v5
+ * Case is deliberately left untouched.
+ *
  * Narrowly scoped to managed-cremations (`case_.organizationId` checked
  * explicitly) — matching on literal English text is inherently fragile,
- * appropriate only for this one specific, permanently-frozen legacy
- * artifact, never generalized into domain/workflow/resolveChecklist.ts's
- * generic engine.
+ * appropriate only for these specific, permanently-frozen snapshot
+ * artifacts, never generalized into
+ * domain/workflow/resolveChecklist.ts's generic engine.
  *
  * `LEGACY_CERTIFIER_ITEM_LABEL` must exactly match
  * domain/cases/checklist.ts's CHECKLIST_BY_RAW_STAGE[0][6] entry — that
@@ -33,6 +42,32 @@ const CERTIFIER_REQUIRED_CASE_FIELDS = ['certifierName', 'certifierPhone'];
 
 function nonEmpty(value: string | null): boolean {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Which Certifier Information items need this module to supply the
+ * structured editor. Two distinct shapes, both of which reach staff with
+ * no usable certifier surface:
+ *
+ * 1. The pre-v5 free-text item, still carrying its old label in every
+ *    frozen v1-v4 snapshot (the original reason this module exists).
+ * 2. (2026-10) An item ALREADY labelled "Certifier Information" but
+ *    carrying no `requiredCaseFields` — the live template version 6
+ *    shape. v6 was created by round-tripping v5 through
+ *    lib/wixWorkflowTemplateMapper.ts, which silently dropped the field
+ *    (fixed separately, in that file). Because template versions are
+ *    append-only and their snapshots are frozen by design, v6 and every
+ *    Case already created from it can only be repaired here, at
+ *    presentation time — there is no snapshot to rewrite.
+ *
+ * A v5 Case is deliberately NOT matched: its snapshot already carries
+ * `requiredCaseFields`, so resolveChecklist has already produced the
+ * structured editor and the correct completion rule, and this module must
+ * leave it entirely alone.
+ */
+function isCertifierItemNeedingStructuredEditor(item: ChecklistItemViewModel): boolean {
+  if (item.label === LEGACY_CERTIFIER_ITEM_LABEL) return true;
+  return item.label === CERTIFIER_INFORMATION_LABEL && (item.requiredCaseFields ?? []).length === 0;
 }
 
 function certifierRequiredCaseFieldValues(case_: Case): Record<string, string> {
@@ -123,7 +158,7 @@ export function applyLegacyCertifierPresentation(
   isPastStage: boolean,
 ): ChecklistItemViewModel[] {
   if (case_.organizationId !== 'managed-cremations') return items;
-  const idx = items.findIndex((item) => item.label === LEGACY_CERTIFIER_ITEM_LABEL);
+  const idx = items.findIndex(isCertifierItemNeedingStructuredEditor);
   if (idx === -1) return items;
 
   const result = [...items];

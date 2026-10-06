@@ -212,11 +212,54 @@ describe('applyLegacyCertifierPresentation', () => {
     expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
   });
 
-  it('is a no-op for a v5+ Case whose item is already labeled "Certifier Information"', () => {
+  it('is a no-op for a v5 Case whose item already carries requiredCaseFields', () => {
+    // resolveChecklist has already produced the structured editor and the
+    // correct completion rule from the snapshot itself — this module must
+    // not touch it.
     const case_ = baseCase();
-    const items = [item({ label: 'Certifier Information', hasField: false })];
+    const items = [
+      item({
+        label: 'Certifier Information',
+        hasField: false,
+        isDerived: true,
+        requiredCaseFields: ['certifierName', 'certifierPhone'],
+        requiredCaseFieldValues: { certifierName: '', certifierPhone: '' },
+      }),
+    ];
     const result = applyLegacyCertifierPresentation(items, case_, false);
     expect(result).toBe(items); // same reference — untouched
+  });
+
+  /**
+   * Live template version 6 regression (2026-10). v6 was derived from v5
+   * through lib/wixWorkflowTemplateMapper.ts, which silently dropped
+   * requiredCaseFields, so a v6 snapshot's Certifier Information item has
+   * hasField:false AND no required fields — no editable surface at all,
+   * the reported "certifier information is not showing" on First Call.
+   * Snapshots are frozen, so it can only be repaired at presentation time.
+   */
+  it('supplies the structured editor for a v6 item labeled "Certifier Information" but missing requiredCaseFields', () => {
+    const case_ = baseCase({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    const items = [item({ label: 'Certifier Information', hasField: false })];
+    const result = applyLegacyCertifierPresentation(items, case_, false);
+
+    expect(result).not.toBe(items);
+    expect(result[0].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' });
+    expect(result[0].hasField).toBe(false);
+    expect(result[0].label).toBe('Certifier Information');
+  });
+
+  it('starts the v6 structured fields blank, and leaves done/locked alone, when no certifier data exists yet', () => {
+    // Mirrors the legacy "no structured data" branch: a presentation fix
+    // must never flip an existing case's completion state on deploy.
+    const case_ = baseCase();
+    const items = [item({ label: 'Certifier Information', hasField: false, done: true, locked: false })];
+    const result = applyLegacyCertifierPresentation(items, case_, false);
+
+    expect(result[0].requiredCaseFieldValues).toEqual({ certifierName: '', certifierPhone: '' });
+    expect(result[0].done).toBe(true);
+    expect(result[0].locked).toBe(false);
   });
 
   it('9. never mutates the input item list or its objects', () => {
