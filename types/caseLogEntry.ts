@@ -25,3 +25,12 @@ export type NewCaseLogEntryInput = {
   contactSummary?: string;
   author: string;
 };
+
+/**
+ * What a Client Component may submit (2026-10): everything except
+ * `author`. Attribution is resolved server-side from the authenticated
+ * caller's own StaffProfile — see
+ * app/api/cases/[caseId]/log/route.ts — so the browser cannot name the
+ * author of a log entry, correctly or otherwise.
+ */
+export type NewCaseLogEntryClientInput = Omit<NewCaseLogEntryInput, 'author'>;

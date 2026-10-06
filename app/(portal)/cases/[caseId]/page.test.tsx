@@ -57,8 +57,21 @@ describe('Case Detail page — Overview tab structure (item #2, 2026-09)', () =>
     expect(SOURCE).toMatch(/<CaseDocumentsTab caseId=\{caseId\} caseName=\{viewModel\.decedentName\} caseNumber=\{viewModel\.caseNumber\} \/>/);
   });
 
-  it('14: CaseLogCard (a genuinely different, staff-notes feature) remains on Overview, untouched', () => {
-    expect(SOURCE).toMatch(/<CaseLogCard[\s\S]*?authorName=\{viewModel\.effectiveOwnerName\}/);
+  it('14: CaseLogCard (a genuinely different, staff-notes feature) remains on Overview', () => {
+    expect(SOURCE).toMatch(/<CaseLogCard[\s\S]*?onAddEntry=/);
+  });
+
+  /**
+   * Author attribution (2026-10). This page used to pass
+   * `authorName={viewModel.effectiveOwnerName}` — the case's ASSIGNED
+   * OWNER — so every log entry was credited to whoever the case belonged
+   * to, and to the literal "Office" on any unassigned case. Attribution
+   * is now resolved server-side from the authenticated caller, so this
+   * page must not name an author at all.
+   */
+  it('14b: never passes an author into CaseLogCard — the server resolves it from the caller', () => {
+    expect(SOURCE).not.toMatch(/authorName/);
+    expect(SOURCE).not.toMatch(/effectiveOwnerName/);
   });
 
   it('15: CaseHeader and StageStepper remain, both still rendered outside/above the tab bar', () => {

@@ -4,6 +4,7 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canEditCase } from '@/services/authorizationPolicyService';
 import { caseLogService } from '@/services/caseLogService';
+import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import type { NewCaseLogEntryInput } from '@/types/caseLogEntry';
 
 /**
@@ -73,9 +74,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (typeof b.type !== 'string' || (b.type !== 'note' && b.type !== 'contact')) {
     return NextResponse.json({ error: '"type" must be "note" or "contact".' }, { status: 400 });
   }
-  if (typeof b.author !== 'string' || b.author.trim() === '') {
-    return NextResponse.json({ error: '"author" is required.' }, { status: 400 });
-  }
+  /**
+   * Author attribution (2026-10). Derived from the authenticated caller's
+   * own StaffProfile, never from the request body.
+   *
+   * The body's `author` was previously trusted verbatim, and the Case
+   * Detail page sent `viewModel.effectiveOwnerName` — the case's ASSIGNED
+   * OWNER, not the person writing. So every entry was attributed to
+   * whoever the case belonged to, and to the literal string "Office" on
+   * any case with no resolvable assignee. A log entry is a factual record
+   * of who wrote it, so the server resolves that itself; a client claim
+   * can no longer set it at all.
+   *
+   * A caller with no StaffProfile in this organization falls back to
+   * "Office" — the same placeholder the UI already used — rather than
+   * failing the write, since a missing profile is a real, disclosed
+   * possibility (see types/session.ts) and must not cost someone their
+   * note.
+   */
+  const callerProfile = await resolveStaffProfileForCaller({ userId, organizationId, role }, dataAdapterMode);
+  const author = callerProfile?.displayName?.trim() || 'Office';
 
   const input: NewCaseLogEntryInput = {
     type: b.type,
@@ -83,7 +101,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     contactedWho: typeof b.contactedWho === 'string' ? b.contactedWho : undefined,
     contactedSpoke: typeof b.contactedSpoke === 'string' ? b.contactedSpoke : undefined,
     contactSummary: typeof b.contactSummary === 'string' ? b.contactSummary : undefined,
-    author: b.author,
+    author,
   };
 
   const entry = await caseLogService.create({ organizationId }, caseId, input, dataAdapterMode);

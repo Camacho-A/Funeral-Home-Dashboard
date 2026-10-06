@@ -5,7 +5,7 @@ import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import textAreaFieldStyles from '@/components/ui/TextArea.module.css';
-import type { CaseLogEntry, NewCaseLogEntryInput } from '@/types/caseLogEntry';
+import type { CaseLogEntry, NewCaseLogEntryClientInput } from '@/types/caseLogEntry';
 import { formatTimestamp } from '@/utils/format';
 import styles from './CaseLogCard.module.css';
 
@@ -38,13 +38,16 @@ export type AddCaseLogEntryOptions = {
  */
 export function CaseLogCard({
   entries,
-  authorName,
   onAddEntry,
   onPrint,
 }: {
   entries: CaseLogEntry[];
-  authorName: string;
-  onAddEntry: (input: NewCaseLogEntryInput, options: AddCaseLogEntryOptions) => void;
+  /** No `author` here (2026-10): attribution is resolved server-side from
+      the authenticated caller, so this card neither knows nor claims who
+      wrote an entry. It previously passed the case's ASSIGNED OWNER,
+      which is why entries were credited to the wrong person — and to the
+      literal "Office" on any unassigned case. */
+  onAddEntry: (input: NewCaseLogEntryClientInput, options: AddCaseLogEntryOptions) => void;
   onPrint: () => void;
 }) {
   const [logType, setLogType] = useState<'note' | 'contact'>('note');
@@ -85,7 +88,7 @@ export function CaseLogCard({
       if (!text) return;
       setIsSaving(true);
       onAddEntry(
-        { type: 'note', text, author: authorName },
+        { type: 'note', text },
         {
           onSuccess: (entry) => {
             setIsSaving(false);
@@ -111,7 +114,6 @@ export function CaseLogCard({
         contactedWho: who,
         contactedSpoke: spoke,
         contactSummary: contactSummary.trim(),
-        author: authorName,
       },
       {
         onSuccess: (entry) => {

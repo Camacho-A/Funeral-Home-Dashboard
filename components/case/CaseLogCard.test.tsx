@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CaseLogCard, type AddCaseLogEntryOptions } from './CaseLogCard';
-import type { CaseLogEntry, NewCaseLogEntryInput } from '@/types/caseLogEntry';
+import type { CaseLogEntry, NewCaseLogEntryClientInput } from '@/types/caseLogEntry';
 
 const ENTRY: CaseLogEntry = {
   id: 'log-1',
@@ -21,11 +21,11 @@ function renderCard({
   onAddEntry = vi.fn(),
 }: {
   entries?: CaseLogEntry[];
-  onAddEntry?: (input: NewCaseLogEntryInput, options: AddCaseLogEntryOptions) => void;
+  onAddEntry?: (input: NewCaseLogEntryClientInput, options: AddCaseLogEntryOptions) => void;
 } = {}) {
   const onPrint = vi.fn();
   const utils = render(
-    <CaseLogCard entries={entries} authorName="Dana" onAddEntry={onAddEntry} onPrint={onPrint} />,
+    <CaseLogCard entries={entries} onAddEntry={onAddEntry} onPrint={onPrint} />,
   );
   return { ...utils, onAddEntry, onPrint };
 }
@@ -62,7 +62,10 @@ describe('CaseLogCard — note editor autofocus and shortcut (Phase 17)', () => 
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
 
     expect(onAddEntry).toHaveBeenCalledWith(
-      { type: 'note', text: 'Quick note', author: 'Dana' },
+      // No `author`: the card no longer claims one. The server resolves
+      // it from the authenticated caller — see
+      // app/api/cases/[caseId]/log/route.ts.
+      { type: 'note', text: 'Quick note' },
       expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
     );
   });
@@ -92,7 +95,7 @@ describe('CaseLogCard — clear/scroll only after a confirmed save (Phase 17)', 
   });
 
   it('clears the textarea once the save actually succeeds', async () => {
-    const onAddEntry = vi.fn((input: NewCaseLogEntryInput, options: AddCaseLogEntryOptions) => {
+    const onAddEntry = vi.fn((input: NewCaseLogEntryClientInput, options: AddCaseLogEntryOptions) => {
       options.onSuccess({ ...ENTRY, id: 'log-new', text: input.text ?? null });
     });
     renderCard({ onAddEntry });
@@ -105,7 +108,7 @@ describe('CaseLogCard — clear/scroll only after a confirmed save (Phase 17)', 
   });
 
   it('keeps the typed text and shows an error if the save fails', async () => {
-    const onAddEntry = vi.fn((_input: NewCaseLogEntryInput, options: AddCaseLogEntryOptions) => {
+    const onAddEntry = vi.fn((_input: NewCaseLogEntryClientInput, options: AddCaseLogEntryOptions) => {
       options.onError();
     });
     renderCard({ onAddEntry });

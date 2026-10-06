@@ -1310,7 +1310,7 @@ describe('NewCaseModal — initial case note', () => {
     expect(createCaseLogEntry).not.toHaveBeenCalled();
   });
 
-  it('saves a non-blank note through createCaseLogEntry with the new caseId, trusted organizationId, and session author — preserving internal line breaks, trimming only the outer whitespace', async () => {
+  it('saves a non-blank note through createCaseLogEntry with the new caseId and trusted organizationId — preserving internal line breaks, trimming only the outer whitespace, and claiming no author', async () => {
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
     const noteText = '  Family requested a biodegradable urn.\nMail death certificate to next of kin.  ';
@@ -1323,10 +1323,12 @@ describe('NewCaseModal — initial case note', () => {
     expect(organizationId).toBe(DEFAULT_ORGANIZATION_ID);
     expect(typeof caseId).toBe('string');
     expect(caseId.length).toBeGreaterThan(0);
+    // No `author`: attribution is resolved server-side from the
+    // authenticated caller, never claimed by the browser — see
+    // app/api/cases/[caseId]/log/route.ts.
     expect(input).toEqual({
       type: 'note',
       text: 'Family requested a biodegradable urn.\nMail death certificate to next of kin.',
-      author: staffFixtures[0].displayName,
     });
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/cases/${caseId}`));

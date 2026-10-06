@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { NewCaseLogEntryInput } from '@/types/caseLogEntry';
+import type { NewCaseLogEntryClientInput } from '@/types/caseLogEntry';
 import { fetchCaseLog, createCaseLogEntry } from '@/lib/caseLogClient';
 import { useOrganization } from './useOrganization';
 
@@ -22,7 +22,7 @@ export function useCaseLog(caseId: string) {
   });
 
   const addEntry = useMutation({
-    mutationFn: (input: NewCaseLogEntryInput) => createCaseLogEntry(caseId, organization.organizationId, input),
+    mutationFn: (input: NewCaseLogEntryClientInput) => createCaseLogEntry(caseId, organization.organizationId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 

@@ -1,4 +1,4 @@
-import type { CaseLogEntry, NewCaseLogEntryInput } from '@/types/caseLogEntry';
+import type { CaseLogEntry, NewCaseLogEntryClientInput } from '@/types/caseLogEntry';
 
 /**
  * Raw-field-name leak fix follow-up (2026-10). Client-side fetch wrappers
@@ -24,7 +24,7 @@ export async function fetchCaseLog(caseId: string, organizationId: string): Prom
   return (body.entries as CaseLogEntry[]) ?? [];
 }
 
-export async function createCaseLogEntry(caseId: string, organizationId: string, input: NewCaseLogEntryInput): Promise<CaseLogEntry> {
+export async function createCaseLogEntry(caseId: string, organizationId: string, input: NewCaseLogEntryClientInput): Promise<CaseLogEntry> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/log`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

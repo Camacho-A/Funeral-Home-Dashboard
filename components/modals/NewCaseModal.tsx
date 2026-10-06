@@ -254,7 +254,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
   const addNote = useMutation({
     mutationFn: ({ caseId, text }: { caseId: string; text: string }) =>
-      createCaseLogEntry(caseId, organization.organizationId, { type: 'note', text, author: session.displayName }),
+      createCaseLogEntry(caseId, organization.organizationId, { type: 'note', text }),
   });
 
   const createOrder = useMutation({

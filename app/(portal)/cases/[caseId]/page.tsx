@@ -243,7 +243,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             <div className={styles.overviewPair}>
               <CaseLogCard
                 entries={logEntries}
-                authorName={viewModel.effectiveOwnerName}
                 onAddEntry={(input, options) => caseLog.addEntry(input, options)}
                 onPrint={() =>
                   printTextLog('Case Log', viewModel.decedentName, viewModel.caseNumber, logEntries, (entry) => {
