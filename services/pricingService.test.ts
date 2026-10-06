@@ -9,6 +9,7 @@ import {
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { caseWriteOffFixtures, ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from './__mocks__/ledgerFixtures';
+import { MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY } from '../domain/pricing/calculateOrder';
 import { getAccountByNumber } from './chartOfAccountsService';
 import { getAccountBalance } from './generalLedgerService';
 import { getTrialBalance, getBalanceSheet } from './financialReportsService';
@@ -125,7 +126,10 @@ describe('createCaseOrder', () => {
       },
       'mock',
     );
-    expect(order.total).toBe(89_000 + 20 * 2_500); // MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY = 20
+    // Derived from the constant, not a hardcoded 20 — this assertion
+    // silently encoded the old ceiling and had to be edited by hand when
+    // it was raised to 50.
+    expect(order.total).toBe(89_000 + MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY * 2_500);
   });
 
   it('is isolated per organization — a second org never sees the first\'s catalog prices leak in', async () => {

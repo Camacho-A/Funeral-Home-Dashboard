@@ -22,10 +22,15 @@ import { SERVICE_CODES } from './serviceCodes';
  * hooks/*, and never will — that boundary is what keeps this shareable.
  */
 
-export const MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY = 20;
+/** Raised 20 -> 50 (2026-10) at Manors' request: real orders do reach
+    into the dozens, and the old ceiling was turning a legitimate order
+    into an un-enterable one. Still a sanity ceiling, not a business rule
+    — its only job is to bound a tampered/malformed browser total. */
+export const MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY = 50;
 /** Manors launch-prep. Same sanity-ceiling reasoning as the death
-    certificate cap above — a real keepsake-transfer order is never in the
-    dozens, this only guards against a tampered/malformed browser total. */
+    certificate cap above, but deliberately left at 20: a real
+    keepsake-transfer order is never in the dozens, and only the death
+    certificate ceiling was reported as too low. */
 export const MAX_KEEPSAKE_TRANSFER_QUANTITY = 20;
 
 const WEIGHT_TIERS: WeightTier[] = ['under_200', '201_250', '251_300'];
