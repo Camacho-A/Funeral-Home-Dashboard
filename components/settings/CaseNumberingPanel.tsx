@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
-import { useManorsCutoverEligibility, useExecuteManorsCutover } from '@/hooks/useCaseNumbering';
+import {
+  useManorsCutoverEligibility,
+  useExecuteManorsCutover,
+  useCaseSequenceResyncPlan,
+  useExecuteCaseSequenceResync,
+} from '@/hooks/useCaseNumbering';
 import { useManorsCaseNumberManageMigrationStatus, useExecuteManorsCaseNumberManageMigration } from '@/hooks/useManorsRbacMigration';
 import { formatCaseNumber } from '@/domain/cases/caseNumber';
 import { Modal } from '@/components/ui/Modal';
@@ -118,6 +123,107 @@ export function CaseNumberingPanel() {
   );
 }
 
+/**
+ * Case-number sequence resync (2026-10). Surfaces the one failure mode
+ * the counter can fall into: a historical Jotform import preserves the
+ * number on the submission and never advances the counter, so importing a
+ * number at or above the counter leaves it BEHIND reality and the next
+ * new case would be handed a number that already exists.
+ *
+ * Renders nothing at all unless a real lag is detected, so this is
+ * invisible in normal operation. The target number is computed entirely
+ * server-side from the Cases collection — this component never sends a
+ * sequence value, and there is no free-text number input anywhere here.
+ *
+ * Only ever mounted inside `NormalCaseNumberingContent`, i.e. once the
+ * caller is confirmed to hold `caseNumber.manage`; the underlying route
+ * independently re-checks and fails closed regardless.
+ */
+function CaseSequenceResyncSection() {
+  const { organizationId } = useOrganization();
+  const planQuery = useCaseSequenceResyncPlan(organizationId);
+  const resync = useExecuteCaseSequenceResync(organizationId);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [resolved, setResolved] = useState<{ nextCaseNumber: string } | null>(null);
+
+  async function handleConfirm() {
+    try {
+      const outcome = await resync.mutateAsync();
+      setResolved({ nextCaseNumber: outcome.nextCaseNumber });
+      setConfirmOpen(false);
+    } catch {
+      // Swallowed deliberately: the failure is already surfaced from
+      // `resync.isError` below, and letting it escape here would be an
+      // unhandled promise rejection in the browser. The modal stays open
+      // so the message is visible next to the action that produced it.
+    }
+  }
+
+  if (resolved) {
+    return (
+      <p className="sx-help" style={{ color: 'var(--sx-green-text)' }}>
+        Case numbering corrected. The next new SOLIS case will be {resolved.nextCaseNumber}.
+      </p>
+    );
+  }
+
+  // A failed/unavailable check is deliberately silent rather than an error
+  // banner: this is a secondary integrity check, and the primary "Next
+  // Case Number" display above is what this page exists to show.
+  const plan = planQuery.data;
+  if (!plan || !plan.needsResync || !plan.targetCaseNumber) return null;
+
+  return (
+    <section className="sx-settings-section">
+      <h3 className="sx-settings-section-title">Case numbering needs attention</h3>
+      <p className="sx-form-banner sx-form-banner-info">
+        {plan.collidingCaseNumbers.length === 1
+          ? `Case ${plan.collidingCaseNumbers[0]} already exists, but it is still queued as the next number to assign.`
+          : `Cases ${plan.collidingCaseNumbers.join(', ')} already exist, but ${plan.collidingCaseNumbers[0]} is still queued as the next number to assign.`}{' '}
+        The next case created would reuse a number that is already in use. This usually happens after importing a case
+        from Jotform, which keeps its own number instead of taking the next one.
+      </p>
+      <p className="sx-help">
+        This will make {plan.targetCaseNumber} the next number assigned to a new SOLIS case. It does not change, create
+        or delete any case.
+      </p>
+      <button type="button" className="sx-btn sx-btn-primary" onClick={() => setConfirmOpen(true)}>
+        Correct the next case number
+      </button>
+
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Correct the next case number">
+        <dl className="sx-kv">
+          <dt>Currently queued:</dt>
+          <dd>{plan.currentCaseNumber}</dd>
+          <dt>Already in use:</dt>
+          <dd>{plan.collidingCaseNumbers.join(', ')}</dd>
+          <dt>After correcting:</dt>
+          <dd>{plan.targetCaseNumber}</dd>
+        </dl>
+        <p className="sx-help" style={{ marginTop: 12 }}>
+          This only changes the next number SOLIS will assign to a newly created case. No existing case is modified.
+        </p>
+        {/* Shown inside the modal rather than behind it — the modal stays
+            open on failure so the reason sits next to the action that
+            produced it, and Cancel/retry remain reachable. */}
+        {resync.isError && (
+          <div className="sx-error-state" role="alert" style={{ marginTop: 12 }}>
+            {(resync.error as Error).message}
+          </div>
+        )}
+        <div className="sx-modal-footer" style={{ padding: 0, border: 'none', height: 'auto', marginTop: 16 }}>
+          <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setConfirmOpen(false)} disabled={resync.isPending}>
+            Cancel
+          </button>
+          <button type="button" className="sx-btn sx-btn-primary" onClick={handleConfirm} disabled={resync.isPending}>
+            {resync.isPending ? 'Correcting…' : 'Confirm'}
+          </button>
+        </div>
+      </Modal>
+    </section>
+  );
+}
+
 /** The pre-existing "current sequence + one-time cutover" content,
     factored out so its own loading/error/data states never affect
     whether the migration control above renders — it is only ever mounted
@@ -158,6 +264,8 @@ function NormalCaseNumberingContent({
           <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--sx-text)' }}>{currentCaseNumber ?? '—'}</div>
         </div>
       </section>
+
+      <CaseSequenceResyncSection />
 
       {result && (
         <p className="sx-help" style={{ color: 'var(--sx-green-text)' }}>

@@ -43,3 +43,36 @@ export async function executeManorsCutover(organizationId: string): Promise<{ or
   const body = await parseJsonOrThrow(response);
   return body as unknown as { organizationId: string; year: number; nextSequence: number };
 }
+
+/** Case-number sequence resync (2026-10) — see
+    app/api/organization/case-sequence/resync/route.ts. */
+export type CaseSequenceResyncPlan = {
+  organizationId: string;
+  year: number;
+  currentNextSequence: number | null;
+  targetNextSequence: number | null;
+  currentCaseNumber: string | null;
+  targetCaseNumber: string | null;
+  needsResync: boolean;
+  collidingCaseNumbers: string[];
+  reason: string | null;
+};
+
+export async function fetchCaseSequenceResyncPlan(organizationId: string): Promise<CaseSequenceResyncPlan> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(`/api/organization/case-sequence/resync?${params.toString()}`);
+  const body = await parseJsonOrThrow(response);
+  return body as unknown as CaseSequenceResyncPlan;
+}
+
+export async function executeCaseSequenceResync(
+  organizationId: string,
+): Promise<{ organizationId: string; year: number; nextSequence: number; nextCaseNumber: string }> {
+  const response = await fetch('/api/organization/case-sequence/resync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId }),
+  });
+  const body = await parseJsonOrThrow(response);
+  return body as unknown as { organizationId: string; year: number; nextSequence: number; nextCaseNumber: string };
+}
