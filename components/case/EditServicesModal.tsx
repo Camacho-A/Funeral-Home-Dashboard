@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { ServicesAndChargesSelector } from '@/components/case/ServicesAndChargesSelector';
+import { ServicesAndChargesSelector, type ServicesAndChargesSelectorHandle } from '@/components/case/ServicesAndChargesSelector';
 import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
 import { useOrganization } from '@/hooks/useOrganization';
@@ -58,6 +58,7 @@ export function EditServicesModal({
   const [customItems, setCustomItems] = useState<CustomLineItemSelection[]>(
     order ? customItemSelectionsFromLineItems(lineItems) : [],
   );
+  const selectorRef = useRef<ServicesAndChargesSelectorHandle>(null);
 
   // Re-seed the draft from the current order every time the modal opens —
   // never carry a stale draft from a previous open across into a fresh one.
@@ -72,8 +73,15 @@ export function EditServicesModal({
   const mutation = order ? editOrder : createOrder;
 
   function handleSave() {
+    // Flush a custom item the user typed but never pressed "Add Custom
+    // Item" for. Without this the draft lived only in the selector's own
+    // state and was silently dropped on save — the item was neither
+    // recorded nor reflected in the total. Uses the returned list, since
+    // the selector's own onChangeCustomItems state update is not visible
+    // synchronously here.
+    const flushed = selectorRef.current?.commitPendingCustomItem() ?? null;
     mutation.mutate(
-      { selections, customItems },
+      { selections, customItems: flushed ?? customItems },
       { onSuccess: onClose },
     );
   }
@@ -88,6 +96,7 @@ export function EditServicesModal({
       )}
 
       <ServicesAndChargesSelector
+        ref={selectorRef}
         catalog={catalog}
         selections={selections}
         onChange={setSelections}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   calculateOrderTotals,
@@ -65,7 +65,34 @@ type FlatAddonConfig = {
  * services/pricingService.ts). See docs/adr/ADR-023's "client preview vs.
  * server authority" section.
  */
-export function ServicesAndChargesSelector({
+export type ServicesAndChargesSelectorHandle = {
+  /**
+   * Commits a custom item the user typed but never pressed "Add Custom
+   * Item" for, and returns the complete custom-item list including it —
+   * or null when there is no valid pending draft.
+   *
+   * Exists because the draft lives in this component's own state, so a
+   * parent's Save had no way to see it: typing a description and price
+   * and pressing Save directly sent `customItems: []` and silently
+   * discarded the entry (it was also absent from the preview total, since
+   * only committed items are summed). Returning the list rather than
+   * relying on `onChangeCustomItems` matters — the parent's own state
+   * update from that callback is not visible synchronously within the
+   * same event handler.
+   */
+  commitPendingCustomItem: () => CustomLineItemSelection[] | null;
+};
+
+export const ServicesAndChargesSelector = forwardRef<
+  ServicesAndChargesSelectorHandle,
+  {
+    catalog: ServiceCatalogItem[];
+    selections: ServiceSelections;
+    onChange: (next: ServiceSelections) => void;
+    customItems?: CustomLineItemSelection[];
+    onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
+  }
+>(function ServicesAndChargesSelector({
   catalog,
   selections,
   onChange,
@@ -84,7 +111,7 @@ export function ServicesAndChargesSelector({
       to attach it to. */
   customItems?: CustomLineItemSelection[];
   onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
-}) {
+}, ref) {
   const baseService = catalog.find((item) => item.category === 'base');
 
   const preview = calculateOrderTotals(catalog, selections);
@@ -97,16 +124,28 @@ export function ServicesAndChargesSelector({
   // `dollarsToCents('')` would otherwise coerce to 0 via `Number('')`.
   const draftAmountCents = draftAmount.trim() === '' ? null : dollarsToCents(draftAmount);
 
-  function addCustomItem() {
+  /** The single commit path, shared by the "Add Custom Item" button and
+      the parent-triggered flush on Save, so the two can never diverge.
+      Returns the resulting list (null when there is nothing valid to
+      commit) — the button ignores it, the flush needs it. */
+  function commitDraftCustomItem(): CustomLineItemSelection[] | null {
     const description = draftDescription.trim();
-    if (!description || draftAmountCents === null || !onChangeCustomItems) return;
-    onChangeCustomItems([
+    if (!description || draftAmountCents === null || !onChangeCustomItems) return null;
+    const next = [
       ...(customItems ?? []),
       { id: crypto.randomUUID(), description, amountCents: draftAmountCents },
-    ]);
+    ];
+    onChangeCustomItems(next);
     setDraftDescription('');
     setDraftAmount('');
+    return next;
   }
+
+  function addCustomItem() {
+    commitDraftCustomItem();
+  }
+
+  useImperativeHandle(ref, () => ({ commitPendingCustomItem: commitDraftCustomItem }));
 
   function removeCustomItem(id: string) {
     if (!onChangeCustomItems) return;
@@ -329,4 +368,4 @@ export function ServicesAndChargesSelector({
       </div>
     </div>
   );
-}
+});
