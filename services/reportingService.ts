@@ -5,6 +5,7 @@ import type { AppointmentStatus } from '../types/appointment';
 import type { PaymentRecordStatus } from '../types/payment';
 import { buildCaseViewModel } from '../domain/cases/viewModel';
 import { STAGES, LAST_DISPLAY_STAGE } from '../domain/cases/stages';
+import { presentedStages } from '../domain/organization/workflowStagePresentation';
 import {
   computeStageBreakdown,
   computeStaffWorkload,
@@ -214,10 +215,17 @@ export type CaseStageCountRow = { stage: string; displayStage: number; count: nu
 
 export async function caseCountsByStage(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<CaseStageCountRow[]> {
   const views = await loadCaseViewModels(organizationId, dataAdapterMode);
-  return STAGES.map((label, displayStage) => ({
-    stage: label,
-    displayStage,
-    count: views.filter((c) => c.displayStage === displayStage).length,
+  // Manors intake-stage combination (2026-10): rows are the USER-FACING
+  // stages, so Manors reports six instead of seven. Each presented stage
+  // covers a disjoint set of canonical display stages, so no case is
+  // counted twice and none is dropped — the row counts still sum to the
+  // same total. `displayStage` keeps reporting a CANONICAL value (the
+  // first one the row covers), since it is an identifier for downstream
+  // consumers, not a position in this list.
+  return presentedStages(organizationId, STAGES).map((stage) => ({
+    stage: stage.label,
+    displayStage: stage.canonicalDisplayStages[0],
+    count: views.filter((c) => stage.canonicalDisplayStages.includes(c.displayStage)).length,
   }));
 }
 
@@ -226,7 +234,7 @@ export async function caseCountsByStage(organizationId: string, dataAdapterMode:
     description for how it differs from `averageCaseCycleDays`). */
 export async function averageDaysInStageSnapshot(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<StageBreakdownRow[]> {
   const views = await loadCaseViewModels(organizationId, dataAdapterMode);
-  return computeStageBreakdown(views);
+  return computeStageBreakdown(views, organizationId);
 }
 
 export async function veteranCaseStatusBreakdown(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<VeteranCaseStatusRow[]> {

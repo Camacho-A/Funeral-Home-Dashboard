@@ -14,6 +14,7 @@ import type { CaseDocument } from '../types/caseDocument';
 import type { SignatureRequest } from '../types/signatureRequest';
 import type { PaymentRecord } from '../types/payment';
 import { STAGES } from '../domain/cases/stages';
+import { presentedStageLabels } from '../domain/organization/workflowStagePresentation';
 import {
   countActiveCases,
   countCasesCreated,
@@ -125,13 +126,31 @@ describe('countOverdueCases', () => {
 });
 
 describe('caseCountsByStage', () => {
-  it('returns one row per STAGES entry, in order, summing to the total case count', async () => {
+  it('returns one row per USER-FACING stage, in order, still summing to the total case count', async () => {
+    // Manors intake-stage combination (2026-10): six rows, not seven —
+    // the two historical intake stages report as one. The total is the
+    // assertion that matters most here: merging rows must not drop or
+    // duplicate a single case.
     const rows = await caseCountsByStage(DEFAULT_ORGANIZATION_ID, 'mock');
-    expect(rows.map((r) => r.stage)).toEqual([...STAGES]);
-    expect(rows.map((r) => r.displayStage)).toEqual(STAGES.map((_, i) => i));
+    expect(rows.map((r) => r.stage)).toEqual(presentedStageLabels(DEFAULT_ORGANIZATION_ID, STAGES));
+    expect(rows).toHaveLength(6);
+    expect(rows[0].stage).toBe('Intake & JotForm');
+
     const total = rows.reduce((sum, r) => sum + r.count, 0);
     const activeAndCompleted = caseFixtures.filter((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted).length;
     expect(total).toBe(activeAndCompleted);
+  });
+
+  it('merges the two intake stages into one row carrying both their cases', async () => {
+    const rows = await caseCountsByStage(DEFAULT_ORGANIZATION_ID, 'mock');
+    const intake = rows.find((r) => r.stage === 'Intake & JotForm')!;
+    const inIntake = caseFixtures.filter(
+      (c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted && c.rawStage <= 2,
+    ).length;
+
+    expect(intake.count).toBe(inIntake);
+    expect(rows.some((r) => r.stage === 'First Call & Payment')).toBe(false);
+    expect(rows.some((r) => r.stage === 'Jotform Application')).toBe(false);
   });
 });
 
