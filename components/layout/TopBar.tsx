@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname, useRouter } from 'next/navigation';
 import type { AuthAdapterMode } from '@/lib/env';
 import { Button } from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
@@ -124,6 +125,26 @@ export function TopBar({
   const { query, setQuery } = useCaseSearch();
   const session = useSession();
   const { data: organization } = useOrganizationRecord();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  /**
+   * This search box is in the persistent TopBar, so it renders on every
+   * portal page — but `/cases` is the only page that reads the shared
+   * query and renders results. Typing here from anywhere else therefore
+   * did nothing whatsoever, with no indication why.
+   *
+   * Enter now takes the viewer to the case list, where the term they
+   * already typed applies immediately: the query lives in the
+   * CaseSearchProvider mounted by the (portal) layout, which survives
+   * this navigation, so nothing needs to be passed through the URL.
+   * Already on `/cases`, Enter is a no-op — that page filters live as you
+   * type, so there is nowhere to go.
+   */
+  function handleSearchSubmit() {
+    if (query.trim() === '' || pathname === '/cases') return;
+    router.push('/cases');
+  }
 
   return (
     <div className={styles.topBar}>
@@ -135,7 +156,13 @@ export function TopBar({
         <img src="/brand/soliscode-mark.png" alt="" aria-hidden="true" className={styles.mobileBrandMark} />
         <span className={styles.mobileBrandWordmark}>SOLIS</span>
       </div>
-      <SearchInput value={query} onChange={setQuery} className={styles.searchSlot} hint="⌘K" />
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        onSubmit={handleSearchSubmit}
+        className={styles.searchSlot}
+        hint="⌘K"
+      />
       <div className={styles.spacer} />
       {authAdapterMode === 'identity' && <OrganizationSwitcher />}
       {isModuleEnabled(organization, 'resources') && (

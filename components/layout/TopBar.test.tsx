@@ -3,13 +3,19 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TopBar } from './TopBar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
+import { CaseSearchProvider } from '@/hooks/useCaseSearch';
 import { SessionProvider } from '@/hooks/useSession';
 
 // Only needed for the identity-mode Audit/Templates test below, which
 // also renders OrganizationSwitcher (authAdapterMode === 'identity') —
 // that component calls useRouter(), which needs a real App Router
 // context none of this file's other tests exercise.
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+const mockPush = vi.fn();
+let mockPathname = '/dashboard';
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush, refresh: vi.fn() }),
+  usePathname: () => mockPathname,
+}));
 
 /**
  * Manors go-live fix (real session identity). TopBar's avatar/signed-in
@@ -31,6 +37,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
  * moved to the Settings menu, see below.)
  */
 beforeEach(() => {
+  mockPush.mockClear();
+  mockPathname = '/dashboard';
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
@@ -270,5 +278,89 @@ describe('TopBar — item #5 (2026-09, navigation cleanup): admin tools no longe
     expect(screen.queryByText('Roles')).not.toBeInTheDocument();
     expect(screen.queryByText('Team')).not.toBeInTheDocument();
     expect(screen.queryByText('Case Numbering')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Global search routing (2026-10). The TopBar search renders on every
+ * portal page, but `/cases` is the only page that reads the shared query
+ * and renders results — so typing here from anywhere else did nothing at
+ * all, with no indication why. Enter now navigates to the case list,
+ * where the already-typed term applies immediately via the shared
+ * CaseSearchProvider.
+ */
+describe('TopBar — global search routing', () => {
+  function renderWithSearch(pathname: string) {
+    mockPathname = pathname;
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OrganizationProvider>
+          <SessionProvider value={TEST_SESSION}>
+            <CaseSearchProvider>
+              <TopBar />
+            </CaseSearchProvider>
+          </SessionProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    return screen.getByLabelText('Search cases');
+  }
+
+  it('navigates to the case list on Enter when the viewer is somewhere else', () => {
+    const input = renderWithSearch('/dashboard');
+    fireEvent.change(input, { target: { value: 'morales' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockPush).toHaveBeenCalledWith('/cases');
+  });
+
+  it('keeps the typed term, so the case list can apply it on arrival', () => {
+    const input = renderWithSearch('/dashboard');
+    fireEvent.change(input, { target: { value: 'morales' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((input as HTMLInputElement).value).toBe('morales');
+  });
+
+  it('does not navigate when already on the case list — it filters live there', () => {
+    const input = renderWithSearch('/cases');
+    fireEvent.change(input, { target: { value: 'morales' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate on Enter with an empty or whitespace-only query', () => {
+    const input = renderWithSearch('/dashboard');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockPush).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate on an ordinary keystroke — only Enter submits', () => {
+    const input = renderWithSearch('/dashboard');
+    fireEvent.change(input, { target: { value: 'morales' } });
+    fireEvent.keyDown(input, { key: 'a' });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('focuses the search on the Cmd/Ctrl-K the hint badge advertises', () => {
+    const input = renderWithSearch('/dashboard');
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('leaves Cmd/Ctrl-K alone while the viewer is typing in another field', () => {
+    const input = renderWithSearch('/dashboard');
+    const other = document.createElement('input');
+    document.body.appendChild(other);
+    other.focus();
+
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(document.activeElement).toBe(other);
+    expect(document.activeElement).not.toBe(input);
+    other.remove();
   });
 });
