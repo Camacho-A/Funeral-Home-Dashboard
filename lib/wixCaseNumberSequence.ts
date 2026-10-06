@@ -156,3 +156,40 @@ export async function initializeCaseSequence(
   await updateWixDataItem<CaseSequenceItem>(CASE_SEQUENCES_COLLECTION, sequenceId, { organizationId, year, nextSequence });
   return { nextSequence };
 }
+
+/**
+ * Historical-import sequence safety (2026-10). Ensures `nextSequence` for
+ * one organization+year is strictly GREATER than `sequence`, so a number
+ * that already belongs to a real Case can never be handed out again.
+ *
+ * Exists because the historical Jotform import is the one path that
+ * deliberately skips `reserveNextCaseNumber` entirely — it preserves the
+ * number carried on the submission itself (see
+ * domain/externalForms/historicalCaseNumber.ts). That leaves the counter
+ * untouched, so importing a number at or above the current `nextSequence`
+ * silently puts the counter BEHIND reality, and the next normally-
+ * allocated case is then handed a number that already exists. This was
+ * observed live for Manors: importing B2026-036 left `nextSequence` at
+ * 36, so the next new case would have duplicated it.
+ *
+ * Idempotent and strictly forward-only — a counter already past
+ * `sequence` is left exactly as it is (`advanced: false`), and the
+ * underlying `initializeCaseSequence` independently refuses any backwards
+ * move. Safe to call after every historical import, including repeats and
+ * out-of-order imports of older numbers.
+ */
+export async function advanceCaseSequencePast(
+  organizationId: string,
+  year: number,
+  sequence: number,
+): Promise<{ nextSequence: number; advanced: boolean }> {
+  const target = sequence + 1;
+  const existing = await getCaseSequenceState(organizationId, year);
+
+  if (existing && existing.nextSequence >= target) {
+    return { nextSequence: existing.nextSequence, advanced: false };
+  }
+
+  const result = await initializeCaseSequence(organizationId, year, target, { forceOverwrite: true });
+  return { nextSequence: result.nextSequence, advanced: true };
+}

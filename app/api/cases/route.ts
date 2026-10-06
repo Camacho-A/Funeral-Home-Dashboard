@@ -15,8 +15,8 @@ import {
 import { STAGES, rawStagesForStageLabel } from '@/domain/cases/stages';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
-import { reserveNextCaseNumber } from '@/lib/wixCaseNumberSequence';
-import { orgLocalYear } from '@/domain/cases/caseNumber';
+import { reserveNextCaseNumber, advanceCaseSequencePast } from '@/lib/wixCaseNumberSequence';
+import { orgLocalYear, parseCaseNumber } from '@/domain/cases/caseNumber';
 import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { isValidEmail, getDateOfBirthFutureError, getDateOfDeathFutureError, resolveOrgLocalToday } from '@/utils/inputMask';
@@ -551,6 +551,10 @@ export async function POST(request: Request) {
     const assignedStaffId = typeof b.assignedStaffId === 'string' ? b.assignedStaffId : createdBy;
 
     let caseNumber: string;
+    // Set only on the historical-import path, so the sequence counter can
+    // be advanced past the preserved number after the Case is created —
+    // see the `historicalPreservedCaseNumber` block below.
+    let historicalPreservedCaseNumber: string | null = null;
     if (typeof b.historicalCaseNumberAuthorization === 'string') {
       // Historical Arrangement import (2026-09) — the ONLY path that ever
       // skips reserveNextCaseNumber. Anything invalid/expired/mismatched
@@ -586,6 +590,7 @@ export async function POST(request: Request) {
       }
 
       caseNumber = authPayload.caseNumber;
+      historicalPreservedCaseNumber = caseNumber;
     } else {
       // Manors launch-prep — P0: the case-number year is the organization's
       // own LOCAL calendar year, never the server's/UTC's, so a case created
@@ -640,6 +645,36 @@ export async function POST(request: Request) {
         `[POST /api/cases] mapWixCaseItem returned null after insert, beaconCaseId=${beaconCaseId} organizationId=${organizationId} correlationId=${correlationId}. Failures: ${describeMapWixCaseItemFailure(inserted.data).join('; ')}`,
       );
       return NextResponse.json({ case: null, error: 'Failed to create case.' }, { status: 500 });
+    }
+
+    // Historical-import sequence safety (2026-10). The preserved number
+    // above was NOT allocated by reserveNextCaseNumber, so the counter is
+    // still wherever it was — if the imported number is at or above it,
+    // the counter is now BEHIND reality and the next normally-allocated
+    // case would be handed a number that already exists. Observed live
+    // for Manors: importing B2026-036 left nextSequence at 36.
+    //
+    // Best-effort by necessity: the Case is already inserted at this
+    // point, so throwing here would report a failure for a case that in
+    // fact exists. A failure is logged loudly and remains repairable from
+    // Settings > Case Numbering (the resync action), which recomputes the
+    // same correction from the Cases collection itself.
+    if (historicalPreservedCaseNumber) {
+      try {
+        const parsed = parseCaseNumber(historicalPreservedCaseNumber);
+        if (parsed) {
+          await advanceCaseSequencePast(organizationId, parsed.year, parsed.sequence);
+        } else {
+          console.error(
+            `[POST /api/cases] Could not parse preserved historical case number "${historicalPreservedCaseNumber}" to advance the sequence, organizationId=${organizationId} correlationId=${correlationId}.`,
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[POST /api/cases] Failed to advance the case-number sequence past imported ${historicalPreservedCaseNumber}, organizationId=${organizationId} correlationId=${correlationId}:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
     }
 
     // Phase 24: best-effort — an activity-log failure never fails the

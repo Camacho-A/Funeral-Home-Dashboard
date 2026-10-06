@@ -42,8 +42,10 @@ vi.mock('@/lib/wixDataApi', async () => {
 // these tests don't need to also simulate the caseSequences collection —
 // lib/wixCaseNumberSequence.test.ts already exercises that logic directly.
 let mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
+let mockAdvanceCaseSequencePast = vi.fn().mockResolvedValue({ nextSequence: 1, advanced: false });
 vi.mock('@/lib/wixCaseNumberSequence', () => ({
   reserveNextCaseNumber: (...args: unknown[]) => mockReserveNextCaseNumber(...args),
+  advanceCaseSequencePast: (...args: unknown[]) => mockAdvanceCaseSequencePast(...args),
 }));
 
 // Manors launch-prep — P0: the case-number year is resolved via the
@@ -222,6 +224,7 @@ beforeEach(() => {
   mockQueryWixDataItems = vi.fn();
   mockInsertWixDataItem = vi.fn();
   mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
+  mockAdvanceCaseSequencePast = vi.fn().mockResolvedValue({ nextSequence: 1, advanced: false });
   mockGetOrganization = vi.fn().mockResolvedValue(null);
   mockSession = { user: mockDefaultUser };
 });
@@ -1480,6 +1483,71 @@ describe('POST /api/cases — historical case-number authorization (2026-09)', (
     expect(response.status).toBe(201);
     expect(body.case.caseNumber).toBe('B2026-035');
     expect(mockReserveNextCaseNumber).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Historical-import sequence safety (2026-10). Because the preserved
+   * number bypasses reserveNextCaseNumber entirely, the counter is left
+   * untouched and can end up BEHIND an imported number — the next
+   * normally-allocated case would then be handed a number that already
+   * exists. Observed live: importing B2026-036 left nextSequence at 36.
+   */
+  it('advances the case-number sequence past the preserved historical number', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-1',
+      caseNumber: 'B2026-036',
+    });
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+
+    expect(response.status).toBe(201);
+    // Year and sequence are taken from the preserved number itself, not
+    // from the server clock or the organization's local year.
+    expect(mockAdvanceCaseSequencePast).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026, 36);
+  });
+
+  it('never advances the sequence on the normal (non-historical) creation path', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+
+    expect(response.status).toBe(201);
+    expect(mockReserveNextCaseNumber).toHaveBeenCalled();
+    expect(mockAdvanceCaseSequencePast).not.toHaveBeenCalled();
+  });
+
+  it('still creates the case when advancing the sequence fails — the insert already succeeded', async () => {
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+    mockAdvanceCaseSequencePast.mockRejectedValue(new Error('Wix Data update failed for collection "caseSequences" (HTTP 500).'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-1',
+      caseNumber: 'B2026-036',
+    });
+
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.case.caseNumber).toBe('B2026-036');
+    // Logged loudly so the lag is traceable; repairable from
+    // Settings > Case Numbering's resync action.
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to advance the case-number sequence'), expect.anything());
+    errorSpy.mockRestore();
   });
 
   it('rejects an invalid/malformed authorization and never falls back to normal allocation', async () => {

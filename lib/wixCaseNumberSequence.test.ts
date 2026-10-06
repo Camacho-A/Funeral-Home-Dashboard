@@ -36,8 +36,13 @@ function stubFetchSequence(handler: (url: string, init: RequestInit) => { status
   );
 }
 
-const { reserveNextCaseNumber, getCaseSequenceState, initializeCaseSequence, CaseSequenceAlreadyInitializedError } =
-  await import('./wixCaseNumberSequence');
+const {
+  reserveNextCaseNumber,
+  getCaseSequenceState,
+  initializeCaseSequence,
+  advanceCaseSequencePast,
+  CaseSequenceAlreadyInitializedError,
+} = await import('./wixCaseNumberSequence');
 
 describe('reserveNextCaseNumber — row already exists (the common path)', () => {
   it('atomically increments and returns the pre-increment value as the assigned number', async () => {
@@ -257,5 +262,115 @@ describe('reserveNextCaseNumber — no reuse after a case is later deleted/cance
     // B2026-186's case is deleted/cancelled here — no code path exists that
     // could feed that fact back into this function; nothing to simulate.
     expect(await reserveNextCaseNumber('manors', 2026)).toBe('B2026-188');
+  });
+});
+
+/**
+ * Historical-import sequence safety (2026-10). The exact live defect this
+ * function exists to prevent: the historical Jotform import preserves the
+ * number carried on the submission and never calls
+ * `reserveNextCaseNumber`, so importing B2026-036 while `nextSequence`
+ * was 36 left the counter BEHIND reality — the next normally-allocated
+ * case would have been handed B2026-036 a second time.
+ */
+describe('advanceCaseSequencePast', () => {
+  it('advances a counter that has fallen behind an imported number to imported + 1', async () => {
+    // The real Manors state: nextSequence 36, B2026-036 just imported.
+    let call = 0;
+    stubFetchSequence((url, init) => {
+      call += 1;
+      if (call === 1) {
+        expect(url).toBe('https://www.wixapis.com/wix-data/v2/items/query');
+        return { status: 200, body: { dataItems: [{ id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'managed-cremations', year: 2026, nextSequence: 36 } }] } };
+      }
+      if (call === 2) return { status: 409, body: {} }; // initializeCaseSequence's insert — row exists
+      if (call === 3) return { status: 200, body: { dataItems: [{ id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'managed-cremations', year: 2026, nextSequence: 36 } }] } };
+      expect(init.method).toBe('PUT');
+      const parsed = JSON.parse(init.body as string);
+      expect(parsed.dataItem.data.nextSequence).toBe(37);
+      return { status: 200, body: { dataItem: { id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+    });
+
+    const result = await advanceCaseSequencePast('managed-cremations', 2026, 36);
+    expect(result).toEqual({ nextSequence: 37, advanced: true });
+  });
+
+  it('leaves a counter that is already ahead completely untouched (no write at all)', async () => {
+    // Importing an OLD number (B2026-012) when the counter is already at
+    // 40 must never drag it backwards — and must not write anything.
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ dataItems: [{ id: 'manors-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'manors', year: 2026, nextSequence: 40 } }] }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await advanceCaseSequencePast('manors', 2026, 12);
+    expect(result).toEqual({ nextSequence: 40, advanced: false });
+    // Exactly one call: the read. No insert, no PUT.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when the counter already sits exactly one past the imported number', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ dataItems: [{ id: 'manors-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'manors', year: 2026, nextSequence: 37 } }] }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await advanceCaseSequencePast('manors', 2026, 36);
+    expect(result).toEqual({ nextSequence: 37, advanced: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is idempotent — running it twice on the same import does not advance twice', async () => {
+    let stored = 36;
+    stubFetchSequence((url, init) => {
+      if (url === 'https://www.wixapis.com/wix-data/v2/items/query') {
+        return { status: 200, body: { dataItems: [{ id: 'manors-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'manors', year: 2026, nextSequence: stored } }] } };
+      }
+      if (url === 'https://www.wixapis.com/wix-data/v2/items') return { status: 409, body: {} };
+      const parsed = JSON.parse(init.body as string);
+      stored = parsed.dataItem.data.nextSequence;
+      return { status: 200, body: { dataItem: { id: 'manors-2026', dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+    });
+
+    expect(await advanceCaseSequencePast('manors', 2026, 36)).toEqual({ nextSequence: 37, advanced: true });
+    expect(await advanceCaseSequencePast('manors', 2026, 36)).toEqual({ nextSequence: 37, advanced: false });
+    expect(stored).toBe(37);
+  });
+
+  it('creates the row when no sequence exists yet, so a later case cannot collide with the imported number', async () => {
+    let call = 0;
+    stubFetchSequence((url, init) => {
+      call += 1;
+      if (call === 1) return { status: 200, body: { dataItems: [] } }; // no row yet
+      expect(url).toBe('https://www.wixapis.com/wix-data/v2/items');
+      expect(init.method).toBe('POST');
+      const parsed = JSON.parse(init.body as string);
+      expect(parsed.dataItem.data).toEqual({ organizationId: 'fresh-org', year: 2026, nextSequence: 37 });
+      return { status: 200, body: { dataItem: { id: 'fresh-org-2026', dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+    });
+
+    const result = await advanceCaseSequencePast('fresh-org', 2026, 36);
+    expect(result).toEqual({ nextSequence: 37, advanced: true });
+  });
+
+  it('keeps years independent — advancing 2026 never touches the 2025 row', async () => {
+    const seen: string[] = [];
+    stubFetchSequence((url, init) => {
+      if (url === 'https://www.wixapis.com/wix-data/v2/items/query') {
+        const parsed = JSON.parse(init.body as string);
+        seen.push(`query:${parsed.query.filter.year}`);
+        return { status: 200, body: { dataItems: [] } };
+      }
+      const parsed = JSON.parse(init.body as string);
+      seen.push(`insert:${parsed.dataItem.id}`);
+      return { status: 200, body: { dataItem: { id: parsed.dataItem.id, dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+    });
+
+    await advanceCaseSequencePast('manors', 2026, 36);
+    expect(seen).toEqual(['query:2026', 'insert:manors-2026']);
   });
 });
