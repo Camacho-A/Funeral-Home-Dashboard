@@ -41,7 +41,7 @@ function CasesPageContent() {
   const stageParam = searchParams.get('stage');
   const stage = isValidStage(stageParam) ? stageParam : null;
 
-  const { query, setQuery, debouncedQuery } = useCaseSearch();
+  const { query, setQuery, debouncedQuery, submitQuery } = useCaseSearch();
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
   const advanceStage = useAdvanceCaseStage();
 
@@ -104,6 +104,20 @@ function CasesPageContent() {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              // This list already filters as you type, so Return's job is
+              // to stop waiting: apply the term now instead of after the
+              // debounce, and dismiss the on-screen keyboard so results
+              // are actually visible on a phone.
+              event.preventDefault();
+              submitQuery();
+              event.currentTarget.blur();
+            }}
+            // Labels the mobile keyboard's Return key "Search" rather
+            // than a generic return, so pressing it reads as the obvious
+            // way to run the search.
+            enterKeyHint="search"
             placeholder="Search cases…"
             className={styles.searchInput}
           />

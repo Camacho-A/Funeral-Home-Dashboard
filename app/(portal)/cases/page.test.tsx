@@ -7,7 +7,7 @@ import { OrganizationProvider } from '@/hooks/useOrganization';
 import { CaseSearchContext, useCaseSearch } from '@/hooks/useCaseSearch';
 import { casesService } from '@/services/casesService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { STAGES } from '@/domain/cases/stages';
 import type { Case } from '@/types/case';
 
@@ -211,8 +211,10 @@ describe('CasesPage — server-side search (Case list scalability, Phase 3)', ()
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function TestSearchProvider({ children }: { children: React.ReactNode }) {
       const [value, setValue] = useState('');
+      // debouncedQuery mirrors query synchronously here, so submitQuery
+      // (which only collapses the debounce) has nothing left to do.
       return (
-        <CaseSearchContext.Provider value={{ query: value, setQuery: setValue, debouncedQuery: value }}>
+        <CaseSearchContext.Provider value={{ query: value, setQuery: setValue, debouncedQuery: value, submitQuery: () => {} }}>
           {children}
         </CaseSearchContext.Provider>
       );
@@ -407,5 +409,67 @@ describe('CasesPage — case progress indicator (Case list scalability, Phase 3)
     const stageFilteredPercent = screen.getByRole('progressbar').getAttribute('aria-valuenow');
 
     expect(stageFilteredPercent).toBe(allCasesPercent);
+  });
+});
+
+/**
+ * Return-to-search (2026-10). The toolbar input had no key handling at
+ * all, so pressing Return did nothing: on a phone the on-screen keyboard
+ * stayed up covering the results, and the viewer still waited out the
+ * debounce. Return now applies the term immediately and dismisses the
+ * keyboard.
+ */
+describe('CasesPage — Return key runs the search', () => {
+  function renderToolbar() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const submitQuery = vi.fn();
+    function TestSearchProvider({ children }: { children: React.ReactNode }) {
+      const [value, setValue] = useState('');
+      return (
+        <CaseSearchContext.Provider value={{ query: value, setQuery: setValue, debouncedQuery: value, submitQuery }}>
+          {children}
+        </CaseSearchContext.Provider>
+      );
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+          <TestSearchProvider>
+            <CasesPage />
+          </TestSearchProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    return { submitQuery, input: screen.getByPlaceholderText('Search cases…') };
+  }
+
+  it('applies the search immediately on Return instead of waiting for the debounce', () => {
+    const { submitQuery, input } = renderToolbar();
+    fireEvent.change(input, { target: { value: 'morales' } });
+    expect(submitQuery).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(submitQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses the on-screen keyboard on Return, so results are not hidden behind it', () => {
+    const { input } = renderToolbar();
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('does not submit on an ordinary keystroke', () => {
+    const { submitQuery, input } = renderToolbar();
+    fireEvent.change(input, { target: { value: 'mor' } });
+    fireEvent.keyDown(input, { key: 'r' });
+    expect(submitQuery).not.toHaveBeenCalled();
+  });
+
+  it('labels the mobile keyboard key as Search rather than a generic return', () => {
+    const { input } = renderToolbar();
+    expect(input).toHaveAttribute('enterkeyhint', 'search');
   });
 });

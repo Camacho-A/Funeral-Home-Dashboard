@@ -122,7 +122,7 @@ export function TopBar({
   onMenuClick?: () => void;
   authAdapterMode?: AuthAdapterMode;
 }) {
-  const { query, setQuery } = useCaseSearch();
+  const { query, setQuery, submitQuery } = useCaseSearch();
   const session = useSession();
   const { data: organization } = useOrganizationRecord();
   const router = useRouter();
@@ -142,8 +142,11 @@ export function TopBar({
    * type, so there is nowhere to go.
    */
   function handleSearchSubmit() {
-    if (query.trim() === '' || pathname === '/cases') return;
-    router.push('/cases');
+    if (query.trim() === '') return;
+    // Apply the term now rather than after the debounce, so Return feels
+    // immediate whether it lands on the case list or navigates there.
+    submitQuery();
+    if (pathname !== '/cases') router.push('/cases');
   }
 
   return (

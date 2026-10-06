@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 /**
  * Shared search-box state (Frontend Engineering Plan, Phase 5).
@@ -32,6 +32,14 @@ type CaseSearchContextValue = {
   query: string;
   setQuery: (query: string) => void;
   debouncedQuery: string;
+  /**
+   * Applies whatever is currently typed immediately, cancelling the
+   * pending debounce — what pressing Return in a search box should do.
+   * Without it, Return either did nothing at all (the Cases page input
+   * had no key handling) or still left the viewer waiting out
+   * SEARCH_DEBOUNCE_MS, which reads as the key not working.
+   */
+  submitQuery: () => void;
 };
 
 // Exported (only) so tests can render `<CaseSearchContext.Provider value={...}>`
@@ -43,19 +51,32 @@ export const CaseSearchContext = createContext<CaseSearchContextValue>({
   query: '',
   setQuery: () => {},
   debouncedQuery: '',
+  submitQuery: () => {},
 });
 
 export function CaseSearchProvider({ children }: { children: React.ReactNode }) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  // Held in a ref so submitQuery can cancel the in-flight debounce
+  // rather than letting it fire a second, redundant update afterwards.
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedQuery(query), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timeout);
+    timeoutRef.current = setTimeout(() => setDebouncedQuery(query), SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [query]);
+
+  const submitQuery = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setDebouncedQuery(query);
   }, [query]);
 
   return (
-    <CaseSearchContext.Provider value={{ query, setQuery, debouncedQuery }}>{children}</CaseSearchContext.Provider>
+    <CaseSearchContext.Provider value={{ query, setQuery, debouncedQuery, submitQuery }}>
+      {children}
+    </CaseSearchContext.Provider>
   );
 }
 

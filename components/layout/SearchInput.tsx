@@ -65,11 +65,16 @@ export function SearchInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            onSubmit?.();
-          }
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          onSubmit?.();
+          // Dismisses the on-screen keyboard on a phone, so the results
+          // the Return key just asked for are actually visible.
+          event.currentTarget.blur();
         }}
+        // Labels the mobile keyboard's Return key "Search" rather than a
+        // generic return.
+        enterKeyHint="search"
         placeholder={placeholder}
         aria-label="Search cases"
       />
