@@ -98,7 +98,10 @@ describe('buildAllCaseDataRows', () => {
     expect(row?.nextOfKinName).toBe('Paul Vance');
     expect(row?.nextOfKinRelationship).toBe('Son');
     expect(row?.tagNumber).toBe('T-900');
-    expect(row?.stage).toBe('First Call & Payment');
+    // Manors intake-stage combination (2026-10): the report's CURRENT
+    // stage column uses the user-facing label, so it matches the Dashboard
+    // and Case Detail. The row set, filters, and date range are unchanged.
+    expect(row?.stage).toBe('Intake & JotForm');
   });
 
   it('filters by case creation date — excludes a case created before fromDate', async () => {

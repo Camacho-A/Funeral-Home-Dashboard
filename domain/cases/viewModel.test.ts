@@ -85,23 +85,35 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
     const case_ = baseCase({ rawStage: 2 });
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
-    expect(vm.stageLabel).toBe('Jotform Application');
+    // Manors intake-stage combination (2026-10): rawStage 2 is canonically
+    // "Jotform Application" (display stage 1), which now PRESENTS as the
+    // combined intake stage. The canonical position is unchanged — see the
+    // dedicated assertion below and workflowStagePresentation.test.ts.
+    expect(vm.stageLabel).toBe('Intake & JotForm');
+    expect(vm.displayStage).toBe(1); // canonical, untouched
+    expect(vm.presentedDisplayStage).toBe(0); // both intake stages present as one
     expect(vm.stageBadgeVariant).toBe('neutral');
   });
 
-  it('exposes stageLabels in display order, matching the original 7-stage list', () => {
+  it('exposes stageLabels as the six user-facing Manors stages, in display order', () => {
     const case_ = baseCase({});
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
+    // Manors intake-stage combination (2026-10): the two historical intake
+    // stages ("First Call & Payment", "Jotform Application") present as one
+    // combined stage. Every later stage keeps its label and relative order.
     expect(vm.stageLabels).toEqual([
-      'First Call & Payment',
-      'Jotform Application',
+      'Intake & JotForm',
       'EDRS & Doctor / Cause of Death',
       'Permit & Authorization Sent to Crematory',
       'DC Application Sent',
       'Ready for Pickup / Contact Family',
       'Completed',
     ]);
+    // The combined entry covers both canonical display stages, so a
+    // clicked stepper position can still resolve to a canonical stage.
+    expect(vm.canonicalDisplayStagesByPresentedIndex[0]).toEqual([0, 1]);
+    expect(vm.canonicalDisplayStagesByPresentedIndex[1]).toEqual([2]);
   });
 
   describe('conditional shipping/tracking (2026-09) — terminal return-of-remains requirement', () => {
@@ -340,7 +352,11 @@ describe('buildCaseViewModel — organization isolation / generalization', () =>
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
     expect(vm.stageLabel).toBe('EDRS & Doctor / Cause of Death');
-    expect(vm.stageLabels).toHaveLength(7); // still Managed Cremations' own 7, not 3
+    // Still Managed Cremations' own workflow, not the second org's 3 —
+    // six user-facing stages since the 2026-10 intake combination.
+    expect(vm.stageLabels).toHaveLength(6);
+    expect(vm.displayStage).toBe(2); // canonical EDRS position, untouched
+    expect(vm.presentedDisplayStage).toBe(1); // shifted down by the combined intake stage
   });
 });
 

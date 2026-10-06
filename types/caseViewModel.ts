@@ -184,4 +184,27 @@ export type CaseViewModel = {
       workflow template renders its own stages correctly through the same
       shared StageStepper component. */
   stageLabels: string[];
+  /** Manors intake-stage combination (2026-10). This case's position
+      within `stageLabels`, which is the USER-FACING stage list and may be
+      shorter than the canonical display-stage count — for Manors the two
+      historical intake stages render as one "Intake & JotForm" entry, so
+      canonical display stages 0 and 1 both land on presented index 0 and
+      every later stage shifts down by one.
+
+      Always index `stageLabels` with this, never with `displayStage`.
+      `displayStage` remains the canonical value and is still what SLA,
+      progress, checklist resolution, composite checklist keys, and stage
+      advancement all key off — see
+      domain/organization/workflowStagePresentation.ts. For every
+      organization other than Manors the two are identical. */
+  presentedDisplayStage: number;
+  /** Which canonical display stage(s) each entry of `stageLabels` covers,
+      parallel to that array. Exactly one entry per presented stage for
+      every organization except Manors, whose combined intake stage covers
+      canonical display stages `[0, 1]`.
+
+      Lets the Case Detail page translate a clicked stepper position back
+      to a canonical display stage for read-only checklist viewing without
+      knowing anything about which organization it is rendering. */
+  canonicalDisplayStagesByPresentedIndex: number[][];
 };

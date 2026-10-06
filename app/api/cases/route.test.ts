@@ -2395,3 +2395,108 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
     });
   });
 });
+
+/**
+ * Manors intake-stage combination (2026-10). The `stage` query param now
+ * resolves against the caller's OWN organization, so Manors' combined
+ * user-facing stage expands to every raw stage it covers. Nothing about
+ * persisted data changes — these assert the FILTER only.
+ *
+ * Runs against DEFAULT_ORGANIZATION_ID ('managed-cremations'), the real
+ * Manors organization the overlay is scoped to, so this exercises the
+ * real gate rather than a stand-in.
+ */
+describe('GET /api/cases — Manors combined intake stage filter', () => {
+  const combinedIds: string[] = [];
+
+  function pushManorsCase(id: string, caseNumber: string, rawStage: number) {
+    const template = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    caseFixtures.push({
+      ...template,
+      id,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber,
+      rawStage,
+      isDeleted: false,
+      createdAt: '2026-02-01T00:00:00.000Z',
+    });
+    combinedIds.push(id);
+  }
+
+  function stageRequest(params: Record<string, string>) {
+    const search = new URLSearchParams({ organizationId: DEFAULT_ORGANIZATION_ID, ...params });
+    return new Request(`http://localhost/api/cases?${search.toString()}`);
+  }
+
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'mock';
+    mockSession = { user: mockDefaultUser };
+  });
+
+  afterEach(() => {
+    while (combinedIds.length > 0) {
+      const id = combinedIds.pop()!;
+      const index = caseFixtures.findIndex((c) => c.id === id);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    }
+  });
+
+  it('accepts "Intake & JotForm" and returns cases from BOTH historical intake stages', async () => {
+    // raw 0 and 1 are canonical display stage 0 (First Call & Payment);
+    // raw 2 is canonical display stage 1 (Jotform Application). All three
+    // belong to the one combined user-facing stage.
+    pushManorsCase('combined-raw0', 'B2026-801', 0);
+    pushManorsCase('combined-raw1', 'B2026-802', 1);
+    pushManorsCase('combined-raw2', 'B2026-803', 2);
+    pushManorsCase('combined-raw3', 'B2026-804', 3);
+
+    const body = await (await GET(stageRequest({ stage: 'Intake & JotForm', limit: '100' }))).json();
+    const ids = body.cases.map((c: { id: string }) => c.id);
+
+    expect(ids).toContain('combined-raw0');
+    expect(ids).toContain('combined-raw1');
+    expect(ids).toContain('combined-raw2');
+    expect(ids).not.toContain('combined-raw3'); // EDRS is its own stage
+  });
+
+  it('never returns a case twice when the combined stage spans several raw stages', async () => {
+    pushManorsCase('combined-once', 'B2026-811', 1);
+    const body = await (await GET(stageRequest({ stage: 'Intake & JotForm', limit: '100' }))).json();
+    expect(body.cases.filter((c: { id: string }) => c.id === 'combined-once')).toHaveLength(1);
+  });
+
+  it('still accepts the historical labels, each matching only its own raw stages', async () => {
+    pushManorsCase('hist-firstcall', 'B2026-821', 0);
+    pushManorsCase('hist-jotform', 'B2026-822', 2);
+
+    const firstCall = await (await GET(stageRequest({ stage: 'First Call & Payment', limit: '100' }))).json();
+    const jotform = await (await GET(stageRequest({ stage: 'Jotform Application', limit: '100' }))).json();
+
+    const firstCallIds = firstCall.cases.map((c: { id: string }) => c.id);
+    const jotformIds = jotform.cases.map((c: { id: string }) => c.id);
+    expect(firstCallIds).toContain('hist-firstcall');
+    expect(firstCallIds).not.toContain('hist-jotform');
+    expect(jotformIds).toContain('hist-jotform');
+    expect(jotformIds).not.toContain('hist-firstcall');
+  });
+
+  it('rejects a label that is not a stage, listing the user-facing stages', async () => {
+    const response = await GET(stageRequest({ stage: 'Not A Stage', limit: '10' }));
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toMatch(/Invalid stage/);
+    expect(body.error).toMatch(/Intake & JotForm/);
+  });
+
+  it('leaves the unfiltered list unchanged — cases from every stage still included', async () => {
+    pushManorsCase('unfiltered-raw0', 'B2026-831', 0);
+    pushManorsCase('unfiltered-raw2', 'B2026-832', 2);
+    pushManorsCase('unfiltered-raw6', 'B2026-833', 6);
+
+    const body = await (await GET(stageRequest({ limit: '100' }))).json();
+    const ids = body.cases.map((c: { id: string }) => c.id);
+    expect(ids).toContain('unfiltered-raw0');
+    expect(ids).toContain('unfiltered-raw2');
+    expect(ids).toContain('unfiltered-raw6');
+  });
+});

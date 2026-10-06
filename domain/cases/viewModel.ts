@@ -22,6 +22,7 @@ import {
 } from './veteran';
 import { buildTimeline } from './timeline';
 import { applyLegacyCertifierPresentation } from './legacyCertifierPresentation';
+import { presentedStages, toPresentedStageIndex } from '../organization/workflowStagePresentation';
 import { findChecklistIndexForCaseField } from '../workflow/resolveIntake';
 import { initialsFromName } from '../../utils/string';
 import { parseLegacyTimeOfDeath } from '../../utils/inputMask';
@@ -286,7 +287,23 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   const caseProgress = computeCaseProgress(snapshot, rawDisplayStage, effectiveCurrentChecklist);
   const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, lastStage, remainsReturnComplete);
   const effectiveStage = findStageByDisplayStage(snapshot, effectiveDisplayStage);
-  const stageLabel = effectiveStage?.label ?? '';
+  // Manors intake-stage combination (2026-10). The ordered canonical
+  // labels from this case's own frozen snapshot, and the user-facing list
+  // derived from them. For every organization but Manors these are
+  // identical; for Manors the two historical intake stages present as one
+  // ("Intake & JotForm"). Presentation only — `effectiveDisplayStage`
+  // below stays canonical, so checklist resolution, composite checklist
+  // keys, SLA, progress, and advancement are all untouched. See
+  // domain/organization/workflowStagePresentation.ts.
+  const canonicalStageLabels = displayStagesInOrder(snapshot).map((stage) => stage.label);
+  const presented = presentedStages(case_.organizationId, canonicalStageLabels);
+  const presentedLabels = presented.map((stage) => stage.label);
+  const presentedDisplayStage = toPresentedStageIndex(
+    case_.organizationId,
+    effectiveDisplayStage,
+    canonicalStageLabels,
+  );
+  const stageLabel = presentedLabels[presentedDisplayStage] ?? effectiveStage?.label ?? '';
   // Case Detail-only presentational overlay (never the structural STAGES/
   // snapshot label sla.ts, the dashboard, and reports key off) — see
   // domain/cases/returnMethod.ts#returnMethodStageHeading's own comment.
@@ -408,11 +425,16 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     timeline: buildTimeline(case_, effectiveCurrentChecklist, rawDisplayStage, effectiveOwnerName, snapshot),
     requiredDocuments: buildRequiredDocuments(case_.rawStage),
 
-    // Ordered display-stage labels from the case's own snapshot — lets the
-    // Case Detail page build its stepper/viewing-stage-label from real,
-    // per-case template data instead of importing the hardcoded STAGES
-    // constant (which only ever describes Managed Cremations' workflow).
-    stageLabels: displayStagesInOrder(snapshot).map((stage) => stage.label),
+    // Ordered USER-FACING stage labels for this case's own organization,
+    // derived from the case's own snapshot — lets the Case Detail page
+    // build its stepper from real per-case template data instead of the
+    // hardcoded STAGES constant. For Manors the two historical intake
+    // stages appear here as one combined entry, so this list is six long
+    // where `displayStage` still counts seven canonical positions; index
+    // into it with `presentedDisplayStage`, never `displayStage`.
+    stageLabels: presentedLabels,
+    presentedDisplayStage,
+    canonicalDisplayStagesByPresentedIndex: presented.map((stage) => stage.canonicalDisplayStages),
   };
 }
 

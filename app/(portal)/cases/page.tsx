@@ -8,15 +8,30 @@ import { useCaseViewModels } from '@/hooks/useCaseViewModels';
 import { useCaseSearch } from '@/hooks/useCaseSearch';
 import { useCaseCounts } from '@/hooks/useCaseCounts';
 import { useAdvanceCaseStage } from '@/hooks/useAdvanceCaseStage';
+import { useOrganization } from '@/hooks/useOrganization';
 import { STAGES } from '@/domain/cases/stages';
+import {
+  canonicalDisplayStagesForPresentedLabel,
+  presentedStageLabels,
+} from '@/domain/organization/workflowStagePresentation';
 import { AllCasesList } from '@/components/dashboard/AllCasesList';
 import { StageFilteredPanel } from '@/components/dashboard/StageFilteredPanel';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './page.module.css';
 
-function isValidStage(value: string | null): value is (typeof STAGES)[number] {
-  return value !== null && (STAGES as readonly string[]).includes(value);
+/**
+ * Manors intake-stage combination (2026-10). Accepts any USER-FACING stage
+ * label for this organization, plus — for backward compatibility — the
+ * canonical labels the overlay merges away, so an existing bookmark or
+ * shared link using "First Call & Payment" or "Jotform Application" keeps
+ * resolving exactly as it did before. The server applies the same rule
+ * (see app/api/cases/route.ts).
+ */
+function isValidStage(value: string | null, organizationId: string): boolean {
+  if (value === null) return false;
+  if ((STAGES as readonly string[]).includes(value)) return true;
+  return presentedStageLabels(organizationId, STAGES).includes(value);
 }
 
 /**
@@ -37,9 +52,10 @@ function isValidStage(value: string | null): value is (typeof STAGES)[number] {
  */
 function CasesPageContent() {
   const router = useRouter();
+  const { organizationId } = useOrganization();
   const searchParams = useSearchParams();
   const stageParam = searchParams.get('stage');
-  const stage = isValidStage(stageParam) ? stageParam : null;
+  const stage = isValidStage(stageParam, organizationId) ? stageParam : null;
 
   const { query, setQuery, debouncedQuery, submitQuery } = useCaseSearch();
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
@@ -50,7 +66,17 @@ function CasesPageContent() {
   const listViewModels = useCaseViewModels(flatCases);
 
   const { data: countsData } = useCaseCounts({ searchQuery: '' });
-  const headerCount = stage === null ? countsData?.total : countsData?.byStage[stage];
+  // `byStage` is keyed by CANONICAL stage labels, while `stage` may be a
+  // user-facing label covering more than one of them (Manors' combined
+  // intake). Sum the canonical counts it covers — those map to disjoint
+  // raw-stage sets, so the sum is exact.
+  const headerCount = useMemo(() => {
+    if (stage === null) return countsData?.total;
+    if (!countsData) return undefined;
+    const canonical = canonicalDisplayStagesForPresentedLabel(organizationId, stage, STAGES);
+    if (!canonical) return undefined;
+    return canonical.reduce((sum, ds) => sum + (countsData.byStage[STAGES[ds]] ?? 0), 0);
+  }, [stage, countsData, organizationId]);
 
   const heading = stage ?? 'All Cases';
   const subheading =
@@ -131,7 +157,7 @@ function CasesPageContent() {
             onChange={(event) => handleStageChange(event.target.value)}
           >
             <option value="">All stages</option>
-            {STAGES.map((label) => (
+            {presentedStageLabels(organizationId, STAGES).map((label) => (
               <option key={label} value={label}>
                 {label}
               </option>

@@ -6,8 +6,9 @@ import * as reportsClient from '@/lib/reportsClient';
 import type { DashboardResult } from '@/services/dashboardService';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { STAGES } from '@/domain/cases/stages';
+import { presentedStageLabels } from '@/domain/organization/workflowStagePresentation';
 import type { Case } from '@/types/case';
 
 /**
@@ -177,14 +178,30 @@ describe('DashboardPage — Cases by Stage is a navigation hub with a Stage Prev
     expect(allCasesLink).toHaveAttribute('href', '/cases');
   });
 
-  it('every canonical stage remains present as a collapsed toggle button', async () => {
+  it('every user-facing stage is present as a collapsed toggle button', async () => {
     vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
     renderPage();
 
-    for (const label of STAGES) {
+    // Manors intake-stage combination (2026-10): Cases by Stage shows the
+    // six USER-FACING stages, so the two historical intake stages appear
+    // as one "Intake & JotForm" row rather than two.
+    const presented = presentedStageLabels(DEFAULT_ORGANIZATION_ID, STAGES);
+    expect(presented).toHaveLength(6);
+    expect(presented[0]).toBe('Intake & JotForm');
+
+    for (const label of presented) {
       const button = await screen.findByRole('button', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) });
       expect(button).toHaveAttribute('aria-expanded', 'false');
     }
+  });
+
+  it('does not show First Call & Payment or Jotform Application as separate stage rows', async () => {
+    vi.mocked(reportsClient.fetchDashboard).mockResolvedValue(BASE_DASHBOARD);
+    renderPage();
+    await screen.findByRole('button', { name: /^Intake & JotForm/ });
+
+    expect(screen.queryByRole('button', { name: /^First Call & Payment/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Jotform Application/ })).not.toBeInTheDocument();
   });
 
   it('renders stage counts from the server-side counts endpoint, not a client-side aggregation', async () => {

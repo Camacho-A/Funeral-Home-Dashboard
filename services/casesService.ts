@@ -17,7 +17,8 @@ import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIn
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
 import { findInvalidChecklistStatePatchEntries } from '../domain/workflow/checklistItemKey';
-import { STAGES, rawStagesForDisplayStage, rawStagesForStageLabel } from '../domain/cases/stages';
+import { STAGES, rawStagesForDisplayStage } from '../domain/cases/stages';
+import { canonicalDisplayStagesForPresentedLabel } from '../domain/organization/workflowStagePresentation';
 import {
   clampCaseListPageSize,
   compareCasesForListSort,
@@ -58,8 +59,20 @@ export type CaseListPageFilters = {
 function listPageMock(context: OrganizationContext, filters: CaseListPageFilters): CaseListPage {
   const searchQuery = filters.searchQuery ?? '';
   const stage = filters.stage ?? null;
-  const rawStages = stage ? rawStagesForStageLabel(stage) : null;
-  if (stage && rawStages === null) {
+  // Manors intake-stage combination (2026-10): resolved against the
+  // organization, so a user-facing label covering more than one canonical
+  // display stage ("Intake & JotForm" = canonical 0 and 1) expands to
+  // every raw stage it covers. Mirrors app/api/cases/route.ts exactly, so
+  // this local mock path and the real route can never disagree about what
+  // a stage filter means. The historical labels still resolve to just
+  // their own stage. See domain/organization/workflowStagePresentation.ts.
+  const canonicalDisplayStages = stage
+    ? canonicalDisplayStagesForPresentedLabel(context.organizationId, stage, STAGES)
+    : null;
+  const rawStages = canonicalDisplayStages
+    ? canonicalDisplayStages.flatMap((displayStage) => rawStagesForDisplayStage(displayStage))
+    : null;
+  if (stage && canonicalDisplayStages === null) {
     // An unrecognized stage never silently falls back to "All Cases" —
     // matches app/api/cases/route.ts's own 400 behavior in spirit (the
     // caller here has no HTTP status to return, so an empty page is the

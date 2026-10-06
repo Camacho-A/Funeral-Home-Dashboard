@@ -12,7 +12,11 @@ import {
   matchesCaseSearch,
   validateCaseCursor,
 } from '@/lib/casePagination';
-import { STAGES, rawStagesForStageLabel } from '@/domain/cases/stages';
+import { STAGES, rawStagesForDisplayStage } from '@/domain/cases/stages';
+import {
+  canonicalDisplayStagesForPresentedLabel,
+  presentedStageLabels,
+} from '@/domain/organization/workflowStagePresentation';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber, advanceCaseSequencePast } from '@/lib/wixCaseNumberSequence';
@@ -120,25 +124,37 @@ export async function GET(request: Request) {
   }
   const paginationRequested = requestedLimit !== null || cursorParam !== null;
 
-  // "All Cases" is never a persisted stage — no `stage` param at all is
-  // the only way to request it; an unrecognized label is rejected
-  // outright rather than silently treated as All Cases.
-  let rawStages: number[] | null = null;
-  if (stageParam !== null) {
-    rawStages = rawStagesForStageLabel(stageParam);
-    if (rawStages === null) {
-      return NextResponse.json(
-        { cases: [], hasMore: false, nextCursor: null, error: `Invalid stage. Must be one of: ${STAGES.join(', ')}.` },
-        { status: 400 },
-      );
-    }
-  }
-
   // Phase 15X (Multi-Tenant Authorization Hardening): re-derived from the
   // caller's session/membership, never trusted from the query param.
   const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
+
+  // "All Cases" is never a persisted stage — no `stage` param at all is
+  // the only way to request it; an unrecognized label is rejected
+  // outright rather than silently treated as All Cases.
+  //
+  // Manors intake-stage combination (2026-10): resolved against the
+  // caller's OWN organization, so a user-facing label covering more than
+  // one canonical display stage ("Intake & JotForm" = canonical 0 and 1)
+  // expands to every raw stage it covers. The canonical labels the
+  // overlay merges away are still accepted, so existing bookmarks and API
+  // callers are unaffected. Resolved after authorization because it needs
+  // the membership-derived organizationId — an unauthorized caller now
+  // gets 401/403 rather than input validation, which is the stricter
+  // order. See domain/organization/workflowStagePresentation.ts.
+  let rawStages: number[] | null = null;
+  if (stageParam !== null) {
+    const canonicalDisplayStages = canonicalDisplayStagesForPresentedLabel(organizationId, stageParam, STAGES);
+    if (canonicalDisplayStages === null) {
+      const valid = presentedStageLabels(organizationId, STAGES).join(', ');
+      return NextResponse.json(
+        { cases: [], hasMore: false, nextCursor: null, error: `Invalid stage. Must be one of: ${valid}.` },
+        { status: 400 },
+      );
+    }
+    rawStages = canonicalDisplayStages.flatMap((displayStage) => rawStagesForDisplayStage(displayStage));
+  }
 
   const adapter = getDataAdapterMode();
   const policyParams = { identityId: userId, organizationId, roleKey: role };

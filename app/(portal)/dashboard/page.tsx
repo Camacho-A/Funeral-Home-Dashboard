@@ -5,6 +5,7 @@ import { useCases } from '@/hooks/useCases';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
 import { useCaseCounts } from '@/hooks/useCaseCounts';
 import { STAGES } from '@/domain/cases/stages';
+import { presentedStages } from '@/domain/organization/workflowStagePresentation';
 import { computeKpis } from '@/domain/reports/calculations';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useDashboardData } from '@/hooks/useDashboard';
@@ -67,16 +68,31 @@ export default function DashboardPage() {
   // Cases by Stage's navigation hub — server-side counts only (Phase 2),
   // never every Case object.
   const { data: countsData } = useCaseCounts({ searchQuery: '' });
+  // Manors intake-stage combination (2026-10). Rows are the USER-FACING
+  // stages, so Manors shows six instead of seven. A presented stage's
+  // count is the SUM of the canonical per-stage counts it covers; those
+  // canonical stages map to disjoint raw-stage sets (First Call is raw
+  // 0-1, Jotform Application is raw 2), so summing them can neither
+  // double-count nor omit a case, and the separate `total` is untouched.
+  // `displayStage` stays a canonical value — it only drives stage colour
+  // and the bottleneck flag. See
+  // domain/organization/workflowStagePresentation.ts.
   const stageBreakdownRows: StageBarRow[] = useMemo(() => {
-    const counts = STAGES.map((label) => countsData?.byStage[label] ?? null);
+    const presented = presentedStages(organizationId, STAGES);
+    const counts = presented.map((stage) => {
+      const parts = stage.canonicalDisplayStages.map((ds) => countsData?.byStage[STAGES[ds]] ?? null);
+      return parts.every((part) => part === null)
+        ? null
+        : parts.reduce((sum, part) => (sum ?? 0) + (part ?? 0), 0 as number | null);
+    });
     const maxCount = Math.max(1, ...counts.map((c) => c ?? 0));
-    return STAGES.map((label, index) => ({
-      label,
+    return presented.map((stage, index) => ({
+      label: stage.label,
       count: counts[index],
       pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
-      displayStage: index,
+      displayStage: stage.canonicalDisplayStages[0],
     }));
-  }, [countsData]);
+  }, [countsData, organizationId]);
 
   // Stage Preview's own case rows (SOLIS true redesign, Phase 1) — grouped
   // from the already-fetched `allViewModels`, keyed by the case's own

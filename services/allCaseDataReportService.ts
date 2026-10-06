@@ -6,6 +6,16 @@ import { listActiveCaseOrdersForOrganization } from './pricingService';
 import { listForOrganization as listDocumentsForOrganization, renderHtmlToPdfBuffer } from './documentService';
 import { getForOrganization as getOrganization } from './organizationsService';
 import { STAGES, toDisplayStage } from '../domain/cases/stages';
+import { presentedStageLabels, toPresentedStageIndex } from '../domain/organization/workflowStagePresentation';
+
+/** The user-facing label for a case's current stage — see
+    domain/organization/workflowStagePresentation.ts. Identical to the
+    canonical label for every organization except Manors. */
+function presentedCurrentStageLabel(organizationId: string, rawStage: number): string {
+  const displayStage = toDisplayStage(rawStage);
+  const labels = presentedStageLabels(organizationId, STAGES);
+  return labels[toPresentedStageIndex(organizationId, displayStage, STAGES)] ?? STAGES[displayStage] ?? '';
+}
 import { caseOrderBalanceStatusLabel } from '../domain/cases/paymentDisplay';
 import { formatCentsAsCurrency } from '../utils/format';
 import { buildCsv, EXPORT_ROW_CAP } from '../domain/reporting/csvExport';
@@ -168,7 +178,11 @@ export async function buildAllCaseDataRows(
 
     return {
       caseNumber: c.caseNumber,
-      stage: STAGES[toDisplayStage(c.rawStage)] ?? '',
+      // Manors intake-stage combination (2026-10): this column is the
+      // case's CURRENT stage, so it uses the user-facing label to stay
+      // consistent with the Dashboard and Case Detail. The report's rows,
+      // filters, and date range are unchanged.
+      stage: presentedCurrentStageLabel(organizationId, c.rawStage),
       createdAt: formatReportDate(c.createdAt),
       daysInStage: String(c.daysWaitingInStage),
       decedentName: c.decedentName,

@@ -85,12 +85,30 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   }
   if (!case_ || !viewModel) return null;
 
+  // Manors intake-stage combination (2026-10): `stageLabels` is the
+  // USER-FACING list and may be shorter than the canonical display-stage
+  // count, so every comparison here uses `presentedDisplayStage`. Clicking
+  // a step still opens a CANONICAL display stage's checklist — resolved by
+  // `canonicalDisplayStageToInspect`, so checklist lookup and composite
+  // checklist keys are completely unchanged. See
+  // domain/organization/workflowStagePresentation.ts.
   const stepperStages: StepperStage[] = viewModel.stageLabels.map((label, index) => ({
     label,
-    done: index < viewModel.displayStage,
-    current: index === viewModel.displayStage,
-    viewable: index <= viewModel.displayStage,
+    done: index < viewModel.presentedDisplayStage,
+    current: index === viewModel.presentedDisplayStage,
+    viewable: index <= viewModel.presentedDisplayStage,
   }));
+
+  // A presented stage can cover more than one canonical display stage
+  // (Manors' combined intake). Open the case's OWN canonical stage when it
+  // sits inside the clicked group — so a case in "Jotform Application"
+  // opens its real live checklist — otherwise the group's first canonical
+  // stage, which carries the substantive intake items.
+  function viewPresentedStage(presentedIndex: number) {
+    const group = viewModel!.canonicalDisplayStagesByPresentedIndex[presentedIndex] ?? [presentedIndex];
+    const canonical = group.includes(viewModel!.displayStage) ? viewModel!.displayStage : group[0];
+    setViewingDisplayStage(canonical === viewModel!.displayStage ? null : canonical);
+  }
 
   const staffOptions = staffList.map((staff) => ({ id: staff.id, name: staff.displayName }));
 
@@ -121,9 +139,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         slaTargetLabel={viewModel.slaTargetLabel}
         isOverdue={viewModel.isOverdue}
         stages={stepperStages}
-        onStepClick={(index) =>
-          setViewingDisplayStage(index === viewModel.displayStage ? null : index)
-        }
+        onStepClick={(index) => viewPresentedStage(index)}
       />
 
       <div className={styles.tabs} role="tablist" ref={tabsRef}>
@@ -206,7 +222,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             slaTargetLabel={viewModel.slaTargetLabel}
             currentChecklist={viewModel.checklist.map((item) => ({ label: item.label, done: item.done }))}
             onViewStage={(index) => {
-              setViewingDisplayStage(index === viewModel.displayStage ? null : index);
+              viewPresentedStage(index);
               setActiveTab('overview');
             }}
           />
@@ -230,7 +246,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
               <div className={styles.eyebrow}>Next step</div>
               <ChecklistCard
                 checklist={viewModel.checklist}
-                viewingStageLabel={viewingDisplayStage != null ? viewModel.stageLabels[viewingDisplayStage] : null}
+                viewingStageLabel={
+                  viewingDisplayStage != null
+                    ? (viewModel.stageLabels[
+                        viewModel.canonicalDisplayStagesByPresentedIndex.findIndex((group) =>
+                          group.includes(viewingDisplayStage),
+                        )
+                      ] ?? null)
+                    : null
+                }
                 onBackToCurrentStage={() => setViewingDisplayStage(null)}
                 onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone)}
                 onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}

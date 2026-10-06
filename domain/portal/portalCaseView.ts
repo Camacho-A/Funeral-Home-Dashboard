@@ -1,5 +1,6 @@
 import type { Case } from '../../types/case';
 import { toDisplayStage, STAGES } from '../cases/stages';
+import { presentedStageLabels, toPresentedStageIndex } from '../organization/workflowStagePresentation';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). An explicit
@@ -32,7 +33,14 @@ export function buildPortalCaseView(caseRecord: Case): PortalCaseView {
     decedentName: caseRecord.decedentName,
     dateOfBirth: caseRecord.dateOfBirth,
     dateOfDeath: caseRecord.dateOfDeath,
-    stageLabel: STAGES[toDisplayStage(caseRecord.rawStage)],
+    // Manors intake-stage combination (2026-10): families see the same
+    // user-facing stage name staff do, so the two surfaces never disagree
+    // about what stage a case is in. Presentation only — `rawStage` is
+    // untouched. See domain/organization/workflowStagePresentation.ts.
+    stageLabel:
+      presentedStageLabels(caseRecord.organizationId, STAGES)[
+        toPresentedStageIndex(caseRecord.organizationId, toDisplayStage(caseRecord.rawStage), STAGES)
+      ] ?? STAGES[toDisplayStage(caseRecord.rawStage)],
     caseType: caseRecord.caseType,
   };
 }

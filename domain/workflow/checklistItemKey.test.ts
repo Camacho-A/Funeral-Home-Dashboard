@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Case } from '../../types/case';
 import {
   checklistItemKey,
   readChecklistValue,
@@ -137,5 +138,67 @@ describe('findInvalidChecklistStatePatchEntries', () => {
   it('still flags that same key if its value actually changes', () => {
     const errors = findInvalidChecklistStatePatchEntries({ '1': true }, { '1': false }, null);
     expect(errors).toHaveLength(1);
+  });
+});
+
+/**
+ * Manors intake-stage combination (2026-10). The two historical intake
+ * stages now PRESENT as one user-facing stage ("Intake & JotForm"), but
+ * they remain two distinct canonical display stages — which is exactly
+ * what keeps their checklist completion separate. These guard the
+ * invariant the combination depends on: First Call completion can never
+ * be read as Arrangement/JotForm completion, or vice versa.
+ *
+ * This is why the combination was implemented as a presentation overlay
+ * rather than by remapping `displayStage` in the workflow template: a real
+ * Manors case already carries the key "1:0" (its completed JotForm item),
+ * and remapping that stage to display 0 would reinterpret it as "0:0" —
+ * "Name of deceased" in the First Call checklist.
+ */
+describe('composite keys survive the Manors intake-stage combination', () => {
+  it('keeps First Call and JotForm Application keys distinct at the same local index', () => {
+    expect(checklistItemKey(0, 0)).toBe('0:0'); // First Call — "Name of deceased"
+    expect(checklistItemKey(1, 0)).toBe('1:0'); // JotForm Application — its own item
+    expect(checklistItemKey(0, 0)).not.toBe(checklistItemKey(1, 0));
+  });
+
+  it('does not let First Call completion satisfy the JotForm item', () => {
+    const firstCallDone: Case['checklistState'] = { [checklistItemKey(0, 0)]: true };
+    expect(readChecklistValue(firstCallDone, 0, 0)).toBe(true);
+    expect(readChecklistValue(firstCallDone, 1, 0)).toBeUndefined();
+  });
+
+  it('does not let JotForm completion satisfy or overwrite First Call state', () => {
+    const jotformDone: Case['checklistState'] = { [checklistItemKey(1, 0)]: true };
+    expect(readChecklistValue(jotformDone, 1, 0)).toBe(true);
+    expect(readChecklistValue(jotformDone, 0, 0)).toBeUndefined();
+  });
+
+  it('keeps both milestones independently recorded when both are complete', () => {
+    let state: Case['checklistState'] = {};
+    state = writeChecklistValue(state, 0, 0, true);
+    state = writeChecklistValue(state, 1, 0, true);
+
+    expect(readChecklistValue(state, 0, 0)).toBe(true);
+    expect(readChecklistValue(state, 1, 0)).toBe(true);
+    expect(Object.keys(state).sort()).toEqual(['0:0', '1:0']);
+  });
+
+  it('reads a real production-shaped key set without cross-stage leakage', () => {
+    // Shaped after a real Manors case: First Call items plus the JotForm
+    // item plus later stages, all under their own canonical display stage.
+    const state: Case['checklistState'] = {
+      '0:8': true,
+      '0:10': true,
+      '1:0': true,
+      '2:2': true,
+      '3:1': true,
+      '4:0': true,
+    };
+
+    expect(readChecklistValue(state, 1, 0)).toBe(true); // JotForm, intact
+    expect(readChecklistValue(state, 0, 0)).toBeUndefined(); // never invented
+    expect(readChecklistValue(state, 0, 8)).toBe(true);
+    expect(readChecklistValue(state, 2, 2)).toBe(true);
   });
 });
