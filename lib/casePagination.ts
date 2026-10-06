@@ -165,27 +165,26 @@ export function validateCaseCursor(
  * preserved verbatim here so no existing searchable field is silently
  * dropped.
  *
- * IMPORTANT LIMITATION (investigated, not assumed): Wix Data's filter
- * grammar (the WQL shared by queryDataItems/countDataItems — see
- * https://dev.wix.com/docs/api-reference/articles/work-with-wix-apis/data-retrieval/about-the-wix-api-query-language)
- * has no `$contains`/substring operator at all for Text fields — only
- * `$startsWith` (documented "not case-sensitive"), plus equality/
- * comparison/`$in`/`$isEmpty`. `matchesSearch`'s real, current behavior is
- * substring-anywhere (`.includes()`), which is NOT representable in a
- * single efficient Wix query without either (a) switching to Wix's
- * separate, tokenized full-text Search Data Items endpoint — a different
- * endpoint with unverified cursor-pagination parity with the
- * queryDataItems-based contract this module already established and
- * live-verified in Phase 1, or (b) a maintained/normalized searchable
- * field (a schema change, explicitly out of scope this phase without
- * approval). `$startsWith` is therefore the safest available
- * approximation without a schema change — REPORTED, not silent: this
- * preserves case-insensitive prefix search on every existing field
- * exactly, but narrows `decedentName` specifically — searching a last
- * name that isn't the first word of a stored "FIRST LAST"-shaped name
- * (e.g. "MORALES" against "EMMA MORALES SILVA") no longer matches,
- * where the old substring search would have. See the Phase 2 report for
- * the full analysis and recommended follow-up.
+ * Uses `$contains` — a true substring match, matching
+ * `matchesSearch`'s own `.includes()` semantics exactly.
+ *
+ * CORRECTION (2026-10, verified live against the real Wix project): this
+ * comment previously asserted that Wix Data's filter grammar "has no
+ * `$contains`/substring operator at all for Text fields", and search was
+ * narrowed to `$startsWith` on that basis. That assertion was wrong.
+ * `$contains` is supported on Text fields, is case-insensitive, and
+ * composes correctly inside the `$and`/`$or` shape
+ * `buildCaseListWixFilter` builds — all four confirmed by querying the
+ * live `cases` collection directly.
+ *
+ * The cost of that mistake was the reported bug: searching a surname that
+ * is not the first word of a stored "FIRST MIDDLE LAST"-shaped name found
+ * nothing at all. Against real data, `$startsWith: "HALL"` returned 0
+ * rows while `$contains: "HALL"` correctly returned "JAMES HALL CALLARD"
+ * — so staff searching by last name, the overwhelmingly common case, got
+ * an empty list. Neither of the two workarounds that comment proposed
+ * (the separate full-text Search Data Items endpoint, or a normalized
+ * searchable field requiring a schema change) is needed.
  */
 export const CASE_SEARCHABLE_FIELDS = ['decedentName', 'caseNumber', 'nextOfKinPhone', 'nextOfKinEmail', 'tagNumber', 'id'] as const;
 
@@ -198,18 +197,19 @@ type SearchableCaseFields = {
   id: string;
 };
 
-function startsWithCaseInsensitive(value: string | null | undefined, query: string): boolean {
-  return typeof value === 'string' && value.toLowerCase().startsWith(query);
+function containsCaseInsensitive(value: string | null | undefined, query: string): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(query);
 }
 
-/** The mock-mode equivalent of buildCaseSearchWixFilter below — kept as a
-    case-insensitive $startsWith-per-field match (never `.includes()`) so
-    mock mode never behaves more permissively than the real Wix query it
-    stands in for; see this module's own top-of-search comment for why. */
-export function matchesSearchStartsWith(case_: SearchableCaseFields, query: string): boolean {
+/** The mock-mode equivalent of buildCaseSearchWixFilter below — a
+    case-insensitive substring match per field, kept deliberately
+    identical in semantics to that function's `$contains` so mock mode can
+    never behave more or less permissively than the real Wix query it
+    stands in for. Matches services/casesService.ts#matchesSearch too. */
+export function matchesCaseSearch(case_: SearchableCaseFields, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return CASE_SEARCHABLE_FIELDS.some((field) => startsWithCaseInsensitive(case_[field], q));
+  return CASE_SEARCHABLE_FIELDS.some((field) => containsCaseInsensitive(case_[field], q));
 }
 
 /**
@@ -232,14 +232,14 @@ const CASE_SEARCHABLE_WIX_FIELD_NAME: Record<(typeof CASE_SEARCHABLE_FIELDS)[num
 };
 
 /** Builds the Wix WQL `$or` fragment for server-side search, or `null` for
-    a blank query (no search filter to add at all). `$startsWith` is
-    documented case-insensitive, so `query` is only trimmed, never
-    lowercased — Wix does that itself. */
+    a blank query (no search filter to add at all). `$contains` is
+    case-insensitive, so `query` is only trimmed, never lowercased — Wix
+    does that itself. */
 export function buildCaseSearchWixFilter(query: string): Record<string, unknown> | null {
   const q = query.trim();
   if (!q) return null;
   return {
-    $or: CASE_SEARCHABLE_FIELDS.map((field) => ({ [CASE_SEARCHABLE_WIX_FIELD_NAME[field]]: { $startsWith: q } })),
+    $or: CASE_SEARCHABLE_FIELDS.map((field) => ({ [CASE_SEARCHABLE_WIX_FIELD_NAME[field]]: { $contains: q } })),
   };
 }
 

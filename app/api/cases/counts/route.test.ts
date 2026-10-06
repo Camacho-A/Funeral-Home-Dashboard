@@ -286,10 +286,10 @@ describe('GET /api/cases/counts — wix mode', () => {
     expect(sawCombinedStage).toBe(true);
   });
 
-  it('7. search-aware counts push the same $startsWith filter into every count call', async () => {
+  it('7. search-aware counts push the same $contains filter into every count call', async () => {
     let sawSearchFilter = false;
     mockRolesAndCounts((filter) => {
-      if (JSON.stringify(filter).includes('$startsWith')) sawSearchFilter = true;
+      if (JSON.stringify(filter).includes('$contains')) sawSearchFilter = true;
       return 0;
     });
     await GET(requestFor(DEFAULT_ORGANIZATION_ID, { searchQuery: 'morales' }));

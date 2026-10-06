@@ -22,7 +22,7 @@ import {
   clampCaseListPageSize,
   compareCasesForListSort,
   encodeCaseCursor,
-  matchesSearchStartsWith,
+  matchesCaseSearch,
   validateCaseCursor,
 } from '../lib/casePagination';
 
@@ -70,7 +70,7 @@ function listPageMock(context: OrganizationContext, filters: CaseListPageFilters
   const eligible = caseFixtures.filter(
     (c) => c.organizationId === context.organizationId && !c.isDeleted && (rawStages === null || rawStages.includes(c.rawStage)),
   );
-  const searched = eligible.filter((c) => matchesSearchStartsWith(c, searchQuery));
+  const searched = eligible.filter((c) => matchesCaseSearch(c, searchQuery));
   const sorted = [...searched].sort(compareCasesForListSort);
 
   let offset = 0;
@@ -130,7 +130,7 @@ export async function counts(
 ): Promise<CaseCounts> {
   if (dataAdapterMode === 'mock') {
     const eligible = caseFixtures.filter(
-      (c) => c.organizationId === context.organizationId && !c.isDeleted && matchesSearchStartsWith(c, searchQuery),
+      (c) => c.organizationId === context.organizationId && !c.isDeleted && matchesCaseSearch(c, searchQuery),
     );
     const byStage: Record<string, number> = {};
     STAGES.forEach((label, displayStage) => {

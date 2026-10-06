@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { countWixDataItems } from '@/lib/wixDataApi';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { buildCaseListWixFilter, buildCaseSearchWixFilter, matchesSearchStartsWith } from '@/lib/casePagination';
+import { buildCaseListWixFilter, buildCaseSearchWixFilter, matchesCaseSearch } from '@/lib/casePagination';
 import { STAGES, rawStagesForDisplayStage } from '@/domain/cases/stages';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canReadCases, canReadPickup } from '@/services/authorizationPolicyService';
@@ -21,7 +21,7 @@ import { canReadCases, canReadPickup } from '@/services/authorizationPolicyServi
  * an optional `searchQuery` narrows every count to cases matching it,
  * using the exact same `$startsWith`-based filter
  * GET /api/cases's bounded-page mode uses (`buildCaseSearchWixFilter`/
- * `matchesSearchStartsWith`) — see that module's own comment for why
+ * `matchesCaseSearch`) — see that module's own comment for why
  * `$startsWith`, not `.includes()`. This keeps counts and the
  * corresponding paginated list queries provably in agreement: both are
  * built from the identical `buildCaseListWixFilter` filter shape.
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
 
     if (adapter === 'mock') {
       const eligible = caseFixtures.filter(
-        (c) => c.organizationId === organizationId && !c.isDeleted && matchesSearchStartsWith(c, searchQuery),
+        (c) => c.organizationId === organizationId && !c.isDeleted && matchesCaseSearch(c, searchQuery),
       );
       const byStage: Record<string, number> = {};
       STAGES.forEach((label, displayStage) => {

@@ -9,7 +9,7 @@ import {
   clampCaseListPageSize,
   compareCasesForListSort,
   encodeCaseCursor,
-  matchesSearchStartsWith,
+  matchesCaseSearch,
   validateCaseCursor,
 } from '@/lib/casePagination';
 import { STAGES, rawStagesForStageLabel } from '@/domain/cases/stages';
@@ -87,11 +87,13 @@ import { toPickupOnlyView } from '@/domain/cases/pickupView';
  * FILTER — before sorting/pagination, never as a post-fetch check on an
  * already-paged result. `searchQuery`, in the bounded (`limit`/`cursor`)
  * mode, is likewise pushed into the filter (`buildCaseSearchWixFilter`/
- * `matchesSearchStartsWith` — see lib/casePagination.ts's own comment for
- * why this is `$startsWith`, not the legacy branch's `.includes()`, and
- * what that narrows). The legacy (no `limit`/`cursor`) branch keeps its
- * existing `matchesSearch` (`.includes()`) behavior unchanged — it's the
- * transitional path, not where new search architecture lands.
+ * `matchesCaseSearch`). Both now use a true substring match (`$contains`
+ * in Wix, `.includes()` in mock), identical to the legacy branch's own
+ * `matchesSearch` — so the two branches agree on what "this search"
+ * means. They previously disagreed: the bounded path used `$startsWith`
+ * on the mistaken premise that Wix had no substring operator, which made
+ * a surname search miss any name it wasn't the first word of. See
+ * lib/casePagination.ts's own CORRECTION note.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -193,7 +195,7 @@ export async function GET(request: Request) {
         });
       }
 
-      const searched = eligible.filter((c) => matchesSearchStartsWith(c, searchQuery));
+      const searched = eligible.filter((c) => matchesCaseSearch(c, searchQuery));
       const sorted = [...searched].sort(compareCasesForListSort);
       const offset = cursor?.mockOffset ?? 0;
       const pageSize = clampCaseListPageSize(requestedLimit);

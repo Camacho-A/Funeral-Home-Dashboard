@@ -1925,6 +1925,16 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
           actual.toLowerCase().startsWith((ops.$startsWith as string).toLowerCase())
         );
       }
+      // Case search uses $contains — a case-insensitive substring match,
+      // verified live against the real Wix project (see
+      // lib/casePagination.ts's CORRECTION note).
+      if ('$contains' in ops) {
+        return (
+          typeof actual === 'string' &&
+          typeof ops.$contains === 'string' &&
+          actual.toLowerCase().includes((ops.$contains as string).toLowerCase())
+        );
+      }
       throw new Error(`Unrecognized filter operator: ${JSON.stringify(ops)}`);
     }
     return actual === condition;
@@ -2162,7 +2172,7 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
         'cases',
         expect.objectContaining({
           filter: expect.objectContaining({
-            $and: expect.arrayContaining([expect.objectContaining({ $or: expect.arrayContaining([{ caseNumber: { $startsWith: 'B2026-001' } }]) })]),
+            $and: expect.arrayContaining([expect.objectContaining({ $or: expect.arrayContaining([{ caseNumber: { $contains: 'B2026-001' } }]) })]),
           }),
         }),
       );
@@ -2203,7 +2213,7 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
 
 /**
  * Case list scalability, Phase 2 (2026-09). Mock-mode parity for stage
- * filtering + search — same contract, same $startsWith search semantics
+ * filtering + search — same contract, same $contains search semantics
  * (never the legacy `.includes()`), proven against a dedicated
  * organization's temporarily-pushed fixtures.
  */

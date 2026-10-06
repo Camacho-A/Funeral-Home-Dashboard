@@ -9,7 +9,7 @@ import {
   compareCasesForListSort,
   decodeCaseCursor,
   encodeCaseCursor,
-  matchesSearchStartsWith,
+  matchesCaseSearch,
   validateCaseCursor,
 } from './casePagination';
 
@@ -156,7 +156,7 @@ describe('cursor encode/decode/validate (Case list scalability, Phase 1+2)', () 
   });
 });
 
-describe('matchesSearchStartsWith (Case list scalability, Phase 2 — server-side search parity)', () => {
+describe('matchesCaseSearch (Case list scalability, Phase 2 — server-side search parity)', () => {
   function caseOf(overrides: Partial<{ decedentName: string; caseNumber: string; nextOfKinPhone: string; nextOfKinEmail: string | null; tagNumber: string | null; id: string }>) {
     return {
       decedentName: '',
@@ -174,47 +174,56 @@ describe('matchesSearchStartsWith (Case list scalability, Phase 2 — server-sid
   });
 
   it('an empty/blank query matches everything', () => {
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA' }), '')).toBe(true);
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA' }), '   ')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), '')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), '   ')).toBe(true);
   });
 
   it('matches a case-insensitive prefix of decedentName', () => {
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'emma')).toBe(true);
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'EMMA')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'emma')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'EMMA')).toBe(true);
   });
 
-  it('does NOT match a non-prefix substring of decedentName — the documented startsWith narrowing', () => {
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'morales')).toBe(false);
+  /** The reported bug: a surname that is not the first word of the stored
+      name found nothing. Previously asserted as an accepted narrowing, on
+      the mistaken premise that Wix had no substring operator. */
+  it('matches a surname in the MIDDLE of decedentName, not just a prefix', () => {
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'morales')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'SILVA')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'JAMES HALL CALLARD' }), 'hall')).toBe(true);
+  });
+
+  it('still does not match a term absent from every searchable field', () => {
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), 'rivero')).toBe(false);
   });
 
   it('matches a prefix of caseNumber', () => {
-    expect(matchesSearchStartsWith(caseOf({ caseNumber: 'B2026-042' }), 'b2026')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ caseNumber: 'B2026-042' }), 'b2026')).toBe(true);
   });
 
   it('matches a prefix of nextOfKinPhone', () => {
-    expect(matchesSearchStartsWith(caseOf({ nextOfKinPhone: '(954) 901-4165' }), '(954)')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ nextOfKinPhone: '(954) 901-4165' }), '(954)')).toBe(true);
   });
 
   it('matches a prefix of nextOfKinEmail, and never crashes when it is null', () => {
-    expect(matchesSearchStartsWith(caseOf({ nextOfKinEmail: 'karen@example.com' }), 'karen')).toBe(true);
-    expect(matchesSearchStartsWith(caseOf({ nextOfKinEmail: null }), 'karen')).toBe(false);
+    expect(matchesCaseSearch(caseOf({ nextOfKinEmail: 'karen@example.com' }), 'karen')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ nextOfKinEmail: null }), 'karen')).toBe(false);
   });
 
   it('matches a prefix of tagNumber, and never crashes when it is null', () => {
-    expect(matchesSearchStartsWith(caseOf({ tagNumber: 'T-1234' }), 't-12')).toBe(true);
-    expect(matchesSearchStartsWith(caseOf({ tagNumber: null }), 't-12')).toBe(false);
+    expect(matchesCaseSearch(caseOf({ tagNumber: 'T-1234' }), 't-12')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ tagNumber: null }), 't-12')).toBe(false);
   });
 
   it('matches a prefix of id', () => {
-    expect(matchesSearchStartsWith(caseOf({ id: 'case-abc-123' }), 'case-abc')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ id: 'case-abc-123' }), 'case-abc')).toBe(true);
   });
 
   it('whitespace around the query is trimmed', () => {
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA' }), '  emma  ')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA' }), '  emma  ')).toBe(true);
   });
 
   it('a query matching no field returns false', () => {
-    expect(matchesSearchStartsWith(caseOf({ decedentName: 'EMMA MORALES SILVA', caseNumber: 'B2026-001' }), 'zzz')).toBe(false);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'EMMA MORALES SILVA', caseNumber: 'B2026-001' }), 'zzz')).toBe(false);
   });
 });
 
@@ -224,15 +233,15 @@ describe('buildCaseSearchWixFilter', () => {
     expect(buildCaseSearchWixFilter('   ')).toBeNull();
   });
 
-  it('builds an $or of $startsWith across every searchable field, trimmed, using Wix collection field names (id -> beaconCaseId)', () => {
+  it('builds an $or of $contains across every searchable field, trimmed, using Wix collection field names (id -> beaconCaseId)', () => {
     expect(buildCaseSearchWixFilter('  Morales  ')).toEqual({
       $or: [
-        { decedentName: { $startsWith: 'Morales' } },
-        { caseNumber: { $startsWith: 'Morales' } },
-        { nextOfKinPhone: { $startsWith: 'Morales' } },
-        { nextOfKinEmail: { $startsWith: 'Morales' } },
-        { tagNumber: { $startsWith: 'Morales' } },
-        { beaconCaseId: { $startsWith: 'Morales' } },
+        { decedentName: { $contains: 'Morales' } },
+        { caseNumber: { $contains: 'Morales' } },
+        { nextOfKinPhone: { $contains: 'Morales' } },
+        { nextOfKinEmail: { $contains: 'Morales' } },
+        { tagNumber: { $contains: 'Morales' } },
+        { beaconCaseId: { $contains: 'Morales' } },
       ],
     });
   });
