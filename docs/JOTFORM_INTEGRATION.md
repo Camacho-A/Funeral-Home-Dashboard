@@ -218,41 +218,42 @@ These are the steps that cannot be done from the repository.
 **1. Set the shared secret.** Choose a long random string. Set
 `JOTFORM_WEBHOOK_SHARED_SECRET` to it in the deployment environment.
 
-**2. Add two hidden fields to the First Call Sheet** (form
-`262664842044055`), which currently has neither:
+Activation status as of 2026-10:
 
-- a hidden short-text field whose **value** is the shared secret from step
-  1. Note the qid JotForm assigns it.
-- no link-token field is needed — a first call has no case to link to yet.
+| Step | State |
+|---|---|
+| First Call Sheet hidden `solisWebhookAuth` field | **Done** — created via the Jotform API, qid **26**, hidden |
+| First Call production `externalFormConfigs` row | **Done** — `purpose: 'case_create'`, `webhookAuthFieldQid: '26'` |
+| Arrangement Forms webhook registration | **Done** — already pointed at `https://solis.manorscremation.com/api/webhooks/jotform` |
+| Arrangement / Vital Statistics config rows | **Done** — both carry every required field |
+| `JOTFORM_WEBHOOK_SHARED_SECRET` | **Outstanding** — must be set in Vercel AND as the value of First Call qid 26 |
+| First Call Sheet webhook registration | **Outstanding** — the API key is not authorized for `/form/{id}/webhooks` writes |
 
-**3. Record that qid.** Set the First Call config row's
-`webhookAuthFieldQid` to the qid from step 2. The seeded value is `'26'`,
-which is the next qid the form would allocate — if JotForm assigns a
-different one, the config must be corrected or every delivery will 401.
+**Remaining step A — the shared secret.** Pick one long random string and
+put the SAME value in both places:
 
-**4. Register the webhook on both forms.** In each form's
-*Settings → Integrations → Webhooks*, add:
+- Vercel → project `manors-cremation-dashboard` → Settings → Environment
+  Variables → `JOTFORM_WEBHOOK_SHARED_SECRET` (Production), then redeploy.
+- Jotform → First Call Sheet (`262664842044055`) → the hidden
+  `solisWebhookAuth` field (qid 26) → set its **default value** to that
+  same string.
+
+The Arrangement form already carries its own copy at qid 275; whatever
+value that field holds must equal the env var too, since one secret gates
+both forms.
+
+**Remaining step B — register the First Call webhook.** Jotform →
+First Call Sheet → Settings → Integrations → Webhooks → add:
 
 ```
-https://<your-APP_BASE_URL>/api/webhooks/jotform
+https://solis.manorscremation.com/api/webhooks/jotform
 ```
 
-Both `262664842044055` (First Call Sheet) and `261945978664175`
-(Arrangement Forms).
+The Jotform API returns 401 for webhook creation with the current key, so
+this one has to be done in the Jotform UI (or the key's permissions
+raised).
 
-**5. Confirm the Arrangement form's hidden fields exist** — qid 274 (link
-token) and qid 275 (`solisWebhookAuth`). These are already configured in
-SOLIS; the form must actually carry them.
-
-**6. Live Wix config rows.** `externalFormConfigs` rows in production are
-documented as still missing `linkTokenFieldQid` / `webhookAuthFieldQid`
-(see `docs/WIX_DATA_SCHEMA.md`). Until those columns exist and are
-populated, every config maps to `null` in `wix` mode and the integration
-cannot resolve any form. The new `purpose` column should be added at the
-same time; rows without it read as `'case_update'`, so only the First Call
-row strictly needs it set.
-
-After that, submissions import on their own. No manual import step.
+After those two, submissions import on their own. No manual import step.
 
 ---
 

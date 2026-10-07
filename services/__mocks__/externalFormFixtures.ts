@@ -79,8 +79,10 @@ export const externalFormConfigFixtures: ExternalFormConfig[] = [
     // right: every submission from this form arrives unlinked and is
     // routed by `purpose`, never by a token.
     linkTokenFieldQid: '',
-    // Supplied once the hidden auth field is added to the live form — see
-    // docs/JOTFORM_INTEGRATION.md's setup steps.
+    // VERIFIED against the live form (2026-10): the hidden
+    // `solisWebhookAuth` short-text field was created through the Jotform
+    // API and Jotform assigned it qid 26. Not a guess — read back from
+    // /form/262664842044055/questions after creation.
     webhookAuthFieldQid: '26',
     isEnabled: true,
     createdAt: '2026-10-06T00:00:00.000Z',
