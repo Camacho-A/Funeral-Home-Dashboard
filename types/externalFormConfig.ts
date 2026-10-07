@@ -15,6 +15,28 @@
  */
 export type ExternalFormAudience = 'family' | 'staff';
 
+/**
+ * Automated intake (2026-10). What Solis does with a submission from this
+ * form — the one piece of configuration that decides whether a webhook
+ * delivery may CREATE a case or may only UPDATE an existing one.
+ *
+ * - `'case_update'`: the historical behavior and the safe default. The
+ *   submission is attached to the case its hidden link token identifies;
+ *   if no link resolves, it is stored `unmatched` for staff to attach by
+ *   hand. A form with this purpose can never allocate a case number.
+ * - `'case_create'`: a first-call/intake form. A submission with no
+ *   resolvable link token creates one new case through the normal
+ *   `POST /api/cases` path.
+ *
+ * Deliberately a separate axis from `audience` (who fills the form in),
+ * and deliberately NOT inferred from the form's label or id: giving a
+ * form the power to allocate case numbers is an explicit, per-form
+ * configuration decision. A config row that omits it reads as
+ * `'case_update'`, so every form configured before this field existed
+ * keeps behaving exactly as it did — the capable value is opt-in only.
+ */
+export type ExternalFormPurpose = 'case_update' | 'case_create';
+
 export type ExternalFormConfig = {
   id: string;
   organizationId: string;
@@ -22,6 +44,9 @@ export type ExternalFormConfig = {
   externalFormId: string; // provider's own form identifier
   label: string; // e.g. "Vital Statistics"
   audience: ExternalFormAudience;
+  /** See `ExternalFormPurpose`. Defaults to `'case_update'` for any row
+      that predates this field — creating cases is opt-in, never implied. */
+  purpose: ExternalFormPurpose;
   /** JSON-stringified Record<string, string> — provider field key (e.g.
       Jotform's `{qid}_{name}` convention) -> Solis field name. Never
       parsed/trusted as executable logic, only as a lookup table. */

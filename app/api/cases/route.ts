@@ -29,7 +29,8 @@ import type { ReturnMethod } from '@/types/case';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { matchesSearch } from '@/services/casesService';
 import { getOrganization } from '@/services/organizationProvisioningService';
-import { resolveStaffProfileForCaller, assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
+import { resolveStaffProfileForCaller, assertAssignableStaffProfile, StaffAssignmentError, getById as getStaffProfileById } from '@/services/staffProfileService';
+import { verifyExternalFormIntakeAuthorization } from '@/lib/auth/externalFormIntakeAuthorization';
 import type { Case, NextOfKinRelationship } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -359,10 +360,53 @@ export async function POST(request: Request) {
     return NextResponse.json({ case: null, error: 'organizationId is required.' }, { status: 400 });
   }
 
-  const authResult = await requireAuthorizedOrganization(b.organizationId);
-  if (!authResult.authorized) return authResult.response;
-  const { organizationId } = authResult.context;
-  const context = authResult.context;
+  /**
+   * Automated Jotform intake (2026-10). A first-call webhook has no
+   * session and no staff caller, so it presents a signed, single-purpose
+   * intake authorization instead — see
+   * lib/auth/externalFormIntakeAuthorization.ts for why that is strictly
+   * narrower than the staff cookie the historical-import path forwards.
+   *
+   * This is an ALTERNATIVE to the session, never a weakening of it: the
+   * token is only minted inside the Jotform webhook after a trusted
+   * server-side form config has already determined the organization and
+   * the shared-secret check has already passed, it expires in five
+   * minutes, and it is bound to one form and one submission. The
+   * organization used below comes from the token's own payload — the
+   * request body's `organizationId` must match it, and is never trusted
+   * on its own.
+   *
+   * Everything after this block is shared with the normal staff path, so
+   * there is exactly one case-creation implementation.
+   */
+  const intakeAuthorizationRaw = b.externalFormIntakeAuthorization;
+  let intakeAuthorization: Awaited<ReturnType<typeof verifyExternalFormIntakeAuthorization>> = null;
+  if (typeof intakeAuthorizationRaw === 'string') {
+    intakeAuthorization = await verifyExternalFormIntakeAuthorization(intakeAuthorizationRaw);
+    if (!intakeAuthorization || intakeAuthorization.organizationId !== b.organizationId) {
+      return NextResponse.json(
+        { case: null, error: 'Invalid or expired external form intake authorization.' },
+        { status: 403 },
+      );
+    }
+  }
+
+  let organizationId: string;
+  let context: { userId: string; organizationId: string; role: string };
+
+  if (intakeAuthorization) {
+    organizationId = intakeAuthorization.organizationId;
+    // No identity and no role: this is a system integration, not a person.
+    // `isSystemGenerated` activity below records it as such, and the
+    // staff profile the case is attributed to comes from the token, which
+    // the webhook resolved from the organization's own staff.
+    context = { userId: '', organizationId, role: '' };
+  } else {
+    const authResult = await requireAuthorizedOrganization(b.organizationId);
+    if (!authResult.authorized) return authResult.response;
+    organizationId = authResult.context.organizationId;
+    context = authResult.context;
+  }
 
   if (getDataAdapterMode() !== 'wix') {
     return NextResponse.json(
@@ -374,7 +418,12 @@ export async function POST(request: Request) {
   // Manors go-live fix: this route had no case.create check at all —
   // any authenticated org member could create a case regardless of role
   // (Dispatch/Read Only included, since neither holds it in the catalog).
-  if (!(await canCreateCase({ identityId: context.userId, organizationId, roleKey: context.role }, 'wix'))) {
+  // Skipped only for a verified intake authorization, whose own minting
+  // conditions are the authorization — there is no human role to check.
+  if (
+    !intakeAuthorization &&
+    !(await canCreateCase({ identityId: context.userId, organizationId, roleKey: context.role }, 'wix'))
+  ) {
     return NextResponse.json({ case: null, error: 'Not authorized to create cases for this organization.' }, { status: 403 });
   }
 
@@ -518,7 +567,13 @@ export async function POST(request: Request) {
     returnMethod = b.returnMethod;
   }
 
-  const callerProfile = await resolveStaffProfileForCaller(context, 'wix');
+  // The integration path has no session identity to resolve a profile
+  // from, so it uses the one the webhook already resolved and signed into
+  // the token. Still looked up (never trusted as a bare id) so a stale or
+  // cross-organization profile id cannot slip through.
+  const callerProfile = intakeAuthorization
+    ? await getStaffProfileById(organizationId, intakeAuthorization.intakeStaffProfileId, 'wix')
+    : await resolveStaffProfileForCaller(context, 'wix');
   if (!callerProfile) {
     // Solis go-live diagnostics: the client-visible message is already
     // specific and safe to show as-is (see services/casesService.ts's

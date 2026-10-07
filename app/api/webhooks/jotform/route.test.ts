@@ -224,6 +224,7 @@ describe('POST /api/webhooks/jotform — malformed / unknown / disabled', () => 
       externalFormId: 'disabled-form-id-123',
       label: 'Disabled Test Form',
       audience: 'staff',
+  purpose: 'case_update',
       fieldMap: '{}',
       linkTokenFieldName: 'solisLinkToken',
       linkTokenFieldQid: '1',

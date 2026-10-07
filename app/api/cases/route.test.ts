@@ -2500,3 +2500,89 @@ describe('GET /api/cases — Manors combined intake stage filter', () => {
     expect(ids).toContain('unfiltered-raw6');
   });
 });
+
+/**
+ * Automated Jotform intake (2026-10). `POST /api/cases` accepts a signed,
+ * single-purpose intake authorization as an ALTERNATIVE to a session, so a
+ * webhook (which has no cookie) can still use the one canonical creation
+ * path. These assert it is genuinely narrower than a session and cannot be
+ * used to reach another organization.
+ */
+describe('POST /api/cases — external form intake authorization', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.SESSION_SECRET ??= 'test-session-secret-for-intake-tokens';
+    mockSession = null; // no session at all — the webhook case
+  });
+
+  function intakeBody(token: string, organizationId = DEFAULT_ORGANIZATION_ID) {
+    return {
+      organizationId,
+      decedentName: 'INTAKE TEST',
+      nextOfKinName: 'NOK TEST',
+      nextOfKinPhone: '(555) 010-2030',
+      externalFormIntakeAuthorization: token,
+    };
+  }
+
+  it('rejects a body whose organizationId does not match the token', async () => {
+    const { createExternalFormIntakeAuthorization } = await import('@/lib/auth/externalFormIntakeAuthorization');
+    const token = await createExternalFormIntakeAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '262664842044055',
+      externalSubmissionId: 'sub-x',
+      intakeStaffProfileId: 'staff-dana',
+    });
+
+    const response = await POST(postRequest(intakeBody(token, SECOND_MOCK_ORGANIZATION_ID)));
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toMatch(/intake authorization/i);
+  });
+
+  it('rejects an expired token', async () => {
+    const { createExternalFormIntakeAuthorization } = await import('@/lib/auth/externalFormIntakeAuthorization');
+    const issued = Math.floor(Date.now() / 1000) - 60 * 60;
+    const token = await createExternalFormIntakeAuthorization(
+      {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        externalFormId: '262664842044055',
+        externalSubmissionId: 'sub-x',
+        intakeStaffProfileId: 'staff-dana',
+      },
+      issued,
+    );
+    const response = await POST(postRequest(intakeBody(token)));
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a garbage token rather than falling back to session auth', async () => {
+    const response = await POST(postRequest(intakeBody('not-a-real-token')));
+    expect(response.status).toBe(403);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('still requires a session when no intake authorization is present', async () => {
+    const response = await POST(
+      postRequest({
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        decedentName: 'NO AUTH',
+        nextOfKinName: 'NOK',
+        nextOfKinPhone: '(555) 000-0000',
+      }),
+    );
+    expect([401, 403]).toContain(response.status);
+  });
+
+  it('never accepts payment card data, even on the intake path', async () => {
+    const { createExternalFormIntakeAuthorization } = await import('@/lib/auth/externalFormIntakeAuthorization');
+    const token = await createExternalFormIntakeAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '262664842044055',
+      externalSubmissionId: 'sub-card',
+      intakeStaffProfileId: 'staff-dana',
+    });
+    const response = await POST(postRequest({ ...intakeBody(token), cardNumber: '4111111111111111' }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/payment card data/i);
+  });
+});

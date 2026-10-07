@@ -9,6 +9,7 @@ const VITAL_STATISTICS_CONFIG: ExternalFormConfig = {
   externalFormId: '262605621454050',
   label: 'Vital Statistics',
   audience: 'family',
+  purpose: 'case_update',
   fieldMap: '{}',
   linkTokenFieldName: 'solisLinkToken',
   linkTokenFieldQid: '44',
@@ -24,6 +25,7 @@ const ARRANGEMENT_FORMS_CONFIG: ExternalFormConfig = {
   externalFormId: '261945978664175',
   label: 'Arrangement Forms',
   audience: 'staff',
+  purpose: 'case_update',
   linkTokenFieldQid: '274',
   webhookAuthFieldQid: '275',
 };

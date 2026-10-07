@@ -6,7 +6,7 @@
  * shape (fail-closed mapping: a malformed row maps to `null` rather than
  * throwing, matching every other Wix mapper in this codebase).
  */
-import type { ExternalFormConfig, ExternalFormAudience } from '../types/externalFormConfig';
+import type { ExternalFormConfig, ExternalFormAudience, ExternalFormPurpose } from '../types/externalFormConfig';
 import type { CaseFormLink, CaseFormLinkStatus } from '../types/caseFormLink';
 import type { ExternalFormSubmission, ExternalFormSubmissionStatus, ExternalFormPdfStatus } from '../types/externalFormSubmission';
 
@@ -20,6 +20,7 @@ export type WixExternalFormConfigItem = {
   externalFormId?: unknown;
   label?: unknown;
   audience?: unknown;
+  purpose?: unknown;
   fieldMap?: unknown;
   linkTokenFieldName?: unknown;
   linkTokenFieldQid?: unknown;
@@ -30,6 +31,23 @@ export type WixExternalFormConfigItem = {
 };
 
 const VALID_AUDIENCES: ExternalFormAudience[] = ['family', 'staff'];
+const VALID_PURPOSES: ExternalFormPurpose[] = ['case_update', 'case_create'];
+
+/**
+ * Automated intake (2026-10). `purpose` is read permissively on purpose:
+ * a row that predates the field, or carries an unrecognized value, reads
+ * as `'case_update'` — the behavior every already-seeded config row
+ * already has. This is deliberately NOT a hard requirement like the
+ * fields above: making it required would map every existing live row to
+ * `null` and silently disable the whole integration, and the failure mode
+ * of guessing wrong here must always be "cannot create a case", never
+ * "unexpectedly allocated a case number".
+ */
+function readPurpose(value: unknown): ExternalFormPurpose {
+  return typeof value === 'string' && (VALID_PURPOSES as string[]).includes(value)
+    ? (value as ExternalFormPurpose)
+    : 'case_update';
+}
 
 export function mapWixExternalFormConfigItem(id: string, item: WixExternalFormConfigItem | undefined): ExternalFormConfig | null {
   if (
@@ -57,6 +75,7 @@ export function mapWixExternalFormConfigItem(id: string, item: WixExternalFormCo
     externalFormId: item.externalFormId,
     label: item.label,
     audience: item.audience as ExternalFormAudience,
+    purpose: readPurpose(item.purpose),
     fieldMap: item.fieldMap,
     linkTokenFieldName: item.linkTokenFieldName,
     linkTokenFieldQid: item.linkTokenFieldQid,

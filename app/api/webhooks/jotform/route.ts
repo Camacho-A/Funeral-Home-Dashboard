@@ -10,6 +10,7 @@ import * as externalFormSubmissionService from '@/services/externalFormSubmissio
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionReceived, recordExternalFormSubmissionUnmatched } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
+import { createCaseFromFirstCallSubmission } from '@/services/externalFormIntakeService';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -107,8 +108,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Webhook verification failed (${verification.reason}).` }, { status: 401 });
   }
 
-  const rawLinkToken = extractHiddenFieldByQid(parsed, config.linkTokenFieldQid);
-  const resolvedLink = rawLinkToken ? await caseFormLinkService.resolveByRawToken(rawLinkToken, dataAdapterMode) : null;
+  // A `case_create` form has no link-token field at all (its config
+  // carries an empty qid), so this never attempts a lookup for one.
+  const rawLinkToken = config.linkTokenFieldQid
+    ? extractHiddenFieldByQid(parsed, config.linkTokenFieldQid)
+    : null;
+  const tokenLink = rawLinkToken ? await caseFormLinkService.resolveByRawToken(rawLinkToken, dataAdapterMode) : null;
+
+  // Multi-tenant guard (2026-10). `resolveByRawToken` looks a link up by
+  // token hash ALONE, with no organization filter — so a token issued by
+  // organization A, replayed through a form owned by organization B, would
+  // otherwise have this handler mark A's CaseFormLink received and
+  // reconcile A's case while filing the submission under B. Treat any such
+  // mismatch as no link at all: the submission is stored unmatched for
+  // staff to resolve, and no cross-tenant write happens.
+  const resolvedLink = tokenLink && tokenLink.organizationId === config.organizationId ? tokenLink : null;
+  if (tokenLink && !resolvedLink) {
+    console.error(
+      `[POST /api/webhooks/jotform] Link token resolved to organization ${tokenLink.organizationId} but form ${config.externalFormId} belongs to ${config.organizationId} — treating as unmatched.`,
+    );
+  }
 
   const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, parsed.answers);
 
@@ -140,6 +159,33 @@ export async function POST(request: Request) {
     // nothing further to do (matched/unmatched state and PDF status were
     // already resolved on first receipt).
     return NextResponse.json({ received: true });
+  }
+
+  /**
+   * Automated first-call intake (2026-10). A form explicitly configured
+   * `purpose: 'case_create'` creates one case when its submission has no
+   * case to attach to. Every other form, and any `case_create` submission
+   * that DID resolve a link, falls through to the unchanged behavior
+   * below — so this can only ever add a case where the old code would
+   * have left an unmatched row, never change what an existing form does.
+   *
+   * Duplicate protection is the `wasNew` gate above plus the
+   * compare-and-swap claim inside `createCaseFromFirstCallSubmission`:
+   * the same submission delivered twice produces exactly one case, and
+   * the second delivery returns here without reaching this branch at all.
+   */
+  if (!resolvedLink && config.purpose === 'case_create') {
+    const outcome = await createCaseFromFirstCallSubmission(
+      { config, submission, mappedFields, request },
+      activityCtx,
+      dataAdapterMode,
+    );
+    // A failure is deliberately NOT surfaced to Jotform as an error: the
+    // submission row is already stored, so retrying the delivery would
+    // short-circuit at `wasNew` and never re-attempt creation anyway. The
+    // row stays `unmatched` and is visible in Unmatched Forms, which is
+    // the existing recovery path staff already use.
+    return NextResponse.json({ received: true, caseCreated: outcome.created });
   }
 
   if (resolvedLink) {

@@ -26,6 +26,12 @@ export type MappedSolisField =
   | 'dateOfBirth'
   | 'dateOfDeath'
   | 'placeOfDeath'
+  // Automated intake (2026-10): both are real, writable Case fields
+  // (types/case.ts) that the First Call Sheet captures directly. Neither
+  // appears on Vital Statistics or Arrangement Forms, so adding them here
+  // changes nothing about those two maps.
+  | 'timeOfDeath'
+  | 'weight'
   | 'isVeteran'
   | 'nextOfKinName'
   | 'nextOfKinRelationship'
@@ -204,9 +210,61 @@ export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   // directly from the raw answer map.
 ];
 
+/** First Call Sheet — form 262664842044055, Manors' intake form and the
+    first form configured with `purpose: 'case_create'`. Named here for the
+    same reason as the two constants above. */
+export const FIRST_CALL_SHEET_EXTERNAL_FORM_ID = '262664842044055';
+
+/**
+ * First Call Sheet — form 262664842044055. Every qid below is confirmed
+ * directly from the Jotform API's /form/{id}/questions response.
+ *
+ * READ THIS BEFORE REUSING ANY QID NUMBER ACROSS FORMS. Several of this
+ * form's qids collide numerically with Vital Statistics' while meaning
+ * something COMPLETELY DIFFERENT:
+ *
+ *   qid  First Call Sheet        Vital Statistics
+ *   ---  ---------------------   --------------------
+ *   3    Name of Deceased        Name of Deceased     (same, by luck)
+ *   6    Date of BIRTH           Date of DEATH        (DIFFERENT)
+ *   22   Next of Kin name        Next of Kin name     (same, by luck)
+ *   24   Next of Kin EMAIL       Next of Kin PHONE    (DIFFERENT)
+ *
+ * This is exactly the hazard that produced the 2026-09 outbound-prefill
+ * bug (see VITAL_STATISTICS_EXTERNAL_FORM_ID's own comment): a block of
+ * qids treated as "common" across forms. A shared mapping here would
+ * silently write dates of birth into dateOfDeath and email addresses into
+ * nextOfKinPhone. Every form keeps its own map; there is no common block.
+ *
+ * Deliberately NOT mapped:
+ *  - qid 14 "Name on Card" — payment-instrument data. Solis stores no
+ *    card data of any kind (see the payment-field guard on POST /api/cases).
+ *  - qid 21 "Hospice or Dr. to sign D/C & Phone Number" — free text with
+ *    no single canonical Case destination; it is the legacy combined
+ *    `dcContact` concept, which Solis has since replaced with the
+ *    structured certifierName/certifierPhone pair. Mapping one free-text
+ *    blob onto either structured field would be a guess.
+ *  - qid 25 "Facility Phone Number" — no Case field exists for it.
+ * All three remain submission-only data, visible for staff review.
+ */
+export const FIELD_MAP_FIRST_CALL_SHEET: FieldMapEntry[] = [
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'first' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'last' },
+  { qid: '6', jotformName: 'dateOf6', solisField: 'dateOfBirth' },
+  { qid: '7', jotformName: 'weight', solisField: 'weight' },
+  { qid: '8', jotformName: 'dateof', solisField: 'dateOfDeath' },
+  { qid: '9', jotformName: 'timeof', solisField: 'timeOfDeath' },
+  { qid: '20', jotformName: 'placeOf', solisField: 'placeOfDeath' },
+  { qid: '22', jotformName: 'nextOf', solisField: 'nextOfKinName', subfield: 'first' },
+  { qid: '22', jotformName: 'nextOf', solisField: 'nextOfKinName', subfield: 'last' },
+  { qid: '23', jotformName: 'nextOf23', solisField: 'nextOfKinPhone', subfield: 'full' },
+  { qid: '24', jotformName: 'nextOf24', solisField: 'nextOfKinEmail' },
+];
+
 export function fieldMapForForm(provider: string, externalFormId: string): FieldMapEntry[] {
   if (provider !== 'jotform') return [];
-  if (externalFormId === '262605621454050') return FIELD_MAP_VITAL_STATISTICS;
+  if (externalFormId === VITAL_STATISTICS_EXTERNAL_FORM_ID) return FIELD_MAP_VITAL_STATISTICS;
   if (externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return FIELD_MAP_ARRANGEMENT_FORMS;
+  if (externalFormId === FIRST_CALL_SHEET_EXTERNAL_FORM_ID) return FIELD_MAP_FIRST_CALL_SHEET;
   return [];
 }

@@ -17,6 +17,7 @@ const VALID_CONFIG: ExternalFormConfig = {
   externalFormId: '262605621454050',
   label: 'Vital Statistics',
   audience: 'family',
+  purpose: 'case_update',
   fieldMap: '{}',
   linkTokenFieldName: 'solisLinkToken',
   linkTokenFieldQid: '44',
@@ -42,6 +43,7 @@ describe('ExternalFormConfig Wix mapper — round trip', () => {
       externalFormId: '261945978664175',
       label: 'Arrangement Forms',
       audience: 'staff',
+  purpose: 'case_update',
       linkTokenFieldQid: '274',
       webhookAuthFieldQid: '275',
     };
