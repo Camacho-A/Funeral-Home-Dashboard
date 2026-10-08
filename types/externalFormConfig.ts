@@ -71,21 +71,36 @@ export type ExternalFormConfig = {
    * - `linkTokenFieldQid`: the AUTHORITATIVE inbound identifier the
    *   webhook parser uses to locate the `solisLinkToken` hidden field in
    *   a delivered submission.
-   * - `webhookAuthFieldQid`: the AUTHORITATIVE inbound identifier the
-   *   webhook parser uses to locate the `solisWebhookAuth` hidden field.
+   * - `webhookAuthFieldQid`: DEPRECATED and no longer read — see below.
    *
    * Inbound parsing (domain/externalForms/parseWebhookPayload.ts) trusts
-   * ONLY `linkTokenFieldQid`/`webhookAuthFieldQid`, resolved server-side
-   * from this stored config — never any name found in the request itself.
+   * ONLY `linkTokenFieldQid`, resolved server-side from this stored
+   * config — never any name found in the request itself. The link token
+   * is read out of Jotform's authenticated API response, not the request
+   * body (app/api/webhooks/jotform/route.ts).
    */
   linkTokenFieldName: string;
   /** Authoritative qid for the `solisLinkToken` hidden field, as a string
       (matching FieldMapEntry.qid's existing string convention) — see the
       comment above `fieldMap` for the full three-way distinction. */
   linkTokenFieldQid: string;
-  /** Authoritative qid for the `solisWebhookAuth` hidden field — see the
-      comment above `fieldMap` for the full three-way distinction. Never
-      sourced from the request; always read from this trusted config row. */
+  /**
+   * DEPRECATED (2026-10) — retained for schema compatibility with the
+   * live rows, but NOT read by any code path.
+   *
+   * This was the qid of the `solisWebhookAuth` hidden field whose value
+   * the webhook compared against a shared secret. That was never real
+   * authentication: a Jotform hidden field is hidden only from the
+   * rendering, and its default value ships inside the public form's own
+   * markup, so any form submitter could read the secret and then forge a
+   * delivery. Deliveries are now authenticated against Jotform's own API
+   * (`lib/jotform/jotformSubmissionAuthenticity.ts`).
+   *
+   * Kept on the type so retiring the mechanism did not require a data
+   * migration in the same change. A structural test
+   * (domain/externalForms/criticalInvariants.test.ts) fails if the webhook
+   * starts reading this again.
+   */
   webhookAuthFieldQid: string;
   isEnabled: boolean;
   createdAt: string;

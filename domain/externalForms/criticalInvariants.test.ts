@@ -70,3 +70,46 @@ describe('Jotform integration — case-creation/case-number invariant', () => {
     expect(code).not.toMatch(/POST\s*\(.*\/api\/cases['"`]\s*,\s*\{\s*method:\s*['"]POST['"]/);
   });
 });
+
+/**
+ * Server-side webhook authentication (2026-10). The hidden-field shared
+ * secret (`solisWebhookAuth`) was retired because a hidden field's default
+ * value ships inside the public form's own markup — anyone who can open
+ * the form can read it, so it authenticated nothing and a forged body
+ * could pass the check.
+ *
+ * These are structural guards, not style checks: each one fails if the
+ * retired mechanism is reintroduced, or if the webhook stops authenticating
+ * against Jotform, or if it starts trusting the request body as data again.
+ */
+describe('Jotform integration — webhook authentication invariant', () => {
+  const WEBHOOK_ROUTE = 'app/api/webhooks/jotform/route.ts';
+
+  function webhookCode(): string {
+    return stripComments(fs.readFileSync(path.join(process.cwd(), WEBHOOK_ROUTE), 'utf8'));
+  }
+
+  it('the retired shared-secret mechanism no longer exists anywhere in the codebase', () => {
+    expect(fs.existsSync(path.join(process.cwd(), 'lib/jotform/jotformWebhookVerification.ts'))).toBe(false);
+  });
+
+  it('the webhook never reads the hidden auth field or the retired shared secret in code', () => {
+    const code = webhookCode();
+    expect(code).not.toContain('webhookAuthFieldQid');
+    expect(code).not.toContain('JOTFORM_WEBHOOK_SHARED_SECRET');
+    expect(code).not.toContain('verifyJotformWebhook');
+  });
+
+  it('the webhook authenticates every delivery against Jotform before acting on it', () => {
+    const code = webhookCode();
+    expect(code).toContain('authenticateJotformSubmission');
+  });
+
+  it('the webhook maps answers from the authenticated API response, never from the request body', () => {
+    const code = webhookCode();
+    // `parsed` may only ever supply the two claims (formId/submissionId).
+    expect(code).not.toContain('parsed.answers');
+    expect(code).not.toContain('parsed.rawRequest');
+    expect(code).toContain('authenticated.answers');
+  });
+});

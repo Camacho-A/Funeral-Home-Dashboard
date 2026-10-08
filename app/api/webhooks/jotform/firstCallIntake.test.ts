@@ -22,22 +22,59 @@ import {
  * configured `purpose: 'case_create'` creates exactly one Solis case; a
  * submission from any other form still never creates one.
  *
- * The PDF and document side effects are stubbed exactly as the sibling
- * webhook suite stubs them — this file is about case creation, not PDF
+ * Server-side authentication (2026-10): the case a webhook creates is
+ * built from answers retrieved through Jotform's authenticated API, not
+ * from the POST body — so `submissionApiRecords` below is what supplies
+ * the answers here, and the body carries only the two claims. The retired
+ * hidden-field shared secret is gone; see the sibling route suite.
+ *
+ * The PDF and document side effects are stubbed exactly as that sibling
+ * suite stubs them — this file is about case creation, not PDF
  * preservation.
  */
+const { submissionApiRecords } = vi.hoisted(() => ({
+  submissionApiRecords: new Map<
+    string,
+    { formId: string; submittedAt: string | null; answers: Record<string, { answer: string | Record<string, string> }> }
+  >(),
+}));
+
 vi.mock('@/lib/jotform/jotformClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/jotform/jotformClient')>('@/lib/jotform/jotformClient');
-  return { ...actual, fetchSubmissionPdf: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 synthetic')) };
+  return {
+    ...actual,
+    fetchSubmissionPdf: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 synthetic')),
+    fetchSubmissionAnswers: vi.fn(async (submissionId: string) => {
+      const record = submissionApiRecords.get(submissionId);
+      if (!record) {
+        throw new actual.JotformClientError('Jotform submission retrieval failed with status 401.', 'http_error');
+      }
+      return record;
+    }),
+  };
 });
 vi.mock('@/services/documentService', async () => {
   const actual = await vi.importActual<typeof import('@/services/documentService')>('@/services/documentService');
   return { ...actual, upload: vi.fn().mockResolvedValue({ id: 'document-first-call-test' }) };
 });
 
-const FIRST_CALL_AUTH_QID = '26';
-const ARRANGEMENT_AUTH_QID = '275';
-const TEST_SECRET = 'test-shared-secret';
+/** Real Jotform submission ids are numeric; the handler shape-checks them
+    before spending an API call. */
+const SUB = {
+  recognizes: '2000000000000000001',
+  maps: '2000000000000000002',
+  noCaseNumber: '2000000000000000003',
+  token: '2000000000000000004',
+  traceable: '2000000000000000005',
+  dupe: '2000000000000000006',
+  dupe2: '2000000000000000007',
+  arrangementNoLink: '2000000000000000008',
+  downgraded: '2000000000000000009',
+  missingField: '2000000000000000010',
+  creationFails: '2000000000000000011',
+  unconfirmed: '2000000000000000012',
+  crossForm: '2000000000000000013',
+};
 
 /**
  * The service creates a case by calling `POST /api/cases` over a real
@@ -86,29 +123,68 @@ function webhookRequest(fields: Record<string, string>) {
   });
 }
 
-/** A complete, realistic First Call Sheet answer set, keyed by the real
-    qids confirmed from the live form's own /questions response. */
-function firstCallAnswers(overrides: Record<string, unknown> = {}) {
-  return JSON.stringify({
-    [`${FIRST_CALL_AUTH_QID}_soliswebhookauth`]: TEST_SECRET,
-    '3_nameof': { first: 'MARGARET', last: 'OKONKWO' },
-    '6_dateOf6': '03/14/1941',
-    '7_weight': '150 lb',
-    '8_dateof': '10/02/2026',
-    '9_timeof': '14:20',
-    '20_placeOf': { addr_line1: '481 NW 1ST AVE', city: 'FORT LAUDERDALE', state: 'FL' },
-    '22_nextOf': { first: 'DANIEL', last: 'OKONKWO' },
-    '23_nextOf23': { full: '(954) 555-0142' },
-    '24_nextOf24': 'daniel.okonkwo@example.test',
+/** Jotform's own `created_at` serialization: no timezone offset. */
+function jotformTimestamp(offsetMs = 0): string {
+  return new Date(Date.now() + offsetMs).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/** A complete, realistic Manors First Call Sheet answer set, keyed by the real
+    qids confirmed from the live form's own /questions response — in the
+    bare-qid shape `GET /submission/{id}` returns. */
+function firstCallAnswers(
+  overrides: Record<string, string | Record<string, string>> = {},
+): Record<string, string | Record<string, string>> {
+  return {
+    '3': { first: 'MARGARET', last: 'OKONKWO' },
+    '6': '03/14/1941',
+    '7': '150 lb',
+    '8': '10/02/2026',
+    '9': '14:20',
+    '20': { addr_line1: '481 NW 1ST AVE', city: 'FORT LAUDERDALE', state: 'FL' },
+    '22': { first: 'DANIEL', last: 'OKONKWO' },
+    '23': { full: '(954) 555-0142' },
+    '24': 'daniel.okonkwo@example.test',
     ...overrides,
+  };
+}
+
+/** Registers what Jotform's authenticated API will report for one
+    submission — the authoritative source the handler reads. */
+function givenJotformHasSubmission(params: {
+  formId: string;
+  submissionId: string;
+  answers?: Record<string, string | Record<string, string>>;
+  submittedAt?: string | null;
+}) {
+  const answers: Record<string, { answer: string | Record<string, string> }> = {};
+  for (const [qid, value] of Object.entries(params.answers ?? {})) answers[qid] = { answer: value };
+  submissionApiRecords.set(params.submissionId, {
+    formId: params.formId,
+    submittedAt: params.submittedAt === undefined ? jotformTimestamp() : params.submittedAt,
+    answers,
   });
+}
+
+/** Registers a complete First Call submission and delivers its webhook. */
+async function deliverFirstCall(
+  submissionId: string,
+  overrides: Record<string, string | Record<string, string>> = {},
+) {
+  givenJotformHasSubmission({
+    formId: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
+    submissionId,
+    answers: firstCallAnswers(overrides),
+  });
+  const { POST } = await import('./route');
+  return POST(webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: submissionId }));
 }
 
 let lengths: Record<string, number> = {};
 
 beforeEach(() => {
-  process.env.JOTFORM_WEBHOOK_SHARED_SECRET = TEST_SECRET;
+  process.env.JOTFORM_API_KEY = 'test-api-key';
   process.env.SESSION_SECRET ??= 'test-session-secret-for-intake-tokens';
+  submissionApiRecords.clear();
   lengths = {
     links: caseFormLinkFixtures.length,
     submissions: externalFormSubmissionFixtures.length,
@@ -120,7 +196,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.JOTFORM_WEBHOOK_SHARED_SECRET;
+  delete process.env.JOTFORM_API_KEY;
+  submissionApiRecords.clear();
   caseFormLinkFixtures.length = lengths.links;
   externalFormSubmissionFixtures.length = lengths.submissions;
   activityEventFixtures.length = lengths.activity;
@@ -131,16 +208,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('First Call Sheet — creates exactly one case', () => {
+describe('Manors First Call Sheet — creates exactly one case', () => {
   it('recognizes the configured First Call form and resolves its organization from config, not the payload', async () => {
-    const { POST } = await import('./route');
-    const response = await POST(
-      webhookRequest({
-        formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
-        submissionID: 'fc-sub-1',
-        rawRequest: firstCallAnswers(),
-      }),
-    );
+    const response = await deliverFirstCall(SUB.recognizes);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ received: true, caseCreated: true });
@@ -149,10 +219,7 @@ describe('First Call Sheet — creates exactly one case', () => {
   });
 
   it('maps the First Call fields onto the correct canonical Case fields', async () => {
-    const { POST } = await import('./route');
-    await POST(
-      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-sub-2', rawRequest: firstCallAnswers() }),
-    );
+    await deliverFirstCall(SUB.maps);
 
     const body = casePostBodies[0];
     expect(body.decedentName).toBe('MARGARET OKONKWO');
@@ -165,21 +232,41 @@ describe('First Call Sheet — creates exactly one case', () => {
     expect(body.placeOfDeath).toBe('481 NW 1ST AVE');
   });
 
-  it('never sends a case number — a first call takes the next one from the normal sequence', async () => {
+  it('builds the case from Jotform\'s own answers, never from the webhook body', async () => {
+    // A forged body claiming an entirely different decedent, paired with a
+    // genuine submission id. The body must contribute nothing.
+    givenJotformHasSubmission({
+      formId: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
+      submissionId: SUB.recognizes,
+      answers: firstCallAnswers(),
+    });
     const { POST } = await import('./route');
     await POST(
-      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-sub-3', rawRequest: firstCallAnswers() }),
+      webhookRequest({
+        formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
+        submissionID: SUB.recognizes,
+        rawRequest: JSON.stringify({
+          '3_nameof': { first: 'FORGED', last: 'IDENTITY' },
+          '23_nextOf23': { full: '(000) 000-0000' },
+        }),
+      }),
     );
+
+    expect(casePostBodies).toHaveLength(1);
+    expect(casePostBodies[0].decedentName).toBe('MARGARET OKONKWO');
+    expect(casePostBodies[0].nextOfKinPhone).toBe('(954) 555-0142');
+    expect(JSON.stringify(casePostBodies[0])).not.toContain('FORGED');
+  });
+
+  it('never sends a case number — a first call takes the next one from the normal sequence', async () => {
+    await deliverFirstCall(SUB.noCaseNumber);
 
     expect(casePostBodies[0]).not.toHaveProperty('caseNumber');
     expect(casePostBodies[0]).not.toHaveProperty('historicalCaseNumberAuthorization');
   });
 
   it('presents a valid intake authorization bound to this organization, form, and submission', async () => {
-    const { POST } = await import('./route');
-    await POST(
-      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-sub-4', rawRequest: firstCallAnswers() }),
-    );
+    await deliverFirstCall(SUB.token);
 
     const token = casePostBodies[0].externalFormIntakeAuthorization as string;
     expect(typeof token).toBe('string');
@@ -187,62 +274,52 @@ describe('First Call Sheet — creates exactly one case', () => {
     expect(payload).not.toBeNull();
     expect(payload!.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
     expect(payload!.externalFormId).toBe(FIRST_CALL_SHEET_EXTERNAL_FORM_ID);
-    expect(payload!.externalSubmissionId).toBe('fc-sub-4');
+    expect(payload!.externalSubmissionId).toBe(SUB.token);
     expect(payload!.intakeStaffProfileId).toBeTruthy();
   });
 
   it('records the submission so it is traceable back to the case it created', async () => {
-    const { POST } = await import('./route');
-    await POST(
-      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-sub-5', rawRequest: firstCallAnswers() }),
-    );
+    await deliverFirstCall(SUB.traceable);
 
-    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'fc-sub-5');
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.traceable);
     expect(stored).toBeDefined();
     expect(stored!.externalFormId).toBe(FIRST_CALL_SHEET_EXTERNAL_FORM_ID);
     expect(stored!.createdCaseId).toBe('case-created-1');
   });
 });
 
-describe('First Call Sheet — duplicate delivery', () => {
+describe('Manors First Call Sheet — duplicate delivery', () => {
   it('creates exactly one case when the same submission is delivered twice', async () => {
-    const { POST } = await import('./route');
-    const deliver = () =>
-      POST(webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-dupe', rawRequest: firstCallAnswers() }));
-
-    const first = await deliver();
-    const second = await deliver();
+    const first = await deliverFirstCall(SUB.dupe);
+    const second = await deliverFirstCall(SUB.dupe);
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(casePostBodies).toHaveLength(1); // the decisive assertion
-    expect(externalFormSubmissionFixtures.filter((s) => s.externalSubmissionId === 'fc-dupe')).toHaveLength(1);
+    expect(externalFormSubmissionFixtures.filter((s) => s.externalSubmissionId === SUB.dupe)).toHaveLength(1);
   });
 
   it('acknowledges the redelivery rather than failing it', async () => {
-    const { POST } = await import('./route');
-    await POST(webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-dupe-2', rawRequest: firstCallAnswers() }));
-    const second = await POST(
-      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-dupe-2', rawRequest: firstCallAnswers() }),
-    );
+    await deliverFirstCall(SUB.dupe2);
+    const second = await deliverFirstCall(SUB.dupe2);
     expect(await second.json()).toEqual({ received: true });
   });
 });
 
 describe('Only a case_create form may create a case', () => {
   it('an Arrangement submission with no link token is still stored unmatched, never created', async () => {
+    givenJotformHasSubmission({
+      formId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+      submissionId: SUB.arrangementNoLink,
+    });
     const { POST } = await import('./route');
     const response = await POST(
-      webhookRequest({
-        formID: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
-        submissionID: 'arr-no-link',
-        rawRequest: JSON.stringify({ [`${ARRANGEMENT_AUTH_QID}_soliswebhookauth`]: TEST_SECRET }),
-      }),
+      webhookRequest({ formID: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, submissionID: SUB.arrangementNoLink }),
     );
 
     expect(response.status).toBe(200);
     expect(casePostBodies).toHaveLength(0);
-    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'arr-no-link');
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrangementNoLink);
     expect(stored!.status).toBe('unmatched');
     expect(stored!.createdCaseId).toBeNull();
   });
@@ -252,10 +329,7 @@ describe('Only a case_create form may create a case', () => {
     const original = config.purpose;
     config.purpose = 'case_update';
     try {
-      const { POST } = await import('./route');
-      await POST(
-        webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-downgraded', rawRequest: firstCallAnswers() }),
-      );
+      await deliverFirstCall(SUB.downgraded);
       expect(casePostBodies).toHaveLength(0);
     } finally {
       config.purpose = original;
@@ -263,49 +337,57 @@ describe('Only a case_create form may create a case', () => {
   });
 });
 
-describe('First Call Sheet — fails safely', () => {
+describe('Manors First Call Sheet — fails safely', () => {
   it('does not create a case when a required field is missing, leaving the submission unmatched', async () => {
-    const { POST } = await import('./route');
-    const response = await POST(
-      webhookRequest({
-        formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
-        submissionID: 'fc-missing',
-        // No decedent name.
-        rawRequest: firstCallAnswers({ '3_nameof': { first: '', last: '' } }),
-      }),
-    );
+    // No decedent name.
+    const response = await deliverFirstCall(SUB.missingField, { '3': { first: '', last: '' } });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ received: true, caseCreated: false });
     expect(casePostBodies).toHaveLength(0);
-    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'fc-missing');
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.missingField);
     expect(stored!.status).toBe('unmatched');
     expect(stored!.createdCaseId).toBeNull();
   });
 
   it('leaves no half-created state when case creation itself fails', async () => {
     casePostResponder = () => ({ status: 422, json: { case: null, error: 'synthetic failure' } });
-    const { POST } = await import('./route');
-    const response = await POST(
-      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: 'fc-fail', rawRequest: firstCallAnswers() }),
-    );
+    const response = await deliverFirstCall(SUB.creationFails);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ received: true, caseCreated: false });
-    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === 'fc-fail');
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.creationFails);
     // The creation claim must be released, not left latched, so the row
     // stays recoverable through Unmatched Forms.
     expect(stored!.createdCaseId).toBeNull();
   });
 
-  it('still rejects an unverified request before any creation is attempted', async () => {
+  it('rejects a delivery Jotform will not confirm, before any creation is attempted', async () => {
+    // Nothing registered — the live API answers 401 for a submission this
+    // account does not own. A forged first-call delivery therefore cannot
+    // reach case creation at all.
     const { POST } = await import('./route');
     const response = await POST(
       webhookRequest({
         formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
-        submissionID: 'fc-badauth',
-        rawRequest: firstCallAnswers({ [`${FIRST_CALL_AUTH_QID}_soliswebhookauth`]: 'wrong-secret' }),
+        submissionID: SUB.unconfirmed,
+        rawRequest: JSON.stringify({ '3_nameof': { first: 'FORGED', last: 'INTAKE' } }),
       }),
+    );
+    expect(response.status).toBe(401);
+    expect(casePostBodies).toHaveLength(0);
+    expect(externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.unconfirmed)).toBeUndefined();
+  });
+
+  it('refuses to create a case from a submission Jotform reports on a different form', async () => {
+    givenJotformHasSubmission({
+      formId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+      submissionId: SUB.crossForm,
+      answers: firstCallAnswers(),
+    });
+    const { POST } = await import('./route');
+    const response = await POST(
+      webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: SUB.crossForm }),
     );
     expect(response.status).toBe(401);
     expect(casePostBodies).toHaveLength(0);

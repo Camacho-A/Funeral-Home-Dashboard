@@ -27,7 +27,7 @@ export type MappedSolisField =
   | 'dateOfDeath'
   | 'placeOfDeath'
   // Automated intake (2026-10): both are real, writable Case fields
-  // (types/case.ts) that the First Call Sheet captures directly. Neither
+  // (types/case.ts) that Manors First Call Sheet captures directly. Neither
   // appears on Vital Statistics or Arrangement Forms, so adding them here
   // changes nothing about those two maps.
   | 'timeOfDeath'
@@ -210,20 +210,22 @@ export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   // directly from the raw answer map.
 ];
 
-/** First Call Sheet — form 262664842044055, Manors' intake form and the
+/** Manors First Call Sheet — form 262664842044055, Manors' intake form and the
     first form configured with `purpose: 'case_create'`. Named here for the
     same reason as the two constants above. */
 export const FIRST_CALL_SHEET_EXTERNAL_FORM_ID = '262664842044055';
 
 /**
- * First Call Sheet — form 262664842044055. Every qid below is confirmed
+ * Manors First Call Sheet — form 262664842044055 (renamed from "First
+ * Call Sheet" in 2026-10; the form id did not change). Every qid below is
+ * confirmed
  * directly from the Jotform API's /form/{id}/questions response.
  *
  * READ THIS BEFORE REUSING ANY QID NUMBER ACROSS FORMS. Several of this
  * form's qids collide numerically with Vital Statistics' while meaning
  * something COMPLETELY DIFFERENT:
  *
- *   qid  First Call Sheet        Vital Statistics
+ *   qid  Manors First Call Sheet  Vital Statistics
  *   ---  ---------------------   --------------------
  *   3    Name of Deceased        Name of Deceased     (same, by luck)
  *   6    Date of BIRTH           Date of DEATH        (DIFFERENT)

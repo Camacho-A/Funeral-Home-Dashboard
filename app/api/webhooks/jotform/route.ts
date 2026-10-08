@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
-import { verifyJotformWebhook } from '@/lib/jotform/jotformWebhookVerification';
+import { authenticateJotformSubmission } from '@/lib/jotform/jotformSubmissionAuthenticity';
 import { parseJotformWebhookBody, extractHiddenFieldByQid } from '@/domain/externalForms/parseWebhookPayload';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import * as externalFormConfigService from '@/services/externalFormConfigService';
@@ -17,9 +17,28 @@ import { createCaseFromFirstCallSubmission } from '@/services/externalFormIntake
  * endpoint — no session, no cookie, no organizationId trusted from the
  * request. Deliberately exempt from `requireSameOrigin` for the same
  * reason `app/api/webhooks/clover/route.ts` is: this is never a
- * cookie-riding request, and its own authenticity check
- * (`verifyJotformWebhook`) is the appropriate mechanism here, not a
- * substitute for one.
+ * cookie-riding request, and its own authenticity check is the
+ * appropriate mechanism here, not a substitute for one.
+ *
+ * SERVER-SIDE AUTHENTICATION (2026-10) — the request body is NOT trusted,
+ * as data or as proof.
+ *
+ * This handler previously authenticated a delivery with a shared secret
+ * carried in a Jotform hidden field (`solisWebhookAuth`). That was not
+ * authentication: a hidden field is hidden only from the rendering, and
+ * its default value ships inside the public form's own markup, so any
+ * form submitter could read the secret and then POST an entirely forged
+ * body here. That check is RETIRED.
+ *
+ * In its place, the delivery is treated as an untrusted notification
+ * carrying exactly two claims — `formID` and `submissionID` — which are
+ * verified against Jotform itself through an authenticated API call keyed
+ * by the server-only `JOTFORM_API_KEY`
+ * (`lib/jotform/jotformSubmissionAuthenticity.ts`, which also records why
+ * Jotform offers no signature to verify and why a URL-embedded secret was
+ * rejected). The submission's answers are then taken from THAT API
+ * response. The body's own `rawRequest` is used for nothing but the two
+ * claims above, so forged answers cannot reach a case.
  *
  * CRITICAL INVARIANT, enforced structurally (see this route's own
  * structural test): this handler NEVER imports or calls
@@ -35,36 +54,40 @@ import { createCaseFromFirstCallSubmission } from '@/services/externalFormIntake
  * never trusted from anything in the request body itself, mirroring the
  * Clover webhook's own organization-resolution principle.
  *
- * Jotform hidden-field identifier correction (2026-09) — RESOLUTION
- * ORDER, deliberately restructured from this route's earlier design:
- *   1. Body-size checks (unchanged, before any parsing).
- *   2. Bounded parse (`parseJotformWebhookBody`) — extracts `formId` only
- *      as far as needed to look up a config; a malformed body (no
- *      resolvable formId) is rejected here, 400, before anything else.
+ * RESOLUTION ORDER:
+ *   1. Body-size checks, before any parsing.
+ *   2. Bounded parse (`parseJotformWebhookBody`) — reads `formID` and
+ *      `submissionID` only; a malformed body is rejected here, 400.
  *   3. Resolve a TRUSTED, server-side `ExternalFormConfig` for that
  *      formId (enabled only). An unrecognized or disabled form is
- *      rejected outright (404) — no auth-field guessing is attempted, no
- *      submission row is created, no case-related action is taken.
- *   4. Using ONLY that trusted config's own `webhookAuthFieldQid` —
- *      never a qid or name supplied by the request — extract the auth
- *      value and verify it. Invalid/missing auth is rejected (401).
- *   5. Using that same trusted config's `linkTokenFieldQid`, extract
- *      `solisLinkToken` and resolve the matching `CaseFormLink`.
- * The request can never choose which qid is treated as the auth field —
- * both qids are only ever read from the config resolved in step 3.
+ *      rejected outright (404) — no submission row is created and no
+ *      case-related action is taken.
+ *   4. Authenticate the two claims against Jotform's own API. This both
+ *      proves the submission exists and is owned by this account, and
+ *      yields the AUTHORITATIVE answers used from here on. A delivery
+ *      that cannot be verified is rejected (401), or 503 when Jotform
+ *      itself could not be reached so that the delivery is retried
+ *      rather than silently lost.
+ *   5. Using the trusted config's `linkTokenFieldQid`, read
+ *      `solisLinkToken` out of those AUTHORITATIVE answers and resolve
+ *      the matching `CaseFormLink`. Reading the link token from Jotform
+ *      rather than from the body matters on its own: otherwise a forged
+ *      body could pair a genuine submission id with a link token of the
+ *      attacker's choosing and attach a real submission to a case it
+ *      does not belong to.
+ * The request can never choose which qid is read — the qid comes only
+ * from the config resolved in step 3.
  *
- * Disclosed, deliberate change from the prior design: because auth
- * verification now depends on resolving a per-form config first, a
- * malformed body (400) and an unrecognized form (404) are now
- * distinguishable from a wrong/missing secret (401) by response code —
- * unlike the prior design's uniform pre-parse 401. This is an unavoidable
- * consequence of per-form qid resolution and is an acceptable tradeoff:
- * a Jotform formId is not itself secret (it's derivable from the form's
- * own public URL).
+ * Response codes deliberately distinguish a malformed body (400) and an
+ * unrecognized form (404) from a failed authentication (401). A Jotform
+ * formId is not secret — it is derivable from the form's own public URL —
+ * so this leaks nothing.
  *
- * The auth value is never logged, never included in any response, and
- * never persisted — it has no qid mapped in fieldMapping.ts, so it
- * structurally cannot appear in `answers`/`mappedFields` either.
+ * `webhookAuthFieldQid` remains on the config type and on the live rows
+ * but is NO LONGER READ by this handler. It is retained rather than
+ * dropped so that retiring the mechanism does not require a data
+ * migration in the same change; see docs/JOTFORM_INTEGRATION.md for the
+ * cleanup that is now safe to perform.
  */
 const MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024; // 2MB — generous for a funeral-intake form's rawRequest JSON blob, bounded against abuse
 
@@ -102,16 +125,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unrecognized or disabled form.' }, { status: 404 });
   }
 
-  const authValue = extractHiddenFieldByQid(parsed, config.webhookAuthFieldQid);
-  const verification = verifyJotformWebhook(authValue);
-  if (!verification.valid) {
-    return NextResponse.json({ error: `Webhook verification failed (${verification.reason}).` }, { status: 401 });
+  // Authenticate against Jotform itself. Everything below this point
+  // uses `authenticated.answers` — Jotform's own record of what was
+  // submitted — and never `parsed.answers`/`parsed.rawRequest`, which an
+  // attacker controls.
+  const authenticated = await authenticateJotformSubmission({
+    claimedFormId: config.externalFormId,
+    claimedSubmissionId: parsed.submissionId,
+  });
+  if (!authenticated.authentic) {
+    return NextResponse.json(
+      { error: `Webhook verification failed (${authenticated.reason}).` },
+      { status: authenticated.status },
+    );
   }
+
+  const authoritative = { answers: authenticated.answers, rawRequest: {} };
 
   // A `case_create` form has no link-token field at all (its config
   // carries an empty qid), so this never attempts a lookup for one.
   const rawLinkToken = config.linkTokenFieldQid
-    ? extractHiddenFieldByQid(parsed, config.linkTokenFieldQid)
+    ? extractHiddenFieldByQid(authoritative, config.linkTokenFieldQid)
     : null;
   const tokenLink = rawLinkToken ? await caseFormLinkService.resolveByRawToken(rawLinkToken, dataAdapterMode) : null;
 
@@ -129,7 +163,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, parsed.answers);
+  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, authenticated.answers);
 
   const correlationId = crypto.randomUUID();
   const activityCtx = {

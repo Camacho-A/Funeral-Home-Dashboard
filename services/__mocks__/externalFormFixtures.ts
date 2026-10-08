@@ -20,7 +20,7 @@ import {
 export const VITAL_STATISTICS_FORM_CONFIG_ID = 'extform-config-managed-cremations-jotform-vital-statistics';
 export const ARRANGEMENT_FORMS_FORM_CONFIG_ID = 'extform-config-managed-cremations-jotform-arrangement-forms';
 
-/** Automated intake (2026-10). Manors' First Call Sheet — the first form
+/** Automated intake (2026-10). Manors First Call Sheet — the first form
     configured with `purpose: 'case_create'`, i.e. the first form whose
     submissions may allocate a Solis case number. */
 export const FIRST_CALL_SHEET_FORM_CONFIG_ID = 'extform-config-managed-cremations-jotform-first-call-sheet';
@@ -67,7 +67,7 @@ export const externalFormConfigFixtures: ExternalFormConfig[] = [
     organizationId: DEFAULT_ORGANIZATION_ID,
     provider: 'jotform',
     externalFormId: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
-    label: 'First Call Sheet',
+    label: 'Manors First Call Sheet',
     audience: 'staff',
     // The ONLY config in this codebase that may create a case.
     purpose: 'case_create',

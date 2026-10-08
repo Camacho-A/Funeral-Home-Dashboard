@@ -18,9 +18,18 @@ import { getSessionSecret } from '../env';
  * and only after that request has already:
  *   1. resolved a trusted, enabled `ExternalFormConfig` from the form id
  *      (which is what determines the organization — never the payload), and
- *   2. passed `verifyJotformWebhook`, the shared-secret check.
+ *   2. authenticated the delivery against Jotform's own API
+ *      (`lib/jotform/jotformSubmissionAuthenticity.ts`) — proving the
+ *      submission genuinely exists on that form and is owned by this
+ *      account, and replacing the retired hidden-field shared secret,
+ *      which a form submitter could read straight out of the public
+ *      form's markup.
  * So the token attests to a check that has already succeeded; it never
  * grants authority on its own, and nothing outside the webhook mints one.
+ *
+ * Note that the case data this token authorizes creation from comes from
+ * Jotform's authenticated API response, never from the webhook body — so
+ * a forged delivery cannot reach case creation with answers of its own.
  *
  * WHY IT IS NARROWER THAN A SESSION
  *
