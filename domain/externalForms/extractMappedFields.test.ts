@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { extractMappedFields } from './extractMappedFields';
-import { FIELD_MAP_VITAL_STATISTICS, FIELD_MAP_ARRANGEMENT_FORMS } from './fieldMapping';
+import {
+  FIELD_MAP_VITAL_STATISTICS,
+  FIELD_MAP_ARRANGEMENT_FORMS,
+  FIELD_MAP_FIRST_CALL_SHEET,
+} from './fieldMapping';
 
 describe('extractMappedFields — Vital Statistics (synthetic fixture, no real submission data)', () => {
   it('combines compound fullname subfields into one Solis-shaped name', () => {
@@ -198,5 +202,83 @@ describe('extractMappedFields — compound Place of Death extraction (2026-09 hi
     const answers = { '30': { answer: 'ST. MARY\'S HOSPITAL' } };
     const result = extractMappedFields(FIELD_MAP_VITAL_STATISTICS, answers);
     expect(result.placeOfDeath).toBe('ST. MARY\'S HOSPITAL');
+  });
+});
+
+describe('extractMappedFields — compound Time of Death extraction (2026-10 live-intake fix)', () => {
+  /** The exact answer shape of the first real automated First Call intake
+      (submission 6673017618712656713): a `control_time` answer is a
+      compound object, and Jotform emitted a vestigial `ampm: "PM"` even
+      though the question is configured `timeFormat: "24 Hour"`. */
+  const LIVE_SHAPE = { timeInput: '11:30', hourSelect: '11', minuteSelect: '30', ampm: 'PM' };
+
+  it('A: the real live 24-hour answer maps to 11:30 — the vestigial ampm is NOT applied', () => {
+    const answers = { '9': { answer: LIVE_SHAPE, timeFormat: '24 Hour' } };
+    const result = extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers);
+    expect(result.timeOfDeath).toBe('11:30');
+  });
+
+  it('B: regression — this shape previously produced NO value at all, blanking Time of Death', () => {
+    // The pre-fix mapping had no subfield, and the no-subfield reader
+    // requires a plain string, so a compound answer read as absent.
+    const answers = { '9': { answer: LIVE_SHAPE, timeFormat: '24 Hour' } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers).timeOfDeath).toBeDefined();
+  });
+
+  it('C: a genuine 12-hour question DOES apply AM/PM', () => {
+    const answers = { '9': { answer: { ...LIVE_SHAPE }, timeFormat: 'AM/PM' } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers).timeOfDeath).toBe('23:30');
+  });
+
+  it('D: 12-hour midnight and noon convert correctly, not to 12:00/24:00', () => {
+    const midnight = { '9': { answer: { hourSelect: '12', minuteSelect: '05', ampm: 'AM' }, timeFormat: 'AM/PM' } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, midnight).timeOfDeath).toBe('00:05');
+    const noon = { '9': { answer: { hourSelect: '12', minuteSelect: '05', ampm: 'PM' }, timeFormat: 'AM/PM' } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, noon).timeOfDeath).toBe('12:05');
+  });
+
+  it('E: a missing timeFormat leaves the value UNSHIFTED rather than guessing a 12-hour reading', () => {
+    // Shifting on an unknown format would risk a twelve-hour error on a
+    // legal record; leaving it alone is the safe failure direction.
+    const answers = { '9': { answer: LIVE_SHAPE } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers).timeOfDeath).toBe('11:30');
+  });
+
+  it('F: falls back to timeInput when the hour/minute selects are absent', () => {
+    const answers = { '9': { answer: { timeInput: '09:05' }, timeFormat: '24 Hour' } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers).timeOfDeath).toBe('09:05');
+  });
+
+  it('G: a plain-string time answer still works, including a trailing meridiem', () => {
+    expect(
+      extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, { '9': { answer: '14:30' } }).timeOfDeath,
+    ).toBe('14:30');
+    expect(
+      extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, { '9': { answer: '2:30 PM', timeFormat: 'AM/PM' } }).timeOfDeath,
+    ).toBe('14:30');
+  });
+
+  it('H: hours/minutes out of range are rejected, never clamped or rolled over', () => {
+    for (const answer of [
+      { hourSelect: '24', minuteSelect: '00' },
+      { hourSelect: '11', minuteSelect: '60' },
+      { hourSelect: '-1', minuteSelect: '30' },
+    ]) {
+      const answers = { '9': { answer, timeFormat: '24 Hour' } };
+      expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers).timeOfDeath).toBeUndefined();
+    }
+  });
+
+  it('I: a 12-hour answer with an impossible 12-hour clock hour is rejected', () => {
+    const answers = { '9': { answer: { hourSelect: '15', minuteSelect: '30', ampm: 'PM' }, timeFormat: 'AM/PM' } };
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, answers).timeOfDeath).toBeUndefined();
+  });
+
+  it('J: an empty or unparseable time answer yields no value rather than a placeholder', () => {
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, { '9': { answer: '' } }).timeOfDeath).toBeUndefined();
+    expect(extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, { '9': { answer: {} } }).timeOfDeath).toBeUndefined();
+    expect(
+      extractMappedFields(FIELD_MAP_FIRST_CALL_SHEET, { '9': { answer: 'not a time' } }).timeOfDeath,
+    ).toBeUndefined();
   });
 });

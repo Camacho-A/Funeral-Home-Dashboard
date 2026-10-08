@@ -197,6 +197,15 @@ map, nothing else.
 | 23 | Next of Kin Phone Number | `nextOfKinPhone` |
 | 24 | Next of Kin Email | `nextOfKinEmail` |
 
+Compound answer shapes, all confirmed against real submissions: qid 3/22
+are `{first, last}` names, qid 6/8 are `{month, day, year}` datetimes, qid
+20 is an address (`addr_line1` preferred), qid 23 is `{full}`, and **qid 9
+is a `control_time` object** (`{timeInput, hourSelect, minuteSelect, ampm}`)
+whose AM/PM value is applied only when the question's own `timeFormat`
+says it is a 12-hour question — Jotform emits a vestigial `ampm` even on a
+24-hour one, and trusting it blindly puts a twelve-hour error on a legal
+record. See `combineTimeParts` in `extractMappedFields.ts`.
+
 Deliberately **not** mapped: qid 14 "Name on Card" (payment-instrument
 data — SOLIS stores no card data of any kind), qid 21 "Hospice or Dr. to
 sign D/C" (free text with no single canonical destination; SOLIS uses the
@@ -401,6 +410,8 @@ map. That is all.
 | Arrangement submission created a second case | Should be impossible — only `case_create` forms create | Check that form's `purpose` is `'case_update'` |
 | Arrangement submission did not attach to its case | Link token missing, unresolvable, or belonging to another organization | Regenerate the form link from the case |
 | Case created but no PDF | PDF preservation is best-effort and independent | Retry from the submission's retry-PDF action |
+| A first-call submission still shows in Unmatched Forms after creating a case | Fixed 2026-10 — `markCaseCreated` now also sets `status: 'matched'`. Rows written before that fix keep `status: 'unmatched'` | Harmless; mark reviewed, or leave it |
+| Time of Death blank on a webhook-created case | Fixed 2026-10 — qid 9 is a compound `control_time` answer that the field map read as absent | Fixed going forward; earlier cases need the field entered by hand |
 
 Failed and unmatched submissions are never silently dropped — they are
 visible at `/unmatched-forms` and can be attached to a case by hand.

@@ -128,6 +128,13 @@ function jotformTimestamp(offsetMs = 0): string {
   return new Date(Date.now() + offsetMs).toISOString().slice(0, 19).replace('T', ' ');
 }
 
+/** The real `control_time` answer shape qid 9 returns, taken from the
+    first live automated intake (submission 6673017618712656713). Note the
+    vestigial `ampm: 'PM'` that Jotform emits even though the question is
+    configured `timeFormat: '24 Hour'`. */
+const FIRST_CALL_TIME_ANSWER = { timeInput: '11:30', hourSelect: '11', minuteSelect: '30', ampm: 'PM' };
+const FIRST_CALL_TIME_FORMATS = { '9': '24 Hour' };
+
 /** A complete, realistic Manors First Call Sheet answer set, keyed by the real
     qids confirmed from the live form's own /questions response — in the
     bare-qid shape `GET /submission/{id}` returns. */
@@ -139,7 +146,7 @@ function firstCallAnswers(
     '6': '03/14/1941',
     '7': '150 lb',
     '8': '10/02/2026',
-    '9': '14:20',
+    '9': FIRST_CALL_TIME_ANSWER,
     '20': { addr_line1: '481 NW 1ST AVE', city: 'FORT LAUDERDALE', state: 'FL' },
     '22': { first: 'DANIEL', last: 'OKONKWO' },
     '23': { full: '(954) 555-0142' },
@@ -154,10 +161,17 @@ function givenJotformHasSubmission(params: {
   formId: string;
   submissionId: string;
   answers?: Record<string, string | Record<string, string>>;
+  /** Per-qid `timeFormat`, as Jotform reports it for `control_time`
+      questions — carried through because a compound time answer cannot be
+      interpreted without it. */
+  timeFormats?: Record<string, string>;
   submittedAt?: string | null;
 }) {
-  const answers: Record<string, { answer: string | Record<string, string> }> = {};
-  for (const [qid, value] of Object.entries(params.answers ?? {})) answers[qid] = { answer: value };
+  const answers: Record<string, { answer: string | Record<string, string>; timeFormat?: string }> = {};
+  for (const [qid, value] of Object.entries(params.answers ?? {})) {
+    const timeFormat = params.timeFormats?.[qid];
+    answers[qid] = { answer: value, ...(timeFormat ? { timeFormat } : {}) };
+  }
   submissionApiRecords.set(params.submissionId, {
     formId: params.formId,
     submittedAt: params.submittedAt === undefined ? jotformTimestamp() : params.submittedAt,
@@ -174,6 +188,7 @@ async function deliverFirstCall(
     formId: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
     submissionId,
     answers: firstCallAnswers(overrides),
+    timeFormats: FIRST_CALL_TIME_FORMATS,
   });
   const { POST } = await import('./route');
   return POST(webhookRequest({ formID: FIRST_CALL_SHEET_EXTERNAL_FORM_ID, submissionID: submissionId }));
@@ -230,6 +245,12 @@ describe('Manors First Call Sheet — creates exactly one case', () => {
     expect(body.nextOfKinEmail).toBe('daniel.okonkwo@example.test'); // qid 24 is EMAIL on this form
     expect(body.weight).toBe('150 lb');
     expect(body.placeOfDeath).toBe('481 NW 1ST AVE');
+    // qid 9 is a compound `control_time` answer. Live-intake fix (2026-10):
+    // this previously mapped to nothing at all, so the created case was
+    // given a blank Time of Death. The vestigial `ampm: 'PM'` must NOT be
+    // applied to a question configured 24-hour — 23:30 would be wrong by
+    // twelve hours.
+    expect(body.timeOfDeath).toBe('11:30');
   });
 
   it('builds the case from Jotform\'s own answers, never from the webhook body', async () => {
@@ -239,6 +260,7 @@ describe('Manors First Call Sheet — creates exactly one case', () => {
       formId: FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
       submissionId: SUB.recognizes,
       answers: firstCallAnswers(),
+      timeFormats: FIRST_CALL_TIME_FORMATS,
     });
     const { POST } = await import('./route');
     await POST(
@@ -285,6 +307,31 @@ describe('Manors First Call Sheet — creates exactly one case', () => {
     expect(stored).toBeDefined();
     expect(stored!.externalFormId).toBe(FIRST_CALL_SHEET_EXTERNAL_FORM_ID);
     expect(stored!.createdCaseId).toBe('case-created-1');
+  });
+
+  it('does NOT leave the submission sitting in the Unmatched Forms queue after it created a case', async () => {
+    // Live-intake finding (2026-10): a `case_create` submission never
+    // resolves a CaseFormLink, so it was stored `unmatched` and only
+    // `createdCaseId` was written afterwards. `listUnmatched` filters on
+    // status alone, so a submission that had already created B2026-037
+    // still showed up as needing manual linking.
+    await deliverFirstCall(SUB.traceable);
+
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.traceable);
+    expect(stored!.status).toBe('matched');
+
+    const { listUnmatched } = await import('@/services/externalFormSubmissionService');
+    const queue = await listUnmatched(DEFAULT_ORGANIZATION_ID, 'mock');
+    expect(queue.map((s) => s.externalSubmissionId)).not.toContain(SUB.traceable);
+  });
+
+  it('still leaves a submission that did NOT create a case in the queue for staff', async () => {
+    // The counterpart direction: the fix must not hide genuine failures.
+    await deliverFirstCall(SUB.missingField, { '3': { first: '', last: '' } });
+
+    const { listUnmatched } = await import('@/services/externalFormSubmissionService');
+    const queue = await listUnmatched(DEFAULT_ORGANIZATION_ID, 'mock');
+    expect(queue.map((s) => s.externalSubmissionId)).toContain(SUB.missingField);
   });
 });
 

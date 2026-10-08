@@ -32,6 +32,63 @@ describe('fetchSubmissionPdf — endpoint construction and authentication', () =
     expect((capturedHeaders as Record<string, string>).APIKEY).toBe('test-key-never-logged');
   });
 
+  it('preserves a control_time question\'s timeFormat, and adds no other sibling field', async () => {
+    // Live-intake fix (2026-10): a compound `control_time` answer cannot
+    // be interpreted without the question's own timeFormat — Jotform emits
+    // a vestigial `ampm` even on a 24-hour question. See
+    // domain/externalForms/extractMappedFields.ts#combineTimeParts.
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: {
+              form_id: FORM_ID,
+              created_at: '2026-10-08 16:49:22',
+              answers: {
+                '9': {
+                  name: 'timeof',
+                  type: 'control_time',
+                  timeFormat: '24 Hour',
+                  prettyFormat: '11:30 PM',
+                  text: 'Time of Death:',
+                  answer: { timeInput: '11:30', hourSelect: '11', minuteSelect: '30', ampm: 'PM' },
+                },
+                '7': { name: 'weight', timeFormat: 'should not matter', answer: '136' },
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    const result = await fetchSubmissionAnswers(SUBMISSION_ID);
+    expect(result.answers['9']).toEqual({
+      answer: { timeInput: '11:30', hourSelect: '11', minuteSelect: '30', ampm: 'PM' },
+      timeFormat: '24 Hour',
+    });
+    // Nothing else leaks through — notably not Jotform's own prettyFormat,
+    // which said "11:30 PM" for a 24-hour question.
+    expect(Object.keys(result.answers['9']).sort()).toEqual(['answer', 'timeFormat']);
+  });
+
+  it('omits timeFormat entirely when Jotform does not report one', async () => {
+    process.env.JOTFORM_API_KEY = 'k';
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: { form_id: FORM_ID, created_at: '2026-08-01 12:00:00', answers: { '7': { answer: '136' } } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    const result = await fetchSubmissionAnswers(SUBMISSION_ID);
+    expect(result.answers['7']).toEqual({ answer: '136' });
+    expect('timeFormat' in result.answers['7']).toBe(false);
+  });
+
   it('throws missing_api_key when JOTFORM_API_KEY is not configured', async () => {
     stubFetch(async () => new Response(REAL_PDF_HEADER, { status: 200, headers: { 'content-type': 'application/pdf' } }));
     await expect(fetchSubmissionPdf(FORM_ID, SUBMISSION_ID)).rejects.toMatchObject({ category: 'missing_api_key' });

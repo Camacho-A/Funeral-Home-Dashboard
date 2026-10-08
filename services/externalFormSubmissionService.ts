@@ -266,6 +266,26 @@ export async function revertCaseCreationClaim(id: string, claimToken: string, da
 /** Persists the real, newly-created case id — the crash-recovery
     checkpoint. Called immediately after case creation succeeds, before
     anything else (linking, PDF preservation) is attempted. */
+/**
+ * Records that this submission resolved to a case it created, and moves it
+ * out of the "needs a human" queue.
+ *
+ * `status: 'matched'` is set here as well as `createdCaseId`. Found during
+ * the first live automated First Call intake (2026-10): a `case_create`
+ * submission never resolves a `CaseFormLink`, so `receive()` stored it
+ * `status: 'unmatched'`, and only `createdCaseId` was written afterwards.
+ * `listUnmatched` filters on `status` alone, so a submission that had
+ * ALREADY successfully created case B2026-037 still appeared in Unmatched
+ * Forms, inviting staff to manually link a submission that needed nothing
+ * — and risking a second, duplicate linkage against a case that was
+ * already correct.
+ *
+ * 'matched' is the accurate status: the type documents it as "resolved to
+ * a specific case", which is exactly what happened — just via
+ * `createdCaseId` rather than `caseFormLinkId`. The two routes that act on
+ * a link (review, retry-pdf) already guard on `caseFormLinkId` being
+ * present, so neither is affected by a matched row that has none.
+ */
 export async function markCaseCreated(id: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<ExternalFormSubmission | null> {
-  return persistUpdate(id, { createdCaseId: caseId }, dataAdapterMode);
+  return persistUpdate(id, { createdCaseId: caseId, status: 'matched' }, dataAdapterMode);
 }

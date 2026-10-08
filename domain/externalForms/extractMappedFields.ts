@@ -13,7 +13,21 @@ import type { FieldMapEntry, MappedSolisField } from './fieldMapping';
 /** A qid-indexed answer, matching /submission/{id}'s own `answers` shape:
     a plain string answer, or a sub-keyed object for a compound field
     (fullname/phone/address). */
-export type JotformAnswerMap = Record<string, { answer?: string | Record<string, string> }>;
+export type JotformAnswerMap = Record<
+  string,
+  {
+    answer?: string | Record<string, string>;
+    /**
+     * Jotform's own `timeFormat` for a `control_time` question (e.g.
+     * `"24 Hour"` / `"AM/PM"`), carried alongside the answer because the
+     * answer ALONE cannot be interpreted safely — see `combineTimeParts`.
+     * Optional: absent for every other question type, and absent on
+     * answer maps parsed from a webhook body (which is untrusted and no
+     * longer used as an answer source anyway).
+     */
+    timeFormat?: string;
+  }
+>;
 
 /** Exported for reuse by arrangementNokDerivation.ts — that module reads
     qids 276-279 directly from the raw answer map (they're deliberately
@@ -127,6 +141,94 @@ function combineAddressParts(qid: string, answers: JotformAnswerMap): string | n
   return city || state || null;
 }
 
+const COMPOUND_TIME_FIELDS: MappedSolisField[] = ['timeOfDeath'];
+
+/** Parses `H:MM`/`HH:MM`, returning the two numbers unvalidated. */
+function splitHourMinute(value: string): { hour: number; minute: number } | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  return { hour: Number(match[1]), minute: Number(match[2]) };
+}
+
+/**
+ * Reads a compound Jotform `control_time` answer and normalizes it to the
+ * 24-hour `HH:MM` string Solis's own Time of Death field uses (its
+ * workflow placeholder is literally "24hr, e.g. 14:30").
+ *
+ * Live-verified against the first real automated First Call intake
+ * (2026-10, submission 6673017618712656713): a `control_time` answer is a
+ * compound object, NOT a plain string —
+ * `{timeInput: "11:30", hourSelect: "11", minuteSelect: "30", ampm: "PM"}`
+ * — so the previous no-subfield mapping (which requires a plain string)
+ * read it as absent and the case was created with Time of Death blank.
+ * That is the bug this function fixes.
+ *
+ * WHY `ampm` IS NOT TRUSTED ON ITS OWN. That same submission's question
+ * is configured `timeFormat: "24 Hour"`, yet Jotform still emitted
+ * `ampm: "PM"` and a `prettyFormat` of `"11:30 PM"`. Reading `ampm`
+ * unconditionally would have stored 23:30 for a death that a 24-hour
+ * form recorded as 11:30 — a twelve-hour error on a legal record. (The
+ * submission itself was created at 16:49 the same day, so 23:30 was not
+ * even a possible time of death; `ampm` was plainly a vestigial default.)
+ *
+ * So AM/PM is applied ONLY when the question's own `timeFormat` says the
+ * question is a 12-hour one. Interpretation follows the form's
+ * configuration, never a value that may be left over from it.
+ */
+function combineTimeParts(qid: string, answers: JotformAnswerMap): string | null {
+  const entry = answers[qid];
+  if (!entry || entry.answer === undefined) return null;
+
+  // A 12-hour question, per Jotform's own question configuration. A
+  // missing `timeFormat` is treated as 24-hour: that leaves a value
+  // unshifted rather than silently moving a recorded time by 12 hours.
+  const is12Hour = typeof entry.timeFormat === 'string' && /12|am\s*\/?\s*pm/i.test(entry.timeFormat);
+
+  let hour: number;
+  let minute: number;
+  let ampm = '';
+
+  if (typeof entry.answer === 'string') {
+    // Falls through to the plain-string behavior unchanged when a form's
+    // true shape genuinely is a string (e.g. a free-text time question).
+    const raw = entry.answer.trim();
+    if (!raw) return null;
+    const meridiem = /\b(AM|PM)\b/i.exec(raw);
+    if (meridiem) ampm = meridiem[1].toUpperCase();
+    const parts = splitHourMinute(raw.replace(/\s*\b(AM|PM)\b\s*/i, ''));
+    if (!parts) return null;
+    ({ hour, minute } = parts);
+  } else if (typeof entry.answer === 'object' && entry.answer !== null) {
+    const answer = entry.answer;
+    const hourRaw = typeof answer.hourSelect === 'string' ? answer.hourSelect.trim() : '';
+    const minuteRaw = typeof answer.minuteSelect === 'string' ? answer.minuteSelect.trim() : '';
+    ampm = typeof answer.ampm === 'string' ? answer.ampm.trim().toUpperCase() : '';
+
+    if (hourRaw !== '' && minuteRaw !== '') {
+      hour = Number(hourRaw);
+      minute = Number(minuteRaw);
+    } else {
+      const timeInput = typeof answer.timeInput === 'string' ? answer.timeInput : '';
+      const parts = timeInput ? splitHourMinute(timeInput) : null;
+      if (!parts) return null;
+      ({ hour, minute } = parts);
+    }
+  } else {
+    return null;
+  }
+
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+
+  if (is12Hour && (ampm === 'AM' || ampm === 'PM')) {
+    if (hour < 1 || hour > 12) return null;
+    if (ampm === 'AM') hour = hour === 12 ? 0 : hour;
+    else hour = hour === 12 ? 12 : hour + 12;
+  }
+
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
 export function extractMappedFields(fieldMap: FieldMapEntry[], answers: JotformAnswerMap): Partial<Record<MappedSolisField, string>> {
   const result: Partial<Record<MappedSolisField, string>> = {};
   const handledCompound = new Set<MappedSolisField>();
@@ -143,6 +245,14 @@ export function extractMappedFields(fieldMap: FieldMapEntry[], answers: JotformA
     if (COMPOUND_DATE_FIELDS.includes(entry.solisField)) {
       if (handledCompound.has(entry.solisField)) continue;
       const combined = combineDateParts(entry.qid, answers);
+      if (combined) result[entry.solisField] = combined;
+      handledCompound.add(entry.solisField);
+      continue;
+    }
+
+    if (COMPOUND_TIME_FIELDS.includes(entry.solisField)) {
+      if (handledCompound.has(entry.solisField)) continue;
+      const combined = combineTimeParts(entry.qid, answers);
       if (combined) result[entry.solisField] = combined;
       handledCompound.add(entry.solisField);
       continue;

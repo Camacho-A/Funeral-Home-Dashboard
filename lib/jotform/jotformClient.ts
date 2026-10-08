@@ -156,7 +156,18 @@ export async function fetchSubmissionAnswers(submissionId: string): Promise<Jotf
     if (!entry || typeof entry !== 'object' || !('answer' in (entry as Record<string, unknown>))) continue;
     const value = (entry as Record<string, unknown>).answer;
     if (typeof value === 'string' || (value && typeof value === 'object')) {
-      answers[qid] = { answer: value as string | Record<string, string> };
+      // `timeFormat` is carried through for `control_time` questions only.
+      // It is question CONFIGURATION, not answer content — a compound time
+      // answer cannot be interpreted without it (see
+      // domain/externalForms/extractMappedFields.ts#combineTimeParts, which
+      // documents the 12-hour error this prevents). No other sibling field
+      // of the answer is preserved, so this does not widen what leaves
+      // this function beyond that one interpretive hint.
+      const timeFormat = (entry as Record<string, unknown>).timeFormat;
+      answers[qid] = {
+        answer: value as string | Record<string, string>,
+        ...(typeof timeFormat === 'string' ? { timeFormat } : {}),
+      };
     }
   }
 
