@@ -1,5 +1,6 @@
 import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
+import { activeChecklistItemCount } from '../organization/checklistRetirement';
 import { displayStagesInOrder } from '../workflow/resolveStages';
 
 export type CaseProgress = {
@@ -60,19 +61,26 @@ export function computeCaseProgress(
   snapshot: CaseWorkflowSnapshot,
   currentDisplayStage: number,
   currentStageChecklist: ChecklistItemViewModel[],
+  /** The case's organization, so retired items are excluded from the
+      stages the case is not currently sitting in. The current stage needs
+      no such adjustment — `currentStageChecklist` has already had them
+      removed by `resolveChecklist`. Optional so existing callers that only
+      have a snapshot keep their previous totals. */
+  organizationId?: string,
 ): CaseProgress {
   let completedItems = 0;
   let totalItems = 0;
 
   for (const stage of displayStagesInOrder(snapshot)) {
+    const stageItemCount = activeChecklistItemCount(organizationId, stage.displayStage, stage.checklist.items);
     if (stage.displayStage < currentDisplayStage) {
-      totalItems += stage.checklist.items.length;
-      completedItems += stage.checklist.items.length;
+      totalItems += stageItemCount;
+      completedItems += stageItemCount;
     } else if (stage.displayStage === currentDisplayStage) {
       totalItems += currentStageChecklist.length;
       completedItems += currentStageChecklist.filter((item) => item.done).length;
     } else {
-      totalItems += stage.checklist.items.length;
+      totalItems += stageItemCount;
     }
   }
 

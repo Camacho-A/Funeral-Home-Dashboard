@@ -2,6 +2,7 @@ import type { Case } from '../../types/case';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
+import { retiredChecklistIndices } from '../organization/checklistRetirement';
 import { findCaseFieldForChecklistIndex } from './resolveIntake';
 
 /**
@@ -144,10 +145,21 @@ export function resolveChecklist(
         ? isFieldDone(index)
         : isManuallyDone(index);
 
-  return items.map((item, index) => {
+  // Retired items (2026-10) stay in the template at their original index —
+  // `checklistState` is keyed by position, so removing one would re-point
+  // every later stored key — but they are not rendered and do not gate the
+  // stage. The ORIGINAL index travels on each view model below, so stored
+  // state keeps resolving to exactly the item it always meant.
+  const retired = retiredChecklistIndices(case_.organizationId, displayStage, items);
+  const visible = items.map((item, index) => ({ item, index })).filter(({ index }) => !retired.has(index));
+
+  return visible.map(({ item, index }, position) => {
     const done = isPastStage || isItemDone(item, index);
-    const priorDone = index === 0 ? true : isPastStage || isItemDone(items[index - 1], index - 1);
-    const locked = !isPastStage && index > 0 && !priorDone;
+    // Locking follows the previous VISIBLE item, so retiring one never
+    // leaves the next item permanently blocked behind something hidden.
+    const previous = position === 0 ? null : visible[position - 1];
+    const priorDone = previous === null ? true : isPastStage || isItemDone(previous.item, previous.index);
+    const locked = !isPastStage && position > 0 && !priorDone;
 
     return {
       index,

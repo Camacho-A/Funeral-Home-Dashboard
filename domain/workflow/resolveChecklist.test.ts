@@ -409,3 +409,107 @@ describe('resolveChecklist — canonical Case field fallback for intake display'
     expect(items[7].fieldValue).toBe('');
   });
 });
+
+/**
+ * Retired checklist items (2026-10). Manors stopped using "Tag photo
+ * taken". The item stays in the template at its original index — because
+ * `checklistState` is keyed by position and removing it would re-point
+ * every later stored key — but it no longer renders or gates the stage.
+ */
+describe('resolveChecklist — retired checklist items', () => {
+  const READY_STAGE = standardCremationWorkflowTemplateFixture.versions[0].stages.find((s) => s.rawStage === 6)!;
+  const READY_ITEMS = READY_STAGE.checklist.items;
+  const READY_DISPLAY_STAGE = READY_STAGE.displayStage;
+
+  function readyCase(checklistState: Record<string, boolean> = {}, organizationId = 'managed-cremations'): Case {
+    return baseCase({ rawStage: 6, organizationId, checklistState });
+  }
+
+  it('targets the right item: "Tag photo taken" is index 1 of this stage', () => {
+    expect(READY_ITEMS.map((i) => i.label)).toEqual([
+      'Ashes picked up (Tue/Fri)',
+      'Tag photo taken',
+      'Tag/name/cert cross-checked',
+      'Labels made',
+      'Transferred to urn',
+      'Family contacted — ashes ready for pickup',
+    ]);
+  });
+
+  it('no longer renders it for Manors', () => {
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase());
+    expect(items.map((i) => i.label)).not.toContain('Tag photo taken');
+    expect(items).toHaveLength(READY_ITEMS.length - 1);
+  });
+
+  it('leaves every other item in the stage untouched', () => {
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase());
+    expect(items.map((i) => i.label)).toEqual([
+      'Ashes picked up (Tue/Fri)',
+      'Tag/name/cert cross-checked',
+      'Labels made',
+      'Transferred to urn',
+      'Family contacted — ashes ready for pickup',
+    ]);
+  });
+
+  it('PRESERVES the original indices, so stored checklistState keeps its meaning', () => {
+    // The decisive guarantee. "Tag/name/cert cross-checked" was index 2
+    // and must stay index 2 — a stored "5:2" still means that item, not
+    // the one after it.
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase());
+    expect(items.map((i) => i.index)).toEqual([0, 2, 3, 4, 5]);
+    expect(items.find((i) => i.index === 2)!.label).toBe('Tag/name/cert cross-checked');
+  });
+
+  it('a historical completion of a later item still reads as done', () => {
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase({ '5:3': true }));
+    expect(items.find((i) => i.index === 3)!.label).toBe('Labels made');
+    expect(items.find((i) => i.index === 3)!.done).toBe(true);
+  });
+
+  it('a historical completion OF the retired item is preserved in state, just not shown', () => {
+    const case_ = readyCase({ '5:1': true });
+    expect(case_.checklistState['5:1']).toBe(true);
+    expect(resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, case_).some((i) => i.index === 1)).toBe(false);
+  });
+
+  it('does not block progression — the stage completes without it', () => {
+    // Every remaining item checked; the retired one deliberately is not.
+    const complete = readyCase({ '5:0': true, '5:2': true, '5:3': true, '5:4': true, '5:5': true });
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, complete);
+    expect(items.every((i) => i.done)).toBe(true);
+  });
+
+  it('never leaves the next item locked behind the hidden one', () => {
+    // Item 2 follows the retired item 1; with item 0 done it must be
+    // reachable, not blocked by something invisible.
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase({ '5:0': true }));
+    expect(items.find((i) => i.index === 2)!.locked).toBe(false);
+  });
+
+  it('still locks correctly when the preceding VISIBLE item is incomplete', () => {
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase());
+    expect(items.find((i) => i.index === 2)!.locked).toBe(true);
+  });
+
+  it('applies to no other organization', () => {
+    const items = resolveChecklist(READY_ITEMS, READY_DISPLAY_STAGE, readyCase({}, 'evergreen-memorial-group'));
+    expect(items.map((i) => i.label)).toContain('Tag photo taken');
+    expect(items).toHaveLength(READY_ITEMS.length);
+  });
+
+  it('leaves unrelated stages completely unaffected', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, baseCase({ organizationId: 'managed-cremations' }));
+    expect(items).toHaveLength(RAW_STAGE_0_ITEMS.length);
+  });
+
+  it('reappears rather than hiding the wrong item if the template is restructured', () => {
+    // Shape guard: the index is the identifier, the label is verified.
+    const reordered = READY_ITEMS.map((i) => ({ ...i }));
+    reordered[1] = { ...reordered[1], label: 'Something else entirely' };
+    const items = resolveChecklist(reordered, READY_DISPLAY_STAGE, readyCase());
+    expect(items).toHaveLength(READY_ITEMS.length);
+    expect(items.map((i) => i.label)).toContain('Something else entirely');
+  });
+});

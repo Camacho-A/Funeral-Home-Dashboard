@@ -1116,12 +1116,17 @@ describe('buildCaseViewModel — progress is immune to the cross-stage checklist
     // Every stage strictly before Permit (First Call & Payment combined
     // 11 items, Jotform 1, EDRS 3 — 15 total) is fully credited by the
     // "past stage" rule; Permit itself (current stage, 2 items) is fully
-    // done; every stage at/after DC Application Sent (DC 2, Ready for
-    // Pickup 6, Completed 1 — 9 total) contributes 0 completed, its own
-    // item count toward the total.
+    // done; every stage at/after DC Application Sent contributes 0
+    // completed and its own item count toward the total: DC 2, Ready for
+    // Pickup 5, Completed 1 — 8 total.
+    //
+    // Ready for Pickup counts 5 of its 6 template items because Manors
+    // retired "Tag photo taken" (2026-10). The item is still present in
+    // the snapshot at its original index so stored checklistState keeps
+    // resolving correctly — it simply no longer counts toward completion.
     expect(vm.progressCompletedItems).toBe(15 + 2); // 17 — DC's 2 items contribute nothing
-    expect(vm.progressTotalItems).toBe(15 + 2 + 9); // 26
-    expect(vm.progressPercent).toBe(65); // round(17/26 * 100)
+    expect(vm.progressTotalItems).toBe(15 + 2 + 8); // 25
+    expect(vm.progressPercent).toBe(68); // round(17/25 * 100)
 
     // The direct mechanism: DC Application Sent's own resolved checklist
     // (evaluated independently, the same way Case Detail would show it if
