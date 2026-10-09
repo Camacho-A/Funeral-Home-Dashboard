@@ -32,3 +32,83 @@
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------
+   Calendar event colour coding, legend and pickup details (2026-10).
+
+   Every colour below is an existing SOLIS token from the case-workflow
+   palette (navy / green / amber / neutral) — no new palette, and no new
+   literal values. The semantic mapping is:
+
+     pickup-expected  navy    in progress — scheduled, not yet here
+     pickup-received  green   completed
+     pickup-overdue   amber   needs attention
+     appointment      neutral everything else, kept quiet so it never
+                              competes with a workflow status
+
+   Colour is never the only signal: each chip carries a title attribute
+   naming its status, the agenda row shows it as text, and the legend
+   labels each swatch.
+   --------------------------------------------------------------------- */
+
+
+
+/* A terminal (cancelled / no-show) appointment keeps its existing
+   struck-through treatment regardless of category. */
+
+/* Agenda rows get a quiet status rail rather than a full tint, so the
+   list stays readable at length. */
+.agendaTitleButton:hover { text-decoration: underline; }
+.agendaTitleButton:focus-visible { outline: none; box-shadow: var(--sx-focus); border-radius: 4px; }
+
+/* ---------------------------------- legend --------------------------- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sx-muted);
+  white-space: nowrap;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.legendSwatch[data-event='pickup-expected'] { background: var(--sx-navy-tint); box-shadow: inset 0 0 0 1px var(--sx-navy); }
+.legendSwatch[data-event='pickup-received'] { background: var(--sx-green-bg); box-shadow: inset 0 0 0 1px var(--sx-green); }
+.legendSwatch[data-event='pickup-overdue'] { background: var(--sx-amber-bg); box-shadow: inset 0 0 0 1px oklch(0.68 0.14 65); }
+.legendSwatch[data-event='appointment'] { background: var(--sx-subtle); box-shadow: inset 0 0 0 1px var(--sx-border-input); }
+
+/* ------------------------------- details ----------------------------- */
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.detailValue {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--sx-text);
+}
+
+@media (max-width: 560px) {
+  .legend { gap: 6px 12px; }
+  .detailGrid { grid-template-columns: 1fr; gap: 12px; }
+}

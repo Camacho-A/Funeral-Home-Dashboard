@@ -132,15 +132,95 @@ describe('Calendar — Month view content', () => {
 
   it('preserves the Cremains Pickups filter', () => {
     renderCalendar();
-    const typeSelect = screen.getAllByRole('combobox').find((s) =>
-      within(s).queryByText(/Cremains Pickups/),
-    );
+    const typeSelect = screen.getAllByRole('combobox').find((s) => within(s).queryByText(/Cremains Pickups/));
     expect(typeSelect).toBeDefined();
     expect(within(typeSelect!).getByText(/Cremains Pickups/)).toBeInTheDocument();
   });
+});
 
-  it('never shows an invented time for an all-day cremains pickup', () => {
+describe('Calendar — cremains pickup chips', () => {
+  /** The pickup chip, found by its compact case label. */
+  const pickupChip = () => screen.getByRole('button', { name: /040 · Boone/ });
+
+  it('labels a pickup with its case number and surname, compactly in month cells', () => {
     renderCalendar();
-    expect(screen.getAllByText('All day').length).toBeGreaterThan(0);
+    expect(pickupChip()).toBeInTheDocument();
+  });
+
+  it('shows neither "All day" nor a clock time on a pickup chip', () => {
+    renderCalendar();
+    const chip = pickupChip();
+    expect(chip.textContent).not.toMatch(/all day/i);
+    expect(chip.textContent).not.toMatch(/\d{1,2}:?\d{0,2}\s?[ap]m?\b/i);
+  });
+
+  it('colours the pickup as expected/in-progress, and names the status in text too', () => {
+    renderCalendar();
+    const chip = pickupChip();
+    expect(chip).toHaveAttribute('data-event', 'pickup-expected');
+    // Colour is never the only signal.
+    expect(chip.getAttribute('title')).toContain('Expected Pickup');
+  });
+
+  it('keeps a regular appointment visually distinct, and still shows its time', () => {
+    renderCalendar();
+    const viewing = screen.getAllByRole('button').find((b) => b.textContent?.includes('Viewing A'))!;
+    expect(viewing).toHaveAttribute('data-event', 'appointment');
+    expect(viewing.textContent).toMatch(/\d/);
+  });
+
+  it('never invents a case number when the case is not available to this caller', () => {
+    renderCalendar();
+    // Every rendered chip label is either a real appointment title or a
+    // label built from a case this organization can actually see.
+    for (const chip of screen.getAllByRole('button')) {
+      const text = chip.textContent ?? '';
+      if (/·/.test(text) && /\d{3}/.test(text)) expect(text).toContain('040');
+    }
+  });
+});
+
+describe('Calendar — colour legend', () => {
+  it('names every status in text beside its swatch', () => {
+    renderCalendar();
+    const legend = screen.getByRole('list', { name: 'Calendar colour key' });
+    for (const label of ['Expected Pickup', 'Received', 'Overdue', 'Appointments']) {
+      expect(within(legend).getByText(label), label).toBeInTheDocument();
+    }
+  });
+
+  it('is informational only — it does not replace the filters', () => {
+    renderCalendar();
+    expect(screen.getByRole('list', { name: 'Calendar colour key' })).toBeInTheDocument();
+    expect(screen.getAllByRole('combobox').some((s) => within(s).queryByText(/Cremains Pickups/))).toBe(true);
+  });
+});
+
+describe('Calendar — pickup details', () => {
+  it('opens a details panel showing the full case number and status', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    const dialog = screen.getByRole('dialog');
+    // The compact chip label never loses the real case number.
+    expect(within(dialog).getByText('B2026-040')).toBeInTheDocument();
+    expect(within(dialog).getByText('Walter Boone')).toBeInTheDocument();
+    expect(within(dialog).getByText('Friday, October 16, 2026')).toBeInTheDocument();
+    // The panel names the precise status (Estimated vs Confirmed), which
+    // the legend deliberately collapses into one "Expected Pickup" colour.
+    expect(within(dialog).getByText('Estimated')).toBeInTheDocument();
+  });
+
+  it('says "Not recorded" and "Not received" rather than inventing dates', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Not recorded')).toBeInTheDocument();
+    expect(within(dialog).getByText('Not received')).toBeInTheDocument();
+  });
+
+  it('links to the case by canonical id', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Open Case' })).toHaveAttribute('href', '/cases/case-1');
   });
 });

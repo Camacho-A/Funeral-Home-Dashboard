@@ -10,6 +10,9 @@ import { resolveCremainsPickupSettingsById } from '@/domain/organization/cremain
 import { writeChecklistValue } from '@/domain/workflow/checklistItemKey';
 import {
   PICKUP_STATUS_LABEL,
+  formatPickupDate,
+  formatPickupDateShort,
+  paperworkDateFromNotes,
   expectedDateOf,
   isExpectedCremainsPickup,
   isManuallyDecided,
@@ -52,45 +55,6 @@ function statusClass(status: CremainsPickupStatus): string {
   if (status === 'overdue') return 'sx-status-bad';
   if (status === 'confirmed') return 'sx-status-info';
   return 'sx-status-plain';
-}
-
-/** Formats `YYYY-MM-DD` as a calendar date, with no timezone conversion —
-    the string is already the organization's own local date. */
-/** Same calendar date without the weekday — used where the weekday is
-    already named in the surrounding sentence. */
-export function formatPickupDateShort(date: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!match) return date;
-  const [, year, month, day] = match;
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-export function formatPickupDate(date: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!match) return date;
-  const [, year, month, day] = match;
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-/** The paperwork date the automation recorded when it scheduled this.
-    Returns null for a staff-entered pickup, which asserts no paperwork
-    date at all — never a guessed one. */
-export function paperworkDateFromNotes(notes: string | null): string | null {
-  if (!notes) return null;
-  if (!/COMPLETED CREMATORY PAPERWORK/i.test(notes)) return null;
-  const match = /(\d{4}-\d{2}-\d{2})/.exec(notes);
-  return match ? match[1] : null;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -610,3 +574,7 @@ export function CremainsPickupSection({
     </section>
   );
 }
+
+// Re-exported so this component's own tests and callers keep one import
+// site; the single implementation lives in the client-safe domain module.
+export { formatPickupDate, paperworkDateFromNotes };

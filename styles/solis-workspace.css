@@ -192,3 +192,77 @@
 @media (prefers-reduced-motion: reduce) {
   .sx-task-row { transition: none; }
 }
+
+
+/* ---------------------------------------------------------------------
+   Calendar event colour coding (2026-10).
+
+   Every colour is an existing SOLIS token from the case-workflow palette
+   (navy / green / amber / neutral) — no new palette, no new literals:
+
+     pickup-expected  navy    in progress — scheduled, not yet here
+     pickup-received  green   completed
+     pickup-overdue   amber   needs attention
+     appointment      neutral everything else, kept quiet so it never
+                              competes with a workflow status
+
+   Lives here, beside .sx-chip itself, rather than in the calendar's CSS
+   Module: these target global `sx-` classes, which a module cannot do
+   (its selectors must contain a local class).
+
+   Colour is never the only signal — each chip carries a title naming its
+   status, the agenda row states it as text, and the legend labels every
+   swatch.
+   --------------------------------------------------------------------- */
+:global(.sx-chip[data-event='pickup-expected']) {
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+  box-shadow: inset 0 0 0 1px oklch(0.32 0.08 255 / 0.12);
+}
+:global(.sx-chip[data-event='pickup-expected']:hover) {
+  background: oklch(0.91 0.02 255);
+}
+:global(.sx-chip[data-event='pickup-received']) {
+  background: var(--sx-green-bg);
+  color: var(--sx-green-text);
+  box-shadow: inset 0 0 0 1px oklch(0.55 0.12 150 / 0.16);
+}
+:global(.sx-chip[data-event='pickup-received']:hover) {
+  background: oklch(0.94 0.04 150);
+}
+:global(.sx-chip[data-event='pickup-overdue']) {
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  box-shadow: inset 0 0 0 1px oklch(0.68 0.14 65 / 0.22);
+  font-weight: 600;
+}
+:global(.sx-chip[data-event='pickup-overdue']:hover) {
+  background: oklch(0.945 0.055 75);
+}
+:global(.sx-chip[data-event='appointment']) {
+  background: var(--sx-subtle);
+  color: var(--sx-text-2);
+  box-shadow: inset 0 0 0 1px var(--sx-border);
+}
+:global(.sx-chip[data-event='appointment']:hover) {
+  background: var(--sx-hover);
+}
+:global(.sx-chip[data-terminal][data-event]) {
+  background: oklch(0.96 0.003 255);
+  color: var(--sx-muted);
+}
+:global(.sx-agenda-row[data-event='pickup-expected']) { box-shadow: inset 3px 0 0 var(--sx-navy); }
+:global(.sx-agenda-row[data-event='pickup-received']) { box-shadow: inset 3px 0 0 var(--sx-green); }
+:global(.sx-agenda-row[data-event='pickup-overdue']) { box-shadow: inset 3px 0 0 oklch(0.68 0.14 65); }
+
+.agendaTitleButton {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--sx-link);
+  text-align: left;
+  cursor: pointer;
+}

@@ -2,7 +2,18 @@
 
 import { useMemo, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
-import { isExpectedCremainsPickup } from '@/domain/scheduling/cremainsPickupPresentation';
+import {
+  cremainsChipLabel,
+  formatPickupDate,
+  isExpectedCremainsPickup,
+  paperworkDateFromNotes,
+  resolvePickupStatus,
+  PICKUP_STATUS_LABEL,
+} from '@/domain/scheduling/cremainsPickupPresentation';
+import { organizationLocalDate } from '@/domain/scheduling/cremainsPickupSchedule';
+import { expectedDateOf } from '@/domain/scheduling/cremainsPickupPresentation';
+import { Modal } from '@/components/ui/Modal';
+import Link from 'next/link';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useAppointments } from '@/hooks/useAppointments';
 import { useResources } from '@/hooks/useResources';
@@ -71,6 +82,49 @@ function statusModifier(variant: ReturnType<typeof appointmentStatusVariant>): s
   if (variant === 'brand') return 'sx-status-info';
   if (variant === 'danger') return 'sx-status-bad';
   return '';
+}
+
+/**
+ * The semantic category a chip is coloured by (2026-10).
+ *
+ * Mapped onto the colour families the case workflow already uses, so the
+ * calendar reads the same way the rest of SOLIS does — no new palette:
+ *
+ *   pickup-expected  navy/blue   in progress: scheduled, not yet here
+ *   pickup-received  green       completed
+ *   pickup-overdue   amber       needs attention
+ *   appointment      neutral     everything else, deliberately quiet so it
+ *                                never competes with a workflow status
+ *
+ * Derived purely from data already on the appointment plus the
+ * organization's own today. Rendering never writes anything: a date
+ * passing can colour a chip amber, and that is all it can ever do.
+ */
+type EventCategory = 'pickup-expected' | 'pickup-received' | 'pickup-overdue' | 'appointment';
+
+const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
+  'pickup-expected': 'Expected Pickup',
+  'pickup-received': 'Received',
+  'pickup-overdue': 'Overdue',
+  appointment: 'Appointments',
+};
+
+/** What a chip reads. A pickup says which case; everything else keeps its
+    own title, and only a real timed event shows a time. */
+function chipLabel(
+  appointment: Appointment,
+  case_: { caseNumber: string; decedentName: string } | undefined,
+  compact: boolean,
+): string {
+  return isExpectedCremainsPickup(appointment) ? cremainsChipLabel(case_, { compact }) : appointment.title;
+}
+
+function eventCategory(appointment: Appointment, organizationToday: string): EventCategory {
+  if (!isExpectedCremainsPickup(appointment)) return 'appointment';
+  const status = resolvePickupStatus(appointment, organizationToday);
+  if (status === 'received') return 'pickup-received';
+  if (status === 'overdue') return 'pickup-overdue';
+  return 'pickup-expected';
 }
 
 /**
@@ -146,11 +200,30 @@ export default function CalendarPage() {
     for (const link of syncLinksQuery.data ?? []) map.set(link.appointmentId, link.syncStatus);
     return map;
   }, [syncLinksQuery.data]);
-  const caseNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of casesQuery.data ?? []) map.set(c.id, c.decedentName);
+  /** Only cases this caller is authorized to see — `useCases()` is already
+      organization-scoped, so a stale or cross-tenant caseId simply fails
+      the lookup and the chip falls back to a neutral label. */
+  const caseById = useMemo(() => {
+    const map = new Map<string, { caseNumber: string; decedentName: string }>();
+    for (const c of casesQuery.data ?? []) map.set(c.id, { caseNumber: c.caseNumber, decedentName: c.decedentName });
     return map;
   }, [casesQuery.data]);
+  const caseNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [id, c] of caseById) map.set(id, c.decedentName);
+    return map;
+  }, [caseById]);
+
+  /** The organization's own calendar day drives the derived Overdue
+      colour — never the viewer's device. Taken from an appointment's own
+      stored timezone, so no extra request is needed. */
+  const organizationToday = useMemo(() => {
+    const tz = (appointmentsQuery.data ?? []).find((a) => a.timezone)?.timezone;
+    return organizationLocalDate(new Date().toISOString(), tz) ?? '';
+  }, [appointmentsQuery.data]);
+
+  /** The pickup whose details are open, if any. */
+  const [detailAppointment, setDetailAppointment] = useState<Appointment | null>(null);
 
   const permissions = myPermissionsQuery.isSuccess ? myPermissionsQuery.data.permissions : null;
   const canCreate = permissions === null || permissions.includes('schedule.create');
@@ -179,8 +252,10 @@ export default function CalendarPage() {
     const isTerminal = isTerminalAppointmentStatus(appointment.status);
     const syncStatus = syncStatusByAppointmentId.get(appointment.id);
     const caseName = appointment.caseId ? caseNameById.get(appointment.caseId) : undefined;
+    const category = eventCategory(appointment, organizationToday);
+    const isPickup = isExpectedCremainsPickup(appointment);
     return (
-      <div key={appointment.id} className="sx-agenda-row" data-terminal={isTerminal || undefined}>
+      <div key={appointment.id} className="sx-agenda-row" data-event={category} data-terminal={isTerminal || undefined}>
         <span className="sx-agenda-time">
           {/* An expected cremains pickup is an ALL-DAY calendar date, not a
               wall-clock moment — rendering its anchor instants would show an
@@ -190,14 +265,26 @@ export default function CalendarPage() {
             : `${formatAppointmentTime(appointment.startAt, appointment.timezone)}–${formatAppointmentTime(appointment.endAt, appointment.timezone)}`}
         </span>
         <div>
-          <div className="sx-agenda-title">{appointment.title}</div>
+          {isPickup ? (
+            <button
+              type="button"
+              className={styles.agendaTitleButton}
+              onClick={() => setDetailAppointment(appointment)}
+            >
+              {chipLabel(appointment, appointment.caseId ? caseById.get(appointment.caseId) : undefined, false)}
+            </button>
+          ) : (
+            <div className="sx-agenda-title">{appointment.title}</div>
+          )}
           <div className="sx-agenda-meta">
             {typeLabel}
             {caseName ? ` · ${toDisplayName(caseName)}` : ''}
           </div>
         </div>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span className={`sx-status ${statusModifier(appointmentStatusVariant(appointment.status))}`}>{APPOINTMENT_STATUS_LABEL[appointment.status]}</span>
+          <span className={`sx-status ${statusModifier(appointmentStatusVariant(appointment.status))}`}>
+            {isPickup ? EVENT_CATEGORY_LABEL[category] : APPOINTMENT_STATUS_LABEL[appointment.status]}
+          </span>
           {syncStatus && (
             <span className="sx-tag" style={syncTagStyle(syncStatus)}>
               {SYNC_STATUS_LABEL[syncStatus]}
@@ -287,20 +374,28 @@ export default function CalendarPage() {
                 ) : (
                   dayAppointments.map((a) => {
                     const isTerminal = isTerminalAppointmentStatus(a.status);
+                    const category = eventCategory(a, organizationToday);
+                    const isPickup = isExpectedCremainsPickup(a);
                     return (
                       <button
                         key={a.id}
                         type="button"
                         className="sx-chip"
                         data-status={a.status}
+                        data-event={category}
                         data-terminal={isTerminal || undefined}
+                        title={`${a.title} — ${EVENT_CATEGORY_LABEL[category]}`}
                         onClick={() => {
+                          if (isPickup) {
+                            setDetailAppointment(a);
+                            return;
+                          }
                           setAnchor(day);
                           setView('day');
                         }}
                       >
-                        <span className="sx-chip-time">{formatChipTime(a)}</span>
-                        {a.title}
+                        {!isExpectedCremainsPickup(a) && <span className="sx-chip-time">{formatChipTime(a)}</span>}
+                        {chipLabel(a, a.caseId ? caseById.get(a.caseId) : undefined, false)}
                       </button>
                     );
                   })
@@ -326,7 +421,15 @@ export default function CalendarPage() {
         </div>
         <div className="sx-month-grid">
           {days.map((day) => {
-            const dayAppointments = appointments.filter((a) => isSameDay(new Date(a.startAt), day));
+            // Overdue pickups surface first so a busy cell never hides the
+            // one that needs attention; everything else keeps start order,
+            // and nothing is filtered out.
+            const dayAppointments = appointments
+              .filter((a) => isSameDay(new Date(a.startAt), day))
+              .sort((a, b) => {
+                const rank = (x: Appointment) => (eventCategory(x, organizationToday) === 'pickup-overdue' ? 0 : 1);
+                return rank(a) - rank(b) || a.startAt.localeCompare(b.startAt);
+              });
             const isOutsideMonth = day.getMonth() !== currentMonth;
             return (
               <div key={day.toISOString()} className="sx-month-cell" data-outside={isOutsideMonth || undefined} data-today={isSameDay(day, today) || undefined}>
@@ -335,20 +438,28 @@ export default function CalendarPage() {
                 </button>
                 {dayAppointments.slice(0, 2).map((a) => {
                   const isTerminal = isTerminalAppointmentStatus(a.status);
+                  const category = eventCategory(a, organizationToday);
+                  const isPickup = isExpectedCremainsPickup(a);
                   return (
                     <button
                       key={a.id}
                       type="button"
                       className="sx-chip"
                       data-status={a.status}
+                      data-event={category}
                       data-terminal={isTerminal || undefined}
+                      title={`${a.title} — ${EVENT_CATEGORY_LABEL[category]}`}
                       onClick={() => {
+                        if (isPickup) {
+                          setDetailAppointment(a);
+                          return;
+                        }
                         setAnchor(day);
                         setView('day');
                       }}
                     >
-                      <span className="sx-chip-time">{formatChipTime(a)}</span>
-                      {a.title}
+                      {!isPickup && <span className="sx-chip-time">{formatChipTime(a)}</span>}
+                      {chipLabel(a, a.caseId ? caseById.get(a.caseId) : undefined, true)}
                     </button>
                   );
                 })}
@@ -472,10 +583,85 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {/* Informational only — it never filters anything, and sits beside
+          the existing Event type / Resource filters rather than replacing
+          them. Each entry names its status in TEXT as well as colour, so
+          colour is never the only way to read the calendar. */}
+      <ul className={styles.legend} aria-label="Calendar colour key">
+        {(Object.keys(EVENT_CATEGORY_LABEL) as EventCategory[]).map((category) => (
+          <li key={category} className={styles.legendItem}>
+            <span className={styles.legendSwatch} data-event={category} aria-hidden="true" />
+            {EVENT_CATEGORY_LABEL[category]}
+          </li>
+        ))}
+      </ul>
+
       {effectiveView === 'agenda' && renderAgenda(appointments, 'No appointments in this window.')}
       {effectiveView === 'day' && renderDay()}
       {effectiveView === 'week' && renderWeek()}
       {effectiveView === 'month' && renderMonth()}
+
+      {detailAppointment && (() => {
+        const case_ = detailAppointment.caseId ? caseById.get(detailAppointment.caseId) : undefined;
+        const expected = expectedDateOf(detailAppointment);
+        const status = resolvePickupStatus(detailAppointment, organizationToday);
+        const paperwork = paperworkDateFromNotes(detailAppointment.notes);
+        const received = status === 'received';
+        return (
+          <Modal open onClose={() => setDetailAppointment(null)} title="Expected Cremains Pickup" size="lg">
+            <div className="sx-modal-header">
+              <h2 className="sx-modal-title">Expected Cremains Pickup</h2>
+              <button type="button" className="sx-icon-btn" aria-label="Close" onClick={() => setDetailAppointment(null)}>
+                ×
+              </button>
+            </div>
+            <div className="sx-modal-body">
+              <dl className={styles.detailGrid}>
+                <div>
+                  <dt className="sx-label">Case</dt>
+                  <dd className={styles.detailValue}>{case_?.caseNumber ?? 'Not available'}</dd>
+                </div>
+                <div>
+                  <dt className="sx-label">Deceased</dt>
+                  <dd className={styles.detailValue}>{case_ ? toDisplayName(case_.decedentName) : 'Not available'}</dd>
+                </div>
+                <div>
+                  <dt className="sx-label">Expected pickup</dt>
+                  <dd className={styles.detailValue}>{expected ? formatPickupDate(expected) : 'Not scheduled'}</dd>
+                </div>
+                <div>
+                  <dt className="sx-label">Status</dt>
+                  <dd className={styles.detailValue}>{PICKUP_STATUS_LABEL[status]}</dd>
+                </div>
+                <div>
+                  <dt className="sx-label">Paperwork sent</dt>
+                  {/* Never guessed — a staff-entered pickup records no
+                      paperwork date at all. */}
+                  <dd className={styles.detailValue}>{paperwork ? formatPickupDate(paperwork) : 'Not recorded'}</dd>
+                </div>
+                <div>
+                  <dt className="sx-label">Actual receipt</dt>
+                  <dd className={styles.detailValue}>
+                    {received && expected ? formatPickupDate(expected) : 'Not received'}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <div className="sx-modal-footer">
+              <button type="button" className="sx-btn sx-btn-secondary" onClick={() => setDetailAppointment(null)}>
+                Close
+              </button>
+              {/* Navigates by canonical case id, and only when the case
+                  resolved through this organization's own case list. */}
+              {detailAppointment.caseId && case_ && (
+                <Link className="sx-btn sx-btn-primary" href={`/cases/${detailAppointment.caseId}`}>
+                  Open Case
+                </Link>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
 
       <AppointmentDialog open={scheduleOpen} onClose={() => setScheduleOpen(false)} organizationId={organizationId} defaultStartAt={anchor.toISOString()} />
     </div>
