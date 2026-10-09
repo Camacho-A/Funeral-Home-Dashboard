@@ -81,6 +81,25 @@ export type Organization = {
       rendered. An administrator can enable specific modules at any time;
       nothing here is ever destructive to the module's own data/code. */
   enabledModules?: string[] | null;
+  /**
+   * Expected Cremains Pickup scheduling (2026-10). Per-organization
+   * cadence for automatically scheduling cremains collection from the
+   * crematory — see domain/organization/cremainsPickupCapability.ts, the
+   * sole place this field is read and normalized.
+   *
+   * Shape: `{ automaticSchedulingEnabled, minimumProcessingDays,
+   * allowedPickupWeekdays }`. Typed as `unknown` here for the same reason
+   * `workflowSnapshot.intake` is stored as one opaque JSON object — the
+   * capability module owns and validates the shape, so adding a setting
+   * later needs no change to this type or to the Wix collection.
+   *
+   * Absent/null means UNCONFIGURED, which means existing behavior is
+   * preserved exactly: no scheduling, no calendar events. Opt-in
+   * polarity, deliberately — this capability creates records, so it must
+   * never switch itself on for a tenant that has not asked for it.
+   */
+  cremainsPickupSettings?: unknown;
+
   /** Handwritten item #3 (2026-09, Family Portal removal for Manors). An
       organization-level capability — see
       domain/organization/familyPortalCapability.ts, the sole place this

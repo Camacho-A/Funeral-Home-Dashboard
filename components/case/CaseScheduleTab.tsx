@@ -12,6 +12,7 @@ import { getAppointmentTypeDefinition } from '@/domain/scheduling/appointmentTyp
 import { formatAppointmentDate, formatAppointmentTime } from '@/utils/scheduling';
 import { isTerminalAppointmentStatus, type Appointment, type AppointmentStatus } from '@/types/appointment';
 import { AppointmentDialog } from '@/components/scheduling/AppointmentDialog';
+import { CremainsPickupSummary } from './CremainsPickupSummary';
 import styles from './CaseScheduleTab.module.css';
 
 /**
@@ -131,6 +132,13 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
 
   return (
     <div className="sx-sched">
+      {/* Expected Cremains Pickup (2026-10). A read-only summary of what
+          the generic appointment row below cannot express — the derived
+          Overdue state, the paperwork date, and whether the date is still
+          automatic. Every ACTION stays on the row itself, so there is only
+          one place to confirm, re-date or receive. */}
+      <CremainsPickupSummary appointments={appointments} />
+
       <div className="sx-sched-toolbar">
         <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>Schedule</h2>
         {canCreate && (

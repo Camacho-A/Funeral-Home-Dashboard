@@ -293,7 +293,12 @@ export async function createAppointment(params: NewAppointmentInput & { idFactor
 
   const now = params.now ?? nowIso();
   const resourceIds = params.resourceIds ?? [];
-  const willBeDraft = params.saveAsDraft === true || resourceIds.length === 0;
+  // `schedulesWithoutResources` is the one way a resource-less appointment
+  // can still be created `scheduled` rather than `draft` — see
+  // NewAppointmentInput. Omitted by every pre-existing caller, so their
+  // behavior is unchanged.
+  const willBeDraft =
+    params.saveAsDraft === true || (resourceIds.length === 0 && params.schedulesWithoutResources !== true);
 
   let hardConflicts: ConflictDetail[] = [];
   if (!willBeDraft) {

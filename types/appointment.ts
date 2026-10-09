@@ -104,6 +104,12 @@ export type NewAppointmentInput = {
       (`schedule.edit` permission) before being accepted. */
   ownerStaffProfileId?: string;
   saveAsDraft?: boolean;
+  /** Expected Cremains Pickup (2026-10). An operational appointment that
+      genuinely books no resources is still a real scheduled event, not a
+      draft awaiting resource assignment. Strictly additive: absent (every
+      pre-existing caller) keeps the original "no resources means draft"
+      behavior exactly. */
+  schedulesWithoutResources?: boolean;
   recurrence?: { frequency: 'daily' | 'weekly' | 'monthly'; interval: number; byWeekday?: number[]; count?: number; until?: string };
   override?: { reason: string };
 };

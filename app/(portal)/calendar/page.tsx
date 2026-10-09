@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
+import { isExpectedCremainsPickup } from '@/domain/scheduling/cremainsPickupPresentation';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useAppointments } from '@/hooks/useAppointments';
 import { useResources } from '@/hooks/useResources';
@@ -106,6 +107,10 @@ export default function CalendarPage() {
   const [view, setView] = useState<CalendarView>('agenda');
   const [anchor, setAnchor] = useState(() => new Date());
   const [resourceFilter, setResourceFilter] = useState('');
+  /** Expected Cremains Pickup (2026-10). A presentation-only filter — it
+      narrows what this calendar renders and changes no query, no data and
+      no other event type. */
+  const [typeFilter, setTypeFilter] = useState<'all' | 'cremains'>('all');
   const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const narrow = useMediaQuery('(max-width: 860px)');
@@ -128,7 +133,12 @@ export default function CalendarPage() {
   const permissions = myPermissionsQuery.isSuccess ? myPermissionsQuery.data.permissions : null;
   const canCreate = permissions === null || permissions.includes('schedule.create');
 
-  const appointments = appointmentsQuery.data ?? [];
+  const allAppointments = appointmentsQuery.data ?? [];
+  const appointments =
+    typeFilter === 'cremains' ? allAppointments.filter(isExpectedCremainsPickup) : allAppointments;
+  /** How many expected pickups fall in the visible range — shown beside
+      the filter so a Tuesday/Friday's load is legible at a glance. */
+  const cremainsCount = allAppointments.filter(isExpectedCremainsPickup).length;
   const resources = resourcesQuery.data ?? [];
 
   function step(direction: 1 | -1) {
@@ -150,7 +160,12 @@ export default function CalendarPage() {
     return (
       <div key={appointment.id} className="sx-agenda-row" data-terminal={isTerminal || undefined}>
         <span className="sx-agenda-time">
-          {formatAppointmentTime(appointment.startAt, appointment.timezone)}–{formatAppointmentTime(appointment.endAt, appointment.timezone)}
+          {/* An expected cremains pickup is an ALL-DAY calendar date, not a
+              wall-clock moment — rendering its anchor instants would show an
+              invented pickup time. Every other event type is unchanged. */}
+          {isExpectedCremainsPickup(appointment)
+            ? 'All day'
+            : `${formatAppointmentTime(appointment.startAt, appointment.timezone)}–${formatAppointmentTime(appointment.endAt, appointment.timezone)}`}
         </span>
         <div>
           <div className="sx-agenda-title">{appointment.title}</div>
@@ -358,6 +373,18 @@ export default function CalendarPage() {
           </button>
         </div>
         <div className="sx-cal-spacer" />
+        <label className="sx-filter" style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <span className="sr-only">Event type</span>
+          <select
+            className="sx-select"
+            style={{ width: 190, height: 32 }}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value === 'cremains' ? 'cremains' : 'all')}
+          >
+            <option value="all">All event types</option>
+            <option value="cremains">Cremains Pickups{cremainsCount > 0 ? ` (${cremainsCount})` : ''}</option>
+          </select>
+        </label>
         <label className="sx-filter" style={{ flexDirection: 'row', alignItems: 'center' }}>
           <span className="sr-only">Resource</span>
           <select className="sx-select" style={{ width: 180, height: 32 }} value={resourceFilter} onChange={(e) => setResourceFilter(e.target.value)}>

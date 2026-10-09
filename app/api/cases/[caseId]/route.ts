@@ -24,6 +24,7 @@ import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
+import { syncExpectedPickupForCase } from '@/services/cremainsPickupService';
 import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
 
 /**
@@ -337,6 +338,40 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         }
       } catch (error) {
         console.error('Failed to reconcile workflow after checklist update:', error instanceof Error ? error.message : error);
+      }
+
+      // Expected Cremains Pickup (2026-10). The crematory-paperwork TASK
+      // completing is what schedules a pickup — never entering the stage —
+      // so this hangs off the checklist write path, the canonical place a
+      // task is actually completed, and runs AFTER the patch has persisted
+      // so it evaluates the new checklist state.
+      //
+      // "Now" is the completion timestamp: this executes in the same
+      // request that just persisted the checkbox, so it is the actual
+      // moment the task was completed, not a case/stage/death date.
+      //
+      // Idempotent by construction (deterministic case-scoped appointment
+      // id), so a repeated save, retry or refresh cannot duplicate.
+      // Best-effort, exactly like reconciliation above: a scheduling
+      // failure never fails the checklist update that already succeeded.
+      try {
+        const organization = await getOrganization(organizationId, 'wix');
+        await syncExpectedPickupForCase(
+          {
+            case_: result,
+            organization: organization
+              ? { id: organization.id, timezone: organization.timezone, cremainsPickupSettings: organization.cremainsPickupSettings }
+              : null,
+            paperworkCompletedAt: new Date().toISOString(),
+          },
+          { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+          'wix',
+        );
+      } catch (error) {
+        console.error(
+          'Failed to sync the expected cremains pickup after checklist update:',
+          error instanceof Error ? error.message : error,
+        );
       }
     }
 

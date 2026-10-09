@@ -30,6 +30,14 @@ export const APPOINTMENT_TYPES = {
   WITNESS_CREMATION: { key: 'witness.cremation', category: 'operational' as AppointmentTypeCategory, displayName: 'Witness Cremation' },
   CREMATORY_APPOINTMENT: { key: 'crematory.appointment', category: 'operational' as AppointmentTypeCategory, displayName: 'Crematory Appointment' },
   CEMETERY_APPOINTMENT: { key: 'cemetery.appointment', category: 'operational' as AppointmentTypeCategory, displayName: 'Cemetery Appointment' },
+  /** Expected Cremains Pickup (2026-10). The date an organization expects
+      to collect a case's cremains from its crematory, derived from when
+      the crematory paperwork was completed — see
+      domain/scheduling/cremainsPickupSchedule.ts. Operational, like the
+      other crematory-facing entries: it is internal logistics, never a
+      family-facing appointment. Added as a registry entry exactly as this
+      file's own header describes, so no data-model change was needed. */
+  EXPECTED_CREMAINS_PICKUP: { key: 'cremains.pickup.expected', category: 'operational' as AppointmentTypeCategory, displayName: 'Expected Cremains Pickup' },
 
   STAFF_MEETING: { key: 'staff.meeting', category: 'internal' as AppointmentTypeCategory, displayName: 'Staff Meeting' },
   INTERNAL_EVENT: { key: 'internal.event', category: 'internal' as AppointmentTypeCategory, displayName: 'Internal Event' },
