@@ -92,17 +92,25 @@ export function isPaperworkComplete(case_: Case, settings: CremainsPickupSetting
   const snapshot = case_.workflowSnapshot;
   if (!snapshot) return false;
 
-  const { displayStage, expectedLabel } = settings.paperworkStage;
-  if (displayStage < 0) return false;
+  const { displayStage, expectedLabel, items } = settings.paperworkStage;
+  if (displayStage < 0 || items.length === 0) return false;
 
   const stages = snapshot.stages.filter((stage) => stage.displayStage === displayStage);
   if (stages.length === 0) return false;
   if (!stages.some((stage) => stage.label === expectedLabel)) return false;
 
-  const items = stages[0].checklist.items;
-  if (items.length === 0) return false;
+  const templateItems = stages[0].checklist.items;
 
-  return items.every((_item, index) => readChecklistValue(case_.checklistState, displayStage, index) === true);
+  // Only the CONFIGURED paperwork items count. Checking "every item in the
+  // stage" would let any unrelated item added to this stage later delay a
+  // pickup — see CremainsPickupSettings.paperworkStage.items.
+  return items.every((configured) => {
+    const templateItem = templateItems[configured.index];
+    // Per-item shape guard: a reshuffled template disables scheduling
+    // rather than reading whatever now sits at that index.
+    if (!templateItem || templateItem.label !== configured.expectedLabel) return false;
+    return readChecklistValue(case_.checklistState, displayStage, configured.index) === true;
+  });
 }
 
 /** Whether the organization's own "cremains are here" checklist item is

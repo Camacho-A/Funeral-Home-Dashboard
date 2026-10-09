@@ -64,3 +64,33 @@ describe('orgLocalYear (Manors launch-prep — P0 automatic case numbering)', ()
     expect(orgLocalYear('2027-01-01T05:05:00.000Z', 'America/New_York')).toBe(2027);
   });
 });
+
+/**
+ * Manors timezone correction (2026-10). The organization was configured
+ * `America/Chicago` while its only location is Oakland Park, Florida —
+ * Eastern. This pins the concrete consequence at New Year, which is the
+ * sharpest edge the misconfiguration had.
+ */
+describe('orgLocalYear — Florida must be Eastern, not Central', () => {
+  it('a case created at 00:30 Eastern on Jan 1 belongs to the NEW year', () => {
+    // 2027-01-01T05:30Z is 00:30 EST on Jan 1 — but 23:30 CST on Dec 31.
+    const justAfterMidnightEastern = '2027-01-01T05:30:00.000Z';
+    expect(orgLocalYear(justAfterMidnightEastern, 'America/New_York')).toBe(2027);
+    // The bug the correction removes: Central would have numbered it 2026.
+    expect(orgLocalYear(justAfterMidnightEastern, 'America/Chicago')).toBe(2026);
+  });
+
+  it('the two zones agree everywhere outside that one-hour window', () => {
+    for (const hour of [6, 12, 18, 23]) {
+      const instant = `2027-01-01T${String(hour).padStart(2, '0')}:30:00.000Z`;
+      expect(orgLocalYear(instant, 'America/New_York'), instant).toBe(orgLocalYear(instant, 'America/Chicago'));
+    }
+  });
+
+  it('already-issued case numbers are unaffected — the year is derived only at creation', () => {
+    // Nothing re-derives a year for an existing case; this is a pure
+    // function of the instant it is called with.
+    expect(orgLocalYear('2026-09-30T16:31:23.798Z', 'America/New_York')).toBe(2026);
+    expect(orgLocalYear('2026-09-30T16:31:23.798Z', 'America/Chicago')).toBe(2026);
+  });
+});

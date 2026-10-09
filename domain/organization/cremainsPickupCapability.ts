@@ -55,11 +55,32 @@ export type CremainsPickupSettings = {
    * is restructured so the label no longer matches, scheduling stops
    * rather than firing off the wrong stage.
    *
-   * Scheduling triggers when EVERY checklist item in this stage is
-   * complete — i.e. the paperwork was genuinely sent — never merely
-   * because the case entered the stage.
+   * Scheduling triggers when every item in `items` below is complete —
+   * i.e. the paperwork was genuinely sent — never merely because the case
+   * entered the stage.
    */
-  paperworkStage: { displayStage: number; expectedLabel: string };
+  paperworkStage: {
+    displayStage: number;
+    expectedLabel: string;
+    /**
+     * The SPECIFIC checklist items that constitute "the paperwork was
+     * sent", by their stable in-stage index, each with the label it is
+     * expected to carry as a per-item shape guard.
+     *
+     * Narrowed from "every item in the stage" (2026-10) so that an item
+     * added to this stage later for an unrelated reason can never delay a
+     * pickup. Index is the stable identifier; the label is only ever a
+     * guard, never a lookup key — a mismatch disables scheduling rather
+     * than firing off the wrong task.
+     *
+     * For Manors this is both of the stage's current items: a permit and
+     * an authorization of release are each genuinely part of the packet
+     * sent to the crematory, so the paperwork is "sent" when both are.
+     * There is no single unambiguous "paperwork sent" item in this
+     * template, and none is invented here.
+     */
+    items: ReadonlyArray<{ index: number; expectedLabel: string }>;
+  };
   /**
    * The existing checklist item that already means "cremains are
    * physically here". Receipt integrates with this item rather than
@@ -86,7 +107,14 @@ export const ORGANIZATION_DEFAULTS: Record<string, CremainsPickupSettings> = {
     // Read from Manors' own live workflow snapshot, not guessed: display
     // stage 3 holds "Permit sent to crematory" and "Authorization of
     // release sent to crematory".
-    paperworkStage: { displayStage: 3, expectedLabel: 'Permit & Authorization Sent to Crematory' },
+    paperworkStage: {
+      displayStage: 3,
+      expectedLabel: 'Permit & Authorization Sent to Crematory',
+      items: [
+        { index: 0, expectedLabel: 'Permit sent to crematory' },
+        { index: 1, expectedLabel: 'Authorization of release sent to crematory' },
+      ],
+    },
     // Display stage 5, item 0 — the item Manors already uses to record
     // that the ashes are back.
     receiptChecklistItem: { displayStage: 5, index: 0, expectedLabel: 'Ashes picked up (Tue/Fri)' },
@@ -101,7 +129,7 @@ export const DISABLED_SETTINGS: CremainsPickupSettings = {
   allowedPickupWeekdays: DEFAULT_PICKUP_WEEKDAYS,
   // Never matched by the shape guard, so a disabled organization can
   // never accidentally resolve a trigger stage.
-  paperworkStage: { displayStage: -1, expectedLabel: '' },
+  paperworkStage: { displayStage: -1, expectedLabel: '', items: [] },
   receiptChecklistItem: { displayStage: -1, index: -1, expectedLabel: '' },
 };
 

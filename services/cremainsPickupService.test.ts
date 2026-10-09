@@ -439,3 +439,96 @@ describe('multi-tenant safety', () => {
     expect(otherOrgView.every((a) => a.organizationId === SECOND_MOCK_ORGANIZATION_ID)).toBe(true);
   });
 });
+
+/**
+ * Trigger precision (2026-10). Narrowed from "every item in the stage" to
+ * the specific configured paperwork items, so an unrelated item added to
+ * that stage later can never delay a pickup.
+ */
+describe('trigger precision — only the configured paperwork items count', () => {
+  it('fires on exactly the two configured crematory-paperwork items', () => {
+    expect(MANORS_SETTINGS.paperworkStage.items.map((i) => i.expectedLabel)).toEqual([
+      'Permit sent to crematory',
+      'Authorization of release sent to crematory',
+    ]);
+    expect(isPaperworkComplete(buildCase({ checklistState: paperworkComplete() }), MANORS_SETTINGS)).toBe(true);
+  });
+
+  it('an UNRELATED item added to the same stage does not delay the pickup', () => {
+    // The real risk the narrowing removes: a future third item in this
+    // stage would previously have blocked every pickup until it was ticked.
+    const case_ = buildCase({ checklistState: paperworkComplete() });
+    const snapshot = structuredClone(case_.workflowSnapshot!);
+    const stage = snapshot.stages.find((s) => s.displayStage === PAPERWORK_STAGE)!;
+    stage.checklist.items.push({ label: 'Something unrelated', hasField: false, isPasswordField: false } as never);
+    expect(isPaperworkComplete({ ...case_, workflowSnapshot: snapshot }, MANORS_SETTINGS)).toBe(true);
+  });
+
+  it('partial completion still does NOT fire — both paperwork items are required', () => {
+    for (const partial of [
+      { [checklistItemKey(PAPERWORK_STAGE, 0)]: true },
+      { [checklistItemKey(PAPERWORK_STAGE, 1)]: true },
+      {},
+    ]) {
+      expect(isPaperworkComplete(buildCase({ checklistState: partial }), MANORS_SETTINGS)).toBe(false);
+    }
+  });
+
+  it('this is exactly why B2026-035 did not schedule: only item 1 is checked', () => {
+    // The real production state, reproduced: "Authorization of release" is
+    // true, "Permit sent to crematory" has never been checked.
+    const b2026035 = buildCase({ checklistState: { '2:2': true, '4:0': true, '4:1': true, '0:10': true, '1:0': true, '0:8': true, '3:1': true } });
+    expect(isPaperworkComplete(b2026035, MANORS_SETTINGS)).toBe(false);
+  });
+
+  it('a renamed paperwork item disables scheduling rather than firing off the wrong task', () => {
+    const case_ = buildCase({ checklistState: paperworkComplete() });
+    const snapshot = structuredClone(case_.workflowSnapshot!);
+    snapshot.stages.find((s) => s.displayStage === PAPERWORK_STAGE)!.checklist.items[0].label = 'Renamed task';
+    expect(isPaperworkComplete({ ...case_, workflowSnapshot: snapshot }, MANORS_SETTINGS)).toBe(false);
+  });
+
+  it('completing an item in a DIFFERENT stage never triggers scheduling', async () => {
+    const unrelated = { [checklistItemKey(2, 0)]: true, [checklistItemKey(4, 0)]: true, [checklistItemKey(5, 1)]: true };
+    const outcome = await syncExpectedPickupForCase(
+      { case_: buildCase({ checklistState: unrelated }), organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT },
+      ctx(),
+      'mock',
+    );
+    expect(outcome.action).toBe('unchanged');
+    expect(appointmentFixtures.length).toBe(appointmentsBefore);
+  });
+});
+
+describe('organization timezone — Chicago vs New York', () => {
+  it('the midnight-to-1am Eastern window resolves to a different calendar day under Chicago', async () => {
+    // 2026-10-03T04:30Z is 00:30 Eastern on Oct 3, but 23:30 Central on
+    // Oct 2 — a full day earlier, which lands on a different pickup.
+    const at = '2026-10-03T04:30:00.000Z';
+    const ny = await syncExpectedPickupForCase(
+      { case_: buildCase({ checklistState: paperworkComplete() }), organization: { id: MANORS_ORGANIZATION_ID, timezone: 'America/New_York' }, paperworkCompletedAt: at },
+      ctx(),
+      'mock',
+    );
+    expect(expectedDateOf(ny.appointment!)).toBe('2026-10-13');
+
+    appointmentFixtures.length = appointmentsBefore;
+    const chi = await syncExpectedPickupForCase(
+      { case_: buildCase({ checklistState: paperworkComplete() }), organization: { id: MANORS_ORGANIZATION_ID, timezone: 'America/Chicago' }, paperworkCompletedAt: at },
+      ctx(),
+      'mock',
+    );
+    expect(expectedDateOf(chi.appointment!)).toBe('2026-10-09');
+  });
+
+  it('the all-day anchor follows the organization timezone', async () => {
+    const outcome = await syncExpectedPickupForCase(
+      { case_: buildCase({ checklistState: paperworkComplete() }), organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT },
+      ctx(),
+      'mock',
+    );
+    // Eastern midnight on the expected date, not UTC midnight.
+    expect(outcome.appointment!.startAt).toBe('2026-10-16T04:00:00.000Z');
+    expect(outcome.appointment!.timezone).toBe('America/New_York');
+  });
+});
