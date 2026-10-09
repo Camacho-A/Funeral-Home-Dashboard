@@ -12,7 +12,10 @@ import { getAppointmentTypeDefinition } from '@/domain/scheduling/appointmentTyp
 import { formatAppointmentDate, formatAppointmentTime } from '@/utils/scheduling';
 import { isTerminalAppointmentStatus, type Appointment, type AppointmentStatus } from '@/types/appointment';
 import { AppointmentDialog } from '@/components/scheduling/AppointmentDialog';
-import { CremainsPickupSummary } from './CremainsPickupSummary';
+import { CremainsPickupSection } from './CremainsPickupSection';
+import { isExpectedCremainsPickup } from '@/domain/scheduling/cremainsPickupPresentation';
+import { useCase } from '@/hooks/useCase';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import styles from './CaseScheduleTab.module.css';
 
 /**
@@ -55,6 +58,10 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
   const confirmAppointment = useConfirmAppointment(organizationId);
   const cancelAppointment = useCancelAppointment(organizationId);
   const completeAppointment = useCompleteAppointment(organizationId);
+  // Needed only so the cremains section can write the organization's own
+  // receipt checklist item and resolve its local "today".
+  const caseQuery = useCase(caseId);
+  const organizationRecord = useOrganizationRecord();
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [cancellingAppointment, setCancellingAppointment] = useState<Appointment | null>(null);
@@ -78,9 +85,13 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
   const canCancel = permissions === null || permissions.includes('schedule.cancel');
 
   const appointments = appointmentsQuery.data ?? [];
-  const upcoming = appointments.filter((a) => !isTerminalAppointmentStatus(a.status)).sort((a, b) => a.startAt.localeCompare(b.startAt));
-  const completed = appointments.filter((a) => a.status === 'completed' || a.status === 'no_show').sort((a, b) => b.startAt.localeCompare(a.startAt));
-  const cancelled = appointments.filter((a) => a.status === 'cancelled').sort((a, b) => b.startAt.localeCompare(a.startAt));
+  // The expected cremains pickup has its own dedicated section above, so
+  // it is deliberately excluded from the generic lists — one pickup, one
+  // card, never presented twice.
+  const generalAppointments = appointments.filter((a) => !isExpectedCremainsPickup(a));
+  const upcoming = generalAppointments.filter((a) => !isTerminalAppointmentStatus(a.status)).sort((a, b) => a.startAt.localeCompare(b.startAt));
+  const completed = generalAppointments.filter((a) => a.status === 'completed' || a.status === 'no_show').sort((a, b) => b.startAt.localeCompare(a.startAt));
+  const cancelled = generalAppointments.filter((a) => a.status === 'cancelled').sort((a, b) => b.startAt.localeCompare(a.startAt));
 
   function renderRow(appointment: Appointment) {
     const typeLabel = getAppointmentTypeDefinition(appointment.appointmentType)?.displayName ?? appointment.appointmentType;
@@ -137,7 +148,14 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
           Overdue state, the paperwork date, and whether the date is still
           automatic. Every ACTION stays on the row itself, so there is only
           one place to confirm, re-date or receive. */}
-      <CremainsPickupSummary appointments={appointments} />
+      <CremainsPickupSection
+        caseId={caseId}
+        organizationId={organizationId}
+        appointments={appointments}
+        case_={caseQuery.data ?? null}
+        canSchedule={canCreate}
+        organizationTimezone={organizationRecord.data?.timezone}
+      />
 
       <div className="sx-sched-toolbar">
         <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>Schedule</h2>

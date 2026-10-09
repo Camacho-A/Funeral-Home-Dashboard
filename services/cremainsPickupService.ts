@@ -15,6 +15,7 @@ import {
 } from '../domain/scheduling/cremainsPickupPresentation';
 import {
   calculateExpectedPickupDateFromInstant,
+  isLocalDate,
   organizationLocalDate,
   type LocalDate,
 } from '../domain/scheduling/cremainsPickupSchedule';
@@ -318,6 +319,117 @@ async function syncExpectedPickupForCaseUncoalesced(
     if (raced) return { action: 'unchanged', appointment: raced, reason: 'created_concurrently' };
     throw error;
   }
+}
+
+/**
+ * Staff-created expected pickup (2026-10).
+ *
+ * For a case whose paperwork predates automatic scheduling, or whose
+ * crematory gave a date directly. Uses the SAME deterministic case-scoped
+ * identity as the automatic path, so the two can never produce competing
+ * records: if an active pickup already exists this refuses and tells the
+ * caller to edit it instead, and the deterministic id means even a racing
+ * duplicate insert conflicts rather than creating a second event.
+ *
+ * Created `lastModifiedBy`-stamped so `isManuallyDecided` is true from the
+ * outset — a staff-entered date is a human decision and must never be
+ * recalculated over by the automatic scheduler.
+ *
+ * Changes no checklist item and no paperwork history: adding an expected
+ * date records an expectation, it does not assert that any task was done.
+ */
+export async function createManualExpectedPickup(
+  params: {
+    case_: Pick<Case, 'id' | 'organizationId' | 'caseNumber'>;
+    organization: { id: string; timezone?: string; cremainsPickupSettings?: unknown } | null;
+    expectedDate: LocalDate;
+    notes?: string | null;
+    /** Required when the date is not one of the organization's own pickup
+        weekdays — recorded on the appointment so the exception is visible. */
+    overrideReason?: string | null;
+  },
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ created: true; appointment: Appointment } | { created: false; reason: 'already_exists' | 'invalid_date'; appointment: Appointment | null }> {
+  const { case_, organization, expectedDate } = params;
+  if (!isLocalDate(expectedDate)) return { created: false, reason: 'invalid_date', appointment: null };
+
+  const appointmentId = expectedPickupAppointmentId(case_.id);
+  const existing = await getAppointment(case_.organizationId, appointmentId, dataAdapterMode);
+  if (existing && !isTerminalAppointmentStatus(existing.status)) {
+    // Never a second active pickup for one case — the caller edits instead.
+    return { created: false, reason: 'already_exists', appointment: existing };
+  }
+  if (existing) {
+    // A received or cancelled pickup is history and is never overwritten.
+    return { created: false, reason: 'already_exists', appointment: existing };
+  }
+
+  const timezone = organization?.timezone || 'UTC';
+  const window = allDayWindowFor(expectedDate, timezone);
+  const noteParts = [`Expected pickup entered by staff for ${expectedDate}.`];
+  if (params.overrideReason?.trim()) noteParts.push(`Off-schedule date — reason: ${params.overrideReason.trim()}`);
+  if (params.notes?.trim()) noteParts.push(params.notes.trim());
+
+  const created = await createAppointment(
+    {
+      caseId: case_.id,
+      appointmentType: EXPECTED_CREMAINS_PICKUP_TYPE,
+      title: `Expected Cremains Pickup — ${case_.caseNumber}`,
+      notes: noteParts.join(' '),
+      timezone,
+      ...window,
+      schedulesWithoutResources: true,
+      saveAsDraft: false,
+      idFactory: () => appointmentId,
+    },
+    ctx,
+    dataAdapterMode,
+  );
+
+  // Stamp it as a human decision so automatic reconciliation leaves it be.
+  const { markManuallyDecided } = await import('./schedulingService');
+  const stamped = await markManuallyDecided(case_.organizationId, appointmentId, ctx.actorIdentityId ?? null, dataAdapterMode);
+  return { created: true, appointment: stamped ?? created };
+}
+
+/**
+ * Staff change of the expected date.
+ *
+ * Reschedules the EXISTING appointment rather than creating another, so
+ * the calendar entry, its id, and its history all survive. The original
+ * automatically-calculated date is preserved in the activity trail by
+ * `rescheduleAppointment`'s own audit event — nothing here rewrites it.
+ */
+export async function changeExpectedPickupDate(
+  params: {
+    caseId: string;
+    organizationId: string;
+    organization: { id: string; timezone?: string } | null;
+    expectedDate: LocalDate;
+    reason?: string | null;
+  },
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ changed: true; appointment: Appointment } | { changed: false; reason: 'not_found' | 'terminal' | 'invalid_date' }> {
+  if (!isLocalDate(params.expectedDate)) return { changed: false, reason: 'invalid_date' };
+
+  const appointmentId = expectedPickupAppointmentId(params.caseId);
+  const existing = await getAppointment(params.organizationId, appointmentId, dataAdapterMode);
+  if (!existing) return { changed: false, reason: 'not_found' };
+  if (isTerminalAppointmentStatus(existing.status)) return { changed: false, reason: 'terminal' };
+
+  const window = allDayWindowFor(params.expectedDate, params.organization?.timezone || existing.timezone);
+  const { rescheduleAppointment } = await import('./schedulingService');
+  const updated = await rescheduleAppointment(
+    params.organizationId,
+    appointmentId,
+    window,
+    ctx,
+    dataAdapterMode,
+    params.reason?.trim() ? { reason: params.reason.trim() } : undefined,
+  );
+  return { changed: true, appointment: updated };
 }
 
 /** Every expected pickup for one organization, newest-first by date. */

@@ -565,6 +565,27 @@ export async function updateAppointmentResources(
   }
 }
 
+/**
+ * Stamps an appointment as last-edited by a person without otherwise
+ * changing it (2026-10).
+ *
+ * Exists for the staff-created expected cremains pickup: a human-entered
+ * date must read as a human decision from the moment it is created, so
+ * automatic reconciliation never recalculates over it. Touches only
+ * `lastModifiedBy`/`updatedAt`; status, times and everything else are
+ * untouched, and a terminal appointment is left alone.
+ */
+export async function markManuallyDecided(
+  organizationId: string,
+  appointmentId: string,
+  actorIdentityId: string | null,
+  dataAdapterMode: DataAdapterMode,
+): Promise<Appointment | null> {
+  const existing = await getAppointment(organizationId, appointmentId, dataAdapterMode);
+  if (!existing || isTerminalAppointmentStatus(existing.status)) return existing;
+  return patchAppointment(organizationId, appointmentId, { lastModifiedBy: actorIdentityId, updatedAt: nowIso() }, dataAdapterMode);
+}
+
 export async function confirmAppointment(organizationId: string, appointmentId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<Appointment> {
   const existing = await getAppointment(organizationId, appointmentId, dataAdapterMode);
   if (!existing) throw new SchedulingServiceError('Appointment not found.');

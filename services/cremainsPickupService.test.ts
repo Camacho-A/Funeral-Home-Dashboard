@@ -12,6 +12,8 @@ import {
 } from '../domain/organization/cremainsPickupCapability';
 import {
   allDayWindowFor,
+  changeExpectedPickupDate,
+  createManualExpectedPickup,
   expectedDateOf,
   expectedPickupAppointmentId,
   isManuallyDecided,
@@ -530,5 +532,143 @@ describe('organization timezone — Chicago vs New York', () => {
     // Eastern midnight on the expected date, not UTC midnight.
     expect(outcome.appointment!.startAt).toBe('2026-10-16T04:00:00.000Z');
     expect(outcome.appointment!.timezone).toBe('America/New_York');
+  });
+});
+
+/**
+ * Staff-managed expected pickup (2026-10). The manual path shares the
+ * automatic path's deterministic identity, so the two can never produce
+ * competing records.
+ */
+describe('createManualExpectedPickup / changeExpectedPickupDate', () => {
+  const CASE = { id: 'case-cremains-1', organizationId: MANORS_ORGANIZATION_ID, caseNumber: 'B2026-040' };
+
+  it('creates one pickup on exactly the date entered, with no date shifting', async () => {
+    const result = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' },
+      ctx(),
+      'mock',
+    );
+    expect(result.created).toBe(true);
+    if (!result.created) return;
+    expect(expectedDateOf(result.appointment)).toBe('2026-10-09');
+    expect(result.appointment.id).toBe(expectedPickupAppointmentId(CASE.id));
+    expect(result.appointment.status).toBe('scheduled');
+  });
+
+  it('is immediately treated as a human decision, so automation never recalculates over it', async () => {
+    const result = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' },
+      ctx(),
+      'mock',
+    );
+    if (!result.created) throw new Error('expected creation');
+    expect(isManuallyDecided(result.appointment)).toBe(true);
+
+    // The automatic scheduler now leaves it alone even though its own
+    // calculation would produce a different date.
+    const sync = await syncExpectedPickupForCase(
+      { case_: buildCase({ checklistState: paperworkComplete() }), organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT },
+      ctx(),
+      'mock',
+    );
+    expect(sync.action).toBe('unchanged');
+    expect(expectedDateOf(sync.appointment!)).toBe('2026-10-09');
+  });
+
+  it('accepts a historical date exactly as entered — never moved to a later pickup day', async () => {
+    const result = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '2020-01-03' },
+      ctx(),
+      'mock',
+    );
+    if (!result.created) throw new Error('expected creation');
+    expect(expectedDateOf(result.appointment)).toBe('2020-01-03');
+  });
+
+  it('records an off-schedule reason on the appointment', async () => {
+    const result = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-14', overrideReason: 'crematory called' },
+      ctx(),
+      'mock',
+    );
+    if (!result.created) throw new Error('expected creation');
+    expect(result.appointment.notes?.toLowerCase()).toContain('crematory called');
+  });
+
+  it('refuses a second pickup for the same case and returns the existing one', async () => {
+    await createManualExpectedPickup({ case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' }, ctx(), 'mock');
+    const second = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-13' },
+      ctx(),
+      'mock',
+    );
+    expect(second.created).toBe(false);
+    if (second.created) return;
+    expect(second.reason).toBe('already_exists');
+    expect(appointmentFixtures.filter((a) => a.caseId === CASE.id)).toHaveLength(1);
+  });
+
+  it('rejects a malformed date rather than storing something unusable', async () => {
+    const result = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '10/09/2026' },
+      ctx(),
+      'mock',
+    );
+    expect(result).toMatchObject({ created: false, reason: 'invalid_date' });
+    expect(appointmentFixtures.length).toBe(appointmentsBefore);
+  });
+
+  it('edits the EXISTING appointment rather than creating another', async () => {
+    await createManualExpectedPickup({ case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' }, ctx(), 'mock');
+    const changed = await changeExpectedPickupDate(
+      { caseId: CASE.id, organizationId: MANORS_ORGANIZATION_ID, organization: ORGANIZATION, expectedDate: '2026-10-13', reason: 'crematory moved it' },
+      ctx(),
+      'mock',
+    );
+    expect(changed.changed).toBe(true);
+    if (!changed.changed) return;
+    expect(expectedDateOf(changed.appointment)).toBe('2026-10-13');
+    expect(changed.appointment.id).toBe(expectedPickupAppointmentId(CASE.id));
+    expect(appointmentFixtures.filter((a) => a.caseId === CASE.id)).toHaveLength(1);
+  });
+
+  it('refuses to re-date a received pickup', async () => {
+    await createManualExpectedPickup({ case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' }, ctx(), 'mock');
+    const row = appointmentFixtures.find((a) => a.id === expectedPickupAppointmentId(CASE.id))!;
+    row.status = 'completed';
+    const changed = await changeExpectedPickupDate(
+      { caseId: CASE.id, organizationId: MANORS_ORGANIZATION_ID, organization: ORGANIZATION, expectedDate: '2026-10-13' },
+      ctx(),
+      'mock',
+    );
+    expect(changed).toMatchObject({ changed: false, reason: 'terminal' });
+  });
+
+  it('reports not_found rather than creating one when editing a case with no pickup', async () => {
+    const changed = await changeExpectedPickupDate(
+      { caseId: 'case-with-no-pickup', organizationId: MANORS_ORGANIZATION_ID, organization: ORGANIZATION, expectedDate: '2026-10-13' },
+      ctx(),
+      'mock',
+    );
+    expect(changed).toMatchObject({ changed: false, reason: 'not_found' });
+    expect(appointmentFixtures.length).toBe(appointmentsBefore);
+  });
+
+  it('anchors a staff-entered date to the organization timezone, all day', async () => {
+    const result = await createManualExpectedPickup(
+      { case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' },
+      ctx(),
+      'mock',
+    );
+    if (!result.created) throw new Error('expected creation');
+    expect(result.appointment.startAt).toBe('2026-10-09T04:00:00.000Z');
+    expect(result.appointment.timezone).toBe('America/New_York');
+  });
+
+  it('changes no checklist item — recording an expectation asserts no task was done', async () => {
+    const before = buildCase({ checklistState: {} });
+    await createManualExpectedPickup({ case_: CASE, organization: ORGANIZATION, expectedDate: '2026-10-09' }, ctx(), 'mock');
+    expect(before.checklistState).toEqual({});
   });
 });
