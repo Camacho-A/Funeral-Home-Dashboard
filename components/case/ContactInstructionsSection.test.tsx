@@ -25,13 +25,12 @@ describe('ContactInstructionsSection', () => {
     expect(screen.getByLabelText('Do not contact next of kin directly')).not.toBeChecked();
   });
 
-  it('states that naming an arrangement contact grants no legal authority', () => {
+  it('frames the contact as an alternate and keeps the next of kin the legal contact', () => {
     render(<ContactInstructionsSection {...baseProps} />);
 
     expect(
-      screen.getByText(/does not give them signing, disposition, or cremation\s+authorization authority/),
+      screen.getByText('Add an alternate contact for arrangements. The Next of Kin remains the legal contact.'),
     ).toBeInTheDocument();
-    expect(screen.getByText(/stays the legal contact\s+of record/)).toBeInTheDocument();
   });
 
   it('warns and names who to call instead when the restriction is active', () => {

@@ -96,9 +96,7 @@ export function ContactInstructionsSection({
     <>
       <div className={styles.sectionHeading}>Contact instructions</div>
       <div className={styles.sectionHelperText}>
-        How this family has asked to be contacted. The next of kin above stays the legal contact of
-        record — naming someone here does not give them signing, disposition, or cremation
-        authorization authority.
+        Add an alternate contact for arrangements. The Next of Kin remains the legal contact.
       </div>
 
       {doNotContactNextOfKin && (
