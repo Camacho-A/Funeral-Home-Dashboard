@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { Modal } from '@/components/ui/Modal';
+import styles from './CremainsPickupDialog.module.css';
 import type { Appointment } from '@/types/appointment';
 import type { Case } from '@/types/case';
 import { organizationLocalDate, weekdayOf, WEEKDAY_LABEL } from '@/domain/scheduling/cremainsPickupSchedule';
@@ -37,6 +39,14 @@ import { CremainsPickupError } from '@/lib/cremainsPickupClient';
  * must never display an invented pickup time.
  */
 
+/** "Tuesday and Friday" / "Tuesday, Thursday and Friday" — derived from
+    the organization's own configured days, never hardcoded wording. */
+function formatWeekdayList(labels: string[]): string {
+  if (labels.length === 0) return '';
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
 function statusClass(status: CremainsPickupStatus): string {
   if (status === 'received') return 'sx-status-ok';
   if (status === 'overdue') return 'sx-status-bad';
@@ -46,6 +56,20 @@ function statusClass(status: CremainsPickupStatus): string {
 
 /** Formats `YYYY-MM-DD` as a calendar date, with no timezone conversion —
     the string is already the organization's own local date. */
+/** Same calendar date without the weekday — used where the weekday is
+    already named in the surrounding sentence. */
+export function formatPickupDateShort(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return date;
+  const [, year, month, day] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 export function formatPickupDate(date: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) return date;
@@ -78,10 +102,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Date entry shared by "Add Expected Pickup" and "Edit Date". */
+/**
+ * Date entry, shared by "Add Expected Pickup" and "Edit Expected Date" so
+ * the two can never drift apart in layout, validation or wording.
+ *
+ * Built on the shared `Modal` primitive, which already provides the dialog
+ * semantics this needs: Escape to close, focus moved into the panel and
+ * trapped there, and focus returned to the trigger on close. The
+ * header/body/footer structure comes from the existing `.sx-modal-*`
+ * system — using it is what fixes the previously cramped layout, and means
+ * this dialog inherits any future change to that system.
+ */
 function PickupDateDialog({
-  title,
-  confirmLabel,
+  mode,
   initialDate,
   organizationId,
   organizationToday,
@@ -91,8 +124,7 @@ function PickupDateDialog({
   onCancel,
   onSubmit,
 }: {
-  title: string;
-  confirmLabel: string;
+  mode: 'add' | 'edit';
   initialDate: string;
   organizationId: string;
   organizationToday: string;
@@ -107,81 +139,137 @@ function PickupDateDialog({
   const [notes, setNotes] = useState('');
 
   const settings = resolveCremainsPickupSettingsById(organizationId);
-  const allowedLabels = settings.allowedPickupWeekdays.map((d) => WEEKDAY_LABEL[d]).join(' and ');
+  const allowedLabels = formatWeekdayList(settings.allowedPickupWeekdays.map((d) => WEEKDAY_LABEL[d]));
   const weekday = weekdayOf(expectedDate);
   const offSchedule = weekday !== null && !settings.allowedPickupWeekdays.includes(weekday);
   const inPast = Boolean(expectedDate) && Boolean(organizationToday) && expectedDate < organizationToday;
+  const needsReason = offSchedule || requiresReason;
+  const canSubmit = Boolean(expectedDate) && (!needsReason || Boolean(reason.trim())) && !busy;
+
+  const title = mode === 'add' ? 'Add Expected Cremains Pickup' : 'Edit Expected Pickup Date';
+  const confirmLabel = mode === 'add' ? 'Add Expected Pickup' : 'Save Date';
 
   return (
-    <div className="sx-modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="sx-modal" style={{ maxWidth: 460 }}>
-        <h3 className="sx-modal-title">{title}</h3>
+    <Modal open onClose={busy ? () => undefined : onCancel} title={title} size="lg">
+      <div className={`sx-modal-header ${styles.header}`}>
+        <span className={styles.headerIcon} aria-hidden="true">
+          🗓
+        </span>
+        <div className={styles.headerText}>
+          <h2 className="sx-modal-title">{title}</h2>
+          <p className={styles.description}>
+            Set the date the cremains are expected to be ready for pickup from the crematory.
+          </p>
+        </div>
+        <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onCancel} disabled={busy}>
+          ×
+        </button>
+      </div>
 
-        <label className="sx-filter" style={{ display: 'block', marginTop: 12 }}>
-          <span className="sx-field-label">Expected pickup date</span>
+      <div className={`sx-modal-body ${styles.body}`}>
+        <div className={styles.infoPanel}>
+          <span className={styles.infoTitle}>Pickup days</span>
+          <span className={styles.infoText}>
+            {allowedLabels
+              ? `Cremains are typically available for pickup on ${allowedLabels}.`
+              : 'This organization has no configured pickup days.'}
+          </span>
+        </div>
+
+        <div className="sx-field">
+          <label className="sx-label sx-label-required" htmlFor="cremains-expected-date">
+            Expected Pickup Date
+          </label>
           <input
+            id="cremains-expected-date"
             type="date"
-            className="sx-input"
+            className={`sx-input ${styles.input}`}
             value={expectedDate}
             onChange={(e) => setExpectedDate(e.target.value)}
-            aria-label="Expected pickup date"
+            aria-describedby="cremains-expected-date-help"
+            required
           />
-        </label>
-        <p className="sx-hint" style={{ marginTop: 6 }}>
-          Pickup days are {allowedLabels}.
-        </p>
+          <span id="cremains-expected-date-help" className={styles.helper}>
+            Select the expected date the cremains will be available.
+          </span>
+        </div>
 
         {offSchedule && weekday !== null && (
-          <p className="sx-hint" role="status" style={{ marginTop: 6 }}>
-            {formatPickupDate(expectedDate)} is a {WEEKDAY_LABEL[weekday]}, which is not a pickup day. Give a reason to
-            use it anyway — the date will be saved exactly as entered.
-          </p>
-        )}
-        {inPast && (
-          <p className="sx-hint" role="status" style={{ marginTop: 6 }}>
-            This date is in the past. It will be saved as entered, not moved to a later day.
+          <p className={`${styles.notice} ${styles.noticeWarning}`} role="status">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>
+              {formatPickupDateShort(expectedDate)} is a {WEEKDAY_LABEL[weekday]}, which falls outside your usual
+              pickup schedule. Please provide a reason.
+            </span>
           </p>
         )}
 
-        {(offSchedule || requiresReason) && (
-          <label className="sx-filter" style={{ display: 'block', marginTop: 10 }}>
-            <span className="sx-field-label">Reason</span>
+        {inPast && (
+          <p className={`${styles.notice} ${styles.noticeWarning}`} role="status">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>This date is in the past. It will be saved as entered.</span>
+          </p>
+        )}
+
+        {needsReason && (
+          <div className="sx-field">
+            <label className="sx-label sx-label-required" htmlFor="cremains-reason">
+              Reason
+            </label>
             <input
-              className="sx-input"
+              id="cremains-reason"
+              className={`sx-input ${styles.input}`}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. crematory confirmed an earlier date"
-              aria-label="Reason"
+              placeholder="e.g. the crematory confirmed an earlier date"
             />
-          </label>
+          </div>
         )}
 
-        <label className="sx-filter" style={{ display: 'block', marginTop: 10 }}>
-          <span className="sx-field-label">Notes (optional)</span>
-          <input className="sx-input" value={notes} onChange={(e) => setNotes(e.target.value)} aria-label="Notes" />
-        </label>
+        {mode === 'add' && (
+          <div className="sx-field">
+            <label className="sx-label" htmlFor="cremains-notes">
+              Notes (optional)
+            </label>
+            <textarea
+              id="cremains-notes"
+              className={styles.textarea}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add any notes about this pickup..."
+              rows={4}
+            />
+          </div>
+        )}
 
         {error && (
-          <p className="sx-error-state" role="alert" style={{ marginTop: 10 }}>
-            {error}
+          <p className={`${styles.notice} ${styles.noticeError}`} role="alert">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>{error}</span>
           </p>
         )}
-
-        <div className="sx-modal-actions" style={{ marginTop: 14 }}>
-          <button type="button" className="sx-btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="sx-btn sx-btn-primary"
-            disabled={busy || !expectedDate || ((offSchedule || requiresReason) && !reason.trim())}
-            onClick={() => onSubmit({ expectedDate, reason, notes })}
-          >
-            {busy ? 'Saving…' : confirmLabel}
-          </button>
-        </div>
       </div>
-    </div>
+
+      <div className="sx-modal-footer">
+        <button type="button" className="sx-btn sx-btn-secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="sx-btn sx-btn-primary"
+          disabled={!canSubmit}
+          onClick={() => onSubmit({ expectedDate, reason, notes })}
+        >
+          {busy ? 'Saving…' : confirmLabel}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -204,50 +292,74 @@ function MarkReceivedDialog({
   const [note, setNote] = useState('');
 
   return (
-    <div className="sx-modal-backdrop" role="dialog" aria-modal="true" aria-label="Mark cremains received">
-      <div className="sx-modal" style={{ maxWidth: 460 }}>
-        <h3 className="sx-modal-title">Mark Cremains Received</h3>
-        <p style={{ marginTop: 8 }}>
-          Confirm the cremains for this case are physically in your possession. This does not complete the case.
-        </p>
+    <Modal open onClose={busy ? () => undefined : onCancel} title="Mark Cremains Received" size="lg">
+      <div className={`sx-modal-header ${styles.header}`}>
+        <span className={styles.headerIcon} aria-hidden="true">
+          ✓
+        </span>
+        <div className={styles.headerText}>
+          <h2 className="sx-modal-title">Mark Cremains Received</h2>
+          <p className={styles.description}>
+            Confirm the cremains for this case are physically in your possession. This does not complete the case.
+          </p>
+        </div>
+        <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onCancel} disabled={busy}>
+          ×
+        </button>
+      </div>
 
-        <label className="sx-filter" style={{ display: 'block', marginTop: 12 }}>
-          <span className="sx-field-label">Date received</span>
+      <div className={`sx-modal-body ${styles.body}`}>
+        <div className="sx-field">
+          <label className="sx-label sx-label-required" htmlFor="cremains-received-on">
+            Date Received
+          </label>
           <input
+            id="cremains-received-on"
             type="date"
-            className="sx-input"
+            className={`sx-input ${styles.input}`}
             value={receivedOn}
             onChange={(e) => setReceivedOn(e.target.value)}
-            aria-label="Date received"
+            aria-describedby="cremains-received-on-help"
+            required
           />
-        </label>
+          <span id="cremains-received-on-help" className={styles.helper}>
+            Defaults to today. Correct it if the cremains arrived on a different day.
+          </span>
+        </div>
 
-        <label className="sx-filter" style={{ display: 'block', marginTop: 10 }}>
-          <span className="sx-field-label">Note (optional)</span>
-          <input className="sx-input" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Receipt note" />
-        </label>
+        <div className="sx-field">
+          <label className="sx-label" htmlFor="cremains-receipt-note">
+            Note (optional)
+          </label>
+          <textarea
+            id="cremains-receipt-note"
+            className={styles.textarea}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Add any notes about this receipt..."
+            rows={3}
+          />
+        </div>
 
         {error && (
-          <p className="sx-error-state" role="alert" style={{ marginTop: 10 }}>
-            {error}
+          <p className={`${styles.notice} ${styles.noticeError}`} role="alert">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>{error}</span>
           </p>
         )}
-
-        <div className="sx-modal-actions" style={{ marginTop: 14 }}>
-          <button type="button" className="sx-btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="sx-btn sx-btn-primary"
-            disabled={busy || !receivedOn}
-            onClick={() => onSubmit({ receivedOn, note })}
-          >
-            {busy ? 'Saving…' : 'Mark Received'}
-          </button>
-        </div>
       </div>
-    </div>
+
+      <div className="sx-modal-footer">
+        <button type="button" className="sx-btn sx-btn-secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button type="button" className="sx-btn sx-btn-primary" disabled={busy || !receivedOn} onClick={() => onSubmit({ receivedOn, note })}>
+          {busy ? 'Saving…' : 'Mark Received'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -293,13 +405,38 @@ export function CremainsPickupSection({
     setRequiresReason(false);
   }
 
+  /**
+   * Turns a failure into something a funeral director can act on.
+   *
+   * The server's own message is preferred when it is a real, specific
+   * explanation (a duplicate, a date it refused). Anything else — a 500, a
+   * dropped connection, an unexpected shape — becomes a plain retry
+   * message rather than leaking backend detail, which is all staff saw
+   * before: a generic "Could not save the expected pickup."
+   */
   function reportError(e: unknown) {
     if (e instanceof CremainsPickupError) {
-      setError(e.message);
       setRequiresReason(e.requiresReason);
+      if (e.status === 401 || e.status === 403) {
+        setError('You do not have permission to schedule this pickup.');
+        return;
+      }
+      if (e.status === 409) {
+        setError('A cremains pickup already exists for this case. Edit the existing one instead.');
+        return;
+      }
+      if (e.status === 404) {
+        setError('This case could not be found. Refresh the page and try again.');
+        return;
+      }
+      if (e.status >= 500) {
+        setError('The selected date could not be saved. Please try again.');
+        return;
+      }
+      setError(e.message);
       return;
     }
-    setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+    setError('The selected date could not be saved. Please try again.');
   }
 
   async function submitDate(input: { expectedDate: string; reason: string; notes: string }) {
@@ -448,8 +585,7 @@ export function CremainsPickupSection({
 
       {(dialog === 'add' || dialog === 'edit') && (
         <PickupDateDialog
-          title={dialog === 'add' ? 'Add Expected Pickup' : 'Edit Expected Date'}
-          confirmLabel={dialog === 'add' ? 'Add Expected Pickup' : 'Save Date'}
+          mode={dialog}
           initialDate={dialog === 'edit' ? (expected ?? '') : ''}
           organizationId={organizationId}
           organizationToday={organizationToday}

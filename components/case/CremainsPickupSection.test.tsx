@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
@@ -141,22 +141,62 @@ describe('CremainsPickupSection — an existing pickup', () => {
 });
 
 describe('CremainsPickupSection — Add Expected Pickup dialog', () => {
-  it('states the organization\'s own pickup days', () => {
+  function openAdd() {
     renderSection([]);
     fireEvent.click(screen.getByRole('button', { name: 'Add Expected Pickup' }));
-    expect(screen.getByRole('dialog', { name: 'Add Expected Pickup' })).toBeInTheDocument();
-    expect(screen.getByText('Pickup days are Tuesday and Friday.')).toBeInTheDocument();
+  }
+
+  /** The section's own trigger shares this name, so submit lookups are
+      scoped inside the dialog. */
+  const submitButton = () => within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expected Pickup' });
+
+  it('opens a properly-labelled dialog with a title and description', () => {
+    openAdd();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add Expected Cremains Pickup' })).toBeInTheDocument();
+    expect(screen.getByText(/Set the date the cremains are expected to be ready/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('derives the pickup-day panel from the organization\'s own configuration', () => {
+    openAdd();
+    expect(screen.getByText('Pickup days')).toBeInTheDocument();
+    expect(screen.getByText('Cremains are typically available for pickup on Tuesday and Friday.')).toBeInTheDocument();
+  });
+
+  it('gives the date a required label and helper text', () => {
+    openAdd();
+    expect(screen.getByLabelText(/Expected Pickup Date/)).toBeInTheDocument();
+    expect(screen.getByText('Select the expected date the cremains will be available.')).toBeInTheDocument();
+  });
+
+  it('offers a multiline notes field with a helpful placeholder', () => {
+    openAdd();
+    const notes = screen.getByLabelText('Notes (optional)');
+    expect(notes.tagName).toBe('TEXTAREA');
+    expect(notes).toHaveAttribute('placeholder', 'Add any notes about this pickup...');
+  });
+
+  it('shows no warning panels until they actually apply', () => {
+    openAdd();
+    expect(screen.queryByText(/falls outside your usual pickup schedule/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/in the past/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Reason')).not.toBeInTheDocument();
+  });
+
+  it('disables the primary action until a date is chosen', () => {
+    openAdd();
+    expect(submitButton()).toBeDisabled();
   });
 
   it('requires a reason for an off-schedule date, and never silently shifts it', () => {
-    renderSection([]);
-    fireEvent.click(screen.getByRole('button', { name: 'Add Expected Pickup' }));
+    openAdd();
     // 2026-10-14 is a Wednesday.
-    fireEvent.change(screen.getByLabelText('Expected pickup date'), { target: { value: '2026-10-14' } });
+    fireEvent.change(screen.getByLabelText(/Expected Pickup Date/), { target: { value: '2026-10-14' } });
 
-    expect(screen.getByText(/is a Wednesday, which is not a pickup day/)).toBeInTheDocument();
-    expect(screen.getByText(/saved exactly as entered/)).toBeInTheDocument();
-    const submit = screen.getAllByRole('button', { name: 'Add Expected Pickup' }).at(-1)!;
+    expect(screen.getByText(/is a Wednesday, which falls outside your usual pickup schedule/)).toBeInTheDocument();
+    const submit = submitButton();
     expect(submit).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'crematory called' } });
@@ -164,20 +204,57 @@ describe('CremainsPickupSection — Add Expected Pickup dialog', () => {
   });
 
   it('accepts an on-schedule date with no reason required', () => {
-    renderSection([]);
-    fireEvent.click(screen.getByRole('button', { name: 'Add Expected Pickup' }));
+    openAdd();
     // 2026-10-16 is a Friday.
-    fireEvent.change(screen.getByLabelText('Expected pickup date'), { target: { value: '2026-10-16' } });
-    expect(screen.queryByText(/not a pickup day/)).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Add Expected Pickup' }).at(-1)!).toBeEnabled();
+    fireEvent.change(screen.getByLabelText(/Expected Pickup Date/), { target: { value: '2026-10-16' } });
+    expect(screen.queryByText(/falls outside your usual pickup schedule/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Reason')).not.toBeInTheDocument();
+    expect(submitButton()).toBeEnabled();
   });
 
   it('warns about a historical date but still allows it', () => {
-    renderSection([]);
-    fireEvent.click(screen.getByRole('button', { name: 'Add Expected Pickup' }));
+    openAdd();
     // A past Friday — exactly the B2026-035 situation staff will hit.
-    fireEvent.change(screen.getByLabelText('Expected pickup date'), { target: { value: '2020-01-03' } });
-    expect(screen.getByText(/in the past. It will be saved as entered/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Expected Pickup Date/), { target: { value: '2020-01-03' } });
+    expect(screen.getByText('This date is in the past. It will be saved as entered.')).toBeInTheDocument();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('closes without saving from Cancel', () => {
+    openAdd();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('CremainsPickupSection — Edit Expected Date dialog', () => {
+  function openEdit() {
+    renderSection([pickup()]);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Date' }));
+  }
+
+  /** The section behind the modal also renders an "Expected pickup" label,
+      so field lookups are scoped inside the dialog. */
+  const dateField = () => within(screen.getByRole('dialog')).getByLabelText(/Expected Pickup Date/);
+
+  it('uses the same redesigned shell, pre-filled with the current date', () => {
+    openEdit();
+    expect(screen.getByRole('heading', { name: 'Edit Expected Pickup Date' })).toBeInTheDocument();
+    expect(screen.getByText('Pickup days')).toBeInTheDocument();
+    expect(dateField()).toHaveValue('2099-10-16');
+    expect(screen.getByRole('button', { name: 'Save Date' })).toBeInTheDocument();
+  });
+
+  it('omits the notes field, which only applies when creating', () => {
+    openEdit();
+    expect(screen.queryByLabelText('Notes (optional)')).not.toBeInTheDocument();
+  });
+
+  it('applies the same off-schedule rule when re-dating', () => {
+    openEdit();
+    fireEvent.change(dateField(), { target: { value: '2026-10-14' } });
+    expect(screen.getByText(/falls outside your usual pickup schedule/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Date' })).toBeDisabled();
   });
 });
 
@@ -187,7 +264,8 @@ describe('CremainsPickupSection — multi-tenant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add Expected Pickup' }));
     // Falls back to the disabled default's weekdays rather than inheriting
     // Manors' Tuesday/Friday as if it were a platform rule.
-    expect(screen.getByText(/^Pickup days are /)).toBeInTheDocument();
+    expect(screen.getByText('Pickup days')).toBeInTheDocument();
+    expect(screen.getByText(/Cremains are typically available for pickup on/)).toBeInTheDocument();
   });
 });
 
@@ -206,5 +284,51 @@ describe('helpers', () => {
     // A staff-entered pickup asserts no paperwork date at all.
     expect(paperworkDateFromNotes('Expected pickup entered by staff for 2026-10-09.')).toBeNull();
     expect(paperworkDateFromNotes(null)).toBeNull();
+  });
+});
+
+/**
+ * Error presentation (2026-10). The production failure surfaced only as
+ * "Could not save the expected pickup." — true but useless. Staff now get
+ * a message tied to what actually happened.
+ */
+describe('CremainsPickupSection — error messages', () => {
+  function openAddWith(status: number, message: string) {
+    const originalFetch = global.fetch;
+    global.fetch = (async () =>
+      new Response(JSON.stringify({ error: message }), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+    renderSection([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Add Expected Pickup' }));
+    fireEvent.change(screen.getByLabelText(/Expected Pickup Date/), { target: { value: '2026-10-16' } });
+    return () => {
+      global.fetch = originalFetch;
+    };
+  }
+
+  it('explains a permission failure in plain language', async () => {
+    const restore = openAddWith(403, 'Not authorized to schedule for this organization.');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expected Pickup' }));
+    expect(await screen.findByText('You do not have permission to schedule this pickup.')).toBeInTheDocument();
+    restore();
+  });
+
+  it('explains a duplicate and points at editing', async () => {
+    const restore = openAddWith(409, 'This case already has an expected cremains pickup.');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expected Pickup' }));
+    expect(await screen.findByText(/already exists for this case/)).toBeInTheDocument();
+    restore();
+  });
+
+  it('never leaks a server error, and keeps the entered values for a retry', async () => {
+    const restore = openAddWith(500, 'TypeError: Failed to parse URL from /api/cases/x');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expected Pickup' }));
+    expect(await screen.findByText('The selected date could not be saved. Please try again.')).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to parse URL/)).not.toBeInTheDocument();
+    // The dialog stays open with the date still entered, so staff can retry.
+    expect(screen.getByLabelText(/Expected Pickup Date/)).toHaveValue('2026-10-16');
+    restore();
   });
 });

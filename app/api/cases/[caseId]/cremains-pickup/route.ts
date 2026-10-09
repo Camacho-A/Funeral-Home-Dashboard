@@ -3,9 +3,12 @@ import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canCreateAppointment, canEditAppointment } from '@/services/authorizationPolicyService';
-import { getDataAdapterMode } from '@/lib/env';
+import { getDataAdapterMode, type DataAdapterMode } from '@/lib/env';
 import { getOrganization } from '@/services/organizationProvisioningService';
+import { queryWixDataItems } from '@/lib/wixDataApi';
+import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { casesService } from '@/services/casesService';
+import type { Case } from '@/types/case';
 import { createManualExpectedPickup, changeExpectedPickupDate } from '@/services/cremainsPickupService';
 import { resolveCremainsPickupSettings } from '@/domain/organization/cremainsPickupCapability';
 import { isLocalDate, weekdayOf } from '@/domain/scheduling/cremainsPickupSchedule';
@@ -34,23 +37,47 @@ import { isLocalDate, weekdayOf } from '@/domain/scheduling/cremainsPickupSchedu
 
 type Body = { organizationId?: unknown; expectedDate?: unknown; notes?: unknown; reason?: unknown };
 
+/**
+ * Loads a case SERVER-SIDE, scoped to the authorized organization.
+ *
+ * Deliberately not `casesService.get()` in wix mode: that function is a
+ * CLIENT-side data accessor — it fetches the relative URL
+ * `/api/cases/{id}`, which has no origin to resolve against inside a route
+ * handler and throws `Failed to parse URL`. Calling it from here turned
+ * every save into a 500, which the dialog could only report as a generic
+ * failure. This queries Wix directly, exactly as the sibling case routes
+ * do, and keeps `casesService` for mock mode where it reads fixtures with
+ * no fetch at all.
+ */
+async function loadCase(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<Case | null> {
+  if (dataAdapterMode === 'mock') {
+    return casesService.get({ organizationId }, caseId, 'mock');
+  }
+  const response = await queryWixDataItems<WixCaseItem>('cases', {
+    filter: { beaconCaseId: caseId, organizationId, isArchived: false },
+    paging: { limit: 1 },
+  });
+  return mapWixCaseItem(response.dataItems[0]?.data);
+}
+
+
 async function resolveContext(request: Request, caseId: string) {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return { error: NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 }) } as const;
+    return { ok: false as const, error: NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 }) } as const;
   }
   const b = body as Body;
   if (typeof b.organizationId !== 'string') {
-    return { error: NextResponse.json({ error: 'organizationId is required.' }, { status: 400 }) } as const;
+    return { ok: false as const, error: NextResponse.json({ error: 'organizationId is required.' }, { status: 400 }) } as const;
   }
   if (typeof b.expectedDate !== 'string' || !isLocalDate(b.expectedDate)) {
-    return { error: NextResponse.json({ error: 'expectedDate must be a valid YYYY-MM-DD date.' }, { status: 400 }) } as const;
+    return { ok: false as const, error: NextResponse.json({ error: 'expectedDate must be a valid YYYY-MM-DD date.' }, { status: 400 }) } as const;
   }
 
   const authResult = await requireAuthorizedOrganization(b.organizationId);
-  if (!authResult.authorized) return { error: authResult.response } as const;
+  if (!authResult.authorized) return { ok: false as const, error: authResult.response } as const;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
 
@@ -74,8 +101,8 @@ async function resolveContext(request: Request, caseId: string) {
 
   // Re-read under the AUTHORIZED organization, so a caseId belonging to
   // another tenant simply does not resolve.
-  const case_ = await casesService.get({ organizationId }, caseId, dataAdapterMode);
-  if (!case_) return { error: NextResponse.json({ error: 'Case not found.' }, { status: 404 }) } as const;
+  const case_ = await loadCase(organizationId, caseId, dataAdapterMode);
+  if (!case_) return { ok: false as const, error: NextResponse.json({ error: 'Case not found.' }, { status: 404 }) } as const;
 
   return {
     ok: true as const,
@@ -99,13 +126,13 @@ async function resolveContext(request: Request, caseId: string) {
 }
 
 /** Create the case's expected pickup. Refuses if one already exists. */
-export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }): Promise<NextResponse> {
   const csrf = requireSameOrigin(request);
   if (csrf) return csrf;
   const { caseId } = await params;
 
   const resolved = await resolveContext(request, caseId);
-  if ('error' in resolved) return resolved.error;
+  if (!resolved.ok) return resolved.error;
 
   if (!(await canCreateAppointment({ identityId: resolved.userId, organizationId: resolved.organizationId, roleKey: resolved.role }, resolved.dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to schedule for this organization.' }, { status: 403 });
@@ -141,13 +168,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 }
 
 /** Change the expected date on the case's existing pickup. */
-export async function PATCH(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ caseId: string }> }): Promise<NextResponse> {
   const csrf = requireSameOrigin(request);
   if (csrf) return csrf;
   const { caseId } = await params;
 
   const resolved = await resolveContext(request, caseId);
-  if ('error' in resolved) return resolved.error;
+  if (!resolved.ok) return resolved.error;
 
   if (!(await canEditAppointment({ identityId: resolved.userId, organizationId: resolved.organizationId, roleKey: resolved.role }, resolved.dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to change this schedule.' }, { status: 403 });
