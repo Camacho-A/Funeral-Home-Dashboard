@@ -262,3 +262,150 @@ describe('resolveChecklist — Certifier Information (requiredCaseFields) generi
     expect(items[5].valueKind).toBe('time');
   });
 });
+
+/**
+ * Automated-intake checklist fix (2026-10). A case created through
+ * `POST /api/cases` — every webhook-created First Call case, and the New
+ * Case modal — persists the decedent's details as canonical Case COLUMNS
+ * and never writes `fieldValues`. The checklist read only `fieldValues`,
+ * so those items rendered blank on a case whose data was fully present.
+ *
+ * Live example this reproduces exactly: B2026-037 held
+ * decedentName "ANGELICA CAMACHO", weight "136", dateOfBirth "02/02/1990"
+ * with `fieldValues: {}` and `checklistState: {}`.
+ *
+ * The decisive safety property, pinned in both directions below: the
+ * fallback is DISPLAY ONLY. `done` still requires a real `fieldValues`
+ * entry, so no item self-completes and no stage self-advances —
+ * `services/workflowReconciliationService.ts` calls this same function.
+ */
+describe('resolveChecklist — canonical Case field fallback for intake display', () => {
+  /** The real intake item indices, asserted rather than assumed. */
+  it('targets the right items: name 0, place 1, DOB 2, weight 3, DOD 4, time 5', () => {
+    expect(RAW_STAGE_0_ITEMS[0].label).toBe('Name of deceased');
+    expect(RAW_STAGE_0_ITEMS[2].label).toBe('Date of birth');
+    expect(RAW_STAGE_0_ITEMS[3].label).toBe('Weight');
+    expect(RAW_STAGE_0_ITEMS[5].label).toBe('Time of death');
+  });
+
+  /** Exactly the live B2026-037 shape: columns populated, fieldValues empty. */
+  function webhookCreatedCase(overrides: Partial<Case> = {}): Case {
+    return baseCase({
+      decedentName: 'ANGELICA CAMACHO',
+      dateOfBirth: '02/02/1990',
+      dateOfDeath: '10/08/2026',
+      timeOfDeath: '11:30',
+      weight: '136',
+      placeOfDeath: '195 HIGHVIEW AVE',
+      fieldValues: {},
+      checklistState: {},
+      ...overrides,
+    });
+  }
+
+  it('1. the deceased\'s name displays from the canonical Case column', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    expect(items[0].fieldValue).toBe('ANGELICA CAMACHO');
+  });
+
+  it('2. weight displays from the canonical Case column', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    expect(items[3].fieldValue).toBe('136');
+  });
+
+  it('3. date of birth displays from the canonical Case column', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    expect(items[2].fieldValue).toBe('02/02/1990');
+  });
+
+  it('4. time of death displays from the canonical Case column', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    expect(items[5].fieldValue).toBe('11:30');
+  });
+
+  it('place of death and date of death come through the same mapping', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    expect(items[1].fieldValue).toBe('195 HIGHVIEW AVE');
+    expect(items[4].fieldValue).toBe('10/08/2026');
+  });
+
+  it('5. a missing Case field displays nothing — never a placeholder, never a guess', () => {
+    // '—' is what casesService/POST /api/cases store for "not supplied".
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase({ weight: '—', timeOfDeath: '—' }));
+    expect(items[3].fieldValue).toBe('');
+    expect(items[5].fieldValue).toBe('');
+  });
+
+  it('5b. an empty or whitespace-only Case field displays nothing', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase({ weight: '   ', dateOfBirth: '' }));
+    expect(items[3].fieldValue).toBe('');
+    expect(items[2].fieldValue).toBe('');
+  });
+
+  it('6. a malformed value is displayed verbatim, never reformatted or rejected by this layer', () => {
+    // Display must not silently "fix" data; the canonical column is the
+    // source of truth and parsing/validation belongs to the write paths.
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase({ dateOfBirth: '99/99/9999' }));
+    expect(items[2].fieldValue).toBe('99/99/9999');
+  });
+
+  it('7. an existing fieldValues entry takes absolute precedence over the Case column', () => {
+    const items = resolveChecklist(
+      RAW_STAGE_0_ITEMS,
+      0,
+      webhookCreatedCase({ fieldValues: { 3: '210 lb' } }),
+    );
+    expect(items[3].fieldValue).toBe('210 lb');
+    // And the untouched items still fall back.
+    expect(items[0].fieldValue).toBe('ANGELICA CAMACHO');
+  });
+
+  it('8. NOTHING is auto-completed — every intake item stays not-done despite every column being populated', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    for (const index of [0, 1, 2, 3, 4, 5]) {
+      expect(items[index].done, `item ${index} must not self-complete`).toBe(false);
+    }
+  });
+
+  it('9. the fallback cannot advance a stage — reconciliation sees the same not-done checklist', () => {
+    // Stage advancement is computed from these same `done` flags, so a
+    // fully-populated case must still read as incomplete here.
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
+    expect(items.every((item) => item.done === false || item.isDerived)).toBe(true);
+    expect(items.some((item) => item.done && item.hasField)).toBe(false);
+  });
+
+  it('10. a manual completion still works and is unaffected by the fallback', () => {
+    const items = resolveChecklist(
+      RAW_STAGE_0_ITEMS,
+      0,
+      webhookCreatedCase({ fieldValues: { 0: 'ANGELICA CAMACHO' } }),
+    );
+    expect(items[0].done).toBe(true);
+    expect(items[0].fieldValue).toBe('ANGELICA CAMACHO');
+  });
+
+  it('a later stage never borrows an intake value, even at the same item index', () => {
+    // `fieldValues` is keyed by a BARE index, so this is the collision the
+    // INTAKE_DISPLAY_STAGE guard exists to prevent.
+    const laterStage = standardCremationWorkflowTemplateFixture.versions[0].stages.find((s) => s.rawStage === 3)!;
+    const items = resolveChecklist(laterStage.checklist.items, laterStage.displayStage, webhookCreatedCase());
+    for (const item of items) expect(item.fieldValue).toBe('');
+  });
+
+  it('a case with no workflowSnapshot is handled without throwing', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase({ workflowSnapshot: null }));
+    expect(items[0].fieldValue).toBe('');
+  });
+
+  it('an ambiguous index (Family Contact: name + phone + email) gets no fallback', () => {
+    // findCaseFieldForChecklistIndex returns null for an index mapping to
+    // more than one Case field, so no half of a combined value is guessed.
+    const items = resolveChecklist(
+      RAW_STAGE_0_ITEMS,
+      0,
+      webhookCreatedCase({ nextOfKinName: 'DANIEL OKONKWO', nextOfKinPhone: '(954) 555-0142' }),
+    );
+    expect(items[7].fieldValue).toBe('');
+  });
+});

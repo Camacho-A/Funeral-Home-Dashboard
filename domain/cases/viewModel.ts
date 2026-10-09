@@ -22,7 +22,11 @@ import {
 } from './veteran';
 import { buildTimeline } from './timeline';
 import { applyLegacyCertifierPresentation } from './legacyCertifierPresentation';
-import { presentedStages, toPresentedStageIndex } from '../organization/workflowStagePresentation';
+import {
+  presentedStages,
+  toPresentedStageIndex,
+  presentsCombinedIntakeLabelsUppercase,
+} from '../organization/workflowStagePresentation';
 import { findChecklistIndexForCaseField } from '../workflow/resolveIntake';
 import { initialsFromName } from '../../utils/string';
 import { parseLegacyTimeOfDeath } from '../../utils/inputMask';
@@ -202,6 +206,35 @@ function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: 
 }
 
 /**
+ * Manors Intake & JotForm uppercase labels (2026-10). Render-time only.
+ *
+ * Applies to the two canonical display stages that present as the single
+ * combined "Intake & JotForm" stage, and only for an organization the
+ * overlay recognizes — the decision itself lives in
+ * domain/organization/workflowStagePresentation.ts, keyed on the stable
+ * `organizationId` plus a canonical-label shape guard, never on a mutable
+ * display name. Every other organization, and every later stage, is
+ * returned untouched.
+ *
+ * The stored `ChecklistItemTemplate.label` in the frozen workflowSnapshot
+ * is never modified, so composite checklist keys, template comparisons,
+ * and the label-matching fallbacks above (e.g. Family Contact's) all keep
+ * working against the original casing.
+ */
+function applyCombinedIntakeLabelCase(
+  items: ChecklistItemViewModel[],
+  case_: Case,
+  canonicalStageLabels: readonly string[],
+  canonicalDisplayStage: number,
+): ChecklistItemViewModel[] {
+  if (!presentsCombinedIntakeLabelsUppercase(case_.organizationId, canonicalStageLabels)) return items;
+  // The combined group is canonical display stages 0 and 1; later stages
+  // keep their own casing.
+  if (canonicalDisplayStage > 1) return items;
+  return items.map((item) => ({ ...item, label: item.label.toUpperCase() }));
+}
+
+/**
  * Auto-required documents by stage — ported from design/support.js's
  * buildCase(). Uses raw stage thresholds directly, matching the source
  * exactly. Uploaded documents (from the compliance/document service, see
@@ -241,6 +274,10 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   const rawDisplayStage = findStageByRawStage(snapshot, case_.rawStage)?.displayStage ?? 0;
   const currentStageItems = findStageByRawStage(snapshot, case_.rawStage)?.checklist.items ?? [];
   const lastStage = lastDisplayStage(snapshot);
+  // Computed here (rather than alongside the presented-stage derivation
+  // further down) because the checklist presentation below needs it too —
+  // one derivation, used by both.
+  const canonicalStageLabels = displayStagesInOrder(snapshot).map((stage) => stage.label);
 
   // Conditional shipping/tracking (2026-09): the terminal return-of-remains
   // requirement is now derived from structured data (returnMethod +
@@ -251,9 +288,14 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // and the terminal checklist item's overridden label/done state, so the
   // two can never drift apart into competing signals.
   const remainsReturnComplete = isTerminalReturnRequirementComplete(case_);
-  const currentChecklist = applyFamilyContactPresentation(
-    applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, rawDisplayStage, case_), case_, false),
+  const currentChecklist = applyCombinedIntakeLabelCase(
+    applyFamilyContactPresentation(
+      applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, rawDisplayStage, case_), case_, false),
+      case_,
+    ),
     case_,
+    canonicalStageLabels,
+    rawDisplayStage,
   );
   // The immutable workflowSnapshot still carries its original "Family
   // picked up ashes" item text (never rewritten — see this project's
@@ -295,7 +337,6 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // below stays canonical, so checklist resolution, composite checklist
   // keys, SLA, progress, and advancement are all untouched. See
   // domain/organization/workflowStagePresentation.ts.
-  const canonicalStageLabels = displayStagesInOrder(snapshot).map((stage) => stage.label);
   const presented = presentedStages(case_.organizationId, canonicalStageLabels);
   const presentedLabels = presented.map((stage) => stage.label);
   const presentedDisplayStage = toPresentedStageIndex(
@@ -352,18 +393,23 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   const viewedStage = viewingDisplayStage != null ? findStageByDisplayStage(snapshot, viewingDisplayStage) : null;
   const viewedChecklist =
     viewingDisplayStage != null
-      ? applyFamilyContactPresentation(
-          applyLegacyCertifierPresentation(
-            resolveChecklist(
-              viewedStage?.checklist.items ?? [],
-              viewingDisplayStage,
+      ? applyCombinedIntakeLabelCase(
+          applyFamilyContactPresentation(
+            applyLegacyCertifierPresentation(
+              resolveChecklist(
+                viewedStage?.checklist.items ?? [],
+                viewingDisplayStage,
+                case_,
+                { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+              ),
               case_,
-              { isPastStage: viewingDisplayStage < effectiveDisplayStage },
+              viewingDisplayStage < effectiveDisplayStage,
             ),
             case_,
-            viewingDisplayStage < effectiveDisplayStage,
           ),
           case_,
+          canonicalStageLabels,
+          viewingDisplayStage,
         )
       : effectiveCurrentChecklist;
 

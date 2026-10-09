@@ -2,6 +2,72 @@ import type { Case } from '../../types/case';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
+import { findCaseFieldForChecklistIndex } from './resolveIntake';
+
+/**
+ * The placeholder `services/casesService.ts#create` and `POST /api/cases`
+ * store for an optional Case field that was never supplied. It is an
+ * "unknown" marker, never a real value, so it must read as blank here —
+ * matching `domain/cases/viewModel.ts`'s own handling of it.
+ */
+const UNKNOWN_CASE_FIELD_PLACEHOLDER = '—';
+
+/**
+ * The display stage whose checklist the intake template's own
+ * `checklistItemIndex` values address.
+ *
+ * `Case.fieldValues` is keyed by a BARE item index, not by the composite
+ * `{displayStage}:{index}` key `checklistState` uses — so an index is only
+ * unambiguous while exactly one stage owns field-backed items. That holds:
+ * the intake form populates the first stage's checklist, and the canonical
+ * fallback below is deliberately confined to it rather than being applied
+ * to any stage that happens to have an item at the same local index.
+ */
+const INTAKE_DISPLAY_STAGE = 0;
+
+/**
+ * Automated-intake checklist fix (2026-10). The value a field-backed
+ * intake item DISPLAYS, resolved canonical-field-aware.
+ *
+ * `Case.fieldValues` keeps absolute precedence: a value a human typed into
+ * the checklist is what shows, always. The fallback only fills in an entry
+ * that is genuinely absent, by reading the structured Case field the
+ * intake template says that item maps to.
+ *
+ * WHY THIS IS NEEDED. A case created through `POST /api/cases` — which is
+ * every webhook-created First Call case, and the New Case modal — persists
+ * the decedent's name, date of birth, weight, date/time of death and place
+ * of death as canonical Case COLUMNS, and never writes `fieldValues`. The
+ * checklist read only `fieldValues`, so those items rendered blank on a
+ * case whose data was in fact fully present (live example: B2026-037 held
+ * decedentName "ANGELICA CAMACHO", weight "136", dateOfBirth "02/02/1990"
+ * with `fieldValues: {}`). The canonical column is the source of truth;
+ * this makes the checklist read it instead of inventing a second one.
+ *
+ * DISPLAY ONLY — this is NOT consulted by `isFieldDone`. Completion still
+ * requires a real `fieldValues` entry, so nothing is auto-completed and no
+ * stage self-advances: `services/workflowReconciliationService.ts` calls
+ * this same `resolveChecklist`, and its advancement decisions are
+ * unchanged by this function existing.
+ *
+ * Ambiguous indices resolve to null and get no fallback —
+ * `findCaseFieldForChecklistIndex` returns null when one index maps to
+ * more than one Case field (Family Contact's shared name/phone/email
+ * index), which already has its own structured editor.
+ */
+function canonicalFallbackValue(case_: Case, displayStage: number, index: number): string {
+  if (displayStage !== INTAKE_DISPLAY_STAGE) return '';
+  if (!case_.workflowSnapshot) return '';
+
+  const caseField = findCaseFieldForChecklistIndex(case_.workflowSnapshot.intake, index);
+  if (!caseField) return '';
+
+  const value = case_[caseField as keyof Case];
+  if (typeof value !== 'string') return '';
+
+  const trimmed = value.trim();
+  return trimmed === '' || trimmed === UNKNOWN_CASE_FIELD_PLACEHOLDER ? '' : trimmed;
+}
 
 /**
  * Generic checklist resolution over a template's item list — the done/
@@ -89,7 +155,13 @@ export function resolveChecklist(
       done,
       locked,
       hasField: item.hasField,
-      fieldValue: item.hasField ? (case_.fieldValues[index] ?? '') : '',
+      // `fieldValues` first (a typed value always wins), then the mapped
+      // canonical Case column. Never both, never a third source.
+      fieldValue: item.hasField
+        ? fieldValueAt(index) !== ''
+          ? (case_.fieldValues[index] ?? '')
+          : canonicalFallbackValue(case_, displayStage, index)
+        : '',
       fieldIsPassword: Boolean(item.isPasswordField),
       isDerived: Boolean(item.requiredCaseFields),
       valueKind: item.valueKind,

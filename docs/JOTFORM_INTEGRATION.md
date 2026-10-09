@@ -149,6 +149,48 @@ tighter than the maximum possible timezone displacement (±14h) would reject
 legitimate deliveries rather than add security. It is a replay bound, not a
 nonce window, and it supplements the ownership proof rather than replacing it.
 
+### Prefill uses the field NAME; inbound uses the qid
+
+These are two different conventions and conflating them was a real bug
+(found and fixed 2026-10).
+
+**Outbound (prefill URL)** — JotForm keys a prefill value by the field's own
+`name`. Live-verified against the Arrangement form by loading URLs and
+reading the rendered inputs:
+
+| Parameter | Result |
+|---|---|
+| `?name87[first]=X` | ✅ populates |
+| `?input274=X` | ✅ populates |
+| `?87_name87[first]=X` | ❌ ignored |
+| `?q87_name87[first]=X` | ❌ ignored |
+| `?solisLinkToken=X` | ❌ ignored |
+
+SOLIS previously sent `{qid}_{name}`, so **every generated form link arrived
+blank — including its case link token**. That is why an Arrangement
+submission could never resolve its case, and why the three historical
+submissions had to be imported by hand.
+
+`ssoPrefillKey` is *not* the prefill key. Both token fields carry
+`ssoPrefillKey: 'solisLinkToken'`, but that is JotForm's SSO-prefill
+feature and has no effect on a plain URL.
+
+A `control_datetime` field is compound: it needs `name[month]`,
+`name[day]`, `name[year]`. Sending one `MM/DD/YYYY` string filled only the
+month dropdown.
+
+`linkTokenFieldName` on the config row therefore stores the hidden field's
+real JotForm **name**, which is genuinely unpredictable per form —
+`input274` on Arrangement, `solislinktoken` (lowercased) on Vital
+Statistics.
+
+Not prefillable: Arrangement qid 1 / 198 (Case No.) are
+`form-readonly validate[Numeric]`, so a `B2026-…` value can never land
+there. Cosmetic only — the case number is reference text, never linkage.
+
+**Inbound** is unchanged and qid-driven: answers come from JotForm's
+authenticated API keyed by qid, never by name.
+
 ### qid, not field name
 
 Hidden fields are located by **qid**, never by name. A live audit found

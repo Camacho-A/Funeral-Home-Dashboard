@@ -108,6 +108,29 @@ export function presentedStageLabels(organizationId: string, canonicalLabels: re
 }
 
 /**
+ * Whether this organization's COMBINED INTAKE checklist item labels render
+ * in uppercase (2026-10, requested for Manors' Intake & JotForm stage).
+ *
+ * Presentation only — it never changes a stored label, a template, a
+ * checklist key, or any comparison. Callers uppercase at render time, so
+ * the underlying `ChecklistItemTemplate.label` stays exactly as the
+ * template defines it and every lookup keyed on a label is unaffected.
+ *
+ * Scoped exactly like the stage combination above: the stable
+ * `organizationId` plus the same canonical-label shape guard, so a
+ * restructured template stops applying it, and every other organization
+ * (including Gus Camacho Jr. Funeral Home) renders unchanged. Deliberately
+ * limited to the combined intake stage — the later stages are not
+ * uppercased.
+ */
+export function presentsCombinedIntakeLabelsUppercase(
+  organizationId: string,
+  canonicalLabels: readonly string[],
+): boolean {
+  return combinesIntakeStages(organizationId, canonicalLabels);
+}
+
+/**
  * Which user-facing position a canonical display stage renders at. Both
  * canonical intake stages collapse onto index 0 for Manors; every later
  * stage shifts down by one. An out-of-range input is returned unchanged,

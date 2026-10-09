@@ -779,3 +779,82 @@ describe('POST /api/webhooks/jotform — workflow progression (Task #1, 2026-09)
     expect(updated?.rawStage).toBe(0); // still blocked — First Call & Payment was never actually completed
   });
 });
+
+describe('POST /api/webhooks/jotform — cross-tenant and retirement safety', () => {
+  it('14. a link token belonging to ANOTHER organization never attaches — the submission lands unmatched', async () => {
+    // `resolveByRawToken` looks up by token hash with no org filter, so the
+    // handler's own organization guard is what prevents a cross-tenant
+    // write. Driven through the real handler, not the service.
+    const { generateLinkForSending } = await import('@/services/caseFormLinkService');
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const { rawToken } = await generateLinkForSending(
+      'org-some-other-tenant',
+      'case-belonging-to-another-tenant',
+      'jotform',
+      ARRANGEMENT_FORMS_FORM_CONFIG_ID,
+      'mock',
+    );
+
+    givenJotformHasSubmission({
+      formId: ARRANGEMENT_FORMS_FORM_ID,
+      submissionId: SUB.crossForm,
+      answers: { [ARRANGEMENT_LINK_QID]: rawToken },
+    });
+
+    const { POST } = await import('./route');
+    const response = await POST(webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: SUB.crossForm }));
+
+    expect(response.status).toBe(200);
+    const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.crossForm);
+    // Filed under the FORM's organization (from the trusted config row),
+    // never the token's.
+    expect(submission?.organizationId).toBe('managed-cremations');
+    expect(submission?.status).toBe('unmatched');
+    expect(submission?.caseFormLinkId).toBeNull();
+    // And the other tenant's link was never touched.
+    const foreignLink = caseFormLinkFixtures.find((l) => l.caseId === 'case-belonging-to-another-tenant');
+    expect(foreignLink?.status).not.toBe('received');
+  });
+
+  it('17. a retired test submission cannot be resurrected by a webhook redelivery', async () => {
+    // The production tombstone shape: the row still exists, carries a
+    // non-null `createdCaseId` sentinel and `status: 'reviewed'`, and its
+    // mapped data has been cleared. A redelivery must be a pure no-op —
+    // the `wasNew` gate returns before any create branch is reached.
+    const { externalFormSubmissionFixtures: rows } = await import('@/services/__mocks__/externalFormFixtures');
+    rows.push({
+      id: `managed-cremations-jotform-${SUB.unknownToJotform}`,
+      organizationId: 'managed-cremations',
+      provider: 'jotform',
+      externalFormId: ARRANGEMENT_FORMS_FORM_ID,
+      externalSubmissionId: SUB.unknownToJotform,
+      caseFormLinkId: null,
+      status: 'reviewed',
+      mappedFields: '{}',
+      receivedAt: '2026-10-08T20:49:23.312Z',
+      reviewedAt: '2026-10-09T00:00:00.000Z',
+      reviewedBy: 'administrative-cleanup',
+      createdCaseId: 'RETIRED-INTEGRATION-TEST',
+      pdfStatus: 'not_applicable',
+      documentId: null,
+      pdfFailureReason: null,
+      updatedAt: '2026-10-09T00:00:00.000Z',
+    } as never);
+
+    givenJotformHasSubmission({ formId: ARRANGEMENT_FORMS_FORM_ID, submissionId: SUB.unknownToJotform });
+
+    const { POST } = await import('./route');
+    const before = externalFormSubmissionFixtures.length;
+    const response = await POST(
+      webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: SUB.unknownToJotform }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true });
+    expect(externalFormSubmissionFixtures.length).toBe(before);
+    const row = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.unknownToJotform);
+    expect(row?.createdCaseId).toBe('RETIRED-INTEGRATION-TEST');
+    expect(row?.status).toBe('reviewed');
+    expect(row?.mappedFields).toBe('{}');
+  });
+});

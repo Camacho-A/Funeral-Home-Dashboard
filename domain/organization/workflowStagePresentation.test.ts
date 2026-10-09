@@ -5,6 +5,7 @@ import {
   canonicalDisplayStagesForPresentedLabel,
   presentedStageLabels,
   presentedStages,
+  presentsCombinedIntakeLabelsUppercase,
   toPresentedStageIndex,
 } from './workflowStagePresentation';
 import { STAGES } from '../cases/stages';
@@ -177,5 +178,27 @@ describe('multi-tenant isolation — only Manors is affected', () => {
   it('no-ops when the two intake labels are present but not in the historical order', () => {
     const reordered = ['Jotform Application', 'First Call & Payment', 'Completed'];
     expect(presentedStageLabels(DEFAULT_ORGANIZATION_ID, reordered)).toEqual(reordered);
+  });
+});
+
+describe('presentsCombinedIntakeLabelsUppercase — Manors Intake & JotForm label casing', () => {
+  it('applies for Manors when the canonical intake stages are the expected pair', () => {
+    expect(presentsCombinedIntakeLabelsUppercase(DEFAULT_ORGANIZATION_ID, STAGES)).toBe(true);
+  });
+
+  it('18. does NOT apply to another organization — their workflows render unchanged', () => {
+    expect(presentsCombinedIntakeLabelsUppercase(SECOND_MOCK_ORGANIZATION_ID, STAGES)).toBe(false);
+  });
+
+  it('does not apply when the template has been restructured away from the expected pair', () => {
+    // Same shape guard the stage combination uses: stop applying rather
+    // than restyle a stage we no longer understand.
+    expect(presentsCombinedIntakeLabelsUppercase(DEFAULT_ORGANIZATION_ID, ['Intake', 'Something Else'])).toBe(false);
+    expect(presentsCombinedIntakeLabelsUppercase(DEFAULT_ORGANIZATION_ID, [])).toBe(false);
+  });
+
+  it('is keyed on the organization id, never a display name', () => {
+    expect(presentsCombinedIntakeLabelsUppercase('Manors Cremation', STAGES)).toBe(false);
+    expect(presentsCombinedIntakeLabelsUppercase('managed-cremations', STAGES)).toBe(true);
   });
 });

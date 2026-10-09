@@ -296,7 +296,12 @@ describe('buildCaseViewModel — JotForm modeled as an integration, not a domain
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
     expect(vm.checklist).toHaveLength(1);
-    expect(vm.checklist[0].label).toBe('Jotform application completed');
+    // Manors uppercase intake labels (2026-10): the Jotform Application
+    // stage is one of the two canonical stages presenting as the combined
+    // "Intake & JotForm", so its label renders uppercase for this
+    // organization. The stored template label is unchanged — see
+    // domain/organization/workflowStagePresentation.ts.
+    expect(vm.checklist[0].label).toBe('JOTFORM APPLICATION COMPLETED');
     // ChecklistItemViewModel itself has no externalFormIntegrationId field —
     // resolveChecklist deliberately doesn't surface it, since done/locked
     // resolution never branches on it. The reference lives only in the
@@ -372,7 +377,9 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
     const case_ = baseCase({ rawStage: 0 });
     const vm = buildCaseViewModel(case_, { staffList: [] });
     const item = vm.checklist[6];
-    expect(item.label).toBe('Certifier Information');
+    // Uppercased at render time for Manors' combined intake stage
+    // (2026-10); the certifier presentation itself is unchanged.
+    expect(item.label).toBe('CERTIFIER INFORMATION');
     expect(vm.checklist.some((i) => i.label.includes('Hospice'))).toBe(false);
   });
 
@@ -417,7 +424,7 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
     it('8. a legacy v1 Case\'s checklist displays "Certifier Information" via the compatibility layer', () => {
       const case_ = legacyCase({ rawStage: 0 });
       const vm = buildCaseViewModel(case_, { staffList: [] });
-      expect(vm.checklist[6].label).toBe('Certifier Information');
+      expect(vm.checklist[6].label).toBe('CERTIFIER INFORMATION');
     });
 
     it('2. a legacy v1 Case\'s checklist never shows the raw persisted Hospice/physician wording', () => {
@@ -439,7 +446,7 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
       // The old free-text fieldValues[6] entry still drives completion,
       // exactly as it always has — never silently reinterpreted. This must
       // never flip when the display/editing fix below deploys.
-      expect(vm.checklist[6].label).toBe('Certifier Information');
+      expect(vm.checklist[6].label).toBe('CERTIFIER INFORMATION');
       expect(vm.checklist[6].done).toBe(true);
       // Task #7 follow-up (2026-09): the editing surface is no longer the
       // raw legacy free-text box — it's the structured Name+Phone editor,
@@ -514,7 +521,7 @@ describe('buildCaseViewModel — legacy (v3) Certifier past-stage editing (Task 
   it('1. viewing the earlier stage (First Call & Payment) still labels the item "Certifier Information"', () => {
     const case_ = v3CaseAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
-    expect(vm.checklist[6].label).toBe('Certifier Information');
+    expect(vm.checklist[6].label).toBe('CERTIFIER INFORMATION');
   });
 
   it('2. the old editable DR.SID textbox is NOT rendered as the Certifier editor (hasField is false, fieldValue is blank)', () => {
@@ -1122,5 +1129,77 @@ describe('buildCaseViewModel — progress is immune to the cross-stage checklist
     // fixed at the source, not merely absent from this one aggregate.
     const dcResolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, case_, { isPastStage: false });
     expect(dcResolved[1].done).toBe(false);
+  });
+});
+
+/**
+ * Automated-intake checklist fix + Manors uppercase intake labels
+ * (2026-10). Reproduces the exact live shape of a webhook-created First
+ * Call case: canonical Case columns populated, `fieldValues` and
+ * `checklistState` empty (live example B2026-037).
+ */
+describe('buildCaseViewModel — webhook-created intake case (canonical columns, no fieldValues)', () => {
+  function webhookCase(overrides: Partial<Case> = {}): Case {
+    return baseCase({
+      decedentName: 'ANGELICA CAMACHO',
+      dateOfBirth: '02/02/1990',
+      dateOfDeath: '10/08/2026',
+      timeOfDeath: '11:30',
+      weight: '136',
+      placeOfDeath: '195 HIGHVIEW AVE',
+      rawStage: 0,
+      fieldValues: {},
+      checklistState: {},
+      ...overrides,
+    });
+  }
+
+  it('the four reported fields all display in the Intake checklist', () => {
+    const vm = buildCaseViewModel(webhookCase(), { staffList: [] });
+    const byLabel = (needle: string) => vm.checklist.find((i) => i.label.includes(needle));
+    expect(byLabel('NAME OF DECEASED')?.fieldValue).toBe('ANGELICA CAMACHO');
+    expect(byLabel('WEIGHT')?.fieldValue).toBe('136');
+    expect(byLabel('DATE OF BIRTH')?.fieldValue).toBe('02/02/1990');
+    expect(byLabel('TIME OF DEATH')?.fieldValue).toBe('11:30');
+  });
+
+  it('Phase 2: the checklist and the Case Overview show the SAME values — one source of truth', () => {
+    const vm = buildCaseViewModel(webhookCase(), { staffList: [] });
+    const byLabel = (needle: string) => vm.checklist.find((i) => i.label.includes(needle))?.fieldValue;
+    expect(byLabel('NAME OF DECEASED')).toBe(vm.decedentName);
+    expect(byLabel('WEIGHT')).toBe(vm.weight);
+    expect(byLabel('DATE OF BIRTH')).toBe(vm.dateOfBirth);
+    expect(byLabel('TIME OF DEATH')).toBe(vm.timeOfDeath);
+  });
+
+  it('no checklist item self-completes, and the case stays on the intake stage', () => {
+    const vm = buildCaseViewModel(webhookCase(), { staffList: [] });
+    expect(vm.checklist.some((i) => i.done && i.hasField)).toBe(false);
+    expect(vm.displayStage).toBe(0);
+  });
+
+  it('Manors renders the combined intake checklist labels in uppercase', () => {
+    const vm = buildCaseViewModel(webhookCase(), { staffList: [] });
+    for (const item of vm.checklist) {
+      expect(item.label).toBe(item.label.toUpperCase());
+    }
+  });
+
+  it('18. another organization keeps its original label casing and is otherwise unchanged', () => {
+    const vm = buildCaseViewModel(
+      webhookCase({ organizationId: SECOND_MOCK_ORGANIZATION_ID }),
+      { staffList: [] },
+    );
+    expect(vm.checklist.some((i) => i.label !== i.label.toUpperCase())).toBe(true);
+    // The canonical-column fallback is organization-independent, so the
+    // values still display for them too.
+    const name = vm.checklist.find((i) => i.label.toLowerCase().includes('name of deceased'));
+    expect(name?.fieldValue).toBe('ANGELICA CAMACHO');
+    expect(name?.done).toBe(false);
+  });
+
+  it('a typed fieldValues entry still wins over the canonical column', () => {
+    const vm = buildCaseViewModel(webhookCase({ fieldValues: { 3: '210 lb' } }), { staffList: [] });
+    expect(vm.checklist.find((i) => i.label.includes('WEIGHT'))?.fieldValue).toBe('210 lb');
   });
 });

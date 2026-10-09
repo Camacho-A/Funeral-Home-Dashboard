@@ -39,7 +39,9 @@ export const externalFormConfigFixtures: ExternalFormConfig[] = [
     audience: 'family',
     purpose: 'case_update',
     fieldMap: flattenForDisplay(FIELD_MAP_VITAL_STATISTICS),
-    linkTokenFieldName: 'solisLinkToken',
+    // The hidden field's real Jotform NAME — URL prefill keys on this,
+    // and Jotform lowercased it (live-verified 2026-10).
+    linkTokenFieldName: 'solislinktoken',
     linkTokenFieldQid: '44',
     webhookAuthFieldQid: '45',
     isEnabled: true,
@@ -55,7 +57,9 @@ export const externalFormConfigFixtures: ExternalFormConfig[] = [
     audience: 'staff',
     purpose: 'case_update',
     fieldMap: flattenForDisplay(FIELD_MAP_ARRANGEMENT_FORMS),
-    linkTokenFieldName: 'solisLinkToken',
+    // Auto-generated placeholder name on the live form — nothing like its
+    // display name, which is why prefill cannot derive it (live-verified).
+    linkTokenFieldName: 'input274',
     linkTokenFieldQid: '274',
     webhookAuthFieldQid: '275',
     isEnabled: true,
