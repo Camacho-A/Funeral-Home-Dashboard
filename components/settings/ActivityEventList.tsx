@@ -1,7 +1,13 @@
 'use client';
 
 import { formatTimestamp } from '@/utils/format';
-import { ACTIVITY_CATEGORY_LABEL, activityActorLabel, resolveActivityDisplayDescription } from '@/domain/activity/activityDisplay';
+import {
+  ACTIVITY_CATEGORY_LABEL,
+  activityActorLabel,
+  resolveActivityDisplayDescription,
+  resolveCaseCreatedDisplay,
+  staffNameForCreation,
+} from '@/domain/activity/activityDisplay';
 import type { ActivityEvent } from '@/types/activityEvent';
 
 /**
@@ -71,7 +77,10 @@ export function ActivityEventList({
                 {formatTimestamp(event.createdAt)}
               </td>
               <td data-label="What happened" data-primary>
-                {resolveActivityDisplayDescription(event)}
+                {resolveCaseCreatedDisplay(
+                  event,
+                  staffNameForCreation(event),
+                )?.primary ?? resolveActivityDisplayDescription(event)}
                 {event.severity !== 'info' && (
                   <span
                     className="sx-tag"

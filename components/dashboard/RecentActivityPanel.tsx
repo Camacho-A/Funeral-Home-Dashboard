@@ -4,7 +4,12 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationActivity } from '@/hooks/useActivity';
 import { useCases } from '@/hooks/useCases';
-import { resolveActivityDisplayDescription, activityActorLabel } from '@/domain/activity/activityDisplay';
+import {
+  resolveActivityDisplayDescription,
+  activityActorLabel,
+  resolveCaseCreatedDisplay,
+  staffNameForCreation,
+} from '@/domain/activity/activityDisplay';
 import styles from './RecentActivityPanel.module.css';
 
 function timeAgo(createdAt: string): string {
@@ -17,7 +22,7 @@ function timeAgo(createdAt: string): string {
   return new Date(createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-type GlyphKind = 'download' | 'regenerate' | 'upload' | 'payment' | 'checklist';
+type GlyphKind = 'download' | 'regenerate' | 'upload' | 'payment' | 'checklist' | 'externalForm' | 'caseCreated';
 
 /**
  * SOLIS true redesign, Phase 1 — visual fidelity correction (2026-10).
@@ -34,6 +39,12 @@ type GlyphKind = 'download' | 'regenerate' | 'upload' | 'payment' | 'checklist';
  * appear, only choosing a glyph for the ones already shown.
  */
 function glyphKindFor(description: string): GlyphKind | undefined {
+  // Creation-source attribution (2026-10): an external-form creation gets
+  // its own glyph so automated intake is recognizable at a glance, and a
+  // staff-created case gets the plain case glyph. Both are keyed off the
+  // already-resolved display text, exactly like the existing kinds below.
+  if (description.includes('via JotForm') || description.includes('imported from JotForm')) return 'externalForm';
+  if (description.startsWith('Case ') && description.includes(' created')) return 'caseCreated';
   if (description.startsWith('Document downloaded')) return 'download';
   if (description.startsWith('Document regenerated')) return 'regenerate';
   if (description.startsWith('Document uploaded')) return 'upload';
@@ -104,16 +115,28 @@ export function RecentActivityPanel() {
         {entries.length === 0 && <div className={`${styles.row} ${styles.rowEmpty}`}>No recent activity.</div>}
         {entries.map((entry) => {
           const caseNumber = entry.caseId ? caseNumberById.get(entry.caseId) : undefined;
-          const description = resolveActivityDisplayDescription(entry);
+          const actorLabel = activityActorLabel(entry);
+          // A case-creation line states its own source ("created via
+          // JotForm", "created by Dana"), so it renders the timestamp
+          // alone rather than repeating an actor — and never prints
+          // "Unknown" beside an event that had no human actor at all.
+          // Any event this cannot describe confidently falls back to the
+          // existing description + "actor · time" treatment, unchanged.
+          const createdDisplay = resolveCaseCreatedDisplay(
+            entry,
+            staffNameForCreation(entry),
+          );
+          const description = createdDisplay?.primary ?? resolveActivityDisplayDescription(entry);
           const kind = glyphKindFor(description);
           const rowContent = (
             <>
               <div className={styles.rowMain}>
                 {caseNumber && <span className={styles.caseNumber}>{caseNumber}</span>}
                 <span className={styles.what}>{description}</span>
+                {createdDisplay?.secondary && <span className={styles.detail}>{createdDisplay.secondary}</span>}
               </div>
               <span className={styles.when}>
-                {activityActorLabel(entry)} · {timeAgo(entry.createdAt)}
+                {createdDisplay ? timeAgo(entry.createdAt) : `${actorLabel} · ${timeAgo(entry.createdAt)}`}
               </span>
             </>
           );

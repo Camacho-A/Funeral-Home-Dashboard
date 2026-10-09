@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityActorLabel, resolveActivityDisplayDescription } from './activityDisplay';
+import { activityActorLabel, resolveActivityDisplayDescription, resolveCaseCreatedDisplay, staffNameForCreation } from './activityDisplay';
 
 describe('activityActorLabel (item #16 — Case Activity actor attribution)', () => {
   it('1. displays "System" for an explicitly system-generated event', () => {
@@ -195,5 +195,134 @@ describe('resolveActivityDisplayDescription — "Case updated (<field>)" present
 
   it('an unrelated case.updated-shaped description that never matches the pattern passes through unchanged', () => {
     expect(resolveActivityDisplayDescription({ eventType: 'case.updated', description: 'Case updated' })).toBe('Case updated');
+  });
+});
+
+/**
+ * Creation-source attribution (2026-10). How a case entered SOLIS comes
+ * from explicit structured metadata on the event, never from the actor
+ * name and never by pattern-matching the description.
+ */
+describe('resolveCaseCreatedDisplay', () => {
+  const SNAPSHOT = JSON.stringify({ caseNumber: 'B2026-037', decedentName: 'ANGELICA CAMACHO' });
+
+  function event(overrides: Record<string, unknown> = {}) {
+    return {
+      eventType: 'case.created',
+      description: 'Case B2026-037 created for ANGELICA CAMACHO',
+      newValue: SNAPSHOT,
+      metadata: null,
+      ...overrides,
+    } as never;
+  }
+
+  it('1. automatic JotForm creation reads "created via JotForm", with decedent and form name beneath', () => {
+    const d = resolveCaseCreatedDisplay(
+      event({ metadata: JSON.stringify({ source: 'external_form_webhook', formLabel: 'Manors First Call Sheet' }) }),
+      null,
+    );
+    expect(d).toEqual({
+      primary: 'Case B2026-037 created via JotForm',
+      secondary: 'ANGELICA CAMACHO · Manors First Call Sheet',
+    });
+  });
+
+  it('2. manual creation names the staff member who created it', () => {
+    const d = resolveCaseCreatedDisplay(
+      event({ metadata: JSON.stringify({ source: 'staff' }) }),
+      'Dana Whitfield',
+    );
+    expect(d).toEqual({ primary: 'Case B2026-037 created by Dana Whitfield', secondary: 'ANGELICA CAMACHO' });
+  });
+
+  it('3. a manual import reads "imported from JotForm" — never "created via"', () => {
+    const d = resolveCaseCreatedDisplay(
+      event({ metadata: JSON.stringify({ source: 'external_form_import', formLabel: 'Manors Cremation Arrangement Forms' }) }),
+      'Dana Whitfield',
+    );
+    expect(d!.primary).toBe('Case B2026-037 imported from JotForm');
+    expect(d!.primary).not.toContain('created via');
+    expect(d!.secondary).toBe('ANGELICA CAMACHO · Manors Cremation Arrangement Forms');
+  });
+
+  it('a webhook creation is never described as an import', () => {
+    const d = resolveCaseCreatedDisplay(
+      event({ metadata: JSON.stringify({ source: 'external_form_webhook', formLabel: 'Manors First Call Sheet' }) }),
+      null,
+    );
+    expect(d!.primary).not.toContain('imported');
+  });
+
+  it('4. a missing actor degrades to "created" — no identity is ever invented, and never "Unknown"', () => {
+    const d = resolveCaseCreatedDisplay(event({ metadata: JSON.stringify({ source: 'staff' }) }), null);
+    expect(d!.primary).toBe('Case B2026-037 created');
+    expect(d!.primary).not.toContain('Unknown');
+  });
+
+  it('5. the form name comes from the event itself, so a later rename cannot rewrite history', () => {
+    const d = resolveCaseCreatedDisplay(
+      event({ metadata: JSON.stringify({ source: 'external_form_webhook', formLabel: 'First Call Sheet' }) }),
+      null,
+    );
+    expect(d!.secondary).toContain('First Call Sheet');
+  });
+
+  it('omits the form name cleanly when the event did not capture one', () => {
+    const d = resolveCaseCreatedDisplay(event({ metadata: JSON.stringify({ source: 'external_form_webhook' }) }), null);
+    expect(d!.secondary).toBe('ANGELICA CAMACHO');
+  });
+
+  it('6. a historical event with no source metadata returns null so the caller falls back unchanged', () => {
+    expect(resolveCaseCreatedDisplay(event(), 'Dana Whitfield')).toBeNull();
+  });
+
+  it('malformed or unrecognized metadata falls back rather than guessing', () => {
+    for (const metadata of ['not json', '{}', '[]', 'null', JSON.stringify({ source: 'telepathy' })]) {
+      expect(resolveCaseCreatedDisplay(event({ metadata }), 'Dana'), metadata).toBeNull();
+    }
+  });
+
+  it('a missing or malformed identifying snapshot falls back rather than rendering a partial line', () => {
+    const meta = JSON.stringify({ source: 'staff' });
+    for (const newValue of [null, 'not json', '{}', JSON.stringify({ caseNumber: 'B2026-037' })]) {
+      expect(resolveCaseCreatedDisplay(event({ metadata: meta, newValue }), 'Dana')).toBeNull();
+    }
+  });
+
+  it('never applies to a different event type', () => {
+    expect(
+      resolveCaseCreatedDisplay(
+        event({ eventType: 'case.updated', metadata: JSON.stringify({ source: 'staff' }) }),
+        'Dana',
+      ),
+    ).toBeNull();
+  });
+
+  it('7. a deleted case still renders from the event\'s own snapshot — no case lookup involved', () => {
+    // The identifying snapshot is captured on the event at creation time,
+    // so a historical event survives its case being deleted and is never
+    // re-associated by case number with a later case that reuses it.
+    const d = resolveCaseCreatedDisplay(
+      event({ metadata: JSON.stringify({ source: 'external_form_webhook', formLabel: 'Manors First Call Sheet' }) }),
+      null,
+    );
+    expect(d!.primary).toContain('B2026-037');
+    expect(d!.secondary).toContain('ANGELICA CAMACHO');
+  });
+});
+
+describe('staffNameForCreation', () => {
+  it('returns null for a system-generated event, so no actor is shown', () => {
+    expect(staffNameForCreation({ isSystemGenerated: true, actorRoleKey: null, actorDisplayName: null })).toBeNull();
+  });
+
+  it('returns null rather than "Unknown" when the actor cannot be resolved', () => {
+    expect(staffNameForCreation({ isSystemGenerated: false, actorRoleKey: null, actorDisplayName: null })).toBeNull();
+  });
+
+  it('returns the resolved display name for a real staff actor', () => {
+    expect(
+      staffNameForCreation({ isSystemGenerated: false, actorRoleKey: 'admin', actorDisplayName: 'Dana Whitfield' }),
+    ).toBe('Dana Whitfield');
   });
 });

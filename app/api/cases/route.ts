@@ -35,6 +35,8 @@ import type { Case, NextOfKinRelationship } from '@/types/case';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { recordCaseCreated } from '@/services/activityService';
+import * as externalFormConfigService from '@/services/externalFormConfigService';
+import type { CaseCreationSource } from '@/types/activityEvent';
 import { canReadCases, canReadPickup, canCreateCase } from '@/services/authorizationPolicyService';
 import { toPickupOnlyView } from '@/domain/cases/pickupView';
 
@@ -628,6 +630,8 @@ export async function POST(request: Request) {
     // be advanced past the preserved number after the Case is created —
     // see the `historicalPreservedCaseNumber` block below.
     let historicalPreservedCaseNumber: string | null = null;
+    /** The external form a historical import came from — see below. */
+    let historicalImportFormId: string | null = null;
     if (typeof b.historicalCaseNumberAuthorization === 'string') {
       // Historical Arrangement import (2026-09) — the ONLY path that ever
       // skips reserveNextCaseNumber. Anything invalid/expired/mismatched
@@ -664,6 +668,9 @@ export async function POST(request: Request) {
 
       caseNumber = authPayload.caseNumber;
       historicalPreservedCaseNumber = caseNumber;
+      // Creation-source attribution (2026-10): taken from the SIGNED
+      // authorization, never a client-supplied body field.
+      historicalImportFormId = authPayload.externalFormId;
     } else {
       // Manors launch-prep — P0: the case-number year is the organization's
       // own LOCAL calendar year, never the server's/UTC's, so a case created
@@ -755,11 +762,40 @@ export async function POST(request: Request) {
     // for non-critical side effects (see app/api/auth/invitations/route.ts's
     // message-send try/catch).
     try {
+      // Creation-source attribution (2026-10). Both external-form sources
+      // are identified by their own SIGNED authorization token — never by
+      // anything the request body claims — so the recorded source cannot
+      // be spoofed by a caller. The form's label is resolved server-side
+      // from the trusted config row and captured on the event, so the
+      // activity line stays accurate even if the form is renamed later.
+      const externalFormId = intakeAuthorization?.externalFormId ?? historicalImportFormId;
+      const source: CaseCreationSource = intakeAuthorization
+        ? 'external_form_webhook'
+        : historicalImportFormId
+          ? 'external_form_import'
+          : 'staff';
+
+      let formLabel: string | undefined;
+      if (externalFormId) {
+        try {
+          const formConfig = await externalFormConfigService.findByProviderFormId('jotform', externalFormId, 'wix');
+          formLabel = formConfig?.label;
+        } catch (lookupError) {
+          // Best-effort: a missing label only costs the secondary line its
+          // form name, and must never fail case creation.
+          console.error(
+            'Failed to resolve external form label for case.created metadata:',
+            lookupError instanceof Error ? lookupError.message : lookupError,
+          );
+        }
+      }
+
       await recordCaseCreated(
         { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
         created.id,
         { caseNumber: created.caseNumber, decedentName: created.decedentName },
         'wix',
+        { source, formLabel, ...(externalFormId ? { externalFormId } : {}) },
       );
     } catch (error) {
       console.error('Failed to record case.created activity event:', error instanceof Error ? error.message : error);

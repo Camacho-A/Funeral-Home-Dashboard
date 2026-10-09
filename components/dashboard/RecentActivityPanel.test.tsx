@@ -829,3 +829,112 @@ describe('RecentActivityPanel — glyph classification via data-kind (SOLIS true
     expect(container.querySelector('[data-kind="checklist"]')).not.toBeNull();
   });
 });
+
+/**
+ * Creation-source attribution (2026-10). "Unknown · 3 hrs ago" beside an
+ * automatically-created case was misleading: the webhook has no human
+ * actor at all. These pin the wording and the no-actor rule.
+ */
+describe('RecentActivityPanel — how a case entered SOLIS', () => {
+  const SNAPSHOT = JSON.stringify({ caseNumber: 'B2026-037', decedentName: 'ANGELICA CAMACHO' });
+
+  it('an automatic JotForm case reads "created via JotForm" and never shows "Unknown"', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-webhook',
+          newValue: SNAPSHOT,
+          isSystemGenerated: true,
+          actorIdentityId: '',
+          actorRoleKey: '',
+          actorDisplayName: null,
+          metadata: JSON.stringify({ source: 'external_form_webhook', formLabel: 'Manors First Call Sheet' }),
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Case B2026-037 created via JotForm')).toBeInTheDocument();
+    expect(screen.getByText('ANGELICA CAMACHO · Manors First Call Sheet')).toBeInTheDocument();
+    expect(screen.queryByText(/Unknown/)).not.toBeInTheDocument();
+    // The timestamp stands alone — no actor is repeated beside it.
+    expect(screen.getByText('5 min ago')).toBeInTheDocument();
+  });
+
+  it('a manually created case names the staff member who created it', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-staff',
+          newValue: SNAPSHOT,
+          actorDisplayName: 'Dana Whitfield',
+          metadata: JSON.stringify({ source: 'staff' }),
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Case B2026-037 created by Dana Whitfield')).toBeInTheDocument();
+    expect(screen.getByText('ANGELICA CAMACHO')).toBeInTheDocument();
+  });
+
+  it('a manual import reads "imported from JotForm", never "created via"', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-import',
+          newValue: SNAPSHOT,
+          actorDisplayName: 'Dana Whitfield',
+          metadata: JSON.stringify({ source: 'external_form_import', formLabel: 'Manors Cremation Arrangement Forms' }),
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Case B2026-037 imported from JotForm')).toBeInTheDocument();
+    expect(screen.queryByText(/created via/)).not.toBeInTheDocument();
+  });
+
+  it('a historical event with no source metadata renders exactly as before', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [makeEvent({ id: 'event-legacy', actorDisplayName: 'Dana Whitfield' })],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    expect(await screen.findByText('Created a new case for Robert Ellison')).toBeInTheDocument();
+    expect(screen.getByText('Dana Whitfield · 5 min ago')).toBeInTheDocument();
+  });
+
+  it('an event whose case was deleted still renders, with no case badge and no link', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({
+      events: [
+        makeEvent({
+          id: 'event-deleted-case',
+          // A caseId that no longer resolves to any case the viewer can see.
+          caseId: 'a75c4f8f-038d-4d43-9847-e17ed2472661',
+          newValue: SNAPSHOT,
+          isSystemGenerated: true,
+          actorRoleKey: '',
+          metadata: JSON.stringify({ source: 'external_form_webhook', formLabel: 'Manors First Call Sheet' }),
+        }),
+      ],
+      nextCursor: null,
+    });
+    renderPanel();
+
+    const row = await screen.findByText('Case B2026-037 created via JotForm');
+    expect(row).toBeInTheDocument();
+    // Rendered from the event's own snapshot, never re-associated by case
+    // number with whichever case holds B2026-037 now.
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});

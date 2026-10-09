@@ -6,7 +6,12 @@ import { useCaseActivity } from '@/hooks/useActivity';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
 import { printTextLog } from '@/utils/print';
-import { activityActorLabel, resolveActivityDisplayDescription } from '@/domain/activity/activityDisplay';
+import {
+  activityActorLabel,
+  resolveActivityDisplayDescription,
+  resolveCaseCreatedDisplay,
+  staffNameForCreation,
+} from '@/domain/activity/activityDisplay';
 import { ActivityEventDiff } from '@/components/activity/ActivityEventDiff';
 import type { ActivityEvent, ActivityEventCategory } from '@/types/activityEvent';
 
@@ -95,7 +100,13 @@ export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: stri
 
   function handlePrint() {
     printTextLog('Case Activity', caseName, caseNumber, events, (event: ActivityEvent) => {
-      return `<div style="margin-bottom:12px"><div>${resolveActivityDisplayDescription(event)}</div><div style="font-size:12px;color:#888">${activityActorLabel(event)} · ${formatTimestamp(event.createdAt)}</div></div>`;
+      const created = resolveCaseCreatedDisplay(
+        event,
+        staffNameForCreation(event),
+      );
+      const what = created?.primary ?? resolveActivityDisplayDescription(event);
+      const who = created?.secondary ?? activityActorLabel(event);
+      return `<div style="margin-bottom:12px"><div>${what}</div><div style="font-size:12px;color:#888">${who} · ${formatTimestamp(event.createdAt)}</div></div>`;
     });
   }
 
@@ -130,7 +141,14 @@ export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: stri
             {group.events.map((event) => {
               const hasDetail = event.previousValue !== null || event.newValue !== null;
               const isExpanded = expandedId === event.id;
-              const label = resolveActivityDisplayDescription(event);
+              // Creation-source attribution (2026-10) — the same shared
+              // resolver the Dashboard feed uses, so the wording is
+              // identical across every activity surface.
+              const createdDisplay = resolveCaseCreatedDisplay(
+                event,
+                staffNameForCreation(event),
+              );
+              const label = createdDisplay?.primary ?? resolveActivityDisplayDescription(event);
 
               const descriptionContent = (
                 <>
@@ -168,7 +186,7 @@ export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: stri
                     ) : (
                       <div className="sx-tl-desc">{descriptionContent}</div>
                     )}
-                    <div className="sx-tl-actor">{activityActorLabel(event)}</div>
+                    <div className="sx-tl-actor">{createdDisplay?.secondary ?? activityActorLabel(event)}</div>
                     {isExpanded && (
                       <div className="sx-tl-diff">
                         <ActivityEventDiff event={event} />

@@ -1,4 +1,11 @@
-import type { ActivityEvent, ActivityEventCategory, ActivityEventType, ActivitySeverity } from '@/types/activityEvent';
+import {
+  ACTIVITY_EVENT_TYPES,
+  type ActivityEvent,
+  type ActivityEventCategory,
+  type ActivityEventType,
+  type ActivitySeverity,
+  type CaseCreatedMetadata,
+} from '@/types/activityEvent';
 import type { BadgeVariant } from '@/components/ui/Badge';
 import { resolveRoleKeyAlias } from '@/domain/rbac/legacyRoleAliases';
 import { isDefaultRoleKey, defaultRoleDefinition } from '@/domain/rbac/defaultRoles';
@@ -185,3 +192,132 @@ export const ACTIVITY_CATEGORY_LABEL: Record<ActivityEventCategory, string> = {
   procurement: 'Procurement',
   external_form: 'External Forms',
 };
+
+/**
+ * Case-creation attribution (2026-10). Turns a `case.created` event into
+ * the two lines the activity feeds render, using the event's own
+ * structured `metadata.source` — never the actor name, and never by
+ * pattern-matching the description.
+ *
+ * Wording by source:
+ *   external_form_webhook  "Case B2026-037 created via JotForm"
+ *                          "ANGELICA CAMACHO · Manors First Call Sheet"
+ *   external_form_import   "Case B2026-039 imported from JotForm"
+ *                          "JAMES CALLARD · Manors Cremation Arrangement Forms"
+ *   staff                  "Case B2026-038 created by Dana Whitfield"
+ *                          "WALTER BOONE"
+ *
+ * "Imported" is used ONLY for a genuine manual import — an automatic
+ * webhook creation is never described as an import, and vice versa.
+ *
+ * Returns null for anything this cannot describe confidently: a different
+ * event type, an event recorded before this metadata existed, or metadata
+ * that is missing/unparseable/unrecognized. The caller then falls back to
+ * the event's own persisted description, so historical rows are unchanged
+ * and nothing is invented.
+ *
+ * `staffName` is the already-resolved actor display name (the same
+ * `activityActorLabel` input the feeds already have). When a staff-created
+ * event has no resolvable actor, the line degrades to "created" rather
+ * than naming anyone — no identity is ever fabricated.
+ */
+export type CaseCreatedDisplay = { primary: string; secondary: string | null };
+
+const EXTERNAL_FORM_PROVIDER_LABEL = 'JotForm';
+
+function parseCaseCreatedMetadata(metadata: string | null): CaseCreatedMetadata | null {
+  if (!metadata) return null;
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const candidate = parsed as Partial<CaseCreatedMetadata>;
+    if (
+      candidate.source !== 'staff' &&
+      candidate.source !== 'external_form_webhook' &&
+      candidate.source !== 'external_form_import'
+    ) {
+      return null;
+    }
+    return {
+      source: candidate.source,
+      ...(typeof candidate.formLabel === 'string' && candidate.formLabel ? { formLabel: candidate.formLabel } : {}),
+      ...(typeof candidate.externalFormId === 'string' ? { externalFormId: candidate.externalFormId } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** `newValue` holds `{caseNumber, decedentName}` — the identifying
+    snapshot captured when the case was created, which is what keeps a
+    historical event readable even after its case is deleted. */
+function parseCaseCreatedSnapshot(newValue: string | null): { caseNumber: string; decedentName: string } | null {
+  if (!newValue) return null;
+  try {
+    const parsed: unknown = JSON.parse(newValue);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const c = parsed as Partial<{ caseNumber: string; decedentName: string }>;
+    if (typeof c.caseNumber !== 'string' || typeof c.decedentName !== 'string') return null;
+    return { caseNumber: c.caseNumber, decedentName: c.decedentName };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The staff name to use in a "created by …" line, or null when there
+ * genuinely isn't one.
+ *
+ * Derived from the same `activityActorLabel` every activity surface
+ * already renders, so there is exactly one actor-resolution path. Returns
+ * null for a system-generated event (no human actor existed) and for an
+ * unresolvable actor — so the line degrades to "created" rather than
+ * naming someone who cannot be identified, and "Unknown" never appears.
+ */
+export function staffNameForCreation(event: {
+  isSystemGenerated: boolean;
+  actorRoleKey: string | null;
+  actorDisplayName?: string | null;
+}): string | null {
+  if (event.isSystemGenerated) return null;
+  const label = activityActorLabel(event);
+  return label === 'Unknown' || label === 'System' ? null : label;
+}
+
+export function resolveCaseCreatedDisplay(
+  event: Pick<ActivityEvent, 'eventType' | 'description' | 'metadata' | 'newValue'>,
+  staffName: string | null,
+): CaseCreatedDisplay | null {
+  if (event.eventType !== ACTIVITY_EVENT_TYPES.CASE_CREATED) return null;
+
+  const metadata = parseCaseCreatedMetadata(event.metadata);
+  const snapshot = parseCaseCreatedSnapshot(event.newValue);
+  if (!metadata || !snapshot) return null;
+
+  const details: string[] = [snapshot.decedentName];
+  if (metadata.formLabel) details.push(metadata.formLabel);
+  const secondary = details.filter(Boolean).join(' · ') || null;
+
+  switch (metadata.source) {
+    case 'external_form_webhook':
+      return { primary: `Case ${snapshot.caseNumber} created via ${EXTERNAL_FORM_PROVIDER_LABEL}`, secondary };
+    case 'external_form_import':
+      return { primary: `Case ${snapshot.caseNumber} imported from ${EXTERNAL_FORM_PROVIDER_LABEL}`, secondary };
+    case 'staff':
+      return {
+        primary: staffName
+          ? `Case ${snapshot.caseNumber} created by ${staffName}`
+          : `Case ${snapshot.caseNumber} created`,
+        secondary: snapshot.decedentName || null,
+      };
+  }
+}
+
+/**
+ * Whether a resolved case-created line already states who or what created
+ * the case, so a feed can show the timestamp alone instead of repeating
+ * an actor — or worse, printing "Unknown" next to "created via JotForm".
+ */
+export function caseCreatedLineNamesItsActor(display: CaseCreatedDisplay | null): boolean {
+  return display !== null;
+}

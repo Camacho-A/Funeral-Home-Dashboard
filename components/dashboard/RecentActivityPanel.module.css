@@ -54,6 +54,12 @@
 .row[data-kind='upload']::before { content: '↑'; }
 .row[data-kind='payment']::before { content: '$'; background: oklch(0.95 0.035 150); color: oklch(0.42 0.1 150); }
 .row[data-kind='checklist']::before { content: '✓'; background: oklch(0.95 0.035 150); color: oklch(0.42 0.1 150); }
+/* Creation-source attribution (2026-10). A case created by automated
+   external-form intake is visually distinct from one a person created, so
+   staff can tell at a glance how it arrived. Navy tint, matching the
+   case-number chip's own palette — no new colour was introduced. */
+.row[data-kind='externalForm']::before { content: '≡'; background: oklch(0.955 0.012 255); color: oklch(0.36 0.06 255); }
+.row[data-kind='caseCreated']::before { content: '+'; background: oklch(0.955 0.012 255); color: oklch(0.36 0.06 255); }
 
 .rowEmpty {
   grid-template-columns: minmax(0, 1fr);
@@ -109,6 +115,9 @@
   grid-column: 2;
   display: flex;
   align-items: center;
+  /* Wraps so a creation row's secondary detail line (below) drops beneath
+     the case number + headline rather than competing with them. */
+  flex-wrap: wrap;
   gap: 10px;
   min-width: 0;
 }
@@ -139,6 +148,20 @@
   color: var(--color-text-primary);
 }
 
+/* Secondary line for a case-creation row: "<DECEDENT> · <Form name>".
+   `flex-basis: 100%` puts it on its own line inside .rowMain without
+   restructuring the grid, so the row stays compact and the existing
+   desktop/mobile layouts both keep working. */
+.detail {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
 .when {
   grid-column: 3;
   font-size: 12.5px;
@@ -167,6 +190,10 @@
   }
 
   .what {
+    white-space: normal;
+  }
+
+  .detail {
     white-space: normal;
   }
 

@@ -97,6 +97,36 @@ export type ActivityEvent = {
  * why (unimplemented features, or legacy writers intentionally not
  * migrated this phase).
  */
+/**
+ * How a case came to exist — recorded as explicit, structured metadata on
+ * the `case.created` event rather than inferred later from an actor name
+ * or a description string (2026-10).
+ *
+ * - `staff`                 a person created it through the app
+ * - `external_form_webhook` an external form submission created it
+ *                           automatically, with no human actor at all
+ * - `external_form_import`  a staff member manually imported a historical
+ *                           external-form submission
+ *
+ * `external_form_webhook` and `external_form_import` are deliberately
+ * distinct: one is automation, the other is a person choosing to pull in
+ * an old submission, and conflating them misreports both.
+ */
+export type CaseCreationSource = 'staff' | 'external_form_webhook' | 'external_form_import';
+
+/** `ActivityEvent.metadata` for a `case.created` event, JSON-encoded.
+    Absent on events recorded before 2026-10 — readers must treat a missing
+    or unparseable value as "unknown source" and fall back, never guess. */
+export type CaseCreatedMetadata = {
+  source: CaseCreationSource;
+  /** The external form's own label, captured at creation time so the event
+      stays self-describing even if the form is later renamed. Only present
+      for the two external-form sources. */
+  formLabel?: string;
+  /** The provider's form id, for traceability. */
+  externalFormId?: string;
+};
+
 export const ACTIVITY_EVENT_TYPES = {
   CASE_CREATED: 'case.created',
   CASE_UPDATED: 'case.updated',

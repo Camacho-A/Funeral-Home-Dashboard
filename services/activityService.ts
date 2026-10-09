@@ -2,7 +2,15 @@ import crypto from 'crypto';
 import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems, insertWixDataItem } from '../lib/wixDataApi';
 import { mapWixActivityEventItem, buildWixActivityEventData, type WixActivityEventItem } from '../lib/wixActivityEventMapper';
-import { ACTIVITY_EVENT_TYPES, type ActivityEvent, type ActivityEventCategory, type ActivitySeverity, type NewActivityEventInput } from '../types/activityEvent';
+import {
+  ACTIVITY_EVENT_TYPES,
+  type ActivityEvent,
+  type ActivityEventCategory,
+  type ActivitySeverity,
+  type CaseCreatedMetadata,
+  type CaseCreationSource,
+  type NewActivityEventInput,
+} from '../types/activityEvent';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { buildCsv, EXPORT_ROW_CAP } from '../domain/reporting/csvExport';
 import { getIdentityById } from './identityService';
@@ -311,12 +319,38 @@ function fieldChangesToJson(changedFields: Record<string, FieldChange>, side: 'p
   return JSON.stringify(Object.fromEntries(Object.entries(changedFields).map(([key, change]) => [key, change[side]])));
 }
 
+/**
+ * Creation-source attribution (2026-10). `origin` records HOW the case was
+ * created as explicit structured metadata, so the activity feed can say
+ * "created via JotForm" / "imported from JotForm" / "created by <staff>"
+ * without ever inferring it from an actor name or by pattern-matching the
+ * description.
+ *
+ * An `external_form_webhook` case has no human actor by definition — the
+ * webhook runs with no identity — so this also marks the event
+ * `isSystemGenerated`, which is what stops the feed rendering "Unknown"
+ * for an event that was never a person's action. The other two sources are
+ * genuine staff actions and keep their real actor.
+ *
+ * `origin` is optional so existing callers (and any path that genuinely
+ * doesn't know) keep working unchanged; omitting it records no metadata,
+ * exactly as before, and readers fall back to the plain description.
+ */
 export function recordCaseCreated(
   ctx: ActivityContext,
   caseId: string,
   identifyingSnapshot: { caseNumber: string; decedentName: string },
   dataAdapterMode: DataAdapterMode,
+  origin?: { source: CaseCreationSource; formLabel?: string; externalFormId?: string },
 ): Promise<ActivityEvent> {
+  const metadata: CaseCreatedMetadata | null = origin
+    ? {
+        source: origin.source,
+        ...(origin.formLabel ? { formLabel: origin.formLabel } : {}),
+        ...(origin.externalFormId ? { externalFormId: origin.externalFormId } : {}),
+      }
+    : null;
+
   return record(
     envelope(ctx, {
       caseId,
@@ -326,8 +360,12 @@ export function recordCaseCreated(
       resourceId: caseId,
       previousValue: null,
       newValue: JSON.stringify(identifyingSnapshot),
+      // The persisted description is unchanged, so every historical row and
+      // any reader that doesn't understand the metadata still renders
+      // exactly as it always has.
       description: `Case ${identifyingSnapshot.caseNumber} created for ${identifyingSnapshot.decedentName}`,
-      metadata: null,
+      metadata: metadata ? JSON.stringify(metadata) : null,
+      ...(origin?.source === 'external_form_webhook' ? { isSystemGenerated: true } : {}),
       severity: 'info',
     }),
     dataAdapterMode,

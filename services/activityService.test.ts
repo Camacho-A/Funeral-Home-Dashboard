@@ -758,3 +758,61 @@ describe('exportCsv', () => {
     expect(csv.split('\n').length).toBeLessThan(10_002); // header + 10,000 cap
   });
 });
+
+/**
+ * Creation-source attribution (2026-10). The source is recorded as
+ * explicit structured metadata so readers never have to infer it.
+ */
+describe('recordCaseCreated — creation source metadata', () => {
+  const snapshot = { caseNumber: 'B2026-037', decedentName: 'ANGELICA CAMACHO' };
+
+  it('records an automatic external-form creation as system-generated, with the form captured', async () => {
+    const e = await recordCaseCreated(ctx(), 'case-wh', snapshot, 'mock', {
+      source: 'external_form_webhook',
+      formLabel: 'Manors First Call Sheet',
+      externalFormId: '262664842044055',
+    });
+    expect(JSON.parse(e.metadata!)).toEqual({
+      source: 'external_form_webhook',
+      formLabel: 'Manors First Call Sheet',
+      externalFormId: '262664842044055',
+    });
+    // No human actor existed, so the event says so rather than leaving a
+    // reader to render "Unknown".
+    expect(e.isSystemGenerated).toBe(true);
+  });
+
+  it('records a manual import as a real staff action, not system-generated', async () => {
+    const e = await recordCaseCreated(ctx(), 'case-imp', snapshot, 'mock', {
+      source: 'external_form_import',
+      formLabel: 'Manors Cremation Arrangement Forms',
+    });
+    expect(JSON.parse(e.metadata!).source).toBe('external_form_import');
+    expect(e.isSystemGenerated).toBe(false);
+  });
+
+  it('records a staff creation with no form fields', async () => {
+    const e = await recordCaseCreated(ctx(), 'case-staff', snapshot, 'mock', { source: 'staff' });
+    expect(JSON.parse(e.metadata!)).toEqual({ source: 'staff' });
+    expect(e.isSystemGenerated).toBe(false);
+  });
+
+  it('omitting the origin records no metadata — existing callers are unchanged', async () => {
+    const e = await recordCaseCreated(ctx(), 'case-legacy', snapshot, 'mock');
+    expect(e.metadata).toBeNull();
+    expect(e.isSystemGenerated).toBe(false);
+  });
+
+  it('the persisted description is identical regardless of source, so historical rows still match', async () => {
+    const a = await recordCaseCreated(ctx(), 'case-a', snapshot, 'mock');
+    const b = await recordCaseCreated(ctx(), 'case-b', snapshot, 'mock', { source: 'external_form_webhook' });
+    expect(a.description).toBe(b.description);
+    expect(b.description).toBe('Case B2026-037 created for ANGELICA CAMACHO');
+  });
+
+  it('stays scoped to the recording organization', async () => {
+    const e = await recordCaseCreated(ctx(), 'case-org', snapshot, 'mock', { source: 'external_form_webhook' });
+    expect(e.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+    expect(e.organizationId).not.toBe(SECOND_MOCK_ORGANIZATION_ID);
+  });
+});
