@@ -1208,3 +1208,108 @@ describe('buildCaseViewModel — webhook-created intake case (canonical columns,
     expect(vm.checklist.find((i) => i.label.includes('WEIGHT'))?.fieldValue).toBe('210 lb');
   });
 });
+
+describe('terminal "Family picked up ashes" — completion semantics (2026-10)', () => {
+  it('carries the release record onto the terminal item so the workflow can offer a way to record it', () => {
+    const case_ = baseCase({
+      rawStage: 7,
+      returnMethod: 'pickup',
+      pickupStatus: 'awaiting_pickup',
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+
+    expect(vm.checklist[0].returnRequirement).toEqual({
+      returnMethod: 'pickup',
+      pickupReleasedTo: null,
+      pickupReleasedAt: null,
+      pickupNote: null,
+      shippingDeliveryStatus: null,
+      shippingDeliveredAt: null,
+    });
+    // Still derived and still not done — carrying the record changes
+    // nothing about how completion is decided.
+    expect(vm.checklist[0].isDerived).toBe(true);
+    expect(vm.checklist[0].done).toBe(false);
+  });
+
+  it('only the terminal item carries the release record', () => {
+    const midStage = buildCaseViewModel(baseCase({ rawStage: 3 }), { staffList: [] });
+    expect(midStage.checklist.every((item) => item.returnRequirement === undefined)).toBe(true);
+  });
+
+  it('recording the release completes the item and moves the case to Completed', () => {
+    const before = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'awaiting_pickup' });
+    const after = baseCase({
+      rawStage: 7,
+      returnMethod: 'pickup',
+      pickupStatus: 'released',
+      pickupReleasedTo: 'KAREN ELLISON',
+      pickupReleasedAt: '10/09/2026',
+    });
+
+    expect(buildCaseViewModel(before, { staffList: [] }).checklist[0].done).toBe(false);
+    expect(buildCaseViewModel(before, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+
+    const vm = buildCaseViewModel(after, { staffList: [] });
+    expect(vm.checklist[0].done).toBe(true);
+    expect(vm.stageLabel).toBe('Completed');
+    expect(vm.checklist[0].returnRequirement?.pickupReleasedTo).toBe('KAREN ELLISON');
+  });
+
+  it('the crematory releasing the ashes to the funeral home never completes the family pickup', () => {
+    // These are different events. "Ashes picked up (Tue/Fri)" is the
+    // crematory handing the remains to Manors; "Family picked up ashes" is
+    // Manors handing them to the family. Completing the former — including
+    // every other item in the Ready for Pickup stage — must leave the
+    // terminal item incomplete.
+    const everyPriorItemDone: Record<string, boolean> = {};
+    for (let index = 0; index < 6; index += 1) everyPriorItemDone[`5:${index}`] = true;
+
+    const case_ = baseCase({
+      rawStage: 7,
+      returnMethod: 'pickup',
+      pickupStatus: 'awaiting_pickup',
+      checklistState: everyPriorItemDone,
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+
+    expect(vm.checklist[0].done).toBe(false);
+    expect(vm.stageLabel).not.toBe('Completed');
+  });
+
+  it('a stale checklistState entry for the terminal item cannot complete it', () => {
+    // Historical compatibility: a case migrated from the era when this item
+    // WAS a manual checkbox may carry `checklistState` for it. That stored
+    // value is preserved untouched, but it no longer decides completion —
+    // only the release record does, so a case can never read as Completed
+    // without one.
+    const case_ = baseCase({
+      rawStage: 7,
+      returnMethod: 'pickup',
+      pickupStatus: 'awaiting_pickup',
+      checklistState: { '6:0': true, 0: true },
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+
+    expect(vm.checklist[0].done).toBe(false);
+    expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family');
+  });
+
+  it('an undecided case exposes no release record to act on and never completes', () => {
+    const vm = buildCaseViewModel(baseCase({ rawStage: 7, returnMethod: 'undecided' }), { staffList: [] });
+    expect(vm.checklist[0].returnRequirement?.returnMethod).toBe('undecided');
+    expect(vm.checklist[0].done).toBe(false);
+    expect(vm.stageLabel).not.toBe('Completed');
+  });
+
+  it('a shipping case completes on confirmed delivery, not on dispatch', () => {
+    const shipped = baseCase({ rawStage: 7, returnMethod: 'shipping', shippingDeliveryStatus: 'shipped' });
+    const delivered = baseCase({ rawStage: 7, returnMethod: 'shipping', shippingDeliveryStatus: 'delivered' });
+
+    expect(buildCaseViewModel(shipped, { staffList: [] }).checklist[0].done).toBe(false);
+    expect(buildCaseViewModel(delivered, { staffList: [] }).checklist[0].done).toBe(true);
+    expect(buildCaseViewModel(delivered, { staffList: [] }).stageLabel).toBe('Completed');
+  });
+});

@@ -1600,3 +1600,77 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
     expect(body.case.rawStage).toBe(5);
   });
 });
+
+describe('PATCH /api/cases/[caseId] — terminal family-pickup release (2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  /** Exactly what ChecklistCard's "Record family pickup" dialog sends. */
+  const DIALOG_PATCH = {
+    pickupStatus: 'released',
+    pickupReleasedTo: 'Karen Ellison',
+    pickupReleasedAt: '07/10/2026',
+    pickupNote: 'Photo ID checked',
+  };
+
+  it('accepts the dialog payload and persists a complete release record', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, currentStage: 7, returnMethod: 'pickup' });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: DIALOG_PATCH });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.pickupStatus).toBe('released');
+    expect(body.case.pickupReleasedTo).toBe('KAREN ELLISON');
+    expect(body.case.pickupReleasedAt).toBe('07/10/2026');
+    // The persisted record is what a reload reads back — completion is
+    // derived from these fields, so it survives refresh by construction.
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith(
+      'cases',
+      '1042',
+      expect.objectContaining({ pickupStatus: 'released', pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '07/10/2026' }),
+    );
+  });
+
+  it('never advances the workflow stage as a side effect of recording the release', async () => {
+    // The release completes the terminal item; it must not also push
+    // rawStage, which is reconciliation's job alone.
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, currentStage: 7, returnMethod: 'pickup' });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: DIALOG_PATCH });
+
+    const persisted = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
+    expect(persisted.currentStage).toBe(7);
+  });
+
+  it('a release missing its documentation is refused at the persistence chokepoint', async () => {
+    // The dialog's Save button cannot produce this, but a direct API call
+    // can — the invariant must hold regardless of which door is used.
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, currentStage: 7, returnMethod: 'pickup' });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released' },
+    });
+
+    // 422, not 400: the payload is well-formed and correctly typed, but
+    // the resulting record would violate the release invariant.
+    expect(response.status).toBe(422);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('recording the release leaves checklistState untouched — no second completion signal is written', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, currentStage: 7, returnMethod: 'pickup' });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: DIALOG_PATCH });
+
+    const persisted = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
+    expect(persisted.checklistState).toEqual(EXISTING_WIX_CASE_DATA.checklistState);
+  });
+});

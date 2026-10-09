@@ -313,6 +313,18 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
             done: remainsReturnComplete,
             locked: false,
             isDerived: true,
+            // The structured record this item is derived FROM, carried so
+            // the checklist can offer a way to record it. Read-only data —
+            // the card writes back through the same case PATCH the Case
+            // Information card uses, never through checklistState.
+            returnRequirement: {
+              returnMethod: case_.returnMethod,
+              pickupReleasedTo: case_.pickupReleasedTo,
+              pickupReleasedAt: case_.pickupReleasedAt,
+              pickupNote: case_.pickupNote,
+              shippingDeliveryStatus: case_.shippingDeliveryStatus,
+              shippingDeliveredAt: case_.shippingDeliveredAt,
+            },
           },
           ...currentChecklist.slice(1),
         ]

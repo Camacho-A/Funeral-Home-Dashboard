@@ -11,7 +11,13 @@
  * happens on click. This keeps domain/ free of React and presentation
  * concerns, per docs/adr/ADR-004-domain-layer.md.
  */
-import type { PaymentStatus, VaPublishChoice, VaNotificationResponsibility } from './case';
+import type {
+  PaymentStatus,
+  ReturnMethod,
+  ShippingDeliveryStatus,
+  VaPublishChoice,
+  VaNotificationResponsibility,
+} from './case';
 
 export type BadgeVariant = 'neutral' | 'brand' | 'danger' | 'success';
 
@@ -52,6 +58,31 @@ export type ChecklistItemViewModel = {
       today); an unrecognized key here is simply not rendered, never
       guessed at generically. */
   requiredCaseFieldValues?: Record<string, string>;
+  /**
+   * "Family picked up ashes" fix (2026-10). Present ONLY on the terminal
+   * stage's return-of-remains item — the one `isDerived` item whose
+   * completion comes from the structured release record rather than from
+   * `checklistState`.
+   *
+   * It carries that record so ChecklistCard can offer staff a way to
+   * record the release from the workflow itself, instead of leaving a
+   * disabled checkbox whose completing control lives, unlabelled as such,
+   * on a different card. The card never writes `checklistState` for this
+   * item — it writes the same `pickupStatus`/`pickupReleasedTo`/
+   * `pickupReleasedAt` (or shipping) fields the Case Information card
+   * already writes, through the same PATCH and the same
+   * `assertValidPickupReleasePatch` invariant. So the derivation is
+   * preserved exactly: this adds a second DOOR to the one record, never a
+   * second source of truth.
+   */
+  returnRequirement?: {
+    returnMethod: ReturnMethod;
+    pickupReleasedTo: string | null;
+    pickupReleasedAt: string | null;
+    pickupNote: string | null;
+    shippingDeliveryStatus: ShippingDeliveryStatus | null;
+    shippingDeliveredAt: string | null;
+  };
 };
 
 export type VaStepViewModel = {

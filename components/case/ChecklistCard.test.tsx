@@ -628,3 +628,182 @@ describe('ChecklistCard — Family Contact structured Name/Phone/Email editor (T
     expect(screen.getByRole('checkbox', { name: 'Family contact — name, phone number & email' })).toBeDisabled();
   });
 });
+
+describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)', () => {
+  function terminalItem(overrides: Partial<ChecklistItemViewModel> = {}, record: Partial<NonNullable<ChecklistItemViewModel['returnRequirement']>> = {}) {
+    return item({
+      index: 0,
+      label: 'Family picked up ashes',
+      isDerived: true,
+      ...overrides,
+      returnRequirement: {
+        returnMethod: 'pickup',
+        pickupReleasedTo: null,
+        pickupReleasedAt: null,
+        pickupNote: null,
+        shippingDeliveryStatus: null,
+        shippingDeliveredAt: null,
+        ...record,
+      },
+    });
+  }
+
+  function openDialog() {
+    fireEvent.click(screen.getByRole('button', { name: 'Record family pickup' }));
+    return within(screen.getByRole('dialog'));
+  }
+
+  function fillValidRelease(dialog: ReturnType<typeof within>) {
+    fireEvent.change(dialog.getByLabelText('Released to'), { target: { value: 'karen ellison' } });
+    fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: '10/09/2026' } });
+    return dialog;
+  }
+
+  it('the checkbox itself stays read-only — the derived signal is never independently toggleable', () => {
+    // The whole point of the 2026-09 design: the checkbox must not become a
+    // second completion signal that can contradict the release record.
+    const { onToggleItem } = renderChecklist([terminalItem()]);
+    const checkbox = screen.getByRole('checkbox', { name: 'Family picked up ashes' });
+    expect(checkbox).toBeDisabled();
+    fireEvent.click(checkbox);
+    expect(onToggleItem).not.toHaveBeenCalled();
+  });
+
+  it('offers staff a way to record the pickup from the workflow itself', () => {
+    renderChecklist([terminalItem()]);
+    expect(screen.getByRole('button', { name: 'Record family pickup' })).toBeEnabled();
+  });
+
+  it('records the release and its documentation in a single patch', () => {
+    const { onUpdateCaseInfo, onToggleItem } = renderChecklist([terminalItem()]);
+    const dialog = fillValidRelease(openDialog());
+    fireEvent.change(dialog.getByLabelText('Note (optional)'), { target: { value: 'photo id checked' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Record pickup' }));
+
+    // One patch — the status and the documentation justifying it can never
+    // be persisted apart, so assertValidPickupReleasePatch always passes.
+    expect(onUpdateCaseInfo).toHaveBeenCalledTimes(1);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({
+      pickupStatus: 'released',
+      pickupReleasedTo: 'KAREN ELLISON',
+      pickupReleasedAt: '10/09/2026',
+      pickupNote: 'PHOTO ID CHECKED',
+    });
+    // Completion still flows only from the release record.
+    expect(onToggleItem).not.toHaveBeenCalled();
+  });
+
+  it('cannot save without the required release documentation', () => {
+    const { onUpdateCaseInfo } = renderChecklist([terminalItem()]);
+    const dialog = openDialog();
+    const save = dialog.getByRole('button', { name: 'Record pickup' });
+
+    expect(save).toBeDisabled();
+
+    // Name alone is not enough.
+    fireEvent.change(dialog.getByLabelText('Released to'), { target: { value: 'KAREN ELLISON' } });
+    expect(save).toBeDisabled();
+
+    // Nor is an invalid date.
+    fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: '13/45/2026' } });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: '10/09/2026' } });
+    expect(save).toBeEnabled();
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('refuses a release dated in the future', () => {
+    renderChecklist([terminalItem()]);
+    const dialog = openDialog();
+    fireEvent.change(dialog.getByLabelText('Released to'), { target: { value: 'KAREN ELLISON' } });
+    fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: '12/31/2099' } });
+
+    expect(dialog.getByRole('alert')).toHaveTextContent('Released date cannot be in the future.');
+    expect(dialog.getByRole('button', { name: 'Record pickup' })).toBeDisabled();
+  });
+
+  it('an optional note left blank is sent as null, never an empty string', () => {
+    const { onUpdateCaseInfo } = renderChecklist([terminalItem()]);
+    fireEvent.click(fillValidRelease(openDialog()).getByRole('button', { name: 'Record pickup' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith(expect.objectContaining({ pickupNote: null }));
+  });
+
+  it('shows the recorded release once it exists, instead of the action', () => {
+    renderChecklist([
+      terminalItem({ done: true }, { pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '10/09/2026' }),
+    ]);
+
+    expect(screen.getByText(/Released to/)).toHaveTextContent('Released to KAREN ELLISON on 10/09/2026.');
+    expect(screen.queryByRole('button', { name: 'Record family pickup' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Family picked up ashes' })).toBeChecked();
+  });
+
+  it('a recorded release can be corrected, pre-filled from what is stored', () => {
+    const { onUpdateCaseInfo } = renderChecklist([
+      terminalItem({ done: true }, { pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '10/09/2026' }),
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Correct this record' }));
+    const dialog = within(screen.getByRole('dialog'));
+
+    expect(dialog.getByLabelText('Released to')).toHaveValue('KAREN ELLISON');
+    expect(dialog.getByLabelText('Released date')).toHaveValue('10/09/2026');
+
+    fireEvent.change(dialog.getByLabelText('Released to'), { target: { value: 'MICHAEL ELLISON' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Record pickup' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith(expect.objectContaining({ pickupReleasedTo: 'MICHAEL ELLISON' }));
+  });
+
+  it('an undecided return method explains what is needed instead of showing a dead control', () => {
+    renderChecklist([
+      terminalItem({ label: 'Return of cremated remains confirmed' }, { returnMethod: 'undecided' }),
+    ]);
+
+    // Matched on a contiguous text node — the sentence is split by <b>.
+    expect(screen.getByText(/to record how the cremated\s+remains were returned/)).toBeInTheDocument();
+    // No "mark complete anyway" escape hatch — an undecided case must not
+    // be able to record a release that never happened.
+    expect(screen.queryByRole('button', { name: 'Record family pickup' })).not.toBeInTheDocument();
+  });
+
+  it('a shipping case points at delivery confirmation, never at a pickup it is not having', () => {
+    renderChecklist([
+      terminalItem({ label: 'Cremated remains confirmed delivered' }, { returnMethod: 'shipping' }),
+    ]);
+
+    expect(screen.getByText(/This case is being shipped/)).toBeInTheDocument();
+    expect(screen.getByText(/is\s+set to Delivered/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record family pickup' })).not.toBeInTheDocument();
+  });
+
+  it('a delivered shipping case shows the confirmed delivery', () => {
+    renderChecklist([
+      terminalItem(
+        { label: 'Cremated remains confirmed delivered', done: true },
+        { returnMethod: 'shipping', shippingDeliveryStatus: 'delivered', shippingDeliveredAt: '10/09/2026' },
+      ),
+    ]);
+    expect(screen.getByText('Delivery confirmed on 10/09/2026.')).toBeInTheDocument();
+  });
+
+  it('viewing a past stage read-only offers no way to record a release', () => {
+    renderChecklist([terminalItem()], { viewingStageLabel: 'Ready for Pickup / Contact Family' });
+    expect(screen.getByRole('button', { name: 'Record family pickup' })).toBeDisabled();
+  });
+
+  it('a caller with no update capability gets no enabled action', () => {
+    // The page only passes onUpdateCaseInfo when the viewer may edit the
+    // case; without it there is nothing to click.
+    renderChecklist([terminalItem()], { onUpdateCaseInfo: undefined });
+    expect(screen.getByRole('button', { name: 'Record family pickup' })).toBeDisabled();
+  });
+
+  it('ordinary items are completely unaffected — no action, still toggleable', () => {
+    const { onToggleItem } = renderChecklist([item({ index: 0, label: 'Labels made' })]);
+    expect(screen.queryByRole('button', { name: 'Record family pickup' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Labels made' }));
+    expect(onToggleItem).toHaveBeenCalledWith(0, true);
+  });
+});

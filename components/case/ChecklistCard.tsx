@@ -3,6 +3,10 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { splitMilitaryTimeToTwelveHourParts, combineTwelveHourTimeParts, isValidEmail } from '@/utils/inputMask';
+import { Modal } from '@/components/ui/Modal';
+import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
+import { formatDateInput, isValidCalendarDate, expandTwoDigitYearInDateInput } from '@/utils/inputMask';
+import type { CaseUpdate } from '@/types/case';
 import type { ChecklistItemViewModel } from '@/types/caseViewModel';
 import styles from './ChecklistCard.module.css';
 
@@ -326,7 +330,12 @@ function RequiredCaseFieldsGroup({
   disabled: boolean;
   onSaveCertifierName?: (value: string | null) => void;
   onSaveCertifierPhone?: (value: string | null) => void;
-  onUpdateCaseInfo?: (patch: Record<string, string | null>) => void;
+  /** Widened from Record<string, string | null> for the terminal
+      return-of-remains action below, which must send `pickupStatus`
+      together with its release detail in ONE patch (see
+      TerminalReturnAction). Every existing caller is unaffected — the page
+      already passes `mutations.updateCaseInfo`, which takes a CaseUpdate. */
+  onUpdateCaseInfo?: (patch: CaseUpdate) => void;
 }) {
   const fields = item.requiredCaseFields ?? [];
   const values = item.requiredCaseFieldValues ?? {};
@@ -387,7 +396,7 @@ export function ChecklistCard({
       callback — the exact same one CaseInformationCard.tsx's own "Next of
       kin"/"NOK phone"/"NOK email" fields already use — never a dedicated
       per-field mutation. */
-  onUpdateCaseInfo?: (patch: Record<string, string | null>) => void;
+  onUpdateCaseInfo?: (patch: CaseUpdate) => void;
 }) {
   const readOnly = viewingStageLabel !== null;
 
@@ -449,6 +458,13 @@ export function ChecklistCard({
                   onCommit={(newValue) => onFieldChange(item.index, newValue)}
                 />
               )}
+              {item.returnRequirement && (
+                <TerminalReturnAction
+                  item={item}
+                  readOnly={readOnly}
+                  onUpdateCaseInfo={onUpdateCaseInfo}
+                />
+              )}
               {!item.hasField && item.requiredCaseFields && item.requiredCaseFields.length > 0 && (
                 <RequiredCaseFieldsGroup
                   item={item}
@@ -464,4 +480,240 @@ export function ChecklistCard({
       </div>
     </div>
   );
+}
+
+/**
+ * "Family picked up ashes" fix (2026-10).
+ *
+ * THE BUG THIS SOLVES. The terminal stage's return-of-remains item is a
+ * read-only, derived indicator: its `done` comes from the structured
+ * release record (`returnMethod` + `pickupStatus`/`shippingDeliveryStatus`,
+ * see domain/cases/returnMethod.ts), never from `checklistState`. That is
+ * correct and is kept exactly as it is — it stops the checkbox and the
+ * release record becoming two signals that can contradict each other.
+ *
+ * What was missing was a door. Staff finished "Ready for Pickup / Contact
+ * Family", landed on a single greyed-out "Family picked up ashes" checkbox,
+ * and had nothing to click: the only control that actually completes it is
+ * a select labelled "Cremated Remains" on a different card, which doesn't
+ * say it is the final workflow step and isn't rendered at all while
+ * `returnMethod` is still `'undecided'`. The item looked broken.
+ *
+ * This renders the release record directly beneath the item, and — when it
+ * is not yet recorded — a button to record it. It writes the SAME fields
+ * through the SAME case PATCH as the Case Information card, so
+ * `assertValidPickupReleasePatch` (domain/cases/pickupRelease.ts) applies
+ * unchanged at both persistence chokepoints. Crucially the status and its
+ * documentation go out in ONE patch, so a release can never be persisted
+ * without a Released To and a valid Released Date — the documentation is
+ * required by the dialog's own Save button as well, rather than being
+ * enforced only by an error the server returns afterwards.
+ *
+ * It never writes `checklistState` for this item, never marks the item
+ * done directly, and adds no second completion path: recording the release
+ * is the only thing it does, and the item's done state continues to be
+ * derived from that record alone.
+ */
+function TerminalReturnAction({
+  item,
+  readOnly,
+  onUpdateCaseInfo,
+}: {
+  item: ChecklistItemViewModel;
+  readOnly: boolean;
+  onUpdateCaseInfo?: (patch: CaseUpdate) => void;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const record = item.returnRequirement;
+  if (!record) return null;
+
+  const canEdit = !readOnly && Boolean(onUpdateCaseInfo);
+
+  // Undecided: the return method genuinely isn't known yet, and inventing
+  // a "mark complete anyway" button here would record a release that never
+  // happened. Say what is actually needed instead of showing a dead
+  // control — the same reasoning that keeps 'undecided' permanently
+  // incomplete in isTerminalReturnRequirementComplete.
+  if (record.returnMethod === 'undecided') {
+    return (
+      <p className={styles.terminalHint}>
+        Set <b>Return method</b> in Case Information to Pickup or Shipping to record how the cremated
+        remains were returned. This step completes once that is recorded.
+      </p>
+    );
+  }
+
+  if (record.returnMethod === 'shipping') {
+    return item.done ? (
+      <p className={styles.terminalRecord}>
+        Delivery confirmed{record.shippingDeliveredAt ? ` on ${record.shippingDeliveredAt}` : ''}.
+      </p>
+    ) : (
+      <p className={styles.terminalHint}>
+        This case is being shipped. It completes once <b>Delivery status</b> in Case Information is
+        set to Delivered.
+      </p>
+    );
+  }
+
+  // Pickup.
+  return (
+    <>
+      {item.done ? (
+        <p className={styles.terminalRecord}>
+          Released to <b>{record.pickupReleasedTo}</b>
+          {record.pickupReleasedAt ? ` on ${record.pickupReleasedAt}` : ''}.
+          {canEdit && (
+            <>
+              {' '}
+              <button type="button" className={styles.terminalLinkButton} onClick={() => setDialogOpen(true)}>
+                Correct this record
+              </button>
+            </>
+          )}
+        </p>
+      ) : (
+        <div className={styles.terminalActionRow}>
+          <button
+            type="button"
+            className={styles.terminalActionButton}
+            disabled={!canEdit}
+            onClick={() => setDialogOpen(true)}
+          >
+            Record family pickup
+          </button>
+          <span className={styles.terminalHintInline}>Requires who collected the remains and the date.</span>
+        </div>
+      )}
+
+      <RecordPickupDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        initialReleasedTo={record.pickupReleasedTo}
+        initialReleasedAt={record.pickupReleasedAt}
+        initialNote={record.pickupNote}
+        onSave={(patch) => {
+          setDialogOpen(false);
+          onUpdateCaseInfo?.(patch);
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * Collects the release documentation and sends it with `pickupStatus` in a
+ * single patch. Save stays disabled until both required fields are valid
+ * per `isValidPickupReleaseDetail` — the same predicate the server-side
+ * invariant uses — so the UI cannot produce a request the server would
+ * reject, and no partial release is ever persisted.
+ */
+function RecordPickupDialog({
+  open,
+  onClose,
+  initialReleasedTo,
+  initialReleasedAt,
+  initialNote,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialReleasedTo: string | null;
+  initialReleasedAt: string | null;
+  initialNote: string | null;
+  onSave: (patch: CaseUpdate) => void;
+}) {
+  const [releasedTo, setReleasedTo] = useState(initialReleasedTo ?? '');
+  const [releasedAt, setReleasedAt] = useState(initialReleasedAt ?? '');
+  const [note, setNote] = useState(initialNote ?? '');
+
+  // Re-seed each time the dialog opens so "Correct this record" always
+  // starts from what is currently stored rather than a stale draft.
+  useEffect(() => {
+    if (!open) return;
+    setReleasedTo(initialReleasedTo ?? '');
+    setReleasedAt(initialReleasedAt ?? '');
+    setNote(initialNote ?? '');
+  }, [open, initialReleasedTo, initialReleasedAt, initialNote]);
+
+  const expandedDate = expandTwoDigitYearInDateInput(releasedAt);
+  const dateIsFuture = isValidCalendarDate(expandedDate) && expandedDate !== '' && isFutureDate(expandedDate);
+  const canSave = isValidPickupReleaseDetail(releasedTo.trim(), expandedDate) && !dateIsFuture;
+
+  return (
+    <Modal open={open} onClose={onClose} title="Record family pickup">
+      <p className={styles.dialogIntro}>
+        This records the release of the cremated remains to the family and completes the final
+        workflow step.
+      </p>
+      <label className={styles.dialogLabel} htmlFor="terminal-released-to">
+        Released to
+      </label>
+      <input
+        id="terminal-released-to"
+        className={styles.dialogInput}
+        value={releasedTo}
+        placeholder="Name of the person who collected the remains"
+        onChange={(e) => setReleasedTo(e.target.value.toUpperCase())}
+      />
+      <label className={styles.dialogLabel} htmlFor="terminal-released-at">
+        Released date
+      </label>
+      <input
+        id="terminal-released-at"
+        className={styles.dialogInput}
+        value={releasedAt}
+        placeholder="MM/DD/YYYY"
+        inputMode="numeric"
+        onChange={(e) => setReleasedAt(formatDateInput(e.target.value))}
+      />
+      {dateIsFuture && (
+        <p className={styles.dialogError} role="alert">
+          Released date cannot be in the future.
+        </p>
+      )}
+      <label className={styles.dialogLabel} htmlFor="terminal-note">
+        Note (optional)
+      </label>
+      <input
+        id="terminal-note"
+        className={styles.dialogInput}
+        value={note}
+        onChange={(e) => setNote(e.target.value.toUpperCase())}
+      />
+      <div className={styles.dialogFooter}>
+        <button type="button" className={styles.dialogCancel} onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={styles.dialogConfirm}
+          disabled={!canSave}
+          onClick={() =>
+            onSave({
+              // One patch: the status and the documentation that justifies
+              // it can never be persisted apart.
+              pickupStatus: 'released',
+              pickupReleasedTo: releasedTo.trim(),
+              pickupReleasedAt: expandedDate,
+              pickupNote: note.trim() === '' ? null : note.trim(),
+            })
+          }
+        >
+          Record pickup
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Local to this action: a release cannot be dated in the future. Mirrors
+    the Released date guard the Case Information card already applies. */
+function isFutureDate(mmddyyyy: string): boolean {
+  const [month, day, year] = mmddyyyy.split('/').map(Number);
+  if (!month || !day || !year) return false;
+  const entered = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return entered.getTime() > today.getTime();
 }
