@@ -14,6 +14,7 @@ import {
   recordShipmentRecorded,
   recordShipmentTrackingNumberChanged,
   recordShipmentDelivered,
+  recordContactRestrictionChanged,
   type FieldChange,
 } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
@@ -423,6 +424,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         await recordShipmentDelivered(activityCtx, caseId, 'wix');
       }
 
+      // Contact instructions (2026-10). Compared against the existing
+      // value coerced to a boolean, so a legacy case whose column is
+      // absent (undefined) correctly reads as "not restricted" and the
+      // first time staff tick the box registers as a real change rather
+      // than as undefined !== false noise.
+      if (patchRecord.doNotContactNextOfKin !== undefined) {
+        const wasRestricted = existing.doNotContactNextOfKin === true;
+        const nowRestricted = patchRecord.doNotContactNextOfKin === true;
+        if (wasRestricted !== nowRestricted) {
+          await recordContactRestrictionChanged(activityCtx, caseId, nowRestricted, 'wix');
+        }
+      }
+
       const SHIPPING_EVENT_FIELDS = new Set([
         'rawStage',
         'returnMethod',
@@ -431,6 +445,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         'shippingDateShipped',
         'shippingDeliveryStatus',
         'shippingDeliveredAt',
+        // Has its own event immediately above; listed here so one change
+        // never produces two audit entries.
+        'doNotContactNextOfKin',
       ]);
       const changedFields: Record<string, FieldChange> = {};
       for (const key of Object.keys(patchRecord)) {

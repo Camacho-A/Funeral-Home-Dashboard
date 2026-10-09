@@ -807,3 +807,75 @@ describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)',
     expect(onToggleItem).toHaveBeenCalledWith(0, true);
   });
 });
+
+describe('ChecklistCard — contact restriction on the Family Contact item (2026-10)', () => {
+  function familyContactItem() {
+    return item({
+      index: 7,
+      label: 'Family contact — name, phone number & email',
+      isDerived: true,
+      requiredCaseFields: ['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail'],
+      requiredCaseFieldValues: {
+        nextOfKinName: 'KAREN ELLISON',
+        nextOfKinPhone: '(555) 201-4432',
+        nextOfKinEmail: 'karen@example.com',
+      },
+    });
+  }
+
+  it('warns, and names who to route through, when a restriction is active', () => {
+    renderChecklist([familyContactItem()], {
+      contactRestriction: { active: true, arrangementContactName: 'MICHAEL ELLISON' },
+    });
+
+    expect(screen.getByText('Do not contact next of kin directly.')).toBeInTheDocument();
+    expect(screen.getByText(/Route contact through MICHAEL ELLISON/)).toBeInTheDocument();
+  });
+
+  it('never implies a substitute contact exists when none is named', () => {
+    renderChecklist([familyContactItem()], {
+      contactRestriction: { active: true, arrangementContactName: null },
+    });
+
+    expect(screen.getByText('Do not contact next of kin directly.')).toBeInTheDocument();
+    expect(screen.queryByText(/Route contact through/)).not.toBeInTheDocument();
+  });
+
+  it('shows nothing alarming when no restriction is recorded', () => {
+    renderChecklist([familyContactItem()], {
+      contactRestriction: { active: false, arrangementContactName: null },
+    });
+    expect(screen.queryByText('Do not contact next of kin directly.')).not.toBeInTheDocument();
+  });
+
+  it('a legacy case with no restriction prop is unaffected', () => {
+    renderChecklist([familyContactItem()]);
+    expect(screen.queryByText('Do not contact next of kin directly.')).not.toBeInTheDocument();
+    // The next-of-kin fields still render and remain editable.
+    expect(screen.getByDisplayValue('KAREN ELLISON')).toBeInTheDocument();
+  });
+
+  it('the restriction never clears or alters the legal next-of-kin values', () => {
+    const { onUpdateCaseInfo } = renderChecklist([familyContactItem()], {
+      contactRestriction: { active: true, arrangementContactName: 'MICHAEL ELLISON' },
+    });
+
+    expect(screen.getByDisplayValue('KAREN ELLISON')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('(555) 201-4432')).toBeInTheDocument();
+    // Rendering the warning writes nothing.
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('does not warn on an unrelated field group', () => {
+    const certifier = item({
+      index: 0,
+      label: 'Certifier information',
+      isDerived: true,
+      requiredCaseFields: ['certifierName', 'certifierPhone'],
+      requiredCaseFieldValues: { certifierName: 'DR. PATEL', certifierPhone: '(555) 777-1234' },
+    });
+    renderChecklist([certifier], { contactRestriction: { active: true, arrangementContactName: 'MICHAEL ELLISON' } });
+
+    expect(screen.queryByText('Do not contact next of kin directly.')).not.toBeInTheDocument();
+  });
+});

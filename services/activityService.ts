@@ -418,6 +418,43 @@ const RETURN_METHOD_LABEL: Record<'undecided' | 'pickup' | 'shipping', string> =
   shipping: 'Shipping',
 };
 
+/**
+ * Contact instructions (2026-10). Records that a Do Not Contact NOK
+ * restriction was switched on or off, by whom (via `ctx`) and when (via
+ * the envelope's timestamp).
+ *
+ * Deliberately records only the boolean's transition, never the
+ * instruction text, the arrangement contact's name, or their phone and
+ * email. Those travel in the generic `case.updated` diff the PATCH route
+ * already emits; duplicating a family member's contact details into a
+ * second, separately-retained audit record would spread personal data
+ * further for no investigative gain.
+ */
+export function recordContactRestrictionChanged(
+  ctx: ActivityContext,
+  caseId: string,
+  restricted: boolean,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_CONTACT_RESTRICTION_CHANGED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ doNotContactNextOfKin: !restricted }),
+      newValue: JSON.stringify({ doNotContactNextOfKin: restricted }),
+      description: restricted
+        ? 'Do not contact next of kin directly — restriction added.'
+        : 'Do not contact next of kin directly — restriction removed.',
+      metadata: null,
+      severity: restricted ? 'info' : 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordReturnMethodChanged(
   ctx: ActivityContext,
   caseId: string,

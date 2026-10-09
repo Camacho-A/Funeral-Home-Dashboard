@@ -24,6 +24,7 @@ import {
 import { VaNotificationPanel } from './VaNotificationPanel';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
 import { normalizeNextOfKinName } from '@/domain/cases/nextOfKinName';
+import { ContactInstructionsSection } from './ContactInstructionsSection';
 import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
 import styles from './CaseInformationCard.module.css';
 
@@ -387,6 +388,14 @@ export function CaseInformationCard({
   nextOfKinEmail,
   nextOfKinRelationship,
   nextOfKinRelationshipOther,
+  doNotContactNextOfKin,
+  arrangementContactName,
+  arrangementContactRelationship,
+  arrangementContactPhone,
+  arrangementContactEmail,
+  contactInstructions,
+  arrangementAuthorizationConfirmed,
+  arrangementAuthorizationSource,
   certifierName,
   certifierPhone,
   certifierLicenseNumber,
@@ -440,6 +449,17 @@ export function CaseInformationCard({
   nextOfKinRelationship: NextOfKinRelationship | null;
   /** Only meaningful when nextOfKinRelationship === 'other'. */
   nextOfKinRelationshipOther: string | null;
+  /** Contact instructions (2026-10). Optional on the Case type — absent on
+      every case that predates the columns — so each is defaulted at the
+      single point of use below rather than every consumer repeating it. */
+  doNotContactNextOfKin?: boolean;
+  arrangementContactName?: string | null;
+  arrangementContactRelationship?: string | null;
+  arrangementContactPhone?: string | null;
+  arrangementContactEmail?: string | null;
+  contactInstructions?: string | null;
+  arrangementAuthorizationConfirmed?: boolean;
+  arrangementAuthorizationSource?: string | null;
   /** Structured Certifier data (2026-09, ADR-041). Replaces the legacy
       free-text "Hospice/physician who will sign DC" intake concept for
       cases created under workflow template v5+ — null for any case whose
@@ -662,6 +682,19 @@ export function CaseInformationCard({
           />
         )}
       </div>
+
+      <ContactInstructionsSection
+        doNotContactNextOfKin={doNotContactNextOfKin ?? false}
+        arrangementContactName={arrangementContactName ?? null}
+        arrangementContactRelationship={arrangementContactRelationship ?? null}
+        arrangementContactPhone={arrangementContactPhone ?? null}
+        arrangementContactEmail={arrangementContactEmail ?? null}
+        contactInstructions={contactInstructions ?? null}
+        arrangementAuthorizationConfirmed={arrangementAuthorizationConfirmed ?? false}
+        arrangementAuthorizationSource={arrangementAuthorizationSource ?? null}
+        nextOfKinName={normalizeNextOfKinName(nextOfKinName, nextOfKinPhone)}
+        onUpdateCaseInfo={onUpdateCaseInfo}
+      />
 
       <div className={styles.sectionHeading}>Certifier information</div>
       <div className={styles.sectionHelperText}>

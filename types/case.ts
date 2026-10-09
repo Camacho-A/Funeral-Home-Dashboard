@@ -135,6 +135,50 @@ export type Case = {
       free-text description, same "detail field only shown for one
       specific selection" pattern as `pickupReleasedTo`/etc. below. */
   nextOfKinRelationshipOther: string | null;
+
+  /**
+   * Contact instructions (2026-10).
+   *
+   * A grieving next of kin sometimes asks that a relative or friend handle
+   * the arrangements instead. Staff must see immediately who to call and
+   * who not to call — so this is a first-class part of the Case, not a
+   * note someone has to go hunting for.
+   *
+   * CRITICAL SEPARATION: these fields NEVER replace the next of kin. The
+   * `nextOfKin*` fields above remain the legal contact of record and are
+   * what every form, death certificate and regulatory document continues
+   * to use. An arrangement contact coordinates; they do not thereby gain
+   * signature, disposition or cremation authority.
+   *
+   * Every field is OPTIONAL at the type level, not merely nullable, and
+   * that is deliberate: these columns are absent on every pre-existing case,
+   * which
+   * reads as "no recorded restriction" — never as consent, authorization,
+   * or an assertion that anything was checked. Nothing is inferred from an
+   * empty field.
+   */
+
+  /** When true, staff must not call the next of kin directly. False/absent
+      means no restriction has been recorded — NOT that one was considered
+      and declined. */
+  doNotContactNextOfKin?: boolean;
+  /** The person coordinating arrangements instead. Null when none has been
+      named, including while a restriction is active — in which case the UI
+      says so rather than implying someone is available. */
+  arrangementContactName?: string | null;
+  arrangementContactRelationship?: string | null;
+  arrangementContactPhone?: string | null;
+  arrangementContactEmail?: string | null;
+  /** Free text: how and when to make contact, what to avoid. */
+  contactInstructions?: string | null;
+  /** Whether staff confirmed the next of kin actually authorized this
+      arrangement contact. Deliberately separate from naming one: a name
+      can be recorded before authorization is established, and the two must
+      never be conflated. */
+  arrangementAuthorizationConfirmed?: boolean;
+  /** How that authorization was established — "spoke with NOK by phone
+      10/09", a signed form reference, and so on. Free text; never parsed. */
+  arrangementAuthorizationSource?: string | null;
   /**
    * Structured Certifier data (2026-09, ADR-041). Replaces the legacy
    * "Hospice/physician who will sign DC" concept for cases created against

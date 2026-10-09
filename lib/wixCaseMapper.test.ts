@@ -1039,3 +1039,127 @@ describe('applyCaseUpdateToWixData — Certifier Name/Phone on a legacy (v3) cas
     expect(Object.keys(result.fieldValues as Record<string, string>).sort()).toEqual(['0', '6']);
   });
 });
+
+describe('contact instructions (2026-10)', () => {
+  it('a legacy case with none of the columns maps to "no recorded restriction", never to failure', () => {
+    // validItem deliberately carries no contact-instruction keys at all —
+    // it is exactly the shape of every row that existed before these
+    // columns did. Mapping must still succeed, which is what makes the
+    // additive schema change need no backfill.
+    const mapped = mapWixCaseItem(validItem);
+
+    expect(mapped).not.toBeNull();
+    expect(mapped?.doNotContactNextOfKin).toBe(false);
+    expect(mapped?.arrangementContactName).toBeNull();
+    expect(mapped?.arrangementContactRelationship).toBeNull();
+    expect(mapped?.arrangementContactPhone).toBeNull();
+    expect(mapped?.arrangementContactEmail).toBeNull();
+    expect(mapped?.contactInstructions).toBeNull();
+    expect(mapped?.arrangementAuthorizationConfirmed).toBe(false);
+    expect(mapped?.arrangementAuthorizationSource).toBeNull();
+  });
+
+  it('reads the columns when present', () => {
+    const mapped = mapWixCaseItem({
+      ...validItem,
+      doNotContactNextOfKin: true,
+      arrangementContactName: 'MICHAEL ELLISON',
+      arrangementContactRelationship: 'SON',
+      arrangementContactPhone: '(555) 886-1190',
+      arrangementContactEmail: 'michael@example.com',
+      contactInstructions: 'All calls after 6pm. Do not leave voicemail.',
+      arrangementAuthorizationConfirmed: true,
+      arrangementAuthorizationSource: 'Spoke with Karen by phone 10/09',
+    });
+
+    expect(mapped?.doNotContactNextOfKin).toBe(true);
+    expect(mapped?.arrangementContactName).toBe('MICHAEL ELLISON');
+    expect(mapped?.arrangementContactPhone).toBe('(555) 886-1190');
+    expect(mapped?.contactInstructions).toBe('All calls after 6pm. Do not leave voicemail.');
+    expect(mapped?.arrangementAuthorizationConfirmed).toBe(true);
+    expect(mapped?.arrangementAuthorizationSource).toBe('Spoke with Karen by phone 10/09');
+  });
+
+  it('a malformed restriction value reads as unrestricted rather than as truthy', () => {
+    // A non-boolean must never be coerced into an active restriction, and
+    // equally must never be coerced into silently DISABLING a restriction
+    // that a real boolean `true` recorded.
+    expect(mapWixCaseItem({ ...validItem, doNotContactNextOfKin: 'yes' })?.doNotContactNextOfKin).toBe(false);
+    expect(mapWixCaseItem({ ...validItem, doNotContactNextOfKin: 1 })?.doNotContactNextOfKin).toBe(false);
+    expect(mapWixCaseItem({ ...validItem, arrangementContactName: 42 })?.arrangementContactName).toBeNull();
+  });
+
+  it('trims, empties-to-null, and length-caps the free-text fields', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({
+      arrangementContactName: '  Michael Ellison  ',
+      arrangementContactRelationship: '   ',
+      contactInstructions: '  All calls to her son.  ',
+    });
+
+    expect(errors).toEqual([]);
+    // Uppercased by the SOLIS-wide ALL-CAPS standard (name + relationship
+    // are allowlisted in domain/cases/textNormalization.ts).
+    expect(patch.arrangementContactName).toBe('MICHAEL ELLISON');
+    // Whitespace-only is an absent value, not a stored space.
+    expect(patch.arrangementContactRelationship).toBeNull();
+    // Prose is deliberately NOT uppercased — see that module's own comment.
+    expect(patch.contactInstructions).toBe('All calls to her son.');
+
+    expect(validateAndPickCaseUpdate({ contactInstructions: 'x'.repeat(2001) }).errors).toContain('contactInstructions');
+    expect(validateAndPickCaseUpdate({ contactInstructions: 'x'.repeat(2000) }).errors).toEqual([]);
+  });
+
+  it('rejects a non-boolean restriction and a malformed arrangement email', () => {
+    expect(validateAndPickCaseUpdate({ doNotContactNextOfKin: 'true' }).errors).toContain('doNotContactNextOfKin');
+    expect(validateAndPickCaseUpdate({ doNotContactNextOfKin: false }).patch.doNotContactNextOfKin).toBe(false);
+    expect(validateAndPickCaseUpdate({ arrangementContactEmail: 'not-an-email' }).errors).toContain(
+      'arrangementContactEmail',
+    );
+    expect(validateAndPickCaseUpdate({ arrangementContactEmail: '  m@example.com ' }).patch.arrangementContactEmail).toBe(
+      'm@example.com',
+    );
+  });
+
+  it('a patch that does not mention the contact fields cannot erase them', () => {
+    // The core safety requirement: "ensure existing case updates cannot
+    // accidentally erase these fields." Editing an unrelated field — here
+    // the decedent's weight — must leave the whole restriction record
+    // byte-for-byte intact.
+    const existing = {
+      ...validItem,
+      doNotContactNextOfKin: true,
+      arrangementContactName: 'MICHAEL ELLISON',
+      arrangementContactPhone: '(555) 886-1190',
+      contactInstructions: 'All calls after 6pm.',
+      arrangementAuthorizationConfirmed: true,
+      arrangementAuthorizationSource: 'Phone 10/09',
+    };
+
+    const merged = applyCaseUpdateToWixData(existing, { weight: '180 lb' });
+
+    expect(merged.weight).toBe('180 lb');
+    expect(merged.doNotContactNextOfKin).toBe(true);
+    expect(merged.arrangementContactName).toBe('MICHAEL ELLISON');
+    expect(merged.arrangementContactPhone).toBe('(555) 886-1190');
+    expect(merged.contactInstructions).toBe('All calls after 6pm.');
+    expect(merged.arrangementAuthorizationConfirmed).toBe(true);
+    expect(merged.arrangementAuthorizationSource).toBe('Phone 10/09');
+  });
+
+  it('only an explicit false clears the restriction, and it clears nothing else', () => {
+    const existing = {
+      ...validItem,
+      doNotContactNextOfKin: true,
+      arrangementContactName: 'MICHAEL ELLISON',
+      contactInstructions: 'All calls after 6pm.',
+    };
+
+    const merged = applyCaseUpdateToWixData(existing, { doNotContactNextOfKin: false });
+
+    expect(merged.doNotContactNextOfKin).toBe(false);
+    // Lifting a restriction is not a reason to discard who the family
+    // asked you to call, or the record of why.
+    expect(merged.arrangementContactName).toBe('MICHAEL ELLISON');
+    expect(merged.contactInstructions).toBe('All calls after 6pm.');
+  });
+});

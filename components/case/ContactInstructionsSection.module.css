@@ -1,0 +1,277 @@
+/*
+ * Contact instructions (2026-10). Deliberately mirrors
+ * CaseInformationCard.module.css's own section/grid/field/editable-value
+ * rules rather than introducing a second visual language inside the same
+ * card — this panel has to look like it has always been part of Case
+ * Information, not like a bolted-on addition.
+ */
+
+.sectionHeading {
+  margin-top: 22px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.sectionHelperText {
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+/* The restriction banner. Amber is SOLIS's established "needs attention"
+   tone (--sx-amber-*, styles/solis-system.css) — the same family the
+   workflow and calendar already use, never a new alert palette. The left
+   bar carries the weight so the banner reads as urgent without shouting. */
+.restrictionBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid oklch(0.85 0.08 70);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--sx-amber-bg, oklch(0.965 0.04 75));
+  color: var(--sx-amber-text, oklch(0.47 0.12 60));
+}
+
+.restrictionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--sx-amber-text, oklch(0.47 0.12 60));
+  color: var(--sx-amber-bg, oklch(0.965 0.04 75));
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.restrictionTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.restrictionDetail {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* Matches CaseInformationCard.module.css's .veteranRow exactly — the
+   established shape for a boolean row inside this card. */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: oklch(0.975 0.003 255);
+  border: 1px solid var(--solis-border-soft, var(--color-border));
+}
+
+.toggleRowLocked {
+  cursor: default;
+}
+
+.toggleRowUnlocked {
+  cursor: pointer;
+}
+
+.toggleLabel {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.valueRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.readOnlyValue {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.editableValue {
+  display: block;
+  margin-top: 1px;
+  padding: 1px 4px;
+  margin-left: -4px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+
+.editableValue:hover,
+.editableValue:focus-visible {
+  background: var(--sx-subtle, oklch(0.97 0.003 255));
+  outline: none;
+}
+
+.input {
+  width: 100%;
+  margin-top: 1px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--color-brand, oklch(0.45 0.09 255));
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.callLink {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--sx-navy-tint, oklch(0.95 0.02 255));
+  color: var(--sx-navy, oklch(0.36 0.07 255));
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.callLink:hover,
+.callLink:focus-visible {
+  text-decoration: underline;
+}
+
+.instructionsBlock {
+  margin-top: 14px;
+}
+
+.textarea {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-brand, oklch(0.45 0.09 255));
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.instructionsButton {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 7px 9px;
+  margin-left: 0;
+  border: 1px dashed var(--solis-border-soft, var(--color-border));
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.instructionsButton:hover,
+.instructionsButton:focus-visible {
+  background: var(--sx-subtle, oklch(0.97 0.003 255));
+  outline: none;
+}
+
+.instructionsText {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.placeholder {
+  color: var(--color-text-muted);
+}
+
+.dialogBody {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+}
+
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dialogCancel,
+.dialogConfirm {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dialogCancel {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text-primary);
+}
+
+/* The confirm button is amber, not red: removing the restriction is a
+   legitimate, reversible action staff take routinely once a family's
+   wishes change — it warrants a pause, not a destructive-delete warning. */
+.dialogConfirm {
+  border: 1px solid oklch(0.78 0.1 70);
+  background: var(--sx-amber-bg, oklch(0.965 0.04 75));
+  color: var(--sx-amber-text, oklch(0.47 0.12 60));
+}
+
+.dialogCancel:hover,
+.dialogConfirm:hover {
+  filter: brightness(0.97);
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -94,6 +94,14 @@ export type WixCaseItem = {
   nextOfKinEmail?: unknown;
   nextOfKinRelationship?: unknown;
   nextOfKinRelationshipOther?: unknown;
+  doNotContactNextOfKin?: unknown;
+  arrangementContactName?: unknown;
+  arrangementContactRelationship?: unknown;
+  arrangementContactPhone?: unknown;
+  arrangementContactEmail?: unknown;
+  contactInstructions?: unknown;
+  arrangementAuthorizationConfirmed?: unknown;
+  arrangementAuthorizationSource?: unknown;
   certifierName?: unknown;
   certifierPhone?: unknown;
   certifierLicenseNumber?: unknown;
@@ -188,6 +196,23 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   const nextOfKinEmail = typeof item.nextOfKinEmail === 'string' ? item.nextOfKinEmail : null;
   const nextOfKinRelationship = isValidNextOfKinRelationship(item.nextOfKinRelationship) ? item.nextOfKinRelationship : null;
   const nextOfKinRelationshipOther = typeof item.nextOfKinRelationshipOther === 'string' ? item.nextOfKinRelationshipOther : null;
+
+  // Contact instructions (2026-10). Read defensively and NEVER allowed to
+  // fail mapping: every case that existed before these columns did has
+  // them absent, and must keep loading exactly as it always has. Absent or
+  // malformed therefore reads as "no restriction recorded" — the honest
+  // default. It is emphatically not read as consent, as authorization, or
+  // as anyone having considered the question.
+  const doNotContactNextOfKin = item.doNotContactNextOfKin === true;
+  const arrangementContactName = typeof item.arrangementContactName === 'string' ? item.arrangementContactName : null;
+  const arrangementContactRelationship =
+    typeof item.arrangementContactRelationship === 'string' ? item.arrangementContactRelationship : null;
+  const arrangementContactPhone = typeof item.arrangementContactPhone === 'string' ? item.arrangementContactPhone : null;
+  const arrangementContactEmail = typeof item.arrangementContactEmail === 'string' ? item.arrangementContactEmail : null;
+  const contactInstructions = typeof item.contactInstructions === 'string' ? item.contactInstructions : null;
+  const arrangementAuthorizationConfirmed = item.arrangementAuthorizationConfirmed === true;
+  const arrangementAuthorizationSource =
+    typeof item.arrangementAuthorizationSource === 'string' ? item.arrangementAuthorizationSource : null;
   // Structured Certifier data (2026-09, ADR-041) — additive fields; a
   // pre-v5 row has none of these at all, which must resolve to null
   // (unset), never fail mapping entirely, matching nextOfKinEmail's own
@@ -235,6 +260,14 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     nextOfKinEmail,
     nextOfKinRelationship,
     nextOfKinRelationshipOther,
+    doNotContactNextOfKin,
+    arrangementContactName,
+    arrangementContactRelationship,
+    arrangementContactPhone,
+    arrangementContactEmail,
+    contactInstructions,
+    arrangementAuthorizationConfirmed,
+    arrangementAuthorizationSource,
     certifierName,
     certifierPhone,
     certifierLicenseNumber,
@@ -488,6 +521,28 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
       }
     }
   }
+  /** Free-text contact fields (2026-10): trimmed, empty-as-null, and
+      length-capped. "Validate and sanitize input" — the cap is what stops
+      an unbounded blob reaching the Wix column, and trimming means a field
+      a user cleared by selecting-all-and-deleting reads as absent rather
+      than as a space. Not HTML-escaped here: every render path is React,
+      which escapes on output; escaping at the boundary would persist
+      `&amp;` into a legal record. */
+  function nullableTextField(key: keyof CaseUpdate, maxLength: number) {
+    if (key in b) {
+      const raw = b[key];
+      if (raw === null) {
+        (patch as Record<string, unknown>)[key] = null;
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (trimmed === '') (patch as Record<string, unknown>)[key] = null;
+        else if (trimmed.length <= maxLength) (patch as Record<string, unknown>)[key] = trimmed;
+        else errors.push(String(key));
+      } else {
+        errors.push(String(key));
+      }
+    }
+  }
   function booleanField(key: keyof CaseUpdate) {
     if (key in b) {
       if (typeof b[key] === 'boolean') (patch as Record<string, unknown>)[key] = b[key];
@@ -517,6 +572,14 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   stringField('nextOfKinPhone');
   nullableEmailField('nextOfKinEmail');
   nullableStringField('nextOfKinRelationshipOther');
+  booleanField('doNotContactNextOfKin');
+  nullableTextField('arrangementContactName', 200);
+  nullableTextField('arrangementContactRelationship', 100);
+  nullableTextField('arrangementContactPhone', 40);
+  nullableEmailField('arrangementContactEmail');
+  nullableTextField('contactInstructions', 2000);
+  booleanField('arrangementAuthorizationConfirmed');
+  nullableTextField('arrangementAuthorizationSource', 500);
   nullableStringField('certifierName');
   nullableStringField('certifierPhone');
   nullableStringField('certifierLicenseNumber');
@@ -626,6 +689,20 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.nextOfKinEmail !== undefined) next.nextOfKinEmail = patch.nextOfKinEmail;
   if (patch.nextOfKinRelationship !== undefined) next.nextOfKinRelationship = patch.nextOfKinRelationship;
   if (patch.nextOfKinRelationshipOther !== undefined) next.nextOfKinRelationshipOther = patch.nextOfKinRelationshipOther;
+  // Each guarded on `!== undefined`, exactly like every field above, which
+  // is what makes "existing case updates cannot accidentally erase these
+  // fields" true: a patch that simply omits them leaves them untouched. A
+  // Do Not Contact restriction is only ever cleared by a patch that says
+  // `doNotContactNextOfKin: false` explicitly.
+  if (patch.doNotContactNextOfKin !== undefined) next.doNotContactNextOfKin = patch.doNotContactNextOfKin;
+  if (patch.arrangementContactName !== undefined) next.arrangementContactName = patch.arrangementContactName;
+  if (patch.arrangementContactRelationship !== undefined) next.arrangementContactRelationship = patch.arrangementContactRelationship;
+  if (patch.arrangementContactPhone !== undefined) next.arrangementContactPhone = patch.arrangementContactPhone;
+  if (patch.arrangementContactEmail !== undefined) next.arrangementContactEmail = patch.arrangementContactEmail;
+  if (patch.contactInstructions !== undefined) next.contactInstructions = patch.contactInstructions;
+  if (patch.arrangementAuthorizationConfirmed !== undefined)
+    next.arrangementAuthorizationConfirmed = patch.arrangementAuthorizationConfirmed;
+  if (patch.arrangementAuthorizationSource !== undefined) next.arrangementAuthorizationSource = patch.arrangementAuthorizationSource;
   if (patch.certifierName !== undefined) next.certifierName = patch.certifierName;
   if (patch.certifierPhone !== undefined) next.certifierPhone = patch.certifierPhone;
   if (patch.certifierLicenseNumber !== undefined) next.certifierLicenseNumber = patch.certifierLicenseNumber;

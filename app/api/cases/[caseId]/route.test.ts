@@ -1601,6 +1601,145 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
   });
 });
 
+describe('PATCH /api/cases/[caseId] — contact instructions (2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  function activityEvents() {
+    return mockInsertWixDataItem.mock.calls
+      .filter(([collectionId]) => collectionId === 'activityEvents')
+      .map(([, data]) => data as Record<string, unknown>);
+  }
+
+  it('records who added a contact restriction and when, as its own readable event', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { doNotContactNextOfKin: true, arrangementContactName: 'Michael Ellison' },
+    });
+
+    expect(response.status).toBe(200);
+    const restriction = activityEvents().find((e) => e.eventType === 'case.contact_restriction.changed');
+    expect(restriction).toBeDefined();
+    expect(restriction?.description).toBe('Do not contact next of kin directly — restriction added.');
+    // "including who changed contact restrictions and when" — the actor
+    // and the timestamp both travel on the event envelope.
+    expect(restriction?.actorIdentityId).toBe(mockDefaultUser.id);
+    expect(restriction?.caseId).toBe('1042');
+    expect(restriction?.createdAt ?? restriction?.occurredAt).toBeTruthy();
+  });
+
+  it('flags removal of a restriction at warning severity', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, doNotContactNextOfKin: true });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { doNotContactNextOfKin: false },
+    });
+
+    expect(response.status).toBe(200);
+    const restriction = activityEvents().find((e) => e.eventType === 'case.contact_restriction.changed');
+    expect(restriction?.description).toBe('Do not contact next of kin directly — restriction removed.');
+    // Lifting the restriction is the direction that can lead to an
+    // unwanted call, so it is the direction a reviewer must be able to find.
+    expect(restriction?.severity).toBe('warning');
+  });
+
+  it('does not double-report the restriction in the generic case.updated diff', async () => {
+    mockAdminQueries();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { doNotContactNextOfKin: true } });
+
+    const generic = activityEvents().filter((e) => e.eventType === 'case.updated');
+    expect(generic.every((e) => !String(e.description).includes('doNotContactNextOfKin'))).toBe(true);
+    expect(activityEvents().filter((e) => e.eventType === 'case.contact_restriction.changed')).toHaveLength(1);
+  });
+
+  it('emits no restriction event when the flag is re-sent unchanged', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, doNotContactNextOfKin: true });
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { doNotContactNextOfKin: true, contactInstructions: 'Call after 6pm.' },
+    });
+
+    expect(activityEvents().filter((e) => e.eventType === 'case.contact_restriction.changed')).toHaveLength(0);
+  });
+
+  it('a legacy case ticking the box for the first time registers as a real change', async () => {
+    // EXISTING_WIX_CASE_DATA has no doNotContactNextOfKin column at all —
+    // the comparison must treat absent as false rather than as
+    // "undefined !== true, therefore noise".
+    mockAdminQueries();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { doNotContactNextOfKin: true } });
+
+    expect(activityEvents().filter((e) => e.eventType === 'case.contact_restriction.changed')).toHaveLength(1);
+  });
+
+  it('persists the arrangement contact without disturbing the legal next of kin', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: {
+        doNotContactNextOfKin: true,
+        arrangementContactName: 'Michael Ellison',
+        arrangementContactRelationship: 'Son',
+        arrangementContactPhone: '(555) 886-1190',
+        arrangementContactEmail: 'michael@example.com',
+        contactInstructions: 'All calls after 6pm. Do not leave voicemail.',
+      },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.arrangementContactName).toBe('MICHAEL ELLISON');
+    expect(body.case.contactInstructions).toBe('All calls after 6pm. Do not leave voicemail.');
+    // The legal contact of record is untouched by any of this.
+    expect(body.case.nextOfKinName).toBe(EXISTING_WIX_CASE_DATA.nextOfKinName);
+    expect(body.case.nextOfKinPhone).toBe(EXISTING_WIX_CASE_DATA.nextOfKinPhone);
+  });
+
+  it('an unrelated edit cannot erase a recorded restriction', async () => {
+    mockAdminQueries({
+      ...EXISTING_WIX_CASE_DATA,
+      doNotContactNextOfKin: true,
+      arrangementContactName: 'MICHAEL ELLISON',
+      contactInstructions: 'All calls after 6pm.',
+    });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { weight: '180 lb' } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.doNotContactNextOfKin).toBe(true);
+    expect(body.case.arrangementContactName).toBe('MICHAEL ELLISON');
+    expect(body.case.contactInstructions).toBe('All calls after 6pm.');
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith(
+      'cases',
+      '1042',
+      expect.objectContaining({ doNotContactNextOfKin: true, arrangementContactName: 'MICHAEL ELLISON' }),
+    );
+    expect(activityEvents().filter((e) => e.eventType === 'case.contact_restriction.changed')).toHaveLength(0);
+  });
+
+  it('rejects the whole request rather than partially applying a malformed contact payload', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { doNotContactNextOfKin: 'yes', contactInstructions: 'Call after 6pm.' },
+    });
+
+    expect(response.status).toBe(400);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
 describe('PATCH /api/cases/[caseId] — terminal family-pickup release (2026-10)', () => {
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'wix';

@@ -140,6 +140,15 @@ export const ACTIVITY_EVENT_TYPES = {
   CASE_SHIPMENT_TRACKING_ADDED: 'case.shipment.tracking_added',
   CASE_SHIPMENT_TRACKING_UPDATED: 'case.shipment.tracking_updated',
   CASE_SHIPMENT_DELIVERED: 'case.shipment.delivered',
+  /** Contact instructions (2026-10). Enabling or removing a "do not
+      contact the next of kin directly" restriction is consequential enough
+      to get its own readable event rather than being decoded out of a
+      generic case.updated field diff — the same reasoning as
+      CASE_RETURN_METHOD_CHANGED above. Severity is deliberately `warning`
+      on removal: lifting a restriction is the direction that can lead to
+      an unwanted call to a grieving family member, so it is the direction
+      a reviewer most needs to find. */
+  CASE_CONTACT_RESTRICTION_CHANGED: 'case.contact_restriction.changed',
   /** Reserved — discovered during implementation, not assumed in
       planning: `services/caseLogService.ts` has no server-side or Wix
       integration at all, in any mode (pure client-side mock fixtures,

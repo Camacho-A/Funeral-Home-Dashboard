@@ -42,6 +42,25 @@ const UPPERCASE_STRING_FIELDS = [
   // uppercased anywhere in this codebase (nextOfKinPhone isn't either).
   'certifierName',
   'certifierLicenseNumber',
+  // Contact instructions (2026-10). The arrangement contact's name and
+  // relationship follow their exact existing counterparts — nextOfKinName
+  // and nextOfKinRelationshipOther, both already above.
+  'arrangementContactName',
+  'arrangementContactRelationship',
+  // DELIBERATELY NOT HERE:
+  //   arrangementContactPhone / arrangementContactEmail — phone and email
+  //   are never uppercased anywhere in this codebase (nextOfKinPhone and
+  //   nextOfKinEmail aren't), and uppercasing the local part of an address
+  //   can break delivery.
+  //   contactInstructions / arrangementAuthorizationSource — these are
+  //   prose, read under time pressure, and up to 2000 characters. A
+  //   restriction like "all calls to her son Michael after 6pm" has to be
+  //   read correctly on the first pass; sustained all-caps measurably slows
+  //   that down, and the cost of a misread here is calling a family member
+  //   who asked not to be called. `pickupNote` is allowlisted above and is
+  //   also a note, so this is a narrow, intentional departure from that
+  //   precedent on legibility grounds rather than an oversight — flagged
+  //   for review rather than decided silently.
 ] as const;
 
 type UppercaseCaseTextField = (typeof UPPERCASE_STRING_FIELDS)[number];

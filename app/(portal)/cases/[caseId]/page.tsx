@@ -261,6 +261,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                 onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
                 onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
                 onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
+                contactRestriction={{
+                  active: case_.doNotContactNextOfKin === true,
+                  arrangementContactName: case_.arrangementContactName ?? null,
+                }}
               />
             </section>
 
@@ -308,6 +312,14 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
               nextOfKinEmail={case_.nextOfKinEmail}
               nextOfKinRelationship={case_.nextOfKinRelationship}
               nextOfKinRelationshipOther={case_.nextOfKinRelationshipOther}
+              doNotContactNextOfKin={case_.doNotContactNextOfKin}
+              arrangementContactName={case_.arrangementContactName}
+              arrangementContactRelationship={case_.arrangementContactRelationship}
+              arrangementContactPhone={case_.arrangementContactPhone}
+              arrangementContactEmail={case_.arrangementContactEmail}
+              contactInstructions={case_.contactInstructions}
+              arrangementAuthorizationConfirmed={case_.arrangementAuthorizationConfirmed}
+              arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
               certifierName={case_.certifierName}
               certifierPhone={case_.certifierPhone}
               certifierLicenseNumber={case_.certifierLicenseNumber}

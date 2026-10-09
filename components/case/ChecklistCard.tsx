@@ -325,6 +325,7 @@ function RequiredCaseFieldsGroup({
   onSaveCertifierName,
   onSaveCertifierPhone,
   onUpdateCaseInfo,
+  contactRestriction,
 }: {
   item: ChecklistItemViewModel;
   disabled: boolean;
@@ -336,6 +337,7 @@ function RequiredCaseFieldsGroup({
       TerminalReturnAction). Every existing caller is unaffected — the page
       already passes `mutations.updateCaseInfo`, which takes a CaseUpdate. */
   onUpdateCaseInfo?: (patch: CaseUpdate) => void;
+  contactRestriction?: { active: boolean; arrangementContactName: string | null };
 }) {
   const fields = item.requiredCaseFields ?? [];
   const values = item.requiredCaseFieldValues ?? {};
@@ -346,8 +348,20 @@ function RequiredCaseFieldsGroup({
     else onUpdateCaseInfo?.({ [field]: value });
   }
 
+  // Only the next-of-kin group carries the warning — a Certifier group has
+  // nothing to do with how the family wants to be contacted.
+  const showRestriction = Boolean(contactRestriction?.active) && fields.includes('nextOfKinName');
+
   return (
     <div className={styles.requiredFieldsGroup}>
+      {showRestriction && (
+        <p className={styles.contactRestrictionNotice} role="note">
+          <b>Do not contact next of kin directly.</b>{' '}
+          {contactRestriction?.arrangementContactName
+            ? `Route contact through ${contactRestriction.arrangementContactName} — see Contact instructions in Case Information.`
+            : 'See Contact instructions in Case Information.'}
+        </p>
+      )}
       {fields
         .filter((field) => REQUIRED_CASE_FIELD_META[field])
         .map((field) => {
@@ -383,6 +397,7 @@ export function ChecklistCard({
   onSaveCertifierName,
   onSaveCertifierPhone,
   onUpdateCaseInfo,
+  contactRestriction,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -397,6 +412,15 @@ export function ChecklistCard({
       kin"/"NOK phone"/"NOK email" fields already use — never a dedicated
       per-field mutation. */
   onUpdateCaseInfo?: (patch: CaseUpdate) => void;
+  /** Contact instructions (2026-10). The Family Contact checklist item
+      presents the next of kin's name/phone/email as the people to call. If
+      the family has asked that the next of kin NOT be contacted directly,
+      this surface would otherwise keep offering their number with no
+      warning — so the restriction travels here too, rather than living
+      only on Case Information. Display-only: this component never writes
+      the restriction, it only refuses to present a contact as preferred
+      when one is active. */
+  contactRestriction?: { active: boolean; arrangementContactName: string | null };
 }) {
   const readOnly = viewingStageLabel !== null;
 
@@ -472,6 +496,7 @@ export function ChecklistCard({
                   onSaveCertifierName={onSaveCertifierName}
                   onSaveCertifierPhone={onSaveCertifierPhone}
                   onUpdateCaseInfo={onUpdateCaseInfo}
+                  contactRestriction={contactRestriction}
                 />
               )}
             </div>
