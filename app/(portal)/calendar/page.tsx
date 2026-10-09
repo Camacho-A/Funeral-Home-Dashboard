@@ -73,9 +73,24 @@ function statusModifier(variant: ReturnType<typeof appointmentStatusVariant>): s
   return '';
 }
 
+/**
+ * The time shown on a week/month chip.
+ *
+ * An all-day event has no meaningful clock time, so it reads "All day"
+ * rather than the midnight anchor its instants happen to carry — the same
+ * treatment the agenda row already gives it. This matters more now that
+ * Month is the default view: an expected cremains pickup is a calendar
+ * date, and the first thing staff see must not imply a pickup time nobody
+ * agreed to.
+ */
+function formatChipTime(appointment: Pick<Appointment, 'startAt' | 'timezone' | 'appointmentType'>): string {
+  if (isExpectedCremainsPickup(appointment)) return 'All day';
+  return formatClockTime(appointment.startAt, appointment.timezone);
+}
+
 /** Hour + a/p suffix, minutes only when non-zero ("9a", "1:30p"), in the
     appointment's own timezone — §2.4's week-chip time format. */
-function formatChipTime(isoString: string, timezone: string): string {
+function formatClockTime(isoString: string, timezone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: 'numeric', hour12: true, timeZone: timezone }).formatToParts(new Date(isoString));
   const hour = parts.find((p) => p.type === 'hour')?.value ?? '';
   const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
@@ -104,7 +119,14 @@ export default function CalendarPage() {
   const resourcesQuery = useResources(organizationId);
   const casesQuery = useCases();
 
-  const [view, setView] = useState<CalendarView>('agenda');
+  /** Month is the default view (2026-10): staff open the calendar to see
+      the shape of the month — which Tuesdays and Fridays carry cremains
+      pickups, where services cluster — not a flat list. Held in component
+      state with no persistence, so navigating away and back, or
+      refreshing, returns to Month every time. Day/Week/Agenda remain fully
+      available and unchanged, and `effectiveView` below still substitutes
+      Agenda on narrow viewports. */
+  const [view, setView] = useState<CalendarView>('month');
   const [anchor, setAnchor] = useState(() => new Date());
   const [resourceFilter, setResourceFilter] = useState('');
   /** Expected Cremains Pickup (2026-10). A presentation-only filter — it
@@ -277,7 +299,7 @@ export default function CalendarPage() {
                           setView('day');
                         }}
                       >
-                        <span className="sx-chip-time">{formatChipTime(a.startAt, a.timezone)}</span>
+                        <span className="sx-chip-time">{formatChipTime(a)}</span>
                         {a.title}
                       </button>
                     );
@@ -325,7 +347,7 @@ export default function CalendarPage() {
                         setView('day');
                       }}
                     >
-                      <span className="sx-chip-time">{formatChipTime(a.startAt, a.timezone)}</span>
+                      <span className="sx-chip-time">{formatChipTime(a)}</span>
                       {a.title}
                     </button>
                   );
