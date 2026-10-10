@@ -18,7 +18,6 @@ import { useStaff } from '@/hooks/useStaff';
 import { useMutation } from '@tanstack/react-query';
 import { createCaseLogEntry } from '@/lib/caseLogClient';
 import { pricingClient } from '@/services/pricingClient';
-import { paymentsClient } from '@/services/paymentsClient';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
@@ -264,11 +263,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
       }),
   });
 
-  const createCheckout = useMutation({
-    mutationFn: (input: { caseId: string }) =>
-      paymentsClient.createCloverCheckout(organization, input.caseId, { idempotencyKey: crypto.randomUUID() }),
-  });
-
   function setDraftValue(key: string, value: string) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
@@ -436,17 +430,17 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
    * Creation Flow, per the phase's own numbered sequence: 1. validate
    * intake (canSubmit, already checked by callers below) — 2. create Case
    * — 3-6. create the Case Order (server calculates line items/totals,
-   * never a client-submitted total) — 7. if collecting with Clover, start
-   * a checkout for CaseOrder.balanceDue (never a manually-entered amount)
-   * and redirect immediately.
+   * never a client-submitted total).
    *
-   * A failure after the Case already exists (order creation, or the
-   * Clover checkout) never stays silently stuck in the modal — it
-   * surfaces a message and still navigates to the new case, where Case
-   * Detail's "Edit Services"/"Collect Balance with Clover" can pick up
-   * where this flow left off.
+   * Clover removal (2026-10): step 7 (start a Clover checkout and
+   * redirect) is gone — creating a case no longer collects payment.
+   *
+   * A failure after the Case already exists (order creation) never stays
+   * silently stuck in the modal — it surfaces a message and still
+   * navigates to the new case, where Case Detail's "Edit Services" and
+   * "Record Payment" can pick up where this flow left off.
    */
-  async function handleSubmit(collectWithClover: boolean) {
+  async function handleSubmit() {
     if (!canSubmit || isSubmitting) return;
     setSubmitError(null);
     setIsSubmitting(true);
@@ -496,20 +490,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
       setSubmitError('Case created, but the case order failed to save — set up services from the case page.');
       goToCase(newCase.id);
       return;
-    }
-
-    if (collectWithClover) {
-      try {
-        const { checkoutUrl } = await createCheckout.mutateAsync({ caseId: newCase.id });
-        resetForm();
-        onClose();
-        window.location.href = checkoutUrl;
-        return;
-      } catch {
-        setSubmitError('Case created, but starting the Clover checkout failed — collect payment from the case page.');
-        goToCase(newCase.id);
-        return;
-      }
     }
 
     const noteText = (draft[NOTES_KEY] ?? '').trim();
@@ -1019,11 +999,12 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
             <button type="button" className="sx-btn sx-btn-ghost" onClick={handleClose}>
               Cancel
             </button>
-            <button type="button" className="sx-btn sx-btn-secondary" onClick={() => handleSubmit(false)} disabled={!canSubmit || isSubmitting}>
-              Create case
-            </button>
-            <button type="button" className="sx-btn sx-btn-primary" onClick={() => handleSubmit(true)} disabled={!canSubmit || isSubmitting}>
-              {isSubmitting ? 'Working…' : 'Create Case & Collect with Clover'}
+            {/* Clover removal (2026-10): "Create Case & Collect with Clover"
+                is gone, so creating a case is a single action again.
+                Payment is recorded afterwards from the case's own Case
+                Order card. */}
+            <button type="button" className="sx-btn sx-btn-primary" onClick={() => handleSubmit()} disabled={!canSubmit || isSubmitting}>
+              {isSubmitting ? 'Working…' : 'Create case'}
             </button>
           </>
         )}

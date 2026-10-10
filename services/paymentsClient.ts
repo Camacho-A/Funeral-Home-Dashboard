@@ -36,26 +36,10 @@ export async function getPayment(
   return body.payment;
 }
 
-export async function createCloverCheckout(
-  context: OrganizationContext,
-  caseId: string,
-  input: { purpose?: string; idempotencyKey: string },
-): Promise<{ paymentId: string; checkoutUrl: string }> {
-  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/payments/clover/checkout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId: context.organizationId, ...input }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.error ?? 'Failed to start Clover checkout.');
-  }
-  return response.json();
-}
-
 /** Manors launch-prep (manual payment recording) — cash/check/other,
-    collected outside a card processor. Mirrors createCloverCheckout's shape;
-    the server validates the amount against the case's own balance due. */
+    collected outside a card processor. Since the Clover removal (2026-10)
+    this is the only way staff register a payment; the server still
+    validates the amount against the case's own balance due. */
 export async function recordManualPayment(
   context: OrganizationContext,
   caseId: string,
@@ -114,7 +98,6 @@ export async function simulateMockPaymentSuccess(
 export const paymentsClient = {
   listPayments,
   getPayment,
-  createCloverCheckout,
   recordManualPayment,
   cancelPayment,
   simulateMockPaymentSuccess,

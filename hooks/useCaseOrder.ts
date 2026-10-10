@@ -8,7 +8,7 @@ import { useOrganization } from './useOrganization';
  * organization-scoped query-key convention as useCasePayments. Both
  * mutations invalidate this case's order query (and, since a CaseOrder
  * edit/creation can move balanceDue, the case's own payment history query
- * too — a fresh Case Order affects what "Collect Balance with Clover"
+ * too — a fresh Case Order affects what Record Payment
  * will charge next).
  */
 export function useCaseOrder(caseId: string, enabled: boolean = true) {

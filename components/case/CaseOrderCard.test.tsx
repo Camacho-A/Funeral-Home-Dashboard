@@ -123,10 +123,10 @@ describe('CaseOrderCard — no order yet', () => {
     expect(screen.getByRole('button', { name: 'Set Up Services & Charges' })).toBeInTheDocument();
   });
 
-  it('never renders a "Collect Balance with Clover" button with no order', async () => {
+  it('never renders a payment collection button with no order', async () => {
     renderCard({ order: { order: null, lineItems: [], auditEntries: [] } });
     await screen.findByText('No case order yet.');
-    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
   });
 });
 
@@ -144,10 +144,10 @@ describe('CaseOrderCard — itemized services, balance, status', () => {
     expect(await screen.findByText('Paid in full')).toBeInTheDocument();
   });
 
-  it('disables "Collect Balance with Clover" once the balance reaches 0', async () => {
+  it('disables payment collection once the balance reaches 0', async () => {
     renderCard({ order: { order: { ...ACTIVE_ORDER, balanceDue: 0 }, lineItems: LINE_ITEMS, auditEntries: [] } });
     await screen.findByText('Paid in full');
-    expect(screen.getByRole('button', { name: 'Collect Balance with Clover' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeDisabled();
   });
 
   it('Phase 37: shows a variant merchandise line with its variant name in the description', async () => {
@@ -159,7 +159,23 @@ describe('CaseOrderCard — itemized services, balance, status', () => {
   });
 });
 
-describe('CaseOrderCard — Collect Balance with Clover', () => {
+describe('CaseOrderCard — Clover removal (2026-10)', () => {
+  it('offers no Clover checkout anywhere on the card', async () => {
+    // Staff no longer start card checkouts from SOLIS; they record
+    // payments they have already collected. The family portal's own
+    // checkout and /api/webhooks/clover are unaffected by this.
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    await screen.findByText('Direct Cremation');
+    expect(screen.queryByRole('button', { name: /clover/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/clover/i)).not.toBeInTheDocument();
+  });
+
+  it('leaves Record Payment as the way to register money received', async () => {
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    await screen.findByText('Direct Cremation');
+    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeEnabled();
+  });
+
   it('never shows an amount input — the balance is always server-derived', async () => {
     const { container } = renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
     await screen.findByText('Direct Cremation');
@@ -167,32 +183,6 @@ describe('CaseOrderCard — Collect Balance with Clover', () => {
     expect(screen.queryByPlaceholderText(/amount due/i)).not.toBeInTheDocument();
   });
 
-  it('redirects to the returned checkoutUrl on success', async () => {
-    const originalLocation = window.location;
-    // @ts-expect-error — redefining window.location for a redirect assertion
-    delete window.location;
-    // @ts-expect-error — partial Location stand-in
-    window.location = { href: '' };
-
-    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
-    await screen.findByText('Direct Cremation');
-    fireEvent.click(screen.getByRole('button', { name: 'Collect Balance with Clover' }));
-
-    await waitFor(() => expect(window.location.href).toBe('https://clover.test/checkout-1'));
-
-    // @ts-expect-error — restoring the real window.location
-    window.location = originalLocation;
-  });
-
-  it('surfaces an error message when the checkout fails (e.g. no remaining balance)', async () => {
-    renderCard({
-      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
-      checkout: { error: 'This case order has no remaining balance to collect.', status: 400 },
-    });
-    await screen.findByText('Direct Cremation');
-    fireEvent.click(screen.getByRole('button', { name: 'Collect Balance with Clover' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/no remaining balance/i);
-  });
 });
 
 describe('CaseOrderCard — payment history', () => {
@@ -238,10 +228,9 @@ describe('CaseOrderCard — payment history', () => {
 });
 
 describe('CaseOrderCard — Record Payment (manual)', () => {
-  it('shows a "Record Payment" button alongside Collect Balance with Clover', async () => {
+  it('shows a "Record Payment" button — the only collection action since the Clover removal', async () => {
     renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
-    expect(await screen.findByRole('button', { name: 'Collect Balance with Clover' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
   });
 
   it('opens an inline form pre-filled with the balance due, and submits cash/check with the entered amount', async () => {
@@ -356,7 +345,7 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Additional Items & Services' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
   });
 
@@ -369,7 +358,7 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Additional Items & Services' })).toBeInTheDocument();
     expect(screen.queryByText('Balance due')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
   });
 
   it('additionally shows totals, balance, and payment history for caseOrder.read + payment.read — but still not the action buttons without payment.collect', async () => {
@@ -381,7 +370,7 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
     expect(screen.getAllByText('Balance due').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Additional Items & Services' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Collect Balance with Clover' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
   });
 
@@ -393,7 +382,6 @@ describe('CaseOrderCard — permission gating (Manors launch-prep)', () => {
     });
     expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Additional Items & Services' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Collect Balance with Clover' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
   });
 });

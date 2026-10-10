@@ -10,7 +10,7 @@ import { EditServicesModal } from '@/components/case/EditServicesModal';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseOrder } from '@/hooks/useCaseOrder';
-import { useCasePayments, useCreateCloverCheckout, useRecordManualPayment } from '@/hooks/useCasePayments';
+import { useCasePayments, useRecordManualPayment } from '@/hooks/useCasePayments';
 import { formatCentsAsCurrency, formatTimestamp } from '@/utils/format';
 import { printTextLog } from '@/utils/print';
 import {
@@ -27,10 +27,14 @@ import styles from './CaseOrderCard.module.css';
  * components/case/PaymentCard.tsx on Case Detail — "Replace the payment
  * placeholder. Add a 'Case Order' section: Itemized Services; Payments;
  * Balance; Status." The manual amount/purpose entry PaymentCard used to
- * offer is gone entirely: "Collect Balance with Clover" always charges
- * this case's own CaseOrder.balanceDue, computed and enforced server-side
- * (app/api/cases/[caseId]/payments/clover/checkout/route.ts) — there is no
- * amount input anywhere in this component for a reason.
+ * offer is gone entirely.
+ *
+ * Clover removal (2026-10): the "Collect Balance with Clover" button is
+ * gone, along with its checkout route and client. Staff now record
+ * payments they have already collected (Record Payment), rather than
+ * starting a card checkout from SOLIS. Payment history, balances and the
+ * family portal's own checkout are untouched, and /api/webhooks/clover
+ * still reconciles late events for payments taken before this change.
  *
  * Manors launch-prep: three separate, self-gated permission tiers
  * (mirroring RecentActivityPanel's `audit.read` self-gating), not one
@@ -44,7 +48,7 @@ import styles from './CaseOrderCard.module.css';
  *     services and add-ons ("Edit Services"/"Set Up Services & Charges").
  *   - `payment.read` — the case's TOTAL, balance due, and payment history
  *     specifically (narrower — not every case-working role gets this).
- *   - `payment.collect` — Record Payment / Collect with Clover.
+ *   - `payment.collect` — Record Payment.
  * Renders nothing at all without `caseOrder.read`. Every query is disabled
  * without its own gate, so no data is fetched for a caller who can't see
  * it — but the real enforcement is server-side (the underlying routes
@@ -69,7 +73,6 @@ export function CaseOrderCard({
 
   const { data, isPending } = useCaseOrder(caseId, canReadCaseOrder);
   const { data: payments = [] } = useCasePayments(caseId, canReadPayment);
-  const createCheckout = useCreateCloverCheckout(caseId);
   const recordManualPayment = useRecordManualPayment(caseId);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [editOpen, setEditOpen] = useState(false);
@@ -82,19 +85,6 @@ export function CaseOrderCard({
   const lineItems = data?.lineItems ?? [];
 
   const canCollect = Boolean(order) && (order?.balanceDue ?? 0) > 0;
-
-  function handleCollect() {
-    if (!canCollect) return;
-    createCheckout.mutate(
-      { purpose: 'Case order balance due', idempotencyKey },
-      {
-        onSuccess: ({ checkoutUrl }) => {
-          window.location.href = checkoutUrl;
-        },
-        onSettled: () => setIdempotencyKey(crypto.randomUUID()),
-      },
-    );
-  }
 
   function dollarsToCents(input: string): number | null {
     const n = Number(input);
@@ -198,12 +188,7 @@ export function CaseOrderCard({
               </Button>
             )}
             {canRecordPayment && (
-              <Button onClick={handleCollect} disabled={!canCollect || createCheckout.isPending}>
-                {createCheckout.isPending ? 'Starting checkout…' : 'Collect Balance with Clover'}
-              </Button>
-            )}
-            {canRecordPayment && (
-              <Button variant="secondary" onClick={openRecordPayment} disabled={!canCollect}>
+              <Button onClick={openRecordPayment} disabled={!canCollect}>
                 Record Payment
               </Button>
             )}
@@ -213,16 +198,10 @@ export function CaseOrderCard({
               </Button>
             )}
           </div>
-          {createCheckout.isError && (
-            <div className={styles.error} role="alert">
-              {createCheckout.error instanceof Error ? createCheckout.error.message : 'Failed to start checkout.'}
-            </div>
-          )}
-
           {recordOpen && (
             <div className={styles.recordPaymentPanel}>
               <strong>Record a payment</strong>
-              <p className={styles.recordPaymentHint}>For cash, check, or any payment collected outside Clover.</p>
+              <p className={styles.recordPaymentHint}>For cash, check, or any other payment you have collected.</p>
               <label className={styles.recordPaymentField}>
                 Method
                 <SelectField value={method} onChange={(e) => setMethod(e.target.value as 'cash' | 'check' | 'other')}>

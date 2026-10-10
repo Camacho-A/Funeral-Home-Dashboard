@@ -35,19 +35,6 @@ export function useCasePaymentStatus(caseId: string, paymentId: string | null) {
   });
 }
 
-export function useCreateCloverCheckout(caseId: string) {
-  const organization = useOrganization();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: { purpose?: string; idempotencyKey: string }) =>
-      paymentsClient.createCloverCheckout(organization, caseId, input),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });
-    },
-  });
-}
-
 export function useRecordManualPayment(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();

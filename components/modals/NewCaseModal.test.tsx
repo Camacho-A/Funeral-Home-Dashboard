@@ -692,32 +692,18 @@ describe('NewCaseModal — Services & Charges catalog fallback (Phase 19C)', () 
   });
 });
 
-describe('NewCaseModal — Create Case & Collect with Clover (Phase 19C)', () => {
-  it('creates the case order, starts a Clover checkout for its balanceDue, and redirects — never a manually-entered amount', async () => {
-    const originalLocation = window.location;
-    // @ts-expect-error — redefining window.location for a redirect assertion, standard JSDOM pattern
-    delete window.location;
-    // @ts-expect-error — partial Location stand-in, only `href` is exercised
-    window.location = { href: '' };
-
+describe('NewCaseModal — Clover removal (2026-10)', () => {
+  it('creates the case and its order, and never starts a checkout', async () => {
+    const requested: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((input: RequestInfo | URL) => {
         const url = typeof input === 'string' ? input : input.toString();
+        requested.push(url);
         if (url.includes('/api/cases/') && url.includes('/order')) {
           return Promise.resolve({
             ok: true,
-            json: async () => ({
-              order: { id: 'order-1', balanceDue: 89_000 },
-              lineItems: [],
-              auditEntries: [],
-            }),
-          });
-        }
-        if (url.includes('/payments/clover/checkout')) {
-          return Promise.resolve({
-            ok: true,
-            json: async () => ({ paymentId: 'payment-1', checkoutUrl: 'https://clover.test/checkout-1' }),
+            json: async () => ({ order: { id: 'order-1', balanceDue: 89_000 }, lineItems: [], auditEntries: [] }),
           });
         }
         return Promise.resolve({
@@ -733,13 +719,16 @@ describe('NewCaseModal — Create Case & Collect with Clover (Phase 19C)', () =>
     const { container } = await renderModalWithFields();
     fillRequiredFields(container);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create Case & Collect with Clover' }));
+    // One submit action now, not two.
+    expect(screen.queryByRole('button', { name: /clover/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
 
-    await waitFor(() => expect(window.location.href).toBe('https://clover.test/checkout-1'));
-    expect(pushMock).not.toHaveBeenCalled(); // redirected to Clover instead of navigating in-app
-
-    // @ts-expect-error — restoring the real window.location after the test
-    window.location = originalLocation;
+    // The case order is still created server-side...
+    await waitFor(() => expect(requested.some((u) => u.includes('/order'))).toBe(true));
+    // ...and the staff member lands on the new case rather than a
+    // payment processor.
+    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    expect(requested.some((u) => u.includes('/payments/clover/checkout'))).toBe(false);
   });
 });
 
