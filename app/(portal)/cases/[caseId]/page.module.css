@@ -188,3 +188,12 @@
   margin-bottom: 14px;
   border-bottom: 1px solid var(--color-border);
 }
+
+/* Case Info tab (2026-10). Mobile-only container for the Case Information
+   card, which above 560px lives in `.overviewRail` instead. The card
+   supplies its own surface and padding, so this only needs to give the
+   tab's content the same full width the other tab panels get. */
+.caseInfoTab {
+  display: block;
+  min-width: 0;
+}

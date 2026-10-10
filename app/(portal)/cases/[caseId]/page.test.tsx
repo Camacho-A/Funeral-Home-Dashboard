@@ -118,13 +118,22 @@ describe('Case Overview layout expansion (2026-09, following fdf3fd3)', () => {
     // (.overviewMain): Checklist -> Case Log/Tasks pair -> Case Order.
     // Right rail (.overviewRail): Case Information, after the main
     // column in DOM order (CSS alone places it visually beside it).
+    // Unchanged by the 2026-10 Case Info tab — see infoCardIndex below.
     const overviewOpenIndex = SOURCE.indexOf('className={styles.overview}');
     const mainOpenIndex = SOURCE.indexOf('className={styles.overviewMain}');
     const checklistIndex = SOURCE.indexOf('<ChecklistCard');
     const pairOpenIndex = SOURCE.indexOf('className={styles.overviewPair}');
     const orderCardIndex = SOURCE.indexOf('<CaseOrderCard');
     const railOpenIndex = SOURCE.indexOf('className={styles.overviewRail}');
-    const infoCardIndex = SOURCE.indexOf('<CaseInformationCard');
+    // Case Info tab (2026-10): the card is now defined once, above the
+    // return, and referenced from the rail — so its DEFINITION no longer
+    // sits inside the rail in source order, while the rendered DOM order
+    // is exactly as before. Track the reference, which is what actually
+    // determines where it mounts.
+    // Scoped to the occurrence INSIDE the rail: the first reference in
+    // source is the mobile Case Info tab branch, which renders in a
+    // different place and must not be what this ordering check reads.
+    const infoCardIndex = SOURCE.indexOf('{caseInformationPanel}', railOpenIndex);
 
     expect(overviewOpenIndex).toBeGreaterThan(-1);
     expect(railOpenIndex).toBeGreaterThan(-1);
@@ -340,5 +349,133 @@ describe('Case Detail page — six-tab order (2026-09, billing-tab relocation, s
     const billingHeadingOccurrences = SOURCE.match(/>\s*Billing\s*</g) ?? [];
     expect(billingCardOccurrences).toHaveLength(1);
     expect(billingHeadingOccurrences.length).toBeLessThanOrEqual(1);
+  });
+});
+
+/**
+ * Case Info tab (2026-10) — mobile navigation.
+ *
+ * Asserted structurally for the reason this file documents at the top: the
+ * page's `use()`-suspended params convention never settles under this
+ * project's jsdom, so a rendered-DOM test of THIS page is not achievable.
+ * The behaviour that can be exercised for real — the media query itself —
+ * is covered by hooks/useMediaQuery.test.ts, and the card's own fields,
+ * editing, phone/email links and Do-Not-Contact warning are covered by
+ * CaseInformationCard.test.tsx and ContactInstructionsSection.test.tsx,
+ * which are unaffected by where the card is mounted.
+ */
+const CASE_PAGE_CSS = fs.readFileSync(path.join(__dirname, 'page.module.css'), 'utf-8');
+
+/** The max-width of the media query that turns `.tabs` into the mobile
+    segmented control. */
+function mobileTabsBreakpoint(): number {
+  const match = CASE_PAGE_CSS.match(/@media \(max-width: (\d+)px\) \{\s*\.tabs\.tabs \{/);
+  expect(match).not.toBeNull();
+  return Number(match![1]);
+}
+
+/** The max-width at which `.overview` collapses from two columns to one. */
+function overviewCollapseBreakpoint(): number {
+  const match = CASE_PAGE_CSS.match(/@media \(max-width: (\d+)px\) \{\s*\.overview \{/);
+  expect(match).not.toBeNull();
+  return Number(match![1]);
+}
+
+describe('Case Detail page — Case Info mobile tab (2026-10)', () => {
+  it('adds a Case Info tab button with the same semantics as every other tab', () => {
+    expect(SOURCE).toMatch(/aria-selected=\{activeTab === 'caseInfo'\}/);
+    expect(SOURCE).toMatch(/onClick=\{\(\) => setActiveTab\('caseInfo'\)\}/);
+    expect(SOURCE).toMatch(/>\s*Case Info\s*</);
+    // Same active/inactive classes as its siblings — no bespoke styling,
+    // so spacing, typography and the active indicator all match.
+    expect(SOURCE).toMatch(/activeTab === 'caseInfo' \? styles\.tabActive : styles\.tabInactive/);
+  });
+
+  it('the tab is a real tab in the existing tablist, so it is keyboard-reachable like the others', () => {
+    const tab = SOURCE.match(/\{isMobileTabs && \([\s\S]*?Case Info[\s\S]*?\)\}/);
+    expect(tab).not.toBeNull();
+    expect(tab![0]).toMatch(/type="button"/);
+    expect(tab![0]).toMatch(/role="tab"/);
+    // It sits inside the one role="tablist" container, not a new one.
+    expect(SOURCE.match(/role="tablist"/g) ?? []).toHaveLength(1);
+    // The rendered label, not the substring shared with CaseInformationCard.
+    expect(SOURCE.search(/>\s*Case Info\s*</)).toBeGreaterThan(SOURCE.indexOf('role="tablist"'));
+  });
+
+  it('shows the tab only on mobile, and the overview rail only off mobile', () => {
+    expect(SOURCE).toMatch(/\{isMobileTabs && \(\s*<button/);
+    expect(SOURCE).toMatch(/activeTab === 'caseInfo' && isMobileTabs/);
+    expect(SOURCE).toMatch(/\{!isMobileTabs && \(\s*<aside className=\{styles\.overviewRail\}/);
+  });
+
+  it('renders Case Information exactly once — one element, two mutually exclusive placements', () => {
+    // The real "no duplicate rendering" guarantee: a single
+    // <CaseInformationCard>, hoisted into one variable, referenced from
+    // the rail and the tab. Not two copies of the JSX, and not one copy
+    // hidden with CSS (which would still duplicate the DOM).
+    expect(SOURCE.match(/<CaseInformationCard/g) ?? []).toHaveLength(1);
+    expect(SOURCE).toMatch(/const caseInformationPanel = \(/);
+    expect(SOURCE.match(/\{caseInformationPanel\}/g) ?? []).toHaveLength(2);
+  });
+
+  it('does not recreate any Case Information field — the existing component is reused as-is', () => {
+    // Deceased info, Next of Kin, and the contact-instruction fields all
+    // still arrive as props on the one card.
+    for (const prop of [
+      'dateOfBirth',
+      'placeOfDeath',
+      'nextOfKinName',
+      'nextOfKinPhone',
+      'doNotContactNextOfKin',
+      'arrangementContactName',
+      'arrangementContactPhone',
+      'contactInstructions',
+    ]) {
+      expect(SOURCE).toMatch(new RegExp(`${prop}=\\{`));
+    }
+  });
+
+  it('uses the same breakpoint that produces the mobile tab bar', () => {
+    // §5: the tab must appear exactly where a mobile tab bar exists. If
+    // someone moves the CSS breakpoint without moving this one, this fails.
+    expect(SOURCE).toMatch(
+      new RegExp(`useMediaQuery\\('\\(max-width: ${mobileTabsBreakpoint()}px\\)'\\)`),
+    );
+  });
+
+  it('leaves no width where Case Information is unreachable', () => {
+    // Between the tab breakpoint and the overview collapse, the rail is
+    // still rendered — stacked below the main column, fully visible. The
+    // gap §5 warns about can only open if the tab breakpoint were raised
+    // above the collapse breakpoint.
+    expect(mobileTabsBreakpoint()).toBeLessThanOrEqual(overviewCollapseBreakpoint());
+    expect(CASE_PAGE_CSS).toMatch(/\.overviewRail \{\s*position: static;/);
+  });
+
+  it('falls back to Overview when the viewport leaves mobile, preserving every other tab', () => {
+    expect(SOURCE).toMatch(
+      /if \(!isMobileTabs && activeTab === 'caseInfo'\) setActiveTab\('overview'\);/,
+    );
+    // Scoped to this one tab — no other selection is reset.
+    expect(SOURCE.match(/setActiveTab\('overview'\)/g)?.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('leaves the existing tabs and the desktop layout untouched', () => {
+    for (const tab of ['overview', 'workflow', 'billing', 'documents', 'activity', 'schedule', 'portal']) {
+      expect(SOURCE).toMatch(new RegExp(`setActiveTab\\('${tab}'\\)`));
+    }
+    // The desktop rail still lives inside the overview grid, in the same
+    // <aside> with the same class — only its render is now gated.
+    expect(SOURCE).toMatch(/<aside className=\{styles\.overviewRail\} aria-label="Case details">/);
+    expect(CASE_PAGE_CSS).toMatch(/\.overview \{\s*display: grid;/);
+    // Exactly one rendered "Case Info" label — no second, desktop-only
+    // tab. Matched on the label as rendered, since "Case Info" is also a
+    // substring of CaseInformationCard/caseInformationPanel.
+    expect(SOURCE.match(/>\s*Case Info\s*</g) ?? []).toHaveLength(1);
+  });
+
+  it('gives the mobile tab panel its own full-width container', () => {
+    expect(SOURCE).toMatch(/<section className=\{styles\.caseInfoTab\} aria-label="Case details">/);
+    expect(CASE_PAGE_CSS).toMatch(/\.caseInfoTab \{/);
   });
 });

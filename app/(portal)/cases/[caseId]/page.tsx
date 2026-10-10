@@ -24,6 +24,7 @@ import { WorkflowStageOverview } from '@/components/case/WorkflowStageOverview';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
 import { BillingCard } from '@/components/case/BillingCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
 import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCard';
 import { CaseActivityTab } from '@/components/case/CaseActivityTab';
@@ -32,7 +33,7 @@ import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
 
-type CaseDetailTab = 'overview' | 'workflow' | 'billing' | 'documents' | 'activity' | 'schedule' | 'portal';
+type CaseDetailTab = 'overview' | 'caseInfo' | 'workflow' | 'billing' | 'documents' | 'activity' | 'schedule' | 'portal';
 
 /**
  * Case Detail page — the orchestration layer. `params` is a Promise per
@@ -57,6 +58,28 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const { caseId } = use(params);
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
+
+  /**
+   * Case Info tab (2026-10). 560px is the SAME breakpoint
+   * page.module.css uses to turn `.tabs` into the stacked mobile
+   * segmented control — deliberately not 1024px (where `.overview`
+   * collapses to a single column). Below 1024px the rail already stacks
+   * BELOW the main column and stays fully visible, so Case Information
+   * is never missing at any tablet width; the tab appears only where a
+   * mobile tab bar actually exists.
+   *
+   * `useMediaQuery` reports false until mounted (SSR-safe — see its own
+   * comment), so first paint is the desktop layout and the client
+   * corrects on mount. Same pattern the Calendar page already uses.
+   */
+  const isMobileTabs = useMediaQuery('(max-width: 560px)');
+
+  // Widening back to a size where Case Info is not a tab must not strand
+  // the page on a tab that no longer exists (which would render nothing).
+  // Only this tab is reset; every other selection is preserved.
+  useEffect(() => {
+    if (!isMobileTabs && activeTab === 'caseInfo') setActiveTab('overview');
+  }, [isMobileTabs, activeTab]);
   const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const activeButton = tabsRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
@@ -123,6 +146,74 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       staffList.find((staff) => staff.id === task.assigneeStaffId)?.displayName ?? 'Office',
   }));
 
+  /**
+   * Defined ONCE and rendered in exactly one place at a time — the
+   * desktop/tablet rail or the mobile Case Info tab, never both. Keeping
+   * a single element (rather than repeating the JSX in two branches) is
+   * what guarantees no duplicate rendering, no second copy of the card's
+   * internal edit state, and no duplicated content for screen readers.
+   */
+  const caseInformationPanel = (
+          <CaseInformationCard
+            dateOfBirth={viewModel.dateOfBirth}
+            dateOfDeath={viewModel.dateOfDeath}
+            timeOfDeath={viewModel.timeOfDeath}
+            placeOfDeath={viewModel.placeOfDeath}
+            weight={viewModel.weight}
+            weightOver200={viewModel.weightOver200}
+            nextOfKinName={case_.nextOfKinName}
+            nextOfKinPhone={case_.nextOfKinPhone}
+            nextOfKinEmail={case_.nextOfKinEmail}
+            nextOfKinRelationship={case_.nextOfKinRelationship}
+            nextOfKinRelationshipOther={case_.nextOfKinRelationshipOther}
+            doNotContactNextOfKin={case_.doNotContactNextOfKin}
+            arrangementContactName={case_.arrangementContactName}
+            arrangementContactRelationship={case_.arrangementContactRelationship}
+            arrangementContactPhone={case_.arrangementContactPhone}
+            arrangementContactEmail={case_.arrangementContactEmail}
+            contactInstructions={case_.contactInstructions}
+            arrangementAuthorizationConfirmed={case_.arrangementAuthorizationConfirmed}
+            arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
+            certifierName={case_.certifierName}
+            certifierPhone={case_.certifierPhone}
+            certifierLicenseNumber={case_.certifierLicenseNumber}
+            certifierFax={case_.certifierFax}
+            onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
+            onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
+            onSaveCertifierLicenseNumber={(value) => mutations.setCertifierLicenseNumber(case_, value)}
+            onSaveCertifierFax={(value) => mutations.setCertifierFax(case_, value)}
+            tagNumber={case_.tagNumber}
+            paymentStatus={viewModel.paymentStatus}
+            pickupStatus={case_.pickupStatus}
+            pickupReleasedTo={case_.pickupReleasedTo}
+            pickupReleasedAt={case_.pickupReleasedAt}
+            pickupNote={case_.pickupNote}
+            returnMethod={case_.returnMethod}
+            shippingCarrier={case_.shippingCarrier}
+            shippingTrackingNumber={case_.shippingTrackingNumber}
+            shippingDateShipped={case_.shippingDateShipped}
+            shippingDeliveryStatus={case_.shippingDeliveryStatus}
+            shippingDeliveredAt={case_.shippingDeliveredAt}
+            ownerStaffId={viewModel.ownerStaffId}
+            staffOptions={staffOptions}
+            onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
+            showOwner={shouldShowCaseOwner(organizationId)}
+            onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
+            onSaveWeight={(value) => mutations.setWeight(case_, value)}
+            onSaveTimeOfDeath={(value) => mutations.setTimeOfDeath(case_, value)}
+            isVeteran={viewModel.isVeteran}
+            veteranFlagLocked={viewModel.veteranFlagLocked}
+            onToggleVeteran={(newValue) => mutations.setVeteranFlag(newValue)}
+            vaSteps={viewModel.vaSteps}
+            vaCallbackDone={viewModel.vaCallbackDone}
+            vaPublishChoice={viewModel.vaPublishChoice}
+            vaNotificationResponsibility={viewModel.vaNotificationResponsibility}
+            onToggleVaStep={(index, newDone) => mutations.toggleVaStep(case_, index, newDone)}
+            onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
+            onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
+          />
+  );
+
   return (
     <div>
       <CaseHeader
@@ -152,6 +243,19 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         >
           Overview
         </button>
+        {/* Mobile only: above 560px Case Information lives in the overview
+            rail, so adding a tab there would duplicate it. */}
+        {isMobileTabs && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'caseInfo'}
+            className={activeTab === 'caseInfo' ? styles.tabActive : styles.tabInactive}
+            onClick={() => setActiveTab('caseInfo')}
+          >
+            Case Info
+          </button>
+        )}
         {canSeeWorkflowTab && (
           <button
             type="button"
@@ -236,6 +340,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       {activeTab === 'activity' && (
         <CaseActivityTab caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
       )}
+      {activeTab === 'caseInfo' && isMobileTabs && (
+        <section className={styles.caseInfoTab} aria-label="Case details">
+          {caseInformationPanel}
+        </section>
+      )}
       {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
       {activeTab === 'portal' && familyPortalEnabled && <CaseFamilyPortalTab caseId={caseId} />}
 
@@ -299,66 +408,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
           </div>
 
-          <aside className={styles.overviewRail} aria-label="Case details">
-            <CaseInformationCard
-              dateOfBirth={viewModel.dateOfBirth}
-              dateOfDeath={viewModel.dateOfDeath}
-              timeOfDeath={viewModel.timeOfDeath}
-              placeOfDeath={viewModel.placeOfDeath}
-              weight={viewModel.weight}
-              weightOver200={viewModel.weightOver200}
-              nextOfKinName={case_.nextOfKinName}
-              nextOfKinPhone={case_.nextOfKinPhone}
-              nextOfKinEmail={case_.nextOfKinEmail}
-              nextOfKinRelationship={case_.nextOfKinRelationship}
-              nextOfKinRelationshipOther={case_.nextOfKinRelationshipOther}
-              doNotContactNextOfKin={case_.doNotContactNextOfKin}
-              arrangementContactName={case_.arrangementContactName}
-              arrangementContactRelationship={case_.arrangementContactRelationship}
-              arrangementContactPhone={case_.arrangementContactPhone}
-              arrangementContactEmail={case_.arrangementContactEmail}
-              contactInstructions={case_.contactInstructions}
-              arrangementAuthorizationConfirmed={case_.arrangementAuthorizationConfirmed}
-              arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
-              certifierName={case_.certifierName}
-              certifierPhone={case_.certifierPhone}
-              certifierLicenseNumber={case_.certifierLicenseNumber}
-              certifierFax={case_.certifierFax}
-              onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
-              onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
-              onSaveCertifierLicenseNumber={(value) => mutations.setCertifierLicenseNumber(case_, value)}
-              onSaveCertifierFax={(value) => mutations.setCertifierFax(case_, value)}
-              tagNumber={case_.tagNumber}
-              paymentStatus={viewModel.paymentStatus}
-              pickupStatus={case_.pickupStatus}
-              pickupReleasedTo={case_.pickupReleasedTo}
-              pickupReleasedAt={case_.pickupReleasedAt}
-              pickupNote={case_.pickupNote}
-              returnMethod={case_.returnMethod}
-              shippingCarrier={case_.shippingCarrier}
-              shippingTrackingNumber={case_.shippingTrackingNumber}
-              shippingDateShipped={case_.shippingDateShipped}
-              shippingDeliveryStatus={case_.shippingDeliveryStatus}
-              shippingDeliveredAt={case_.shippingDeliveredAt}
-              ownerStaffId={viewModel.ownerStaffId}
-              staffOptions={staffOptions}
-              onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
-              showOwner={shouldShowCaseOwner(organizationId)}
-              onUpdateCaseInfo={(patch) => mutations.updateCaseInfo(patch)}
-              onSaveWeight={(value) => mutations.setWeight(case_, value)}
-              onSaveTimeOfDeath={(value) => mutations.setTimeOfDeath(case_, value)}
-              isVeteran={viewModel.isVeteran}
-              veteranFlagLocked={viewModel.veteranFlagLocked}
-              onToggleVeteran={(newValue) => mutations.setVeteranFlag(newValue)}
-              vaSteps={viewModel.vaSteps}
-              vaCallbackDone={viewModel.vaCallbackDone}
-              vaPublishChoice={viewModel.vaPublishChoice}
-              vaNotificationResponsibility={viewModel.vaNotificationResponsibility}
-              onToggleVaStep={(index, newDone) => mutations.toggleVaStep(case_, index, newDone)}
-              onSetVaPublishChoice={(choice) => mutations.setVaPublishChoice(choice)}
-              onSetVaNotificationResponsibility={(responsibility) => mutations.setVaNotificationResponsibility(responsibility)}
-            />
-          </aside>
+          {!isMobileTabs && (
+            <aside className={styles.overviewRail} aria-label="Case details">
+              {caseInformationPanel}
+            </aside>
+          )}
         </div>
       )}
     </div>
