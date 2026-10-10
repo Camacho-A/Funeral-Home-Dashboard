@@ -149,6 +149,13 @@ export const ACTIVITY_EVENT_TYPES = {
       an unwanted call to a grieving family member, so it is the direction
       a reviewer most needs to find. */
   CASE_CONTACT_RESTRICTION_CHANGED: 'case.contact_restriction.changed',
+  /** Archived Cases (2026-10). Archiving is a soft flag — the case record,
+      its number and its history all remain — but it removes the case from
+      every working list, so it gets its own readable events rather than a
+      generic case.updated diff. `warning` on archive: that is the
+      direction that makes a case disappear from staff's view. */
+  CASE_ARCHIVED: 'case.archived',
+  CASE_RESTORED: 'case.restored',
   /** Reserved — discovered during implementation, not assumed in
       planning: `services/caseLogService.ts` has no server-side or Wix
       integration at all, in any mode (pure client-side mock fixtures,

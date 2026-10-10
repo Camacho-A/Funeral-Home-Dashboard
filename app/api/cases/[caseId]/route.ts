@@ -15,6 +15,7 @@ import {
   recordShipmentTrackingNumberChanged,
   recordShipmentDelivered,
   recordContactRestrictionChanged,
+  recordCaseArchiveChanged,
   type FieldChange,
 } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
@@ -429,6 +430,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       // absent (undefined) correctly reads as "not restricted" and the
       // first time staff tick the box registers as a real change rather
       // than as undefined !== false noise.
+      // Archived Cases (2026-10). Compared against the existing value
+      // coerced to a boolean so a legacy row with the column absent reads
+      // as "active", and the first archive registers as a real change.
+      if (patchRecord.isDeleted !== undefined) {
+        const wasArchived = existing.isDeleted === true;
+        const nowArchived = patchRecord.isDeleted === true;
+        if (wasArchived !== nowArchived) {
+          await recordCaseArchiveChanged(activityCtx, caseId, nowArchived, 'wix');
+        }
+      }
+
       if (patchRecord.doNotContactNextOfKin !== undefined) {
         const wasRestricted = existing.doNotContactNextOfKin === true;
         const nowRestricted = patchRecord.doNotContactNextOfKin === true;
@@ -448,6 +460,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         // Has its own event immediately above; listed here so one change
         // never produces two audit entries.
         'doNotContactNextOfKin',
+        // Has its own archived/restored event immediately above.
+        'isDeleted',
       ]);
       const changedFields: Record<string, FieldChange> = {};
       for (const key of Object.keys(patchRecord)) {

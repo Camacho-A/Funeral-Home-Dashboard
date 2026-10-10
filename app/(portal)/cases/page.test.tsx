@@ -473,3 +473,69 @@ describe('CasesPage — Return key runs the search', () => {
     expect(input).toHaveAttribute('enterkeyhint', 'search');
   });
 });
+
+describe('CasesPage — Archived Cases (2026-10)', () => {
+  /** Archive a fixture for the duration of one test, then restore it. */
+  function archiveFixture(): { id: string; restore: () => void } {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    return { id: target.id, restore: () => { caseFixtures[index] = target; } };
+  }
+
+  it('offers a way to reach the archived cases from the active list', async () => {
+    searchParams = new URLSearchParams();
+    renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+    const link = await screen.findByRole('link', { name: 'Archived cases' });
+    expect(link).toHaveAttribute('href', '/cases?archived=1');
+  });
+
+  it('shows archived cases under their own heading, and a way back', async () => {
+    const archived = archiveFixture();
+    try {
+      searchParams = new URLSearchParams({ archived: '1' });
+      renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+
+      expect(await screen.findByRole('heading', { name: 'Archived Cases' })).toBeInTheDocument();
+      // Says plainly that nothing was destroyed.
+      expect(screen.getByText(/Nothing has been deleted/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Back to active cases' })).toHaveAttribute('href', '/cases');
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('the archived view lists archived cases and the active view does not', async () => {
+    const archived = archiveFixture();
+    try {
+      searchParams = new URLSearchParams({ archived: '1' });
+      const { unmount } = renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+      // The archived case is present in this view...
+      await waitFor(() => expect(document.querySelectorAll(`a[href="/cases/${archived.id}"]`).length).toBeGreaterThan(0));
+      unmount();
+      cleanup();
+
+      searchParams = new URLSearchParams();
+      renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+      await screen.findByRole('heading', { name: 'All Cases' });
+      // ...and absent from the active one, which is otherwise populated.
+      await waitFor(() => expect(document.querySelectorAll('a[href^="/cases/"]').length).toBeGreaterThan(0));
+      expect(document.querySelectorAll(`a[href="/cases/${archived.id}"]`).length).toBe(0);
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('tells staff when nothing has been archived yet', async () => {
+    searchParams = new URLSearchParams({ archived: '1' });
+    renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+    expect(await screen.findByText('No cases have been archived.')).toBeInTheDocument();
+  });
+
+  it('does not show the "n active" count on the archive', async () => {
+    searchParams = new URLSearchParams({ archived: '1' });
+    renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+    await screen.findByRole('heading', { name: 'Archived Cases' });
+    expect(screen.queryByText(/\d+ active/)).not.toBeInTheDocument();
+  });
+});

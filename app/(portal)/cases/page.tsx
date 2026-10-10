@@ -56,12 +56,20 @@ function CasesPageContent() {
   const searchParams = useSearchParams();
   const stageParam = searchParams.get('stage');
   const stage = isValidStage(stageParam, organizationId) ? stageParam : null;
+  /**
+   * Archived Cases (2026-10). A distinct view of the same list, reached at
+   * /cases?archived=1 — not a stage, because archiving is orthogonal to
+   * where a case sits in the workflow. Stage filtering is deliberately
+   * ignored here: the archive is a flat record of filed cases, and a
+   * stage-filtered archive would hide cases for no useful reason.
+   */
+  const archived = searchParams.get('archived') === '1';
 
   const { query, setQuery, debouncedQuery, submitQuery } = useCaseSearch();
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
   const advanceStage = useAdvanceCaseStage();
 
-  const listQuery = useCaseListPage({ stage, searchQuery: debouncedQuery });
+  const listQuery = useCaseListPage({ stage: archived ? null : stage, searchQuery: debouncedQuery, archived });
   const flatCases = useMemo(() => listQuery.data?.pages.flatMap((page) => page.cases) ?? [], [listQuery.data]);
   const listViewModels = useCaseViewModels(flatCases);
 
@@ -78,13 +86,21 @@ function CasesPageContent() {
     return canonical.reduce((sum, ds) => sum + (countsData.byStage[STAGES[ds]] ?? 0), 0);
   }, [stage, countsData, organizationId]);
 
-  const heading = stage ?? 'All Cases';
-  const subheading =
-    stage === null
+  const heading = archived ? 'Archived Cases' : (stage ?? 'All Cases');
+  const subheading = archived
+    ? 'Cases filed away and hidden from the working lists. Nothing has been deleted — open a case to restore it.'
+    : stage === null
       ? 'All cases across every workflow stage.'
       : `Showing cases currently in: ${stage}.`;
-  const emptyMessage =
-    debouncedQuery.trim() !== '' ? 'No cases found.' : stage !== null ? 'No cases in this stage.' : 'No cases yet.';
+  const emptyMessage = archived
+    ? debouncedQuery.trim() !== ''
+      ? 'No archived cases match your search.'
+      : 'No cases have been archived.'
+    : debouncedQuery.trim() !== ''
+      ? 'No cases found.'
+      : stage !== null
+        ? 'No cases in this stage.'
+        : 'No cases yet.';
   const selectedCount = Object.values(selectedCaseIds).filter(Boolean).length;
 
   function handleToggleSelect(caseId: string) {
@@ -112,7 +128,7 @@ function CasesPageContent() {
       <header className={styles.header}>
         <div className={styles.titleRow}>
           <h1 className={styles.heading}>{heading}</h1>
-          {headerCount !== undefined && headerCount !== null && (
+          {!archived && headerCount !== undefined && headerCount !== null && (
             <span className={styles.count}>{headerCount} active</span>
           )}
         </div>
@@ -167,6 +183,9 @@ function CasesPageContent() {
             <path d="M3 4.5l3 3 3-3" />
           </svg>
         </label>
+        <Link href={archived ? '/cases' : '/cases?archived=1'} className={styles.archivedLink}>
+          {archived ? 'Back to active cases' : 'Archived cases'}
+        </Link>
       </div>
 
       {listQuery.isLoading && <EmptyState message="Loading cases…" />}
@@ -180,7 +199,7 @@ function CasesPageContent() {
         </div>
       )}
 
-      {!listQuery.isLoading && listQuery.data && stage === null && (
+      {!listQuery.isLoading && listQuery.data && (archived || stage === null) && (
         <AllCasesList
           cases={listViewModels}
           emptyMessage={emptyMessage}
@@ -192,7 +211,7 @@ function CasesPageContent() {
         />
       )}
 
-      {!listQuery.isLoading && listQuery.data && stage !== null && (
+      {!listQuery.isLoading && listQuery.data && !archived && stage !== null && (
         <StageFilteredPanel
           cases={listViewModels.map((c) => ({ ...c, selected: Boolean(selectedCaseIds[c.id]) }))}
           emptyMessage={emptyMessage}

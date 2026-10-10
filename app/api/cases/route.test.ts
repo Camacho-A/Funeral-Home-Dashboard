@@ -2586,3 +2586,87 @@ describe('POST /api/cases — external form intake authorization', () => {
     expect((await response.json()).error).toMatch(/payment card data/i);
   });
 });
+
+function archivedRequest(organizationId: string, archived?: string) {
+  const params = new URLSearchParams({ organizationId });
+  if (archived !== undefined) params.set('archived', archived);
+  return new Request(`http://localhost/api/cases?${params.toString()}`);
+}
+
+describe('GET /api/cases — Archived Cases (2026-10)', () => {
+  /**
+   * No fixture ships archived, so each test archives one itself and puts
+   * it back afterwards — otherwise "returns only archived cases" would
+   * pass vacuously against an empty array, which proves nothing.
+   */
+  async function withArchivedFixture<T>(run: (archivedId: string) => Promise<T>): Promise<T> {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    try {
+      // Awaited: a non-awaited return would run `finally` first and put
+      // the fixture back before the request under test ever read it.
+      return await run(target.id);
+    } finally {
+      caseFixtures[index] = target;
+    }
+  }
+
+  it('excludes archived cases by default and returns only them when asked', async () => {
+    const { activeIds, archivedIds, archivedId } = await withArchivedFixture(async (archivedId) => {
+      const activeBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
+      const archivedBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, 'true'))).json();
+      return {
+        activeIds: activeBody.cases.map((c: { id: string }) => c.id),
+        archivedIds: archivedBody.cases.map((c: { id: string }) => c.id),
+        archivedId,
+      };
+    });
+
+    // The archived case is genuinely present in one view...
+    expect(archivedIds).toContain(archivedId);
+    // ...and genuinely gone from the other.
+    expect(activeIds).not.toContain(archivedId);
+    expect(activeIds.length).toBeGreaterThan(0);
+  });
+
+  it('the two views never overlap', async () => {
+    const { activeIds, archivedIds } = await withArchivedFixture(async () => {
+      const activeBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
+      const archivedBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, 'true'))).json();
+      return {
+        activeIds: activeBody.cases.map((c: { id: string }) => c.id),
+        archivedIds: archivedBody.cases.map((c: { id: string }) => c.id),
+      };
+    });
+
+    expect(archivedIds.length).toBeGreaterThan(0);
+    expect(archivedIds.filter((id: string) => activeIds.includes(id))).toEqual([]);
+  });
+
+  it('only "true" opts in — any other value returns the active list', async () => {
+    await withArchivedFixture(async (archivedId) => {
+      for (const value of ['1', 'yes', 'TRUE', '']) {
+        const body = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, value))).json();
+        expect(body.cases.map((c: { id: string }) => c.id)).not.toContain(archivedId);
+      }
+    });
+  });
+
+  it('archiving a case removes it from the default list without deleting it', async () => {
+    const before = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
+    const beforeCount = before.cases.length;
+
+    const stillThere = await withArchivedFixture(async (archivedId) => {
+      const after = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
+      expect(after.cases.length).toBe(beforeCount - 1);
+      const archivedBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, 'true'))).json();
+      return archivedBody.cases.find((c: { id: string }) => c.id === archivedId);
+    });
+
+    // The record itself is intact — it moved view, it did not vanish.
+    expect(stillThere).toBeDefined();
+    expect(stillThere.caseNumber).toBeTruthy();
+    expect(stillThere.decedentName).toBeTruthy();
+  });
+});

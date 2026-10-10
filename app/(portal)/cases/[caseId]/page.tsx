@@ -25,6 +25,7 @@ import { CaseOrderCard } from '@/components/case/CaseOrderCard';
 import { BillingCard } from '@/components/case/BillingCard';
 import { ChecklistCard } from '@/components/case/ChecklistCard';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useArchiveCase } from '@/hooks/useArchiveCase';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
 import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCard';
 import { CaseActivityTab } from '@/components/case/CaseActivityTab';
@@ -73,6 +74,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
    * corrects on mount. Same pattern the Calendar page already uses.
    */
   const isMobileTabs = useMediaQuery('(max-width: 560px)');
+  const archiveCase = useArchiveCase();
 
   // Widening back to a size where Case Info is not a tab must not strand
   // the page on a tab that no longer exists (which would render nothing).
@@ -174,6 +176,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             contactInstructions={case_.contactInstructions}
             arrangementAuthorizationConfirmed={case_.arrangementAuthorizationConfirmed}
             arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
+            isArchived={case_.isDeleted}
+            caseNumber={viewModel.caseNumber}
+            decedentName={viewModel.decedentName}
+            onArchiveChange={(archived) => archiveCase.mutate({ caseId, archived })}
+            archivePending={archiveCase.isPending}
             certifierName={case_.certifierName}
             certifierPhone={case_.certifierPhone}
             certifierLicenseNumber={case_.certifierLicenseNumber}

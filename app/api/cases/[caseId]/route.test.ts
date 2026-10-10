@@ -1813,3 +1813,89 @@ describe('PATCH /api/cases/[caseId] — terminal family-pickup release (2026-10)
     expect(persisted.checklistState).toEqual(EXISTING_WIX_CASE_DATA.checklistState);
   });
 });
+
+describe('PATCH /api/cases/[caseId] — archive / restore (2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_collectionId: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  function activityEvents() {
+    return mockInsertWixDataItem.mock.calls
+      .filter(([collectionId]) => collectionId === 'activityEvents')
+      .map(([, data]) => data as Record<string, unknown>);
+  }
+
+  it('archiving sets only isArchived and deletes nothing', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDeleted: true } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.isDeleted).toBe(true);
+
+    const persisted = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
+    expect(persisted.isArchived).toBe(true);
+    // Everything that makes the case a record survives untouched.
+    expect(persisted.caseNumber).toBe(EXISTING_WIX_CASE_DATA.caseNumber);
+    expect(persisted.currentStage).toBe(EXISTING_WIX_CASE_DATA.currentStage);
+    expect(persisted.checklistState).toEqual(EXISTING_WIX_CASE_DATA.checklistState);
+    expect(persisted.decedentName).toBe(EXISTING_WIX_CASE_DATA.decedentName);
+  });
+
+  it('records who archived the case and when, at warning severity', async () => {
+    mockAdminQueries();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDeleted: true } });
+
+    const event = activityEvents().find((e) => e.eventType === 'case.archived');
+    expect(event).toBeDefined();
+    expect(event?.description).toMatch(/No data was deleted/);
+    expect(event?.severity).toBe('warning');
+    expect(event?.actorIdentityId).toBe(mockDefaultUser.id);
+    expect(event?.caseId).toBe('1042');
+  });
+
+  it('restoring emits case.restored and clears the flag', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, isArchived: true });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDeleted: false } });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.isDeleted).toBe(false);
+    const event = activityEvents().find((e) => e.eventType === 'case.restored');
+    expect(event).toBeDefined();
+    expect(event?.severity).toBe('info');
+  });
+
+  it('does not double-report the archive in the generic case.updated diff', async () => {
+    mockAdminQueries();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDeleted: true } });
+
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(1);
+    const generic = activityEvents().filter((e) => e.eventType === 'case.updated');
+    expect(generic.every((e) => !String(e.description).includes('isDeleted'))).toBe(true);
+  });
+
+  it('re-sending the same archive state emits no event', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, isArchived: true });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isDeleted: true } });
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+  });
+
+  it('an unrelated edit never archives a case by accident', async () => {
+    mockAdminQueries();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { weight: '180 lb' } });
+
+    const persisted = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
+    expect(persisted.isArchived).toBe(EXISTING_WIX_CASE_DATA.isArchived);
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+  });
+});

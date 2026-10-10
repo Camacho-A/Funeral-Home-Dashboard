@@ -24,16 +24,20 @@ import { useOrganization } from './useOrganization';
  * First Call & Payment query, or an unsearched query collide with a
  * searched one.
  */
-export function useCaseListPage(params: { stage: string | null; searchQuery: string }) {
+export function useCaseListPage(params: { stage: string | null; searchQuery: string; archived?: boolean }) {
   const organization = useOrganization();
   const { stage, searchQuery } = params;
+  // Archived Cases (2026-10). Part of the query key, so the archived and
+  // active lists are cached separately and switching views never shows
+  // the other one's rows while refetching.
+  const archived = params.archived === true;
 
   return useInfiniteQuery({
-    queryKey: ['cases', organization.organizationId, 'list', { stage, searchQuery }] as const,
+    queryKey: ['cases', organization.organizationId, 'list', { stage, searchQuery, archived }] as const,
     queryFn: ({ pageParam }) =>
       casesService.listPage(
         organization,
-        { stage, searchQuery, limit: CASE_LIST_DEFAULT_PAGE_SIZE, cursor: pageParam },
+        { stage, searchQuery, archived, limit: CASE_LIST_DEFAULT_PAGE_SIZE, cursor: pageParam },
         organization.dataAdapterMode,
       ),
     initialPageParam: null as string | null,

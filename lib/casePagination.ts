@@ -60,8 +60,8 @@ export function clampCaseListPageSize(requested: number | null): number {
   return Math.min(Math.floor(requested), CASE_LIST_MAX_PAGE_SIZE);
 }
 
-type WixCaseCursorPayload = { v: 1; kind: 'wix'; organizationId: string; searchQuery: string; stage: string | null; wixCursor: string };
-type MockCaseCursorPayload = { v: 1; kind: 'mock'; organizationId: string; searchQuery: string; stage: string | null; offset: number };
+type WixCaseCursorPayload = { v: 1; kind: 'wix'; organizationId: string; searchQuery: string; stage: string | null; archived: boolean; wixCursor: string };
+type MockCaseCursorPayload = { v: 1; kind: 'mock'; organizationId: string; searchQuery: string; stage: string | null; archived: boolean; offset: number };
 
 /** The application-level pagination cursor — opaque to every caller
     (UI components included; see route.ts's own comment on why the raw Wix
@@ -116,11 +116,18 @@ export function decodeCaseCursor(token: string): CaseCursorPayload | null {
     if (p.v !== 1 || typeof p.organizationId !== 'string' || typeof p.searchQuery !== 'string') return null;
     if (p.stage !== null && typeof p.stage !== 'string') return null;
     const stage = (p.stage as string | null) ?? null;
+    // Archived Cases (2026-10): `archived` is a result-set dimension like
+    // stage/search, so it rides on the cursor and is re-checked below —
+    // a cursor minted on the archived list can never continue paging the
+    // active one. Absent on a cursor issued before this change, which
+    // correctly reads as the active list.
+    if (p.archived !== undefined && typeof p.archived !== 'boolean') return null;
+    const archived = p.archived === true;
     if (p.kind === 'wix' && typeof p.wixCursor === 'string') {
-      return { v: 1, kind: 'wix', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, wixCursor: p.wixCursor };
+      return { v: 1, kind: 'wix', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, archived, wixCursor: p.wixCursor };
     }
     if (p.kind === 'mock' && typeof p.offset === 'number' && Number.isInteger(p.offset) && p.offset >= 0) {
-      return { v: 1, kind: 'mock', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, offset: p.offset };
+      return { v: 1, kind: 'mock', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, archived, offset: p.offset };
     }
     return null;
   } catch {
@@ -148,7 +155,7 @@ export type CaseCursorValidation = { ok: true; payload: CaseCursorPayload } | { 
  */
 export function validateCaseCursor(
   token: string,
-  context: { organizationId: string; searchQuery: string; stage: string | null; kind: 'wix' | 'mock' },
+  context: { organizationId: string; searchQuery: string; stage: string | null; kind: 'wix' | 'mock'; archived?: boolean },
 ): CaseCursorValidation {
   const payload = decodeCaseCursor(token);
   if (!payload) return { ok: false };
@@ -156,6 +163,9 @@ export function validateCaseCursor(
   if (payload.searchQuery !== context.searchQuery) return { ok: false };
   if (payload.stage !== context.stage) return { ok: false };
   if (payload.kind !== context.kind) return { ok: false };
+  // Archived Cases (2026-10): an archived-list cursor must never continue
+  // paging the active list, or vice versa.
+  if (payload.archived !== (context.archived === true)) return { ok: false };
   return { ok: true, payload };
 }
 
@@ -263,8 +273,11 @@ export function buildCaseListWixFilter(params: {
   organizationId: string;
   rawStages: number[] | null;
   searchFilter?: Record<string, unknown> | null;
+  /** Archived Cases (2026-10). Defaults to the active list, so every
+      existing caller keeps excluding archived cases unchanged. */
+  archived?: boolean;
 }): Record<string, unknown> {
-  const base: Record<string, unknown> = { organizationId: params.organizationId, isArchived: false };
+  const base: Record<string, unknown> = { organizationId: params.organizationId, isArchived: params.archived === true };
   if (params.rawStages) base.currentStage = { $in: params.rawStages };
   if (!params.searchFilter) return base;
   return { $and: [base, params.searchFilter] };

@@ -25,6 +25,7 @@ import { VaNotificationPanel } from './VaNotificationPanel';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
 import { normalizeNextOfKinName } from '@/domain/cases/nextOfKinName';
 import { ContactInstructionsSection } from './ContactInstructionsSection';
+import { ArchiveCaseSection } from './ArchiveCaseSection';
 import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
 import styles from './CaseInformationCard.module.css';
 
@@ -396,6 +397,11 @@ export function CaseInformationCard({
   contactInstructions,
   arrangementAuthorizationConfirmed,
   arrangementAuthorizationSource,
+  isArchived,
+  onArchiveChange,
+  archivePending,
+  caseNumber,
+  decedentName,
   certifierName,
   certifierPhone,
   certifierLicenseNumber,
@@ -460,6 +466,14 @@ export function CaseInformationCard({
   contactInstructions?: string | null;
   arrangementAuthorizationConfirmed?: boolean;
   arrangementAuthorizationSource?: string | null;
+  /** Archived Cases (2026-10). Omitted on any caller that does not offer
+      archiving (the control simply does not render). */
+  isArchived?: boolean;
+  onArchiveChange?: (archived: boolean) => void;
+  archivePending?: boolean;
+  /** Only used to name the case in the archive confirmation. */
+  caseNumber?: string;
+  decedentName?: string;
   /** Structured Certifier data (2026-09, ADR-041). Replaces the legacy
       free-text "Hospice/physician who will sign DC" intake concept for
       cases created under workflow template v5+ — null for any case whose
@@ -897,6 +911,16 @@ export function CaseInformationCard({
           onSetVaNotificationResponsibility={onSetVaNotificationResponsibility}
         />
       )}
+      {onArchiveChange && (
+        <ArchiveCaseSection
+          isArchived={isArchived === true}
+          caseNumber={caseNumber ?? ''}
+          decedentName={decedentName ?? 'This case'}
+          onChange={onArchiveChange}
+          pending={archivePending === true}
+        />
+      )}
+
     </div>
   );
 }

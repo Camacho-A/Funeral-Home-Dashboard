@@ -479,3 +479,20 @@ describe('Case Detail page — Case Info mobile tab (2026-10)', () => {
     expect(CASE_PAGE_CSS).toMatch(/\.caseInfoTab \{/);
   });
 });
+
+describe('Case Detail page — archive wiring (2026-10)', () => {
+  it('passes the archive state and handler into Case Information', () => {
+    // Structural, for the reason this file documents at the top. The
+    // control's own behaviour is covered by ArchiveCaseSection.test.tsx.
+    expect(SOURCE).toMatch(/import \{ useArchiveCase \} from '@\/hooks\/useArchiveCase';/);
+    expect(SOURCE).toMatch(/const archiveCase = useArchiveCase\(\);/);
+    expect(SOURCE).toMatch(/isArchived=\{case_\.isDeleted\}/);
+    expect(SOURCE).toMatch(/onArchiveChange=\{\(archived\) => archiveCase\.mutate\(\{ caseId, archived \}\)\}/);
+    expect(SOURCE).toMatch(/archivePending=\{archiveCase\.isPending\}/);
+  });
+
+  it('archives through the ordinary case update, never a bespoke delete', () => {
+    // No hard-delete path is introduced anywhere on this page.
+    expect(SOURCE).not.toMatch(/deleteCase|removeCase|hardDelete/);
+  });
+});

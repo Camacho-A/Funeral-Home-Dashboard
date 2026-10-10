@@ -430,6 +430,41 @@ const RETURN_METHOD_LABEL: Record<'undecided' | 'pickup' | 'shipping', string> =
  * second, separately-retained audit record would spread personal data
  * further for no investigative gain.
  */
+/**
+ * Archived Cases (2026-10). Records a case being archived or restored,
+ * by whom (via `ctx`) and when (via the envelope's timestamp).
+ *
+ * Archiving never deletes anything: the case row, its number, its
+ * checklist state and its whole audit trail survive untouched. All that
+ * changes is `isArchived`, which takes it out of the working lists — so
+ * this event exists to answer "where did that case go?" without anyone
+ * having to read a field diff.
+ */
+export function recordCaseArchiveChanged(
+  ctx: ActivityContext,
+  caseId: string,
+  archived: boolean,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: archived ? ACTIVITY_EVENT_TYPES.CASE_ARCHIVED : ACTIVITY_EVENT_TYPES.CASE_RESTORED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ isArchived: !archived }),
+      newValue: JSON.stringify({ isArchived: archived }),
+      description: archived
+        ? 'Case archived — removed from the working case lists. No data was deleted.'
+        : 'Case restored to the active case lists.',
+      metadata: null,
+      severity: archived ? 'warning' : 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordContactRestrictionChanged(
   ctx: ActivityContext,
   caseId: string,
