@@ -61,13 +61,13 @@ describe('compareCasesForListSort', () => {
 
 describe('cursor encode/decode/validate (Case list scalability, Phase 1+2)', () => {
   it('round-trips a wix cursor payload, including stage and archived', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: '', stage: 'Completed', wixCursor: 'raw-wix-token' });
-    expect(decodeCaseCursor(token)).toEqual({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: '', stage: 'Completed', wixCursor: 'raw-wix-token' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: '', stage: 'Completed', wixCursor: 'raw-wix-token' });
+    expect(decodeCaseCursor(token)).toEqual({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: '', stage: 'Completed', wixCursor: 'raw-wix-token' });
   });
 
   it('round-trips a mock cursor payload with stage: null (All Cases)', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'mock', archived: false, organizationId: 'org-1', searchQuery: 'emma', stage: null, offset: 50 });
-    expect(decodeCaseCursor(token)).toEqual({ v: 1, kind: 'mock', archived: false, organizationId: 'org-1', searchQuery: 'emma', stage: null, offset: 50 });
+    const token = encodeCaseCursor({ v: 1, kind: 'mock', scope: 'active', organizationId: 'org-1', searchQuery: 'emma', stage: null, offset: 50 });
+    expect(decodeCaseCursor(token)).toEqual({ v: 1, kind: 'mock', scope: 'active', organizationId: 'org-1', searchQuery: 'emma', stage: null, offset: 50 });
   });
 
   it('decodes to null for garbage input rather than throwing', () => {
@@ -103,49 +103,49 @@ describe('cursor encode/decode/validate (Case list scalability, Phase 1+2)', () 
   });
 
   it('validateCaseCursor accepts a cursor whose context (including stage) matches exactly', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: 'emma', stage: 'Completed', wixCursor: 'abc' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: 'emma', stage: 'Completed', wixCursor: 'abc' });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: 'emma', stage: 'Completed', kind: 'wix' });
     expect(result.ok).toBe(true);
   });
 
   it('validateCaseCursor accepts a cursor minted with stage: null (All Cases) against a request with no stage', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: '', stage: null, wixCursor: 'abc' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: '', stage: null, wixCursor: 'abc' });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: '', stage: null, kind: 'wix' });
     expect(result.ok).toBe(true);
   });
 
   it('validateCaseCursor rejects a cursor minted for a different organization — cannot be used to bypass org scoping', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-attacker', searchQuery: '', stage: null, wixCursor: 'abc' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-attacker', searchQuery: '', stage: null, wixCursor: 'abc' });
     const result = validateCaseCursor(token, { organizationId: 'org-victim', searchQuery: '', stage: null, kind: 'wix' });
     expect(result.ok).toBe(false);
   });
 
   it('validateCaseCursor rejects a cursor minted for a different search query', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'mock', archived: false, organizationId: 'org-1', searchQuery: 'emma', stage: null, offset: 10 });
+    const token = encodeCaseCursor({ v: 1, kind: 'mock', scope: 'active', organizationId: 'org-1', searchQuery: 'emma', stage: null, offset: 10 });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: 'karen', stage: null, kind: 'mock' });
     expect(result.ok).toBe(false);
   });
 
   it('validateCaseCursor rejects a cursor minted for a different adapter kind', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'mock', archived: false, organizationId: 'org-1', searchQuery: '', stage: null, offset: 10 });
+    const token = encodeCaseCursor({ v: 1, kind: 'mock', scope: 'active', organizationId: 'org-1', searchQuery: '', stage: null, offset: 10 });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: '', stage: null, kind: 'wix' });
     expect(result.ok).toBe(false);
   });
 
   it('validateCaseCursor rejects a cursor minted for a different stage — Completed + "Morales" cannot page through First Call & Payment + "Morales"', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: 'morales', stage: 'Completed', wixCursor: 'abc' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: 'morales', stage: 'Completed', wixCursor: 'abc' });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: 'morales', stage: 'First Call & Payment', kind: 'wix' });
     expect(result.ok).toBe(false);
   });
 
   it('validateCaseCursor rejects a cursor minted for a different search query within the same stage — Completed + "Morales" cannot page through Completed + "Smith"', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: 'morales', stage: 'Completed', wixCursor: 'abc' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: 'morales', stage: 'Completed', wixCursor: 'abc' });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: 'smith', stage: 'Completed', kind: 'wix' });
     expect(result.ok).toBe(false);
   });
 
   it('validateCaseCursor rejects a cursor minted with no stage against a request that now supplies one', () => {
-    const token = encodeCaseCursor({ v: 1, kind: 'wix', archived: false, organizationId: 'org-1', searchQuery: '', stage: null, wixCursor: 'abc' });
+    const token = encodeCaseCursor({ v: 1, kind: 'wix', scope: 'active', organizationId: 'org-1', searchQuery: '', stage: null, wixCursor: 'abc' });
     const result = validateCaseCursor(token, { organizationId: 'org-1', searchQuery: '', stage: 'Completed', kind: 'wix' });
     expect(result.ok).toBe(false);
   });
@@ -272,15 +272,17 @@ describe('buildCaseListWixFilter', () => {
 });
 
 describe('cursor + filter — Archived Cases (2026-10)', () => {
-  it('an archived-list cursor cannot continue paging the active list, or vice versa', () => {
-    const archivedToken = encodeCaseCursor({ v: 1, kind: 'mock', archived: true, organizationId: 'org-1', searchQuery: '', stage: null, offset: 25 });
+  it('a cursor minted on one slice cannot continue paging another', () => {
+    const archivedToken = encodeCaseCursor({ v: 1, kind: 'mock', scope: 'archived', organizationId: 'org-1', searchQuery: '', stage: null, offset: 25 });
     const activeContext = { organizationId: 'org-1', searchQuery: '', stage: null, kind: 'mock' as const };
 
     expect(validateCaseCursor(archivedToken, activeContext).ok).toBe(false);
-    expect(validateCaseCursor(archivedToken, { ...activeContext, archived: true }).ok).toBe(true);
+    expect(validateCaseCursor(archivedToken, { ...activeContext, scope: 'archived' as const }).ok).toBe(true);
+    // ...including the widened search slice.
+    expect(validateCaseCursor(archivedToken, { ...activeContext, scope: 'all' as const }).ok).toBe(false);
 
-    const activeToken = encodeCaseCursor({ v: 1, kind: 'mock', archived: false, organizationId: 'org-1', searchQuery: '', stage: null, offset: 25 });
-    expect(validateCaseCursor(activeToken, { ...activeContext, archived: true }).ok).toBe(false);
+    const activeToken = encodeCaseCursor({ v: 1, kind: 'mock', scope: 'active', organizationId: 'org-1', searchQuery: '', stage: null, offset: 25 });
+    expect(validateCaseCursor(activeToken, { ...activeContext, scope: 'archived' as const }).ok).toBe(false);
     expect(validateCaseCursor(activeToken, activeContext).ok).toBe(true);
   });
 
@@ -288,13 +290,21 @@ describe('cursor + filter — Archived Cases (2026-10)', () => {
     // Forward compatibility: `archived` absent decodes to false rather
     // than rejecting a cursor a user may still be holding.
     const legacy = encodeCaseCursor({ v: 1, kind: 'mock', organizationId: 'org-1', searchQuery: '', stage: null, offset: 10 } as never);
-    expect(decodeCaseCursor(legacy)?.archived).toBe(false);
+    expect(decodeCaseCursor(legacy)?.scope).toBe('active');
     expect(validateCaseCursor(legacy, { organizationId: 'org-1', searchQuery: '', stage: null, kind: 'mock' }).ok).toBe(true);
   });
 
   it('the list filter excludes archived cases by default and targets them only on request', () => {
     expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null })).toMatchObject({ isArchived: false });
-    expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, archived: false })).toMatchObject({ isArchived: false });
-    expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, archived: true })).toMatchObject({ isArchived: true });
+    expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, scope: 'active' })).toMatchObject({ isArchived: false });
+    expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, scope: 'archived' })).toMatchObject({ isArchived: true });
+  });
+
+  it("scope 'all' drops the archived filter entirely, so search spans both slices", () => {
+    const filter = buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, scope: 'all' });
+    // Not isArchived: { $in: [true, false] } — the key is simply absent,
+    // so Wix returns every case regardless of the flag.
+    expect('isArchived' in filter).toBe(false);
+    expect(filter).toMatchObject({ organizationId: 'org-1' });
   });
 });

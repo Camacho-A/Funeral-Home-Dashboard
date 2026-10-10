@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { casesService, type CaseListPage } from '@/services/casesService';
-import { CASE_LIST_DEFAULT_PAGE_SIZE } from '@/lib/casePagination';
+import { CASE_LIST_DEFAULT_PAGE_SIZE, type CaseListScope } from '@/lib/casePagination';
 import { useOrganization } from './useOrganization';
 
 /**
@@ -24,20 +24,20 @@ import { useOrganization } from './useOrganization';
  * First Call & Payment query, or an unsearched query collide with a
  * searched one.
  */
-export function useCaseListPage(params: { stage: string | null; searchQuery: string; archived?: boolean }) {
+export function useCaseListPage(params: { stage: string | null; searchQuery: string; scope?: CaseListScope }) {
   const organization = useOrganization();
   const { stage, searchQuery } = params;
-  // Archived Cases (2026-10). Part of the query key, so the archived and
-  // active lists are cached separately and switching views never shows
-  // the other one's rows while refetching.
-  const archived = params.archived === true;
+  // Archived Cases (2026-10). Part of the query key, so each slice is
+  // cached separately and switching views never shows another slice's
+  // rows while refetching.
+  const scope: CaseListScope = params.scope ?? 'active';
 
   return useInfiniteQuery({
-    queryKey: ['cases', organization.organizationId, 'list', { stage, searchQuery, archived }] as const,
+    queryKey: ['cases', organization.organizationId, 'list', { stage, searchQuery, scope }] as const,
     queryFn: ({ pageParam }) =>
       casesService.listPage(
         organization,
-        { stage, searchQuery, archived, limit: CASE_LIST_DEFAULT_PAGE_SIZE, cursor: pageParam },
+        { stage, searchQuery, scope, limit: CASE_LIST_DEFAULT_PAGE_SIZE, cursor: pageParam },
         organization.dataAdapterMode,
       ),
     initialPageParam: null as string | null,

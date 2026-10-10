@@ -25,6 +25,7 @@ import {
   encodeCaseCursor,
   matchesCaseSearch,
   validateCaseCursor,
+  type CaseListScope,
 } from '../lib/casePagination';
 
 export type CaseFilters = {
@@ -54,15 +55,15 @@ export type CaseListPageFilters = {
   searchQuery?: string;
   limit?: number;
   cursor?: string | null;
-  /** Archived Cases (2026-10). Omitted/false returns the ACTIVE list,
-      so every existing caller is unchanged; true returns only archived
-      cases. Never a mix — an archived case has left the working list. */
-  archived?: boolean;
+  /** Archived Cases (2026-10). Omitted returns the ACTIVE list, so every
+      existing caller is unchanged. See CaseListScope for why 'all'
+      exists. */
+  scope?: CaseListScope;
 };
 
 function listPageMock(context: OrganizationContext, filters: CaseListPageFilters): CaseListPage {
   const searchQuery = filters.searchQuery ?? '';
-  const archived = filters.archived === true;
+  const scope = filters.scope ?? 'active';
   const stage = filters.stage ?? null;
   // Manors intake-stage combination (2026-10): resolved against the
   // organization, so a user-facing label covering more than one canonical
@@ -86,14 +87,14 @@ function listPageMock(context: OrganizationContext, filters: CaseListPageFilters
   }
 
   const eligible = caseFixtures.filter(
-    (c) => c.organizationId === context.organizationId && c.isDeleted === archived && (rawStages === null || rawStages.includes(c.rawStage)),
+    (c) => c.organizationId === context.organizationId && (scope === 'all' || c.isDeleted === (scope === 'archived')) && (rawStages === null || rawStages.includes(c.rawStage)),
   );
   const searched = eligible.filter((c) => matchesCaseSearch(c, searchQuery));
   const sorted = [...searched].sort(compareCasesForListSort);
 
   let offset = 0;
   if (filters.cursor) {
-    const validation = validateCaseCursor(filters.cursor, { organizationId: context.organizationId, searchQuery, stage, archived, kind: 'mock' });
+    const validation = validateCaseCursor(filters.cursor, { organizationId: context.organizationId, searchQuery, stage, scope, kind: 'mock' });
     if (!validation.ok || validation.payload.kind !== 'mock') {
       return { cases: [], hasMore: false, nextCursor: null };
     }
@@ -104,7 +105,7 @@ function listPageMock(context: OrganizationContext, filters: CaseListPageFilters
   const page = sorted.slice(offset, offset + pageSize);
   const hasMore = offset + page.length < sorted.length;
   const nextCursor = hasMore
-    ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId: context.organizationId, searchQuery, stage, archived, offset: offset + page.length })
+    ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId: context.organizationId, searchQuery, stage, scope, offset: offset + page.length })
     : null;
 
   return { cases: page, hasMore, nextCursor };
@@ -124,7 +125,7 @@ export async function listPage(
   if (filters.searchQuery) params.set('searchQuery', filters.searchQuery);
   params.set('limit', String(clampCaseListPageSize(filters.limit ?? null)));
   if (filters.cursor) params.set('cursor', filters.cursor);
-  if (filters.archived) params.set('archived', 'true');
+  if (filters.scope && filters.scope !== 'active') params.set('scope', filters.scope);
 
   const response = await fetch(`/api/cases?${params.toString()}`);
   const body = await response.json();

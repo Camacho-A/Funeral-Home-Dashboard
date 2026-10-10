@@ -4,6 +4,7 @@ import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCaseListPage } from '@/hooks/useCaseListPage';
+import type { CaseListScope } from '@/lib/casePagination';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
 import { useCaseSearch } from '@/hooks/useCaseSearch';
 import { useCaseCounts } from '@/hooks/useCaseCounts';
@@ -69,7 +70,29 @@ function CasesPageContent() {
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
   const advanceStage = useAdvanceCaseStage();
 
-  const listQuery = useCaseListPage({ stage: archived ? null : stage, searchQuery: debouncedQuery, archived });
+  /**
+   * Archived Cases (2026-10) — search reaches the archive.
+   *
+   * Browsing shows what you asked for: the active list, or the archive.
+   * SEARCHING spans both, because someone typing a name or case number is
+   * looking for a specific case and should not have to already know it was
+   * filed. Archived hits carry the muted "Archived" label in the row, so
+   * they can never be mistaken for active work.
+   *
+   * The archived view stays scoped to the archive even while searching —
+   * narrowing within the archive is the whole point of searching there.
+   *
+   * A STAGE view stays active-only even while searching. It answers
+   * "what is in my pipeline at stage X" and carries the bulk
+   * advance-stage action, so a filed case has no business being
+   * selectable there. Both search boxes (TopBar and this toolbar) land on
+   * All Cases with no stage, which is exactly where the widened search
+   * applies.
+   */
+  const searching = debouncedQuery.trim() !== '';
+  const scope: CaseListScope = archived ? 'archived' : searching && stage === null ? 'all' : 'active';
+
+  const listQuery = useCaseListPage({ stage: archived ? null : stage, searchQuery: debouncedQuery, scope });
   const flatCases = useMemo(() => listQuery.data?.pages.flatMap((page) => page.cases) ?? [], [listQuery.data]);
   const listViewModels = useCaseViewModels(flatCases);
 
@@ -97,7 +120,9 @@ function CasesPageContent() {
       ? 'No archived cases match your search.'
       : 'No cases have been archived.'
     : debouncedQuery.trim() !== ''
-      ? 'No cases found.'
+      ? stage === null
+        ? 'No cases found, including archived ones.'
+        : 'No cases found in this stage.'
       : stage !== null
         ? 'No cases in this stage.'
         : 'No cases yet.';

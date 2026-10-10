@@ -5,6 +5,8 @@ import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, describ
 import {
   CASE_LIST_SORT,
   buildCaseListWixFilter,
+  isCaseListScope,
+  type CaseListScope,
   buildCaseSearchWixFilter,
   clampCaseListPageSize,
   compareCasesForListSort,
@@ -106,9 +108,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedOrganizationId = url.searchParams.get('organizationId');
   const searchQuery = url.searchParams.get('searchQuery') ?? '';
-  // Archived Cases (2026-10). Opt-in: every existing caller omits it and
-  // keeps getting the active list, exactly as before.
-  const archived = url.searchParams.get('archived') === 'true';
+  // Archived Cases (2026-10). Opt-in: an absent or unrecognised value
+  // means the active list, exactly as before. 'all' is what a SEARCH
+  // uses, so a filed case is still findable by name or number.
+  const scopeParam = url.searchParams.get('scope');
+  const scope: CaseListScope = isCaseListScope(scopeParam) ? scopeParam : 'active';
   const limitParam = url.searchParams.get('limit');
   const cursorParam = url.searchParams.get('cursor');
   const stageParam = url.searchParams.get('stage');
@@ -190,7 +194,7 @@ export async function GET(request: Request) {
     // another organization's cases.
     let cursor: { wix?: string; mockOffset?: number } | null = null;
     if (cursorParam !== null) {
-      const validation = validateCaseCursor(cursorParam, { organizationId, searchQuery, stage: stageParam, archived, kind: adapter === 'mock' ? 'mock' : 'wix' });
+      const validation = validateCaseCursor(cursorParam, { organizationId, searchQuery, stage: stageParam, scope, kind: adapter === 'mock' ? 'mock' : 'wix' });
       if (!validation.ok) {
         return NextResponse.json(
           { cases: [], hasMore: false, nextCursor: null, error: 'Invalid or expired pagination cursor.' },
@@ -202,7 +206,7 @@ export async function GET(request: Request) {
 
     if (adapter === 'mock') {
       const eligible = caseFixtures.filter(
-        (c) => c.organizationId === organizationId && c.isDeleted === archived && (rawStages === null || rawStages.includes(c.rawStage)),
+        (c) => c.organizationId === organizationId && (scope === 'all' || c.isDeleted === (scope === 'archived')) && (rawStages === null || rawStages.includes(c.rawStage)),
       );
 
       if (!paginationRequested) {
@@ -224,7 +228,7 @@ export async function GET(request: Request) {
       const page = sorted.slice(offset, offset + pageSize);
       const hasMore = offset + page.length < sorted.length;
       const nextCursor = hasMore
-        ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId, searchQuery, stage: stageParam, archived, offset: offset + page.length })
+        ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId, searchQuery, stage: stageParam, scope, offset: offset + page.length })
         : null;
 
       return NextResponse.json({ cases: hasFullRead ? page : page.map(toPickupOnlyView), hasMore, nextCursor });
@@ -241,7 +245,7 @@ export async function GET(request: Request) {
       // being skipped or duplicated across pages. Stage filtering (new,
       // opt-in) is pushed into the same Wix filter; search stays
       // `matchesSearch` (`.includes()`), unchanged.
-      const items = await queryAllWixDataItems<WixCaseItem>('cases', buildCaseListWixFilter({ organizationId, rawStages, archived }));
+      const items = await queryAllWixDataItems<WixCaseItem>('cases', buildCaseListWixFilter({ organizationId, rawStages, scope }));
       const cases = items
         .map((item) => mapWixCaseItem(item.data))
         .filter((c): c is Case => c !== null)
@@ -253,7 +257,7 @@ export async function GET(request: Request) {
     const pageSize = clampCaseListPageSize(requestedLimit);
     const searchFilter = buildCaseSearchWixFilter(searchQuery);
     const pageResponse = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter, archived }),
+      filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter, scope }),
       sort: CASE_LIST_SORT,
       // Wix's cursor-paging contract: the first page is requested via
       // `limit` alone, every subsequent page via `cursor` alone — never
@@ -279,7 +283,7 @@ export async function GET(request: Request) {
     const nextWixCursor = pageResponse.pagingMetadata?.cursors?.next ?? null;
     const hasMore = Boolean(pageResponse.pagingMetadata?.hasNext) && nextWixCursor !== null;
     const nextCursor = hasMore
-      ? encodeCaseCursor({ v: 1, kind: 'wix', organizationId, searchQuery, stage: stageParam, archived, wixCursor: nextWixCursor! })
+      ? encodeCaseCursor({ v: 1, kind: 'wix', organizationId, searchQuery, stage: stageParam, scope, wixCursor: nextWixCursor! })
       : null;
 
     return NextResponse.json({ cases: hasFullRead ? cases : cases.map(toPickupOnlyView), hasMore, nextCursor });

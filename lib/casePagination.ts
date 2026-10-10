@@ -60,8 +60,26 @@ export function clampCaseListPageSize(requested: number | null): number {
   return Math.min(Math.floor(requested), CASE_LIST_MAX_PAGE_SIZE);
 }
 
-type WixCaseCursorPayload = { v: 1; kind: 'wix'; organizationId: string; searchQuery: string; stage: string | null; archived: boolean; wixCursor: string };
-type MockCaseCursorPayload = { v: 1; kind: 'mock'; organizationId: string; searchQuery: string; stage: string | null; archived: boolean; offset: number };
+/**
+ * Archived Cases (2026-10). Which slice of the case list a query covers.
+ * Three mutually exclusive views, not two booleans:
+ *   'active'   — the working list; archived cases excluded (the default,
+ *                and what every caller that says nothing still gets).
+ *   'archived' — only filed cases (the Archived Cases view).
+ *   'all'      — both, used when a SEARCH is running, so a case someone
+ *                is looking for by name or number is never invisible
+ *                just because it has been filed. Archived hits are
+ *                labelled "Archived" in the row, so they can't be
+ *                mistaken for active work.
+ */
+export type CaseListScope = 'active' | 'archived' | 'all';
+
+export function isCaseListScope(value: unknown): value is CaseListScope {
+  return value === 'active' || value === 'archived' || value === 'all';
+}
+
+type WixCaseCursorPayload = { v: 1; kind: 'wix'; organizationId: string; searchQuery: string; stage: string | null; scope: CaseListScope; wixCursor: string };
+type MockCaseCursorPayload = { v: 1; kind: 'mock'; organizationId: string; searchQuery: string; stage: string | null; scope: CaseListScope; offset: number };
 
 /** The application-level pagination cursor — opaque to every caller
     (UI components included; see route.ts's own comment on why the raw Wix
@@ -116,18 +134,18 @@ export function decodeCaseCursor(token: string): CaseCursorPayload | null {
     if (p.v !== 1 || typeof p.organizationId !== 'string' || typeof p.searchQuery !== 'string') return null;
     if (p.stage !== null && typeof p.stage !== 'string') return null;
     const stage = (p.stage as string | null) ?? null;
-    // Archived Cases (2026-10): `archived` is a result-set dimension like
+    // Archived Cases (2026-10): `scope` is a result-set dimension like
     // stage/search, so it rides on the cursor and is re-checked below —
-    // a cursor minted on the archived list can never continue paging the
-    // active one. Absent on a cursor issued before this change, which
-    // correctly reads as the active list.
-    if (p.archived !== undefined && typeof p.archived !== 'boolean') return null;
-    const archived = p.archived === true;
+    // a cursor minted on one slice can never continue paging another.
+    // Absent on a cursor issued before this change, which correctly
+    // reads as the active list.
+    if (p.scope !== undefined && !isCaseListScope(p.scope)) return null;
+    const scope: CaseListScope = isCaseListScope(p.scope) ? p.scope : 'active';
     if (p.kind === 'wix' && typeof p.wixCursor === 'string') {
-      return { v: 1, kind: 'wix', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, archived, wixCursor: p.wixCursor };
+      return { v: 1, kind: 'wix', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, scope, wixCursor: p.wixCursor };
     }
     if (p.kind === 'mock' && typeof p.offset === 'number' && Number.isInteger(p.offset) && p.offset >= 0) {
-      return { v: 1, kind: 'mock', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, archived, offset: p.offset };
+      return { v: 1, kind: 'mock', organizationId: p.organizationId, searchQuery: p.searchQuery, stage, scope, offset: p.offset };
     }
     return null;
   } catch {
@@ -155,7 +173,7 @@ export type CaseCursorValidation = { ok: true; payload: CaseCursorPayload } | { 
  */
 export function validateCaseCursor(
   token: string,
-  context: { organizationId: string; searchQuery: string; stage: string | null; kind: 'wix' | 'mock'; archived?: boolean },
+  context: { organizationId: string; searchQuery: string; stage: string | null; kind: 'wix' | 'mock'; scope?: CaseListScope },
 ): CaseCursorValidation {
   const payload = decodeCaseCursor(token);
   if (!payload) return { ok: false };
@@ -163,9 +181,9 @@ export function validateCaseCursor(
   if (payload.searchQuery !== context.searchQuery) return { ok: false };
   if (payload.stage !== context.stage) return { ok: false };
   if (payload.kind !== context.kind) return { ok: false };
-  // Archived Cases (2026-10): an archived-list cursor must never continue
-  // paging the active list, or vice versa.
-  if (payload.archived !== (context.archived === true)) return { ok: false };
+  // Archived Cases (2026-10): a cursor minted on one slice must never
+  // continue paging another.
+  if (payload.scope !== (context.scope ?? 'active')) return { ok: false };
   return { ok: true, payload };
 }
 
@@ -274,10 +292,13 @@ export function buildCaseListWixFilter(params: {
   rawStages: number[] | null;
   searchFilter?: Record<string, unknown> | null;
   /** Archived Cases (2026-10). Defaults to the active list, so every
-      existing caller keeps excluding archived cases unchanged. */
-  archived?: boolean;
+      existing caller keeps excluding archived cases unchanged. 'all'
+      omits the filter entirely rather than asking for both values. */
+  scope?: CaseListScope;
 }): Record<string, unknown> {
-  const base: Record<string, unknown> = { organizationId: params.organizationId, isArchived: params.archived === true };
+  const scope = params.scope ?? 'active';
+  const base: Record<string, unknown> = { organizationId: params.organizationId };
+  if (scope !== 'all') base.isArchived = scope === 'archived';
   if (params.rawStages) base.currentStage = { $in: params.rawStages };
   if (!params.searchFilter) return base;
   return { $and: [base, params.searchFilter] };

@@ -2587,9 +2587,10 @@ describe('POST /api/cases — external form intake authorization', () => {
   });
 });
 
-function archivedRequest(organizationId: string, archived?: string) {
+function scopedRequest(organizationId: string, scope?: string, searchQuery?: string) {
   const params = new URLSearchParams({ organizationId });
-  if (archived !== undefined) params.set('archived', archived);
+  if (scope !== undefined) params.set('scope', scope);
+  if (searchQuery !== undefined) params.set('searchQuery', searchQuery);
   return new Request(`http://localhost/api/cases?${params.toString()}`);
 }
 
@@ -2614,8 +2615,8 @@ describe('GET /api/cases — Archived Cases (2026-10)', () => {
 
   it('excludes archived cases by default and returns only them when asked', async () => {
     const { activeIds, archivedIds, archivedId } = await withArchivedFixture(async (archivedId) => {
-      const activeBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
-      const archivedBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, 'true'))).json();
+      const activeBody = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID))).json();
+      const archivedBody = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'archived'))).json();
       return {
         activeIds: activeBody.cases.map((c: { id: string }) => c.id),
         archivedIds: archivedBody.cases.map((c: { id: string }) => c.id),
@@ -2632,8 +2633,8 @@ describe('GET /api/cases — Archived Cases (2026-10)', () => {
 
   it('the two views never overlap', async () => {
     const { activeIds, archivedIds } = await withArchivedFixture(async () => {
-      const activeBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
-      const archivedBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, 'true'))).json();
+      const activeBody = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID))).json();
+      const archivedBody = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'archived'))).json();
       return {
         activeIds: activeBody.cases.map((c: { id: string }) => c.id),
         archivedIds: archivedBody.cases.map((c: { id: string }) => c.id),
@@ -2644,23 +2645,23 @@ describe('GET /api/cases — Archived Cases (2026-10)', () => {
     expect(archivedIds.filter((id: string) => activeIds.includes(id))).toEqual([]);
   });
 
-  it('only "true" opts in — any other value returns the active list', async () => {
+  it('an unrecognised scope falls back to the active list', async () => {
     await withArchivedFixture(async (archivedId) => {
-      for (const value of ['1', 'yes', 'TRUE', '']) {
-        const body = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, value))).json();
+      for (const value of ['1', 'yes', 'ARCHIVED', '', 'everything']) {
+        const body = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, value))).json();
         expect(body.cases.map((c: { id: string }) => c.id)).not.toContain(archivedId);
       }
     });
   });
 
   it('archiving a case removes it from the default list without deleting it', async () => {
-    const before = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
+    const before = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID))).json();
     const beforeCount = before.cases.length;
 
     const stillThere = await withArchivedFixture(async (archivedId) => {
-      const after = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID))).json();
+      const after = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID))).json();
       expect(after.cases.length).toBe(beforeCount - 1);
-      const archivedBody = await (await GET(archivedRequest(DEFAULT_ORGANIZATION_ID, 'true'))).json();
+      const archivedBody = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'archived'))).json();
       return archivedBody.cases.find((c: { id: string }) => c.id === archivedId);
     });
 
@@ -2668,5 +2669,71 @@ describe('GET /api/cases — Archived Cases (2026-10)', () => {
     expect(stillThere).toBeDefined();
     expect(stillThere.caseNumber).toBeTruthy();
     expect(stillThere.decedentName).toBeTruthy();
+  });
+});
+
+describe('GET /api/cases — search reaches the archive (2026-10)', () => {
+  function scopeFixture(): { id: string; caseNumber: string; decedentName: string; restore: () => void } {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    return {
+      id: target.id,
+      caseNumber: target.caseNumber,
+      decedentName: target.decedentName,
+      restore: () => { caseFixtures[index] = target; },
+    };
+  }
+
+  it("scope 'all' finds an archived case by name, which the active scope cannot", async () => {
+    const archived = scopeFixture();
+    try {
+      const term = archived.decedentName.split(' ')[0];
+
+      const active = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'active', term))).json();
+      expect(active.cases.map((c: { id: string }) => c.id)).not.toContain(archived.id);
+
+      const all = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'all', term))).json();
+      expect(all.cases.map((c: { id: string }) => c.id)).toContain(archived.id);
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it("scope 'all' finds an archived case by case number", async () => {
+    const archived = scopeFixture();
+    try {
+      const all = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'all', archived.caseNumber))).json();
+      expect(all.cases.map((c: { id: string }) => c.id)).toContain(archived.id);
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it("scope 'all' still returns active cases too — it widens, never replaces", async () => {
+    const archived = scopeFixture();
+    try {
+      const all = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'all'))).json();
+      const ids = all.cases.map((c: { id: string }) => c.id);
+      expect(ids).toContain(archived.id);
+      // Every other org case is present as well.
+      const others = caseFixtures.filter((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && c.id !== archived.id);
+      for (const other of others) expect(ids).toContain(other.id);
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('archived hits stay identifiable as archived in the payload', async () => {
+    const archived = scopeFixture();
+    try {
+      const all = await (await GET(scopedRequest(DEFAULT_ORGANIZATION_ID, 'all'))).json();
+      const hit = all.cases.find((c: { id: string }) => c.id === archived.id);
+      // The row label is derived from this flag, so a search result can
+      // never be mistaken for active work.
+      expect(hit.isDeleted).toBe(true);
+    } finally {
+      archived.restore();
+    }
   });
 });

@@ -539,3 +539,110 @@ describe('CasesPage — Archived Cases (2026-10)', () => {
     expect(screen.queryByText(/\d+ active/)).not.toBeInTheDocument();
   });
 });
+
+describe('CasesPage — search reaches the archive (2026-10)', () => {
+  function archiveFixture() {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    return { ...target, restore: () => { caseFixtures[index] = target; } };
+  }
+
+  /** Renders with search applied immediately — `renderPageForOrg` has no
+      CaseSearchContext, so its debounce never fires under test. Mirrors
+      the toolbar suite's own TestSearchProvider. */
+  function renderSearchable() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function TestSearchProvider({ children }: { children: React.ReactNode }) {
+      const [value, setValue] = useState('');
+      return (
+        <CaseSearchContext.Provider value={{ query: value, setQuery: setValue, debouncedQuery: value, submitQuery: vi.fn() }}>
+          {children}
+        </CaseSearchContext.Provider>
+      );
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+          <TestSearchProvider>
+            <CasesPage />
+          </TestSearchProvider>
+        </OrganizationProvider>
+      </QueryClientProvider>,
+    );
+    return screen.getByPlaceholderText('Search cases…');
+  }
+
+  const linksTo = (id: string) => document.querySelectorAll(`a[href="/cases/${id}"]`).length;
+
+  it('finds an archived case from the All Cases search, labelled Archived', async () => {
+    const archived = archiveFixture();
+    try {
+      searchParams = new URLSearchParams();
+      const input = renderSearchable();
+
+      // Not in the unsearched active list...
+      await waitFor(() => expect(document.querySelectorAll('a[href^="/cases/"]').length).toBeGreaterThan(0));
+      expect(linksTo(archived.id)).toBe(0);
+
+      // ...but searching for it surfaces it.
+      fireEvent.change(input, { target: { value: archived.decedentName.split(' ')[0] } });
+      await waitFor(() => expect(linksTo(archived.id)).toBeGreaterThan(0));
+
+      // And it is unmistakably archived, not active work.
+      expect(screen.getAllByText('Archived').length).toBeGreaterThan(0);
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('finds an archived case by case number', async () => {
+    const archived = archiveFixture();
+    try {
+      searchParams = new URLSearchParams();
+      const input = renderSearchable();
+      fireEvent.change(input, { target: { value: archived.caseNumber } });
+      await waitFor(() => expect(linksTo(archived.id)).toBeGreaterThan(0));
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('clearing the search puts the archived case back out of sight', async () => {
+    const archived = archiveFixture();
+    try {
+      searchParams = new URLSearchParams();
+      const input = renderSearchable();
+
+      fireEvent.change(input, { target: { value: archived.decedentName.split(' ')[0] } });
+      await waitFor(() => expect(linksTo(archived.id)).toBeGreaterThan(0));
+
+      fireEvent.change(input, { target: { value: '' } });
+      await waitFor(() => expect(linksTo(archived.id)).toBe(0));
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('a stage view stays active-only even while searching — bulk advance must not reach filed cases', async () => {
+    const archived = archiveFixture();
+    try {
+      const stageLabel = STAGES[archived.rawStage === 0 ? 0 : Math.max(0, archived.rawStage - 1)];
+      searchParams = new URLSearchParams({ stage: stageLabel });
+      const input = renderSearchable();
+      fireEvent.change(input, { target: { value: archived.decedentName.split(' ')[0] } });
+
+      await waitFor(() => expect(screen.queryByText('Loading cases…')).not.toBeInTheDocument());
+      expect(linksTo(archived.id)).toBe(0);
+    } finally {
+      archived.restore();
+    }
+  });
+
+  it('says so when a search finds nothing, archive included', async () => {
+    searchParams = new URLSearchParams();
+    const input = renderSearchable();
+    fireEvent.change(input, { target: { value: 'zzzzz-no-such-case' } });
+    expect(await screen.findByText('No cases found, including archived ones.')).toBeInTheDocument();
+  });
+});
