@@ -3,9 +3,22 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import type { BadgeVariant } from '@/types/caseViewModel';
+import type { CaseRowSummaryVariant } from '@/types/caseViewModel';
 import { BulkActionBar } from './BulkActionBar';
 import styles from './StageFilteredPanel.module.css';
+
+/**
+ * Case status label (2026-10). Maps the view model's status variant to the
+ * list's own colour classes — the same four states on desktop and mobile,
+ * since the CSS only changes wrapping at narrow widths, never the colour.
+ */
+const SUMMARY_CLASS: Record<CaseRowSummaryVariant, string> = {
+  danger: styles.summaryDanger,
+  success: styles.summaryComplete,
+  archived: styles.summaryArchived,
+  neutral: styles.summaryNeutral,
+};
+
 
 export type StageFilteredCase = {
   id: string;
@@ -17,7 +30,7 @@ export type StageFilteredCase = {
       resolveDecedentInitials. */
   decedentInitials: string;
   rowSummaryText: string;
-  rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
+  rowSummaryVariant: CaseRowSummaryVariant;
   isStalled: boolean;
   selected: boolean;
   /** Case list scalability, Phase 3 (progress indicator, 2026-09) — see
@@ -84,7 +97,7 @@ export function StageFilteredPanel({
               <div className={styles.name}>{c.decedentName}</div>
               <div className={styles.caseNumber}>#{c.caseNumber}</div>
               <div
-                className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
+                className={`${styles.summary} ${SUMMARY_CLASS[c.rowSummaryVariant]}`}
               >
                 {c.rowSummaryText}
               </div>

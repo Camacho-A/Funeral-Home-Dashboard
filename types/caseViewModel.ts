@@ -21,6 +21,13 @@ import type {
 
 export type BadgeVariant = 'neutral' | 'brand' | 'danger' | 'success';
 
+/**
+ * Case status label (2026-10). Deliberately its own union rather than a
+ * subset of BadgeVariant: 'archived' is a list-row state, not a badge
+ * tone, and there is no archived Badge to borrow from.
+ */
+export type CaseRowSummaryVariant = 'danger' | 'neutral' | 'success' | 'archived';
+
 export type ChecklistItemViewModel = {
   index: number;
   label: string;
@@ -164,11 +171,16 @@ export type CaseViewModel = {
       none) — the prototype's own `nextAction` concept (buildCase()), i.e.
       "what should happen next on this case." */
   nextActionLabel: string;
-  /** stalledReason when stalled, else nextActionLabel — computed once here
-      rather than in every row component that displays it (Dashboard's
-      AllCasesList and StageFilteredPanel both need this exact fallback). */
+  /** The status line under the case number in the case lists. Archived
+      -> "Archived"; a workflow-complete case -> "Completed"; a stalled
+      case -> its stalled reason; otherwise the next action. Computed once
+      here rather than in every row component that displays it
+      (Dashboard's AllCasesList and StageFilteredPanel both need exactly
+      this) — which is also what keeps desktop and mobile identical, since
+      both read this one field. See domain/cases/viewModel.ts for the
+      precedence and for why "Completed" is derived, never stored. */
   rowSummaryText: string;
-  rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
+  rowSummaryVariant: CaseRowSummaryVariant;
 
   paymentStatus: PaymentStatus;
   paymentStatusVariant: BadgeVariant;

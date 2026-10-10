@@ -4,8 +4,21 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { toDisplayName } from '@/utils/displayName';
-import type { BadgeVariant } from '@/types/caseViewModel';
+import type { BadgeVariant, CaseRowSummaryVariant } from '@/types/caseViewModel';
 import styles from './AllCasesList.module.css';
+
+/**
+ * Case status label (2026-10). Maps the view model's status variant to the
+ * list's own colour classes — the same four states on desktop and mobile,
+ * since the CSS only changes wrapping at narrow widths, never the colour.
+ */
+const SUMMARY_CLASS: Record<CaseRowSummaryVariant, string> = {
+  danger: styles.summaryDanger,
+  success: styles.summaryComplete,
+  archived: styles.summaryArchived,
+  neutral: styles.summaryNeutral,
+};
+
 
 export type AllCasesListItem = {
   id: string;
@@ -13,7 +26,7 @@ export type AllCasesListItem = {
   decedentName: string;
   decedentInitials: string;
   rowSummaryText: string;
-  rowSummaryVariant: Extract<BadgeVariant, 'danger' | 'neutral'>;
+  rowSummaryVariant: CaseRowSummaryVariant;
   isOverdue: boolean;
   stageLabel: string;
   stageBadgeVariant: BadgeVariant;
@@ -56,7 +69,7 @@ export function AllCasesList({
               <div className={styles.name}>{toDisplayName(c.decedentName)}</div>
               <div className={styles.caseNumber}>#{c.caseNumber}</div>
               <div
-                className={`${styles.summary} ${c.rowSummaryVariant === 'danger' ? styles.summaryDanger : styles.summaryNeutral}`}
+                className={`${styles.summary} ${SUMMARY_CLASS[c.rowSummaryVariant]}`}
               >
                 {c.rowSummaryText}
               </div>

@@ -167,3 +167,56 @@ describe('AllCasesList — case progress indicator (Case list scalability, Phase
     expect(screen.getByText('77% Complete')).toBeInTheDocument();
   });
 });
+
+describe('AllCasesList — case status label (2026-10)', () => {
+  /** The class the status line carries, as the component resolves it. */
+  function summaryClassFor(text: string) {
+    return screen.getByText(text).className;
+  }
+
+  it('renders the status line directly under the case number and keeps the row clickable', () => {
+    renderList({ cases: [{ ...item, rowSummaryText: 'Completed', rowSummaryVariant: 'success' }] });
+
+    const link = screen.getByRole('link');
+    expect(link).toHaveAttribute('href', '/cases/1042');
+    // Case number, then status, in that order inside the same row.
+    const rowText = link.textContent ?? '';
+    expect(rowText.indexOf('#B2026-001')).toBeLessThan(rowText.indexOf('Completed'));
+  });
+
+  it('styles an incomplete case neutrally', () => {
+    renderList({ cases: [{ ...item, rowSummaryText: 'Review case', rowSummaryVariant: 'neutral' }] });
+    expect(summaryClassFor('Review case')).toMatch(/summaryNeutral/);
+    expect(summaryClassFor('Review case')).not.toMatch(/summaryComplete|summaryArchived/);
+  });
+
+  it('styles a completed case with the success colour', () => {
+    renderList({ cases: [{ ...item, rowSummaryText: 'Completed', rowSummaryVariant: 'success' }] });
+    expect(summaryClassFor('Completed')).toMatch(/summaryComplete/);
+  });
+
+  it('styles an archived case with the muted archived colour', () => {
+    renderList({ cases: [{ ...item, rowSummaryText: 'Archived', rowSummaryVariant: 'archived' }] });
+    expect(summaryClassFor('Archived')).toMatch(/summaryArchived/);
+  });
+
+  it('still styles a stalled case as a blocker', () => {
+    renderList({ cases: [{ ...item, rowSummaryText: 'Waiting on ME release', rowSummaryVariant: 'danger' }] });
+    expect(summaryClassFor('Waiting on ME release')).toMatch(/summaryDanger/);
+  });
+
+  it('renders every status through the one .summary element, so mobile and desktop cannot diverge', () => {
+    // The mobile rules in AllCasesList.module.css only change `.summary`'s
+    // wrapping; the state class (and therefore the colour) is the same
+    // element at every width. One row, one element, one class.
+    for (const [text, variant] of [
+      ['Review case', 'neutral'],
+      ['Completed', 'success'],
+      ['Archived', 'archived'],
+    ] as const) {
+      const { unmount } = renderList({ cases: [{ ...item, rowSummaryText: text, rowSummaryVariant: variant }] });
+      expect(summaryClassFor(text)).toMatch(/\bsummary\b|summary_/);
+      unmount();
+    }
+  });
+});

@@ -154,3 +154,20 @@
   justify-content: center;
   padding: var(--space-6) 0 var(--space-2);
 }
+
+/* Case status label (2026-10). "Completed" uses the same green the rest of
+   SOLIS already uses for a finished state (--sx-green-text, as in
+   .sx-status-ok / .sx-bill-success); "Archived" is deliberately quieter
+   than the neutral next-action text, since a filed case needs the least
+   attention of anything in the list. Both inherit .summary's own mobile
+   wrapping rule, so desktop and mobile differ only in line wrapping. */
+.summaryComplete {
+  color: var(--sx-green-text, oklch(0.42 0.1 150));
+  font-weight: 500;
+}
+
+.summaryArchived {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  font-style: italic;
+}

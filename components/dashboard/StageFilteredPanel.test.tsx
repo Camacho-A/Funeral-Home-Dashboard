@@ -152,3 +152,32 @@ describe('StageFilteredPanel — case progress indicator (Case list scalability,
     expect(screen.getByText('100% Complete')).toBeInTheDocument();
   });
 });
+
+describe('StageFilteredPanel — case status label (2026-10)', () => {
+  it('renders the same four statuses with the same classes as AllCasesList', () => {
+    // Requirement: identical status logic in both case lists. Both read
+    // the one `rowSummaryText`/`rowSummaryVariant` pair from the view
+    // model and map it through the same SUMMARY_CLASS table, so they
+    // cannot drift apart.
+    for (const [text, variant, expected] of [
+      ['Review case', 'neutral', /summaryNeutral/],
+      ['Completed', 'success', /summaryComplete/],
+      ['Archived', 'archived', /summaryArchived/],
+      ['Waiting on ME release', 'danger', /summaryDanger/],
+    ] as const) {
+      const { unmount } = renderPanel({ cases: [{ ...item, rowSummaryText: text, rowSummaryVariant: variant }] });
+      expect(screen.getByText(text).className).toMatch(expected);
+      unmount();
+    }
+  });
+
+  it('keeps the case openable regardless of status', () => {
+    renderPanel({ cases: [{ ...item, rowSummaryText: 'Completed', rowSummaryVariant: 'success' }] });
+    // The row renders two links (avatar and main body); both still open
+    // the case, so a Completed status changes nothing about navigation.
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) expect(link).toHaveAttribute('href', '/cases/1042');
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+  });
+});

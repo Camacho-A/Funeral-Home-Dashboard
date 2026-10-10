@@ -1313,3 +1313,126 @@ describe('terminal "Family picked up ashes" — completion semantics (2026-10)',
     expect(buildCaseViewModel(delivered, { staffList: [] }).stageLabel).toBe('Completed');
   });
 });
+
+describe('case status label in the case lists (2026-10)', () => {
+  function summaryOf(overrides: Partial<Case>) {
+    const vm = buildCaseViewModel(baseCase(overrides), { staffList: [] });
+    return { text: vm.rowSummaryText, variant: vm.rowSummaryVariant };
+  }
+
+  it('an incomplete case shows its next action, neutrally', () => {
+    expect(summaryOf({ rawStage: 3 })).toEqual({
+      text: 'EDRS submitted & sent to doctor',
+      variant: 'neutral',
+    });
+  });
+
+  it('a case with nothing outstanding no longer falls through to "Review case" forever', () => {
+    // The actual reported bug: B2026-035 sat on "Review case" with
+    // nothing left to review, because the row only ever showed
+    // "stalled reason, else next action".
+    const before = summaryOf({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'awaiting_pickup' });
+    expect(before.text).not.toBe('Completed');
+
+    const after = summaryOf({
+      rawStage: 7,
+      returnMethod: 'pickup',
+      pickupStatus: 'released',
+      pickupReleasedTo: 'KAREN ELLISON',
+      pickupReleasedAt: '10/09/2026',
+    });
+    expect(after).toEqual({ text: 'Completed', variant: 'success' });
+  });
+
+  it('flips to Completed the moment the family pickup is recorded — no archiving required', () => {
+    const completed = summaryOf({
+      rawStage: 7,
+      returnMethod: 'pickup',
+      pickupStatus: 'released',
+      isDeleted: false,
+    });
+    expect(completed.text).toBe('Completed');
+  });
+
+  it('shipping completes on confirmed delivery, not on dispatch', () => {
+    expect(summaryOf({ rawStage: 7, returnMethod: 'shipping', shippingDeliveryStatus: 'shipped' }).text).not.toBe(
+      'Completed',
+    );
+    expect(summaryOf({ rawStage: 7, returnMethod: 'shipping', shippingDeliveryStatus: 'delivered' })).toEqual({
+      text: 'Completed',
+      variant: 'success',
+    });
+  });
+
+  it('the crematory releasing ashes to the funeral home never makes a case read Completed', () => {
+    // "Ashes picked up (Tue/Fri)" is the crematory handing the remains to
+    // Manors. Completing it — and every other item in that stage — is not
+    // the family release and must not flip the label.
+    const everyPriorItemDone: Record<string, boolean> = {};
+    for (let index = 0; index < 6; index += 1) everyPriorItemDone[`5:${index}`] = true;
+
+    expect(
+      summaryOf({
+        rawStage: 7,
+        returnMethod: 'pickup',
+        pickupStatus: 'awaiting_pickup',
+        checklistState: everyPriorItemDone,
+      }).text,
+    ).not.toBe('Completed');
+  });
+
+  it('an undecided return method never reads Completed', () => {
+    expect(summaryOf({ rawStage: 7, returnMethod: 'undecided' }).text).not.toBe('Completed');
+  });
+
+  it('a legacy case carrying a stale checklistState for the terminal item still is not Completed', () => {
+    // Completion comes from the release record, never from stored
+    // checklist state — so a migrated case cannot read Completed without
+    // a real release.
+    expect(
+      summaryOf({
+        rawStage: 7,
+        returnMethod: 'pickup',
+        pickupStatus: 'awaiting_pickup',
+        checklistState: { '6:0': true, 0: true },
+      }).text,
+    ).not.toBe('Completed');
+  });
+
+  it('an archived case reads Archived, outranking every other state', () => {
+    expect(summaryOf({ rawStage: 3, isDeleted: true })).toEqual({ text: 'Archived', variant: 'archived' });
+    // Even a completed or stalled case reads Archived once filed.
+    expect(summaryOf({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released', isDeleted: true }).text).toBe(
+      'Archived',
+    );
+    expect(
+      summaryOf({ rawStage: 3, isStalled: true, stalledReason: 'Waiting on ME release', isDeleted: true }).text,
+    ).toBe('Archived');
+  });
+
+  it('a stalled but incomplete case still shows its blocker', () => {
+    expect(summaryOf({ rawStage: 3, isStalled: true, stalledReason: 'Waiting on ME release' })).toEqual({
+      text: 'Waiting on ME release',
+      variant: 'danger',
+    });
+  });
+
+  it('Completed outranks a stale stalled flag, so a finished case never shows a dead blocker', () => {
+    expect(
+      summaryOf({
+        rawStage: 7,
+        returnMethod: 'pickup',
+        pickupStatus: 'released',
+        isStalled: true,
+        stalledReason: 'Waiting on ME release',
+      }),
+    ).toEqual({ text: 'Completed', variant: 'success' });
+  });
+
+  it('agrees with the stage badge — the label is derived from the same signal, never stored', () => {
+    const case_ = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.stageLabel).toBe('Completed');
+    expect(vm.rowSummaryText).toBe('Completed');
+  });
+});

@@ -1,6 +1,11 @@
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
-import type { CaseViewModel, RequiredDocumentViewModel, ChecklistItemViewModel } from '../../types/caseViewModel';
+import type {
+  CaseViewModel,
+  RequiredDocumentViewModel,
+  ChecklistItemViewModel,
+  CaseRowSummaryVariant,
+} from '../../types/caseViewModel';
 import { resolveChecklist } from '../workflow/resolveChecklist';
 import {
   findStageByRawStage,
@@ -394,8 +399,49 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // it rather than re-deriving it.
   const firstUndoneItem = effectiveCurrentChecklist.find((item) => !item.done);
   const nextActionLabel = firstUndoneItem?.label ?? 'Review case';
-  const rowSummaryText = case_.isStalled ? (case_.stalledReason ?? '') : nextActionLabel;
-  const rowSummaryVariant: 'danger' | 'neutral' = case_.isStalled ? 'danger' : 'neutral';
+
+  /**
+   * Case status label (2026-10). The list row used to show only
+   * "stalled reason, else next action" — so a case that had finished
+   * everything fell through to the `nextActionLabel` fallback and sat
+   * there reading "Review case" forever, with nothing left to review.
+   *
+   * Completion is the SAME signal that makes the stage badge read
+   * "Completed": `effectiveDisplayStage` reaching the template's own last
+   * stage. `resolveEffectiveDisplayStage` only allows that once
+   * `isTerminalReturnRequirementComplete` is true, so the label flips the
+   * moment the family release (or confirmed shipping delivery) is
+   * recorded — and never because the crematory released the ashes to the
+   * funeral home, which is a different event entirely (see
+   * domain/cases/returnMethod.ts). Never a hardcoded stage number and
+   * never a status string: a template with a different stage count
+   * resolves correctly through `lastStage`.
+   *
+   * Archiving is NOT required to show Completed, and is not what makes a
+   * case complete — it is a separate, later filing action.
+   *
+   * Precedence, highest first:
+   *   Archived   — the case is filed away; its stalled reason is moot.
+   *   Completed  — nothing is outstanding, so a stale `isStalled` flag
+   *                must not keep showing a blocker that no longer exists.
+   *   Stalled    — the existing red blocker text, unchanged.
+   *   Next action — the existing neutral behaviour, unchanged.
+   */
+  const isWorkflowComplete = effectiveDisplayStage === lastStage;
+  const rowSummaryText = case_.isDeleted
+    ? 'Archived'
+    : isWorkflowComplete
+      ? 'Completed'
+      : case_.isStalled
+        ? (case_.stalledReason ?? '')
+        : nextActionLabel;
+  const rowSummaryVariant: CaseRowSummaryVariant = case_.isDeleted
+    ? 'archived'
+    : isWorkflowComplete
+      ? 'success'
+      : case_.isStalled
+        ? 'danger'
+        : 'neutral';
 
   // A stage the case has already moved beyond is complete by definition
   // (see domain/workflow/resolveChecklist.ts's doc comment) — determined
