@@ -1476,3 +1476,51 @@ describe('case status label in the case lists (2026-10)', () => {
     expect(vm.rowSummaryText).toBe('Completed');
   });
 });
+
+describe('Family Contact completion (2026-10)', () => {
+  function intakeCase(overrides: Partial<Case>) {
+    return baseCase({
+      rawStage: 0,
+      decedentName: 'JOYCE GOLLIS',
+      fieldValues: {},
+      checklistState: {},
+      ...overrides,
+    });
+  }
+
+  function familyContactItem(case_: Case) {
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    return vm.checklist.find((i) => i.requiredCaseFields?.includes('nextOfKinName'));
+  }
+
+  it('completes from the canonical next-of-kin fields, with no email', () => {
+    // The Arrangement Form has no email question at all, so requiring one
+    // made this item permanently unsatisfiable for an Arrangement-created
+    // case. Live example: B2026-038.
+    const item = familyContactItem(
+      intakeCase({ nextOfKinName: 'MARCIA SHALLOW', nextOfKinPhone: '(954) 980-2702', nextOfKinEmail: null }),
+    );
+    expect(item).toBeDefined();
+    expect(item!.done).toBe(true);
+  });
+
+  it('still offers email as an editable row — optional is not hidden', () => {
+    const item = familyContactItem(
+      intakeCase({ nextOfKinName: 'MARCIA SHALLOW', nextOfKinPhone: '(954) 980-2702', nextOfKinEmail: null }),
+    );
+    expect(item!.requiredCaseFields).toContain('nextOfKinEmail');
+  });
+
+  it('stays outstanding when the contact is genuinely unknown', () => {
+    expect(familyContactItem(intakeCase({ nextOfKinName: '', nextOfKinPhone: '' }))!.done).toBe(false);
+    // A name with no way to reach them is not a usable family contact.
+    expect(familyContactItem(intakeCase({ nextOfKinName: 'MARCIA SHALLOW', nextOfKinPhone: '' }))!.done).toBe(false);
+    expect(familyContactItem(intakeCase({ nextOfKinName: '', nextOfKinPhone: '(954) 980-2702' }))!.done).toBe(false);
+  });
+
+  it('an email alone never satisfies it', () => {
+    expect(
+      familyContactItem(intakeCase({ nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: 'a@b.com' }))!.done,
+    ).toBe(false);
+  });
+});

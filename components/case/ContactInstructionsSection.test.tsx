@@ -141,7 +141,7 @@ describe('ContactInstructionsSection', () => {
   it('saves an edited arrangement contact, uppercased, trimmed and null when cleared', () => {
     const onUpdateCaseInfo = vi.fn();
     const { rerender } = render(
-      <ContactInstructionsSection {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />,
+      <ContactInstructionsSection {...baseProps} doNotContactNextOfKin onUpdateCaseInfo={onUpdateCaseInfo} />,
     );
 
     // Four fields are empty, so address the first by position — the
@@ -158,6 +158,7 @@ describe('ContactInstructionsSection', () => {
     rerender(
       <ContactInstructionsSection
         {...baseProps}
+        doNotContactNextOfKin
         arrangementContactName="MICHAEL ELLISON"
         onUpdateCaseInfo={onUpdateCaseInfo}
       />,
@@ -191,7 +192,7 @@ describe('ContactInstructionsSection', () => {
 
   it('reverts rather than saving an invalid arrangement email', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(<ContactInstructionsSection {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    render(<ContactInstructionsSection {...baseProps} doNotContactNextOfKin onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     const emailDisplay = screen.getAllByRole('button', { name: '—' })[3];
     fireEvent.click(emailDisplay);
@@ -204,7 +205,7 @@ describe('ContactInstructionsSection', () => {
 
   it('saves multiline instructions on blur, with Enter inserting a newline instead of committing', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(<ContactInstructionsSection {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    render(<ContactInstructionsSection {...baseProps} doNotContactNextOfKin onUpdateCaseInfo={onUpdateCaseInfo} />);
 
     fireEvent.click(screen.getByRole('button', { name: /All calls to her son Michael after 6pm/ }));
     const area = screen.getByLabelText('Notes / special instructions');
@@ -278,5 +279,44 @@ describe('ContactInstructionsSection', () => {
     expect(screen.getByText('MICHAEL ELLISON')).toBeInTheDocument();
     // Still dialable — read-only restricts editing, not calling.
     expect(screen.getByRole('link', { name: 'Call' })).toBeInTheDocument();
+  });
+});
+
+describe('ContactInstructionsSection — collapsed until relevant (2026-10)', () => {
+  it('shows only the heading and the toggle on a case with no restriction', () => {
+    render(<ContactInstructionsSection {...baseProps} />);
+
+    expect(screen.getByLabelText('Do not contact next of kin directly')).toBeInTheDocument();
+    // Six empty fields under every case was noise on the screen staff
+    // read most often.
+    expect(screen.queryByText('Arrangement contact')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contact phone')).not.toBeInTheDocument();
+    expect(screen.queryByText('Notes / special instructions')).not.toBeInTheDocument();
+  });
+
+  it('reveals the fields as soon as the restriction is on', () => {
+    render(<ContactInstructionsSection {...baseProps} doNotContactNextOfKin />);
+
+    expect(screen.getByText('Arrangement contact')).toBeInTheDocument();
+    expect(screen.getByText('Contact phone')).toBeInTheDocument();
+    expect(screen.getByText('Notes / special instructions')).toBeInTheDocument();
+  });
+
+  it('keeps recorded detail visible after a restriction is lifted', () => {
+    // The important half: collapsing must never hide something somebody
+    // wrote down.
+    render(<ContactInstructionsSection {...baseProps} arrangementContactName="MICHAEL ELLISON" />);
+    expect(screen.getByText('Arrangement contact')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'MICHAEL ELLISON' })).toBeInTheDocument();
+  });
+
+  it('stays open for a recorded note or a confirmed authorization alone', () => {
+    const { rerender } = render(
+      <ContactInstructionsSection {...baseProps} contactInstructions="Call after 6pm." />,
+    );
+    expect(screen.getByText('Notes / special instructions')).toBeInTheDocument();
+
+    rerender(<ContactInstructionsSection {...baseProps} arrangementAuthorizationConfirmed />);
+    expect(screen.getByText('Arrangement contact')).toBeInTheDocument();
   });
 });

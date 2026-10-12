@@ -92,6 +92,23 @@ export function ContactInstructionsSection({
 
   const hasArrangementContact = (arrangementContactName ?? '').trim() !== '';
 
+  /**
+   * The detail fields appear once the restriction is on — or whenever any
+   * of them already carry something, so lifting a restriction can never
+   * hide a contact, note or authorization somebody recorded.
+   */
+  const showContactDetail =
+    doNotContactNextOfKin ||
+    [
+      arrangementContactName,
+      arrangementContactRelationship,
+      arrangementContactPhone,
+      arrangementContactEmail,
+      contactInstructions,
+      arrangementAuthorizationSource,
+    ].some((value) => (value ?? '').trim() !== '') ||
+    arrangementAuthorizationConfirmed;
+
   return (
     <>
       <div className={styles.sectionHeading}>Contact instructions</div>
@@ -110,7 +127,9 @@ export function ContactInstructionsSection({
               {hasArrangementContact ? (
                 <>
                   Route all contact through {arrangementContactName}
-                  {(arrangementContactRelationship ?? '').trim() !== '' && ` (${arrangementContactRelationship})`}.
+                  {(arrangementContactRelationship ?? '').trim() !== '' &&
+                    ` (${arrangementContactRelationship})`}
+                  .
                 </>
               ) : (
                 // Never implies someone is available to call when nobody
@@ -137,86 +156,108 @@ export function ContactInstructionsSection({
         <span className={styles.toggleLabel}>Do not contact next of kin directly</span>
       </div>
 
-      <div className={styles.grid}>
-        <InlineField
-          label="Arrangement contact"
-          value={arrangementContactName ?? ''}
-          uppercase
-          readOnly={readOnly}
-          onSave={(v) => onUpdateCaseInfo({ arrangementContactName: nullIfBlank(v) })}
-        />
-        <InlineField
-          label="Their relationship"
-          value={arrangementContactRelationship ?? ''}
-          uppercase
-          readOnly={readOnly}
-          onSave={(v) => onUpdateCaseInfo({ arrangementContactRelationship: nullIfBlank(v) })}
-        />
-        <InlineField
-          label="Contact phone"
-          value={arrangementContactPhone ?? ''}
-          readOnly={readOnly}
-          onSave={(v) => onUpdateCaseInfo({ arrangementContactPhone: nullIfBlank(v) })}
-          // A phone number that is both click-to-edit and click-to-call
-          // cannot be both on the same element, so the call affordance is
-          // a separate, explicitly-labelled link beside the value — the
-          // same `trailingBadge` shape Weight's "Notify crematory" uses.
-          trailingBadge={
-            (arrangementContactPhone ?? '').trim() !== '' ? (
-              <a className={styles.callLink} href={`tel:${telHref(arrangementContactPhone ?? '')}`}>
-                Call
-              </a>
-            ) : null
-          }
-        />
-        <InlineField
-          label="Contact email"
-          value={arrangementContactEmail ?? ''}
-          kind="email"
-          readOnly={readOnly}
-          onSave={(v) => onUpdateCaseInfo({ arrangementContactEmail: nullIfBlank(v) })}
-        />
-      </div>
+      {/* Collapsed until it is relevant (2026-10). An alternate contact
+          only exists when the family has asked for one, so six empty
+          fields sitting under every case was noise on the screen that
+          staff read most often. Still shown when any of them already
+          hold something — a restriction lifted later must never make the
+          recorded contact invisible. */}
+      {showContactDetail && (
+        <>
+          <div className={styles.grid}>
+            <InlineField
+              label="Arrangement contact"
+              value={arrangementContactName ?? ''}
+              uppercase
+              readOnly={readOnly}
+              onSave={(v) => onUpdateCaseInfo({ arrangementContactName: nullIfBlank(v) })}
+            />
+            <InlineField
+              label="Their relationship"
+              value={arrangementContactRelationship ?? ''}
+              uppercase
+              readOnly={readOnly}
+              onSave={(v) => onUpdateCaseInfo({ arrangementContactRelationship: nullIfBlank(v) })}
+            />
+            <InlineField
+              label="Contact phone"
+              value={arrangementContactPhone ?? ''}
+              readOnly={readOnly}
+              onSave={(v) => onUpdateCaseInfo({ arrangementContactPhone: nullIfBlank(v) })}
+              // A phone number that is both click-to-edit and click-to-call
+              // cannot be both on the same element, so the call affordance is
+              // a separate, explicitly-labelled link beside the value — the
+              // same `trailingBadge` shape Weight's "Notify crematory" uses.
+              trailingBadge={
+                (arrangementContactPhone ?? '').trim() !== '' ? (
+                  <a
+                    className={styles.callLink}
+                    href={`tel:${telHref(arrangementContactPhone ?? '')}`}
+                  >
+                    Call
+                  </a>
+                ) : null
+              }
+            />
+            <InlineField
+              label="Contact email"
+              value={arrangementContactEmail ?? ''}
+              kind="email"
+              readOnly={readOnly}
+              onSave={(v) => onUpdateCaseInfo({ arrangementContactEmail: nullIfBlank(v) })}
+            />
+          </div>
 
-      <InlineTextArea
-        label="Notes / special instructions"
-        value={contactInstructions ?? ''}
-        readOnly={readOnly}
-        placeholder="e.g. All calls to her son Michael after 6pm. Do not leave voicemail."
-        onSave={(v) => onUpdateCaseInfo({ contactInstructions: nullIfBlank(v) })}
-      />
+          <InlineTextArea
+            label="Notes / special instructions"
+            value={contactInstructions ?? ''}
+            readOnly={readOnly}
+            placeholder="e.g. All calls to her son Michael after 6pm. Do not leave voicemail."
+            onSave={(v) => onUpdateCaseInfo({ contactInstructions: nullIfBlank(v) })}
+          />
 
-      <div
-        className={`${styles.toggleRow} ${readOnly ? styles.toggleRowLocked : styles.toggleRowUnlocked}`}
-        onClick={
-          readOnly
-            ? undefined
-            : () => onUpdateCaseInfo({ arrangementAuthorizationConfirmed: !arrangementAuthorizationConfirmed })
-        }
-      >
-        <Checkbox
-          checked={arrangementAuthorizationConfirmed}
-          disabled={readOnly}
-          onChange={
-            readOnly
-              ? undefined
-              : () => onUpdateCaseInfo({ arrangementAuthorizationConfirmed: !arrangementAuthorizationConfirmed })
-          }
-          tone={arrangementAuthorizationConfirmed ? 'success' : 'brand'}
-          aria-label="Next of kin confirmed this arrangement contact"
-        />
-        <span className={styles.toggleLabel}>Next of kin confirmed this arrangement contact</span>
-      </div>
+          <div
+            className={`${styles.toggleRow} ${readOnly ? styles.toggleRowLocked : styles.toggleRowUnlocked}`}
+            onClick={
+              readOnly
+                ? undefined
+                : () =>
+                    onUpdateCaseInfo({
+                      arrangementAuthorizationConfirmed: !arrangementAuthorizationConfirmed,
+                    })
+            }
+          >
+            <Checkbox
+              checked={arrangementAuthorizationConfirmed}
+              disabled={readOnly}
+              onChange={
+                readOnly
+                  ? undefined
+                  : () =>
+                      onUpdateCaseInfo({
+                        arrangementAuthorizationConfirmed: !arrangementAuthorizationConfirmed,
+                      })
+              }
+              tone={arrangementAuthorizationConfirmed ? 'success' : 'brand'}
+              aria-label="Next of kin confirmed this arrangement contact"
+            />
+            <span className={styles.toggleLabel}>
+              Next of kin confirmed this arrangement contact
+            </span>
+          </div>
 
-      {/* Shown whenever it is checked OR already holds text, so unchecking
+          {/* Shown whenever it is checked OR already holds text, so unchecking
           never makes a recorded reference invisible. */}
-      {(arrangementAuthorizationConfirmed || (arrangementAuthorizationSource ?? '').trim() !== '') && (
-        <InlineField
-          label="How it was confirmed"
-          value={arrangementAuthorizationSource ?? ''}
-          readOnly={readOnly}
-          onSave={(v) => onUpdateCaseInfo({ arrangementAuthorizationSource: nullIfBlank(v) })}
-        />
+          {(arrangementAuthorizationConfirmed ||
+            (arrangementAuthorizationSource ?? '').trim() !== '') && (
+            <InlineField
+              label="How it was confirmed"
+              value={arrangementAuthorizationSource ?? ''}
+              readOnly={readOnly}
+              onSave={(v) => onUpdateCaseInfo({ arrangementAuthorizationSource: nullIfBlank(v) })}
+            />
+          )}
+        </>
       )}
 
       <Modal
@@ -225,8 +266,8 @@ export function ContactInstructionsSection({
         title="Remove contact restriction?"
       >
         <p className={styles.dialogBody}>
-          This case is marked <strong>do not contact next of kin directly</strong>. Removing it means
-          staff will no longer be warned before contacting
+          This case is marked <strong>do not contact next of kin directly</strong>. Removing it
+          means staff will no longer be warned before contacting
           {nextOfKinName.trim() !== '' ? <> {nextOfKinName}</> : ' the next of kin'}.
         </p>
         <p className={styles.dialogBody}>
@@ -234,7 +275,11 @@ export function ContactInstructionsSection({
           change is recorded in this case&rsquo;s activity history.
         </p>
         <div className={styles.dialogFooter}>
-          <button type="button" className={styles.dialogCancel} onClick={() => setConfirmingRemoval(false)}>
+          <button
+            type="button"
+            className={styles.dialogCancel}
+            onClick={() => setConfirmingRemoval(false)}
+          >
             Keep restriction
           </button>
           <button type="button" className={styles.dialogConfirm} onClick={confirmRemoval}>
@@ -267,7 +312,9 @@ function telHref(phone: string): string {
   const digits = (value: string) => value.replace(/[^0-9+]/g, '');
 
   const base = digits(number);
-  const normalized = base.startsWith('+') ? `+${base.slice(1).replace(/\+/g, '')}` : base.replace(/\+/g, '');
+  const normalized = base.startsWith('+')
+    ? `+${base.slice(1).replace(/\+/g, '')}`
+    : base.replace(/\+/g, '');
   const extension = digits(extensionParts.join('')).replace(/\+/g, '');
 
   return extension === '' ? normalized : `${normalized},${extension}`;
@@ -441,7 +488,9 @@ function InlineTextArea({
             setIsEditing(true);
           }}
         >
-          {display || <span className={styles.placeholder}>{placeholder ?? 'Add instructions'}</span>}
+          {display || (
+            <span className={styles.placeholder}>{placeholder ?? 'Add instructions'}</span>
+          )}
         </button>
       )}
     </div>

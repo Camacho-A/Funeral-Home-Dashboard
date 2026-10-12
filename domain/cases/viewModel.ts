@@ -121,7 +121,25 @@ function resolveDecedentInitials(decedentName: string): string {
  * theory that Case Information already shows them; the live CRM showed
  * the checklist section needs its own structured rows too, exactly like
  * Certifier.) */
+/** Every row this item renders — name, phone AND email each get their own
+    editable row. Rendering is not the same as requiring: see
+    FAMILY_CONTACT_COMPLETION_FIELDS below. */
 const FAMILY_CONTACT_REQUIRED_CASE_FIELDS = ['nextOfKinName', 'nextOfKinPhone', 'nextOfKinEmail'];
+
+/**
+ * What the item actually needs to be considered done (2026-10).
+ *
+ * Email is DELIBERATELY not here. The Arrangement Form has no email
+ * question at all — a live audit of its question metadata found none — so
+ * requiring one meant an Arrangement-created case could never satisfy
+ * this item no matter what staff did, short of inventing an address.
+ * Live example: B2026-038, which carried a complete name and phone and
+ * still read as outstanding.
+ *
+ * Email remains an editable row and is still worth capturing; it is just
+ * not what decides whether the family contact is known.
+ */
+const FAMILY_CONTACT_COMPLETION_FIELDS = ['nextOfKinName', 'nextOfKinPhone'] as const;
 
 /**
  * The frozen Family Contact checklist item label — verbatim from
@@ -198,14 +216,34 @@ function applyFamilyContactPresentation(items: ChecklistItemViewModel[], case_: 
   }
   if (idx === -1) return items;
 
+  const values = familyContactRequiredCaseFieldValues(case_);
+  /**
+   * Done when the family contact is genuinely known (2026-10).
+   *
+   * Previously `done` was left untouched here, which meant this item
+   * depended on a `fieldValues` entry — something a webhook-created case
+   * never has, since intake data lands on canonical Case columns. The
+   * item therefore displayed a complete name and phone while staying
+   * unchecked, with nothing staff could do but retype what was on screen.
+   * This mirrors the same canonical-column rule every other field-backed
+   * intake item now follows (domain/workflow/resolveChecklist.ts), which
+   * could not reach THIS item because its checklist index maps to three
+   * Case fields rather than one.
+   *
+   * ORed with the resolved value so a past stage, or an explicit manual
+   * completion, still reads as done.
+   */
+  const knownFromCase = FAMILY_CONTACT_COMPLETION_FIELDS.every((field) => (values[field] ?? '').trim() !== '');
+
   const result = [...items];
   result[idx] = {
     ...items[idx],
     hasField: false,
     fieldValue: '',
+    done: items[idx].done || knownFromCase,
     isDerived: true,
     requiredCaseFields: FAMILY_CONTACT_REQUIRED_CASE_FIELDS,
-    requiredCaseFieldValues: familyContactRequiredCaseFieldValues(case_),
+    requiredCaseFieldValues: values,
   };
   return result;
 }
