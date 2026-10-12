@@ -154,6 +154,11 @@ export const ACTIVITY_EVENT_TYPES = {
       every working list, so it gets its own readable events rather than a
       generic case.updated diff. `warning` on archive: that is the
       direction that makes a case disappear from staff's view. */
+  /** Form-created case duplicate guard (2026-10). A creating form's
+      submission was held back from auto-creating a case because an
+      existing case resembles it. Nothing was merged and nothing was
+      created — this records that a human needs to decide. */
+  EXTERNAL_FORM_DUPLICATE_SUSPECTED: 'external_form.duplicate_suspected',
   CASE_ARCHIVED: 'case.archived',
   CASE_RESTORED: 'case.restored',
   /** Reserved — discovered during implementation, not assumed in

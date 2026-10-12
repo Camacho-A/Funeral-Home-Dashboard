@@ -1,18 +1,32 @@
 import type { DataAdapterMode } from '../lib/env';
+import type { Case } from '../types/case';
 import type { ExternalFormConfig } from '../types/externalFormConfig';
 import type { ExternalFormSubmission } from '../types/externalFormSubmission';
 import type { MappedSolisField } from '../domain/externalForms/fieldMapping';
 import { isCaseCreationClaimToken } from '../types/externalFormSubmission';
 import { createExternalFormIntakeAuthorization } from '../lib/auth/externalFormIntakeAuthorization';
 import * as externalFormSubmissionService from './externalFormSubmissionService';
+import * as caseFormLinkService from './caseFormLinkService';
+import { findDuplicateCandidates, type DuplicateCandidate } from '../domain/externalForms/duplicateCandidates';
 import * as staffProfileService from './staffProfileService';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
-import { recordExternalFormSubmissionLinked, type ActivityContext } from './activityService';
+import {
+  recordExternalFormSubmissionLinked,
+  recordExternalFormSubmissionDuplicateSuspected,
+  type ActivityContext,
+} from './activityService';
 
 /**
- * Automated first-call intake (2026-10). Turns a verified Jotform
- * submission from a `purpose: 'case_create'` form into exactly one Solis
- * case.
+ * Automated form intake (2026-10). Turns a verified Jotform submission
+ * from ANY `purpose: 'case_create'` form into exactly one Solis case.
+ *
+ * Form-agnostic by design (2026-10 follow-up): Manors staff take calls
+ * overnight and often submit the Cremation Arrangement Forms before the
+ * First Call Sheet is ever entered, so either form must be able to open a
+ * case. Nothing in here is specific to the First Call Sheet — the form's
+ * own `config` supplies its label (used for provenance) and its field map
+ * supplies the values, so enabling a second creating form is a
+ * configuration change, not a code change.
  *
  * CRITICAL INVARIANT — this module creates a case ONLY by calling the
  * normal, unmodified `POST /api/cases` over an internal same-origin
@@ -32,9 +46,9 @@ import { recordExternalFormSubmissionLinked, type ActivityContext } from './acti
  * here — preserving a pre-existing number is a different operation.
  */
 
-export type FirstCallIntakeOutcome =
+export type FormIntakeOutcome =
   | { created: true; caseId: string; caseNumber: string }
-  | { created: false; reason: string };
+  | { created: false; reason: string; duplicateCandidates?: DuplicateCandidate[] };
 
 /** Mapped values a case genuinely cannot be created without. */
 const REQUIRED_FOR_CREATION: MappedSolisField[] = ['decedentName', 'nextOfKinName', 'nextOfKinPhone'];
@@ -61,7 +75,52 @@ async function resolveIntakeStaffProfileId(
   return active[0]?.id ?? null;
 }
 
-export async function createCaseFromFirstCallSubmission(
+/**
+ * Existing cases in THIS organization that resemble the submission.
+ *
+ * Reads are deliberately scoped by `organizationId` in the query itself,
+ * never filtered after the fact, so a candidate from another tenant can
+ * never reach `findDuplicateCandidates` — which does no tenant filtering
+ * of its own by contract.
+ *
+ * Archived cases are included on purpose: a death already filed away is
+ * still the same death, and creating a second case for it would be
+ * exactly the duplicate this guard exists to prevent.
+ */
+async function findDuplicateCandidatesForOrganization(
+  organizationId: string,
+  mappedFields: Partial<Record<MappedSolisField, string>>,
+  dataAdapterMode: DataAdapterMode,
+): Promise<DuplicateCandidate[]> {
+  try {
+    if (dataAdapterMode === 'mock') {
+      const { caseFixtures } = await import('./__mocks__/fixtures');
+      return findDuplicateCandidates(
+        mappedFields,
+        caseFixtures.filter((c) => c.organizationId === organizationId),
+      );
+    }
+    const { queryAllWixDataItems } = await import('../lib/wixDataApi');
+    const { mapWixCaseItem } = await import('../lib/wixCaseMapper');
+    const items = await queryAllWixDataItems<Record<string, unknown>>('cases', { organizationId });
+    const cases = items
+      .map((item) => mapWixCaseItem(item.data as never))
+      .filter((c): c is Case => c !== null);
+    return findDuplicateCandidates(mappedFields, cases);
+  } catch (error) {
+    // A lookup failure must not silently disable the guard and let a
+    // duplicate through. Treat it as "cannot establish safety" and
+    // surface a synthetic candidate so the submission is reviewed by a
+    // human rather than auto-created on incomplete information.
+    console.error(
+      '[form intake] Duplicate-candidate lookup failed — refusing to auto-create, routing to review:',
+      error instanceof Error ? error.message : error,
+    );
+    return [{ caseId: '', caseNumber: '(lookup unavailable)', decedentName: mappedFields.decedentName ?? '', matchedOn: [] }];
+  }
+}
+
+export async function createCaseFromIntakeSubmission(
   params: {
     config: ExternalFormConfig;
     submission: ExternalFormSubmission;
@@ -70,7 +129,7 @@ export async function createCaseFromFirstCallSubmission(
   },
   activityCtx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
-): Promise<FirstCallIntakeOutcome> {
+): Promise<FormIntakeOutcome> {
   const { config, submission, mappedFields, request } = params;
 
   const missing = REQUIRED_FOR_CREATION.filter((field) => !mappedFields[field]?.trim());
@@ -79,9 +138,47 @@ export async function createCaseFromFirstCallSubmission(
     // Unmatched Forms, where staff can attach it to a case by hand. A
     // case is never created from partial data, and nothing is guessed.
     console.error(
-      `[first-call intake] Submission ${submission.id} is missing required field(s) (${missing.join(', ')}) — left unmatched, no case created.`,
+      `[form intake] Submission ${submission.id} is missing required field(s) (${missing.join(', ')}) — left unmatched, no case created.`,
     );
     return { created: false, reason: `missing_required_fields:${missing.join(',')}` };
+  }
+
+  /**
+   * Duplicate guard (2026-10). Two forms can now create a case, so the
+   * same death can arrive twice with nothing linking the deliveries. If
+   * an existing case already looks like this submission, SOLIS does NOT
+   * create a second one and does NOT merge them — the submission stays
+   * `unmatched` and appears in Unmatched Forms, where staff link it to
+   * the right case deliberately. See
+   * domain/externalForms/duplicateCandidates.ts for why a name alone is
+   * never enough to flag one.
+   */
+  const candidates = await findDuplicateCandidatesForOrganization(
+    config.organizationId,
+    mappedFields,
+    dataAdapterMode,
+  );
+  if (candidates.length > 0) {
+    console.error(
+      `[form intake] Submission ${submission.id} resembles existing case(s) ${candidates
+        .map((c) => c.caseNumber)
+        .join(', ')} — left unmatched for staff review, no case created and nothing merged.`,
+    );
+    try {
+      await recordExternalFormSubmissionDuplicateSuspected(
+        activityCtx,
+        submission.id,
+        config.label,
+        candidates,
+        dataAdapterMode,
+      );
+    } catch (error) {
+      console.error(
+        'Failed to record external_form.duplicate_suspected activity event:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+    return { created: false, reason: 'duplicate_review_required', duplicateCandidates: candidates };
   }
 
   // Compare-and-swap claim — the same fence the historical-import path
@@ -97,7 +194,7 @@ export async function createCaseFromFirstCallSubmission(
     if (!intakeStaffProfileId) {
       await externalFormSubmissionService.revertCaseCreationClaim(submission.id, claim.claimToken, dataAdapterMode);
       console.error(
-        `[first-call intake] Organization ${config.organizationId} has no active staff profile to attribute an intake case to — left unmatched.`,
+        `[form intake] Organization ${config.organizationId} has no active staff profile to attribute an intake case to — left unmatched.`,
       );
       return { created: false, reason: 'no_active_staff_profile' };
     }
@@ -135,13 +232,44 @@ export async function createCaseFromFirstCallSubmission(
       await externalFormSubmissionService.revertCaseCreationClaim(submission.id, claim.claimToken, dataAdapterMode);
       const body = await caseResponse.json().catch(() => null);
       console.error(
-        `[first-call intake] POST /api/cases failed for submission ${submission.id} (HTTP ${caseResponse.status}): ${body?.error ?? 'unknown error'}`,
+        `[form intake] POST /api/cases failed for submission ${submission.id} (HTTP ${caseResponse.status}): ${body?.error ?? 'unknown error'}`,
       );
       return { created: false, reason: `case_creation_failed:${caseResponse.status}` };
     }
 
     const created = (await caseResponse.json()).case as { id: string; caseNumber: string };
     await externalFormSubmissionService.markCaseCreated(submission.id, created.id, dataAdapterMode);
+
+    /**
+     * Give the new case the same CaseFormLink a token-matched submission
+     * would have. Without it the case has no record that this form was
+     * ever received: `workflowReconciliationService`'s
+     * `isArrangementFormLinked` reads CaseFormLinks, so an
+     * Arrangement-created case would otherwise show its own
+     * Jotform-application checklist item as outstanding, and later
+     * case-specific form links would have nothing to hang off.
+     *
+     * Uses the identical `linkExistingSubmission` call the manual
+     * Unmatched-Forms link path uses, so a webhook-created association
+     * and a staff-created one are the same shape. Best-effort: a failure
+     * here must not unwind a case that genuinely exists — the submission
+     * still carries `caseId`, and staff can link it by hand.
+     */
+    try {
+      await caseFormLinkService.linkExistingSubmission(
+        config.organizationId,
+        created.id,
+        config.provider,
+        config.id,
+        submission.id,
+        dataAdapterMode,
+      );
+    } catch (error) {
+      console.error(
+        `[form intake] Case ${created.caseNumber} was created but its CaseFormLink could not be written:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
 
     // Recorded against the new case so the submission that produced it is
     // visible in that case's own activity timeline. Best-effort: an audit
@@ -164,7 +292,7 @@ export async function createCaseFromFirstCallSubmission(
   } catch (error) {
     await externalFormSubmissionService.revertCaseCreationClaim(submission.id, claim.claimToken, dataAdapterMode);
     console.error(
-      `[first-call intake] Unexpected failure creating a case for submission ${submission.id}:`,
+      `[form intake] Unexpected failure creating a case for submission ${submission.id}:`,
       error instanceof Error ? error.message : error,
     );
     return { created: false, reason: 'unexpected_error' };

@@ -55,7 +55,13 @@ export const externalFormConfigFixtures: ExternalFormConfig[] = [
     externalFormId: '261945978664175',
     label: 'Arrangement Forms',
     audience: 'staff',
-    purpose: 'case_update',
+    // Arrangement-first intake (2026-10). Manors staff take calls
+    // overnight and often submit this form before the First Call Sheet
+    // is ever entered, so it must be able to open a case on its own. A
+    // submission carrying a valid link token still updates that case —
+    // the token always wins; `case_create` only governs what happens
+    // when nothing links.
+    purpose: 'case_create',
     fieldMap: flattenForDisplay(FIELD_MAP_ARRANGEMENT_FORMS),
     // Auto-generated placeholder name on the live form — nothing like its
     // display name, which is why prefill cannot derive it (live-verified).

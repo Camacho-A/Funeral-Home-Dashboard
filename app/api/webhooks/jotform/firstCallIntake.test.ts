@@ -4,6 +4,7 @@ import {
   externalFormSubmissionFixtures,
   externalFormConfigFixtures,
   FIRST_CALL_SHEET_FORM_CONFIG_ID,
+  ARRANGEMENT_FORMS_FORM_CONFIG_ID,
 } from '@/services/__mocks__/externalFormFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
@@ -74,6 +75,11 @@ const SUB = {
   creationFails: '2000000000000000011',
   unconfirmed: '2000000000000000012',
   crossForm: '2000000000000000013',
+  arrCreates: '2000000000000000014',
+  arrDupe: '2000000000000000015',
+  fcAfterArr: '2000000000000000016',
+  arrNoBranch: '2000000000000000017',
+  arrConcurrentA: '2000000000000000018',
 };
 
 /**
@@ -353,24 +359,200 @@ describe('Manors First Call Sheet — duplicate delivery', () => {
   });
 });
 
-describe('Only a case_create form may create a case', () => {
-  it('an Arrangement submission with no link token is still stored unmatched, never created', async () => {
-    givenJotformHasSubmission({
-      formId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
-      submissionId: SUB.arrangementNoLink,
-    });
-    const { POST } = await import('./route');
-    const response = await POST(
-      webhookRequest({ formID: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, submissionID: SUB.arrangementNoLink }),
-    );
+/**
+ * A complete Arrangement Forms submission. Every qid here is `required`
+ * on the live form (verified against the Jotform question metadata), so
+ * this is the shape a real submission always has — notably qid 276, the
+ * Yes/No branch that authorizes deriving Next of Kin from the Informant
+ * block (qids 122/224/225).
+ */
+function arrangementAnswers(overrides: Record<string, string | Record<string, string>> = {}) {
+  return {
+    '87': { first: 'MARGARET', last: 'OKONKWO' },
+    '8': '03/14/1951',
+    '10': '10/09/2026',
+    '122': { first: 'DANIEL', last: 'OKONKWO' },
+    '224': { full: '(555) 330-1180' },
+    '225': 'Son',
+    '276': 'Yes',
+    ...overrides,
+  };
+}
+
+async function deliverArrangement(
+  submissionId: string,
+  overrides: Record<string, string | Record<string, string>> = {},
+) {
+  givenJotformHasSubmission({
+    formId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+    submissionId,
+    answers: arrangementAnswers(overrides),
+  });
+  const { POST } = await import('./route');
+  return POST(webhookRequest({ formID: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, submissionID: submissionId }));
+}
+
+describe('Arrangement Forms can open a case on its own (2026-10)', () => {
+  it('SCENARIO B — an Arrangement submission with no First Call creates a case', async () => {
+    // The reported bug: staff take a call overnight, submit the
+    // Arrangement form, and the First Call Sheet is not entered until
+    // morning. The missing First Call must not block the case.
+    const response = await deliverArrangement(SUB.arrCreates);
+
+    expect(response.status).toBe(200);
+    expect(casePostBodies).toHaveLength(1);
+
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrCreates);
+    expect(stored!.createdCaseId).toBeTruthy();
+    expect(stored!.status).not.toBe('unmatched');
+  });
+
+  it('derives Next of Kin from the Informant block, which is what makes creation possible', async () => {
+    await deliverArrangement(SUB.arrCreates);
+    const body = casePostBodies[0];
+
+    expect(body.decedentName).toBe('MARGARET OKONKWO');
+    // qid 276 = "Yes" authorizes the Informant (122/224) as the NOK.
+    expect(body.nextOfKinName).toBe('DANIEL OKONKWO');
+    expect(body.nextOfKinPhone).toBe('(555) 330-1180');
+    expect(body.dateOfBirth).toBe('03/14/1951');
+    expect(body.dateOfDeath).toBe('10/09/2026');
+  });
+
+  it('never allocates its own case number — it goes through POST /api/cases like every other path', async () => {
+    await deliverArrangement(SUB.arrCreates);
+    expect(casePostBodies[0]).not.toHaveProperty('caseNumber');
+    expect(casePostBodies[0].organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+  });
+
+  it('gives the new case a CaseFormLink, so the checklist reflects the form that created it', async () => {
+    const before = caseFormLinkFixtures.length;
+    await deliverArrangement(SUB.arrCreates);
+
+    const added = caseFormLinkFixtures.slice(before);
+    expect(added).toHaveLength(1);
+    expect(added[0].status).toBe('received');
+    expect(added[0].formConfigId).toBe(ARRANGEMENT_FORMS_FORM_CONFIG_ID);
+    expect(added[0].submissionId).toBeTruthy();
+  });
+
+  it('records the Arrangement form as the source, never the First Call Sheet', async () => {
+    const before = activityEventFixtures.length;
+    await deliverArrangement(SUB.arrCreates);
+
+    const events = activityEventFixtures.slice(before);
+    const descriptions = events.map((e) => e.description).join(' | ');
+    expect(descriptions).toMatch(/Arrangement/i);
+    expect(descriptions).not.toMatch(/First Call/i);
+  });
+
+  it('fails safely when qid 276 is absent — no NOK can be derived, so nothing is invented', async () => {
+    // The derivation refuses to guess which block is authoritative, so
+    // the required NOK fields are missing and the submission waits for a
+    // human rather than producing a half-identified case.
+    const response = await deliverArrangement(SUB.arrNoBranch, { '276': '' });
 
     expect(response.status).toBe(200);
     expect(casePostBodies).toHaveLength(0);
-    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrangementNoLink);
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrNoBranch);
+    expect(stored!.status).toBe('unmatched');
+  });
+
+  it('a redelivery of the same Arrangement submission creates exactly one case', async () => {
+    await deliverArrangement(SUB.arrConcurrentA);
+    await deliverArrangement(SUB.arrConcurrentA);
+    expect(casePostBodies).toHaveLength(1);
+  });
+});
+
+describe('Duplicate guard — a second form describing a known case is reviewed, never merged', () => {
+  it('SCENARIO C — a First Call arriving after an Arrangement case does not create a duplicate', async () => {
+    // Arrangement creates the case...
+    await deliverArrangement(SUB.arrDupe);
+    expect(casePostBodies).toHaveLength(1);
+
+    // ...and the case now genuinely exists in SOLIS.
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: 'case-from-arrangement',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-900',
+      decedentName: 'MARGARET OKONKWO',
+      dateOfBirth: '03/14/1951',
+      dateOfDeath: '10/09/2026',
+    });
+
+    // The First Call for the same death arrives the next morning with no
+    // link to it.
+    const response = await deliverFirstCall(SUB.fcAfterArr, {
+      '3': { first: 'MARGARET', last: 'OKONKWO' },
+      '6': '03/14/1951',
+      '8': '10/09/2026',
+    });
+
+    expect(response.status).toBe(200);
+    // No second case, and no silent merge.
+    expect(casePostBodies).toHaveLength(1);
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.fcAfterArr);
     expect(stored!.status).toBe('unmatched');
     expect(stored!.createdCaseId).toBeNull();
   });
 
+  it('records why it was held, naming the candidate case for staff review', async () => {
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: 'case-dupe-target',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-901',
+      decedentName: 'MARGARET OKONKWO',
+      dateOfBirth: '03/14/1951',
+      dateOfDeath: '10/09/2026',
+    });
+    const before = activityEventFixtures.length;
+    await deliverArrangement(SUB.arrDupe);
+
+    const event = activityEventFixtures
+      .slice(before)
+      .find((e) => e.eventType === 'external_form.duplicate_suspected');
+    expect(event).toBeDefined();
+    expect(event!.description).toMatch(/B2026-901/);
+    expect(event!.description).toMatch(/No case was created and nothing was merged/);
+    // Not attached to a candidate case — no association has been made.
+    expect(event!.caseId).toBeNull();
+  });
+
+  it('a shared name alone never blocks creation', async () => {
+    // Same name, different death. This must still create a case, or a
+    // real death would go unrecorded.
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: 'case-same-name-only',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-902',
+      decedentName: 'MARGARET OKONKWO',
+      dateOfBirth: '01/01/1940',
+      dateOfDeath: '01/01/2020',
+    });
+    await deliverArrangement(SUB.arrCreates);
+    expect(casePostBodies).toHaveLength(1);
+  });
+
+  it('a candidate in ANOTHER organization never blocks creation', async () => {
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: 'case-other-org',
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
+      caseNumber: 'X-1',
+      decedentName: 'MARGARET OKONKWO',
+      dateOfBirth: '03/14/1951',
+      dateOfDeath: '10/09/2026',
+    });
+    await deliverArrangement(SUB.arrCreates);
+    expect(casePostBodies).toHaveLength(1);
+  });
+});
+
+describe('Only a case_create form may create a case', () => {
   it('a config without the case_create purpose cannot create, even from the First Call form id', async () => {
     const config = externalFormConfigFixtures.find((c) => c.id === FIRST_CALL_SHEET_FORM_CONFIG_ID)!;
     const original = config.purpose;

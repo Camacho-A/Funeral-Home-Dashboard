@@ -10,7 +10,7 @@ import * as externalFormSubmissionService from '@/services/externalFormSubmissio
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionReceived, recordExternalFormSubmissionUnmatched } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
-import { createCaseFromFirstCallSubmission } from '@/services/externalFormIntakeService';
+import { createCaseFromIntakeSubmission } from '@/services/externalFormIntakeService';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -196,20 +196,28 @@ export async function POST(request: Request) {
   }
 
   /**
-   * Automated first-call intake (2026-10). A form explicitly configured
+   * Automated form intake (2026-10). ANY form explicitly configured
    * `purpose: 'case_create'` creates one case when its submission has no
-   * case to attach to. Every other form, and any `case_create` submission
-   * that DID resolve a link, falls through to the unchanged behavior
-   * below — so this can only ever add a case where the old code would
-   * have left an unmatched row, never change what an existing form does.
+   * case to attach to — at Manors that is both the First Call Sheet and
+   * the Cremation Arrangement Forms, because staff take calls overnight
+   * and frequently submit the Arrangement first. A `case_update` form,
+   * and any `case_create` submission that DID resolve a link, falls
+   * through to the unchanged behavior below.
    *
-   * Duplicate protection is the `wasNew` gate above plus the
-   * compare-and-swap claim inside `createCaseFromFirstCallSubmission`:
-   * the same submission delivered twice produces exactly one case, and
-   * the second delivery returns here without reaching this branch at all.
+   * A resolved link always wins: this branch is only reached when no
+   * link resolved, so a submission carrying a valid case-link token
+   * updates its own case and can never create a second one.
+   *
+   * Duplicate protection is three-layered: the `wasNew` gate above (a
+   * redelivered submission never gets here), the compare-and-swap claim
+   * inside `createCaseFromIntakeSubmission` (two concurrent deliveries
+   * of one submission cannot both create), and that function's own
+   * duplicate-candidate guard (a DIFFERENT submission describing a case
+   * SOLIS already has is held for staff review instead of creating a
+   * second case).
    */
   if (!resolvedLink && config.purpose === 'case_create') {
-    const outcome = await createCaseFromFirstCallSubmission(
+    const outcome = await createCaseFromIntakeSubmission(
       { config, submission, mappedFields, request },
       activityCtx,
       dataAdapterMode,

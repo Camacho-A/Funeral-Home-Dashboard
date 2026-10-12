@@ -440,6 +440,41 @@ const RETURN_METHOD_LABEL: Record<'undecided' | 'pickup' | 'shipping', string> =
  * this event exists to answer "where did that case go?" without anyone
  * having to read a field diff.
  */
+/**
+ * Form-created case duplicate guard (2026-10). Records that a submission
+ * from a creating form was NOT turned into a case because existing cases
+ * resemble it, and names those candidates so the review has something to
+ * act on.
+ *
+ * Organization-scoped like every other event here, and deliberately not
+ * attached to any one candidate case: no association has been made yet,
+ * and writing this onto a case's timeline would imply one.
+ */
+export function recordExternalFormSubmissionDuplicateSuspected(
+  ctx: ActivityContext,
+  submissionId: string,
+  formLabel: string,
+  candidates: { caseId: string; caseNumber: string; matchedOn: string[] }[],
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  const summary = candidates.map((c) => `${c.caseNumber}${c.matchedOn.length ? ` (${c.matchedOn.join(' + ')})` : ''}`).join(', ');
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_DUPLICATE_SUSPECTED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: JSON.stringify({ candidates }),
+      description: `${formLabel} submission held for review — it resembles existing case(s) ${summary}. No case was created and nothing was merged.`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCaseArchiveChanged(
   ctx: ActivityContext,
   caseId: string,
