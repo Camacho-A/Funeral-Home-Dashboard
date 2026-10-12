@@ -125,7 +125,31 @@ export function resolveChecklist(
   const defaultDone = (_index: number) => false;
   const isManuallyDone = (index: number) => readChecklistValue(case_.checklistState, displayStage, index) ?? defaultDone(index);
   const fieldValueAt = (index: number) => (case_.fieldValues[index] ?? '').toString().trim();
-  const isFieldDone = (index: number) => fieldValueAt(index).length > 0;
+  /**
+   * Arrangement-first intake fix (2026-10). A field-backed intake item is
+   * done when the information it asks for actually exists — whether a
+   * human typed it into the checklist (`fieldValues`) or it arrived on
+   * the canonical Case column from a Jotform submission.
+   *
+   * WHY THIS CHANGED. `POST /api/cases` — which is every webhook-created
+   * case — writes the decedent's name, dates, place and time of death to
+   * canonical Case COLUMNS and never to `fieldValues`. Completion read
+   * only `fieldValues`, so a case created from the Arrangement Form
+   * DISPLAYED all its intake answers (via canonicalFallbackValue, which
+   * has always read the column) while every one of those items sat
+   * unchecked, with no action a staff member could take to satisfy them
+   * other than retyping values already on screen. Live example:
+   * B2026-038, created 2026-10-12 from a real Arrangement submission.
+   *
+   * Scope is deliberately narrow and unchanged from the display
+   * fallback's own: intake stage only, `hasField` items only, and only
+   * where `findCaseFieldForChecklistIndex` resolves ONE unambiguous Case
+   * field. An action item ("Payment collected"), a document item, or a
+   * confirmation item has no `hasField` and is untouched — data being
+   * present never implies somebody did something.
+   */
+  const isFieldDone = (index: number) =>
+    fieldValueAt(index).length > 0 || canonicalFallbackValue(case_, displayStage, index) !== '';
 
   // Structured Certifier data (2026-09, ADR-041): an item with
   // requiredCaseFields is done once every listed Case field is a non-empty

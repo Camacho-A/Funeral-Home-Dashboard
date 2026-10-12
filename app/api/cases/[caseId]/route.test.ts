@@ -3,7 +3,7 @@ import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 import { standardCremationWorkflowTemplateFixture } from '@/services/__mocks__/workflowTemplates';
-import { buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
+import { buildCaseWorkflowSnapshot, latestTemplateVersion } from '@/domain/workflow/snapshot';
 
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
@@ -1896,6 +1896,171 @@ describe('PATCH /api/cases/[caseId] — archive / restore (2026-10)', () => {
 
     const persisted = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
     expect(persisted.isArchived).toBe(EXISTING_WIX_CASE_DATA.isArchived);
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+  });
+});
+
+describe('PATCH /api/cases/[caseId] — automatic archiving (2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  /**
+   * A case sitting at the terminal stage, awaiting family pickup. Carries
+   * a REAL workflow snapshot: completion is judged against the case's own
+   * template, so the shared fixture's empty `stages: []` has no terminal
+   * stage to reach and could never complete.
+   */
+  const REAL_SNAPSHOT = buildCaseWorkflowSnapshot(
+    standardCremationWorkflowTemplateFixture,
+    latestTemplateVersion(standardCremationWorkflowTemplateFixture),
+  );
+  const TERMINAL_AWAITING = {
+    ...EXISTING_WIX_CASE_DATA,
+    workflowSnapshot: REAL_SNAPSHOT,
+    currentStage: 7,
+    returnMethod: 'pickup',
+    pickupStatus: 'awaiting_pickup',
+    pickupReleasedTo: null,
+    pickupReleasedAt: null,
+  };
+
+  function mockAdminQueries(caseData: Record<string, unknown>) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_c: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  function activityEvents() {
+    return mockInsertWixDataItem.mock.calls
+      .filter(([collectionId]) => collectionId === 'activityEvents')
+      .map(([, data]) => data as Record<string, unknown>);
+  }
+
+  /** The final persisted state across every write this request made. */
+  function lastPersisted() {
+    return mockUpdateWixDataItem.mock.calls.at(-1)![2] as Record<string, unknown>;
+  }
+
+  it('archives automatically when the family pickup completes the case', async () => {
+    mockAdminQueries(TERMINAL_AWAITING);
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.isDeleted).toBe(true);
+    const persisted = lastPersisted();
+    expect(persisted.isArchived).toBe(true);
+    expect(typeof persisted.archivedAt).toBe('string');
+    // Nothing about the case itself was lost or rewritten.
+    expect(persisted.caseNumber).toBe(EXISTING_WIX_CASE_DATA.caseNumber);
+    expect(persisted.currentStage).toBe(7);
+    expect(persisted.pickupReleasedTo).toBe('KAREN ELLISON');
+  });
+
+  it('attributes the archive to SOLIS, never to the staff member who recorded the pickup', async () => {
+    mockAdminQueries(TERMINAL_AWAITING);
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+    });
+
+    const archived = activityEvents().filter((e) => e.eventType === 'case.archived');
+    expect(archived).toHaveLength(1);
+    expect(archived[0].isSystemGenerated).toBe(true);
+    expect(archived[0].actorIdentityId).toBeNull();
+  });
+
+  it('archives on confirmed shipping delivery, but NOT on dispatch', async () => {
+    mockAdminQueries({ ...TERMINAL_AWAITING, returnMethod: 'shipping', shippingDeliveryStatus: null });
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { shippingDeliveryStatus: 'shipped' },
+    });
+    expect(lastPersisted().isArchived).toBeFalsy();
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+
+    mockUpdateWixDataItem.mockClear();
+    mockInsertWixDataItem.mockClear();
+    mockAdminQueries({ ...TERMINAL_AWAITING, returnMethod: 'shipping', shippingDeliveryStatus: 'shipped' });
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { shippingDeliveryStatus: 'delivered' },
+    });
+    expect(lastPersisted().isArchived).toBe(true);
+  });
+
+  it('does not archive an incomplete case', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, workflowSnapshot: REAL_SNAPSHOT, currentStage: 3 });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { weight: '180 lb' } });
+
+    expect(lastPersisted().isArchived).toBeFalsy();
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+  });
+
+  it('crematory release earlier in the workflow does not archive', async () => {
+    // pickupStatus released while still at an earlier stage is the
+    // crematory handing remains to the funeral home, not the family.
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, workflowSnapshot: REAL_SNAPSHOT, currentStage: 5, returnMethod: 'pickup' });
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+    });
+
+    expect(lastPersisted().isArchived).toBeFalsy();
+  });
+
+  it('never re-archives an already-complete case, so no existing case is backfilled', async () => {
+    // B2026-035's shape: complete BEFORE this edit, so there is no
+    // transition and nothing to archive.
+    mockAdminQueries({
+      ...TERMINAL_AWAITING,
+      pickupStatus: 'released',
+      pickupReleasedTo: 'Karen Ellison',
+      pickupReleasedAt: '07/10/2026',
+      isArchived: false,
+    });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { weight: '180 lb' } });
+
+    expect(lastPersisted().isArchived).toBe(false);
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+  });
+
+  it('a restored case is not immediately re-archived by a later edit', async () => {
+    // Restored: isArchived false, but the case is still complete. The next
+    // edit sees complete -> complete, which is not a transition.
+    mockAdminQueries({
+      ...TERMINAL_AWAITING,
+      pickupStatus: 'released',
+      pickupReleasedTo: 'Karen Ellison',
+      pickupReleasedAt: '07/10/2026',
+      isArchived: false,
+      archivedAt: null,
+    });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupNote: 'corrected' } });
+
+    expect(lastPersisted().isArchived).toBe(false);
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
+  });
+
+  it('emits exactly one archive event for one completing transition', async () => {
+    mockAdminQueries(TERMINAL_AWAITING);
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { pickupStatus: 'released', pickupReleasedTo: 'Karen Ellison', pickupReleasedAt: '07/10/2026' },
+    });
+    expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(1);
+  });
+
+  it('an already-archived case is left alone', async () => {
+    mockAdminQueries({ ...TERMINAL_AWAITING, isArchived: true });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { pickupNote: 'note' } });
     expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
   });
 });

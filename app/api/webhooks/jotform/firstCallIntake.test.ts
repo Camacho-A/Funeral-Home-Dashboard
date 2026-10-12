@@ -691,3 +691,60 @@ describe('Automatic intake failure visibility (2026-10)', () => {
     expect(stored!.caseCreationFailureReason).toBeNull();
   });
 });
+
+describe('Arrangement field mapping — time of death and certifier (2026-10)', () => {
+  /** Joyce Gollis's real production submission shape, qid for qid. */
+  function fullArrangement(overrides: Record<string, string | Record<string, string>> = {}) {
+    return arrangementAnswers({
+      // qid 91: the 24-hour control immediately after Date of Death.
+      '91': { timeInput: '13:30', hourSelect: '13', minuteSelect: '30' },
+      '138': 'JOHN ZARAVINOS',
+      '139': '954-486-4085',
+      '137': 'ME129731',
+      '140': '954-777-2262',
+      ...overrides,
+    });
+  }
+
+  async function deliverFull(id: string, overrides: Record<string, string | Record<string, string>> = {}) {
+    givenJotformHasSubmission({
+      formId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+      submissionId: id,
+      answers: fullArrangement(overrides),
+      timeFormats: { '91': '24 Hour' },
+    });
+    const { POST } = await import('./route');
+    return POST(webhookRequest({ formID: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, submissionID: id }));
+  }
+
+  it('carries time of death from qid 91 into the new case', async () => {
+    await deliverFull('2000000000000000020');
+    expect(casePostBodies[0].timeOfDeath).toBe('13:30');
+  });
+
+  it('carries the full certifier block into the new case', async () => {
+    await deliverFull('2000000000000000021');
+    const body = casePostBodies[0];
+    expect(body.certifierName).toBe('JOHN ZARAVINOS');
+    expect(body.certifierPhone).toBe('954-486-4085');
+    expect(body.certifierLicenseNumber).toBe('ME129731');
+    expect(body.certifierFax).toBe('954-777-2262');
+  });
+
+  it('omits what the submission did not carry, rather than sending blanks', async () => {
+    // A form left partly blank must not blank the case's own fields.
+    await deliverFull('2000000000000000022', { '138': '', '139': '', '137': '', '140': '', '91': '' });
+    const body = casePostBodies[0];
+    expect(body).not.toHaveProperty('certifierName');
+    expect(body).not.toHaveProperty('certifierPhone');
+    expect(body).not.toHaveProperty('timeOfDeath');
+  });
+
+  it('never invents a weight — this form has no weight question', async () => {
+    // Confirmed against the live form's own metadata: the only numeric
+    // field is qid 273 "Age-Value". Weight reaches a case from the First
+    // Call Sheet or from staff entering it.
+    await deliverFull('2000000000000000023');
+    expect(casePostBodies[0]).not.toHaveProperty('weight');
+  });
+});

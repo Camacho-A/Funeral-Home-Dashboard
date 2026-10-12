@@ -32,6 +32,15 @@ export type MappedSolisField =
   // changes nothing about those two maps.
   | 'timeOfDeath'
   | 'weight'
+  // Arrangement Forms certifier block (2026-10). Real, writable Case
+  // fields that the Arrangement Forms "To BE COMPLETED BY FUNERAL
+  // DIRECTOR" section captures (qids 137-140, confirmed against the live
+  // form's own question metadata). Adding them here changes nothing for
+  // First Call or Vital Statistics, neither of which carries them.
+  | 'certifierName'
+  | 'certifierPhone'
+  | 'certifierLicenseNumber'
+  | 'certifierFax'
   | 'isVeteran'
   | 'nextOfKinName'
   | 'nextOfKinRelationship'
@@ -199,6 +208,35 @@ export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   { qid: '122', jotformName: 'name122', solisField: 'informantName', subfield: 'last' },
   { qid: '224', jotformName: 'phoneNumber224', solisField: 'informantPhone', subfield: 'full' },
   { qid: '225', jotformName: 'informantsRelationship', solisField: 'informantRelationship' },
+  /**
+   * Time of death (2026-10). qid 91 — the `control_time` immediately
+   * following qid 10 (Date of Death) in the vital-statistics block, and
+   * the one Jotform reports as `timeFormat: "24 Hour"`.
+   *
+   * qid 159 is deliberately NOT mapped: it is the SAME moment restated in
+   * the cremation-authorization block as a 12-hour value (a submission
+   * carrying 13:30 here carries 01:30 PM there). Mapping both would give
+   * two sources for one Case field, and the 24-hour one is unambiguous.
+   * `combineTimeParts` still reads the question's own `timeFormat` rather
+   * than trusting the vestigial `ampm` key — see extractMappedFields.ts.
+   */
+  { qid: '91', jotformName: 'time91', solisField: 'timeOfDeath' },
+  /**
+   * Certifier block, qids 137-140 ("To BE COMPLETED BY FUNERAL
+   * DIRECTOR"). These are the medical certifier who signs the death
+   * certificate — a different person from the informant and from the
+   * next of kin, and they land in Case's own structured certifier*
+   * fields rather than any free-text note.
+   */
+  { qid: '138', jotformName: 'certifierName', solisField: 'certifierName' },
+  { qid: '139', jotformName: 'phoneNumber139', solisField: 'certifierPhone' },
+  { qid: '137', jotformName: 'typeA137', solisField: 'certifierLicenseNumber' },
+  { qid: '140', jotformName: 'faxNumber', solisField: 'certifierFax' },
+  // WEIGHT IS DELIBERATELY ABSENT. A live audit of this form's question
+  // metadata (2026-10) found no weight question at all — the only numeric
+  // field is qid 273 "Age-Value". Weight reaches a case from the First
+  // Call Sheet (qid 7) or by staff entering it; inventing a mapping here
+  // would mean guessing at a question that does not exist.
   // qids 276-279 (the Yes/No NOK branch question + its 3 dedicated NOK
   // fields, added to the live Jotform in Phase A, 2026-09) are
   // DELIBERATELY ABSENT from this array. They cannot be handled by a

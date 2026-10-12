@@ -270,6 +270,13 @@ export type Case = {
   intakeOwnerId: string | null;
   createdAt: string;
   isDeleted: boolean; // soft-delete only, per docs/DECISIONS.md and docs/adr — never hard-deleted
+  /**
+   * Automatic archiving (2026-10). When the case was archived, ISO-8601.
+   * Null on an active case and on every case archived before this field
+   * existed — absence means "no recorded time", never "not archived"
+   * (`isDeleted` is the authority on that).
+   */
+  archivedAt?: string | null;
 
   /**
    * Phase 11 (Workflow Template Architecture). Which workflow template —

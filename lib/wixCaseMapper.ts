@@ -94,6 +94,7 @@ export type WixCaseItem = {
   nextOfKinEmail?: unknown;
   nextOfKinRelationship?: unknown;
   nextOfKinRelationshipOther?: unknown;
+  archivedAt?: unknown;
   doNotContactNextOfKin?: unknown;
   arrangementContactName?: unknown;
   arrangementContactRelationship?: unknown;
@@ -302,6 +303,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     intakeOwnerId,
     createdAt: item.createdAt,
     isDeleted: item.isArchived,
+    archivedAt: typeof item.archivedAt === 'string' ? item.archivedAt : null,
     workflowTemplateId: item.workflowTemplateId,
     workflowTemplateVersion: item.workflowTemplateVersion,
     caseType: item.caseType,
@@ -597,6 +599,7 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   booleanField('isVeteran');
   booleanField('isStalled');
   booleanField('isDeleted');
+  nullableStringField('archivedAt');
   nullableStringField('assignedStaffId');
   nullableStringField('stalledReason');
   plainObjectField('checklistState');
@@ -755,6 +758,7 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.isStalled !== undefined) next.isStalled = patch.isStalled;
   if (patch.stalledReason !== undefined) next.stalledReason = patch.stalledReason;
   if (patch.isDeleted !== undefined) next.isArchived = patch.isDeleted;
+  if (patch.archivedAt !== undefined) next.archivedAt = patch.archivedAt;
 
   return next;
 }

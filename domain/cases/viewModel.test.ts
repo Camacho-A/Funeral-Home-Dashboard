@@ -245,12 +245,42 @@ describe('buildCaseViewModel — overall progress indicator (Case list scalabili
     );
   });
 
-  it('a brand-new case (stage 0, nothing checked yet) is genuinely 0% — checklist default-done fix (2026-10) retired the old free credit for non-last items', () => {
-    const case_ = baseCase({ rawStage: 0 });
+  it('a brand-new case with NO information yet is genuinely 0% — no free credit for non-last items', () => {
+    // Every canonical intake column blank, so nothing is satisfied by
+    // data either (2026-10: data-backed items now count — see the
+    // Arrangement-first fix — so "brand new" has to mean genuinely empty).
+    const case_ = baseCase({
+      rawStage: 0,
+      decedentName: '',
+      dateOfBirth: '—',
+      dateOfDeath: '—',
+      timeOfDeath: '—',
+      placeOfDeath: '—',
+      weight: '—',
+      nextOfKinName: '',
+      nextOfKinPhone: '',
+      certifierName: null,
+      certifierPhone: null,
+    });
     const vm = buildCaseViewModel(case_, { staffList: [] });
     expect(vm.progressPercent).toBe(0);
     expect(vm.progressCompletedItems).toBe(0);
     expect(vm.progressTotalItems).toBeGreaterThan(vm.progressCompletedItems);
+  });
+
+  it('a case that genuinely holds its intake information is NOT 0% (2026-10)', () => {
+    const case_ = baseCase({
+      rawStage: 0,
+      decedentName: 'ANGELICA CAMACHO',
+      dateOfBirth: '02/02/1990',
+      dateOfDeath: '10/08/2026',
+      timeOfDeath: '11:30',
+      placeOfDeath: '195 HIGHVIEW AVE',
+      weight: '136',
+      fieldValues: {},
+    });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.progressCompletedItems).toBeGreaterThan(0);
   });
 
   it('a genuinely completed case (stageLabel "Completed") is exactly 100% — every stage passed, terminal item satisfied', () => {
@@ -1177,9 +1207,17 @@ describe('buildCaseViewModel — webhook-created intake case (canonical columns,
     expect(byLabel('TIME OF DEATH')).toBe(vm.timeOfDeath);
   });
 
-  it('no checklist item self-completes, and the case stays on the intake stage', () => {
+  it('data-backed items complete from the canonical columns, action items do not (2026-10)', () => {
+    // The Arrangement-first fix: information that genuinely exists
+    // satisfies the item that asks for it, whether a human typed it into
+    // the checklist or it arrived from Jotform. Doing something still
+    // requires somebody to do it.
     const vm = buildCaseViewModel(webhookCase(), { staffList: [] });
-    expect(vm.checklist.some((i) => i.done && i.hasField)).toBe(false);
+    expect(vm.checklist.some((i) => i.done && i.hasField)).toBe(true);
+    const actionItems = vm.checklist.filter((i) => !i.hasField && !i.isDerived);
+    expect(actionItems.length).toBeGreaterThan(0);
+    expect(actionItems.every((i) => i.done === false)).toBe(true);
+    // Still on intake, because those action items remain outstanding.
     expect(vm.displayStage).toBe(0);
   });
 
@@ -1200,7 +1238,9 @@ describe('buildCaseViewModel — webhook-created intake case (canonical columns,
     // values still display for them too.
     const name = vm.checklist.find((i) => i.label.toLowerCase().includes('name of deceased'));
     expect(name?.fieldValue).toBe('ANGELICA CAMACHO');
-    expect(name?.done).toBe(false);
+    // The canonical-column rule is organization-independent too: the name
+    // is genuinely present, so its item is genuinely satisfied.
+    expect(name?.done).toBe(true);
   });
 
   it('a typed fieldValues entry still wins over the canonical column', () => {

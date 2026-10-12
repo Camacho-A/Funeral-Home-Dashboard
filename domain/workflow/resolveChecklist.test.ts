@@ -360,19 +360,34 @@ describe('resolveChecklist — canonical Case field fallback for intake display'
     expect(items[0].fieldValue).toBe('ANGELICA CAMACHO');
   });
 
-  it('8. NOTHING is auto-completed — every intake item stays not-done despite every column being populated', () => {
+  it('8. a field-backed intake item IS satisfied by its canonical column (2026-10)', () => {
+    // Changed deliberately. A webhook-created case writes canonical Case
+    // columns and never `fieldValues`, so these items used to display
+    // their answers while staying unchecked — with nothing a staff member
+    // could do but retype values already on screen. Live example:
+    // B2026-038, created from a real Arrangement submission.
     const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
     for (const index of [0, 1, 2, 3, 4, 5]) {
-      expect(items[index].done, `item ${index} must not self-complete`).toBe(false);
+      expect(items[index].done, `item ${index} should be satisfied by its canonical column`).toBe(true);
     }
   });
 
-  it('9. the fallback cannot advance a stage — reconciliation sees the same not-done checklist', () => {
-    // Stage advancement is computed from these same `done` flags, so a
-    // fully-populated case must still read as incomplete here.
+  it('9. an ACTION item never self-completes just because data exists', () => {
+    // The line that matters: data being present satisfies a data item,
+    // and nothing else. "Payment collected" carries no hasField, so it
+    // stays outstanding until somebody actually does it.
     const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, webhookCreatedCase());
-    expect(items.every((item) => item.done === false || item.isDerived)).toBe(true);
-    expect(items.some((item) => item.done && item.hasField)).toBe(false);
+    const actionItems = items.filter((item) => !item.hasField && !item.isDerived);
+    expect(actionItems.length).toBeGreaterThan(0);
+    expect(actionItems.every((item) => item.done === false)).toBe(true);
+  });
+
+  it('9b. an empty or placeholder column does not satisfy its item', () => {
+    const blank = { ...webhookCreatedCase(), weight: '', timeOfDeath: '—' };
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, blank);
+    // Weight (index 3) and Time of death (index 5) must stay outstanding.
+    expect(items[3].done).toBe(false);
+    expect(items[5].done).toBe(false);
   });
 
   it('10. a manual completion still works and is unaffected by the fallback', () => {

@@ -911,9 +911,14 @@ export function CaseInformationCard({
           onSetVaNotificationResponsibility={onSetVaNotificationResponsibility}
         />
       )}
-      {onArchiveChange && (
+      {/* Automatic archiving (2026-10): there is no manual "Archive
+          case" action any more — a case files itself away the moment it
+          genuinely completes. What remains is the archived-state notice
+          and Restore, which staff still need when a finished case turns
+          out to need correcting. */}
+      {onArchiveChange && isArchived === true && (
         <ArchiveCaseSection
-          isArchived={isArchived === true}
+          isArchived
           caseNumber={caseNumber ?? ''}
           decedentName={decedentName ?? 'This case'}
           onChange={onArchiveChange}

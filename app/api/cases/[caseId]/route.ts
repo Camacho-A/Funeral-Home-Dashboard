@@ -26,6 +26,7 @@ import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
+import { becameComplete } from '@/domain/cases/workflowCompletion';
 import { syncExpectedPickupForCase } from '@/services/cremainsPickupService';
 import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
 
@@ -306,6 +307,61 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     let result = mapWixCaseItem(updated.data);
     if (!result) {
       return NextResponse.json({ case: null, error: 'Failed to update case.' }, { status: 500 });
+    }
+
+    /**
+     * Automatic archiving (2026-10). A case files itself away the moment
+     * it genuinely finishes — the family has received the remains, or a
+     * shipment is confirmed delivered — so staff stop seeing finished work
+     * in their working lists without having to tidy up by hand.
+     *
+     * Keyed off the TRANSITION, never the state. That one choice gives
+     * three properties the brief asks for, for free:
+     *   - Deploying this backfills nothing: an already-complete case was
+     *     complete before the patch too, so there is no transition.
+     *   - Restoring is safe: a restored case is still complete, so a later
+     *     unrelated edit cannot silently re-archive it. Only a NEW
+     *     incomplete -> complete transition can.
+     *   - It is idempotent: the same patch applied twice transitions once.
+     *
+     * Completion comes from `isCaseWorkflowComplete`, which reads the
+     * case's OWN frozen workflowSnapshot — no hardcoded stage number, so
+     * every organization is judged against its own template. Crematory
+     * receipt and shipping dispatch deliberately do not qualify.
+     *
+     * Best-effort and deliberately last: an archiving failure must never
+     * fail, or roll back, the case edit that already succeeded.
+     */
+    if (!existing.isDeleted && becameComplete(existing, result)) {
+      try {
+        const archivedAt = new Date().toISOString();
+        const archivedData = applyCaseUpdateToWixData(updated.data, { isDeleted: true, archivedAt });
+        const archived = await updateWixDataItem<WixCaseItem>('cases', existingItem.id, archivedData);
+        const remapped = mapWixCaseItem(archived.data);
+        if (remapped) result = remapped;
+
+        // Attributed to SOLIS itself, never to the staff member who
+        // happened to make the edit that completed the case — they
+        // recorded a pickup, they did not ask for an archive.
+        await recordCaseArchiveChanged(
+          {
+            organizationId,
+            actorIdentityId: null,
+            actorMembershipId: null,
+            actorRoleKey: null,
+            correlationId,
+            isSystemGenerated: true,
+          },
+          caseId,
+          true,
+          'wix',
+        );
+      } catch (error) {
+        console.error(
+          'Failed to automatically archive a completed case (the case update itself succeeded):',
+          error instanceof Error ? error.message : error,
+        );
+      }
     }
 
     // Task #6 (2026-09, checklist completion → workflow reconciliation).

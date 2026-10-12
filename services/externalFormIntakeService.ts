@@ -233,6 +233,13 @@ export async function createCaseFromIntakeSubmission(
         ...(mappedFields.placeOfDeath ? { placeOfDeath: mappedFields.placeOfDeath } : {}),
         ...(mappedFields.weight ? { weight: mappedFields.weight } : {}),
         ...(mappedFields.nextOfKinEmail ? { nextOfKinEmail: mappedFields.nextOfKinEmail } : {}),
+        // Certifier block (2026-10). Same omit-when-absent rule as every
+        // optional field above — never sent as an empty string, so the
+        // route's own defaults apply instead of blanking a field.
+        ...(mappedFields.certifierName ? { certifierName: mappedFields.certifierName } : {}),
+        ...(mappedFields.certifierPhone ? { certifierPhone: mappedFields.certifierPhone } : {}),
+        ...(mappedFields.certifierLicenseNumber ? { certifierLicenseNumber: mappedFields.certifierLicenseNumber } : {}),
+        ...(mappedFields.certifierFax ? { certifierFax: mappedFields.certifierFax } : {}),
         externalFormIntakeAuthorization,
       }),
     });
