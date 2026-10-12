@@ -172,6 +172,7 @@ export type WixExternalFormSubmissionItem = {
   pdfStatus?: unknown;
   pdfFailureReason?: unknown;
   createdCaseId?: unknown;
+  caseCreationFailureReason?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -216,6 +217,10 @@ export function mapWixExternalFormSubmissionItem(id: string, item: WixExternalFo
     // field is newly added and won't exist yet on rows persisted before
     // its live schema addition.
     createdCaseId: typeof item.createdCaseId === 'string' ? item.createdCaseId : null,
+    // Read defensively like createdCaseId above — absent on every row
+    // written before this field existed, which correctly reads as "no
+    // recorded failure".
+    caseCreationFailureReason: typeof item.caseCreationFailureReason === 'string' ? item.caseCreationFailureReason : null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
@@ -238,6 +243,7 @@ export function applyExternalFormSubmissionUpdateToWixData(
   if (patch.pdfStatus !== undefined) next.pdfStatus = patch.pdfStatus;
   if (patch.pdfFailureReason !== undefined) next.pdfFailureReason = patch.pdfFailureReason;
   if (patch.createdCaseId !== undefined) next.createdCaseId = patch.createdCaseId;
+  if (patch.caseCreationFailureReason !== undefined) next.caseCreationFailureReason = patch.caseCreationFailureReason;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

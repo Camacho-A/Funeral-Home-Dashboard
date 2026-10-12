@@ -227,6 +227,23 @@ export async function POST(request: Request) {
     // short-circuit at `wasNew` and never re-attempt creation anyway. The
     // row stays `unmatched` and is visible in Unmatched Forms, which is
     // the existing recovery path staff already use.
+    //
+    // Automatic intake failure visibility (2026-10): the reason is
+    // recorded ON the submission, not only in a server log, so Unmatched
+    // Forms can tell staff WHY this one needs them rather than leaving an
+    // unexplained row for someone to puzzle over. Best-effort — the
+    // submission is already stored, and failing to annotate it must never
+    // be what loses it.
+    if (!outcome.created) {
+      try {
+        await externalFormSubmissionService.recordCaseCreationFailure(submission.id, outcome.reason, dataAdapterMode);
+      } catch (error) {
+        console.error(
+          'Failed to record the case-creation failure reason on the submission:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
     return NextResponse.json({ received: true, caseCreated: outcome.created });
   }
 

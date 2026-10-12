@@ -655,3 +655,39 @@ describe('Intake authorization token', () => {
     expect(await verifyExternalFormIntakeAuthorization('')).toBeNull();
   });
 });
+
+describe('Automatic intake failure visibility (2026-10)', () => {
+  it('records WHY creation did not happen on the submission itself', async () => {
+    // Without this the reason lived only in a server log, so Unmatched
+    // Forms showed an unexplained row and staff had no way to find out.
+    await deliverArrangement(SUB.arrNoBranch, { '276': '' });
+
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrNoBranch);
+    expect(stored!.status).toBe('unmatched');
+    expect(stored!.caseCreationFailureReason).toMatch(/^missing_required_fields:/);
+    expect(stored!.caseCreationFailureReason).toContain('nextOfKinName');
+  });
+
+  it('records a held-back duplicate as the reason, not a generic failure', async () => {
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: 'case-reason-dupe',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-903',
+      decedentName: 'MARGARET OKONKWO',
+      dateOfBirth: '03/14/1951',
+      dateOfDeath: '10/09/2026',
+    });
+    await deliverArrangement(SUB.arrDupe);
+
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrDupe);
+    expect(stored!.caseCreationFailureReason).toBe('duplicate_review_required');
+  });
+
+  it('leaves no failure reason when creation succeeds', async () => {
+    await deliverArrangement(SUB.arrCreates);
+    const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrCreates);
+    expect(stored!.createdCaseId).toBeTruthy();
+    expect(stored!.caseCreationFailureReason).toBeNull();
+  });
+});

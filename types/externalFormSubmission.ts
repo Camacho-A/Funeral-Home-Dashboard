@@ -72,6 +72,21 @@ export type ExternalFormSubmission = {
    * `CLAIMING:` as "not yet a real case," never as `caseId`.
    */
   createdCaseId: string | null;
+  /**
+   * Automatic intake failure visibility (2026-10). Why automatic case
+   * creation did not happen for a submission from a `case_create` form.
+   * Null when creation succeeded, when it was never attempted (a
+   * `case_update` form, or a submission that resolved a link), or on any
+   * row that predates this field.
+   *
+   * Exists because the reason used to live only in a server log: staff
+   * saw an unexplained row in Unmatched Forms with no way to know whether
+   * the submission was missing a required field, held back as a suspected
+   * duplicate, or had hit a transient fault — and no way to discover it
+   * without someone reading Vercel logs. A queue that cannot say WHY
+   * something needs attention makes people guess.
+   */
+  caseCreationFailureReason: string | null;
   createdAt: string;
   updatedAt: string;
 };

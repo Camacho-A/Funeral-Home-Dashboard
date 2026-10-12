@@ -89,6 +89,7 @@ export async function receive(params: ReceiveSubmissionParams, dataAdapterMode: 
     pdfStatus: params.pdfStatus,
     pdfFailureReason: null,
     createdCaseId: null,
+    caseCreationFailureReason: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -111,6 +112,21 @@ export async function receive(params: ReceiveSubmissionParams, dataAdapterMode: 
     if (!existing) throw error;
     return { submission: existing, wasNew: false };
   }
+}
+
+/**
+ * Automatic intake failure visibility (2026-10). Records WHY automatic
+ * case creation did not happen, so Unmatched Forms can say so instead of
+ * showing an unexplained row. Best-effort by contract: the submission is
+ * already safely stored, and failing to annotate it must never be what
+ * loses the submission.
+ */
+export async function recordCaseCreationFailure(
+  id: string,
+  reason: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ExternalFormSubmission | null> {
+  return persistUpdate(id, { caseCreationFailureReason: reason }, dataAdapterMode);
 }
 
 export async function listUnmatched(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<ExternalFormSubmission[]> {

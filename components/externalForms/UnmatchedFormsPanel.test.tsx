@@ -48,6 +48,7 @@ const ROSELYN = {
   pdfStatus: 'stored' as const,
   pdfFailureReason: null,
   createdCaseId: null,
+  caseCreationFailureReason: null,
   createdAt: '2026-10-10T16:46:49.760Z',
   updatedAt: '2026-10-10T16:46:49.760Z',
 };
@@ -132,6 +133,42 @@ describe('UnmatchedFormsPanel — a row identifies itself', () => {
     });
     renderPanel();
     expect(screen.queryByText(/Date of death/)).not.toBeInTheDocument();
+  });
+});
+
+describe('UnmatchedFormsPanel — explains why automatic creation did not run', () => {
+  function withReason(reason: string) {
+    submissionsQuery.mockReturnValue({
+      data: [{ ...ROSELYN, caseCreationFailureReason: reason }],
+      isPending: false,
+      isError: false,
+    });
+  }
+
+  it('says nothing when there is no recorded failure', () => {
+    renderPanel();
+    expect(screen.queryByText(/Automatic case creation did not run/)).not.toBeInTheDocument();
+  });
+
+  it('names the missing fields, in words a funeral director can act on', () => {
+    withReason('missing_required_fields:nextOfKinName,nextOfKinPhone');
+    renderPanel();
+    expect(screen.getByText(/Automatic case creation did not run/)).toBeInTheDocument();
+    expect(screen.getByText(/nextOfKinName, nextOfKinPhone/)).toBeInTheDocument();
+  });
+
+  it('explains a suspected duplicate without implying anything was merged', () => {
+    withReason('duplicate_review_required');
+    renderPanel();
+    expect(screen.getByText(/nothing was created and nothing was merged/)).toBeInTheDocument();
+  });
+
+  it('shows an unrecognised reason verbatim rather than hiding it', () => {
+    // An unexplained row is the exact problem this solves — an unfamiliar
+    // code is still better than silence.
+    withReason('some_future_reason_code');
+    renderPanel();
+    expect(screen.getByText(/some_future_reason_code/)).toBeInTheDocument();
   });
 });
 

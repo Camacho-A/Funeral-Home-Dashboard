@@ -51,6 +51,33 @@ function readMappedFields(raw: string): Record<string, string> {
   }
 }
 
+/**
+ * Automatic intake failure visibility (2026-10). Turns the service's
+ * machine reason into something a funeral director can act on. An
+ * unrecognised reason is shown verbatim rather than hidden — an
+ * unexplained row is exactly the problem this solves, so an unfamiliar
+ * code is still better than silence.
+ */
+function describeCaseCreationFailure(reason: string): string {
+  if (reason.startsWith('missing_required_fields')) {
+    const fields = reason.split(':')[1] ?? '';
+    return `The submission did not carry ${fields.split(',').join(', ') || 'the required fields'}, which a case cannot be opened without. Link it to an existing case, or use Create Case once you can supply them.`;
+  }
+  if (reason === 'duplicate_review_required') {
+    return 'It looks like a case SOLIS already has, so nothing was created and nothing was merged. Check the existing case first — if it is the same person, link this submission to it.';
+  }
+  if (reason === 'already_claimed') {
+    return 'Another delivery of this same submission was already creating a case.';
+  }
+  if (reason === 'no_active_staff_profile') {
+    return 'This organization has no active staff profile to attribute an intake case to.';
+  }
+  if (reason.startsWith('case_creation_failed')) {
+    return 'Creating the case failed. Use Create Case to try again.';
+  }
+  return reason;
+}
+
 export function UnmatchedFormsPanel() {
   const { organizationId } = useOrganization();
   const submissionsQuery = useUnmatchedSubmissions(organizationId);
@@ -107,6 +134,13 @@ export function UnmatchedFormsPanel() {
               </strong>
               <span className={styles.meta}>Received {formatTimestamp(submission.receivedAt)}</span>
             </div>
+
+            {submission.caseCreationFailureReason && (
+              <p className={styles.failureReason} role="note">
+                <strong>Automatic case creation did not run.</strong>{' '}
+                {describeCaseCreationFailure(submission.caseCreationFailureReason)}
+              </p>
+            )}
 
             <div className={styles.details}>
               {fields.dateOfDeath && <span>Date of death {fields.dateOfDeath}</span>}
