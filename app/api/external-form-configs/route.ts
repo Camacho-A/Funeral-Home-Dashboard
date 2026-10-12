@@ -29,5 +29,13 @@ export async function GET(request: Request) {
   }
 
   const configs = await externalFormConfigService.listForOrganization(resolvedOrganizationId, dataAdapterMode);
-  return NextResponse.json({ configs: configs.map((c) => ({ id: c.id, label: c.label, audience: c.audience })) });
+  return NextResponse.json({ configs: configs.map((c) => ({
+      id: c.id,
+      label: c.label,
+      audience: c.audience,
+      // Unmatched Forms (2026-10): lets a submission row show the form's
+      // human name instead of the provider's numeric id. Not sensitive —
+      // it is the id already embedded in every public form URL.
+      externalFormId: c.externalFormId,
+    })) });
 }

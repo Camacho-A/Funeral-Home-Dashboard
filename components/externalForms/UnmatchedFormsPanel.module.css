@@ -46,3 +46,45 @@
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
 }
+
+/* Identifiable rows (2026-10). */
+.decedentName {
+  font-size: 14px;
+}
+
+.unnamed {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.submissionId {
+  font-variant-numeric: tabular-nums;
+}
+
+.errorState {
+  padding: 14px 16px;
+  border: 1px solid oklch(0.85 0.08 70);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--sx-amber-bg, oklch(0.965 0.04 75));
+  color: var(--sx-amber-text, oklch(0.47 0.12 60));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.errorDetail {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+}

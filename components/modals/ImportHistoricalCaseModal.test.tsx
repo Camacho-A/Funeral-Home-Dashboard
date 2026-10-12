@@ -26,7 +26,7 @@ vi.mock('@/lib/externalFormsClient', async () => {
   };
 });
 
-const CONFIGS = [{ id: 'config-1', label: 'Arrangement Form', audience: 'family' as const }];
+const CONFIGS = [{ id: 'config-1', label: 'Arrangement Form', audience: 'family' as const, externalFormId: '261945978664175' }];
 
 const VALID_PREVIEW = {
   formLabel: 'Arrangement Form',

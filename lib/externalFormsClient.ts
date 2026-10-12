@@ -165,7 +165,7 @@ export async function importHistoricalSubmission(
   return { alreadyImported: Boolean(body.alreadyImported) };
 }
 
-export type MinimalExternalFormConfig = { id: string; label: string; audience: 'family' | 'staff' };
+export type MinimalExternalFormConfig = { id: string; label: string; audience: 'family' | 'staff'; externalFormId: string };
 
 export async function fetchExternalFormConfigs(organizationId: string): Promise<MinimalExternalFormConfig[]> {
   const params = new URLSearchParams({ organizationId });
