@@ -126,11 +126,22 @@ export async function createCaseFromIntakeSubmission(
     submission: ExternalFormSubmission;
     mappedFields: Partial<Record<MappedSolisField, string>>;
     request: Request;
+    /**
+     * Staff-initiated creation only (Unmatched Forms → Create Case).
+     * When a human has been shown the duplicate candidates and chosen to
+     * proceed anyway, the guard steps aside — it exists to stop SILENT
+     * automatic duplication, not to overrule someone who has looked at
+     * the candidates and decided this really is a different death.
+     *
+     * The webhook never sets this: an unattended delivery has nobody to
+     * do the looking.
+     */
+    acknowledgedDuplicates?: boolean;
   },
   activityCtx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
 ): Promise<FormIntakeOutcome> {
-  const { config, submission, mappedFields, request } = params;
+  const { config, submission, mappedFields, request, acknowledgedDuplicates = false } = params;
 
   const missing = REQUIRED_FOR_CREATION.filter((field) => !mappedFields[field]?.trim());
   if (missing.length > 0) {
@@ -153,11 +164,9 @@ export async function createCaseFromIntakeSubmission(
    * domain/externalForms/duplicateCandidates.ts for why a name alone is
    * never enough to flag one.
    */
-  const candidates = await findDuplicateCandidatesForOrganization(
-    config.organizationId,
-    mappedFields,
-    dataAdapterMode,
-  );
+  const candidates = acknowledgedDuplicates
+    ? []
+    : await findDuplicateCandidatesForOrganization(config.organizationId, mappedFields, dataAdapterMode);
   if (candidates.length > 0) {
     console.error(
       `[form intake] Submission ${submission.id} resembles existing case(s) ${candidates

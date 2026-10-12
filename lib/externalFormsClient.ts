@@ -74,6 +74,39 @@ export async function linkSubmissionToCase(organizationId: string, submissionId:
   await parseJsonOrThrow(response);
 }
 
+/** Unmatched Forms → Create Case (2026-10). Everything the confirmation
+    dialog shows, assembled server-side so the client never derives it. */
+export type CreateCasePreview = {
+  formLabel: string;
+  receivedAt: string;
+  decedentName: string | null;
+  dateOfDeath: string | null;
+  dateOfBirth: string | null;
+  nextOfKinName: string | null;
+  duplicateCandidates: { caseId: string; caseNumber: string; decedentName: string; matchedOn: string[] }[];
+};
+
+export async function fetchCreateCasePreview(organizationId: string, submissionId: string): Promise<CreateCasePreview> {
+  const params = new URLSearchParams({ organizationId });
+  const response = await fetch(
+    `/api/external-form-submissions/${encodeURIComponent(submissionId)}/create-case?${params.toString()}`,
+  );
+  return (await parseJsonOrThrow(response)) as CreateCasePreview;
+}
+
+export async function createCaseFromSubmission(
+  organizationId: string,
+  submissionId: string,
+  acknowledgedDuplicates: boolean,
+): Promise<{ case: { id: string; caseNumber: string } }> {
+  const response = await fetch(`/api/external-form-submissions/${encodeURIComponent(submissionId)}/create-case`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId, acknowledgedDuplicates }),
+  });
+  return (await parseJsonOrThrow(response)) as { case: { id: string; caseNumber: string } };
+}
+
 export async function fetchReconciliation(
   organizationId: string,
   submissionId: string,

@@ -142,8 +142,27 @@ export async function authenticateJotformSubmission(params: {
   claimedFormId: string;
   claimedSubmissionId: string;
   now?: number;
+  /**
+   * Unmatched Forms → Create Case (2026-10). Skips ONLY the
+   * `MAX_SUBMISSION_AGE_MS` replay bound. Every other check — numeric id
+   * shape, the Jotform round-trip, and the form-ownership comparison
+   * that makes retrievability itself the proof of provenance — still
+   * runs unchanged.
+   *
+   * Safe here, and ONLY here, because the replay bound exists to stop an
+   * attacker re-POSTing an old webhook delivery to an unauthenticated
+   * endpoint. A staff member rescuing a historical submission is a
+   * different situation entirely: the request is authenticated,
+   * authorized, same-origin, and the submission id comes from a row
+   * already in our own database rather than from the request. There is
+   * nothing to replay. Meanwhile the submissions this exists to rescue
+   * are legitimately older than 36 hours — that is the whole point.
+   *
+   * The webhook never passes this.
+   */
+  skipAgeCheck?: boolean;
 }): Promise<JotformSubmissionAuthenticity> {
-  const { claimedFormId, claimedSubmissionId } = params;
+  const { claimedFormId, claimedSubmissionId, skipAgeCheck = false } = params;
   const now = params.now ?? Date.now();
 
   if (!NUMERIC_ID_PATTERN.test(claimedFormId) || !NUMERIC_ID_PATTERN.test(claimedSubmissionId)) {
@@ -184,7 +203,7 @@ export async function authenticateJotformSubmission(params: {
   if (submittedAtMs === null) {
     return { authentic: false, reason: 'submission_timestamp_unusable', status: 401 };
   }
-  if (now - submittedAtMs > MAX_SUBMISSION_AGE_MS || submittedAtMs - now > MAX_SUBMISSION_FUTURE_SKEW_MS) {
+  if (!skipAgeCheck && (now - submittedAtMs > MAX_SUBMISSION_AGE_MS || submittedAtMs - now > MAX_SUBMISSION_FUTURE_SKEW_MS)) {
     return { authentic: false, reason: 'submission_too_old', status: 401 };
   }
 

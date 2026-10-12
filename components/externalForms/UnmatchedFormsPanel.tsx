@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useUnmatchedSubmissions, useLinkSubmissionToCase } from '@/hooks/useExternalForms';
+import { CreateCaseFromSubmissionDialog } from './CreateCaseFromSubmissionDialog';
 import { useCases } from '@/hooks/useCases';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
@@ -11,18 +12,27 @@ import { formatTimestamp } from '@/utils/format';
 import styles from './UnmatchedFormsPanel.module.css';
 
 /**
- * Manors Jotform integration (case-first architecture, 2026-09). NOT a
- * general intake queue — this never creates a case. A submission lands
- * here only when its opaque link token was missing, invalid, or already
- * superseded (see app/api/webhooks/jotform/route.ts). Staff search for
- * and attach it to an EXISTING case; case-number allocation is never
- * touched by anything on this page.
+ * Manors Jotform integration (case-first architecture, 2026-09).
+ *
+ * Create Case (2026-10): this page can now also open a NEW case from a
+ * submission, which it deliberately could not before. That changed
+ * because either the First Call Sheet or the Arrangement Forms can
+ * legitimately be the first thing SOLIS hears about a death, and
+ * historical submissions that predate that fix are still sitting here
+ * with no case to attach to.
+ *
+ * Case-number allocation is still never performed on this page: the
+ * action calls the same server-side intake path the webhook uses, which
+ * goes through POST /api/cases like everything else. Every eligibility,
+ * ownership, authorization and duplicate check is re-run server-side —
+ * nothing here is trusted.
  */
 export function UnmatchedFormsPanel() {
   const { organizationId } = useOrganization();
   const submissionsQuery = useUnmatchedSubmissions(organizationId);
   const linkMutation = useLinkSubmissionToCase(organizationId);
   const [searchingSubmissionId, setSearchingSubmissionId] = useState<string | null>(null);
+  const [creatingSubmissionId, setCreatingSubmissionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const casesQuery = useCases({ searchQuery });
 
@@ -72,10 +82,19 @@ export function UnmatchedFormsPanel() {
               <Button variant="secondary" onClick={() => setSearchingSubmissionId(submission.id)}>
                 Search existing SOLIS case
               </Button>
+              {/* Eligibility is decided server-side; the dialog explains
+                  it if this submission's form is not permitted to create. */}
+              <Button onClick={() => setCreatingSubmissionId(submission.id)}>Create Case</Button>
             </div>
           )}
         </div>
       ))}
+
+      <CreateCaseFromSubmissionDialog
+        organizationId={organizationId}
+        submissionId={creatingSubmissionId}
+        onClose={() => setCreatingSubmissionId(null)}
+      />
     </div>
   );
 }

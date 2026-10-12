@@ -12,6 +12,8 @@ import {
   previewHistoricalCase,
   createHistoricalCase,
   retryFormPdf,
+  fetchCreateCasePreview,
+  createCaseFromSubmission,
 } from '@/lib/externalFormsClient';
 
 /** Manors Jotform integration (case-first architecture, 2026-09). */
@@ -41,6 +43,35 @@ export function useUnmatchedSubmissions(organizationId: string) {
     queryKey: unmatchedSubmissionsKey(organizationId),
     queryFn: () => fetchUnmatchedSubmissions(organizationId),
     enabled: Boolean(organizationId),
+  });
+}
+
+/**
+ * Unmatched Forms → Create Case (2026-10). The confirmation dialog's
+ * contents, fetched only once a submission is actually being considered
+ * (`enabled`), so opening the page does not spend a Jotform API call per
+ * unmatched row.
+ */
+export function useCreateCasePreview(organizationId: string, submissionId: string | null) {
+  return useQuery({
+    queryKey: ['createCasePreview', organizationId, submissionId],
+    queryFn: () => fetchCreateCasePreview(organizationId, submissionId!),
+    enabled: Boolean(organizationId) && Boolean(submissionId),
+    retry: false,
+  });
+}
+
+export function useCreateCaseFromSubmission(organizationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { submissionId: string; acknowledgedDuplicates: boolean }) =>
+      createCaseFromSubmission(organizationId, params.submissionId, params.acknowledgedDuplicates),
+    // The submission leaves Unmatched Forms and a new case appears, so
+    // both lists are stale.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: unmatchedSubmissionsKey(organizationId) });
+      queryClient.invalidateQueries({ queryKey: ['cases', organizationId] });
+    },
   });
 }
 
