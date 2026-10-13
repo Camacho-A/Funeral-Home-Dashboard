@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixVendorBillItem, buildWixVendorBillData, applyVendorBillUpdateToWixData, type WixVendorBillItem } from '../lib/wixVendorBillMapper';
 import { mapWixVendorBillLineItemItem, buildWixVendorBillLineItemData, type WixVendorBillLineItemItem } from '../lib/wixVendorBillLineItemMapper';
 import { mapWixBillPaymentItem, buildWixBillPaymentData, type WixBillPaymentItem } from '../lib/wixBillPaymentMapper';
@@ -50,8 +50,10 @@ export async function listBillsForOrganization(organizationId: string, dataAdapt
   } else {
     const filter: Record<string, unknown> = { organizationId };
     if (options.status) filter.status = options.status;
-    const response = await queryWixDataItems<WixVendorBillItem>('vendorBills', { filter });
-    bills = response.dataItems.map((i) => mapWixVendorBillItem(i.data)).filter((b): b is VendorBill => b !== null);
+    // The caller's filter stays ON THE QUERY (it uses the indexed
+    // columns); pagination only ensures that filtered set comes back whole.
+    const vendorBillsRows = await queryAllWixDataItems<WixVendorBillItem>('vendorBills', filter);
+    bills = vendorBillsRows.map((i) => mapWixVendorBillItem(i.data)).filter((b): b is VendorBill => b !== null);
   }
   const filtered = options.status ? bills.filter((b) => b.status === options.status) : bills;
   return filtered.sort((a, b) => (a.billDate < b.billDate ? 1 : -1));
@@ -68,16 +70,16 @@ export async function listLineItemsForBill(organizationId: string, vendorBillId:
   if (dataAdapterMode === 'mock') {
     lines = vendorBillLineItemFixtures.filter((l) => l.organizationId === organizationId && l.vendorBillId === vendorBillId);
   } else {
-    const response = await queryWixDataItems<WixVendorBillLineItemItem>('vendorBillLineItems', { filter: { organizationId, vendorBillId } });
-    lines = response.dataItems.map((i) => mapWixVendorBillLineItemItem(i.data)).filter((l): l is VendorBillLineItem => l !== null);
+    const vendorBillLineItemsRows = await queryAllWixDataItems<WixVendorBillLineItemItem>('vendorBillLineItems', { organizationId, vendorBillId });
+    lines = vendorBillLineItemsRows.map((i) => mapWixVendorBillLineItemItem(i.data)).filter((l): l is VendorBillLineItem => l !== null);
   }
   return lines.sort((a, b) => a.lineNumber - b.lineNumber);
 }
 
 export async function listPaymentsForBill(organizationId: string, vendorBillId: string, dataAdapterMode: DataAdapterMode): Promise<BillPayment[]> {
   if (dataAdapterMode === 'mock') return billPaymentFixtures.filter((p) => p.organizationId === organizationId && p.vendorBillId === vendorBillId);
-  const response = await queryWixDataItems<WixBillPaymentItem>('billPayments', { filter: { organizationId, vendorBillId } });
-  return response.dataItems.map((i) => mapWixBillPaymentItem(i.data)).filter((p): p is BillPayment => p !== null);
+  const billPaymentsRows = await queryAllWixDataItems<WixBillPaymentItem>('billPayments', { organizationId, vendorBillId });
+  return billPaymentsRows.map((i) => mapWixBillPaymentItem(i.data)).filter((p): p is BillPayment => p !== null);
 }
 
 /** Sum of quantity already billed against a receipt across all NON-VOID bill
@@ -132,8 +134,8 @@ export async function listBillableReceiptsForPurchaseOrder(organizationId: strin
 
 async function listAllBillLines(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<VendorBillLineItem[]> {
   if (dataAdapterMode === 'mock') return vendorBillLineItemFixtures.filter((l) => l.organizationId === organizationId);
-  const response = await queryWixDataItems<WixVendorBillLineItemItem>('vendorBillLineItems', { filter: { organizationId } });
-  return response.dataItems.map((i) => mapWixVendorBillLineItemItem(i.data)).filter((l): l is VendorBillLineItem => l !== null);
+  const vendorBillLineItemsRows = await queryAllWixDataItems<WixVendorBillLineItemItem>('vendorBillLineItems', { organizationId });
+  return vendorBillLineItemsRows.map((i) => mapWixVendorBillLineItemItem(i.data)).filter((l): l is VendorBillLineItem => l !== null);
 }
 
 async function findBillByNumber(organizationId: string, supplierId: string, billNumber: string, dataAdapterMode: DataAdapterMode): Promise<VendorBill | null> {

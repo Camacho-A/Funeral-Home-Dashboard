@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixPurchaseOrderItem,
   buildWixPurchaseOrderData,
@@ -60,8 +60,10 @@ export async function listPurchaseOrdersForOrganization(organizationId: string, 
   } else {
     const filter: Record<string, unknown> = { organizationId };
     if (options.status) filter.status = options.status;
-    const response = await queryWixDataItems<WixPurchaseOrderItem>('purchaseOrders', { filter });
-    orders = response.dataItems.map((i) => mapWixPurchaseOrderItem(i.data)).filter((p): p is PurchaseOrder => p !== null);
+    // The caller's filter stays ON THE QUERY (it uses the indexed
+    // columns); pagination only ensures that filtered set comes back whole.
+    const purchaseOrdersRows = await queryAllWixDataItems<WixPurchaseOrderItem>('purchaseOrders', filter);
+    orders = purchaseOrdersRows.map((i) => mapWixPurchaseOrderItem(i.data)).filter((p): p is PurchaseOrder => p !== null);
   }
   const filtered = options.status ? orders.filter((p) => p.status === options.status) : orders;
   return filtered.sort((a, b) => (a.poNumber < b.poNumber ? 1 : -1));
@@ -98,8 +100,8 @@ export async function listLineItemsForPurchaseOrder(organizationId: string, purc
   if (dataAdapterMode === 'mock') {
     lines = purchaseOrderLineItemFixtures.filter((l) => l.organizationId === organizationId && l.purchaseOrderId === purchaseOrderId);
   } else {
-    const response = await queryWixDataItems<WixPurchaseOrderLineItemItem>('purchaseOrderLineItems', { filter: { organizationId, purchaseOrderId } });
-    lines = response.dataItems.map((i) => mapWixPurchaseOrderLineItemItem(i.data)).filter((l): l is PurchaseOrderLineItem => l !== null);
+    const rows = await queryAllWixDataItems<WixPurchaseOrderLineItemItem>('purchaseOrderLineItems', { organizationId, purchaseOrderId });
+    lines = rows.map((i) => mapWixPurchaseOrderLineItemItem(i.data)).filter((l): l is PurchaseOrderLineItem => l !== null);
   }
   return lines.sort((a, b) => a.lineNumber - b.lineNumber);
 }

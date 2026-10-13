@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixLedgerAccountItem,
   buildWixLedgerAccountData,
@@ -41,8 +41,8 @@ export async function listAccounts(organizationId: string, dataAdapterMode: Data
   if (dataAdapterMode === 'mock') {
     return ledgerAccountFixtures.filter((a) => a.organizationId === organizationId);
   }
-  const response = await queryWixDataItems<WixLedgerAccountItem>('chartOfAccounts', { filter: { organizationId } });
-  return response.dataItems.map((item) => mapWixLedgerAccountItem(item.data)).filter((a): a is LedgerAccount => a !== null);
+  const items = await queryAllWixDataItems<WixLedgerAccountItem>('chartOfAccounts', { organizationId });
+  return items.map((item) => mapWixLedgerAccountItem(item.data)).filter((a): a is LedgerAccount => a !== null);
 }
 
 export async function getAccountById(

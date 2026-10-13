@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixInventoryMovementItem,
   buildWixInventoryMovementData,
@@ -90,8 +90,8 @@ async function listMovementsForStockLine(organizationId: string, productId: stri
   if (dataAdapterMode === 'mock') {
     return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId && m.locationId === locationId && (m.variantId ?? null) === variantId);
   }
-  const response = await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, productId, locationId } });
-  return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null && (m.variantId ?? null) === variantId);
+  const inventoryMovementsRows = await queryAllWixDataItems<WixInventoryMovementItem>('inventoryMovements', { organizationId, productId, locationId });
+  return inventoryMovementsRows.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null && (m.variantId ?? null) === variantId);
 }
 
 async function findMovementById(id: string, dataAdapterMode: DataAdapterMode): Promise<InventoryMovement | null> {
@@ -104,8 +104,8 @@ async function listActiveReservationsForStockLine(organizationId: string, produc
   if (dataAdapterMode === 'mock') {
     return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.locationId === locationId && r.status === 'active' && (r.variantId ?? null) === variantId);
   }
-  const response = await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, productId, locationId, status: 'active' } });
-  return response.dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null && (r.variantId ?? null) === variantId);
+  const inventoryReservationsRows = await queryAllWixDataItems<WixInventoryReservationItem>('inventoryReservations', { organizationId, productId, locationId, status: 'active' });
+  return inventoryReservationsRows.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null && (r.variantId ?? null) === variantId);
 }
 
 async function findReservationById(id: string, dataAdapterMode: DataAdapterMode): Promise<InventoryReservation | null> {
@@ -337,8 +337,8 @@ export async function getStockLevel(organizationId: string, productId: string, l
 export async function productLevelStockInUse(organizationId: string, productId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   const movements = (await (async () => {
     if (dataAdapterMode === 'mock') return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId);
-    const response = await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, productId } });
-    return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
+    const inventoryMovementsRows = await queryAllWixDataItems<WixInventoryMovementItem>('inventoryMovements', { organizationId, productId });
+    return inventoryMovementsRows.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
   })()).filter((m) => (m.variantId ?? null) === null);
   const byLocation = new Map<string, number>();
   for (const m of movements) byLocation.set(m.locationId, (byLocation.get(m.locationId) ?? 0) + m.quantity);
@@ -346,8 +346,8 @@ export async function productLevelStockInUse(organizationId: string, productId: 
 
   const reservations = (await (async () => {
     if (dataAdapterMode === 'mock') return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.status === 'active');
-    const response = await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, productId, status: 'active' } });
-    return response.dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null);
+    const inventoryReservationsRows = await queryAllWixDataItems<WixInventoryReservationItem>('inventoryReservations', { organizationId, productId, status: 'active' });
+    return inventoryReservationsRows.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null);
   })()).filter((r) => (r.variantId ?? null) === null && r.quantity > 0);
   return reservations.length > 0;
 }
@@ -359,34 +359,34 @@ export async function variantStockInUse(organizationId: string, productId: strin
   // Aggregate across every location for this variant.
   const all = (dataAdapterMode === 'mock'
     ? inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.productId === productId)
-    : (await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, productId } })).dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null)
+    : (await queryAllWixDataItems<WixInventoryMovementItem>('inventoryMovements', { organizationId, productId })).map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null)
   ).filter((m) => (m.variantId ?? null) === variantId);
   const byLocation = new Map<string, number>();
   for (const m of all) byLocation.set(m.locationId, (byLocation.get(m.locationId) ?? 0) + m.quantity);
   if ([...byLocation.values()].some((onHand) => onHand !== 0)) return true;
   const reservations = (dataAdapterMode === 'mock'
     ? inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.productId === productId && r.status === 'active')
-    : (await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, productId, status: 'active' } })).dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null)
+    : (await queryAllWixDataItems<WixInventoryReservationItem>('inventoryReservations', { organizationId, productId, status: 'active' })).map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null)
   ).filter((r) => (r.variantId ?? null) === variantId && r.quantity > 0);
   return reservations.length > 0;
 }
 
 export async function listBalancesForOrganization(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryBalance[]> {
   if (dataAdapterMode === 'mock') return inventoryBalanceFixtures.filter((b) => b.organizationId === organizationId);
-  const response = await queryWixDataItems<WixInventoryBalanceItem>('inventoryBalances', { filter: { organizationId } });
-  return response.dataItems.map((i) => mapWixInventoryBalanceItem(i.data)).filter((b): b is InventoryBalance => b !== null);
+  const inventoryBalancesRows = await queryAllWixDataItems<WixInventoryBalanceItem>('inventoryBalances', { organizationId });
+  return inventoryBalancesRows.map((i) => mapWixInventoryBalanceItem(i.data)).filter((b): b is InventoryBalance => b !== null);
 }
 
 export async function listMovementsForCase(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryMovement[]> {
   if (dataAdapterMode === 'mock') return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.caseId === caseId);
-  const response = await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, caseId } });
-  return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
+  const inventoryMovementsRows = await queryAllWixDataItems<WixInventoryMovementItem>('inventoryMovements', { organizationId, caseId });
+  return inventoryMovementsRows.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
 }
 
 export async function listMovementsByType(organizationId: string, movementType: InventoryMovementType, dataAdapterMode: DataAdapterMode): Promise<InventoryMovement[]> {
   if (dataAdapterMode === 'mock') return inventoryMovementFixtures.filter((m) => m.organizationId === organizationId && m.movementType === movementType);
-  const response = await queryWixDataItems<WixInventoryMovementItem>('inventoryMovements', { filter: { organizationId, movementType } });
-  return response.dataItems.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
+  const inventoryMovementsRows = await queryAllWixDataItems<WixInventoryMovementItem>('inventoryMovements', { organizationId, movementType });
+  return inventoryMovementsRows.map((i) => mapWixInventoryMovementItem(i.data)).filter((m): m is InventoryMovement => m !== null);
 }
 
 /** Phase 36: a scoped read of one movement by id — accountsPayableService
@@ -399,8 +399,8 @@ export async function getMovementById(organizationId: string, movementId: string
 
 export async function listReservationsForCase(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<InventoryReservation[]> {
   if (dataAdapterMode === 'mock') return inventoryReservationFixtures.filter((r) => r.organizationId === organizationId && r.caseId === caseId);
-  const response = await queryWixDataItems<WixInventoryReservationItem>('inventoryReservations', { filter: { organizationId, caseId } });
-  return response.dataItems.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null);
+  const inventoryReservationsRows = await queryAllWixDataItems<WixInventoryReservationItem>('inventoryReservations', { organizationId, caseId });
+  return inventoryReservationsRows.map((i) => mapWixInventoryReservationItem(i.data)).filter((r): r is InventoryReservation => r !== null);
 }
 
 // ---------------------------------------------------------------------------

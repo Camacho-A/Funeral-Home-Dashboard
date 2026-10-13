@@ -156,3 +156,62 @@ describe('Phase 31: hard layering invariant extension — no *IdentityId field o
     expect(source).not.toMatch(/initiatedByIdentityId/);
   });
 });
+
+/**
+ * Pagination (2026-10 accounting audit).
+ *
+ * `queryWixDataItems` sends ONE request. With no `paging`, Wix applies its
+ * own default page size — 50, verified against the live site — and returns
+ * a truncated set with no error. For a financial aggregate that is silent
+ * data loss: a trial balance that omits the 51st journal entry line still
+ * balances, still looks right, and is wrong.
+ *
+ * So any financial read that aggregates must either page through the whole
+ * filtered set (`queryAllWixDataItems`) or be explicitly bounded
+ * (`paging: { limit: N }`, used for single-record lookups). This test
+ * fails on a new unbounded one rather than waiting for a report to drift.
+ */
+describe('Financial reads are never silently truncated (structural)', () => {
+  /** Services whose reads feed a balance, a total, or a posted entry. */
+  const FINANCIAL_SERVICES = [
+    'generalLedgerService.ts',
+    'chartOfAccountsService.ts',
+    'financialTransactionService.ts',
+    'financialReportsService.ts',
+    'paymentsService.ts',
+    'pricingService.ts',
+    'bankingService.ts',
+    'accountsPayableService.ts',
+    'purchaseOrderService.ts',
+    'inventoryService.ts',
+    'merchandiseService.ts',
+  ];
+
+  /**
+   * A `queryWixDataItems` call that carries neither `paging` nor an
+   * explicit limit. Matched on the call's own argument object, so a
+   * bounded single-record lookup is correctly left alone.
+   */
+  const UNBOUNDED_CALL = /queryWixDataItems<[^>]*>\(\s*'[a-zA-Z]+'\s*,\s*\{(?:(?!paging)[^{}]|\{[^{}]*\})*\}\s*\)/g;
+
+  it.each(FINANCIAL_SERVICES)('%s pages or bounds every Wix read', (fileName) => {
+    const path = join(root, 'services', fileName);
+    const source = readFileSync(path, 'utf-8');
+    const offenders = source.match(UNBOUNDED_CALL) ?? [];
+    expect(offenders, `${fileName} has unbounded Wix reads:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('the ledger itself reads through the paginating helper', () => {
+    // The two that actually produce the Trial Balance's figures.
+    const source = readFileSync(join(root, 'services', 'generalLedgerService.ts'), 'utf-8');
+    expect(source).toMatch(/queryAllWixDataItems<WixJournalEntryItem>\('journalEntries', \{ organizationId \}\)/);
+    expect(source).toMatch(/queryAllWixDataItems<WixJournalEntryLineItem>\('journalEntryLines', \{ organizationId \}\)/);
+  });
+
+  it('single-record lookups stay bounded rather than paging a whole collection', () => {
+    // Pagination is for completeness, not a blanket replacement: a lookup
+    // by id must not turn into a full-collection read.
+    const source = readFileSync(join(root, 'services', 'generalLedgerService.ts'), 'utf-8');
+    expect(source).toMatch(/beaconJournalEntryId: entryId \},\n\s*paging: \{ limit: 1 \}/);
+  });
+});

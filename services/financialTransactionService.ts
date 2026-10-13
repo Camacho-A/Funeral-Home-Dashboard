@@ -12,7 +12,7 @@ import { createAndPostJournalEntry, type NewJournalEntryLineInput } from './gene
 import { getAccountByNumber, getAccountById } from './chartOfAccountsService';
 import { getPaymentRecordById, updatePaymentRecord, refundPaymentAtProvider } from './paymentsService';
 import { refreshBalanceForCase } from './pricingService';
-import { queryWixDataItems, insertWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem } from '../lib/wixDataApi';
 import { mapWixCaseWriteOffItem, buildWixCaseWriteOffData, type WixCaseWriteOffItem } from '../lib/wixCaseWriteOffMapper';
 import { mapWixBankDepositItem, buildWixBankDepositData, type WixBankDepositItem } from '../lib/wixBankDepositMapper';
 import { mapWixBankAccountItem, type WixBankAccountItem } from '../lib/wixBankAccountMapper';
@@ -113,8 +113,8 @@ export async function listCaseWriteOffsForCase(
   if (dataAdapterMode === 'mock') {
     return caseWriteOffFixtures.filter((w) => w.organizationId === organizationId && w.caseId === caseId);
   }
-  const response = await queryWixDataItems<WixCaseWriteOffItem>('caseWriteOffs', { filter: { organizationId, caseId } });
-  return response.dataItems.map((item) => mapWixCaseWriteOffItem(item.data)).filter((w): w is CaseWriteOff => w !== null);
+  const items = await queryAllWixDataItems<WixCaseWriteOffItem>('caseWriteOffs', { organizationId, caseId });
+  return items.map((item) => mapWixCaseWriteOffItem(item.data)).filter((w): w is CaseWriteOff => w !== null);
 }
 
 /**
@@ -386,8 +386,8 @@ export async function listBankDepositsForOrganization(organizationId: string, da
   if (dataAdapterMode === 'mock') {
     return bankDepositFixtures.filter((d) => d.organizationId === organizationId).sort((a, b) => (a.depositDate < b.depositDate ? 1 : -1));
   }
-  const response = await queryWixDataItems<WixBankDepositItem>('bankDeposits', { filter: { organizationId } });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixBankDepositItem>('bankDeposits', { organizationId });
+  return items
     .map((item) => mapWixBankDepositItem(item.data))
     .filter((d): d is BankDeposit => d !== null)
     .sort((a, b) => (a.depositDate < b.depositDate ? 1 : -1));

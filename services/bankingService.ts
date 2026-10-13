@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixBankAccountItem, buildWixBankAccountData, applyBankAccountUpdateToWixData, type WixBankAccountItem } from '../lib/wixBankAccountMapper';
 import {
   buildWixBankStatementImportData,
@@ -74,8 +74,8 @@ export async function listBankAccounts(organizationId: string, dataAdapterMode: 
   if (dataAdapterMode === 'mock') {
     return bankAccountFixtures.filter((a) => a.organizationId === organizationId);
   }
-  const response = await queryWixDataItems<WixBankAccountItem>('bankAccounts', { filter: { organizationId } });
-  return response.dataItems.map((item) => mapWixBankAccountItem(item.data)).filter((a): a is BankAccount => a !== null);
+  const bankAccountsRows = await queryAllWixDataItems<WixBankAccountItem>('bankAccounts', { organizationId });
+  return bankAccountsRows.map((item) => mapWixBankAccountItem(item.data)).filter((a): a is BankAccount => a !== null);
 }
 
 /**
@@ -194,8 +194,8 @@ export async function getStatementLinesForImport(
   if (dataAdapterMode === 'mock') {
     return bankStatementLineFixtures.filter((l) => l.organizationId === organizationId && l.bankStatementImportId === bankStatementImportId);
   }
-  const response = await queryWixDataItems<WixBankStatementLineItem>('bankStatementLines', { filter: { organizationId, bankStatementImportId } });
-  return response.dataItems.map((item) => mapWixBankStatementLineItem(item.data)).filter((l): l is BankStatementLine => l !== null);
+  const bankStatementLinesRows = await queryAllWixDataItems<WixBankStatementLineItem>('bankStatementLines', { organizationId, bankStatementImportId });
+  return bankStatementLinesRows.map((item) => mapWixBankStatementLineItem(item.data)).filter((l): l is BankStatementLine => l !== null);
 }
 
 export async function getStatementLinesForBankAccount(
@@ -206,8 +206,8 @@ export async function getStatementLinesForBankAccount(
   if (dataAdapterMode === 'mock') {
     return bankStatementLineFixtures.filter((l) => l.organizationId === organizationId && l.bankAccountId === bankAccountId);
   }
-  const response = await queryWixDataItems<WixBankStatementLineItem>('bankStatementLines', { filter: { organizationId, bankAccountId } });
-  return response.dataItems.map((item) => mapWixBankStatementLineItem(item.data)).filter((l): l is BankStatementLine => l !== null);
+  const bankStatementLinesRows = await queryAllWixDataItems<WixBankStatementLineItem>('bankStatementLines', { organizationId, bankAccountId });
+  return bankStatementLinesRows.map((item) => mapWixBankStatementLineItem(item.data)).filter((l): l is BankStatementLine => l !== null);
 }
 
 async function getStatementLineById(organizationId: string, lineId: string, dataAdapterMode: DataAdapterMode): Promise<BankStatementLine | null> {
@@ -424,8 +424,8 @@ export async function listReconciliationHistory(
       .filter((r) => r.organizationId === organizationId && r.bankAccountId === bankAccountId)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
-  const response = await queryWixDataItems<WixBankReconciliationItem>('bankReconciliations', { filter: { organizationId, bankAccountId } });
-  return response.dataItems
+  const bankReconciliationsRows = await queryAllWixDataItems<WixBankReconciliationItem>('bankReconciliations', { organizationId, bankAccountId });
+  return bankReconciliationsRows
     .map((item) => mapWixBankReconciliationItem(item.data))
     .filter((r): r is BankReconciliation => r !== null)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));

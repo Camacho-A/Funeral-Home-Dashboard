@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixMerchandiseProductItem,
   buildWixMerchandiseProductData,
@@ -54,8 +54,8 @@ export async function listProductsForOrganization(
   if (dataAdapterMode === 'mock') {
     products = merchandiseProductFixtures.filter((p) => p.organizationId === organizationId);
   } else {
-    const response = await queryWixDataItems<WixMerchandiseProductItem>('merchandiseProducts', { filter: { organizationId } });
-    products = response.dataItems
+    const merchandiseProductsRows = await queryAllWixDataItems<WixMerchandiseProductItem>('merchandiseProducts', { organizationId });
+    products = merchandiseProductsRows
       .map((item) => mapWixMerchandiseProductItem(item.data))
       .filter((p): p is MerchandiseProduct => p !== null);
   }
@@ -104,8 +104,8 @@ export async function listVariantsForProduct(organizationId: string, productId: 
   if (dataAdapterMode === 'mock') {
     variants = merchandiseProductVariantFixtures.filter((v) => v.organizationId === organizationId && v.productId === productId);
   } else {
-    const response = await queryWixDataItems<WixMerchandiseProductVariantItem>('merchandiseProductVariants', { filter: { organizationId, productId } });
-    variants = response.dataItems.map((i) => mapWixMerchandiseProductVariantItem(i.data)).filter((v): v is MerchandiseProductVariant => v !== null);
+    const merchandiseProductVariantsRows = await queryAllWixDataItems<WixMerchandiseProductVariantItem>('merchandiseProductVariants', { organizationId, productId });
+    variants = merchandiseProductVariantsRows.map((i) => mapWixMerchandiseProductVariantItem(i.data)).filter((v): v is MerchandiseProductVariant => v !== null);
   }
   if (!options.includeInactive) variants = variants.filter((v) => v.isActive);
   return variants.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import {
   mapWixPaymentIntegrationItem,
   buildWixPaymentIntegrationData,
@@ -130,10 +130,8 @@ export async function listPaymentRecordsForCase(
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 
-  const response = await queryWixDataItems<WixPaymentRecordItem>('paymentRecords', {
-    filter: { organizationId, caseId },
-  });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixPaymentRecordItem>('paymentRecords', { organizationId, caseId });
+  return items
     .map((item) => mapWixPaymentRecordItem(item.data))
     .filter((p): p is PaymentRecord => p !== null)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -161,8 +159,11 @@ export async function listPaymentRecordsForOrganization(
   } else {
     const filter: Record<string, unknown> = { organizationId };
     if (filters.status) filter.status = filters.status;
-    const response = await queryWixDataItems<WixPaymentRecordItem>('paymentRecords', { filter });
-    payments = response.dataItems.map((item) => mapWixPaymentRecordItem(item.data)).filter((p): p is PaymentRecord => p !== null);
+    // The status filter stays ON THE QUERY (it uses the
+    // (organizationId, status) index); pagination only ensures the
+    // already-filtered set comes back complete.
+    const items = await queryAllWixDataItems<WixPaymentRecordItem>('paymentRecords', filter);
+    payments = items.map((item) => mapWixPaymentRecordItem(item.data)).filter((p): p is PaymentRecord => p !== null);
   }
   return payments
     .filter((p) => (filters.status ? p.status === filters.status : true))

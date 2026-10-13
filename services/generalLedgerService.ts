@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem, WixDataApiError } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import {
   mapWixJournalEntryItem,
   buildWixJournalEntryData,
@@ -302,10 +302,8 @@ async function listLinesForEntry(organizationId: string, entryId: string, dataAd
       .filter((l) => l.organizationId === organizationId && l.journalEntryId === entryId)
       .sort((a, b) => a.lineNumber - b.lineNumber);
   }
-  const response = await queryWixDataItems<WixJournalEntryLineItem>('journalEntryLines', {
-    filter: { organizationId, journalEntryId: entryId },
-  });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixJournalEntryLineItem>('journalEntryLines', { organizationId, journalEntryId: entryId });
+  return items
     .map((item) => mapWixJournalEntryLineItem(item.data))
     .filter((l): l is JournalEntryLine => l !== null)
     .sort((a, b) => a.lineNumber - b.lineNumber);
@@ -346,10 +344,8 @@ async function replaceDraftLines(
   // wix mode: draft lines this phase are only ever replaced before the
   // entry is ever posted, so a delete-then-reinsert (rather than an
   // in-place update) is safe — no other reader has ever seen the old set.
-  const existingResponse = await queryWixDataItems<WixJournalEntryLineItem>('journalEntryLines', {
-    filter: { organizationId, journalEntryId: entryId },
-  });
-  for (const item of existingResponse.dataItems) {
+  const existingItems = await queryAllWixDataItems<WixJournalEntryLineItem>('journalEntryLines', { organizationId, journalEntryId: entryId });
+  for (const item of existingItems) {
     await deleteWixDataItem('journalEntryLines', item.id);
   }
   for (const line of lines) {
@@ -547,8 +543,8 @@ export async function listJournalEntriesForCase(organizationId: string, caseId: 
       .filter((e) => e.organizationId === organizationId && e.caseId === caseId)
       .sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1));
   }
-  const response = await queryWixDataItems<WixJournalEntryItem>('journalEntries', { filter: { organizationId, caseId } });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixJournalEntryItem>('journalEntries', { organizationId, caseId });
+  return items
     .map((item) => mapWixJournalEntryItem(item.data))
     .filter((e): e is JournalEntry => e !== null)
     .sort((a, b) => (a.entryDate < b.entryDate ? 1 : -1));
@@ -563,8 +559,8 @@ export async function listJournalEntriesForOrganization(
   if (dataAdapterMode === 'mock') {
     entries = journalEntryFixtures.filter((e) => e.organizationId === organizationId);
   } else {
-    const response = await queryWixDataItems<WixJournalEntryItem>('journalEntries', { filter: { organizationId } });
-    entries = response.dataItems.map((item) => mapWixJournalEntryItem(item.data)).filter((e): e is JournalEntry => e !== null);
+    const items = await queryAllWixDataItems<WixJournalEntryItem>('journalEntries', { organizationId });
+    entries = items.map((item) => mapWixJournalEntryItem(item.data)).filter((e): e is JournalEntry => e !== null);
   }
   return entries
     .filter((e) => (options?.fromDate ? e.entryDate >= options.fromDate : true))
@@ -586,8 +582,8 @@ export async function listAllLinesForAccount(
   if (dataAdapterMode === 'mock') {
     return journalEntryLineFixtures.filter((l) => l.organizationId === organizationId && l.accountId === accountId);
   }
-  const response = await queryWixDataItems<WixJournalEntryLineItem>('journalEntryLines', { filter: { organizationId, accountId } });
-  return response.dataItems.map((item) => mapWixJournalEntryLineItem(item.data)).filter((l): l is JournalEntryLine => l !== null);
+  const items = await queryAllWixDataItems<WixJournalEntryLineItem>('journalEntryLines', { organizationId, accountId });
+  return items.map((item) => mapWixJournalEntryLineItem(item.data)).filter((l): l is JournalEntryLine => l !== null);
 }
 
 /**
@@ -660,9 +656,9 @@ export async function getTrialBalance(
   const allLines =
     dataAdapterMode === 'mock'
       ? journalEntryLineFixtures.filter((l) => l.organizationId === organizationId)
-      : (
-          await queryWixDataItems<WixJournalEntryLineItem>('journalEntryLines', { filter: { organizationId } })
-        ).dataItems.map((item) => mapWixJournalEntryLineItem(item.data)).filter((l): l is JournalEntryLine => l !== null);
+      : (await queryAllWixDataItems<WixJournalEntryLineItem>('journalEntryLines', { organizationId }))
+          .map((item) => mapWixJournalEntryLineItem(item.data))
+          .filter((l): l is JournalEntryLine => l !== null);
 
   const totals = new Map<string, TrialBalanceRow>();
   for (const line of allLines) {

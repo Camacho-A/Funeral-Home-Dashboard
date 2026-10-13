@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixServiceCatalogItem,
   type WixServiceCatalogItem,
@@ -92,10 +92,8 @@ export async function getServiceCatalog(
   if (dataAdapterMode === 'mock') {
     items = serviceCatalogFixtures.filter((item) => item.organizationId === organizationId);
   } else {
-    const response = await queryWixDataItems<WixServiceCatalogItem>('serviceCatalog', {
-      filter: { organizationId },
-    });
-    items = response.dataItems
+    const rows = await queryAllWixDataItems<WixServiceCatalogItem>('serviceCatalog', { organizationId });
+    items = rows
       .map((item) => mapWixServiceCatalogItem(item.data))
       .filter((item): item is ServiceCatalogItem => item !== null);
   }
@@ -139,8 +137,8 @@ export async function listActiveCaseOrdersForOrganization(
   if (dataAdapterMode === 'mock') {
     return caseOrderFixtures.filter((o) => o.organizationId === organizationId && o.status === 'active');
   }
-  const response = await queryWixDataItems<WixCaseOrderItem>('caseOrders', { filter: { organizationId, status: 'active' } });
-  return response.dataItems.map((item) => mapWixCaseOrderItem(item.data)).filter((o): o is CaseOrder => o !== null);
+  const items = await queryAllWixDataItems<WixCaseOrderItem>('caseOrders', { organizationId, status: 'active' });
+  return items.map((item) => mapWixCaseOrderItem(item.data)).filter((o): o is CaseOrder => o !== null);
 }
 
 export async function listCaseOrderVersions(
@@ -153,10 +151,8 @@ export async function listCaseOrderVersions(
       .filter((o) => o.organizationId === organizationId && o.caseId === caseId)
       .sort((a, b) => b.version - a.version);
   }
-  const response = await queryWixDataItems<WixCaseOrderItem>('caseOrders', {
-    filter: { organizationId, caseId },
-  });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixCaseOrderItem>('caseOrders', { organizationId, caseId });
+  return items
     .map((item) => mapWixCaseOrderItem(item.data))
     .filter((o): o is CaseOrder => o !== null)
     .sort((a, b) => b.version - a.version);
@@ -172,10 +168,8 @@ export async function listLineItemsForOrder(
       .filter((li) => li.organizationId === organizationId && li.caseOrderId === caseOrderId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
-  const response = await queryWixDataItems<WixCaseOrderLineItemItem>('caseOrderLineItems', {
-    filter: { organizationId, caseOrderId },
-  });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixCaseOrderLineItemItem>('caseOrderLineItems', { organizationId, caseOrderId });
+  return items
     .map((item) => mapWixCaseOrderLineItemItem(item.data))
     .filter((li): li is CaseOrderLineItem => li !== null)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -209,10 +203,8 @@ export async function listAuditEntriesForCase(
       .filter((e) => e.organizationId === organizationId && e.caseId === caseId)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
-  const response = await queryWixDataItems<WixCaseOrderAuditItem>('caseOrderAuditEntries', {
-    filter: { organizationId, caseId },
-  });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixCaseOrderAuditItem>('caseOrderAuditEntries', { organizationId, caseId });
+  return items
     .map((item) => mapWixCaseOrderAuditItem(item.data))
     .filter((e): e is CaseOrderAuditEntry => e !== null)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -250,8 +242,8 @@ async function getWriteOffTotalForCase(
       .filter((w) => w.organizationId === organizationId && w.caseId === caseId)
       .reduce((sum, w) => sum + w.amount, 0);
   }
-  const response = await queryWixDataItems<WixCaseWriteOffItem>('caseWriteOffs', { filter: { organizationId, caseId } });
-  return response.dataItems
+  const items = await queryAllWixDataItems<WixCaseWriteOffItem>('caseWriteOffs', { organizationId, caseId });
+  return items
     .map((item) => mapWixCaseWriteOffItem(item.data))
     .filter((w): w is NonNullable<typeof w> => w !== null)
     .reduce((sum, w) => sum + w.amount, 0);
