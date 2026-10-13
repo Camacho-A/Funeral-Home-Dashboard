@@ -37,8 +37,13 @@ const TRIAL_BALANCE_COLUMNS: ReadonlyArray<CsvColumn<TrialBalanceReportRow>> = [
   { header: 'accountNumber', value: (r) => r.accountNumber },
   { header: 'accountName', value: (r) => r.accountName },
   { header: 'accountType', value: (r) => r.accountType },
+  // Ending balance — what the Trial Balance's own columns show.
   { header: 'debitTotal', value: (r) => String(r.debitTotal) },
   { header: 'creditTotal', value: (r) => String(r.creditTotal) },
+  // Gross movement over the period, for anyone reconciling the balance
+  // back to the postings that produced it.
+  { header: 'debitActivity', value: (r) => String(r.debitActivity) },
+  { header: 'creditActivity', value: (r) => String(r.creditActivity) },
 ];
 
 type BalanceSheetSectionRow = BalanceSheetLine & { section: string };

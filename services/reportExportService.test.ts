@@ -52,7 +52,7 @@ describe('exportReportCsv', () => {
     );
     const csv = await exportReportCsv(DEFAULT_ORGANIZATION_ID, 'trial-balance', {}, 'mock');
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('accountNumber,accountName,accountType,debitTotal,creditTotal');
+    expect(lines[0]).toBe('accountNumber,accountName,accountType,debitTotal,creditTotal,debitActivity,creditActivity');
     expect(lines.length).toBeGreaterThan(1);
   });
 

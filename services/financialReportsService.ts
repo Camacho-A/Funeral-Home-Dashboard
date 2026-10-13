@@ -44,10 +44,43 @@ export type TrialBalanceReportRow = {
   accountNumber: string;
   accountName: string;
   accountType: LedgerAccountType;
+  /** The account's ENDING BALANCE in its natural column. Exactly one of
+      these is non-zero; a fully-cleared account has zero in both. */
   debitTotal: number;
   creditTotal: number;
+  /** GROSS movement on the account over the period — every debit and every
+      credit posted to it, un-netted. Kept because it is genuinely useful
+      (it shows an account cleared 5,595 through it even though it ends at
+      zero), but it is NOT what a Trial Balance's columns mean. */
+  debitActivity: number;
+  creditActivity: number;
 };
 
+/**
+ * Trial Balance — each account's ENDING BALANCE as of a date, in its
+ * natural column, with the two columns proving the ledger balances.
+ *
+ * Corrected 2026-10. This previously published each account's GROSS
+ * ACTIVITY in both columns, which is an activity summary, not a trial
+ * balance. The difference is not cosmetic: every amount that merely moves
+ * BETWEEN accounts — a payment clearing Accounts Receivable into
+ * Undeposited Funds, an order revision debiting Revenue back — was counted
+ * again on both sides, so the total grew with bookkeeping volume rather
+ * than describing the business. For `managed-cremations` it reported
+ * $11,190.00 against a true balance of $5,020.00, and showed Accounts
+ * Receivable as 5,595 Dr / 5,595 Cr when its actual ending balance is
+ * zero.
+ *
+ * Netting does not weaken the control the report exists to provide:
+ * totals agree if and only if total debits equal total credits across the
+ * ledger, exactly as before. It only changes gross activity into the
+ * ending balances a trial balance is defined to show.
+ *
+ * Nothing in the ledger is rewritten — this reads posted journal entries
+ * and presents them correctly. Archived cases stay included: archiving a
+ * case files it away operationally and must never remove its financial
+ * history from the books.
+ */
 export async function getTrialBalance(
   organizationId: string,
   dataAdapterMode: DataAdapterMode,
@@ -60,13 +93,17 @@ export async function getTrialBalance(
     .map((row) => {
       const account = accounts.get(row.accountId);
       if (!account) return null;
+      // Debit-positive convention, the same one getAccountBalance uses.
+      const balance = row.debitTotal - row.creditTotal;
       return {
         accountId: row.accountId,
         accountNumber: account.accountNumber,
         accountName: account.name,
         accountType: account.accountType,
-        debitTotal: row.debitTotal,
-        creditTotal: row.creditTotal,
+        debitTotal: balance > 0 ? balance : 0,
+        creditTotal: balance < 0 ? -balance : 0,
+        debitActivity: row.debitTotal,
+        creditActivity: row.creditTotal,
       };
     })
     .filter((row): row is TrialBalanceReportRow => row !== null)

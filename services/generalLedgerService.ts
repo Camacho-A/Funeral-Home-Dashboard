@@ -608,7 +608,7 @@ export async function getAccountBalance(
   const postedEntryIds = new Set(
     (await listJournalEntriesForOrganization(organizationId, dataAdapterMode))
       .filter((e) => e.status === 'posted')
-      .filter((e) => (asOfDate ? e.entryDate <= asOfDate : true))
+      .filter((e) => isOnOrBeforeAsOfDate(e.entryDate, asOfDate))
       .map((e) => e.id),
   );
   let balance = 0;
@@ -619,14 +619,33 @@ export async function getAccountBalance(
   return balance;
 }
 
+/**
+ * Whether a posted entry falls on or before an "as of" date (2026-10).
+ *
+ * `entryDate` is a full ISO timestamp; an `asOfDate` is usually a calendar
+ * date ("2026-10-13"). A raw string comparison then silently EXCLUDES
+ * everything dated on the as-of date itself, because
+ * "2026-10-13T00:00:18.050Z" sorts after "2026-10-13". Comparing calendar
+ * dates gives "as of" its ordinary meaning: through the end of that day.
+ */
+export function isOnOrBeforeAsOfDate(entryDate: string, asOfDate?: string): boolean {
+  if (!asOfDate) return true;
+  return entryDate.slice(0, 10) <= asOfDate.slice(0, 10);
+}
+
 export type TrialBalanceRow = { accountId: string; debitTotal: number; creditTotal: number };
 
 /**
  * Sums every posted line, grouped by account, split into debit/credit
- * column totals (not netted) — the raw shape a Trial Balance report
- * displays directly. `services/financialReportsService.ts#getTrialBalance`
- * joins this against `chartOfAccountsService.ts` for account
- * numbers/names; this function itself never reads the chart of accounts.
+ * column totals — the GROSS ACTIVITY on each account, deliberately NOT
+ * netted.
+ *
+ * This is the raw primitive, not the report. A Trial Balance shows each
+ * account's ENDING BALANCE, which
+ * `services/financialReportsService.ts#getTrialBalance` derives from these
+ * figures; it also joins them against `chartOfAccountsService.ts` for
+ * account numbers/names. This function itself never reads the chart of
+ * accounts and never nets.
  */
 export async function getTrialBalance(
   organizationId: string,
@@ -635,7 +654,7 @@ export async function getTrialBalance(
 ): Promise<TrialBalanceRow[]> {
   const entries = (await listJournalEntriesForOrganization(organizationId, dataAdapterMode))
     .filter((e) => e.status === 'posted')
-    .filter((e) => (asOfDate ? e.entryDate <= asOfDate : true));
+    .filter((e) => isOnOrBeforeAsOfDate(e.entryDate, asOfDate));
   const postedEntryIds = new Set(entries.map((e) => e.id));
 
   const allLines =

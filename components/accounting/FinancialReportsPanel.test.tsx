@@ -105,7 +105,7 @@ describe('FinancialReportsPanel — permission gating', () => {
     mockPermissions(['accounting.report']);
     vi.mocked(accountingClient.fetchChartOfAccounts).mockResolvedValue([makeAccount()]);
     vi.mocked(accountingClient.fetchTrialBalanceReport).mockResolvedValue({
-      rows: [{ accountId: 'account-1', accountNumber: '1000', accountName: 'Cash - Operating', accountType: 'asset', debitTotal: 50000, creditTotal: 0 }],
+      rows: [{ accountId: 'account-1', accountNumber: '1000', accountName: 'Cash - Operating', accountType: 'asset', debitTotal: 50000, creditTotal: 0, debitActivity: 50000, creditActivity: 0 }],
       totalDebits: 50000,
       totalCredits: 50000,
     });

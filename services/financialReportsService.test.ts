@@ -8,6 +8,7 @@ import {
   getTransactionRegister,
 } from './financialReportsService';
 import { seedChartOfAccounts, getAccountByNumber } from './chartOfAccountsService';
+import { createAndPostJournalEntry } from './generalLedgerService';
 import { postPaymentTransaction, postDepositTransaction, postWriteOffTransaction } from './financialTransactionService';
 import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
 import type { ActivityContext } from './activityService';
@@ -16,7 +17,7 @@ import { bankDepositFixtures } from './__mocks__/bankingFixtures';
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { paymentRecordFixtures } from './__mocks__/paymentFixtures';
 import { caseOrderFixtures } from './__mocks__/pricingFixtures';
-import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import type { PaymentRecord } from '../types/payment';
 
 const NOW = '2026-08-01T00:00:00.000Z';
@@ -199,5 +200,223 @@ describe('financialReportsService', () => {
       expect(rows[0].sourceType).toBe('deposit');
       expect(rows[0].relatedDescription).toBe('Deposit of 1 payment(s)');
     });
+  });
+});
+
+/**
+ * Trial Balance correctness (2026-10 accounting audit).
+ *
+ * The report published each account's GROSS ACTIVITY in both columns,
+ * which is an activity summary rather than a trial balance. Every amount
+ * that merely moves between accounts got counted again on both sides, so
+ * the total tracked bookkeeping volume instead of the business. These
+ * tests pin the definition: each account's ENDING BALANCE, in its natural
+ * column, with the two columns proving the ledger balances.
+ */
+describe('getTrialBalance — ending balances, not gross activity', () => {
+  const ORG = DEFAULT_ORGANIZATION_ID;
+
+  async function accounts() {
+    await seedChartOfAccounts(ORG, idFactory, 'mock');
+    return {
+      ar: (await getAccountByNumber(ORG, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, 'mock'))!,
+      revenue: (await getAccountByNumber(ORG, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, 'mock'))!,
+    };
+  }
+
+  /** Dr Accounts Receivable / Cr Service Revenue — an invoice. */
+  async function recognizeRevenue(caseId: string, amount: number, entryDate = NOW) {
+    const { ar, revenue } = await accounts();
+    await createAndPostJournalEntry(
+      ORG,
+      {
+        entryDate,
+        sourceType: 'revenue_recognition',
+        caseId,
+        memo: `revenue ${amount}`,
+        lines:
+          amount > 0
+            ? [
+                { accountId: ar.id, direction: 'debit', amount, caseId },
+                { accountId: revenue.id, direction: 'credit', amount, caseId },
+              ]
+            : [
+                { accountId: ar.id, direction: 'credit', amount: -amount, caseId },
+                { accountId: revenue.id, direction: 'debit', amount: -amount, caseId },
+              ],
+        idFactory,
+        now: entryDate,
+      },
+      'mock',
+    );
+  }
+
+  const row = (rows: Awaited<ReturnType<typeof getTrialBalance>>['rows'], number: string) =>
+    rows.find((r) => r.accountNumber === number);
+
+  it('an invoiced-then-paid case leaves Accounts Receivable at ZERO, not at its gross activity', async () => {
+    // The headline defect. AR took 50,000 in and 50,000 out; its balance
+    // is zero. Reporting 50,000/50,000 states a receivable that is settled.
+    await recognizeRevenue('case-1', 50_000);
+    await postPaymentTransaction(ORG, { caseId: 'case-1', paymentId: 'payment-1', amountCents: 50_000, idFactory }, ctx(), 'mock');
+
+    const { rows, totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+    const ar = row(rows, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE)!;
+
+    expect(ar.debitTotal).toBe(0);
+    expect(ar.creditTotal).toBe(0);
+    // The gross movement is still reported, just not as the balance.
+    expect(ar.debitActivity).toBe(50_000);
+    expect(ar.creditActivity).toBe(50_000);
+
+    // Cash in one account, revenue in the other — not both sides twice.
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.UNDEPOSITED_FUNDS)!.debitTotal).toBe(50_000);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE)!.creditTotal).toBe(50_000);
+    expect(totalDebits).toBe(50_000);
+    expect(totalCredits).toBe(50_000);
+  });
+
+  it('reproduces the managed-cremations ledger and totals 5,020 — not 11,190', async () => {
+    // The exact shape of the live ledger: three invoiced-and-paid cases,
+    // one of them revised down twice and up once. Gross activity across
+    // all accounts is 1,119,000; the books balance at 502,000.
+    await recognizeRevenue('case-a', 145_000);
+    await postPaymentTransaction(ORG, { caseId: 'case-a', paymentId: 'pay-a', amountCents: 145_000, idFactory }, ctx(), 'mock');
+    await recognizeRevenue('case-b', 89_000);
+    await postPaymentTransaction(ORG, { caseId: 'case-b', paymentId: 'pay-b', amountCents: 89_000, idFactory }, ctx(), 'mock');
+    await recognizeRevenue('case-c', 175_500);
+    await postPaymentTransaction(ORG, { caseId: 'case-c', paymentId: 'pay-c', amountCents: 164_000, idFactory }, ctx(), 'mock');
+    await recognizeRevenue('case-c', -12_500);
+    await recognizeRevenue('case-c', -45_000);
+    await recognizeRevenue('case-c', 46_000);
+    await recognizeRevenue('case-d', 104_000);
+    await postPaymentTransaction(ORG, { caseId: 'case-d', paymentId: 'pay-d', amountCents: 104_000, idFactory }, ctx(), 'mock');
+
+    const { rows, totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+
+    expect(totalDebits).toBe(502_000);
+    expect(totalCredits).toBe(502_000);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.UNDEPOSITED_FUNDS)!.debitTotal).toBe(502_000);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE)!.creditTotal).toBe(502_000);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE)!.debitTotal).toBe(0);
+
+    // The old behaviour, preserved as activity — this is where 11,190 came from.
+    const grossDebits = rows.reduce((s, r) => s + r.debitActivity, 0);
+    expect(grossDebits).toBe(1_119_000);
+  });
+
+  it('an unpaid case shows a real receivable — balances are not collapsed to zero', async () => {
+    await recognizeRevenue('case-unpaid', 80_000);
+
+    const { rows, totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE)!.debitTotal).toBe(80_000);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE)!.creditTotal).toBe(80_000);
+    expect(totalDebits).toBe(totalCredits);
+  });
+
+  it('a partial payment leaves the unpaid remainder in Accounts Receivable', async () => {
+    await recognizeRevenue('case-partial', 100_000);
+    await postPaymentTransaction(ORG, { caseId: 'case-partial', paymentId: 'pay-partial', amountCents: 30_000, idFactory }, ctx(), 'mock');
+
+    const { rows, totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE)!.debitTotal).toBe(70_000);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.UNDEPOSITED_FUNDS)!.debitTotal).toBe(30_000);
+    expect(totalDebits).toBe(totalCredits);
+  });
+
+  it('a write-off clears the receivable and lands in Bad Debt Expense', async () => {
+    await recognizeRevenue('case-wo', 60_000);
+    await postWriteOffTransaction(ORG, { caseId: 'case-wo', amountCents: 60_000, reason: 'uncollectible', idFactory }, ctx(), 'mock');
+
+    const { rows, totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE)!.debitTotal).toBe(0);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.BAD_DEBT_EXPENSE)!.debitTotal).toBe(60_000);
+    expect(totalDebits).toBe(totalCredits);
+  });
+
+  it('a deposit moves cash out of Undeposited Funds instead of counting it twice', async () => {
+    await recognizeRevenue('case-1', 50_000);
+    await postPaymentTransaction(ORG, { caseId: 'case-1', paymentId: 'payment-1', amountCents: 50_000, idFactory }, ctx(), 'mock');
+    paymentRecordFixtures.push(buildSucceededPayment());
+    const cashOperating = await getAccountByNumber(ORG, STARTER_ACCOUNT_NUMBERS.CASH_OPERATING, 'mock');
+    await postDepositTransaction(ORG, { bankAccountLedgerAccountId: cashOperating!.id, paymentIds: ['payment-1'], idFactory }, ctx(), 'mock');
+
+    const { rows, totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.UNDEPOSITED_FUNDS)!.debitTotal).toBe(0);
+    expect(row(rows, STARTER_ACCOUNT_NUMBERS.CASH_OPERATING)!.debitTotal).toBe(50_000);
+    // Three entries have now touched the books, and the cash is still 50,000:
+    // the balance follows the money, not the number of postings.
+    expect(totalDebits).toBe(50_000);
+    expect(totalDebits).toBe(totalCredits);
+  });
+
+  it('totals always agree, which is the control the report exists to provide', async () => {
+    await recognizeRevenue('case-x', 12_345);
+    await postPaymentTransaction(ORG, { caseId: 'case-x', paymentId: 'pay-x', amountCents: 5_000, idFactory }, ctx(), 'mock');
+    const { totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock');
+    expect(totalDebits).toBe(totalCredits);
+  });
+
+  it('is scoped to one organization', async () => {
+    await recognizeRevenue('case-mine', 70_000);
+    const other = await getTrialBalance(SECOND_MOCK_ORGANIZATION_ID, 'mock');
+    expect(other.totalDebits).toBe(0);
+    expect(other.totalCredits).toBe(0);
+  });
+});
+
+describe('getTrialBalance — as-of date', () => {
+  const ORG = DEFAULT_ORGANIZATION_ID;
+
+  async function invoice(caseId: string, amount: number, entryDate: string) {
+    await seedChartOfAccounts(ORG, idFactory, 'mock');
+    const ar = (await getAccountByNumber(ORG, STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE, 'mock'))!;
+    const revenue = (await getAccountByNumber(ORG, STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE, 'mock'))!;
+    await createAndPostJournalEntry(
+      ORG,
+      {
+        entryDate,
+        sourceType: 'revenue_recognition',
+        caseId,
+        memo: 'invoice',
+        lines: [
+          { accountId: ar.id, direction: 'debit', amount, caseId },
+          { accountId: revenue.id, direction: 'credit', amount, caseId },
+        ],
+        idFactory,
+        now: entryDate,
+      },
+      'mock',
+    );
+  }
+
+  it('includes entries dated ON the as-of date', async () => {
+    // `entryDate` is a full timestamp and an as-of date is a calendar day,
+    // so a raw string compare put "2026-08-01T10:00:00.000Z" AFTER
+    // "2026-08-01" and silently dropped everything booked that day.
+    await invoice('case-same-day', 25_000, '2026-08-01T10:00:00.000Z');
+    const { totalDebits } = await getTrialBalance(ORG, 'mock', '2026-08-01');
+    expect(totalDebits).toBe(25_000);
+  });
+
+  it('excludes entries dated after the as-of date', async () => {
+    await invoice('case-later', 25_000, '2026-08-02T10:00:00.000Z');
+    const { totalDebits } = await getTrialBalance(ORG, 'mock', '2026-08-01');
+    expect(totalDebits).toBe(0);
+  });
+
+  it('includes everything when no as-of date is given', async () => {
+    await invoice('case-any', 25_000, '2026-08-05T10:00:00.000Z');
+    const { totalDebits } = await getTrialBalance(ORG, 'mock');
+    expect(totalDebits).toBe(25_000);
+  });
+
+  it('still balances at any as-of date', async () => {
+    await invoice('case-1', 10_000, '2026-08-01T10:00:00.000Z');
+    await invoice('case-2', 20_000, '2026-08-03T10:00:00.000Z');
+    for (const asOf of ['2026-07-31', '2026-08-01', '2026-08-02', '2026-08-03', '2026-08-10']) {
+      const { totalDebits, totalCredits } = await getTrialBalance(ORG, 'mock', asOf);
+      expect(totalDebits, asOf).toBe(totalCredits);
+    }
   });
 });
