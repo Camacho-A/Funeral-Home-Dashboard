@@ -514,9 +514,20 @@ describe('resolveChecklist — retired checklist items', () => {
     expect(items).toHaveLength(READY_ITEMS.length);
   });
 
-  it('leaves unrelated stages completely unaffected', () => {
-    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, baseCase({ organizationId: 'managed-cremations' }));
+  it('leaves a stage with no retirements completely unaffected', () => {
+    // displayStage 2 has no retired items. (Stage 0 is no longer a valid
+    // example — it retires the duplicate credit-card payment item, 2026-10.)
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 2, baseCase({ organizationId: 'managed-cremations' }));
     expect(items).toHaveLength(RAW_STAGE_0_ITEMS.length);
+  });
+
+  it('retires exactly one item from the intake stage, leaving every other index intact', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, baseCase({ organizationId: 'managed-cremations' }));
+    expect(items).toHaveLength(RAW_STAGE_0_ITEMS.length - 1);
+    expect(items.map((i) => i.index)).not.toContain(9);
+    // Every surviving item keeps its ORIGINAL index, so no stored
+    // checklistState key changes meaning.
+    expect(items.map((i) => i.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 10]);
   });
 
   it('reappears rather than hiding the wrong item if the template is restructured', () => {
@@ -526,5 +537,46 @@ describe('resolveChecklist — retired checklist items', () => {
     const items = resolveChecklist(reordered, READY_DISPLAY_STAGE, readyCase());
     expect(items).toHaveLength(READY_ITEMS.length);
     expect(items.map((i) => i.label)).toContain('Something else entirely');
+  });
+});
+
+describe('payment items (2026-10)', () => {
+  function paymentCase(paymentStatus: 'paid_in_full' | 'awaiting_payment'): Case {
+    return baseCase({
+      decedentName: 'ANGELICA CAMACHO',
+      fieldValues: {},
+      checklistState: {},
+      paymentStatus,
+    });
+  }
+  const PAID = paymentCase('paid_in_full');
+  const UNPAID = paymentCase('awaiting_payment');
+
+  it('"Payment collected" follows the case\'s payment status', () => {
+    const paid = resolveChecklist(RAW_STAGE_0_ITEMS, 0, PAID);
+    const unpaid = resolveChecklist(RAW_STAGE_0_ITEMS, 0, UNPAID);
+    const find = (items: ReturnType<typeof resolveChecklist>) =>
+      items.find((i) => i.label === 'Payment collected');
+
+    // However the case came to be paid — the payments API, or a staff
+    // member setting Payment to "Paid in full" — the item agrees.
+    expect(find(paid)!.done).toBe(true);
+    expect(find(unpaid)!.done).toBe(false);
+  });
+
+  it('"Payment receipt sent" stays a real action somebody performs', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, PAID);
+    const receipt = items.find((i) => i.label.startsWith('Payment receipt sent'));
+    expect(receipt).toBeDefined();
+    expect(receipt!.done).toBe(false);
+  });
+
+  it('the duplicate credit-card item is retired for Manors — one payment, one box', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, PAID);
+    expect(items.some((i) => i.label === 'Credit card payment collected by phone')).toBe(false);
+    // Retired, not deleted: the surviving items keep their original
+    // indices, so no stored checklistState key changes meaning.
+    expect(items.find((i) => i.label === 'Payment collected')!.index).toBe(8);
+    expect(items.find((i) => i.label.startsWith('Payment receipt sent'))!.index).toBe(10);
   });
 });

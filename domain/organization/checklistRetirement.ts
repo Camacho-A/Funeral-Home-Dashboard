@@ -52,6 +52,11 @@ export const RETIRED_CHECKLIST_ITEMS: Record<string, readonly RetiredChecklistIt
     // photographs the tag; the adjacent "Tag/name/cert cross-checked" item
     // remains and is unaffected.
     { displayStage: 5, index: 1, expectedLabel: 'Tag photo taken' },
+    // "Payment collected" (index 8) and this item asked the same question
+    // twice — one payment, two boxes. Combined into index 8, which covers
+    // a card taken by phone as readily as any other method. Retired
+    // rather than deleted so no stored checklistState key shifts meaning.
+    { displayStage: 0, index: 9, expectedLabel: 'Credit card payment collected by phone' },
   ],
 };
 

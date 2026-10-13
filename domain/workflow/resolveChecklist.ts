@@ -4,6 +4,7 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
 import { retiredChecklistIndices } from '../organization/checklistRetirement';
 import { findCaseFieldForChecklistIndex } from './resolveIntake';
+import { PAYMENT_CONFIRMATION_LABEL } from '../cases/checklist';
 
 /**
  * The placeholder `services/casesService.ts#create` and `POST /api/cases`
@@ -162,7 +163,29 @@ export function resolveChecklist(
       const value = case_[field as keyof Case];
       return typeof value === 'string' && value.trim().length > 0;
     });
+  /**
+   * Payment completion (2026-10). "Payment collected" reflects the case's
+   * own payment status, not a separate box someone has to remember.
+   *
+   * It was already ticked by `markCasePaidIfVerified` when a payment is
+   * recorded through the payments API — but a staff member who simply
+   * sets Payment to "Paid in full" on Case Information makes an ordinary
+   * field edit that never reaches that service, leaving the box
+   * unchecked while the case plainly says it is paid. Deriving it removes
+   * that whole class of disagreement: however the case came to be paid,
+   * the item agrees.
+   *
+   * Identified by the canonical label, never a hardcoded index — the same
+   * technique domain/cases/paymentChecklist.ts already uses, so a
+   * template that places the item elsewhere, or omits it, still works.
+   * Only this one item derives; "Payment receipt sent" remains a real
+   * action somebody performs.
+   */
+  const isPaymentConfirmed = case_.paymentStatus === 'paid_in_full';
   const isItemDone = (item: ChecklistItemTemplate, index: number): boolean =>
+    item.label === PAYMENT_CONFIRMATION_LABEL && isPaymentConfirmed
+      ? true
+      :
     item.requiredCaseFields
       ? isRequiredCaseFieldsDone(item)
       : item.hasField
