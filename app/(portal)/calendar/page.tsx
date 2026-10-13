@@ -171,7 +171,19 @@ export default function CalendarPage() {
   const { organizationId } = useOrganization();
   const myPermissionsQuery = useMyPermissions(organizationId);
   const resourcesQuery = useResources(organizationId);
-  const casesQuery = useCases();
+  /**
+   * Includes archived cases (2026-10). A calendar event outlives the
+   * working life of its case: an Expected Cremains Pickup that happened
+   * in October is still a true historical record once the case is filed
+   * away. Looking these up through the ACTIVE list blanked those events
+   * to "Case: Not available / Deceased: Not available" the moment a case
+   * was archived — the information was never lost, the lookup just
+   * stopped returning it.
+   *
+   * Scoped to this one historical surface. Case lists, counts and
+   * operational metrics still exclude archived cases.
+   */
+  const casesQuery = useCases({ scope: 'all' });
 
   /** Month is the default view (2026-10): staff open the calendar to see
       the shape of the month — which Tuesdays and Fridays carry cremains

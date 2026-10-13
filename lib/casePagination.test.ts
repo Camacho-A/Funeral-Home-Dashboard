@@ -308,3 +308,27 @@ describe('cursor + filter — Archived Cases (2026-10)', () => {
     expect(filter).toMatchObject({ organizationId: 'org-1' });
   });
 });
+
+describe('historical surfaces keep seeing archived cases (2026-10)', () => {
+  it("scope 'all' is what lets a calendar event still describe a filed case", () => {
+    // Archiving must never blank a case's own past events. 'all' drops
+    // the isArchived filter entirely rather than asking for both values.
+    const historical = buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, scope: 'all' });
+    expect('isArchived' in historical).toBe(false);
+
+    // ...while the active surfaces that must NOT see archived cases are
+    // unchanged, including when no scope is given at all.
+    expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null })).toMatchObject({ isArchived: false });
+    expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, scope: 'active' })).toMatchObject({
+      isArchived: false,
+    });
+  });
+
+  it('every scope still scopes to the organization', () => {
+    for (const scope of ['active', 'archived', 'all'] as const) {
+      expect(buildCaseListWixFilter({ organizationId: 'org-1', rawStages: null, scope })).toMatchObject({
+        organizationId: 'org-1',
+      });
+    }
+  });
+});

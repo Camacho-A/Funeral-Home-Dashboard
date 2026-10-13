@@ -30,6 +30,19 @@ import {
 
 export type CaseFilters = {
   searchQuery?: string;
+  /**
+   * Archived-case visibility (2026-10). Omitted means the ACTIVE list, so
+   * every existing caller — case lists, counts, operational metrics — is
+   * unchanged and keeps excluding archived cases.
+   *
+   * 'all' exists for HISTORICAL surfaces that must keep describing a case
+   * after it is filed away. The calendar is the first: archiving a case
+   * used to blank its own past events to "Case: Not available / Deceased:
+   * Not available", because the lookup those events are enriched from
+   * silently dropped the case. An archived case is a historical record,
+   * not a deleted one.
+   */
+  scope?: CaseListScope;
 };
 
 /**
@@ -233,7 +246,7 @@ function listMock(context: OrganizationContext, filters: CaseFilters): Case[] {
   return caseFixtures.filter(
     (c) =>
       c.organizationId === context.organizationId &&
-      !c.isDeleted &&
+      (filters.scope === 'all' || c.isDeleted === (filters.scope === 'archived')) &&
       matchesSearch(c, filters.searchQuery ?? ''),
   );
 }
@@ -249,6 +262,7 @@ export async function list(
 
   const params = new URLSearchParams({ organizationId: context.organizationId });
   if (filters.searchQuery) params.set('searchQuery', filters.searchQuery);
+  if (filters.scope && filters.scope !== 'active') params.set('scope', filters.scope);
 
   const response = await fetch(`/api/cases?${params.toString()}`);
   if (!response.ok) {

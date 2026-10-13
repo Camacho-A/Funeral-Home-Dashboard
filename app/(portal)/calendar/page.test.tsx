@@ -61,7 +61,21 @@ vi.mock('@/hooks/useRbac', () => ({
 }));
 vi.mock('@/hooks/useResources', () => ({ useResources: () => ({ data: [] }) }));
 vi.mock('@/hooks/useCalendarIntegrations', () => ({ useCalendarSyncLinks: () => ({ data: [] }) }));
-vi.mock('@/hooks/useCases', () => ({ useCases: () => ({ data: [{ id: 'case-1', caseNumber: 'B2026-040', decedentName: 'WALTER BOONE' }] }) }));
+/** Captures the filters the page asks for, so the archived-case
+    regression can assert the calendar looks cases up historically. */
+const useCasesSpy = vi.fn();
+vi.mock('@/hooks/useCases', () => ({
+  useCases: (filters?: unknown) => {
+    useCasesSpy(filters);
+    return {
+      data: [
+        { id: 'case-1', caseNumber: 'B2026-040', decedentName: 'WALTER BOONE' },
+        // Archived — a filed case is still the subject of its own past events.
+        { id: 'case-archived', caseNumber: 'B2026-035', decedentName: 'EVARISTA SILVA RIVERO', isDeleted: true },
+      ],
+    };
+  },
+}));
 vi.mock('@/hooks/useAppointments', () => ({ useAppointments: () => ({ data: APPOINTMENTS, isPending: false, isError: false }) }));
 // Wide viewport, so `effectiveView` never substitutes Agenda.
 vi.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => false }));
@@ -222,5 +236,16 @@ describe('Calendar — pickup details', () => {
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
     expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Open Case' })).toHaveAttribute('href', '/cases/case-1');
+  });
+});
+
+describe('Calendar — archived cases keep their event details (2026-10)', () => {
+  it('looks cases up across the whole history, not just the active list', () => {
+    // Root cause of "Case: Not available / Deceased: Not available": the
+    // calendar enriched its events from the ACTIVE case list, so archiving
+    // a case silently blanked its own past events. The information was
+    // never lost — the lookup just stopped returning it.
+    renderCalendar();
+    expect(useCasesSpy).toHaveBeenCalledWith({ scope: 'all' });
   });
 });
