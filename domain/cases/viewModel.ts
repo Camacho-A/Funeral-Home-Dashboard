@@ -1,4 +1,5 @@
 import type { Case } from '../../types/case';
+import { composeDecedentName } from './decedentName';
 import type { StaffProfile } from '../../types/staffProfile';
 import type {
   CaseViewModel,
@@ -518,7 +519,11 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   return {
     id: case_.id,
     caseNumber: case_.caseNumber,
-    decedentName: case_.decedentName,
+    // Middle name (2026-10): composed once here, so every surface built
+    // from the view model — header, case lists, dashboard, reports —
+    // shows the same full name without each one remembering to.
+    // `case_.decedentName` itself is untouched.
+    decedentName: composeDecedentName(case_.decedentName, case_.decedentMiddleName),
     decedentInitials: resolveDecedentInitials(case_.decedentName),
     dateOfBirth: case_.dateOfBirth,
     dateOfDeath: case_.dateOfDeath,

@@ -1732,3 +1732,45 @@ describe('CaseInformationCard — archived cases are read-only', () => {
     expect(onUpdateCaseInfo).toHaveBeenCalled();
   });
 });
+
+/**
+ * Decedent middle name (2026-10). Stored separately from `decedentName`,
+ * which is never re-parsed — see domain/cases/decedentName.ts.
+ */
+describe('CaseInformationCard — decedent middle name', () => {
+  it('shows an existing middle name', () => {
+    render(<CaseInformationCard {...baseProps} decedentMiddleName="BEVERLY" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'BEVERLY' })).toBeInTheDocument();
+  });
+
+  it('saves an entered middle name, upper-cased like every other name field', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} decedentMiddleName={null} onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    const field = screen.getByText('Middle name').parentElement!;
+    fireEvent.click(within(field).getByRole('button'));
+    const input = within(field).getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'beverly' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentMiddleName: 'BEVERLY' });
+  });
+
+  it('clearing it stores null rather than an empty string', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} decedentMiddleName="BEVERLY" onUpdateCaseInfo={onUpdateCaseInfo} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'BEVERLY' }));
+    const input = screen.getByDisplayValue('BEVERLY');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentMiddleName: null });
+  });
+
+  it('is read-only on an archived case', () => {
+    render(<CaseInformationCard {...baseProps} decedentMiddleName="BEVERLY" onUpdateCaseInfo={vi.fn()} isArchived />);
+    expect(screen.getByText('BEVERLY')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'BEVERLY' })).not.toBeInTheDocument();
+  });
+});

@@ -22,6 +22,8 @@ import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
 
 const UPPERCASE_STRING_FIELDS = [
   'decedentName',
+  // Middle name (2026-10) — same ALL-CAPS treatment as the name it belongs to.
+  'decedentMiddleName',
   'placeOfDeath',
   'nextOfKinName',
   'pickupReleasedTo',

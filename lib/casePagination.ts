@@ -214,10 +214,16 @@ export function validateCaseCursor(
  * (the separate full-text Search Data Items endpoint, or a normalized
  * searchable field requiring a schema change) is needed.
  */
-export const CASE_SEARCHABLE_FIELDS = ['decedentName', 'caseNumber', 'nextOfKinPhone', 'nextOfKinEmail', 'tagNumber', 'id'] as const;
+/** Middle name (2026-10) is searchable: staff who know a decedent as
+    "Joyce Beverly" must find her, and it is stored separately from
+    `decedentName`, so a query against the full name alone would miss it.
+    It is deliberately NOT used for duplicate detection or JotForm case
+    matching — those safeguards are unchanged. */
+export const CASE_SEARCHABLE_FIELDS = ['decedentName', 'decedentMiddleName', 'caseNumber', 'nextOfKinPhone', 'nextOfKinEmail', 'tagNumber', 'id'] as const;
 
 type SearchableCaseFields = {
   decedentName: string;
+  decedentMiddleName?: string | null;
   caseNumber: string;
   nextOfKinPhone: string;
   nextOfKinEmail: string | null;
@@ -252,6 +258,7 @@ export function matchesCaseSearch(case_: SearchableCaseFields, query: string): b
  */
 const CASE_SEARCHABLE_WIX_FIELD_NAME: Record<(typeof CASE_SEARCHABLE_FIELDS)[number], string> = {
   decedentName: 'decedentName',
+  decedentMiddleName: 'decedentMiddleName',
   caseNumber: 'caseNumber',
   nextOfKinPhone: 'nextOfKinPhone',
   nextOfKinEmail: 'nextOfKinEmail',

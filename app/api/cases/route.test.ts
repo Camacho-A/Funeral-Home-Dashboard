@@ -2186,7 +2186,9 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
       const filter = call?.[1]?.filter as { $and: Record<string, unknown>[] };
       const orClause = filter.$and[1] as { $or: Record<string, unknown>[] };
       const fieldsSearched = orClause.$or.map((clause) => Object.keys(clause)[0]);
-      expect(fieldsSearched.sort()).toEqual(['beaconCaseId', 'caseNumber', 'decedentName', 'nextOfKinEmail', 'nextOfKinPhone', 'tagNumber'].sort());
+      expect(fieldsSearched.sort()).toEqual(
+        ['beaconCaseId', 'caseNumber', 'decedentName', 'decedentMiddleName', 'nextOfKinEmail', 'nextOfKinPhone', 'tagNumber'].sort(),
+      );
     });
 
     it('11. a search cursor cannot be reused with a different search query', async () => {

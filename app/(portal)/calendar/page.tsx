@@ -25,6 +25,7 @@ import { AppointmentDialog } from '@/components/scheduling/AppointmentDialog';
 import { APPOINTMENT_STATUS_LABEL, appointmentStatusVariant } from '@/domain/scheduling/appointmentDisplay';
 import { getAppointmentTypeDefinition } from '@/domain/scheduling/appointmentTypeRegistry';
 import { toDisplayName } from '@/utils/displayName';
+import { composeDecedentName } from '@/domain/cases/decedentName';
 import {
   formatAppointmentTime,
   getCalendarRange,
@@ -218,7 +219,13 @@ export default function CalendarPage() {
   const caseById = useMemo(() => {
     const map = new Map<string, { caseNumber: string; decedentName: string; dateOfDeath: string }>();
     for (const c of casesQuery.data ?? [])
-      map.set(c.id, { caseNumber: c.caseNumber, decedentName: c.decedentName, dateOfDeath: c.dateOfDeath });
+      map.set(c.id, {
+        caseNumber: c.caseNumber,
+        // Middle name (2026-10) — composed here too, so a calendar event
+        // names the decedent exactly as every other surface does.
+        decedentName: composeDecedentName(c.decedentName, c.decedentMiddleName),
+        dateOfDeath: c.dateOfDeath,
+      });
     return map;
   }, [casesQuery.data]);
   const caseNameById = useMemo(() => {

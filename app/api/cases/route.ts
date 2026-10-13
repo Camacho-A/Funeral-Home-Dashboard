@@ -532,6 +532,15 @@ export async function POST(request: Request) {
   // creation, plain trimmed nullable strings with no format validation at
   // this layer, matching nextOfKinRelationshipOther/nextOfKinPhone's own
   // posture exactly (no phone-masking convention exists anywhere in SOLIS).
+  // Middle name (2026-10): optional, trimmed, and empty becomes null — a
+  // blank box is "not collected", never a value.
+  let decedentMiddleName: string | null = null;
+  if ('decedentMiddleName' in b) {
+    if (typeof b.decedentMiddleName !== 'string') {
+      return NextResponse.json({ case: null, error: 'Invalid field(s): decedentMiddleName' }, { status: 400 });
+    }
+    decedentMiddleName = b.decedentMiddleName.trim() || null;
+  }
   let certifierName: string | null = null;
   if ('certifierName' in b) {
     if (typeof b.certifierName !== 'string') {
@@ -701,6 +710,7 @@ export async function POST(request: Request) {
       createdBy,
       assignedStaffId,
       decedentName: b.decedentName as string,
+      decedentMiddleName,
       dateOfBirth: (b.dateOfBirth as string) ?? '—',
       dateOfDeath: (b.dateOfDeath as string) ?? '—',
       timeOfDeath: (b.timeOfDeath as string) ?? '—',

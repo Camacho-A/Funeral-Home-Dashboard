@@ -172,6 +172,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
    */
   const caseInformationPanel = (
           <CaseInformationCard
+            decedentMiddleName={case_.decedentMiddleName}
             dateOfBirth={viewModel.dateOfBirth}
             dateOfDeath={viewModel.dateOfDeath}
             timeOfDeath={viewModel.timeOfDeath}

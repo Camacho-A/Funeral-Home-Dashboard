@@ -157,9 +157,10 @@ describe('cursor encode/decode/validate (Case list scalability, Phase 1+2)', () 
 });
 
 describe('matchesCaseSearch (Case list scalability, Phase 2 — server-side search parity)', () => {
-  function caseOf(overrides: Partial<{ decedentName: string; caseNumber: string; nextOfKinPhone: string; nextOfKinEmail: string | null; tagNumber: string | null; id: string }>) {
+  function caseOf(overrides: Partial<{ decedentName: string; decedentMiddleName: string | null; caseNumber: string; nextOfKinPhone: string; nextOfKinEmail: string | null; tagNumber: string | null; id: string }>) {
     return {
       decedentName: '',
+      decedentMiddleName: null,
       caseNumber: '',
       nextOfKinPhone: '',
       nextOfKinEmail: null,
@@ -170,7 +171,14 @@ describe('matchesCaseSearch (Case list scalability, Phase 2 — server-side sear
   }
 
   it('matches every currently-searchable field preserved from matchesSearch', () => {
-    expect(CASE_SEARCHABLE_FIELDS).toEqual(['decedentName', 'caseNumber', 'nextOfKinPhone', 'nextOfKinEmail', 'tagNumber', 'id']);
+    expect(CASE_SEARCHABLE_FIELDS).toEqual(['decedentName', 'decedentMiddleName', 'caseNumber', 'nextOfKinPhone', 'nextOfKinEmail', 'tagNumber', 'id']);
+  });
+
+  it('finds a case by the decedent\'s middle name alone (2026-10)', () => {
+    // Stored separately from decedentName, so a query against the full
+    // name alone would never find it.
+    expect(matchesCaseSearch(caseOf({ decedentName: 'JOYCE GOLLIS', decedentMiddleName: 'BEVERLY' }), 'beverly')).toBe(true);
+    expect(matchesCaseSearch(caseOf({ decedentName: 'JOYCE GOLLIS' }), 'beverly')).toBe(false);
   });
 
   it('an empty/blank query matches everything', () => {
@@ -237,6 +245,7 @@ describe('buildCaseSearchWixFilter', () => {
     expect(buildCaseSearchWixFilter('  Morales  ')).toEqual({
       $or: [
         { decedentName: { $contains: 'Morales' } },
+        { decedentMiddleName: { $contains: 'Morales' } },
         { caseNumber: { $contains: 'Morales' } },
         { nextOfKinPhone: { $contains: 'Morales' } },
         { nextOfKinEmail: { $contains: 'Morales' } },

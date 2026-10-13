@@ -103,6 +103,21 @@ export type Case = {
    */
   caseNumber: string;
   decedentName: string;
+  /**
+   * The decedent's middle name, when known (2026-10). Optional, and
+   * deliberately a SEPARATE field rather than part of `decedentName`.
+   *
+   * `decedentName` stays exactly what it has always been — the full name
+   * as it was recorded — so nothing re-parses or re-splits an existing
+   * name. This is additive only: all three JotForm forms already collect
+   * first/middle/last separately and SOLIS was discarding the middle, so
+   * the value exists upstream and simply had nowhere to land.
+   *
+   * Absent on every case created before this field existed, and never
+   * guessed from `decedentName` — a middle name cannot be recovered from
+   * a full-name string without inventing one.
+   */
+  decedentMiddleName?: string | null;
   dateOfBirth: string; // display-formatted (MM/DD/YYYY), matching the prototype — no date math is ever performed on it directly
   dateOfDeath: string;
   timeOfDeath: string;
@@ -324,6 +339,7 @@ export type Case = {
  * behavior.
  */
 export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOfKinPhone'> &
+  Partial<Pick<Case, 'decedentMiddleName'>> &
   Partial<
     Pick<
       Case,

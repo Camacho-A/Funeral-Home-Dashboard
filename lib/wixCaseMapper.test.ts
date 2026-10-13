@@ -1163,3 +1163,38 @@ describe('contact instructions (2026-10)', () => {
     expect(merged.contactInstructions).toBe('All calls after 6pm.');
   });
 });
+
+/**
+ * Decedent middle name (2026-10) — additive and optional. Absent on every
+ * case created before the field existed, and never derived from
+ * `decedentName`, which is left exactly as recorded.
+ */
+describe('decedentMiddleName round-trips without disturbing decedentName', () => {
+  it('reads a stored middle name', () => {
+    const mapped = mapWixCaseItem({ ...validItem, decedentMiddleName: 'BEVERLY' });
+    expect(mapped?.decedentMiddleName).toBe('BEVERLY');
+    expect(mapped?.decedentName).toBe(validItem.decedentName);
+  });
+
+  it('reads null for a case that predates the field', () => {
+    const mapped = mapWixCaseItem(validItem);
+    expect(mapped?.decedentMiddleName).toBeNull();
+    // Never invented from the full name.
+    expect(mapped?.decedentName).toBe(validItem.decedentName);
+  });
+
+  it('accepts a patch that sets it, and one that clears it', () => {
+    expect(validateAndPickCaseUpdate({ decedentMiddleName: 'BEVERLY' }).patch.decedentMiddleName).toBe('BEVERLY');
+    expect(validateAndPickCaseUpdate({ decedentMiddleName: null }).patch.decedentMiddleName).toBeNull();
+  });
+
+  it('rejects a non-string value rather than coercing it', () => {
+    expect(validateAndPickCaseUpdate({ decedentMiddleName: 42 }).errors).toContain('decedentMiddleName');
+  });
+
+  it('writing it never touches decedentName', () => {
+    const next = applyCaseUpdateToWixData({ ...validItem }, { decedentMiddleName: 'BEVERLY' });
+    expect(next.decedentMiddleName).toBe('BEVERLY');
+    expect(next.decedentName).toBe(validItem.decedentName);
+  });
+});

@@ -84,6 +84,7 @@ export type WixCaseItem = {
   checklistState?: unknown;
   fieldValues?: unknown;
   decedentName?: unknown;
+  decedentMiddleName?: unknown;
   dateOfBirth?: unknown;
   dateOfDeath?: unknown;
   timeOfDeath?: unknown;
@@ -250,6 +251,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     organizationId: item.organizationId,
     caseNumber: item.caseNumber,
     decedentName: item.decedentName,
+    decedentMiddleName: typeof item.decedentMiddleName === 'string' ? item.decedentMiddleName : null,
     dateOfBirth: item.dateOfBirth,
     dateOfDeath: item.dateOfDeath,
     timeOfDeath: item.timeOfDeath,
@@ -378,6 +380,7 @@ export function buildWixCaseData(params: {
   createdBy: string;
   assignedStaffId: string | null;
   decedentName: string;
+  decedentMiddleName?: string | null;
   dateOfBirth: string;
   dateOfDeath: string;
   timeOfDeath: string;
@@ -405,6 +408,7 @@ export function buildWixCaseData(params: {
   // payload (see app/api/cases/route.ts's POST handler, its sole caller).
   const normalized = normalizeCaseTextFields({
     decedentName: params.decedentName,
+    decedentMiddleName: params.decedentMiddleName ?? null,
     placeOfDeath: params.placeOfDeath,
     nextOfKinName: params.nextOfKinName,
     nextOfKinRelationshipOther: params.nextOfKinRelationshipOther ?? null,
@@ -426,6 +430,7 @@ export function buildWixCaseData(params: {
     checklistState: {},
     fieldValues: normalizeCaseFieldValues(params.fieldValues, params.workflowSnapshot),
     decedentName: normalized.decedentName,
+    decedentMiddleName: normalized.decedentMiddleName ?? null,
     dateOfBirth: params.dateOfBirth,
     dateOfDeath: params.dateOfDeath,
     timeOfDeath: params.timeOfDeath,
@@ -585,6 +590,7 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   nullableTextField('contactInstructions', 2000);
   booleanField('arrangementAuthorizationConfirmed');
   nullableTextField('arrangementAuthorizationSource', 500);
+  nullableStringField('decedentMiddleName');
   nullableStringField('certifierName');
   nullableStringField('certifierPhone');
   nullableStringField('certifierLicenseNumber');
@@ -710,6 +716,7 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.arrangementAuthorizationConfirmed !== undefined)
     next.arrangementAuthorizationConfirmed = patch.arrangementAuthorizationConfirmed;
   if (patch.arrangementAuthorizationSource !== undefined) next.arrangementAuthorizationSource = patch.arrangementAuthorizationSource;
+  if (patch.decedentMiddleName !== undefined) next.decedentMiddleName = patch.decedentMiddleName;
   if (patch.certifierName !== undefined) next.certifierName = patch.certifierName;
   if (patch.certifierPhone !== undefined) next.certifierPhone = patch.certifierPhone;
   if (patch.certifierLicenseNumber !== undefined) next.certifierLicenseNumber = patch.certifierLicenseNumber;

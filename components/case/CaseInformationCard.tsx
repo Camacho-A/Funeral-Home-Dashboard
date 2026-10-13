@@ -443,6 +443,7 @@ function TwelveHourTimeField({
 }
 
 export function CaseInformationCard({
+  decedentMiddleName,
   dateOfBirth,
   dateOfDeath,
   timeOfDeath,
@@ -506,6 +507,7 @@ export function CaseInformationCard({
   onSetVaPublishChoice,
   onSetVaNotificationResponsibility,
 }: {
+  decedentMiddleName?: string | null;
   dateOfBirth: string;
   dateOfDeath: string;
   timeOfDeath: string;
@@ -703,6 +705,17 @@ export function CaseInformationCard({
         </p>
       )}
       <div className={styles.grid}>
+        {/* Middle name (2026-10). Optional, and sits above the dates
+            because it belongs with who the decedent was, not with the
+            case's timeline. `decedentName` itself is edited from the case
+            header, not here, so this is the one name part this card
+            owns. */}
+        <EditableField
+          label="Middle name"
+          value={decedentMiddleName ?? ''}
+          uppercase
+          onSave={(v) => onUpdateCaseInfo({ decedentMiddleName: v.trim().length > 0 ? v.trim() : null })}
+        />
         <EditableField
           label="Date of birth"
           value={dateOfBirth}

@@ -23,6 +23,13 @@ import type { NextOfKinRelationship } from '@/types/case';
 
 export type MappedSolisField =
   | 'decedentName'
+  /** Middle name (2026-10). All three Manors forms ask for the decedent's
+      name as a Jotform `control_fullname` with the middle sub-field
+      ENABLED, so every submission already carries
+      `{first, middle, last, suffix}` — SOLIS was simply discarding the
+      middle. Confirmed against the live form definitions and against real
+      submissions (B2026-038 sent "JOYCE / BEVERLY / GOLLIS"). */
+  | 'decedentMiddleName'
   | 'dateOfBirth'
   | 'dateOfDeath'
   | 'placeOfDeath'
@@ -162,6 +169,7 @@ export const ARRANGEMENT_NOK_RELATIONSHIP_REVERSE_MAP: Partial<Record<NextOfKinR
 export const FIELD_MAP_VITAL_STATISTICS: FieldMapEntry[] = [
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'first' },
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'last' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentMiddleName', subfield: 'middle' },
   { qid: '10', jotformName: 'dateof10', solisField: 'dateOfBirth' },
   { qid: '6', jotformName: 'dateof', solisField: 'dateOfDeath' },
   { qid: '30', jotformName: 'placeOf', solisField: 'placeOfDeath' },
@@ -182,6 +190,7 @@ export const FIELD_MAP_VITAL_STATISTICS: FieldMapEntry[] = [
 export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   { qid: '87', jotformName: 'name87', solisField: 'decedentName', subfield: 'first' },
   { qid: '87', jotformName: 'name87', solisField: 'decedentName', subfield: 'last' },
+  { qid: '87', jotformName: 'name87', solisField: 'decedentMiddleName', subfield: 'middle' },
   { qid: '8', jotformName: 'dateOf', solisField: 'dateOfBirth' },
   { qid: '10', jotformName: 'dateOf10', solisField: 'dateOfDeath' },
   { qid: '97', jotformName: 'address97', solisField: 'placeOfDeath' },
@@ -290,6 +299,7 @@ export const FIRST_CALL_SHEET_EXTERNAL_FORM_ID = '262664842044055';
 export const FIELD_MAP_FIRST_CALL_SHEET: FieldMapEntry[] = [
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'first' },
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'last' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentMiddleName', subfield: 'middle' },
   { qid: '6', jotformName: 'dateOf6', solisField: 'dateOfBirth' },
   { qid: '7', jotformName: 'weight', solisField: 'weight' },
   { qid: '8', jotformName: 'dateof', solisField: 'dateOfDeath' },

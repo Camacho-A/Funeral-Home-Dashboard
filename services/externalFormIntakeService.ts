@@ -227,6 +227,9 @@ export async function createCaseFromIntakeSubmission(
         // Optional mapped values — omitted entirely when the submission
         // did not carry them, never sent as empty strings, so the route's
         // own defaults apply instead of blanking a field.
+        // Middle name (2026-10): omitted when the form left it blank, so
+        // an empty box never blanks a value another form supplied.
+        ...(mappedFields.decedentMiddleName ? { decedentMiddleName: mappedFields.decedentMiddleName } : {}),
         ...(mappedFields.dateOfBirth ? { dateOfBirth: mappedFields.dateOfBirth } : {}),
         ...(mappedFields.dateOfDeath ? { dateOfDeath: mappedFields.dateOfDeath } : {}),
         ...(mappedFields.timeOfDeath ? { timeOfDeath: mappedFields.timeOfDeath } : {}),
