@@ -78,6 +78,7 @@ const SUB = {
   arrCreates: '2000000000000000014',
   arrDupe: '2000000000000000015',
   fcAfterArr: '2000000000000000016',
+  arrPdfFails: '2000000000000000017',
   arrNoBranch: '2000000000000000017',
   arrConcurrentA: '2000000000000000018',
 };
@@ -434,6 +435,67 @@ describe('Arrangement Forms can open a case on its own (2026-10)', () => {
     expect(added[0].status).toBe('received');
     expect(added[0].formConfigId).toBe(ARRANGEMENT_FORMS_FORM_CONFIG_ID);
     expect(added[0].submissionId).toBeTruthy();
+  });
+
+  /**
+   * Arrangement-first PDF import (2026-10). The webhook called
+   * `preservePdfForSubmission` only in its existing-case branch, which a
+   * case created from this very submission never reaches — so an
+   * Arrangement-first case never had its PDF imported and its submission
+   * sat at `pdfStatus: 'pending'` with no failure recorded, because the
+   * import was never attempted. B2026-038 is exactly that state.
+   */
+  it('imports the Arrangement PDF for a case it just created — no First Call needed', async () => {
+    const { fetchSubmissionPdf } = await import('@/lib/jotform/jotformClient');
+    vi.mocked(fetchSubmissionPdf).mockClear();
+
+    await deliverArrangement(SUB.arrCreates);
+
+    expect(fetchSubmissionPdf).toHaveBeenCalledWith(ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, SUB.arrCreates);
+    const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrCreates);
+    expect(submission?.pdfStatus).toBe('stored');
+    expect(submission?.documentId).toBeTruthy();
+  });
+
+  it('files the PDF against the case it created, under the Arrangement document type', async () => {
+    const { upload } = await import('@/services/documentService');
+    vi.mocked(upload).mockClear();
+
+    await deliverArrangement(SUB.arrCreates);
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    const [params] = vi.mocked(upload).mock.calls[0];
+    const createdCaseId = caseFormLinkFixtures[caseFormLinkFixtures.length - 1].caseId;
+    expect(params.caseId).toBe(createdCaseId);
+    expect(params.fileName).toBe('Arrangement Forms.pdf');
+    expect(params.documentTypeKey).toBe('external_form.arrangement_forms');
+    expect(params.mimeType).toBe('application/pdf');
+  });
+
+  it('a redelivered submission does not import the PDF twice', async () => {
+    const { upload } = await import('@/services/documentService');
+    vi.mocked(upload).mockClear();
+
+    await deliverArrangement(SUB.arrCreates);
+    await deliverArrangement(SUB.arrCreates);
+
+    // The second delivery short-circuits on pdfStatus === 'stored'.
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it('a PDF failure still leaves the case created, and records why', async () => {
+    const { fetchSubmissionPdf, JotformClientError } = await import('@/lib/jotform/jotformClient');
+    vi.mocked(fetchSubmissionPdf).mockRejectedValueOnce(new JotformClientError('nope', 'http_error'));
+
+    const response = await deliverArrangement(SUB.arrPdfFails);
+
+    // The case still exists — a document problem must never cost the case.
+    expect(await response.json()).toEqual({ received: true, caseCreated: true });
+    const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrPdfFails);
+    expect(submission?.pdfStatus).toBe('failed');
+    // Never silently "pending" — a failure is recorded so it is visible
+    // and retryable, which is precisely what B2026-038 lacked.
+    expect(submission?.pdfFailureReason).toBeTruthy();
   });
 
   it('records the Arrangement form as the source, never the First Call Sheet', async () => {

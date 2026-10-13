@@ -266,6 +266,33 @@ export async function POST(request: Request) {
         dataAdapterMode,
       );
     }
+
+    /**
+     * Arrangement-first PDF import (2026-10). THE BUG: this branch used
+     * to return here, and `preservePdfForSubmission` is called only in
+     * the `resolvedLink` branch below — which a case created from this
+     * very submission never reaches. So a case created Arrangement-first
+     * never had its PDF imported, and its submission sat at
+     * `pdfStatus: 'pending'` forever: not failed, not retried, with no
+     * reason recorded, because the import was never attempted at all.
+     * B2026-038 is exactly that; B2026-037 only has its PDF because
+     * somebody recovered it by hand through the manual link/retry route.
+     *
+     * A First Call was never literally the prerequisite — a pre-existing
+     * CaseFormLink was, which is what a First Call-created case happens
+     * to have. The case and its link both exist by the time we get here,
+     * so the same preservation call the update path makes works
+     * unchanged.
+     *
+     * Same contract as that call: best-effort, never blocks or fails the
+     * webhook, and idempotent — `preservePdfForSubmission` short-circuits
+     * on `pdfStatus === 'stored'`, so a redelivery never uploads twice.
+     */
+    if (outcome.created) {
+      const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
+      await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode);
+    }
+
     return NextResponse.json({ received: true, caseCreated: outcome.created });
   }
 
