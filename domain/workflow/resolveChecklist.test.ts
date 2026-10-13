@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveChecklist } from './resolveChecklist';
 import type { Case } from '../../types/case';
+import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from './snapshot';
 import { standardCremationWorkflowTemplateFixture } from '../../services/__mocks__/workflowTemplates';
 
@@ -667,5 +668,77 @@ describe('two raw stages sharing one displayStage (Manors First Call + Payment)'
       expect(labels).toContain('Payment collected');
       expect(labels.some((l) => l.startsWith('Payment receipt sent'))).toBe(true);
     }
+  });
+});
+
+describe('Medical Examiner cases (2026-10)', () => {
+  const EDRS_DISPLAY_STAGE = 2;
+  const DOCTOR_ITEMS: ChecklistItemTemplate[] = [
+    { index: 0, label: 'EDRS submitted & sent to doctor', hasField: false },
+    { index: 1, label: 'Cause of death entered', hasField: false },
+    { index: 2, label: 'Hardsave for state approval if not an online doctor', hasField: false },
+  ];
+
+  const meCase = (overrides: Partial<Case> = {}) =>
+    baseCase({ organizationId: 'managed-cremations', isMedicalExaminerCase: true, checklistState: {}, ...overrides });
+  const standardCase = (overrides: Partial<Case> = {}) =>
+    baseCase({ organizationId: 'managed-cremations', checklistState: {}, ...overrides });
+
+  it('a standard case still sees the doctor items', () => {
+    const items = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, standardCase());
+    expect(items.map((i) => i.label)).toEqual(DOCTOR_ITEMS.map((i) => i.label));
+  });
+
+  it('an ME case sees the verification items instead', () => {
+    const items = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, meCase());
+    expect(items.map((i) => i.label)).toEqual([
+      'Medical Examiner EDRS entry verified',
+      'Medical Examiner cause of death verified',
+      'Required ME information confirmed',
+    ]);
+  });
+
+  it('classifying a case never completes anything', () => {
+    // "Do not mark them complete merely because the checkbox is selected."
+    const items = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, meCase());
+    expect(items.every((i) => i.done === false)).toBe(true);
+  });
+
+  it('verification completes only by explicit staff action, under its own keys', () => {
+    const verified = meCase({ checklistState: { '2:3': true, '2:4': true, '2:5': true } });
+    const items = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, verified);
+    expect(items.every((i) => i.done)).toBe(true);
+  });
+
+  it('doctor completions do NOT satisfy ME verification, and vice versa', () => {
+    // The disjoint-index guarantee, from both directions.
+    const doctorTicked = meCase({ checklistState: { '2:0': true, '2:1': true, '2:2': true } });
+    expect(resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, doctorTicked).every((i) => !i.done)).toBe(true);
+
+    const meTicked = standardCase({ checklistState: { '2:3': true, '2:4': true, '2:5': true } });
+    expect(resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, meTicked).every((i) => !i.done)).toBe(true);
+  });
+
+  it('switching the classification preserves BOTH sets of history', () => {
+    // Doctor items ticked, then reclassified as ME, then back again.
+    const both = { '2:0': true, '2:1': true, '2:2': true, '2:3': true, '2:4': true };
+    const asMe = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, meCase({ checklistState: both }));
+    expect(asMe.filter((i) => i.done).map((i) => i.index)).toEqual([3, 4]);
+
+    const asStandard = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, standardCase({ checklistState: both }));
+    expect(asStandard.filter((i) => i.done).map((i) => i.index)).toEqual([0, 1, 2]);
+  });
+
+  it('another organization is unaffected', () => {
+    const otherOrg = baseCase({ organizationId: 'second-org', isMedicalExaminerCase: true, checklistState: {} });
+    const items = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, otherOrg);
+    expect(items.map((i) => i.label)).toEqual(DOCTOR_ITEMS.map((i) => i.label));
+  });
+
+  it('other stages keep their own requirements on an ME case', () => {
+    // Permit, DC Application and the rest are the funeral home's own
+    // responsibilities and are not removed by the classification.
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, meCase());
+    expect(items.map((i) => i.label)).toContain('Payment collected');
   });
 });

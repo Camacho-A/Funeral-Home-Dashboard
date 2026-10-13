@@ -70,7 +70,7 @@ export const RETIRED_CHECKLIST_ITEMS: Record<string, readonly RetiredChecklistIt
 export function retiredChecklistIndices(
   organizationId: string | null | undefined,
   displayStage: number,
-  items: readonly Pick<ChecklistItemTemplate, 'label'>[],
+  items: readonly Pick<ChecklistItemTemplate, 'label' | 'index'>[],
 ): ReadonlySet<number> {
   const retired = organizationId ? RETIRED_CHECKLIST_ITEMS[organizationId] : undefined;
   if (!retired || retired.length === 0) return EMPTY;
@@ -79,7 +79,11 @@ export function retiredChecklistIndices(
   for (const entry of retired) {
     if (entry.displayStage !== displayStage) continue;
     // Shape guard: only ever hide the item that is genuinely there.
-    if (items[entry.index]?.label === entry.expectedLabel) indices.add(entry.index);
+    // Looked up by the item's OWN `index`, not by array position — the
+    // Medical Examiner variant can legitimately reorder a stage's items,
+    // and position would then point at the wrong one.
+    const item = items.find((candidate) => candidate.index === entry.index);
+    if (item?.label === entry.expectedLabel) indices.add(entry.index);
   }
   return indices.size === 0 ? EMPTY : indices;
 }
@@ -94,7 +98,7 @@ const EMPTY: ReadonlySet<number> = new Set<number>();
 export function activeChecklistItemCount(
   organizationId: string | null | undefined,
   displayStage: number,
-  items: readonly Pick<ChecklistItemTemplate, 'label'>[],
+  items: readonly Pick<ChecklistItemTemplate, 'label' | 'index'>[],
 ): number {
   return items.length - retiredChecklistIndices(organizationId, displayStage, items).size;
 }

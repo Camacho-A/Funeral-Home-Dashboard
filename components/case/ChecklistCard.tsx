@@ -398,6 +398,8 @@ export function ChecklistCard({
   onSaveCertifierPhone,
   onUpdateCaseInfo,
   contactRestriction,
+  isMedicalExaminerCase,
+  onToggleMedicalExaminerCase,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -421,6 +423,13 @@ export function ChecklistCard({
       the restriction, it only refuses to present a contact as preferred
       when one is active. */
   contactRestriction?: { active: boolean; arrangementContactName: string | null };
+  /** Medical Examiner case (2026-10). The Medical Examiner handles EDRS
+      entry and certifies cause of death; staff verify rather than repeat
+      it, so this stage's doctor-specific items are replaced with
+      verification items. Omit `onToggleMedicalExaminerCase` to hide the
+      control entirely. */
+  isMedicalExaminerCase?: boolean;
+  onToggleMedicalExaminerCase?: (next: boolean) => void;
 }) {
   const readOnly = viewingStageLabel !== null;
 
@@ -428,6 +437,28 @@ export function ChecklistCard({
     <div className={styles.card}>
       <div className={styles.title}>Checklist</div>
       <div className={styles.subtitle}>Required steps for this stage</div>
+
+      {/* Medical Examiner classification (2026-10). Near the top because
+          it changes what the stage below actually asks for — a staff
+          member needs to see WHY the EDRS items read the way they do,
+          without hunting for it. Rendered only when the caller supplies a
+          handler, so read-only and pickup-only views are unaffected. */}
+      {onToggleMedicalExaminerCase && (
+        <div
+          className={`${styles.meRow} ${readOnly ? styles.meRowLocked : styles.meRowUnlocked}`}
+          onClick={readOnly ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)}
+        >
+          <Checkbox
+            checked={isMedicalExaminerCase === true}
+            disabled={readOnly}
+            onChange={readOnly ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)}
+            tone="brand"
+            aria-label="Medical Examiner Case"
+          />
+          <span className={styles.meLabel}>Medical Examiner Case</span>
+          {isMedicalExaminerCase && <span className={styles.meBadge}>Medical Examiner Case</span>}
+        </div>
+      )}
 
       {viewingStageLabel && (
         <div className={styles.viewingBanner}>

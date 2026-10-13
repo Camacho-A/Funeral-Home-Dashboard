@@ -879,3 +879,59 @@ describe('ChecklistCard — contact restriction on the Family Contact item (2026
     expect(screen.queryByText('Do not contact next of kin directly.')).not.toBeInTheDocument();
   });
 });
+
+describe('ChecklistCard — Medical Examiner classification (2026-10)', () => {
+  it('offers the classification near the top of the checklist', () => {
+    const onToggleMedicalExaminerCase = vi.fn();
+    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor' })], {
+      isMedicalExaminerCase: false,
+      onToggleMedicalExaminerCase,
+    });
+
+    const box = screen.getByLabelText('Medical Examiner Case');
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(true);
+  });
+
+  it('shows a badge once a case is classified', () => {
+    renderChecklist([item({ index: 0, label: 'Medical Examiner EDRS entry verified' })], {
+      isMedicalExaminerCase: true,
+      onToggleMedicalExaminerCase: vi.fn(),
+    });
+    expect(screen.getByLabelText('Medical Examiner Case')).toBeChecked();
+    // Label plus badge.
+    expect(screen.getAllByText('Medical Examiner Case').length).toBeGreaterThan(1);
+  });
+
+  it('hides the control entirely for callers that do not offer it', () => {
+    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor' })]);
+    expect(screen.queryByLabelText('Medical Examiner Case')).not.toBeInTheDocument();
+  });
+
+  it('is not editable while viewing a past stage', () => {
+    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor' })], {
+      viewingStageLabel: 'EDRS & Doctor / Cause of Death',
+      isMedicalExaminerCase: false,
+      onToggleMedicalExaminerCase: vi.fn(),
+    });
+    expect(screen.getByLabelText('Medical Examiner Case')).toBeDisabled();
+  });
+
+  it('the verification items are ordinary toggleable items — nothing auto-completes them', () => {
+    const { onToggleItem } = renderChecklist(
+      [
+        item({ index: 3, label: 'Medical Examiner EDRS entry verified' }),
+        item({ index: 4, label: 'Medical Examiner cause of death verified' }),
+        item({ index: 5, label: 'Required ME information confirmed' }),
+      ],
+      { isMedicalExaminerCase: true, onToggleMedicalExaminerCase: vi.fn() },
+    );
+
+    const box = screen.getByRole('checkbox', { name: 'Medical Examiner EDRS entry verified' });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    // Ticked under its OWN index, which the doctor items never use.
+    expect(onToggleItem).toHaveBeenCalledWith(3, true);
+  });
+});

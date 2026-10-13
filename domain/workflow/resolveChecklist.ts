@@ -3,6 +3,7 @@ import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
 import { retiredChecklistIndices } from '../organization/checklistRetirement';
+import { applyMedicalExaminerVariant } from '../organization/medicalExaminerWorkflow';
 import { findCaseFieldForChecklistIndex } from './resolveIntake';
 import { PAYMENT_CONFIRMATION_LABEL, getChecklistLabels } from '../cases/checklist';
 import { CERTIFIER_INFORMATION_LABEL, LEGACY_CERTIFIER_ITEM_LABEL } from '../cases/legacyCertifierPresentation';
@@ -249,13 +250,31 @@ export function resolveChecklist(
         ? isFieldDone(index)
         : isManuallyDone(index);
 
+  /**
+   * Medical Examiner variant (2026-10). Applied BEFORE retirement and
+   * before any done/locked maths, so everything below operates on the
+   * items this case actually presents. A standard case is returned
+   * untouched, so the normal workflow never routes through this.
+   */
+  const presentedItems = applyMedicalExaminerVariant(
+    items,
+    case_.organizationId,
+    displayStage,
+    case_.isMedicalExaminerCase === true,
+  );
+
   // Retired items (2026-10) stay in the template at their original index —
   // `checklistState` is keyed by position, so removing one would re-point
   // every later stored key — but they are not rendered and do not gate the
   // stage. The ORIGINAL index travels on each view model below, so stored
   // state keeps resolving to exactly the item it always meant.
-  const retired = retiredChecklistIndices(case_.organizationId, displayStage, items);
-  const visible = items.map((item, index) => ({ item, index })).filter(({ index }) => !retired.has(index));
+  const retired = retiredChecklistIndices(case_.organizationId, displayStage, presentedItems);
+  // The item's OWN `index` is the identity every stored checklistState key
+  // resolves against — never its position in this array, which the ME
+  // variant can legitimately reorder.
+  const visible = presentedItems
+    .map((item) => ({ item, index: item.index }))
+    .filter(({ index }) => !retired.has(index));
 
   return visible.map(({ item, index }, position) => {
     const done = isPastStage || isItemDone(item, index);

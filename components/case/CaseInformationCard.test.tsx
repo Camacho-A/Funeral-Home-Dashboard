@@ -1638,3 +1638,42 @@ describe('CaseInformationCard — Notify Crematory badge spacing (2026-09)', () 
     expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
   });
 });
+
+describe('CaseInformationCard — Medical Examiner pending values (2026-10)', () => {
+  it('describes blanks as Pending Medical Examiner on an ME case', () => {
+    // The ME often has not released these when the Arrangement Form is
+    // submitted. Display only — nothing is invented or back-filled.
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        isMedicalExaminerCase
+        weight=""
+        timeOfDeath=""
+        certifierName={null}
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText('Pending Medical Examiner').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('never replaces a value that genuinely exists', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        isMedicalExaminerCase
+        weight="117"
+        timeOfDeath="13:30"
+        certifierName="JOHN ZARAVINOS"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('117')).toBeInTheDocument();
+    expect(screen.getByText('JOHN ZARAVINOS')).toBeInTheDocument();
+    expect(screen.queryByText('Pending Medical Examiner')).not.toBeInTheDocument();
+  });
+
+  it('a standard case still shows an em dash', () => {
+    render(<CaseInformationCard {...baseProps} weight="" certifierName={null} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Pending Medical Examiner')).not.toBeInTheDocument();
+  });
+});

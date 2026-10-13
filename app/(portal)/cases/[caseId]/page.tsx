@@ -177,6 +177,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             arrangementAuthorizationConfirmed={case_.arrangementAuthorizationConfirmed}
             arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
             isArchived={case_.isDeleted}
+            isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
             caseNumber={viewModel.caseNumber}
             decedentName={viewModel.decedentName}
             onArchiveChange={(archived) => archiveCase.mutate({ caseId, archived })}
@@ -381,6 +382,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   active: case_.doNotContactNextOfKin === true,
                   arrangementContactName: case_.arrangementContactName ?? null,
                 }}
+                isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
+                onToggleMedicalExaminerCase={(next) =>
+                  mutations.updateCaseInfo({ isMedicalExaminerCase: next })
+                }
               />
             </section>
 

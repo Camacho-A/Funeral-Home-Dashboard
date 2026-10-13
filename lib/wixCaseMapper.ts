@@ -95,6 +95,7 @@ export type WixCaseItem = {
   nextOfKinRelationship?: unknown;
   nextOfKinRelationshipOther?: unknown;
   archivedAt?: unknown;
+  isMedicalExaminerCase?: unknown;
   doNotContactNextOfKin?: unknown;
   arrangementContactName?: unknown;
   arrangementContactRelationship?: unknown;
@@ -304,6 +305,8 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     createdAt: item.createdAt,
     isDeleted: item.isArchived,
     archivedAt: typeof item.archivedAt === 'string' ? item.archivedAt : null,
+    // Absent or malformed reads as a standard case — never as a decision.
+    isMedicalExaminerCase: item.isMedicalExaminerCase === true,
     workflowTemplateId: item.workflowTemplateId,
     workflowTemplateVersion: item.workflowTemplateVersion,
     caseType: item.caseType,
@@ -600,6 +603,7 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   booleanField('isStalled');
   booleanField('isDeleted');
   nullableStringField('archivedAt');
+  booleanField('isMedicalExaminerCase');
   nullableStringField('assignedStaffId');
   nullableStringField('stalledReason');
   plainObjectField('checklistState');
@@ -759,6 +763,7 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.stalledReason !== undefined) next.stalledReason = patch.stalledReason;
   if (patch.isDeleted !== undefined) next.isArchived = patch.isDeleted;
   if (patch.archivedAt !== undefined) next.archivedAt = patch.archivedAt;
+  if (patch.isMedicalExaminerCase !== undefined) next.isMedicalExaminerCase = patch.isMedicalExaminerCase;
 
   return next;
 }

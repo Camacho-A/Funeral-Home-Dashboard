@@ -1,6 +1,7 @@
 import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { activeChecklistItemCount } from '../organization/checklistRetirement';
+import { applyMedicalExaminerVariant } from '../organization/medicalExaminerWorkflow';
 import { displayStagesInOrder } from '../workflow/resolveStages';
 
 export type CaseProgress = {
@@ -67,12 +68,25 @@ export function computeCaseProgress(
       removed by `resolveChecklist`. Optional so existing callers that only
       have a snapshot keep their previous totals. */
   organizationId?: string,
+  /** Medical Examiner case (2026-10). Defaults false, so every existing
+      caller keeps its previous totals. */
+  isMedicalExaminerCase: boolean = false,
 ): CaseProgress {
   let completedItems = 0;
   let totalItems = 0;
 
   for (const stage of displayStagesInOrder(snapshot)) {
-    const stageItemCount = activeChecklistItemCount(organizationId, stage.displayStage, stage.checklist.items);
+    // Count what this case actually presents. A Medical Examiner case
+    // swaps the doctor items for verification items, and a stage's size
+    // has to follow — today both sets are three items, but progress must
+    // not quietly depend on that staying true.
+    const presentedItems = applyMedicalExaminerVariant(
+      stage.checklist.items,
+      organizationId,
+      stage.displayStage,
+      isMedicalExaminerCase,
+    );
+    const stageItemCount = activeChecklistItemCount(organizationId, stage.displayStage, presentedItems);
     if (stage.displayStage < currentDisplayStage) {
       totalItems += stageItemCount;
       completedItems += stageItemCount;

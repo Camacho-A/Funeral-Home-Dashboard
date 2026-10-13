@@ -120,3 +120,27 @@ describe('becameComplete — archiving keys off the transition, never the state'
     expect(becameComplete(incomplete, complete)).toBe(true);
   });
 });
+
+describe('Medical Examiner cases cannot complete on unverified ME work', () => {
+  it('completion still requires reaching the last stage, which ME verification gates', () => {
+    // No new rule and no hardcoded stage number: the ME verification
+    // items live in the EDRS stage's own checklist, so a case cannot
+    // reach its template's LAST stage until they are ticked — and
+    // `isCaseWorkflowComplete` already requires the last stage.
+    const stillAtEdrs = caseAt({ rawStage: 3, pickupStatus: 'released' });
+    expect(isCaseWorkflowComplete(stillAtEdrs)).toBe(false);
+  });
+
+  it('classification alone changes nothing about completion', () => {
+    const complete = caseAt({ pickupStatus: 'released' });
+    const asMe = { ...complete, isMedicalExaminerCase: true } as typeof complete;
+    // A verified ME case that has genuinely finished still completes —
+    // the classification is not itself a blocker once the work is done.
+    expect(isCaseWorkflowComplete(asMe)).toBe(true);
+  });
+
+  it('an ME case still needs the family release, like any other', () => {
+    const awaiting = { ...caseAt({}), isMedicalExaminerCase: true } as ReturnType<typeof caseAt>;
+    expect(isCaseWorkflowComplete(awaiting)).toBe(false);
+  });
+});

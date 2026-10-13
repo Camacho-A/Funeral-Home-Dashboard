@@ -2068,3 +2068,66 @@ describe('PATCH /api/cases/[caseId] — automatic archiving (2026-10)', () => {
     expect(activityEvents().filter((e) => e.eventType === 'case.archived')).toHaveLength(0);
   });
 });
+
+describe('PATCH /api/cases/[caseId] — Medical Examiner classification (2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function mockAdminQueries(caseData: Record<string, unknown> = EXISTING_WIX_CASE_DATA) {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: caseData }]);
+    mockUpdateWixDataItem.mockImplementation((_c: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  it('persists the classification and audits the change', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isMedicalExaminerCase: true },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.case.isMedicalExaminerCase).toBe(true);
+    expect(mockUpdateWixDataItem.mock.calls.at(-1)![2]).toMatchObject({ isMedicalExaminerCase: true });
+
+    const updated = mockInsertWixDataItem.mock.calls
+      .filter(([c]) => c === 'activityEvents')
+      .map(([, d]) => d as Record<string, unknown>)
+      .filter((e) => e.eventType === 'case.updated');
+    expect(updated.some((e) => String(e.description).includes('isMedicalExaminerCase'))).toBe(true);
+  });
+
+  it('rejects a non-boolean classification', async () => {
+    mockAdminQueries();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isMedicalExaminerCase: 'yes' },
+    });
+    expect(response.status).toBe(400);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('turning the classification off never erases checklist history', async () => {
+    const withBoth = {
+      ...EXISTING_WIX_CASE_DATA,
+      isMedicalExaminerCase: true,
+      checklistState: { '2:0': true, '2:3': true, '2:4': true },
+    };
+    mockAdminQueries(withBoth);
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { isMedicalExaminerCase: false } });
+
+    const persisted = mockUpdateWixDataItem.mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect(persisted.checklistState).toEqual(withBoth.checklistState);
+  });
+
+  it('an unrelated edit never changes the classification', async () => {
+    mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, isMedicalExaminerCase: true });
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { tagNumber: 'T-4' } });
+    expect(mockUpdateWixDataItem.mock.calls.at(-1)![2]).toMatchObject({ isMedicalExaminerCase: true });
+  });
+});

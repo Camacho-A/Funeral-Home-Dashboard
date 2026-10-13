@@ -26,6 +26,7 @@ import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelati
 import { normalizeNextOfKinName } from '@/domain/cases/nextOfKinName';
 import { ContactInstructionsSection } from './ContactInstructionsSection';
 import { ArchiveCaseSection } from './ArchiveCaseSection';
+import { PENDING_MEDICAL_EXAMINER_LABEL } from '@/domain/organization/medicalExaminerWorkflow';
 import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
 import styles from './CaseInformationCard.module.css';
 
@@ -86,6 +87,7 @@ function EditableField({
   crossFieldValidate,
   valueClassName,
   trailingBadge,
+  emptyLabel,
 }: {
   label: string;
   value: string;
@@ -105,6 +107,11 @@ function EditableField({
       displayed value only (never shown while editing) — e.g. Weight's
       "Notify crematory" badge. */
   trailingBadge?: ReactNode;
+  /** What an empty value reads as instead of "—". Used for Medical
+      Examiner cases, where a blank means "the ME has not released this
+      yet", not "nobody filled it in". Display only — the stored value is
+      untouched and nothing is back-filled. */
+  emptyLabel?: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -259,7 +266,7 @@ function EditableField({
             className={`${styles.editableValue} ${trailingBadge ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
             onClick={startEditing}
           >
-            {displayValue || '—'}
+            {displayValue || emptyLabel || '—'}
           </button>
           {trailingBadge}
         </div>
@@ -290,7 +297,18 @@ const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2
  * mechanism so a just-saved time doesn't flicker back to the pre-edit
  * value while the mutation is still in flight.
  */
-function TwelveHourTimeField({ label, value, onSave }: { label: string; value: string; onSave: (newValue: string) => void }) {
+function TwelveHourTimeField({
+  label,
+  value,
+  onSave,
+  emptyLabel,
+}: {
+  label: string;
+  value: string;
+  onSave: (newValue: string) => void;
+  /** See EditableField's own `emptyLabel`. */
+  emptyLabel?: string;
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [hour, setHour] = useState('');
   const [minute, setMinute] = useState('');
@@ -370,7 +388,7 @@ function TwelveHourTimeField({ label, value, onSave }: { label: string; value: s
         </div>
       ) : (
         <button type="button" className={styles.editableValue} onClick={startEditing}>
-          {formatMilitaryTimeToTwelveHour(displayValue) || '—'}
+          {formatMilitaryTimeToTwelveHour(displayValue) || emptyLabel || '—'}
         </button>
       )}
     </div>
@@ -400,6 +418,7 @@ export function CaseInformationCard({
   isArchived,
   onArchiveChange,
   archivePending,
+  isMedicalExaminerCase,
   caseNumber,
   decedentName,
   certifierName,
@@ -471,6 +490,13 @@ export function CaseInformationCard({
   isArchived?: boolean;
   onArchiveChange?: (archived: boolean) => void;
   archivePending?: boolean;
+  /** Medical Examiner case (2026-10). Time of death, weight and certifier
+      are often unavailable when the Arrangement Form is submitted,
+      because the ME has not released them yet. A blank reads "Pending
+      Medical Examiner" rather than as simply absent — display only, and
+      deliberately so: a value SOLIS does not have is never invented or
+      back-filled. */
+  isMedicalExaminerCase?: boolean;
   /** Only used to name the case in the archive confirmation. */
   caseNumber?: string;
   decedentName?: string;
@@ -565,6 +591,9 @@ export function CaseInformationCard({
   // placed into different rows depending on `showOwner` below — never
   // duplicated JSX/logic, just relocated. Identical markup/behavior to
   // what existed inline before this follow-up.
+  /** See `isMedicalExaminerCase`'s own comment: display only. */
+  const mePending = isMedicalExaminerCase ? PENDING_MEDICAL_EXAMINER_LABEL : undefined;
+
   const returnMethodControl = (
     <div>
       <div className={styles.fieldLabel}>Return method</div>
@@ -632,6 +661,7 @@ export function CaseInformationCard({
         />
         <TwelveHourTimeField
           label="Time of death"
+          emptyLabel={mePending}
           value={timeOfDeath}
           onSave={(v) => onSaveTimeOfDeath(v)}
         />
@@ -643,6 +673,7 @@ export function CaseInformationCard({
         />
         <EditableField
           label="Weight"
+          emptyLabel={mePending}
           value={weight}
           onSave={(v) => onSaveWeight(v)}
           valueClassName={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}
@@ -717,6 +748,7 @@ export function CaseInformationCard({
       <div className={styles.grid}>
         <EditableField
           label="Certifier name"
+          emptyLabel={mePending}
           value={certifierName ?? ''}
           uppercase
           onSave={(v) => onSaveCertifierName(v.trim().length > 0 ? v.trim() : null)}

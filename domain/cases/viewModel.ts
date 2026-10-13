@@ -381,7 +381,13 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // actually resolved against (effectiveCurrentChecklist, computed from
   // `case_.rawStage` directly above), not that presentational rollback —
   // otherwise this would double-resolve the wrong stage's checklist.
-  const caseProgress = computeCaseProgress(snapshot, rawDisplayStage, effectiveCurrentChecklist, case_.organizationId);
+  const caseProgress = computeCaseProgress(
+    snapshot,
+    rawDisplayStage,
+    effectiveCurrentChecklist,
+    case_.organizationId,
+    case_.isMedicalExaminerCase === true,
+  );
   const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, lastStage, remainsReturnComplete);
   const effectiveStage = findStageByDisplayStage(snapshot, effectiveDisplayStage);
   // Manors intake-stage combination (2026-10). The ordered canonical

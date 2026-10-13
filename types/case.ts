@@ -269,6 +269,14 @@ export type Case = {
       fabricated backfill. */
   intakeOwnerId: string | null;
   createdAt: string;
+  /**
+   * Medical Examiner case (2026-10). The Medical Examiner handles EDRS
+   * entry and certifies cause of death; funeral home staff verify that
+   * rather than repeating it. Optional at the type level — absent on
+   * every case that predates the column, which reads as a standard case,
+   * never as "someone decided it is not an ME case".
+   */
+  isMedicalExaminerCase?: boolean;
   isDeleted: boolean; // soft-delete only, per docs/DECISIONS.md and docs/adr — never hard-deleted
   /**
    * Automatic archiving (2026-10). When the case was archived, ISO-8601.
