@@ -57,6 +57,17 @@ export type NotificationTokens = {
   supplierName?: string;
   billNumber?: string;
   dueDateDisplay?: string;
+  /** Intake activation (2026-10). Identifying a stuck JotForm submission
+      without describing the person it is about: the form's own label, a
+      submission reference staff can quote, a short sanitized reason, and
+      a pre-formatted receipt time (same "formatted string in" boundary as
+      every other display token here). Deliberately NO decedent or family
+      token — triaging a stuck submission never requires them, and putting
+      them here would copy personal data into every recipient's inbox. */
+  formLabel?: string;
+  submissionReference?: string;
+  reason?: string;
+  receivedAt?: string;
 };
 
 const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
@@ -70,6 +81,10 @@ const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
   'supplierName',
   'billNumber',
   'dueDateDisplay',
+  'formLabel',
+  'submissionReference',
+  'reason',
+  'receivedAt',
 ];
 
 type TemplateDefinition = {
@@ -93,6 +108,14 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
   'scheduling.appointment_reminder': {
     titleTemplate: 'Upcoming appointment',
     bodyTemplate: 'Reminder: "{{entityTitle}}" at {{appointmentStartAt}}',
+  },
+  /** Intake activation (2026-10). Carries the form, a submission
+      reference and the reason — never the deceased's or the family's
+      details, which are not needed to triage a stuck submission and
+      would put personal data into every recipient's inbox. */
+  'case.intake_submission_needs_attention': {
+    titleTemplate: 'JotForm submission needs attention',
+    bodyTemplate: '{{formLabel}} · submission {{submissionReference}} · {{reason}} · received {{receivedAt}}',
   },
   'task.assigned': {
     titleTemplate: 'Task assigned',

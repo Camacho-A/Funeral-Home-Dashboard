@@ -1,0 +1,184 @@
+/* Notification Center (2026-10). Deliberately plain: this is a working
+   list, not a showcase — the job is scanning a backlog quickly, so rows
+   stay dense and only unread state is given visual weight. */
+.page {
+  padding: 24px 28px 48px;
+  max-width: 920px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.markAllButton,
+.loadMore {
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface, #fff);
+  color: var(--sx-text, #16202c);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.markAllButton:disabled,
+.loadMore:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.loadMore {
+  margin-top: 16px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--sx-border, #d8dde5);
+  margin-bottom: 4px;
+}
+
+.tab {
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--sx-text-muted, #5b6675);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab[aria-selected='true'] {
+  color: var(--sx-text, #16202c);
+  border-bottom-color: var(--solis-selected-fg, #1f3b63);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--sx-border-faint, #eceff3);
+}
+
+/* The only strong signal in the list: an unread row gets a left rule and
+   a bolder title. Everything else stays quiet so this reads. */
+.row[data-unread] {
+  box-shadow: inset 2px 0 0 0 var(--solis-selected-fg, #1f3b63);
+  padding-left: 12px;
+}
+
+.row[data-unread] .rowTitle {
+  font-weight: 650;
+}
+
+.rowMain {
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTop {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rowTitle {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--sx-text, #16202c);
+}
+
+.rowCategory {
+  font-size: 11.5px;
+  color: var(--sx-faint, #8a94a3);
+  white-space: nowrap;
+}
+
+.rowBody {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sx-text-muted, #5b6675);
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--sx-faint, #8a94a3);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.openLink {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--solis-selected-fg, #1f3b63);
+  text-decoration: none;
+}
+
+.rowButton {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 12.5px;
+  color: var(--sx-text-muted, #5b6675);
+  cursor: pointer;
+}
+
+.rowButton:hover,
+.openLink:hover {
+  text-decoration: underline;
+}
+
+.loading {
+  color: var(--sx-text-muted, #5b6675);
+  font-size: 14px;
+}
+
+/* Mobile: actions move under the content so a long title never squeezes
+   them off the row. */
+@media (max-width: 640px) {
+  .page {
+    padding: 16px 16px 40px;
+  }
+
+  .row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .rowActions {
+    gap: 14px;
+  }
+}

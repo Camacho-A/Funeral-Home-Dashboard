@@ -14,7 +14,7 @@ import type { NotificationCategory } from '@/domain/notifications/notificationTy
 
 export type NotificationInboxItem = { notification: Notification; recipient: NotificationRecipient };
 export type NotificationInboxPage = { items: NotificationInboxItem[]; nextCursor: string | null };
-export type NotificationInboxFilters = { category?: NotificationCategory; unreadOnly?: boolean };
+export type NotificationInboxFilters = { category?: NotificationCategory; unreadOnly?: boolean; includeArchived?: boolean };
 
 async function parseJsonOrThrow(response: Response): Promise<Record<string, unknown>> {
   const body = await response.json().catch(() => ({}));
@@ -29,6 +29,7 @@ export async function fetchNotificationInbox(organizationId: string, filters: No
   const params = new URLSearchParams({ organizationId });
   if (filters.category) params.set('category', filters.category);
   if (filters.unreadOnly) params.set('unreadOnly', 'true');
+  if (filters.includeArchived) params.set('includeArchived', 'true');
   if (cursor) params.set('cursor', cursor);
   const response = await fetch(`/api/notifications?${params.toString()}`);
   const body = await parseJsonOrThrow(response);
@@ -60,6 +61,15 @@ export async function archiveNotification(organizationId: string, notificationRe
   });
   const body = await parseJsonOrThrow(response);
   return body.recipient as NotificationRecipient;
+}
+
+export async function markAllNotificationsRead(organizationId: string): Promise<{ markedRead: number }> {
+  const response = await fetch('/api/notifications/mark-all-read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId }),
+  });
+  return (await parseJsonOrThrow(response)) as { markedRead: number };
 }
 
 export async function fetchNotificationPreferences(organizationId: string): Promise<NotificationPreference> {

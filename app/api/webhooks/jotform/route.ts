@@ -11,6 +11,7 @@ import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionReceived, recordExternalFormSubmissionUnmatched } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { createCaseFromIntakeSubmission } from '@/services/externalFormIntakeService';
+import { notifyIntakeSubmissionNeedsAttention } from '@/services/intakeNotifications';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -243,6 +244,27 @@ export async function POST(request: Request) {
           error instanceof Error ? error.message : error,
         );
       }
+      // Intake activation (2026-10): annotating the row told staff WHY,
+      // but only once they went looking. This tells them it happened.
+      // In-app only, best-effort, and idempotent per (submission,
+      // recipient) — see services/intakeNotifications.ts.
+      await notifyIntakeSubmissionNeedsAttention(
+        activityCtx,
+        {
+          submissionId: submission.id,
+          formLabel: config.label,
+          submissionReference: submission.externalSubmissionId,
+          // A duplicate candidate means SOLIS deliberately HELD the
+          // submission for a person to judge, which is a different thing
+          // from creation failing — staff should see which it was.
+          reason:
+            (outcome.duplicateCandidates?.length ?? 0) > 0
+              ? 'Needs manual review before a case is created'
+              : 'Automatic case creation failed',
+          receivedAt: submission.receivedAt,
+        },
+        dataAdapterMode,
+      );
     }
     return NextResponse.json({ received: true, caseCreated: outcome.created });
   }
@@ -272,6 +294,17 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error('Failed to record external_form.submission_unmatched activity event:', error instanceof Error ? error.message : error);
     }
+    await notifyIntakeSubmissionNeedsAttention(
+      activityCtx,
+      {
+        submissionId: submission.id,
+        formLabel: config.label,
+        submissionReference: submission.externalSubmissionId,
+        reason: 'Could not be matched to a case',
+        receivedAt: submission.receivedAt,
+      },
+      dataAdapterMode,
+    );
   }
 
   return NextResponse.json({ received: true });

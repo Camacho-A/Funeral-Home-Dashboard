@@ -44,6 +44,24 @@ export const NOTIFICATION_TYPES = {
 
   TASK_ASSIGNED: { key: 'task.assigned', category: 'task' as NotificationCategory, displayName: 'Task Assigned' },
 
+  /**
+   * Intake activation (2026-10). A JotForm submission arrived that SOLIS
+   * could not resolve on its own — it matched no case, or automatic case
+   * creation declined/failed. Until now the only signal was a row
+   * appearing on the Unmatched Forms page that somebody had to think to
+   * visit; a submission could sit there for days unnoticed.
+   *
+   * Deliberately ONE type for every such outcome rather than one per
+   * reason. The staff action is identical in all of them — open the
+   * review screen and resolve it — and the specific reason is carried in
+   * the body, where it informs without fragmenting the inbox.
+   */
+  INTAKE_SUBMISSION_NEEDS_ATTENTION: {
+    key: 'case.intake_submission_needs_attention',
+    category: 'case' as NotificationCategory,
+    displayName: 'Intake Submission Needs Attention',
+  },
+
   SIGNATURE_COMPLETED: { key: 'signature.completed', category: 'signature' as NotificationCategory, displayName: 'Document Signed' },
   SIGNATURE_DECLINED: { key: 'signature.declined', category: 'signature' as NotificationCategory, displayName: 'Signature Declined' },
 

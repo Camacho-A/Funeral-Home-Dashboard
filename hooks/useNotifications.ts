@@ -4,6 +4,7 @@ import {
   fetchUnreadNotificationCount,
   markNotificationRead,
   archiveNotification,
+  markAllNotificationsRead,
   fetchNotificationPreferences,
   updateNotificationPreferences,
   type NotificationInboxFilters,
@@ -46,6 +47,19 @@ export function useUnreadNotificationCount(organizationId: string) {
     queryFn: () => fetchUnreadNotificationCount(organizationId),
     enabled: Boolean(organizationId),
     refetchInterval: 60_000,
+  });
+}
+
+/** Notification Center (2026-10). Invalidates the same two caches a
+    single mark-read does, so the list and the bell badge both settle. */
+export function useMarkAllNotificationsRead(organizationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => markAllNotificationsRead(organizationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificationInbox', organizationId] });
+      queryClient.invalidateQueries({ queryKey: unreadCountKey(organizationId) });
+    },
   });
 }
 

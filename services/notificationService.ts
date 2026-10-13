@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { countWixDataItems, queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixNotificationItem, buildWixNotificationData, applyNotificationPatchToWixData, type WixNotificationItem } from '../lib/wixNotificationMapper';
 import {
   mapWixNotificationRecipientItem,
@@ -568,10 +568,16 @@ export async function createNotification(
 
     const preference = await getPreferences(ctx.organizationId, identityId, dataAdapterMode);
     const toggles = resolveEffectiveChannelToggles(preference, notification.category as NotificationCategory);
+    // `params.channels` is an upper bound the CALLER sets; preferences are
+    // the recipient's own. A channel is used only if BOTH allow it, so a
+    // caller can restrict to in-app without ever overriding someone who
+    // has turned in-app off. Omitted means the caller imposes no bound.
+    const allowedByCaller = params.channels ? new Set(params.channels) : null;
+    const permits = (channel: NotificationChannel) => allowedByCaller === null || allowedByCaller.has(channel);
     const channels: NotificationChannel[] = [];
-    if (toggles.inAppEnabled) channels.push('in_app');
-    if (toggles.emailEnabled) channels.push('email');
-    if (toggles.smsEnabled) channels.push('sms');
+    if (toggles.inAppEnabled && permits('in_app')) channels.push('in_app');
+    if (toggles.emailEnabled && permits('email')) channels.push('email');
+    if (toggles.smsEnabled && permits('sms')) channels.push('sms');
 
     for (const channel of channels) {
       await dispatchChannel(notification, recipient, channel, content, ctx, caseIdForActivity, preference, organization?.timezone, now, dataAdapterMode);
@@ -625,6 +631,54 @@ export async function markRead(organizationId: string, notificationRecipientId: 
   }
 
   return updated;
+}
+
+/**
+ * Mark every unread in-app notification read for one identity (2026-10).
+ *
+ * Reuses `markRead` per row rather than bulk-patching, so each row goes
+ * through the same ownership check and emits the same activity event a
+ * single mark-read does — "mark all" is a convenience over the existing
+ * operation, never a second way to mutate inbox state.
+ *
+ * Scoped by `(organizationId, identityId)`: it can only ever touch the
+ * caller's own unread rows in the organization they are acting in.
+ */
+export async function markAllReadForIdentity(
+  organizationId: string,
+  identityId: string,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ markedRead: number }> {
+  const unread = await listUnreadRecipientsForIdentity(organizationId, identityId, dataAdapterMode);
+  let markedRead = 0;
+  for (const recipient of unread) {
+    try {
+      await markRead(organizationId, recipient.id, identityId, ctx, dataAdapterMode);
+      markedRead += 1;
+    } catch (error) {
+      console.error(`Failed to mark notification ${recipient.id} read:`, error instanceof Error ? error.message : error);
+    }
+  }
+  return { markedRead };
+}
+
+/** Every not-yet-read, not-archived recipient row for one identity.
+    Paginated, so "mark all" genuinely means all. */
+async function listUnreadRecipientsForIdentity(
+  organizationId: string,
+  identityId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<NotificationRecipient[]> {
+  if (dataAdapterMode === 'mock') {
+    return notificationRecipientFixtures.filter(
+      (r) => r.organizationId === organizationId && r.identityId === identityId && r.readAt === null && r.archivedAt === null,
+    );
+  }
+  const items = await queryAllWixDataItems<WixNotificationRecipientItem>('notificationRecipients', { organizationId, identityId });
+  return items
+    .map((item) => mapWixNotificationRecipientItem(item.data))
+    .filter((r): r is NotificationRecipient => r !== null && r.readAt === null && r.archivedAt === null);
 }
 
 export async function archiveNotificationForRecipient(
@@ -791,23 +845,30 @@ export async function listForOrganization(
 // ---------------------------------------------------------------------------
 // Unread badge — always a live query over NotificationDelivery, never a
 // separately-maintained counter (see this file's own header comment and
-// ADR-032). Whether Wix Data's COUNT capability is reachable is an
-// empirical question for live verification (task #243); until confirmed,
-// this fetches the matching rows and counts them in application code,
-// bounded by WIX_FETCH_WINDOW.
+// ADR-032).
+//
+// Pagination fix (2026-10). This previously fetched up to WIX_FETCH_WINDOW
+// (250) delivery rows and counted the unread ones in application code,
+// because whether Wix Data's COUNT capability was reachable was an open
+// question (task #243). It is: verified against the live site, COUNT
+// honours a filter and the `$ne` operator, and returns a true total rather
+// than a page. The old approach did not merely cap the badge at 250 — the
+// query carried no sort, so past 250 deliveries it counted the unread rows
+// within an ARBITRARY 250, and the number it showed meant nothing in
+// particular. Counting server-side is exact at any volume and loads no
+// rows at all.
 // ---------------------------------------------------------------------------
 
 export async function getUnreadCount(organizationId: string, identityId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
   if (dataAdapterMode === 'mock') {
     return notificationDeliveryFixtures.filter((d) => d.organizationId === organizationId && d.identityId === identityId && d.channel === 'in_app' && d.status !== 'read').length;
   }
-  const response = await queryWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', {
-    filter: { organizationId, identityId, channel: 'in_app' },
-    paging: { limit: WIX_FETCH_WINDOW },
+  return countWixDataItems('notificationDeliveries', {
+    organizationId,
+    identityId,
+    channel: 'in_app',
+    status: { $ne: 'read' },
   });
-  return response.dataItems
-    .map((item) => mapWixNotificationDeliveryItem(item.data))
-    .filter((d): d is NotificationDelivery => d !== null && d.status !== 'read').length;
 }
 
 // ---------------------------------------------------------------------------
@@ -827,11 +888,11 @@ export async function listAllQueuedForDigestDeliveries(dataAdapterMode: DataAdap
   if (dataAdapterMode === 'mock') {
     return notificationDeliveryFixtures.filter((d) => d.status === 'queued_for_digest');
   }
-  const response = await queryWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', {
-    filter: { status: 'queued_for_digest' },
-    paging: { limit: WIX_FETCH_WINDOW },
-  });
-  return response.dataItems.map((item) => mapWixNotificationDeliveryItem(item.data)).filter((d): d is NotificationDelivery => d !== null);
+  // Paginated (2026-10): a sweep that silently processed only the first
+  // WIX_FETCH_WINDOW rows would strand the rest indefinitely, and a
+  // backlog is exactly the state this sweep exists to clear.
+  const items = await queryAllWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', { status: 'queued_for_digest' });
+  return items.map((item) => mapWixNotificationDeliveryItem(item.data)).filter((d): d is NotificationDelivery => d !== null);
 }
 
 /**

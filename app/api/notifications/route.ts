@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     actionUrl?: unknown;
     tokens?: unknown;
     saveAsDraft?: unknown;
+    channels?: unknown;
   };
 
   if (typeof b.organizationId !== 'string') return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
@@ -81,6 +82,23 @@ export async function POST(request: Request) {
   }
   if (b.tokens !== undefined && (typeof b.tokens !== 'object' || b.tokens === null)) {
     return NextResponse.json({ error: 'tokens must be an object if provided.' }, { status: 400 });
+  }
+  /**
+   * Optional channel bound (2026-10). Omitted keeps the original
+   * behaviour — every channel the recipient's preferences allow. Supplied,
+   * it NARROWS: `["in_app"]` sends an in-app notification and nothing
+   * else, whatever the recipient has enabled.
+   *
+   * This exists so a manual send can be made deliberately silent — the
+   * safe way to exercise the delivery pipeline without sending real email
+   * or SMS to real staff. It can never widen delivery, so it is not a way
+   * to bypass somebody's preferences.
+   */
+  const VALID_CHANNELS = ['in_app', 'email', 'sms'];
+  if (b.channels !== undefined) {
+    if (!Array.isArray(b.channels) || b.channels.length === 0 || !b.channels.every((c) => typeof c === 'string' && VALID_CHANNELS.includes(c))) {
+      return NextResponse.json({ error: 'channels must be a non-empty array of "in_app" | "email" | "sms".' }, { status: 400 });
+    }
   }
 
   const authResult = await requireAuthorizedOrganization(b.organizationId);
@@ -105,6 +123,7 @@ export async function POST(request: Request) {
         actionUrl: typeof b.actionUrl === 'string' ? b.actionUrl : undefined,
         tokens: (b.tokens as Record<string, string> | undefined) ?? {},
         saveAsDraft: b.saveAsDraft === true,
+        channels: b.channels as ('in_app' | 'email' | 'sms')[] | undefined,
         idFactory: () => crypto.randomUUID(),
       },
       { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },

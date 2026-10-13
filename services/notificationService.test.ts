@@ -13,6 +13,7 @@ import {
   getPreferences,
   updatePreferences,
   NotificationServiceError,
+  markAllReadForIdentity,
 } from './notificationService';
 import {
   notificationFixtures,
@@ -695,5 +696,144 @@ describe('NotificationService orchestration boundary (structural)', () => {
       const offenders = allFiles.filter((filePath) => filePath !== notificationServicePath && writePattern.test(readFileSync(filePath, 'utf8')));
       expect(offenders, `unexpected writer(s) of "${collection}": ${offenders.join(', ')}`).toEqual([]);
     }
+  });
+});
+
+/**
+ * In-app activation safety (2026-10). `channels` is an upper bound the
+ * CALLER sets. Without it, a trigger wired today would send real email —
+ * every production preference row has email on with instant digest.
+ */
+describe('caller-supplied channel bound', () => {
+  function prefs(identityId: string, over: Partial<{ emailEnabled: boolean; inAppEnabled: boolean; smsEnabled: boolean }> = {}) {
+    notificationPreferenceFixtures.push({
+      id: `${DEFAULT_ORGANIZATION_ID}-${identityId}`,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      identityId,
+      emailEnabled: true,
+      inAppEnabled: true,
+      smsEnabled: true,
+      digestFrequency: 'instant',
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      categoryOverrides: {},
+      lastDigestSentAt: null,
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      ...over,
+    });
+  }
+
+  it('restricts delivery to in_app when asked, despite email and sms being enabled', async () => {
+    prefs(MANORS_ADMIN_IDENTITY_ID);
+    await createNotification(
+      {
+        notificationType: 'system.announcement',
+        recipientScope: 'individual',
+        recipientIdentityId: MANORS_ADMIN_IDENTITY_ID,
+        channels: ['in_app'],
+        tokens: { entityTitle: 'Bounded' },
+        idFactory,
+      },
+      ctx(),
+      'mock',
+    );
+    expect(notificationDeliveryFixtures.map((d) => d.channel)).toEqual(['in_app']);
+  });
+
+  it('omitting it keeps the original behaviour — every enabled channel is used', async () => {
+    prefs(MANORS_ADMIN_IDENTITY_ID);
+    await createNotification(
+      {
+        notificationType: 'system.announcement',
+        recipientScope: 'individual',
+        recipientIdentityId: MANORS_ADMIN_IDENTITY_ID,
+        tokens: { entityTitle: 'Unbounded' },
+        idFactory,
+      },
+      ctx(),
+      'mock',
+    );
+    expect(notificationDeliveryFixtures.map((d) => d.channel)).toContain('email');
+  });
+
+  it('can only NARROW — a disabled channel is never re-enabled by asking for it', async () => {
+    prefs(MANORS_ADMIN_IDENTITY_ID, { emailEnabled: false, inAppEnabled: false, smsEnabled: false });
+    await createNotification(
+      {
+        notificationType: 'system.announcement',
+        recipientScope: 'individual',
+        recipientIdentityId: MANORS_ADMIN_IDENTITY_ID,
+        channels: ['in_app', 'email', 'sms'],
+        tokens: { entityTitle: 'Still nothing' },
+        idFactory,
+      },
+      ctx(),
+      'mock',
+    );
+    expect(notificationDeliveryFixtures).toHaveLength(0);
+  });
+});
+
+describe('markAllReadForIdentity', () => {
+  async function seedUnread(count: number, identityId: string) {
+    for (let i = 0; i < count; i++) {
+      await createNotification(
+        {
+          notificationType: 'system.announcement',
+          recipientScope: 'individual',
+          recipientIdentityId: identityId,
+          channels: ['in_app'],
+          tokens: { entityTitle: `n${i}` },
+          idFactory,
+        },
+        ctx(),
+        'mock',
+      );
+    }
+  }
+
+  it('marks every unread row read, including past any page-size ceiling', async () => {
+    // 300 > the old 250-row window, which is the point.
+    await seedUnread(300, MANORS_ADMIN_IDENTITY_ID);
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(300);
+
+    const result = await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+
+    expect(result.markedRead).toBe(300);
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(0);
+  });
+
+  it('touches nobody else’s inbox', async () => {
+    await seedUnread(3, MANORS_ADMIN_IDENTITY_ID);
+    await seedUnread(2, MANORS_CHRIS_IDENTITY_ID);
+
+    await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_CHRIS_IDENTITY_ID, 'mock')).toBe(2);
+  });
+
+  it('is a no-op when nothing is unread', async () => {
+    const result = await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    expect(result.markedRead).toBe(0);
+  });
+});
+
+describe('unread count is exact beyond the old 250-row window', () => {
+  it('counts 400 unread as 400, not 250', async () => {
+    for (let i = 0; i < 400; i++) {
+      await createNotification(
+        {
+          notificationType: 'system.announcement',
+          recipientScope: 'individual',
+          recipientIdentityId: MANORS_ADMIN_IDENTITY_ID,
+          channels: ['in_app'],
+          tokens: { entityTitle: `n${i}` },
+          idFactory,
+        },
+        ctx(),
+        'mock',
+      );
+    }
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(400);
   });
 });

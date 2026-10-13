@@ -12,7 +12,7 @@
  */
 import type { ReactNode } from 'react';
 
-export type IconName = 'dashboard' | 'tasks' | 'calendar' | 'reports' | 'accounting' | 'settings' | 'search';
+export type IconName = 'dashboard' | 'tasks' | 'calendar' | 'reports' | 'accounting' | 'settings' | 'search' | 'notifications';
 
 const PATHS: Record<IconName, ReactNode> = {
   dashboard: (
@@ -27,6 +27,15 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
       <path d="M5.5 8l2 2 3-4" />
+    </>
+  ),
+  /* The same bell the TopBar bell button already draws, scaled to the
+     16px line-glyph grid — the nav entry and the bell must read as the
+     same thing. */
+  notifications: (
+    <>
+      <path d="M8 2a3.6 3.6 0 0 0-3.6 3.6v2.06c0 .33-.12.65-.33.9l-.87 1.02c-.4.48-.06 1.2.56 1.2h8.48c.62 0 .96-.72.56-1.2l-.87-1.02a1.4 1.4 0 0 1-.33-.9V5.6A3.6 3.6 0 0 0 8 2Z" />
+      <path d="M6.6 12.4a1.5 1.5 0 0 0 2.8 0" />
     </>
   ),
   calendar: (

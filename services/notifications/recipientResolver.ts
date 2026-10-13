@@ -45,10 +45,20 @@ export type ResolveRecipientsParams = {
     API — mirrors `services/signatureService.ts`'s identical
     `getCaseForNotification` precedent exactly. */
 async function getCaseForRecipientResolution(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<Case | null> {
+  // Archived cases resolve (2026-10). This used to filter them out, so a
+  // notification about an archived case resolved to ZERO recipients: the
+  // notification row was created, reached nobody, and said nothing about
+  // it. The people who worked a case do not stop being its participants
+  // when it is filed away, and the detail page opens an archived case
+  // read-only, so the link still works.
+  //
+  // This does NOT mean archiving generates notifications — nothing calls
+  // this on archive. It means a notification that legitimately arises
+  // about an archived case can still find the people it is for.
   if (dataAdapterMode === 'mock') {
-    return caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted) ?? null;
+    return caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId) ?? null;
   }
-  const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { beaconCaseId: caseId, organizationId, isArchived: false }, paging: { limit: 1 } });
+  const response = await queryWixDataItems<WixCaseItem>('cases', { filter: { beaconCaseId: caseId, organizationId }, paging: { limit: 1 } });
   return mapWixCaseItem(response.dataItems[0]?.data);
 }
 

@@ -196,3 +196,39 @@ describe('resolveRecipientIdentityIds', () => {
     await expect(resolveRecipientIdentityIds({ organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'portal_user' }, 'mock')).rejects.toThrow(RecipientResolverError);
   });
 });
+
+describe('archived cases still resolve their participants (2026-10)', () => {
+  it('a notification about an archived case reaches people instead of nobody', async () => {
+    // This used to filter archived cases out, so the notification was
+    // created and reached zero recipients with nothing to say so. The
+    // people who worked a case do not stop being its participants when it
+    // is filed away, and the detail page opens an archived case read-only.
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    try {
+      const recipients = await resolveRecipientIdentityIds(
+        { organizationId: DEFAULT_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: target.id },
+        'mock',
+      );
+      expect(recipients.length).toBeGreaterThan(0);
+    } finally {
+      caseFixtures[index] = target;
+    }
+  });
+
+  it('stays organization-scoped for an archived case', async () => {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    try {
+      const recipients = await resolveRecipientIdentityIds(
+        { organizationId: SECOND_MOCK_ORGANIZATION_ID, recipientScope: 'case_participants', caseId: target.id },
+        'mock',
+      );
+      expect(recipients).toEqual([]);
+    } finally {
+      caseFixtures[index] = target;
+    }
+  });
+});

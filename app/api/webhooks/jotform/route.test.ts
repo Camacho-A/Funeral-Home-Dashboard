@@ -519,6 +519,57 @@ describe('POST /api/webhooks/jotform — unmatched submission', () => {
   });
 });
 
+/**
+ * Intake activation (2026-10). The webhook now announces a submission it
+ * could not resolve, instead of leaving a row on a page somebody has to
+ * think to visit.
+ */
+describe('POST /api/webhooks/jotform — notifies staff about unresolved submissions', () => {
+  it('creates an in-app notification when a submission cannot be matched', async () => {
+    const { notificationFixtures, notificationDeliveryFixtures } = await import('@/services/__mocks__/notificationFixtures');
+    notificationFixtures.length = 0;
+    notificationDeliveryFixtures.length = 0;
+
+    givenJotformHasSubmission({ formId: VITAL_STATISTICS_FORM_ID, submissionId: SUB.noToken });
+    const { POST } = await import('./route');
+    await POST(webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: SUB.noToken }));
+
+    const created = notificationFixtures.filter((n) => n.notificationType === 'case.intake_submission_needs_attention');
+    expect(created.length).toBeGreaterThan(0);
+    expect(created[0].title).toBe('JotForm submission needs attention');
+    expect(created[0].actionUrl).toBe('/unmatched-forms');
+    // IN-APP ONLY — the whole safety property of this phase.
+    expect(notificationDeliveryFixtures.every((d) => d.channel === 'in_app')).toBe(true);
+  });
+
+  it('a redelivery of the same submission does not notify twice', async () => {
+    const { notificationFixtures } = await import('@/services/__mocks__/notificationFixtures');
+    notificationFixtures.length = 0;
+
+    givenJotformHasSubmission({ formId: VITAL_STATISTICS_FORM_ID, submissionId: SUB.noToken });
+    const { POST } = await import('./route');
+    await POST(webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: SUB.noToken }));
+    const afterFirst = notificationFixtures.filter((n) => n.notificationType === 'case.intake_submission_needs_attention').length;
+    await POST(webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: SUB.noToken }));
+    const afterSecond = notificationFixtures.filter((n) => n.notificationType === 'case.intake_submission_needs_attention').length;
+
+    expect(afterSecond).toBe(afterFirst);
+  });
+
+  it('the notification carries no deceased or family detail', async () => {
+    const { notificationFixtures } = await import('@/services/__mocks__/notificationFixtures');
+    notificationFixtures.length = 0;
+
+    givenJotformHasSubmission({ formId: VITAL_STATISTICS_FORM_ID, submissionId: SUB.noToken });
+    const { POST } = await import('./route');
+    await POST(webhookRequest({ formID: VITAL_STATISTICS_FORM_ID, submissionID: SUB.noToken }));
+
+    for (const n of notificationFixtures) {
+      expect(`${n.title} ${n.body}`).not.toMatch(/decedent|deceased|next of kin/i);
+    }
+  });
+});
+
 describe('POST /api/webhooks/jotform — data minimization', () => {
   it('never persists a full rawPayload or the raw solisLinkToken on the stored submission', async () => {
     const { generateLinkForSending } = await import('@/services/caseFormLinkService');

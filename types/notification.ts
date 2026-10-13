@@ -34,6 +34,8 @@ export function isTerminalNotificationStatus(status: NotificationStatus): boolea
     `dispatchChannel` for the resulting email-resolution fallback this
     requires. Never conflated with `'individual'`, which is always
     Identity-space. */
+import type { NotificationChannel } from './notificationDelivery';
+
 export type RecipientScope = 'individual' | 'role' | 'organization_wide' | 'case_participants' | 'portal_user';
 
 export type Notification = {
@@ -83,4 +85,17 @@ export type NewNotificationInput = {
       resolveNotificationContent — never a pre-formatted title/body here. */
   tokens?: Record<string, string>;
   saveAsDraft?: boolean;
+  /**
+   * The channels this notification may use at most (2026-10).
+   *
+   * Omitted means "whatever each recipient's preferences allow" — the
+   * original behaviour, unchanged for every existing caller.
+   *
+   * When supplied this NARROWS and can never widen: a recipient who has
+   * turned a channel off still does not receive it. It exists so a caller
+   * can state "in-app only" as a property of the trigger itself rather
+   * than depending on every recipient's saved preferences happening to
+   * have email and SMS switched off — which in production they do not.
+   */
+  channels?: readonly NotificationChannel[];
 };
