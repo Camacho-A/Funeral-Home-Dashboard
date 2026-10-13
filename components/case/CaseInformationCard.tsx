@@ -707,24 +707,21 @@ export function CaseInformationCard({
         </p>
       )}
       <div className={styles.grid}>
-        {/* Deceased name (2026-10). The middle name is shown WITH the
-            first and last rather than as an isolated box — on its own it
-            told you a middle name without saying whose, or what the whole
-            name reads as once it is in. The full name above is the
-            composed result (first, middle, last), so editing the middle
-            name updates the line directly above it. */}
+        {/* Deceased name (2026-10). ONE complete name — first, middle and
+            last together — not a name plus a separate middle-name box.
+            A middle name is part of someone's name, not a property of
+            their case, and showing it on its own line invited reading it
+            as a separate fact.
+            `decedentMiddleName` is still stored, still mapped from all
+            three JotForm forms, and still searchable; it simply has no
+            standalone field here. It reaches this card only to be
+            composed into the name below. */}
         <div className={styles.fullNameRow}>
           <div className={styles.fieldLabel}>Name</div>
           <div className={styles.fullNameValue}>
             {toDisplayName(composeDecedentName(decedentName ?? '', decedentMiddleName)) || '—'}
           </div>
         </div>
-        <EditableField
-          label="Middle name"
-          value={decedentMiddleName ?? ''}
-          uppercase
-          onSave={(v) => onUpdateCaseInfo({ decedentMiddleName: v.trim().length > 0 ? v.trim() : null })}
-        />
         <EditableField
           label="Date of birth"
           value={dateOfBirth}

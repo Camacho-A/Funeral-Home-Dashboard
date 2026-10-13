@@ -79,6 +79,10 @@ const SUB = {
   arrDupe: '2000000000000000015',
   fcAfterArr: '2000000000000000016',
   arrPdfFails: '2000000000000000017',
+  mnFirstCall: '2000000000000000018',
+  mnArrangement: '2000000000000000019',
+  mnAbsent: '2000000000000000020',
+  mnOtherPeople: '2000000000000000021',
   arrNoBranch: '2000000000000000017',
   arrConcurrentA: '2000000000000000018',
 };
@@ -392,6 +396,48 @@ async function deliverArrangement(
   const { POST } = await import('./route');
   return POST(webhookRequest({ formID: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, submissionID: submissionId }));
 }
+
+/**
+ * Middle name from JotForm (2026-10). All three forms send the deceased
+ * name as a structured {first, middle, last, suffix}; the middle is read
+ * from the SAME question as first and last, never split out of a full
+ * name string.
+ */
+describe('decedent middle name reaches the new case', () => {
+  it('a First Call submission creates the case with its middle name', async () => {
+    await deliverFirstCall(SUB.mnFirstCall, { '3': { first: 'MARGARET', middle: 'ADAEZE', last: 'OKONKWO' } });
+
+    expect(casePostBodies[0].decedentMiddleName).toBe('ADAEZE');
+    // The stored full name is untouched — the middle name is separate.
+    expect(casePostBodies[0].decedentName).toBe('MARGARET OKONKWO');
+  });
+
+  it('an Arrangement-first submission does too, with no First Call', async () => {
+    await deliverArrangement(SUB.mnArrangement, { '87': { first: 'JOYCE', middle: 'BEVERLY', last: 'GOLLIS' } });
+
+    expect(casePostBodies[0].decedentMiddleName).toBe('BEVERLY');
+    expect(casePostBodies[0].decedentName).toBe('JOYCE GOLLIS');
+  });
+
+  it('a submission with no middle name omits the field rather than sending blank', async () => {
+    // Omitted, never '' — an empty box must not be able to blank a value
+    // another form supplied.
+    await deliverFirstCall(SUB.mnAbsent, { '3': { first: 'MARGARET', middle: '', last: 'OKONKWO' } });
+
+    expect(casePostBodies[0]).not.toHaveProperty('decedentMiddleName');
+  });
+
+  it('reads the middle name off the deceased question, not another person on the form', async () => {
+    // The Arrangement form carries several full-name questions (spouse,
+    // parents, informant). Only qid 87 is the deceased.
+    await deliverArrangement(SUB.mnOtherPeople, {
+      '87': { first: 'JOYCE', middle: 'BEVERLY', last: 'GOLLIS' },
+      '122': { first: 'MARCIA', middle: 'ELAINE', last: 'SHALLOW' },
+    });
+
+    expect(casePostBodies[0].decedentMiddleName).toBe('BEVERLY');
+  });
+});
 
 describe('Arrangement Forms can open a case on its own (2026-10)', () => {
   it('SCENARIO B — an Arrangement submission with no First Call creates a case', async () => {

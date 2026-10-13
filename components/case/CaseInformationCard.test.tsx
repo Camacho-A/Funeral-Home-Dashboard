@@ -1735,42 +1735,51 @@ describe('CaseInformationCard — archived cases are read-only', () => {
 
 /**
  * Decedent middle name (2026-10). Stored separately from `decedentName`,
- * which is never re-parsed — see domain/cases/decedentName.ts.
+ * which is never re-parsed, and shown as part of ONE complete name rather
+ * than as a standalone field — see domain/cases/decedentName.ts.
  */
-describe('CaseInformationCard — decedent middle name', () => {
-  it('shows an existing middle name', () => {
+describe('CaseInformationCard — the deceased name is one complete name', () => {
+  it('shows first, middle and last together', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        decedentName="JOYCE GOLLIS"
+        decedentMiddleName="BEVERLY"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Joyce Beverly Gollis')).toBeInTheDocument();
+  });
+
+  it('has NO separate middle-name field', () => {
     render(<CaseInformationCard {...baseProps} decedentMiddleName="BEVERLY" onUpdateCaseInfo={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'BEVERLY' })).toBeInTheDocument();
-  });
-
-  it('saves an entered middle name, upper-cased like every other name field', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} decedentMiddleName={null} onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    const field = screen.getByText('Middle name').parentElement!;
-    fireEvent.click(within(field).getByRole('button'));
-    const input = within(field).getByRole('textbox');
-    fireEvent.change(input, { target: { value: 'beverly' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentMiddleName: 'BEVERLY' });
-  });
-
-  it('clearing it stores null rather than an empty string', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} decedentMiddleName="BEVERLY" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'BEVERLY' }));
-    const input = screen.getByDisplayValue('BEVERLY');
-    fireEvent.change(input, { target: { value: '' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentMiddleName: null });
-  });
-
-  it('is read-only on an archived case', () => {
-    render(<CaseInformationCard {...baseProps} decedentMiddleName="BEVERLY" onUpdateCaseInfo={vi.fn()} isArchived />);
-    expect(screen.getByText('BEVERLY')).toBeInTheDocument();
+    expect(screen.queryByText('Middle name')).not.toBeInTheDocument();
+    // And no editable control carrying the middle name on its own.
     expect(screen.queryByRole('button', { name: 'BEVERLY' })).not.toBeInTheDocument();
+  });
+
+  it('shows the stored name unchanged when there is no middle name', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        decedentName="JOHN SMITH"
+        decedentMiddleName={null}
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    // No double space, no trailing space, nothing invented.
+    expect(screen.getByText('John Smith')).toBeInTheDocument();
+  });
+
+  it('never splits a multi-word surname', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        decedentName="EVARISTA SILVA RIVERO"
+        decedentMiddleName="ROSA"
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Evarista Rosa Silva Rivero')).toBeInTheDocument();
   });
 });
