@@ -267,3 +267,18 @@
   font-size: 13px;
   line-height: 1.4;
 }
+
+/* Deceased name (2026-10). The composed full name, shown with the
+   editable middle name directly beneath it so the middle name is never
+   presented without the name it belongs to. Not click-to-edit: the name
+   itself is not this card's to change. */
+.fullNameRow {
+  grid-column: 1 / -1;
+}
+
+.fullNameValue {
+  padding: 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sx-text, #16202c);
+}

@@ -27,6 +27,8 @@ import { normalizeNextOfKinName } from '@/domain/cases/nextOfKinName';
 import { ContactInstructionsSection } from './ContactInstructionsSection';
 import { ArchiveCaseSection } from './ArchiveCaseSection';
 import { PENDING_MEDICAL_EXAMINER_LABEL } from '@/domain/organization/medicalExaminerWorkflow';
+import { composeDecedentName } from '@/domain/cases/decedentName';
+import { toDisplayName } from '@/utils/displayName';
 import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
 import styles from './CaseInformationCard.module.css';
 
@@ -705,11 +707,18 @@ export function CaseInformationCard({
         </p>
       )}
       <div className={styles.grid}>
-        {/* Middle name (2026-10). Optional, and sits above the dates
-            because it belongs with who the decedent was, not with the
-            case's timeline. `decedentName` itself is edited from the case
-            header, not here, so this is the one name part this card
-            owns. */}
+        {/* Deceased name (2026-10). The middle name is shown WITH the
+            first and last rather than as an isolated box — on its own it
+            told you a middle name without saying whose, or what the whole
+            name reads as once it is in. The full name above is the
+            composed result (first, middle, last), so editing the middle
+            name updates the line directly above it. */}
+        <div className={styles.fullNameRow}>
+          <div className={styles.fieldLabel}>Name</div>
+          <div className={styles.fullNameValue}>
+            {toDisplayName(composeDecedentName(decedentName ?? '', decedentMiddleName)) || '—'}
+          </div>
+        </div>
         <EditableField
           label="Middle name"
           value={decedentMiddleName ?? ''}
