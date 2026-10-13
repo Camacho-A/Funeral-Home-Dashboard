@@ -187,6 +187,79 @@ describe('GET /api/cases/[caseId] — authorization', () => {
   });
 });
 
+/**
+ * Archived cases open (2026-10).
+ *
+ * The detail route used to filter `isArchived: false`, so every archived
+ * case 404'd — which the detail page surfaces as "Case ... not found for
+ * this organization". That is the error staff hit clicking "Open Case" on
+ * a calendar event for an archived case, and the same error the Archived
+ * Cases list produced. It also made Restore unreachable, since the only
+ * Restore control lives on the case detail page.
+ */
+describe('GET /api/cases/[caseId] — archived cases open', () => {
+  /** No fixture ships archived, so archive one here and put it back —
+      otherwise these would pass vacuously. */
+  async function withArchivedFixture<T>(run: (archivedId: string) => Promise<T>): Promise<T> {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    try {
+      return await run(target.id);
+    } finally {
+      caseFixtures[index] = target;
+    }
+  }
+
+  it('returns an archived case with its full detail, not a 404', async () => {
+    const { status, body, expected } = await withArchivedFixture(async (archivedId) => {
+      const response = await requestFor(archivedId, DEFAULT_ORGANIZATION_ID);
+      const expected = caseFixtures.find((c) => c.id === archivedId)!;
+      return { status: response.status, body: await response.json(), expected };
+    });
+
+    expect(status).toBe(200);
+    expect(body.case.id).toBe(expected.id);
+    // Everything staff open an archived case FOR — the case number, the
+    // deceased, next of kin, the checklist history, the workflow it ran.
+    expect(body.case.caseNumber).toBe(expected.caseNumber);
+    expect(body.case.decedentName).toBe(expected.decedentName);
+    expect(body.case.nextOfKinName).toBe(expected.nextOfKinName);
+    expect(body.case.checklistState).toEqual(expected.checklistState);
+    expect(body.case.workflowSnapshot).toEqual(expected.workflowSnapshot);
+  });
+
+  it('reports the case as archived, so the page can render it read-only', async () => {
+    const body = await withArchivedFixture(async (archivedId) =>
+      (await requestFor(archivedId, DEFAULT_ORGANIZATION_ID)).json(),
+    );
+    expect(body.case.isDeleted).toBe(true);
+  });
+
+  it('reading an archived case never un-archives it', async () => {
+    const stillArchived = await withArchivedFixture(async (archivedId) => {
+      await requestFor(archivedId, DEFAULT_ORGANIZATION_ID);
+      return caseFixtures.find((c) => c.id === archivedId)!.isDeleted;
+    });
+    expect(stillArchived).toBe(true);
+  });
+
+  it('is still organization-scoped — archiving does not open a cross-tenant door', async () => {
+    const status = await withArchivedFixture(async (archivedId) => {
+      mockSession = { user: mockMultiOrgUser };
+      return (await requestFor(archivedId, SECOND_MOCK_ORGANIZATION_ID)).status;
+    });
+    expect(status).toBe(404);
+  });
+
+  it('an active case is completely unaffected', async () => {
+    const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const response = await requestFor(known.id, DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+    expect((await response.json()).case.id).toBe(known.id);
+  });
+});
+
 describe('GET /api/cases/[caseId] — mock mode', () => {
   it('returns the case when id and organizationId both match', async () => {
     const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
@@ -260,7 +333,7 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
     expect(response.status).toBe(200);
     expect(body.case.id).toBe('1042');
     expect(mockQueryWixDataItems).toHaveBeenCalledWith('cases', {
-      filter: { beaconCaseId: '1042', organizationId: DEFAULT_ORGANIZATION_ID, isArchived: false },
+      filter: { beaconCaseId: '1042', organizationId: DEFAULT_ORGANIZATION_ID },
       paging: { limit: 1 },
     });
   });
@@ -285,7 +358,7 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
     const response = await requestFor('1042', SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(404);
     expect(mockQueryWixDataItems).toHaveBeenCalledWith('cases', {
-      filter: { beaconCaseId: '1042', organizationId: SECOND_MOCK_ORGANIZATION_ID, isArchived: false },
+      filter: { beaconCaseId: '1042', organizationId: SECOND_MOCK_ORGANIZATION_ID },
       paging: { limit: 1 },
     });
   });
@@ -1677,6 +1750,89 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
     const body = await response.json();
     expect(body.case.isMedicalExaminerCase).toBe(false);
     expect(body.case.rawStage).toBe(5);
+  });
+});
+
+/**
+ * Archived cases are read-only, and Restore works (2026-10).
+ *
+ * The PATCH route used to look the case up with `isArchived: false`, so an
+ * archived case 404'd on every write — including the restore meant to
+ * un-archive it. Reading is now allowed (see the GET suite above) and the
+ * restriction is explicit: one permitted write, and only one.
+ */
+describe('PATCH /api/cases/[caseId] — archived cases', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+  });
+
+  function mockArchived(extra: Record<string, unknown> = {}) {
+    mockWixQueries([
+      {
+        id: '1042',
+        dataCollectionId: 'cases',
+        data: { ...EXISTING_WIX_CASE_DATA, isArchived: true, archivedAt: '2026-10-01T00:00:00.000Z', ...extra },
+      },
+    ]);
+    mockUpdateWixDataItem.mockImplementation((_c: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  }
+
+  it('refuses an ordinary edit with 409 and persists nothing', async () => {
+    mockArchived();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { decedentName: 'SOMEONE ELSE' },
+    });
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/archived/i);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('refuses a checklist tick on an archived case', async () => {
+    mockArchived();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { '0:0': true } },
+    });
+    expect(response.status).toBe(409);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('allows the restore, so a filed case can be brought back', async () => {
+    mockArchived();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isDeleted: false },
+    });
+    expect(response.status).toBe(200);
+    const persisted = mockUpdateWixDataItem.mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect(persisted.isArchived).toBe(false);
+  });
+
+  it('refuses a restore that carries an edit with it', async () => {
+    mockArchived();
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isDeleted: false, decedentName: 'SOMEONE ELSE' },
+    });
+    expect(response.status).toBe(409);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('leaves live cases completely unaffected', async () => {
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: { ...EXISTING_WIX_CASE_DATA, isArchived: false } }]);
+    mockUpdateWixDataItem.mockImplementation((_c: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { placeOfDeath: 'ST. MARY\'S HOSPITAL' },
+    });
+    expect(response.status).toBe(200);
   });
 });
 

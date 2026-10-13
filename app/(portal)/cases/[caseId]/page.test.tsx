@@ -496,3 +496,37 @@ describe('Case Detail page — archive wiring (2026-10)', () => {
     expect(SOURCE).not.toMatch(/deleteCase|removeCase|hardDelete/);
   });
 });
+
+/**
+ * Archived cases open and are read-only (2026-10), and the Medical
+ * Examiner control belongs to intake.
+ */
+describe('Case Detail page — archived cases and ME control placement (2026-10)', () => {
+  it('tells the header the case is archived, so it can show the status badge', () => {
+    expect(SOURCE).toMatch(/isArchived=\{case_\.isDeleted === true\}\s*\n\s*caseDetailStageHeading=/);
+  });
+
+  it('tells the checklist the case is archived, so it renders read-only', () => {
+    expect(SOURCE).toMatch(/<ChecklistCard[\s\S]*?isArchived=\{case_\.isDeleted === true\}/);
+  });
+
+  it('still passes isArchived to Case Information, which carries Restore', () => {
+    expect(SOURCE).toMatch(/isArchived=\{case_\.isDeleted\}/);
+    expect(SOURCE).toMatch(/onArchiveChange=\{\(archived\) => archiveCase\.mutate\(\{ caseId, archived \}\)\}/);
+  });
+
+  it('offers the Medical Examiner control on the intake step only', () => {
+    expect(SOURCE).toMatch(/shownPresentedStageIndex === INTAKE_PRESENTED_STAGE_INDEX/);
+    expect(SOURCE).toMatch(/const INTAKE_PRESENTED_STAGE_INDEX = 0;/);
+  });
+
+  it('withholds the Medical Examiner control on an archived case', () => {
+    expect(SOURCE).toMatch(/INTAKE_PRESENTED_STAGE_INDEX && case_\.isDeleted !== true/);
+  });
+
+  it('derives the shown step from the stage being inspected, not only the current one', () => {
+    // Viewing the intake step from a later stage must still resolve to
+    // intake, or the control would appear on the wrong step.
+    expect(SOURCE).toMatch(/const shownPresentedStageIndex =[\s\S]*?viewingDisplayStage != null/);
+  });
+});

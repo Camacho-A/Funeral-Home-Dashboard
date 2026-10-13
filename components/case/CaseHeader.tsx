@@ -22,6 +22,7 @@ export function CaseHeader({
   weight,
   weightOver200,
   isMedicalExaminerCase,
+  isArchived,
   caseDetailStageHeading,
   stageBadgeVariant,
   daysWaitingInStage,
@@ -39,6 +40,9 @@ export function CaseHeader({
   weightOver200?: boolean;
   /** Medical Examiner case (2026-10) — shown as a header flag. */
   isMedicalExaminerCase?: boolean;
+  /** Archived case (2026-10) — shown as a status badge beside the stage,
+      so the read-only state is stated, not inferred from missing controls. */
+  isArchived?: boolean;
   caseDetailStageHeading: string;
   stageBadgeVariant: BadgeVariant;
   daysWaitingInStage: number;
@@ -84,9 +88,16 @@ export function CaseHeader({
           )}
         </div>
         <div className={styles.stageColumn}>
-          <span className={styles.stageChip}>
-            <Badge variant={stageBadgeVariant}>{caseDetailStageHeading}</Badge>
-          </span>
+          {/* The badge is a SIBLING of the stage chip, not a child of it:
+              `.stageChip > *` paints the navy stage pill, which would
+              restyle anything placed inside. The row wraps, so a long
+              stage label plus the badge never overflows on a phone. */}
+          <div className={styles.statusRow}>
+            <span className={styles.stageChip}>
+              <Badge variant={stageBadgeVariant}>{caseDetailStageHeading}</Badge>
+            </span>
+            {isArchived && <span className={styles.archivedBadge}>Archived</span>}
+          </div>
           {stages && onStepClick && (
             <StageProgress stages={stages} daysWaitingInStage={daysWaitingInStage} onStepClick={onStepClick} />
           )}

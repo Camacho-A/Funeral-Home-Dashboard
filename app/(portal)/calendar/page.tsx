@@ -6,7 +6,7 @@ import {
   cremainsChipLabel,
   formatPickupDate,
   isExpectedCremainsPickup,
-  paperworkDateFromNotes,
+  formatCaseDateOfDeath,
   resolvePickupStatus,
   PICKUP_STATUS_LABEL,
 } from '@/domain/scheduling/cremainsPickupPresentation';
@@ -216,8 +216,9 @@ export default function CalendarPage() {
       organization-scoped, so a stale or cross-tenant caseId simply fails
       the lookup and the chip falls back to a neutral label. */
   const caseById = useMemo(() => {
-    const map = new Map<string, { caseNumber: string; decedentName: string }>();
-    for (const c of casesQuery.data ?? []) map.set(c.id, { caseNumber: c.caseNumber, decedentName: c.decedentName });
+    const map = new Map<string, { caseNumber: string; decedentName: string; dateOfDeath: string }>();
+    for (const c of casesQuery.data ?? [])
+      map.set(c.id, { caseNumber: c.caseNumber, decedentName: c.decedentName, dateOfDeath: c.dateOfDeath });
     return map;
   }, [casesQuery.data]);
   const caseNameById = useMemo(() => {
@@ -617,7 +618,7 @@ export default function CalendarPage() {
         const case_ = detailAppointment.caseId ? caseById.get(detailAppointment.caseId) : undefined;
         const expected = expectedDateOf(detailAppointment);
         const status = resolvePickupStatus(detailAppointment, organizationToday);
-        const paperwork = paperworkDateFromNotes(detailAppointment.notes);
+        const dateOfDeath = formatCaseDateOfDeath(case_?.dateOfDeath);
         const received = status === 'received';
         return (
           <Modal open onClose={() => setDetailAppointment(null)} title="Expected Cremains Pickup" size="lg">
@@ -646,10 +647,14 @@ export default function CalendarPage() {
                   <dd className={styles.detailValue}>{PICKUP_STATUS_LABEL[status]}</dd>
                 </div>
                 <div>
-                  <dt className="sx-label">Paperwork sent</dt>
-                  {/* Never guessed — a staff-entered pickup records no
-                      paperwork date at all. */}
-                  <dd className={styles.detailValue}>{paperwork ? formatPickupDate(paperwork) : 'Not recorded'}</dd>
+                  <dt className="sx-label">Date of Death</dt>
+                  {/* Read from the associated case, and never guessed — a
+                      case with no recorded date of death reads "Not
+                      recorded" rather than showing today's. The paperwork
+                      date this row used to show is untouched on the
+                      appointment; it is simply no longer the thing staff
+                      need here. */}
+                  <dd className={styles.detailValue}>{dateOfDeath ?? 'Not recorded'}</dd>
                 </div>
                 <div>
                   <dt className="sx-label">Actual receipt</dt>

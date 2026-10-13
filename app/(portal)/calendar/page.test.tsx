@@ -51,6 +51,13 @@ const APPOINTMENTS: Appointment[] = [
     title: 'Expected Cremains Pickup — B2026-040',
     ...allDayWindowFor('2026-10-16', TZ),
   }),
+  appointment({
+    id: 'cremains-pickup-archived',
+    caseId: 'case-archived',
+    appointmentType: 'cremains.pickup.expected',
+    title: 'Expected Cremains Pickup — B2026-035',
+    ...allDayWindowFor('2026-10-17', TZ),
+  }),
   appointment({ id: 'a-1', title: 'Viewing A' }),
   appointment({ id: 'a-2', title: 'Viewing B' }),
   appointment({ id: 'a-3', title: 'Viewing C' }),
@@ -69,9 +76,12 @@ vi.mock('@/hooks/useCases', () => ({
     useCasesSpy(filters);
     return {
       data: [
-        { id: 'case-1', caseNumber: 'B2026-040', decedentName: 'WALTER BOONE' },
-        // Archived — a filed case is still the subject of its own past events.
-        { id: 'case-archived', caseNumber: 'B2026-035', decedentName: 'EVARISTA SILVA RIVERO', isDeleted: true },
+        { id: 'case-1', caseNumber: 'B2026-040', decedentName: 'WALTER BOONE', dateOfDeath: '10/09/2026' },
+        // Archived — a filed case is still the subject of its own past
+        // events. Deliberately carries NO date of death, so the popup's
+        // "Not recorded" path is exercised on a real case rather than on
+        // a missing one.
+        { id: 'case-archived', caseNumber: 'B2026-035', decedentName: 'EVARISTA SILVA RIVERO', isDeleted: true, dateOfDeath: '' },
       ],
     };
   },
@@ -187,9 +197,14 @@ describe('Calendar — cremains pickup chips', () => {
     renderCalendar();
     // Every rendered chip label is either a real appointment title or a
     // label built from a case this organization can actually see.
+    // Both mocked cases are real, visible ones; a chip must never show a
+    // number belonging to neither.
+    const visibleCaseNumbers = ['040', '035'];
     for (const chip of screen.getAllByRole('button')) {
       const text = chip.textContent ?? '';
-      if (/·/.test(text) && /\d{3}/.test(text)) expect(text).toContain('040');
+      if (/·/.test(text) && /\d{3}/.test(text)) {
+        expect(visibleCaseNumbers.some((number) => text.includes(number)), text).toBe(true);
+      }
     }
   });
 });
@@ -224,18 +239,67 @@ describe('Calendar — pickup details', () => {
     expect(within(dialog).getByText('Estimated')).toBeInTheDocument();
   });
 
-  it('says "Not recorded" and "Not received" rather than inventing dates', () => {
+  it('says "Not received" rather than inventing a receipt date', () => {
+    // The companion "Not recorded" assertion moved to the Date of Death
+    // suite below, which is the row that now carries it.
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('Not recorded')).toBeInTheDocument();
-    expect(within(dialog).getByText('Not received')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByText('Not received')).toBeInTheDocument();
   });
 
   it('links to the case by canonical id', () => {
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
     expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Open Case' })).toHaveAttribute('href', '/cases/case-1');
+  });
+});
+
+/**
+ * Date of Death replaces Paperwork sent (2026-10).
+ *
+ * The paperwork date is an internal automation artefact; the date of
+ * death is what staff actually need when they open a pickup event. The
+ * appointment's own paperwork note is untouched — it is simply no longer
+ * what this row shows.
+ */
+describe('Calendar — pickup details show Date of Death', () => {
+  it('shows the case\'s date of death in the same long form as the other dates', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Date of Death')).toBeInTheDocument();
+    expect(within(dialog).getByText('Friday, October 9, 2026')).toBeInTheDocument();
+  });
+
+  it('no longer shows a Paperwork sent row', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    expect(within(screen.getByRole('dialog')).queryByText('Paperwork sent')).not.toBeInTheDocument();
+  });
+
+  it('reads "Not recorded" rather than inventing a date', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /035 · Rivero/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Date of Death')).toBeInTheDocument();
+    expect(within(dialog).getByText('Not recorded')).toBeInTheDocument();
+  });
+
+  it('works for an archived case, which keeps its full event details', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /035 · Rivero/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('B2026-035')).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: 'Open Case' })).toHaveAttribute('href', '/cases/case-archived');
+  });
+
+  it('leaves every other row in the popup intact', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    const dialog = screen.getByRole('dialog');
+    for (const label of ['Case', 'Deceased', 'Expected pickup', 'Status', 'Actual receipt']) {
+      expect(within(dialog).getByText(label), label).toBeInTheDocument();
+    }
   });
 });
 

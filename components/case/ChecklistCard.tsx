@@ -400,6 +400,7 @@ export function ChecklistCard({
   contactRestriction,
   isMedicalExaminerCase,
   onToggleMedicalExaminerCase,
+  isArchived,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -430,8 +431,11 @@ export function ChecklistCard({
       control entirely. */
   isMedicalExaminerCase?: boolean;
   onToggleMedicalExaminerCase?: (next: boolean) => void;
+  /** Archived cases are read-only (2026-10). Independent of the
+      past-stage read-only above — either one alone locks the card. */
+  isArchived?: boolean;
 }) {
-  const readOnly = viewingStageLabel !== null;
+  const readOnly = viewingStageLabel !== null || isArchived === true;
 
   return (
     <div className={styles.card}>

@@ -4,6 +4,7 @@ import {
   cremainsChipLabel,
   deriveSurname,
   formatPickupDate,
+  formatCaseDateOfDeath,
   paperworkDateFromNotes,
 } from './cremainsPickupPresentation';
 
@@ -104,5 +105,31 @@ describe('detail helpers', () => {
     expect(paperworkDateFromNotes('AUTOMATICALLY SCHEDULED FROM COMPLETED CREMATORY PAPERWORK ON 2026-10-02.')).toBe('2026-10-02');
     expect(paperworkDateFromNotes('Expected pickup entered by staff for 2026-10-09.')).toBeNull();
     expect(paperworkDateFromNotes(null)).toBeNull();
+  });
+});
+
+describe('formatCaseDateOfDeath (2026-10)', () => {
+  it('formats a case date in the same long form as every other date in the popup', () => {
+    expect(formatCaseDateOfDeath('10/09/2026')).toBe('Friday, October 9, 2026');
+    expect(formatCaseDateOfDeath('10/09/2026')).toBe(formatPickupDate('2026-10-09'));
+  });
+
+  it('reads as not-recorded rather than guessing, when there is no usable value', () => {
+    // Never today's date, and never a partial parse — a case with no
+    // recorded date of death must not appear to have one.
+    for (const value of [null, undefined, '', '   ', 'unknown', '2026-10-09', '9/10/2026', '10/09/26']) {
+      expect(formatCaseDateOfDeath(value), String(value)).toBeNull();
+    }
+  });
+
+  it('ignores surrounding whitespace', () => {
+    expect(formatCaseDateOfDeath('  10/09/2026  ')).toBe('Friday, October 9, 2026');
+  });
+
+  it('is timezone-stable — the date shown is the date stored', () => {
+    // A naive new Date("10/09/2026") would shift by a day for viewers
+    // behind UTC. The first of a month is where that shows up worst.
+    expect(formatCaseDateOfDeath('01/01/2026')).toBe('Thursday, January 1, 2026');
+    expect(formatCaseDateOfDeath('12/31/2026')).toBe('Thursday, December 31, 2026');
   });
 });

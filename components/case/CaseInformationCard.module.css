@@ -246,3 +246,24 @@
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   }
 }
+
+/* Archived cases are read-only (2026-10). The value keeps the same type
+   and alignment as the editable one it replaces, so the card does not
+   reflow when a case is archived — only the affordance goes away. */
+.readOnlyValue {
+  display: inline-block;
+  padding: 4px 0;
+  font-size: 14px;
+  color: var(--sx-text, #16202c);
+}
+
+.archivedNotice {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface-2, #f3f5f8);
+  color: var(--sx-text-muted, #5b6675);
+  font-size: 13px;
+  line-height: 1.4;
+}

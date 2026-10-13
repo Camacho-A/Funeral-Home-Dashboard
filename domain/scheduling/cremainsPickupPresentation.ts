@@ -200,3 +200,21 @@ export function paperworkDateFromNotes(notes: string | null): string | null {
   const match = /(\d{4}-\d{2}-\d{2})/.exec(notes);
   return match ? match[1] : null;
 }
+
+/**
+ * A case's Date of Death, in the same long form every other date in the
+ * pickup popup uses ("Friday, October 9, 2026").
+ *
+ * Cases store dates as "MM/DD/YYYY" while the pickup dates above are ISO
+ * "YYYY-MM-DD", so this converts before reusing `formatPickupDate` rather
+ * than introducing a second long-date format. Returns null — never a
+ * guess, and never today's date — when there is no usable value, so the
+ * caller shows "Not recorded".
+ */
+export function formatCaseDateOfDeath(dateOfDeath: string | null | undefined): string | null {
+  if (!dateOfDeath) return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateOfDeath.trim());
+  if (!match) return null;
+  const [, month, day, year] = match;
+  return formatPickupDate(`${year}-${month}-${day}`);
+}

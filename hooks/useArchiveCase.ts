@@ -19,9 +19,16 @@ import { useOrganization } from './useOrganization';
  * emits its own `case.archived` / `case.restored` activity event.
  *
  * Invalidates the whole `['cases', organizationId]` subtree, which covers
- * both the active and archived list queries plus the case itself — so an
- * archived case leaves the working list and appears under Archived in one
- * round trip, with no stale row left behind in either view.
+ * both the active and archived list queries — so an archived case leaves
+ * the working list and appears under Archived in one round trip, with no
+ * stale row left behind in either view.
+ *
+ * The open case ITSELF is a separate key, `['case', organizationId,
+ * caseId]` (singular — see hooks/useCase.ts), which the list prefix does
+ * not match. It must be invalidated explicitly or the detail page keeps
+ * rendering the pre-change state: before archived cases could be opened
+ * at all this was invisible, but now it reads as "I clicked Restore and
+ * nothing happened."
  */
 export function useArchiveCase() {
   const organization = useOrganization();
@@ -30,8 +37,9 @@ export function useArchiveCase() {
   return useMutation({
     mutationFn: ({ caseId, archived }: { caseId: string; archived: boolean }) =>
       casesService.update(organization, caseId, { isDeleted: archived }, organization.dataAdapterMode),
-    onSuccess: () => {
+    onSuccess: (_result, { caseId }) => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
+      queryClient.invalidateQueries({ queryKey: ['case', organization.organizationId, caseId] });
     },
   });
 }

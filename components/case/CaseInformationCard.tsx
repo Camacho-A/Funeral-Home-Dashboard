@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Checkbox } from '@/components/ui/Checkbox';
-import { SelectField } from '@/components/ui/SelectField';
+import { createContext, useContext, useEffect, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from 'react';
+import { Checkbox as BaseCheckbox } from '@/components/ui/Checkbox';
+import { SelectField as BaseSelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
 import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
@@ -78,6 +78,41 @@ export type StaffOption = { id: string; name: string };
  * simply reverts rather than trapping focus — avoids a bad value ever being
  * saved without needing to fight the browser's own blur order.
  */
+/**
+ * Read-only mode (2026-10), used for archived cases.
+ *
+ * A context rather than a prop threaded through two dozen fields: this
+ * card renders ~25 click-to-edit values and several selects, and a prop
+ * per field is exactly the kind of list where one gets missed and quietly
+ * stays editable. One provider at the top covers every control inside,
+ * including any added later.
+ *
+ * Presentation only. The server refuses writes to an archived case
+ * regardless (domain/cases/archivedCaseWrites.ts); this is so staff are
+ * never offered a control that would fail.
+ */
+const ReadOnlyContext = createContext(false);
+
+function useIsReadOnly(): boolean {
+  return useContext(ReadOnlyContext);
+}
+
+/**
+ * Read-only-aware wrappers, shadowing the imported primitives under their
+ * own names so every existing call site inside this file is covered
+ * without each one remembering to pass `disabled`. New controls added
+ * later are covered automatically for the same reason.
+ */
+function SelectField(props: ComponentProps<typeof BaseSelectField>) {
+  const readOnly = useIsReadOnly();
+  return <BaseSelectField {...props} disabled={readOnly || props.disabled} />;
+}
+
+function Checkbox(props: ComponentProps<typeof BaseCheckbox>) {
+  const readOnly = useIsReadOnly();
+  return <BaseCheckbox {...props} disabled={readOnly || props.disabled} />;
+}
+
 function EditableField({
   label,
   value,
@@ -113,6 +148,7 @@ function EditableField({
       untouched and nothing is back-filled. */
   emptyLabel?: string;
 }) {
+  const readOnly = useIsReadOnly();
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
@@ -261,13 +297,19 @@ function EditableField({
         </>
       ) : (
         <div className={styles.editableValueRow}>
-          <button
-            type="button"
-            className={`${styles.editableValue} ${trailingBadge ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
-            onClick={startEditing}
-          >
-            {displayValue || emptyLabel || '—'}
-          </button>
+          {readOnly ? (
+            <span className={`${styles.readOnlyValue} ${valueClassName ?? ''}`}>
+              {displayValue || emptyLabel || '—'}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className={`${styles.editableValue} ${trailingBadge ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
+              onClick={startEditing}
+            >
+              {displayValue || emptyLabel || '—'}
+            </button>
+          )}
           {trailingBadge}
         </div>
       )}
@@ -309,6 +351,7 @@ function TwelveHourTimeField({
   /** See EditableField's own `emptyLabel`. */
   emptyLabel?: string;
 }) {
+  const readOnly = useIsReadOnly();
   const [isEditing, setIsEditing] = useState(false);
   const [hour, setHour] = useState('');
   const [minute, setMinute] = useState('');
@@ -386,6 +429,10 @@ function TwelveHourTimeField({
             Cancel
           </button>
         </div>
+      ) : readOnly ? (
+        <span className={styles.readOnlyValue}>
+          {formatMilitaryTimeToTwelveHour(displayValue) || emptyLabel || '—'}
+        </span>
       ) : (
         <button type="button" className={styles.editableValue} onClick={startEditing}>
           {formatMilitaryTimeToTwelveHour(displayValue) || emptyLabel || '—'}
@@ -642,8 +689,19 @@ export function CaseInformationCard({
   );
 
   return (
+    /* Archived cases are read-only (2026-10). The provider covers every
+       field and select below. The Restore row at the foot is deliberately
+       unaffected — it uses its own button rather than these primitives —
+       because restoring IS the authorized way out of this state and must
+       stay available. */
+    <ReadOnlyContext.Provider value={isArchived === true}>
     <div className={styles.card}>
       <div className={styles.title}>Case information</div>
+      {isArchived === true && (
+        <p className={styles.archivedNotice}>
+          This case is archived and is shown read-only. Restore it to make changes.
+        </p>
+      )}
       <div className={styles.grid}>
         <EditableField
           label="Date of birth"
@@ -959,5 +1017,6 @@ export function CaseInformationCard({
       )}
 
     </div>
+    </ReadOnlyContext.Provider>
   );
 }

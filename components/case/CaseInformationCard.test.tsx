@@ -1677,3 +1677,58 @@ describe('CaseInformationCard — Medical Examiner pending values (2026-10)', ()
     expect(screen.queryByText('Pending Medical Examiner')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Archived cases are read-only (2026-10). The server refuses the write
+ * regardless; this is so staff are never handed a control that fails.
+ */
+describe('CaseInformationCard — archived cases are read-only', () => {
+  it('shows a field as plain text with no way to start editing', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isArchived />);
+
+    expect(screen.getByText("ST. MARY'S HOSPITAL")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "ST. MARY'S HOSPITAL" })).not.toBeInTheDocument();
+  });
+
+  it('still shows every value — an archived case is read-only, not redacted', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isArchived />);
+
+    expect(screen.getByText("ST. MARY'S HOSPITAL")).toBeInTheDocument();
+    expect(screen.getByText(baseProps.nextOfKinName)).toBeInTheDocument();
+  });
+
+  it('disables the selects', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isArchived />);
+    for (const select of screen.getAllByRole('combobox')) {
+      expect(select).toBeDisabled();
+    }
+  });
+
+  it('says why the fields are not editable', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isArchived />);
+    expect(screen.getByText(/archived and is shown read-only/i)).toBeInTheDocument();
+  });
+
+  it('keeps Restore available — it is the authorized way out of this state', () => {
+    const onArchiveChange = vi.fn();
+    render(
+      <CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isArchived onArchiveChange={onArchiveChange} />,
+    );
+
+    const restore = screen.getByRole('button', { name: /restore case/i });
+    expect(restore).toBeEnabled();
+    fireEvent.click(restore);
+    expect(onArchiveChange).toHaveBeenCalledWith(false);
+  });
+
+  it('leaves a live case fully editable', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={onUpdateCaseInfo} isArchived={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: "ST. MARY'S HOSPITAL" }));
+    const input = screen.getByDisplayValue("ST. MARY'S HOSPITAL");
+    fireEvent.change(input, { target: { value: 'general hospital' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalled();
+  });
+});

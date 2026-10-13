@@ -1278,3 +1278,77 @@ describe('listForOrganization (used by services/reportingService.ts)', () => {
     expect(result).toEqual([]);
   });
 });
+
+/**
+ * Archived cases open, and are read-only (2026-10). Mirrors the Wix route's
+ * own suite — the two paths share one rule, and mock mode diverging from
+ * production is exactly how a bug ships unseen.
+ */
+describe('casesService — archived cases (2026-10)', () => {
+  async function withArchivedFixture<T>(run: (archivedId: string) => Promise<T>): Promise<T> {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const index = caseFixtures.indexOf(target);
+    caseFixtures[index] = { ...target, isDeleted: true };
+    try {
+      return await run(target.id);
+    } finally {
+      caseFixtures[index] = target;
+    }
+  }
+
+  it('get() returns an archived case rather than null', async () => {
+    const found = await withArchivedFixture((archivedId) => casesService.get(organization, archivedId, 'mock'));
+    expect(found).not.toBeNull();
+    expect(found!.isDeleted).toBe(true);
+  });
+
+  it('get() keeps the full historical detail', async () => {
+    const { found, expected } = await withArchivedFixture(async (archivedId) => ({
+      found: await casesService.get(organization, archivedId, 'mock'),
+      expected: caseFixtures.find((c) => c.id === archivedId)!,
+    }));
+    expect(found!.caseNumber).toBe(expected.caseNumber);
+    expect(found!.checklistState).toEqual(expected.checklistState);
+    expect(found!.workflowSnapshot).toEqual(expected.workflowSnapshot);
+  });
+
+  it('get() stays organization-scoped', async () => {
+    const found = await withArchivedFixture((archivedId) =>
+      casesService.get({ organizationId: SECOND_MOCK_ORGANIZATION_ID }, archivedId, 'mock'),
+    );
+    expect(found).toBeNull();
+  });
+
+  it('update() refuses an ordinary edit to an archived case', async () => {
+    await withArchivedFixture(async (archivedId) => {
+      await expect(
+        casesService.update(organization, archivedId, { placeOfDeath: 'SOMEWHERE ELSE' }, 'mock'),
+      ).rejects.toThrow(/archived/i);
+    });
+  });
+
+  it('update() leaves the archived case untouched when it refuses', async () => {
+    const unchanged = await withArchivedFixture(async (archivedId) => {
+      const before = { ...caseFixtures.find((c) => c.id === archivedId)! };
+      await casesService.update(organization, archivedId, { placeOfDeath: 'SOMEWHERE ELSE' }, 'mock').catch(() => {});
+      const after = caseFixtures.find((c) => c.id === archivedId)!;
+      return after.placeOfDeath === before.placeOfDeath;
+    });
+    expect(unchanged).toBe(true);
+  });
+
+  it('update() allows the restore', async () => {
+    const restored = await withArchivedFixture((archivedId) =>
+      casesService.update(organization, archivedId, { isDeleted: false }, 'mock'),
+    );
+    expect(restored.isDeleted).toBe(false);
+  });
+
+  it('update() on a live case is completely unaffected', async () => {
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
+    const before = { ...target };
+    const updated = await casesService.update(organization, target.id, { placeOfDeath: 'GENERAL HOSPITAL' }, 'mock');
+    expect(updated.placeOfDeath).toBe('GENERAL HOSPITAL');
+    caseFixtures[caseFixtures.indexOf(caseFixtures.find((c) => c.id === target.id)!)] = before;
+  });
+});

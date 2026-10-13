@@ -148,3 +148,31 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Archived case (2026-10). Quiet and neutral beside the stage chip — it
+   states a filing status, not a problem, so it must not read as an alert. */
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .statusRow {
+    justify-content: flex-start;
+  }
+}
+
+.archivedBadge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface-2, #f3f5f8);
+  color: var(--sx-text-muted, #5b6675);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}

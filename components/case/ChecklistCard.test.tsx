@@ -935,3 +935,54 @@ describe('ChecklistCard — Medical Examiner classification (2026-10)', () => {
     expect(onToggleItem).toHaveBeenCalledWith(3, true);
   });
 });
+
+describe('ChecklistCard — archived cases are read-only (2026-10)', () => {
+  it('still shows the checklist — history is the reason to open an archived case', () => {
+    renderChecklist([item({ label: 'Permit sent to crematory', done: true })], { isArchived: true });
+    expect(screen.getByText('Permit sent to crematory')).toBeInTheDocument();
+  });
+
+  it('cannot tick an item', () => {
+    const { onToggleItem } = renderChecklist([item({ label: 'Permit sent to crematory' })], { isArchived: true });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Permit sent to crematory' }));
+    expect(onToggleItem).not.toHaveBeenCalled();
+  });
+
+  it('cannot untick a completed one either', () => {
+    const { onToggleItem } = renderChecklist([item({ label: 'Permit sent to crematory', done: true })], {
+      isArchived: true,
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Permit sent to crematory' }));
+    expect(onToggleItem).not.toHaveBeenCalled();
+  });
+
+  it('locks the Medical Examiner control when one is offered at all', () => {
+    const onToggleMedicalExaminerCase = vi.fn();
+    renderChecklist([item({ label: 'Permit sent to crematory' })], {
+      isArchived: true,
+      onToggleMedicalExaminerCase,
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Medical Examiner Case' }));
+    expect(onToggleMedicalExaminerCase).not.toHaveBeenCalled();
+  });
+
+  it('a live case is unaffected', () => {
+    const { onToggleItem } = renderChecklist([item({ label: 'Permit sent to crematory' })], { isArchived: false });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Permit sent to crematory' }));
+    expect(onToggleItem).toHaveBeenCalledWith(0, true);
+  });
+});
+
+describe('ChecklistCard — the Medical Examiner control is the caller\'s to offer (2026-10)', () => {
+  it('renders no classification row when the caller supplies no handler', () => {
+    // How the page keeps the control on the intake step alone: it simply
+    // does not pass a handler on any other step.
+    renderChecklist([item({ label: 'EDRS submitted & sent to doctor' })]);
+    expect(screen.queryByRole('checkbox', { name: 'Medical Examiner Case' })).not.toBeInTheDocument();
+  });
+
+  it('renders it when the caller does', () => {
+    renderChecklist([item({ label: 'Name of deceased' })], { onToggleMedicalExaminerCase: vi.fn() });
+    expect(screen.getByRole('checkbox', { name: 'Medical Examiner Case' })).toBeInTheDocument();
+  });
+});

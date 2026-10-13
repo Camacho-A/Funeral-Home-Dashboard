@@ -17,6 +17,7 @@ import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIn
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
 import { touchesWorkflowCompletion } from '../domain/cases/workflowCompletion';
+import { archivedCaseWriteRefusal } from '../domain/cases/archivedCaseWrites';
 import { findInvalidChecklistStatePatchEntries } from '../domain/workflow/checklistItemKey';
 import { STAGES, rawStagesForDisplayStage } from '../domain/cases/stages';
 import { canonicalDisplayStagesForPresentedLabel } from '../domain/organization/workflowStagePresentation';
@@ -317,11 +318,11 @@ export async function get(
   dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<Case | null> {
   if (dataAdapterMode === 'mock') {
-    return (
-      caseFixtures.find(
-        (c) => c.id === caseId && c.organizationId === context.organizationId && !c.isDeleted,
-      ) ?? null
-    );
+    // Archived cases are readable (2026-10) — mirrors the Wix GET route's
+    // own change exactly; see its comment for the full "why". Archiving
+    // files a case away, it does not hide it from the person who goes
+    // looking for it. Editing is refused separately, on write.
+    return caseFixtures.find((c) => c.id === caseId && c.organizationId === context.organizationId) ?? null;
   }
 
   const response = await fetch(
@@ -540,6 +541,11 @@ export async function update(
     (c) => c.id === caseId && c.organizationId === context.organizationId,
   );
   if (index === -1) throw new Error(`Case ${caseId} not found for this organization`);
+  // Archived cases are read-only (2026-10): mirrors the Wix PATCH route's
+  // identical guard, so DATA_ADAPTER=mock never diverges. Both read the
+  // same shared rule — see domain/cases/archivedCaseWrites.ts.
+  const archivedRefusal = archivedCaseWriteRefusal(caseFixtures[index], patch);
+  if (archivedRefusal) throw new Error(archivedRefusal);
   // Staff-facing terminology (2026-09): see domain/cases/pickupRelease.ts's
   // own comment — mirrors the same check the Wix-mode PATCH route applies.
   assertValidPickupReleasePatch(caseFixtures[index], patch);

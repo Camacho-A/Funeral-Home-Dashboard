@@ -60,3 +60,20 @@ describe('CaseHeader — Medical Examiner flag (2026-10)', () => {
     expect(screen.getByText('Medical Examiner Case')).toBeInTheDocument();
   });
 });
+
+describe('CaseHeader — Archived badge (2026-10)', () => {
+  it('states that an archived case is archived', () => {
+    render(<CaseHeader {...baseProps} isArchived />);
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+  });
+
+  it('shows nothing on a live case', () => {
+    render(<CaseHeader {...baseProps} isArchived={false} />);
+    expect(screen.queryByText('Archived')).not.toBeInTheDocument();
+  });
+
+  it('keeps the stage heading beside it — the badge adds to the status, it does not replace it', () => {
+    render(<CaseHeader {...baseProps} isArchived />);
+    expect(screen.getByText('First Call & Payment')).toBeInTheDocument();
+  });
+});

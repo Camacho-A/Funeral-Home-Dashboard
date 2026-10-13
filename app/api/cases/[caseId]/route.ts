@@ -27,6 +27,7 @@ import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { becameComplete, touchesWorkflowCompletion } from '@/domain/cases/workflowCompletion';
+import { archivedCaseWriteRefusal } from '@/domain/cases/archivedCaseWrites';
 import { syncExpectedPickupForCase } from '@/services/cremainsPickupService';
 import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
 
@@ -66,9 +67,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
       return NextResponse.json({ case: null, error: 'Not authorized to view this case.' }, { status: 403 });
     }
 
+    /**
+     * Archived cases are READABLE (2026-10). Archiving files a case away;
+     * it does not destroy it, and staff legitimately need to open one —
+     * from the Archived Cases list, from a calendar event, from an
+     * activity entry. Excluding them here 404'd every one of those, which
+     * the detail page surfaces as "Case ... not found for this
+     * organization", and it also made Restore unreachable: the only
+     * Restore control lives on the case detail page.
+     *
+     * Reading is not editing. PATCH below still refuses every change to an
+     * archived case except the restore itself, so opening one can never
+     * become a way to modify it — and opening one never unarchives it.
+     */
     if (adapter === 'mock') {
-      const found =
-        caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted) ?? null;
+      const found = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId) ?? null;
       if (!found) {
         return NextResponse.json({ case: null }, { status: 404 });
       }
@@ -76,7 +89,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
     }
 
     const response = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: { beaconCaseId: caseId, organizationId, isArchived: false },
+      filter: { beaconCaseId: caseId, organizationId },
       paging: { limit: 1 },
     });
 
@@ -230,14 +243,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   }
 
   try {
+    // Archived cases are loaded, not filtered out (2026-10). The filter
+    // used to carry `isArchived: false`, which refused every write to an
+    // archived case by 404 — including the restore that un-archives it, so
+    // Restore could never have worked. The restriction is now explicit
+    // below, and says what it means.
     const existingResponse = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: { beaconCaseId: caseId, organizationId, isArchived: false },
+      filter: { beaconCaseId: caseId, organizationId },
       paging: { limit: 1 },
     });
     const existingItem = existingResponse.dataItems[0];
     const existing = existingItem ? mapWixCaseItem(existingItem.data) : null;
     if (!existingItem || !existing) {
       return NextResponse.json({ case: null }, { status: 404 });
+    }
+
+    // An archived case accepts the restore and nothing else — checked
+    // before any validation or mutation, so a refused edit never touches
+    // the record. See domain/cases/archivedCaseWrites.ts.
+    const archivedRefusal = archivedCaseWriteRefusal(existing, patch);
+    if (archivedRefusal) {
+      return NextResponse.json({ case: null, error: archivedRefusal }, { status: 409 });
     }
 
     // Staff-facing terminology (2026-09): a case may never persist
