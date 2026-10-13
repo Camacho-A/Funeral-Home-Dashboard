@@ -437,6 +437,23 @@ export function ChecklistCard({
 }) {
   const readOnly = viewingStageLabel !== null || isArchived === true;
 
+  /**
+   * The Medical Examiner classification is NOT gated by the past-stage
+   * read-only above (2026-10).
+   *
+   * It is a property of the CASE, not a checklist item of the stage it is
+   * displayed on. Staff learn the Medical Examiner holds a case exactly
+   * when they go to do the EDRS work — which is after intake — so locking
+   * it the moment intake is done means a real ME case can never be
+   * classified at the point anyone finds out, and the case sits on the
+   * doctor items forever waiting for work that is never coming.
+   *
+   * Which STEP the control appears on is the caller's decision (the case
+   * page offers it on intake only); whether it can be used is this one,
+   * and an archived case is the only thing that locks it.
+   */
+  const medicalExaminerLocked = isArchived === true;
+
   return (
     <div className={styles.card}>
       <div className={styles.title}>Checklist</div>
@@ -446,16 +463,20 @@ export function ChecklistCard({
           it changes what the stage below actually asks for — a staff
           member needs to see WHY the EDRS items read the way they do,
           without hunting for it. Rendered only when the caller supplies a
-          handler, so read-only and pickup-only views are unaffected. */}
+          handler, so pickup-only views are unaffected. */}
       {onToggleMedicalExaminerCase && (
         <div
-          className={`${styles.meRow} ${readOnly ? styles.meRowLocked : styles.meRowUnlocked}`}
-          onClick={readOnly ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)}
+          className={`${styles.meRow} ${medicalExaminerLocked ? styles.meRowLocked : styles.meRowUnlocked}`}
+          onClick={
+            medicalExaminerLocked ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)
+          }
         >
           <Checkbox
             checked={isMedicalExaminerCase === true}
-            disabled={readOnly}
-            onChange={readOnly ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)}
+            disabled={medicalExaminerLocked}
+            onChange={
+              medicalExaminerLocked ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)
+            }
             tone="brand"
             aria-label="Medical Examiner Case"
           />

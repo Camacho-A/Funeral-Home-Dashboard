@@ -909,13 +909,46 @@ describe('ChecklistCard — Medical Examiner classification (2026-10)', () => {
     expect(screen.queryByLabelText('Medical Examiner Case')).not.toBeInTheDocument();
   });
 
-  it('is not editable while viewing a past stage', () => {
-    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor' })], {
-      viewingStageLabel: 'EDRS & Doctor / Cause of Death',
+  it('stays usable while viewing a PAST stage — classification is not a checklist item', () => {
+    // Supersedes the earlier "not editable while viewing a past stage".
+    // The control now lives on the intake step only, and staff learn the
+    // Medical Examiner holds a case when they reach EDRS — after intake.
+    // Locking it alongside that stage's checklist items meant a real ME
+    // case could never be classified at the moment anyone found out, and
+    // the case sat on the doctor items waiting for work never coming.
+    const onToggleMedicalExaminerCase = vi.fn();
+    renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
+      viewingStageLabel: 'Intake & JotForm',
       isMedicalExaminerCase: false,
+      onToggleMedicalExaminerCase,
+    });
+
+    const box = screen.getByLabelText('Medical Examiner Case');
+    expect(box).toBeEnabled();
+    fireEvent.click(box);
+    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(true);
+  });
+
+  it('the viewed stage\'s own checklist items stay read-only alongside it', () => {
+    // The ungating above is scoped to the classification. A past stage's
+    // items must not become editable just because it is being viewed.
+    const { onToggleItem } = renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
+      viewingStageLabel: 'Intake & JotForm',
       onToggleMedicalExaminerCase: vi.fn(),
     });
-    expect(screen.getByLabelText('Medical Examiner Case')).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'NAME OF DECEASED' }));
+    expect(onToggleItem).not.toHaveBeenCalled();
+  });
+
+  it('can be un-classified again from the same place', () => {
+    const onToggleMedicalExaminerCase = vi.fn();
+    renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
+      viewingStageLabel: 'Intake & JotForm',
+      isMedicalExaminerCase: true,
+      onToggleMedicalExaminerCase,
+    });
+    fireEvent.click(screen.getByLabelText('Medical Examiner Case'));
+    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(false);
   });
 
   it('the verification items are ordinary toggleable items — nothing auto-completes them', () => {
