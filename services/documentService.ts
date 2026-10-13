@@ -594,10 +594,53 @@ export async function generateBillingDocument(
   // Phase 39 audit trail: a system-rendered compliance document is still a
   // CaseDocument — reuse the existing document.generated/.regenerated events
   // (no dedicated event type needed) so every Statement generation is audited.
-  if (params.existingDocumentId) {
-    await updateDocumentStatus(ctx.organizationId, params.existingDocumentId, 'superseded', dataAdapterMode);
+  /**
+   * Every older version of this document type is superseded (2026-10),
+   * not just the one id the caller happened to pass.
+   *
+   * This used to supersede `existingDocumentId` alone, so the Documents
+   * tab accumulated several live "Statement of Funeral Goods and Services
+   * Selected" entries: a caller that passed no id superseded nothing, and
+   * once two were active the UI could only ever point at one of them, so
+   * the other stayed active forever. Staff then had to tell apart several
+   * identically-named statements with no way to know which was current.
+   *
+   * Superseding by (case, documentTypeKey) makes it automatic and
+   * self-healing: regenerating once retires every earlier version into
+   * History, including ones left active by the old behaviour.
+   *
+   * A SIGNED document is never touched. Regenerating one is already
+   * refused above, and a signed document is a legal artefact that must
+   * keep its own status whatever supersedes it.
+   */
+  const supersededIds = existing
+    .filter(
+      (d) =>
+        d.documentTypeKey === params.documentTypeKey &&
+        d.id !== documentId &&
+        d.status === 'active' &&
+        d.signatureStatus !== 'signed',
+    )
+    .map((d) => d.id);
+
+  for (const supersededId of supersededIds) {
     try {
-      await recordDocumentRegenerated(ctx, params.caseId, documentId, params.existingDocumentId, docVersion, dataAdapterMode);
+      await updateDocumentStatus(ctx.organizationId, supersededId, 'superseded', dataAdapterMode);
+    } catch (error) {
+      console.error(`Failed to supersede document ${supersededId}:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  if (params.existingDocumentId || supersededIds.length > 0) {
+    try {
+      await recordDocumentRegenerated(
+        ctx,
+        params.caseId,
+        documentId,
+        params.existingDocumentId ?? supersededIds[0],
+        docVersion,
+        dataAdapterMode,
+      );
     } catch (error) {
       console.error('Failed to record document.regenerated activity event:', error instanceof Error ? error.message : error);
     }
