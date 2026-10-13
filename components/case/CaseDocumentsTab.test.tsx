@@ -216,21 +216,20 @@ describe('CaseDocumentsTab — document list', () => {
    * authenticated download route with `disposition=inline`, opened in a
    * new tab — never a forced download, never a blob URL.
    */
-  it('renders a "View" action alongside Download/Print that opens the document inline in a new tab', async () => {
+  it('renders a "View" action alongside Download/Print that shows the document in the browser', async () => {
+    // Supersedes the earlier "opens inline in a new tab". A top-level
+    // navigation to the inline URL is overridden by Chrome's "Download
+    // PDFs instead of automatically opening them" setting, which saved
+    // the file and handed it to the OS viewer. View is now an in-app
+    // embed, which that setting does not affect.
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument()]);
     renderTab();
 
     const fileName = await screen.findByText('Cremation Authorization.pdf');
     const row = fileName.closest('div')!.parentElement!;
-    const viewLink = within(row).getByRole('link', { name: 'View' });
-    expect(viewLink).toHaveAttribute('href', '/api/cases/case-1/documents/doc-1/download?organizationId=managed-cremations&disposition=inline');
-    expect(viewLink).toHaveAttribute('target', '_blank');
-    expect(viewLink).toHaveAttribute('rel', 'noopener noreferrer');
-
-    openRowMenu('Cremation Authorization.pdf');
-    const downloadLink = screen.getByRole('menuitem', { name: 'Download' });
-    expect(downloadLink).toHaveAttribute('href', '/api/cases/case-1/documents/doc-1/download?organizationId=managed-cremations');
-    expect(downloadLink).not.toHaveAttribute('target');
+    const viewButton = within(row).getByRole('button', { name: 'View' });
+    expect(viewButton.tagName).toBe('BUTTON');
+    expect(viewButton).not.toHaveAttribute('href');
   });
 
   it('does not render a "View" action for a document that is not downloadable (e.g. a failed generation)', async () => {
@@ -592,7 +591,7 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
     renderTab(DEFAULT_ORGANIZATION_ID);
 
     await screen.findByText('Statement of Funeral Goods and Services Selected.pdf');
-    expect(screen.getByRole('link', { name: 'View' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
     await waitFor(() => {
@@ -961,5 +960,60 @@ describe('CaseDocumentsTab — Documents/History separation (Task #12 follow-up,
     expect(caseDocumentsClient.fetchCaseDocuments).toHaveBeenCalledTimes(1);
     expect(caseDocumentsClient.generateCaseDocument).not.toHaveBeenCalled();
     expect(caseDocumentsClient.archiveCaseDocument).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * In-app document viewer (2026-10). "View" opened the inline download URL
+ * as a top-level navigation. Chrome's "Download PDFs instead of
+ * automatically opening them" setting overrides `Content-Disposition:
+ * inline` for top-level navigations, so View saved the file and handed it
+ * to the OS viewer. An embedded document is not subject to that setting.
+ */
+describe('CaseDocumentsTab — View shows the document in the browser', () => {
+  it('opens an in-app viewer rather than navigating away', async () => {
+    renderTab();
+    const view = await screen.findByRole('button', { name: 'View' });
+    fireEvent.click(view);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it('embeds the document inline, with the disposition=inline URL', async () => {
+    const { container } = renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+
+    const embed = container.querySelector('object[type="application/pdf"]');
+    expect(embed).toBeTruthy();
+    expect(embed?.getAttribute('data')).toContain('disposition=inline');
+  });
+
+  it('is not an anchor — nothing hands the file to the browser to save', async () => {
+    renderTab();
+    const view = await screen.findByRole('button', { name: 'View' });
+    expect(view.tagName).toBe('BUTTON');
+    expect(view).not.toHaveAttribute('href');
+  });
+
+  it('still offers Download as its own separate action', async () => {
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const download = within(dialog).getByRole('link', { name: 'Download' });
+    expect(download.getAttribute('href')).toContain('/download?');
+    expect(download.getAttribute('href')).not.toContain('disposition=inline');
+  });
+
+  it('closes without leaving the case', async () => {
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+    const dialog = await screen.findByRole('dialog');
+    // Two controls close it — the × and the footer button. Either works;
+    // this exercises the footer one.
+    const closeButtons = within(dialog).getAllByRole('button', { name: 'Close' });
+    fireEvent.click(closeButtons[closeButtons.length - 1]);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
