@@ -26,6 +26,15 @@ export async function generateStatement(input: { organizationId: string; caseId:
   return body.document as CaseDocument;
 }
 
+/** Receipt of Payment (2026-10) — separate from the Statement above; one
+    never replaces the other. Returns the missing fields alongside the
+    document so the caller can tell staff what the case lacked. */
+export async function generateReceiptOfPayment(input: { organizationId: string; caseId: string; existingDocumentId?: string }): Promise<{ document: CaseDocument; missingFields: string[] }> {
+  const { caseId, ...rest } = input;
+  const body = await parseJsonOrThrow(await fetch(`/api/cases/${encodeURIComponent(caseId)}/billing/receipt`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(rest) }));
+  return { document: body.document as CaseDocument, missingFields: (body.missingFields as string[]) ?? [] };
+}
+
 export async function fetchCashAdvances(organizationId: string, caseId: string): Promise<CaseCashAdvanceItem[]> {
   const body = await parseJsonOrThrow(await fetch(`/api/cases/${encodeURIComponent(caseId)}/billing/cash-advances?organizationId=${encodeURIComponent(organizationId)}`));
   return (body.items as CaseCashAdvanceItem[]) ?? [];

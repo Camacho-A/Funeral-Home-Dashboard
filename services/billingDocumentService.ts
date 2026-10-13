@@ -9,7 +9,19 @@ import { createOrgDocument } from './orgDocumentService';
 import { classifyServiceItem } from '../domain/billing/ftcClassification';
 import { FTC_CLASS, FTC_DISCLOSURE_VERSION, disclosuresFor, type ProviderOfferings } from '../domain/billing/ftcComplianceRegistry';
 import { renderStatementHtml } from '../domain/billing/renderStatementHtml';
-import { MANORS_ORGANIZATION_ID, MANORS_STATEMENT_PROVIDER_IDENTITY, shouldShowCashAdvanceSection } from '../domain/billing/organizationStatementOverrides';
+import { renderReceiptOfPaymentHtml } from '../domain/billing/renderReceiptOfPaymentHtml';
+import {
+  formatReceiptDate,
+  receiptPaymentMethodLabel,
+  resolvePaidInFullDate,
+  resolveReceiptPaymentStatus,
+  type ReceiptLineItem,
+  type ReceiptOfPaymentModel,
+  type ReceiptPaymentLine,
+} from '../domain/billing/receiptOfPayment';
+import { composeDecedentName } from '../domain/cases/decedentName';
+import { listPaymentRecordsForCase } from './paymentsService';
+import { MANORS_ORGANIZATION_ID, MANORS_STATEMENT_PROVIDER_IDENTITY, shouldShowCashAdvanceSection, receiptFooterFor } from '../domain/billing/organizationStatementOverrides';
 import { renderGeneralPriceListHtml } from '../domain/billing/renderGeneralPriceListHtml';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
 import type { Organization } from '../types/organization';
@@ -243,6 +255,125 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
  * catalog + merchandise (D5, D7). Persists an immutable `OrgDocument` with
  * provenance (effective date, disclosure version, catalog snapshot hash).
  */
+
+/**
+ * Receipt of Payment (2026-10) — the family-facing acknowledgement of what
+ * was charged and what has been paid, reproducing Manors' own document.
+ *
+ * SEPARATE FROM, NOT A REPLACEMENT FOR, the Statement of Funeral Goods and
+ * Services Selected above. That statement is a legally mandated FTC
+ * disclosure (16 CFR 453.2(b)(5)); this is a receipt. Both are generated,
+ * each under its own document type, through the same existing document
+ * pipeline.
+ *
+ * READ-ONLY against the books. Every figure comes from the active order
+ * and the recorded payment records; nothing here posts, amends or reads
+ * back a journal entry.
+ */
+export async function buildReceiptOfPaymentModel(
+  params: { caseId: string; now?: string },
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ReceiptOfPaymentModel> {
+  const src = await resolveMergeSourceData(organizationId, params.caseId, dataAdapterMode);
+  if (!src.caseOrder) {
+    throw new BillingDocumentServiceError(
+      'This case has no active order — a receipt cannot be generated until an order exists.',
+    );
+  }
+  const order = src.caseOrder;
+
+  const [lineItems, catalog, payments] = await Promise.all([
+    listLineItemsForOrder(organizationId, order.id, dataAdapterMode),
+    getServiceCatalog(organizationId, dataAdapterMode),
+    listPaymentRecordsForCase(organizationId, params.caseId, dataAdapterMode),
+  ]);
+
+  // Only money that actually cleared. A pending or failed attempt is not a
+  // payment and must never appear on a receipt as one.
+  const succeeded = payments.filter((p) => p.status === 'succeeded');
+  const paymentLines: ReceiptPaymentLine[] = succeeded
+    .slice()
+    .sort((a, b) => String(a.paidAt ?? a.createdAt).localeCompare(String(b.paidAt ?? b.createdAt)))
+    .map((p) => ({
+      methodLabel: receiptPaymentMethodLabel({ provider: p.provider, cardBrand: p.cardBrand, cardLast4: p.cardLast4 }),
+      paidAtDisplay: formatReceiptDate(p.paidAt ?? p.createdAt),
+      amountCents: p.amount,
+    }));
+
+  const paidCents = paymentLines.reduce((sum, p) => sum + p.amountCents, 0);
+  const codeByDisplayName = new Map(catalog.map((c) => [c.displayName, c.serviceCode]));
+
+  const receiptLines: ReceiptLineItem[] = lineItems.map((line) => ({
+    quantity: line.quantity,
+    itemNumber: line.serviceCode || codeByDisplayName.get(line.description) || null,
+    description: line.description,
+    costCents: line.unitPrice,
+    // A per-line discount is the gap between what the line would cost at
+    // its unit price and what it was actually charged — derived, never a
+    // second stored figure that could disagree with the order.
+    discountCents: Math.max(0, line.unitPrice * line.quantity - line.lineTotal),
+    totalCents: line.lineTotal,
+  }));
+
+  const grossCents = receiptLines.reduce((sum, l) => sum + l.costCents * l.quantity, 0);
+  const discountCents = Math.max(0, grossCents - order.total);
+  const status = resolveReceiptPaymentStatus({ balanceDueCents: order.balanceDue, paidCents });
+
+  /** Named, not silently blank — staff see what the case is missing
+      before the document goes to a family. */
+  const missingFields: string[] = [];
+  if (!src.case.caseNumber) missingFields.push('Case number');
+  if (!src.case.decedentName) missingFields.push("Deceased's name");
+  if (!formatReceiptDate(src.case.dateOfDeath)) missingFields.push('Date of death');
+  if (!src.case.nextOfKinName) missingFields.push('Responsible family member');
+  if (receiptLines.length === 0) missingFields.push('Itemised charges');
+
+  return {
+    provider: statementProviderIdentity(organizationId, src.organization, src.location),
+    footer: receiptFooterFor(organizationId, statementProviderIdentity(organizationId, src.organization, src.location).name),
+    statementDateDisplay: formatReceiptDate(params.now ?? nowIso()) ?? '',
+    caseNumber: src.case.caseNumber,
+    soldToName: src.case.nextOfKinName || null,
+    // The canonical composition, so the middle name reads here exactly as
+    // it does on every other surface.
+    deceasedName: composeDecedentName(src.case.decedentName, src.case.decedentMiddleName),
+    dateOfDeathDisplay: formatReceiptDate(src.case.dateOfDeath),
+    status,
+    paidInFullDateDisplay: resolvePaidInFullDate(status, paymentLines),
+    payments: paymentLines,
+    lineItems: receiptLines,
+    totalChargeCents: order.total,
+    discountCents,
+    paymentCents: paidCents,
+    balanceDueCents: order.balanceDue,
+    missingFields,
+  };
+}
+
+export async function generateReceiptOfPayment(
+  params: { caseId: string; existingDocumentId?: string; idFactory: () => string; now?: string },
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ document: CaseDocument; model: ReceiptOfPaymentModel }> {
+  const model = await buildReceiptOfPaymentModel(params, ctx.organizationId, dataAdapterMode);
+  const document = await generateBillingDocument(
+    {
+      caseId: params.caseId,
+      documentTypeKey: DOCUMENT_TYPES.STATEMENT_ACCOUNT.key,
+      category: 'statement',
+      fileName: `Receipt of Payment - ${model.caseNumber}.pdf`,
+      bodyHtml: renderReceiptOfPaymentHtml(model),
+      existingDocumentId: params.existingDocumentId,
+      idFactory: params.idFactory,
+      now: params.now,
+    },
+    ctx,
+    dataAdapterMode,
+  );
+  return { document, model };
+}
+
 export async function generateGeneralPriceList(
   params: { effectiveDate: string; idFactory: () => string; now?: string },
   ctx: ActivityContext,

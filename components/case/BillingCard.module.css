@@ -24,3 +24,12 @@
     height: 44px;
   }
 }
+
+/* Receipt of Payment (2026-10). Two distinct documents, so two buttons —
+   they wrap rather than crowd on a narrow viewport. */
+.billingHeaderActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

@@ -47,3 +47,35 @@ export const MANORS_STATEMENT_PROVIDER_IDENTITY: ProviderIdentity = {
 export function shouldShowCashAdvanceSection(organizationId: string): boolean {
   return organizationId !== MANORS_ORGANIZATION_ID;
 }
+
+/**
+ * Receipt of Payment footer (2026-10).
+ *
+ * Manors' own receipt names the legal entity behind the trading name —
+ * "Cremations America of Broward, LLC DBA MANORS CREMATION" — which is
+ * specific to that organization and must never appear on anybody else's
+ * document. Every other organization gets a footer built from its OWN
+ * provider identity, so onboarding a funeral home needs no change here;
+ * it only needs an entry if its legal entity differs from its trading
+ * name the way Manors' does.
+ */
+export type ReceiptFooter = {
+  thanksLine: string;
+  legalEntityLine: string | null;
+};
+
+const RECEIPT_FOOTERS: Record<string, ReceiptFooter> = {
+  [MANORS_ORGANIZATION_ID]: {
+    thanksLine: 'Thank you for your trust in Cremations America of Broward, LLC',
+    legalEntityLine: 'DBA MANORS CREMATION',
+  },
+};
+
+export function receiptFooterFor(organizationId: string, providerName: string): ReceiptFooter {
+  return (
+    RECEIPT_FOOTERS[organizationId] ?? {
+      thanksLine: `Thank you for your trust in ${providerName}`,
+      legalEntityLine: null,
+    }
+  );
+}

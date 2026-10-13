@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { shouldShowCashAdvanceSection } from '@/domain/billing/organizationStatementOverrides';
-import { useStatementPreview, useCashAdvances, useCreateCashAdvance, useDeleteCashAdvance, useGenerateStatement } from '@/hooks/useBilling';
+import { useStatementPreview, useCashAdvances, useCreateCashAdvance, useDeleteCashAdvance, useGenerateStatement, useGenerateReceiptOfPayment } from '@/hooks/useBilling';
 import { useCaseDocumentLibrary } from '@/hooks/useCaseDocumentLibrary';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { TextField } from '@/components/ui/TextField';
@@ -60,6 +60,7 @@ export function BillingCard({ caseId }: { caseId: string }) {
   const createCa = useCreateCashAdvance(organizationId, caseId);
   const deleteCa = useDeleteCashAdvance(organizationId, caseId);
   const generate = useGenerateStatement(organizationId, caseId);
+  const generateReceipt = useGenerateReceiptOfPayment(organizationId, caseId);
   const documents = useCaseDocumentLibrary(organizationId, caseId);
   const activeStatement =
     documents.data?.find(
@@ -122,9 +123,17 @@ export function BillingCard({ caseId }: { caseId: string }) {
           </p>
         </div>
         {model && (
-          <button type="button" className={`sx-btn sx-btn-primary ${styles.billingHeaderAction}`} onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
-            {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
-          </button>
+          <div className={styles.billingHeaderActions}>
+            <button type="button" className={`sx-btn sx-btn-primary ${styles.billingHeaderAction}`} onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
+              {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
+            </button>
+            {/* Receipt of Payment (2026-10) — a DIFFERENT document from the
+                Statement beside it, generated separately. The Statement is
+                a required FTC disclosure; this is the family's receipt. */}
+            <button type="button" className={`sx-btn ${styles.billingHeaderAction}`} onClick={() => generateReceipt.mutate({})} disabled={generateReceipt.isPending}>
+              {generateReceipt.isPending ? 'Generating…' : 'Generate Receipt of Payment'}
+            </button>
+          </div>
         )}
       </div>
 

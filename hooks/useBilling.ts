@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchStatementPreview,
   generateStatement,
+  generateReceiptOfPayment,
   fetchCashAdvances,
   createCashAdvance,
   deleteCashAdvance,
@@ -55,6 +56,17 @@ export function useDeleteCashAdvance(organizationId: string, caseId: string) {
       qc.invalidateQueries({ queryKey: cashAdvancesKey(caseId) });
       qc.invalidateQueries({ queryKey: statementPreviewKey(caseId) });
     },
+  });
+}
+
+export function useGenerateReceiptOfPayment(organizationId: string, caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { existingDocumentId?: string } = {}) =>
+      generateReceiptOfPayment({ organizationId, caseId, ...input }),
+    // Same cache key as every other generated document, so the receipt
+    // appears in the Documents tab without a reload.
+    onSuccess: () => qc.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
   });
 }
 
