@@ -212,6 +212,27 @@ export function resolveChecklist(
   const isCertifierKnown = nonEmpty(case_.certifierName) && nonEmpty(case_.certifierPhone);
   // Email is deliberately not required — see viewModel.ts's own comment.
   const isFamilyContactKnown = nonEmpty(case_.nextOfKinName) && nonEmpty(case_.nextOfKinPhone);
+  /**
+   * Satisfied by the canonical Case column, REGARDLESS of `hasField`
+   * (2026-10).
+   *
+   * Manors' First Call (rawStage 0) and Payment (rawStage 1) are two
+   * stages that share one displayStage, one label, and one identical
+   * 11-item checklist — but rawStage 1's copies all carry
+   * `hasField: false`. Keying this off `hasField` therefore satisfied the
+   * items at rawStage 0 and left the very same items, under the very same
+   * composite keys, unsatisfiable at rawStage 1: the case advanced
+   * 0 -> 1 and then stalled forever on boxes that already read as ticked.
+   * That is the "not moving to the next step after the last box" report.
+   *
+   * `canonicalFallbackValue` is already tightly scoped — intake stage
+   * only, and only where the index maps to ONE unambiguous Case field
+   * with a real value — so an action item like "Payment collected", which
+   * maps to no Case field at all, is untouched by this and still requires
+   * somebody to do it.
+   */
+  const isSatisfiedByCaseData = (index: number) => canonicalFallbackValue(case_, displayStage, index) !== '';
+
   const isItemDone = (item: ChecklistItemTemplate, index: number): boolean =>
     item.label === PAYMENT_CONFIRMATION_LABEL && isPaymentConfirmed
       ? true
@@ -219,7 +240,9 @@ export function resolveChecklist(
         ? true
         : item.label === FAMILY_CONTACT_ITEM_LABEL && isFamilyContactKnown
           ? true
-          :
+          : isSatisfiedByCaseData(index)
+            ? true
+            :
     item.requiredCaseFields
       ? isRequiredCaseFieldsDone(item)
       : item.hasField

@@ -617,3 +617,55 @@ describe('derived intake items agree with reconciliation (2026-10)', () => {
     expect(items.find((i) => i.label.startsWith('Family contact'))!.done).toBe(false);
   });
 });
+
+describe('two raw stages sharing one displayStage (Manors First Call + Payment)', () => {
+  /**
+   * The live shape that caused "Review case" to stick: rawStage 0 and
+   * rawStage 1 are both displayStage 0, both labelled "First Call &
+   * Payment", and both carry the SAME 11 items — but rawStage 1's copies
+   * all have `hasField: false`. Keying data-satisfaction off `hasField`
+   * satisfied the items at rawStage 0 and left the identical items, under
+   * the identical composite keys, unsatisfiable at rawStage 1.
+   */
+  const PAYMENT_STAGE_ITEMS = RAW_STAGE_0_ITEMS.map((item) => ({ ...item, hasField: false }));
+
+  function populatedCase(): Case {
+    return baseCase({
+      decedentName: 'JOYCE GOLLIS',
+      dateOfBirth: '08/02/1929',
+      dateOfDeath: '10/12/2026',
+      timeOfDeath: '13:30',
+      weight: '117',
+      placeOfDeath: 'VITAS IPU',
+      certifierName: 'JOHN ZARAVINOS',
+      certifierPhone: '954-486-4085',
+      nextOfKinName: 'MARCIA SHALLOW',
+      nextOfKinPhone: '(954) 980-2702',
+      paymentStatus: 'paid_in_full',
+      fieldValues: {},
+      checklistState: { '0:10': true },
+    });
+  }
+
+  it('satisfies the data items identically in BOTH stages', () => {
+    const first = resolveChecklist(RAW_STAGE_0_ITEMS, 0, populatedCase());
+    const payment = resolveChecklist(PAYMENT_STAGE_ITEMS, 0, populatedCase());
+
+    expect(first.filter((i) => !i.done)).toEqual([]);
+    // The crux: the same items, same keys, same case — the only
+    // difference is hasField, which must not change the answer.
+    expect(payment.filter((i) => !i.done)).toEqual([]);
+  });
+
+  it('a genuine action item stays outstanding in both stages', () => {
+    const unpaid = { ...populatedCase(), paymentStatus: 'awaiting_payment' as const, checklistState: {} };
+    const first = resolveChecklist(RAW_STAGE_0_ITEMS, 0, unpaid);
+    const payment = resolveChecklist(PAYMENT_STAGE_ITEMS, 0, unpaid);
+
+    for (const items of [first, payment]) {
+      const labels = items.filter((i) => !i.done).map((i) => i.label);
+      expect(labels).toContain('Payment collected');
+      expect(labels.some((l) => l.startsWith('Payment receipt sent'))).toBe(true);
+    }
+  });
+});
