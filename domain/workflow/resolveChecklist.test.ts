@@ -580,3 +580,40 @@ describe('payment items (2026-10)', () => {
     expect(items.find((i) => i.label.startsWith('Payment receipt sent'))!.index).toBe(10);
   });
 });
+
+describe('derived intake items agree with reconciliation (2026-10)', () => {
+  function withFields(overrides: Partial<Case>): Case {
+    return baseCase({ fieldValues: {}, checklistState: {}, ...overrides });
+  }
+
+  it('Certifier Information completes from the structured certifier fields', () => {
+    // The bug this closes: these rules lived only in the view model's
+    // presentation overlays, so the checklist staff SAW and the checklist
+    // reconciliation EVALUATED disagreed — B2026-038 showed every intake
+    // item ticked while the case would not leave the intake stage.
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, withFields({ certifierName: 'JOHN ZARAVINOS', certifierPhone: '954-486-4085' }));
+    // A frozen snapshot carries either the current or the legacy label.
+    const certifier = items.find((i) => /certifier|hospice or physician/i.test(i.label));
+    expect(certifier).toBeDefined();
+    expect(certifier!.done).toBe(true);
+  });
+
+  it('Certifier stays outstanding without both name and phone', () => {
+    const nameOnly = resolveChecklist(RAW_STAGE_0_ITEMS, 0, withFields({ certifierName: 'JOHN ZARAVINOS', certifierPhone: null }));
+    expect(nameOnly.find((i) => /certifier|hospice or physician/i.test(i.label))!.done).toBe(false);
+  });
+
+  it('Family contact completes from name and phone, with no email', () => {
+    const items = resolveChecklist(
+      RAW_STAGE_0_ITEMS,
+      0,
+      withFields({ nextOfKinName: 'MARCIA SHALLOW', nextOfKinPhone: '(954) 980-2702', nextOfKinEmail: null }),
+    );
+    expect(items.find((i) => i.label.startsWith('Family contact'))!.done).toBe(true);
+  });
+
+  it('Family contact stays outstanding when unreachable', () => {
+    const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, withFields({ nextOfKinName: 'MARCIA SHALLOW', nextOfKinPhone: '' }));
+    expect(items.find((i) => i.label.startsWith('Family contact'))!.done).toBe(false);
+  });
+});

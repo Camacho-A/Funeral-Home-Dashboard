@@ -388,7 +388,35 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     // would only self-correct on some later, unrelated refetch.
     // Best-effort: a reconciliation failure never fails the checklist
     // update that already succeeded.
-    if (patch.checklistState) {
+    /**
+     * Reconcile after anything that can change completion (2026-10).
+     *
+     * Was `patch.checklistState` alone, which was correct when every item
+     * was ticked by hand. Items are now also satisfied by the case's own
+     * data — the canonical intake columns, certifier, next of kin,
+     * payment status — so an ordinary field edit can complete a stage
+     * without touching `checklistState` at all. B2026-038 showed the
+     * consequence: every intake item read as done and the case still sat
+     * on the intake stage, because nothing had triggered reconciliation.
+     */
+    const COMPLETION_AFFECTING_FIELDS = [
+      'checklistState',
+      'fieldValues',
+      'paymentStatus',
+      'decedentName',
+      'dateOfBirth',
+      'dateOfDeath',
+      'timeOfDeath',
+      'placeOfDeath',
+      'weight',
+      'certifierName',
+      'certifierPhone',
+      'nextOfKinName',
+      'nextOfKinPhone',
+    ] as const;
+    const touchesCompletion = COMPLETION_AFFECTING_FIELDS.some((field) => field in patch);
+
+    if (touchesCompletion) {
       try {
         const reconcileResult = await reconcileCaseWorkflow(organizationId, caseId, 'wix');
         if (reconcileResult.changed) {

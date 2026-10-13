@@ -4,7 +4,12 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
 import { retiredChecklistIndices } from '../organization/checklistRetirement';
 import { findCaseFieldForChecklistIndex } from './resolveIntake';
-import { PAYMENT_CONFIRMATION_LABEL } from '../cases/checklist';
+import { PAYMENT_CONFIRMATION_LABEL, getChecklistLabels } from '../cases/checklist';
+import { CERTIFIER_INFORMATION_LABEL, LEGACY_CERTIFIER_ITEM_LABEL } from '../cases/legacyCertifierPresentation';
+
+/** The frozen label every snapshot persists for the Family Contact item.
+    Defined from the same constant viewModel.ts derives its own from. */
+const FAMILY_CONTACT_ITEM_LABEL = getChecklistLabels(0)[7];
 
 /**
  * The placeholder `services/casesService.ts#create` and `POST /api/cases`
@@ -182,10 +187,39 @@ export function resolveChecklist(
    * action somebody performs.
    */
   const isPaymentConfirmed = case_.paymentStatus === 'paid_in_full';
+
+  /**
+   * Derived intake items (2026-10). Certifier and Family Contact are
+   * satisfied by the case's own structured fields.
+   *
+   * These rules used to live ONLY in the view model's presentation
+   * overlays (legacyCertifierPresentation.ts,
+   * applyFamilyContactPresentation), which meant the checklist a staff
+   * member SAW and the checklist reconciliation EVALUATED disagreed:
+   * B2026-038 showed every intake item ticked while
+   * `computeFirstIncompleteRawStage` still read items 6 and 7 as
+   * outstanding, so the case sat on the intake stage with nothing left to
+   * click. Completion now has one source of truth, here, and the overlays
+   * are left to do what they are for — labels, rows and editors.
+   *
+   * Matched on canonical labels, never indices: a frozen snapshot can
+   * carry either the legacy or the current certifier label, and neither
+   * carries `requiredCaseFields` at all.
+   */
+  const nonEmpty = (value: string | null | undefined) => typeof value === 'string' && value.trim() !== '';
+  const isCertifierItem = (label: string) =>
+    label === CERTIFIER_INFORMATION_LABEL || label === LEGACY_CERTIFIER_ITEM_LABEL;
+  const isCertifierKnown = nonEmpty(case_.certifierName) && nonEmpty(case_.certifierPhone);
+  // Email is deliberately not required — see viewModel.ts's own comment.
+  const isFamilyContactKnown = nonEmpty(case_.nextOfKinName) && nonEmpty(case_.nextOfKinPhone);
   const isItemDone = (item: ChecklistItemTemplate, index: number): boolean =>
     item.label === PAYMENT_CONFIRMATION_LABEL && isPaymentConfirmed
       ? true
-      :
+      : isCertifierItem(item.label) && isCertifierKnown
+        ? true
+        : item.label === FAMILY_CONTACT_ITEM_LABEL && isFamilyContactKnown
+          ? true
+          :
     item.requiredCaseFields
       ? isRequiredCaseFieldsDone(item)
       : item.hasField

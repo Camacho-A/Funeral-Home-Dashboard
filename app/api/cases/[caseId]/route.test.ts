@@ -1035,7 +1035,11 @@ describe('PATCH /api/cases/[caseId] — Task #15 (2026-09, future-historical-dat
   });
 
   it('never fetches the organization when the patch contains no date field', async () => {
-    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } });
+    // `tagNumber` deliberately: it is not a completion-affecting field,
+    // so it also does not trigger workflow reconciliation (2026-10),
+    // which legitimately reads organization data of its own. This test is
+    // about the DATE-VALIDATION fetch, and stays about that.
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { tagNumber: 'T-9' } });
     expect(response.status).toBe(200);
     expect(mockGetOrganization).not.toHaveBeenCalled();
   });
