@@ -616,6 +616,14 @@ export async function generateBillingDocument(
   const supersededIds = existing
     .filter(
       (d) =>
+        // GENERATED only. An uploaded file is a staff artefact, not an
+        // earlier version of something this generated — and uploads can
+        // legitimately carry a real documentTypeKey. Manors has five
+        // uploaded "Arrangement Forms.pdf" tagged
+        // `external_form.arrangement_forms`, including the one recovered
+        // for B2026-038; generating anything under that key must never
+        // retire them.
+        d.origin === 'generated' &&
         d.documentTypeKey === params.documentTypeKey &&
         d.id !== documentId &&
         d.status === 'active' &&

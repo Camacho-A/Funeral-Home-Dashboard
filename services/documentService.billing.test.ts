@@ -181,4 +181,41 @@ describe('generateBillingDocument — supersedes every older version of its type
     // A signed document is a legal artefact — it keeps its own status.
     expect(caseDocumentFixtures.find((d) => d.id === signed.id)?.status).toBe('active');
   });
+
+  const CASE_ID_UPLOAD = 'case-upload-guard';
+
+  it('never retires an UPLOADED document, even one tagged with the same type', async () => {
+    // Uploads can legitimately carry a real documentTypeKey — Manors has
+    // five uploaded "Arrangement Forms.pdf" under
+    // `external_form.arrangement_forms`, including the one recovered for
+    // B2026-038. A generated document must never retire a staff upload.
+    const { upload } = await import('./documentService');
+    const uploaded = await upload(
+      {
+        caseId: CASE_ID_UPLOAD,
+        fileName: 'Arrangement Forms.pdf',
+        mimeType: 'application/pdf',
+        documentTypeKey: 'financial.statement_goods_services',
+        idFactory: () => `doc-upload-${Math.random()}`,
+      },
+      Buffer.from('%PDF-1.4 uploaded'),
+      { organizationId: 'managed-cremations', actorIdentityId: 'identity-1', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'corr-1' },
+      'mock',
+    );
+
+    await generateBillingDocument(
+      {
+        caseId: CASE_ID_UPLOAD,
+        documentTypeKey: 'financial.statement_goods_services',
+        category: 'statement',
+        fileName: 'Statement of Funeral Goods and Services Selected.pdf',
+        bodyHtml: '<p>statement</p>',
+        idFactory: () => `doc-${Math.random()}`,
+      },
+      { organizationId: 'managed-cremations', actorIdentityId: 'identity-1', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'corr-1' },
+      'mock',
+    );
+
+    expect(caseDocumentFixtures.find((d) => d.id === uploaded.id)?.status).toBe('active');
+  });
 });
