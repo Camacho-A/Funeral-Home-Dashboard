@@ -16,6 +16,7 @@ import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cas
 import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
+import { touchesWorkflowCompletion } from '../domain/cases/workflowCompletion';
 import { findInvalidChecklistStatePatchEntries } from '../domain/workflow/checklistItemKey';
 import { STAGES, rawStagesForDisplayStage } from '../domain/cases/stages';
 import { canonicalDisplayStagesForPresentedLabel } from '../domain/organization/workflowStagePresentation';
@@ -550,6 +551,13 @@ export async function update(
       caseFixtures[index].checklistState,
       patch.checklistState,
       caseFixtures[index].workflowSnapshot,
+      {
+        organizationId: context.organizationId,
+        isMedicalExaminerCase:
+          patch.isMedicalExaminerCase !== undefined
+            ? patch.isMedicalExaminerCase === true
+            : caseFixtures[index].isMedicalExaminerCase === true,
+      },
     );
     if (invalidEntries.length > 0) {
       throw new Error(`Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}`);
@@ -597,10 +605,11 @@ export async function update(
   // Task #6 (2026-09, checklist completion → workflow reconciliation).
   // Mirrors the Wix-mode PATCH route's identical fix exactly, so
   // DATA_ADAPTER=mock never diverges from DATA_ADAPTER=wix — see that
-  // route's own comment for the full "why." Scoped to the original
-  // (pre-normalization) patch's checklistState key, same as the route.
+  // route's own comment for the full "why." Both read the SAME shared
+  // trigger list, so the two can no longer drift apart. Scoped to the
+  // original (pre-normalization) patch, same as the route.
   let result: Case = updated;
-  if (patch.checklistState) {
+  if (touchesWorkflowCompletion(patch)) {
     try {
       const reconcileResult = await reconcileCaseWorkflow(context.organizationId, caseId, 'mock');
       if (reconcileResult.changed) {

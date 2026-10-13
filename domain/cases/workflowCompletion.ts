@@ -62,3 +62,44 @@ export function becameComplete(
 ): boolean {
   return !isCaseWorkflowComplete(before) && isCaseWorkflowComplete(after);
 }
+
+/**
+ * The patch fields that can change whether a stage is complete, and so
+ * must trigger workflow reconciliation (2026-10).
+ *
+ * Was `checklistState` alone, which was correct when every item was ticked
+ * by hand. Items are now also satisfied by the case's own data — the
+ * canonical intake columns, certifier, next of kin, payment status — so an
+ * ordinary field edit can complete a stage without touching
+ * `checklistState` at all. B2026-038 showed the consequence: every intake
+ * item read as done and the case still sat on the intake stage, because
+ * nothing had triggered reconciliation.
+ *
+ * Shared by the Wix PATCH route and the mock-mode service so the two can
+ * never drift — a divergence here means a fix verified in dev is absent in
+ * production, or the reverse.
+ */
+export const COMPLETION_AFFECTING_FIELDS = [
+  'checklistState',
+  'fieldValues',
+  'paymentStatus',
+  'decedentName',
+  'dateOfBirth',
+  'dateOfDeath',
+  'timeOfDeath',
+  'placeOfDeath',
+  'weight',
+  'certifierName',
+  'certifierPhone',
+  'nextOfKinName',
+  'nextOfKinPhone',
+  // Changes WHICH items a stage requires (the Medical Examiner variant
+  // swaps the doctor items for verification items), so it can complete or
+  // re-open a stage on its own.
+  'isMedicalExaminerCase',
+] as const;
+
+/** Whether a patch touches anything that can change stage completion. */
+export function touchesWorkflowCompletion(patch: object): boolean {
+  return COMPLETION_AFFECTING_FIELDS.some((field) => field in patch);
+}

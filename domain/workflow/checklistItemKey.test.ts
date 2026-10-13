@@ -202,3 +202,96 @@ describe('composite keys survive the Manors intake-stage combination', () => {
     expect(readChecklistValue(state, 2, 2)).toBe(true);
   });
 });
+
+/**
+ * Medical Examiner cases (2026-10). An ME case presents three verification
+ * items at indices 3-5 of the EDRS stage — indices the frozen snapshot does
+ * not contain, because the ME variant is a presentation layer over it. The
+ * validator therefore has to resolve the stage's items through the SAME
+ * function the checklist renders from, or it refuses every tick on exactly
+ * the items it just showed: staff classified the case and nothing moved.
+ */
+describe('findInvalidChecklistStatePatchEntries — Medical Examiner items', () => {
+  const EDRS_DISPLAY_STAGE = 2;
+  const MANORS = 'managed-cremations';
+
+  const snapshot = {
+    templateId: 't',
+    templateVersion: 1,
+    stages: [
+      {
+        rawStage: 3,
+        displayStage: EDRS_DISPLAY_STAGE,
+        label: 'EDRS & Doctor / Cause of Death',
+        checklist: {
+          items: [
+            { index: 0, label: 'EDRS submitted & sent to doctor', hasField: false },
+            { index: 1, label: 'Cause of death entered', hasField: false },
+            { index: 2, label: 'Hardsave for state approval if not an online doctor', hasField: false },
+          ],
+        },
+      },
+    ],
+  } as unknown as Parameters<typeof findInvalidChecklistStatePatchEntries>[2];
+
+  const standard = { organizationId: MANORS, isMedicalExaminerCase: false };
+  const asMedicalExaminer = { organizationId: MANORS, isMedicalExaminerCase: true };
+
+  it('accepts the verification indices on a Medical Examiner case', () => {
+    for (const index of [3, 4, 5]) {
+      expect(
+        findInvalidChecklistStatePatchEntries({}, { [`2:${index}`]: true }, snapshot, asMedicalExaminer),
+        `index ${index}`,
+      ).toEqual([]);
+    }
+  });
+
+  it('still rejects those indices on a standard case — nothing is widened', () => {
+    for (const index of [3, 4, 5]) {
+      expect(
+        findInvalidChecklistStatePatchEntries({}, { [`2:${index}`]: true }, snapshot, standard),
+        `index ${index}`,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('rejects them with no presentation context at all — the default is unchanged', () => {
+    expect(findInvalidChecklistStatePatchEntries({}, { '2:3': true }, snapshot)).toHaveLength(1);
+  });
+
+  it('rejects the DOCTOR indices on a Medical Examiner case — they are not presented', () => {
+    // The swap is in both directions. An ME case is not shown the doctor
+    // items, so nothing should be able to tick them on its behalf.
+    for (const index of [0, 1, 2]) {
+      expect(
+        findInvalidChecklistStatePatchEntries({}, { [`2:${index}`]: true }, snapshot, asMedicalExaminer),
+        `index ${index}`,
+      ).toHaveLength(1);
+    }
+  });
+
+  it('still accepts the doctor indices on a standard case', () => {
+    for (const index of [0, 1, 2]) {
+      expect(
+        findInvalidChecklistStatePatchEntries({}, { [`2:${index}`]: true }, snapshot, standard),
+        `index ${index}`,
+      ).toEqual([]);
+    }
+  });
+
+  it('touches no other organization', () => {
+    expect(
+      findInvalidChecklistStatePatchEntries({}, { '2:3': true }, snapshot, {
+        organizationId: 'some-other-org',
+        isMedicalExaminerCase: true,
+      }),
+    ).toHaveLength(1);
+  });
+
+  it('an ME tick already stored is never re-validated by an unrelated edit', () => {
+    // Un-classifying a case leaves its ME ticks in checklistState. Those
+    // keys ride along on every later patch; re-sending one unchanged must
+    // not brick an edit that has nothing to do with them.
+    expect(findInvalidChecklistStatePatchEntries({ '2:3': true }, { '2:3': true }, snapshot, standard)).toEqual([]);
+  });
+});

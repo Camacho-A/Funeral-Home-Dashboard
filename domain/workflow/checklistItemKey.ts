@@ -1,5 +1,6 @@
 import type { Case } from '../../types/case';
 import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
+import { applyMedicalExaminerVariant } from '../organization/medicalExaminerWorkflow';
 
 /**
  * B2026-035 (2026-10, checklist index-collision over-advancement). Root
@@ -120,11 +121,29 @@ export type ChecklistStatePatchValidationError = { key: string; reason: string }
  * available — that a stage with that `displayStage` and an item at that
  * `index` actually exist in it, not just that the key is shaped
  * correctly. Returns an empty array when the patch is fully valid.
+ *
+ * Medical Examiner cases (2026-10): the stage's items are resolved through
+ * `applyMedicalExaminerVariant` — the SAME function the checklist renders
+ * from — so "writable" and "presented" are one question, not two. Without
+ * this, an ME case presented the three verification items and then silently
+ * refused every tick, because those items' indices are not in the frozen
+ * snapshot: staff classified the case and nothing moved.
+ *
+ * `presentation` is optional, and omitting it keeps the plain snapshot
+ * behavior exactly as before. It never WIDENS what a standard case may
+ * write — `applyMedicalExaminerVariant` returns the snapshot's own items
+ * untouched for any case, stage, or organization without an ME variant.
  */
+export type ChecklistPresentationContext = {
+  organizationId: string | null;
+  isMedicalExaminerCase: boolean;
+};
+
 export function findInvalidChecklistStatePatchEntries(
   previousChecklistState: Case['checklistState'],
   patchChecklistState: Case['checklistState'],
   workflowSnapshot: CaseWorkflowSnapshot | null,
+  presentation?: ChecklistPresentationContext,
 ): ChecklistStatePatchValidationError[] {
   const errors: ChecklistStatePatchValidationError[] = [];
 
@@ -151,7 +170,15 @@ export function findInvalidChecklistStatePatchEntries(
 
     if (workflowSnapshot) {
       const stage = workflowSnapshot.stages.find((s) => s.displayStage === displayStage);
-      const item = stage?.checklist.items.find((candidate) => candidate.index === index);
+      const presentedItems = stage
+        ? applyMedicalExaminerVariant(
+            stage.checklist.items,
+            presentation?.organizationId ?? null,
+            displayStage,
+            presentation?.isMedicalExaminerCase === true,
+          )
+        : [];
+      const item = presentedItems.find((candidate) => candidate.index === index);
       if (!stage || !item) {
         errors.push({ key, reason: `no checklist item at displayStage ${displayStage}, index ${index} exists in this case's workflow snapshot` });
       }

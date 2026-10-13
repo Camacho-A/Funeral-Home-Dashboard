@@ -26,7 +26,7 @@ import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
-import { becameComplete } from '@/domain/cases/workflowCompletion';
+import { becameComplete, touchesWorkflowCompletion } from '@/domain/cases/workflowCompletion';
 import { syncExpectedPickupForCase } from '@/services/cremainsPickupService';
 import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
 
@@ -261,7 +261,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     // ones, never an unchanged legacy key merely carried forward). Checked
     // before any mutation, so an invalid patch never touches the case.
     if (patch.checklistState) {
-      const invalidEntries = findInvalidChecklistStatePatchEntries(existing.checklistState, patch.checklistState, existing.workflowSnapshot);
+      // The classification this write will land under — a single PATCH may
+      // set `isMedicalExaminerCase` and tick an item in the same request, and
+      // the tick must be judged against the items the case will then present.
+      const invalidEntries = findInvalidChecklistStatePatchEntries(
+        existing.checklistState,
+        patch.checklistState,
+        existing.workflowSnapshot,
+        {
+          organizationId,
+          isMedicalExaminerCase:
+            patch.isMedicalExaminerCase !== undefined
+              ? patch.isMedicalExaminerCase === true
+              : existing.isMedicalExaminerCase === true,
+        },
+      );
       if (invalidEntries.length > 0) {
         return NextResponse.json(
           { case: null, error: `Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}` },
@@ -388,37 +402,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     // would only self-correct on some later, unrelated refetch.
     // Best-effort: a reconciliation failure never fails the checklist
     // update that already succeeded.
-    /**
-     * Reconcile after anything that can change completion (2026-10).
-     *
-     * Was `patch.checklistState` alone, which was correct when every item
-     * was ticked by hand. Items are now also satisfied by the case's own
-     * data — the canonical intake columns, certifier, next of kin,
-     * payment status — so an ordinary field edit can complete a stage
-     * without touching `checklistState` at all. B2026-038 showed the
-     * consequence: every intake item read as done and the case still sat
-     * on the intake stage, because nothing had triggered reconciliation.
-     */
-    const COMPLETION_AFFECTING_FIELDS = [
-      'checklistState',
-      'fieldValues',
-      'paymentStatus',
-      'decedentName',
-      'dateOfBirth',
-      'dateOfDeath',
-      'timeOfDeath',
-      'placeOfDeath',
-      'weight',
-      'certifierName',
-      'certifierPhone',
-      'nextOfKinName',
-      'nextOfKinPhone',
-      // Changes WHICH items a stage requires (the Medical Examiner
-      // variant swaps the doctor items for verification items), so it
-      // can complete or re-open a stage on its own.
-      'isMedicalExaminerCase',
-    ] as const;
-    const touchesCompletion = COMPLETION_AFFECTING_FIELDS.some((field) => field in patch);
+    // Reconcile after anything that can change completion (2026-10) —
+    // the field list is shared with mock mode so the two cannot drift.
+    const touchesCompletion = touchesWorkflowCompletion(patch);
 
     if (touchesCompletion) {
       try {

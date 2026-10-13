@@ -1621,6 +1621,49 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
     expect(body.case.rawStage).toBe(5);
   });
 
+  it('11c. an ME case can tick its verification items, which the frozen snapshot does not contain', async () => {
+    // The whole reported symptom: the checklist presented the three
+    // verification items and the write validator refused every one, because
+    // indices 3-5 of the EDRS stage are not in the snapshot. Rendering and
+    // writing must agree, or staff classify a case and nothing moves.
+    mockAdminQueries({
+      ...permitStageCaseData({}),
+      currentStage: 3,
+      isMedicalExaminerCase: true,
+    });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { '2:3': true } },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.checklistState['2:3']).toBe(true);
+  });
+
+  it('11d. a standard case still cannot write the ME indices', async () => {
+    mockAdminQueries({ ...permitStageCaseData({}), currentStage: 3, isMedicalExaminerCase: false });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { '2:3': true } },
+    });
+    expect(response.status).toBe(400);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('11e. classifying and ticking in ONE patch is judged against the post-patch classification', async () => {
+    // A single request can do both. The tick must be validated against the
+    // items the case will present once this patch lands, not the ones it
+    // presented before it.
+    mockAdminQueries({ ...permitStageCaseData({}), currentStage: 3, isMedicalExaminerCase: false });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isMedicalExaminerCase: true, checklistState: { '2:3': true } },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.checklistState['2:3']).toBe(true);
+  });
+
   it('11b. un-classifying also triggers reconciliation, in the same way', async () => {
     // Symmetry matters: clearing the box restores the doctor items, which
     // can leave an earlier stage incomplete again. That must be reflected
