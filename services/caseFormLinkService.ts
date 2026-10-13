@@ -144,6 +144,32 @@ export async function resolveByRawToken(rawToken: string, dataAdapterMode: DataA
   return item ? mapWixCaseFormLinkItem(item.id, item.data) : null;
 }
 
+/**
+ * The CaseFormLink that already points at this submission (2026-10).
+ *
+ * Exists so a submission whose own `caseFormLinkId` back-reference was
+ * never written can still be resolved to the case it genuinely belongs
+ * to — the association is real, only the pointer was missing. Scoped by
+ * organizationId like every other read here.
+ */
+export async function findBySubmissionId(
+  organizationId: string,
+  submissionId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<CaseFormLink | null> {
+  if (dataAdapterMode === 'mock') {
+    return (
+      caseFormLinkFixtures.find((l) => l.organizationId === organizationId && l.submissionId === submissionId) ?? null
+    );
+  }
+  const response = await queryWixDataItems<WixCaseFormLinkItem>('caseFormLinks', {
+    filter: { organizationId, submissionId },
+    paging: { limit: 1 },
+  });
+  const item = response.dataItems[0];
+  return item ? mapWixCaseFormLinkItem(item.id, item.data) : null;
+}
+
 export async function markReceived(linkId: string, submissionId: string, dataAdapterMode: DataAdapterMode): Promise<CaseFormLink | null> {
   return persistUpdate(linkId, { status: 'received', submissionId }, dataAdapterMode);
 }

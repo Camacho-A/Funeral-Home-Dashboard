@@ -275,7 +275,7 @@ export async function createCaseFromIntakeSubmission(
      * still carries `caseId`, and staff can link it by hand.
      */
     try {
-      await caseFormLinkService.linkExistingSubmission(
+      const link = await caseFormLinkService.linkExistingSubmission(
         config.organizationId,
         created.id,
         config.provider,
@@ -283,6 +283,15 @@ export async function createCaseFromIntakeSubmission(
         submission.id,
         dataAdapterMode,
       );
+      // Write the back-reference too (2026-10). The link pointed at the
+      // submission but the submission did not point back, leaving the
+      // association half-formed: `caseFormLinkId` stayed null while
+      // `status` became 'matched'. Nothing could recover that state — the
+      // retry-PDF route needs `caseFormLinkId`, and the manual link route
+      // refuses anything already 'matched'. B2026-038 sat there.
+      if (link?.id) {
+        await externalFormSubmissionService.markLinked(submission.id, link.id, dataAdapterMode);
+      }
     } catch (error) {
       console.error(
         `[form intake] Case ${created.caseNumber} was created but its CaseFormLink could not be written:`,

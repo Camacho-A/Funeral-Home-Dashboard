@@ -188,3 +188,65 @@ describe('POST /api/external-form-submissions/[submissionId]/retry-pdf', () => {
     expect(response.status).toBe(403);
   });
 });
+
+/**
+ * Half-linked recovery (2026-10). An Arrangement-first case used to get a
+ * CaseFormLink pointing at its submission while the submission never
+ * pointed back — `caseFormLinkId` null, `status` 'matched'. Neither
+ * recovery route could touch that state: this one refused the missing
+ * back-reference, and the manual link route refuses anything already
+ * matched. B2026-038 sat exactly there with its PDF unreachable.
+ */
+describe('POST retry-pdf — recovers a submission whose back-reference was never written', () => {
+  it('finds the link by submission and imports the PDF', async () => {
+    const { fetchSubmissionPdf } = await import('@/lib/jotform/jotformClient');
+    const { upload } = await import('@/services/documentService');
+    vi.mocked(fetchSubmissionPdf).mockResolvedValue(Buffer.from('%PDF-1.4 synthetic'));
+    vi.mocked(upload).mockResolvedValue({ id: 'document-halflinked-test' } as never);
+
+    const { submission } = await seedLinkedFailedSubmission('existing-case-halflinked', 'retry-sub-halflinked');
+    // Exactly B2026-038's shape: the link points at the submission, the
+    // submission does not point back, and status is already 'matched'.
+    const caseFormLinkService = await import('@/services/caseFormLinkService');
+    const seededLink = caseFormLinkFixtures.find((l) => l.caseId === 'existing-case-halflinked')!;
+    await caseFormLinkService.markReceived(seededLink.id, submission.id, 'mock');
+    const index = externalFormSubmissionFixtures.findIndex((s) => s.id === submission.id);
+    externalFormSubmissionFixtures[index] = {
+      ...externalFormSubmissionFixtures[index],
+      caseFormLinkId: null,
+      status: 'matched',
+      pdfStatus: 'pending',
+      documentId: null,
+    };
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      retryRequest({ organizationId: 'managed-cremations' }),
+      { params: Promise.resolve({ submissionId: submission.id }) },
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.pdf.outcome).toBe('stored');
+    expect(body.caseId).toBe('existing-case-halflinked');
+
+    // The pointer is repaired, so the row is no longer stuck.
+    const after = externalFormSubmissionFixtures.find((s) => s.id === submission.id)!;
+    expect(after.caseFormLinkId).toBeTruthy();
+  });
+
+  it('still refuses a submission that genuinely has no link', async () => {
+    const { submission } = await seedLinkedFailedSubmission('existing-case-nolink', 'retry-sub-nolink');
+    const index = externalFormSubmissionFixtures.findIndex((s) => s.id === submission.id);
+    externalFormSubmissionFixtures[index] = { ...externalFormSubmissionFixtures[index], caseFormLinkId: null };
+    caseFormLinkFixtures.length = 0;
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      retryRequest({ organizationId: 'managed-cremations' }),
+      { params: Promise.resolve({ submissionId: submission.id }) },
+    );
+
+    expect(response.status).toBe(409);
+  });
+});

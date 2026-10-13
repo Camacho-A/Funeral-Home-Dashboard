@@ -60,17 +60,37 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     return NextResponse.json({ error: 'Not authorized to retry this document.' }, { status: 403 });
   }
 
-  const submission = await externalFormSubmissionService.getById(submissionId, dataAdapterMode);
+  let submission = await externalFormSubmissionService.getById(submissionId, dataAdapterMode);
   if (!submission || submission.organizationId !== organizationId) {
     return NextResponse.json({ error: 'Submission not found.' }, { status: 404 });
   }
-  if (!submission.caseFormLinkId) {
+  /**
+   * Recover a half-linked submission (2026-10).
+   *
+   * An Arrangement-first case used to get a CaseFormLink pointing AT its
+   * submission while the submission never pointed back: `caseFormLinkId`
+   * stayed null even though `status` became 'matched'. That state was
+   * unrecoverable — this route refused it for the missing back-reference,
+   * and the manual link route refuses anything already 'matched' — so the
+   * PDF could never be fetched. B2026-038 sat exactly there.
+   *
+   * The association genuinely exists; only the pointer was missing. So
+   * when `caseFormLinkId` is absent, find the link BY this submission and
+   * repair the back-reference before proceeding. The creation path now
+   * writes it itself, making this a recovery route for rows created
+   * before that fix rather than something new cases rely on.
+   */
+  const link = submission.caseFormLinkId
+    ? await caseFormLinkService.getById(submission.caseFormLinkId, dataAdapterMode)
+    : await caseFormLinkService.findBySubmissionId(organizationId, submission.id, dataAdapterMode);
+
+  if (!link || link.organizationId !== organizationId) {
     return NextResponse.json({ error: 'This submission is not linked to a case — nothing to retry against.' }, { status: 409 });
   }
 
-  const link = await caseFormLinkService.getById(submission.caseFormLinkId, dataAdapterMode);
-  if (!link || link.organizationId !== organizationId) {
-    return NextResponse.json({ error: 'Linked case record not found.' }, { status: 404 });
+  if (!submission.caseFormLinkId) {
+    const repaired = await externalFormSubmissionService.markLinked(submission.id, link.id, dataAdapterMode);
+    if (repaired) submission = repaired;
   }
 
   const activityCtx = {
