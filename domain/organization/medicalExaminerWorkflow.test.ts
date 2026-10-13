@@ -8,6 +8,7 @@ import {
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 
 const EDRS_DISPLAY_STAGE = 2;
+const INTAKE_DISPLAY_STAGE = 0;
 
 const DOCTOR_ITEMS: ChecklistItemTemplate[] = [
   { index: 0, label: 'EDRS submitted & sent to doctor', hasField: false },
@@ -98,9 +99,13 @@ describe('applyMedicalExaminerVariant', () => {
 });
 
 describe('medicalExaminerStageFor', () => {
-  it('finds the configured stage, and nothing else', () => {
+  it('finds each configured stage, and nothing else', () => {
     expect(medicalExaminerStageFor(MANORS_ORGANIZATION_ID, EDRS_DISPLAY_STAGE)).not.toBeNull();
-    expect(medicalExaminerStageFor(MANORS_ORGANIZATION_ID, 0)).toBeNull();
+    expect(medicalExaminerStageFor(MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE)).not.toBeNull();
+    // Everything between and after them is untouched.
+    for (const displayStage of [1, 3, 4, 5, 6]) {
+      expect(medicalExaminerStageFor(MANORS_ORGANIZATION_ID, displayStage), String(displayStage)).toBeNull();
+    }
     expect(medicalExaminerStageFor('other-org', EDRS_DISPLAY_STAGE)).toBeNull();
     expect(medicalExaminerStageFor(undefined, EDRS_DISPLAY_STAGE)).toBeNull();
   });
@@ -110,5 +115,75 @@ describe('pendingMedicalExaminerPlaceholder', () => {
   it('describes a blank only on an ME case, and never invents a value', () => {
     expect(pendingMedicalExaminerPlaceholder(true)).toBe('Pending Medical Examiner');
     expect(pendingMedicalExaminerPlaceholder(false)).toBeNull();
+  });
+});
+
+/**
+ * Intake on a Medical Examiner case (2026-10).
+ *
+ * Weight, Time of death and Certifier Information are all ME-owned, so
+ * asking for them at step 1 stalls the case before the step where they
+ * become obtainable — which is where B2026-037 sat with everything else
+ * done and payment settled.
+ */
+describe('applyMedicalExaminerVariant — intake stage', () => {
+  const INTAKE_ITEMS: ChecklistItemTemplate[] = [
+    { index: 0, label: 'Name of deceased', hasField: true },
+    { index: 3, label: 'Weight', hasField: true },
+    { index: 4, label: 'Date of death', hasField: true },
+    { index: 5, label: 'Time of death', hasField: true },
+    { index: 6, label: 'Certifier Information', hasField: false },
+    { index: 8, label: 'Payment collected', hasField: false },
+  ];
+
+  it('stops asking intake for what the Medical Examiner owes', () => {
+    const result = applyMedicalExaminerVariant(INTAKE_ITEMS, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, true);
+    expect(labels(result)).not.toContain('Weight');
+    expect(labels(result)).not.toContain('Time of death');
+    expect(labels(result)).not.toContain('Certifier Information');
+  });
+
+  it('keeps every other intake item exactly as it was', () => {
+    const result = applyMedicalExaminerVariant(INTAKE_ITEMS, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, true);
+    expect(labels(result)).toEqual(['Name of deceased', 'Date of death', 'Payment collected']);
+    expect(result.map((i) => i.index)).toEqual([0, 4, 8]);
+  });
+
+  it('substitutes NOTHING — an ME case is simply not asked, never auto-answered', () => {
+    // Marking them done would assert the funeral home obtained data it has
+    // not got. Removing the question is honest; ticking it is not.
+    const result = applyMedicalExaminerVariant(INTAKE_ITEMS, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, true);
+    expect(result).toHaveLength(3);
+  });
+
+  it('leaves a standard case completely untouched', () => {
+    expect(applyMedicalExaminerVariant(INTAKE_ITEMS, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, false)).toBe(
+      INTAKE_ITEMS,
+    );
+  });
+
+  it('accepts the pre-2026-09 certifier label too, so an older snapshot still matches', () => {
+    const legacy = INTAKE_ITEMS.map((i) => (i.index === 6 ? { ...i, label: 'Certifier name & phone' } : i));
+    const result = applyMedicalExaminerVariant(legacy, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, true);
+    expect(labels(result)).not.toContain('Certifier name & phone');
+  });
+
+  it('swaps nothing if the template no longer holds those items', () => {
+    const restructured = INTAKE_ITEMS.map((i) => (i.index === 3 ? { ...i, label: 'Something else' } : i));
+    expect(applyMedicalExaminerVariant(restructured, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, true)).toBe(
+      restructured,
+    );
+  });
+
+  it('touches no other organization', () => {
+    expect(applyMedicalExaminerVariant(INTAKE_ITEMS, 'some-other-org', INTAKE_DISPLAY_STAGE, true)).toBe(INTAKE_ITEMS);
+  });
+
+  it('un-classifying restores the questions — nothing was destroyed', () => {
+    const asMe = applyMedicalExaminerVariant(INTAKE_ITEMS, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, true);
+    const back = applyMedicalExaminerVariant(INTAKE_ITEMS, MANORS_ORGANIZATION_ID, INTAKE_DISPLAY_STAGE, false);
+    expect(asMe).toHaveLength(3);
+    expect(back).toBe(INTAKE_ITEMS);
+    expect(labels(back)).toContain('Certifier Information');
   });
 });
