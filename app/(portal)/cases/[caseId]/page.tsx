@@ -232,6 +232,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         tagNumber={case_.tagNumber}
         weight={viewModel.weight}
         weightOver200={viewModel.weightOver200}
+        isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
         caseDetailStageHeading={viewModel.caseDetailStageHeading}
         stageBadgeVariant={viewModel.stageBadgeVariant}
         daysWaitingInStage={viewModel.daysWaitingInStage}

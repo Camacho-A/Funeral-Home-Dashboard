@@ -39,3 +39,24 @@ describe('CaseHeader — Tag # (Manors launch-prep)', () => {
     expect(screen.queryByText(/Tag #/)).not.toBeInTheDocument();
   });
 });
+
+describe('CaseHeader — Medical Examiner flag (2026-10)', () => {
+  it('flags a Medical Examiner case beside the weight flag', () => {
+    // Same kind of fact as "Over 200 lb": a property of the case that
+    // changes how staff handle it, and that they should not have to
+    // scroll to discover.
+    render(<CaseHeader {...baseProps} isMedicalExaminerCase />);
+    expect(screen.getByText('Medical Examiner Case')).toBeInTheDocument();
+  });
+
+  it('shows nothing on a standard case', () => {
+    render(<CaseHeader {...baseProps} isMedicalExaminerCase={false} />);
+    expect(screen.queryByText('Medical Examiner Case')).not.toBeInTheDocument();
+  });
+
+  it('shows both flags together when both apply', () => {
+    render(<CaseHeader {...baseProps} weight="250" weightOver200 isMedicalExaminerCase />);
+    expect(screen.getByText('Over 200 lb')).toBeInTheDocument();
+    expect(screen.getByText('Medical Examiner Case')).toBeInTheDocument();
+  });
+});

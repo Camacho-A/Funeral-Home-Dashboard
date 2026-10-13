@@ -21,6 +21,7 @@ export function CaseHeader({
   tagNumber,
   weight,
   weightOver200,
+  isMedicalExaminerCase,
   caseDetailStageHeading,
   stageBadgeVariant,
   daysWaitingInStage,
@@ -36,6 +37,8 @@ export function CaseHeader({
   tagNumber?: string | null;
   weight?: string | number | null;
   weightOver200?: boolean;
+  /** Medical Examiner case (2026-10) — shown as a header flag. */
+  isMedicalExaminerCase?: boolean;
   caseDetailStageHeading: string;
   stageBadgeVariant: BadgeVariant;
   daysWaitingInStage: number;
@@ -60,13 +63,23 @@ export function CaseHeader({
             DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
             {tagNumber ? ` · Tag #${tagNumber}` : ''}
           </div>
-          {hasWeight && (
+          {/* The facts line carries handling flags, so it appears when there
+              is any flag to carry — not only when a weight was recorded. An
+              ME case with no weight yet still needs its notice. */}
+          {(hasWeight || isMedicalExaminerCase) && (
             <div className={styles.facts}>
-              <span className={styles.fact}>
-                Weight{' '}
-                <span className={weightOver200 ? styles.weightOver : styles.weightNormal}>{weightText}</span>
-              </span>
+              {hasWeight && (
+                <span className={styles.fact}>
+                  Weight{' '}
+                  <span className={weightOver200 ? styles.weightOver : styles.weightNormal}>{weightText}</span>
+                </span>
+              )}
               {weightOver200 && <span className={styles.weightFlag}>Over 200 lb</span>}
+              {/* Medical Examiner classification (2026-10). Alongside the
+                  weight flag, because it is the same kind of fact: a
+                  property of the case that changes how staff handle it,
+                  and that they should not have to scroll to discover. */}
+              {isMedicalExaminerCase && <span className={styles.meFlag}>Medical Examiner Case</span>}
             </div>
           )}
         </div>

@@ -135,3 +135,16 @@
     font-size: 22px;
   }
 }
+
+/* Medical Examiner classification (2026-10). Same shape as the weight
+   flag beside it — amber, the established SOLIS attention tone. */
+.meFlag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--sx-amber-bg, oklch(0.965 0.04 75));
+  color: var(--sx-amber-text, oklch(0.47 0.12 60));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}

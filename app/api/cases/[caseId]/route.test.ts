@@ -1603,6 +1603,38 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
     const body = await response.json();
     expect(body.case.rawStage).toBe(5);
   });
+
+  it('11. classifying a case as a Medical Examiner case triggers reconciliation', async () => {
+    // Medical Examiner classification (2026-10). The classification
+    // changes WHICH items a stage requires, so it changes whether the
+    // stage is complete. Without it in COMPLETION_AFFECTING_FIELDS the
+    // toggle saved but the case never moved — staff ticked the box and
+    // nothing happened.
+    mockAdminQueries({ ...permitStageCaseData({ '3:0': true, '3:1': true }), isMedicalExaminerCase: true });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isMedicalExaminerCase: true },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.isMedicalExaminerCase).toBe(true);
+    expect(body.case.rawStage).toBe(5);
+  });
+
+  it('11b. un-classifying also triggers reconciliation, in the same way', async () => {
+    // Symmetry matters: clearing the box restores the doctor items, which
+    // can leave an earlier stage incomplete again. That must be reflected
+    // too, not silently ignored.
+    mockAdminQueries({ ...permitStageCaseData({ '3:0': true, '3:1': true }), isMedicalExaminerCase: false });
+    const response = await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { isMedicalExaminerCase: false },
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.isMedicalExaminerCase).toBe(false);
+    expect(body.case.rawStage).toBe(5);
+  });
 });
 
 describe('PATCH /api/cases/[caseId] — contact instructions (2026-10)', () => {

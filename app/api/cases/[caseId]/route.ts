@@ -413,6 +413,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       'certifierPhone',
       'nextOfKinName',
       'nextOfKinPhone',
+      // Changes WHICH items a stage requires (the Medical Examiner
+      // variant swaps the doctor items for verification items), so it
+      // can complete or re-open a stage on its own.
+      'isMedicalExaminerCase',
     ] as const;
     const touchesCompletion = COMPLETION_AFFECTING_FIELDS.some((field) => field in patch);
 
