@@ -1783,3 +1783,102 @@ describe('CaseInformationCard — the deceased name is one complete name', () =>
     expect(screen.getByText('Evarista Rosa Silva Rivero')).toBeInTheDocument();
   });
 });
+
+/**
+ * Edit Name (2026-10). Corrects the deceased's name from beside the name
+ * itself. Two fields — the name as recorded and the middle name — never
+ * first/middle/last, because splitting a stored name means guessing where
+ * a multi-word surname begins.
+ */
+describe('CaseInformationCard — Edit Name', () => {
+  function openDialog(props: Record<string, unknown> = {}) {
+    const onUpdateCaseInfo = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        decedentName="JOYCE GOLLIS"
+        decedentMiddleName="BEVERLY"
+        onUpdateCaseInfo={onUpdateCaseInfo}
+        {...props}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Name' }));
+    return { onUpdateCaseInfo };
+  }
+
+  it('offers an Edit Name control beside the name', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Edit Name' })).toBeInTheDocument();
+  });
+
+  it('edits the name and the middle name together, with no separate panel field', () => {
+    openDialog();
+    expect(screen.getByDisplayValue('JOYCE GOLLIS')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('BEVERLY')).toBeInTheDocument();
+    // The removed panel row must not come back.
+    expect(screen.queryByText('Middle name:')).not.toBeInTheDocument();
+  });
+
+  it('previews exactly how the two will read together', () => {
+    openDialog();
+    // Scoped to the dialog — the panel shows the same name behind it.
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Will display as')).toBeInTheDocument();
+    expect(within(dialog).getByText('Joyce Beverly Gollis')).toBeInTheDocument();
+  });
+
+  it('saves both values in one update', () => {
+    const { onUpdateCaseInfo } = openDialog();
+    fireEvent.change(screen.getByDisplayValue('BEVERLY'), { target: { value: 'beverley' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentName: 'JOYCE GOLLIS', decedentMiddleName: 'BEVERLEY' });
+  });
+
+  it('clearing the middle name stores null, not an empty string', () => {
+    const { onUpdateCaseInfo } = openDialog();
+    fireEvent.change(screen.getByDisplayValue('BEVERLY'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentName: 'JOYCE GOLLIS', decedentMiddleName: null });
+  });
+
+  it('never splits a multi-word surname — the name is edited as one value', () => {
+    const { onUpdateCaseInfo } = openDialog({ decedentName: 'EVARISTA SILVA RIVERO', decedentMiddleName: 'ROSA' });
+    expect(screen.getByDisplayValue('EVARISTA SILVA RIVERO')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByText('Evarista Rosa Silva Rivero')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({
+      decedentName: 'EVARISTA SILVA RIVERO',
+      decedentMiddleName: 'ROSA',
+    });
+  });
+
+  it('edits the STORED name, never the composed one', () => {
+    // The dialog writes back to `decedentName`. If it were seeded with the
+    // composed name, saving would permanently bake the middle name into
+    // the stored value — and the next composition would read it twice.
+    const { onUpdateCaseInfo } = openDialog();
+    expect(screen.getByDisplayValue('JOYCE GOLLIS')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('JOYCE BEVERLY GOLLIS')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ decedentName: 'JOYCE GOLLIS', decedentMiddleName: 'BEVERLY' });
+  });
+
+  it('cancelling changes nothing', () => {
+    const { onUpdateCaseInfo } = openDialog();
+    fireEvent.change(screen.getByDisplayValue('BEVERLY'), { target: { value: 'WRONG' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('refuses to save an empty name', () => {
+    openDialog();
+    fireEvent.change(screen.getByDisplayValue('JOYCE GOLLIS'), { target: { value: '   ' } });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('is absent entirely on an archived case', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isArchived />);
+    expect(screen.queryByRole('button', { name: 'Edit Name' })).not.toBeInTheDocument();
+  });
+});

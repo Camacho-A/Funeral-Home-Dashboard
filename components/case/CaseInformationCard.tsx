@@ -26,6 +26,7 @@ import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelati
 import { normalizeNextOfKinName } from '@/domain/cases/nextOfKinName';
 import { ContactInstructionsSection } from './ContactInstructionsSection';
 import { ArchiveCaseSection } from './ArchiveCaseSection';
+import { Modal } from '@/components/ui/Modal';
 import { PENDING_MEDICAL_EXAMINER_LABEL } from '@/domain/organization/medicalExaminerWorkflow';
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { toDisplayName } from '@/utils/displayName';
@@ -444,6 +445,100 @@ function TwelveHourTimeField({
   );
 }
 
+/**
+ * Edit Name (2026-10). A small dialog for correcting the deceased's name,
+ * opened from beside the name itself.
+ *
+ * TWO FIELDS, DELIBERATELY: the name as recorded, and the middle name.
+ * Not first/middle/last — SOLIS has never stored a split name, and
+ * splitting an existing one means guessing where a multi-word surname
+ * begins ("EVARISTA SILVA RIVERO"). So the stored name is edited as the
+ * single string it is, and the middle name stays the separate value it
+ * already is. Nothing is parsed or re-derived from what is typed.
+ *
+ * The preview shows exactly how the two will read together, through the
+ * same `composeDecedentName` every other surface uses — so what staff
+ * approve here is what the case will show everywhere.
+ */
+function EditNameDialog({
+  open,
+  decedentName,
+  decedentMiddleName,
+  onCancel,
+  onSave,
+}: {
+  open: boolean;
+  decedentName: string;
+  decedentMiddleName: string | null;
+  onCancel: () => void;
+  onSave: (next: { decedentName: string; decedentMiddleName: string | null }) => void;
+}) {
+  const [name, setName] = useState(decedentName);
+  const [middle, setMiddle] = useState(decedentMiddleName ?? '');
+
+  // Reopening after an edit elsewhere must show the current values, not
+  // whatever was typed the previous time.
+  useEffect(() => {
+    if (open) {
+      setName(decedentName);
+      setMiddle(decedentMiddleName ?? '');
+    }
+  }, [open, decedentName, decedentMiddleName]);
+
+  const trimmedName = name.trim();
+  const canSave = trimmedName.length > 0;
+
+  return (
+    <Modal open={open} onClose={onCancel} title="Edit name">
+      <div className={styles.editNameBody}>
+        <label className={styles.editNameField}>
+          <span className={styles.fieldLabel}>Name as recorded</span>
+          <input
+            className={textFieldStyles.field}
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value.toUpperCase())}
+          />
+          <span className={styles.editNameHint}>
+            First and last name, including a multi-word surname. Edited as one value — SOLIS never splits it.
+          </span>
+        </label>
+
+        <label className={styles.editNameField}>
+          <span className={styles.fieldLabel}>Middle name</span>
+          <input
+            className={textFieldStyles.field}
+            value={middle}
+            onChange={(e) => setMiddle(e.target.value.toUpperCase())}
+          />
+          <span className={styles.editNameHint}>Optional. Leave blank if there is none.</span>
+        </label>
+
+        <div className={styles.editNamePreview}>
+          <span className={styles.fieldLabel}>Will display as</span>
+          <strong>{toDisplayName(composeDecedentName(trimmedName, middle)) || '—'}</strong>
+        </div>
+      </div>
+
+      <div className={styles.editNameFooter}>
+        <button type="button" className={styles.editNameCancel} onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={styles.editNameSave}
+          disabled={!canSave}
+          onClick={() =>
+            onSave({ decedentName: trimmedName, decedentMiddleName: middle.trim() || null })
+          }
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export function CaseInformationCard({
   decedentMiddleName,
   dateOfBirth,
@@ -692,6 +787,9 @@ export function CaseInformationCard({
     </div>
   );
 
+  const [editingName, setEditingName] = useState(false);
+  const isReadOnlyCard = isArchived === true;
+
   return (
     /* Archived cases are read-only (2026-10). The provider covers every
        field and select below. The Restore row at the foot is deliberately
@@ -718,10 +816,30 @@ export function CaseInformationCard({
             composed into the name below. */}
         <div className={styles.fullNameRow}>
           <div className={styles.fieldLabel}>Name</div>
-          <div className={styles.fullNameValue}>
-            {toDisplayName(composeDecedentName(decedentName ?? '', decedentMiddleName)) || '—'}
+          <div className={styles.fullNameLine}>
+            <span className={styles.fullNameValue}>
+              {toDisplayName(composeDecedentName(decedentName ?? '', decedentMiddleName)) || '—'}
+            </span>
+            {/* Archived cases stay read-only — the control is absent, not
+                merely disabled, so nothing offers an edit that the server
+                would refuse. */}
+            {!isReadOnlyCard && (
+              <button type="button" className={styles.editNameButton} onClick={() => setEditingName(true)}>
+                Edit Name
+              </button>
+            )}
           </div>
         </div>
+        <EditNameDialog
+          open={editingName}
+          decedentName={decedentName ?? ''}
+          decedentMiddleName={decedentMiddleName ?? null}
+          onCancel={() => setEditingName(false)}
+          onSave={(next) => {
+            setEditingName(false);
+            onUpdateCaseInfo(next);
+          }}
+        />
         <EditableField
           label="Date of birth"
           value={dateOfBirth}

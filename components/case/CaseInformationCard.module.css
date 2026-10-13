@@ -282,3 +282,90 @@
   font-weight: 600;
   color: var(--sx-text, #16202c);
 }
+
+/* Edit Name (2026-10). The control sits beside the name it edits, quiet
+   enough not to compete with it. */
+.fullNameLine {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.editNameButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--solis-selected-fg, #1f3b63);
+  cursor: pointer;
+}
+
+.editNameButton:hover {
+  text-decoration: underline;
+}
+
+.editNameBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0 8px;
+}
+
+.editNameField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.editNameHint {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--sx-faint, #8a94a3);
+}
+
+/* The preview is the point of the dialog: it shows the two values read
+   together before anything is saved. */
+.editNamePreview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--sx-surface-2, #f3f5f8);
+  font-size: 15px;
+}
+
+.editNameFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.editNameCancel,
+.editNameSave {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.editNameCancel {
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface, #fff);
+  color: var(--sx-text, #16202c);
+}
+
+.editNameSave {
+  border: 1px solid var(--solis-selected-fg, #1f3b63);
+  background: var(--solis-selected-fg, #1f3b63);
+  color: #fff;
+}
+
+.editNameSave:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

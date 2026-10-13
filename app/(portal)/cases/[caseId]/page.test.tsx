@@ -530,3 +530,16 @@ describe('Case Detail page — archived cases and ME control placement (2026-10)
     expect(SOURCE).toMatch(/const shownPresentedStageIndex =[\s\S]*?viewingDisplayStage != null/);
   });
 });
+
+describe('Case Detail page — the name card edits the stored name (2026-10)', () => {
+  it('passes the RAW decedentName to Case Information, not the composed one', () => {
+    // Case Information hosts Edit Name, which writes back to
+    // `decedentName`. Seeding it from the view model's COMPOSED name would
+    // bake the middle name into the stored value on the next save.
+    expect(SOURCE).toMatch(/decedentName=\{case_\.decedentName\}/);
+  });
+
+  it('still gives the header the composed name', () => {
+    expect(SOURCE).toMatch(/decedentName=\{viewModel\.decedentName\}/);
+  });
+});

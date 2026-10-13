@@ -195,7 +195,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             isArchived={case_.isDeleted}
             isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
             caseNumber={viewModel.caseNumber}
-            decedentName={viewModel.decedentName}
+            // The RAW stored name, not the composed one: this card edits it,
+            // and composes for display itself. Passing the composed name
+            // would bake the middle name into `decedentName` on save.
+            decedentName={case_.decedentName}
             onArchiveChange={(archived) => archiveCase.mutate({ caseId, archived })}
             archivePending={archiveCase.isPending}
             certifierName={case_.certifierName}
