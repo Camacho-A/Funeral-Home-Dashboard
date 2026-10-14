@@ -543,3 +543,34 @@ describe('Case Detail page — the name card edits the stored name (2026-10)', (
     expect(SOURCE).toMatch(/decedentName=\{viewModel\.decedentName\}/);
   });
 });
+
+/**
+ * Production loading investigation (2026-10). Staff reported cases that
+ * never opened. This page had no failure branch at all: a failed fetch
+ * fell through to `return null` and rendered a blank screen, which reads
+ * as a case with nothing in it rather than a request that didn't land.
+ */
+describe('Case Detail page — a failed load is visible and recoverable', () => {
+  it('reads the query\'s error state, not just its pending state', () => {
+    expect(SOURCE).toMatch(/isError:\s*caseFailed/);
+    expect(SOURCE).toMatch(/refetch:\s*refetchCase/);
+  });
+
+  it('renders an alert with a Retry instead of a blank screen', () => {
+    expect(SOURCE).toMatch(/if \(caseFailed\)/);
+    expect(SOURCE).toMatch(/role="alert"/);
+    expect(SOURCE).toMatch(/refetchCase\(\)/);
+    expect(SOURCE).toMatch(/Retry/);
+  });
+
+  it('tells the user nothing was changed — a failed read is not data loss', () => {
+    expect(SOURCE).toMatch(/Nothing has been changed/);
+  });
+
+  it('checks the failure before the branches that would render nothing', () => {
+    // Order matters: `return null` below must never be what a failed
+    // fetch reaches.
+    expect(SOURCE.indexOf('if (caseFailed)')).toBeLessThan(SOURCE.indexOf('if (!case_ || !viewModel) return null;'));
+  });
+});
+

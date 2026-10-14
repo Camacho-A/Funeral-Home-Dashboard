@@ -2,6 +2,7 @@
 
 import { use, useEffect, useRef, useState } from 'react';
 import { useCase } from '@/hooks/useCase';
+import { Button } from '@/components/ui/Button';
 import { useResetMainContentScrollOnChange } from '@/hooks/useResetMainContentScrollOnChange';
 import { useCaseViewModel } from '@/hooks/useCaseViewModel';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
@@ -94,7 +95,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   useResetMainContentScrollOnChange(caseId);
 
-  const { data: case_, isPending } = useCase(caseId);
+  const { data: case_, isPending, isError: caseFailed, refetch: refetchCase } = useCase(caseId);
   const { data: staffList = [] } = useStaff();
   const { data: organizationRecord } = useOrganizationRecord();
   const familyPortalEnabled = isFamilyPortalEnabled(organizationRecord ?? null);
@@ -108,6 +109,28 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const caseTasks = useCaseTasks(caseId);
 
   if (isPending) return <p className={styles.loading}>Loading case…</p>;
+
+  /**
+   * A case that failed to load says so, and offers a way to try again
+   * (2026-10). Previously this fell through to `return null` below and
+   * rendered a blank screen: the case looked like it held nothing, which
+   * for a funeral director reads as lost data rather than a failed
+   * request. Nothing here is a judgement about the case itself — only
+   * about whether this browser managed to fetch it.
+   */
+  if (caseFailed) {
+    return (
+      <div className={styles.loadFailure} role="alert">
+        <p className={styles.loadFailureTitle}>This case couldn&rsquo;t be loaded.</p>
+        <p className={styles.loadFailureBody}>
+          Nothing has been changed. Check your connection and try again.
+        </p>
+        <Button variant="secondary" onClick={() => void refetchCase()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   if (case_ === null) {
     throw new Error(`Case ${caseId} not found for this organization`);

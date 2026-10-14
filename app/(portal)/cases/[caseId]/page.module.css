@@ -197,3 +197,22 @@
   display: block;
   min-width: 0;
 }
+
+/* A case that failed to load (2026-10) — see page.tsx. Deliberately plain
+   and calm: this is a failed request, not lost data, and it should not
+   look like an emergency. */
+.loadFailure {
+  padding: 32px;
+  max-width: 520px;
+}
+
+.loadFailureTitle {
+  margin: 0 0 6px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.loadFailureBody {
+  margin: 0 0 14px;
+  font-size: var(--font-size-13-5);
+  color: var(--color-text-secondary);
+}
