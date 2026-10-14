@@ -13,6 +13,7 @@ const PREFERENCE: NotificationPreference = {
   quietHoursEnd: null,
   smsEnabled: false,
   categoryOverrides: {},
+    typeOverrides: {},
   lastDigestSentAt: null,
   updatedAt: '2026-08-01T00:00:00.000Z',
 };

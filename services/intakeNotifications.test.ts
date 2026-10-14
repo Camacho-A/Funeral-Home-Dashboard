@@ -107,6 +107,7 @@ describe('intake notifications are in-app only', () => {
       quietHoursStart: null,
       quietHoursEnd: null,
       categoryOverrides: {},
+    typeOverrides: {},
       lastDigestSentAt: null,
       updatedAt: '2026-10-01T00:00:00.000Z',
     });
@@ -132,6 +133,7 @@ describe('intake notifications are in-app only', () => {
       quietHoursStart: null,
       quietHoursEnd: null,
       categoryOverrides: {},
+    typeOverrides: {},
       lastDigestSentAt: null,
       updatedAt: '2026-10-01T00:00:00.000Z',
     });

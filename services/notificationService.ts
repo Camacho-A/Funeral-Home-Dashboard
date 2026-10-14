@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { isTypeEnabled, IMPLEMENTED_NOTIFICATION_TYPES } from '../domain/notifications/notificationDefaults';
 import { countWixDataItems, queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixNotificationItem, buildWixNotificationData, applyNotificationPatchToWixData, type WixNotificationItem } from '../lib/wixNotificationMapper';
 import {
@@ -305,6 +306,21 @@ export async function updatePreferences(
   patch: NotificationPreferencePatch,
   dataAdapterMode: DataAdapterMode,
 ): Promise<NotificationPreference> {
+  /**
+   * Only types SOLIS can actually emit may be stored (2026-10). An
+   * unrecognised key is dropped rather than persisted: offering a setting
+   * for an event that never fires leaves somebody waiting for a
+   * notification that cannot arrive, and a stored key for a type that
+   * does not exist would outlive whatever typo produced it.
+   */
+  if (patch.typeOverrides) {
+    const allowed: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(patch.typeOverrides)) {
+      if (IMPLEMENTED_NOTIFICATION_TYPES.includes(key)) allowed[key] = value;
+    }
+    patch = { ...patch, typeOverrides: allowed };
+  }
+
   const existingRow = await getPreferenceRow(organizationId, identityId, dataAdapterMode);
   const now = nowIso();
   if (!existingRow) {
@@ -568,6 +584,23 @@ export async function createNotification(
 
     const preference = await getPreferences(ctx.organizationId, identityId, dataAdapterMode);
     const toggles = resolveEffectiveChannelToggles(preference, notification.category as NotificationCategory);
+    /**
+     * Individual per-type preference (2026-10) — the third and narrowest
+     * switch, applied on top of the global and category ones.
+     *
+     * Precedence is deliberately one-directional: this can only ever
+     * SUPPRESS. A type turned off here is suppressed even when its
+     * category and the global toggle both allow it; a type turned on here
+     * still sends nothing if the category or global switch has the
+     * channel off. So an individual choice can never re-enable a channel
+     * somebody disabled wholesale, and it has no bearing at all on
+     * permissions — who is eligible was decided before this point.
+     *
+     * A type the person has never spoken about falls back to its own
+     * default, which is why a preference row written before this existed
+     * keeps behaving exactly as it did.
+     */
+    const wantsThisType = isTypeEnabled(preference.typeOverrides, notification.notificationType);
     // `params.channels` is an upper bound the CALLER sets; preferences are
     // the recipient's own. A channel is used only if BOTH allow it, so a
     // caller can restrict to in-app without ever overriding someone who
@@ -575,9 +608,9 @@ export async function createNotification(
     const allowedByCaller = params.channels ? new Set(params.channels) : null;
     const permits = (channel: NotificationChannel) => allowedByCaller === null || allowedByCaller.has(channel);
     const channels: NotificationChannel[] = [];
-    if (toggles.inAppEnabled && permits('in_app')) channels.push('in_app');
-    if (toggles.emailEnabled && permits('email')) channels.push('email');
-    if (toggles.smsEnabled && permits('sms')) channels.push('sms');
+    if (wantsThisType && toggles.inAppEnabled && permits('in_app')) channels.push('in_app');
+    if (wantsThisType && toggles.emailEnabled && permits('email')) channels.push('email');
+    if (wantsThisType && toggles.smsEnabled && permits('sms')) channels.push('sms');
 
     for (const channel of channels) {
       await dispatchChannel(notification, recipient, channel, content, ctx, caseIdForActivity, preference, organization?.timezone, now, dataAdapterMode);

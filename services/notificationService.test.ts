@@ -717,6 +717,7 @@ describe('caller-supplied channel bound', () => {
       quietHoursStart: null,
       quietHoursEnd: null,
       categoryOverrides: {},
+    typeOverrides: {},
       lastDigestSentAt: null,
       updatedAt: '2026-10-01T00:00:00.000Z',
       ...over,

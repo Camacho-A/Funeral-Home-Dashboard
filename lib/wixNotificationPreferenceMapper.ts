@@ -28,6 +28,7 @@ export type WixNotificationPreferenceItem = {
   smsEnabled?: unknown;
   /** JSON-serialized `Partial<Record<NotificationCategory, NotificationCategoryOverride>>`. */
   categoryOverrides?: unknown;
+  typeOverrides?: unknown;
   lastDigestSentAt?: unknown;
   updatedAt?: unknown;
 };
@@ -50,6 +51,24 @@ function isCategoryOverride(value: unknown): value is NotificationCategoryOverri
     typeof (value as Record<string, unknown>).inAppEnabled === 'boolean' &&
     typeof (value as Record<string, unknown>).smsEnabled === 'boolean'
   );
+}
+
+/** Parses the JSON-serialized `typeOverrides` column. Only real booleans
+    survive: a malformed or partially-written value must never be read as
+    "off" for an event somebody is relying on. */
+function parseTypeOverrides(raw: unknown): Record<string, boolean> {
+  if (typeof raw !== 'string' || raw.trim() === '') return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const result: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'boolean') result[key] = value;
+    }
+    return result;
+  } catch {
+    return {};
+  }
 }
 
 /** Parses the JSON-serialized `categoryOverrides` column, discarding (not
@@ -100,6 +119,10 @@ export function mapWixNotificationPreferenceItem(item: WixNotificationPreference
     quietHoursEnd: item.quietHoursEnd,
     smsEnabled: item.smsEnabled,
     categoryOverrides: parseCategoryOverrides(item.categoryOverrides),
+    // Additive (2026-10): a row written before per-type controls existed
+    // has no column value, which parses to {} — "never said" for every
+    // type, so its behaviour is unchanged.
+    typeOverrides: parseTypeOverrides(item.typeOverrides),
     lastDigestSentAt: item.lastDigestSentAt,
     updatedAt: item.updatedAt,
   };
@@ -117,6 +140,7 @@ export function buildWixNotificationPreferenceData(preference: NotificationPrefe
     quietHoursEnd: preference.quietHoursEnd,
     smsEnabled: preference.smsEnabled,
     categoryOverrides: JSON.stringify(preference.categoryOverrides),
+    typeOverrides: JSON.stringify(preference.typeOverrides),
     lastDigestSentAt: preference.lastDigestSentAt,
     updatedAt: preference.updatedAt,
   };
@@ -132,6 +156,7 @@ export function applyNotificationPreferenceUpdateToWixData(
     quietHoursStart: string | null;
     quietHoursEnd: string | null;
     categoryOverrides: Partial<Record<NotificationCategory, NotificationCategoryOverride>>;
+    typeOverrides: Record<string, boolean>;
     lastDigestSentAt: string | null;
     updatedAt: string;
   }>,
@@ -144,6 +169,7 @@ export function applyNotificationPreferenceUpdateToWixData(
   if (patch.quietHoursStart !== undefined) next.quietHoursStart = patch.quietHoursStart;
   if (patch.quietHoursEnd !== undefined) next.quietHoursEnd = patch.quietHoursEnd;
   if (patch.categoryOverrides !== undefined) next.categoryOverrides = JSON.stringify(patch.categoryOverrides);
+  if (patch.typeOverrides !== undefined) next.typeOverrides = JSON.stringify(patch.typeOverrides);
   if (patch.lastDigestSentAt !== undefined) next.lastDigestSentAt = patch.lastDigestSentAt;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;

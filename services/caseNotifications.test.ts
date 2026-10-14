@@ -312,3 +312,94 @@ describe('announcing is best-effort and never breaks the work', () => {
     ).resolves.toEqual({ notified: 0 });
   });
 });
+
+/**
+ * Precedence between the three switches (2026-10). The rule is
+ * one-directional: an individual choice can only ever SUPPRESS. It must
+ * never re-enable a channel that a category or the global toggle has
+ * turned off, and it has no bearing on permissions.
+ */
+describe('global, category and individual preferences compose', () => {
+  function preference(overrides: Record<string, unknown>) {
+    notificationPreferenceFixtures.push({
+      id: `${ORG}-identity-office`,
+      organizationId: ORG,
+      identityId: 'identity-office',
+      emailEnabled: false,
+      inAppEnabled: true,
+      smsEnabled: false,
+      digestFrequency: 'instant',
+      quietHoursStart: null,
+      quietHoursEnd: null,
+      categoryOverrides: {},
+      typeOverrides: {},
+      lastDigestSentAt: null,
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      ...overrides,
+    } as (typeof notificationPreferenceFixtures)[number]);
+  }
+
+  beforeEach(() => {
+    membershipFixtures.push(membership({ identityId: 'identity-office', role: 'officeStaff' }));
+  });
+
+  it('delivers when every switch allows it', async () => {
+    preference({});
+    await notifyCaseCreated(ctx(), { case: CASE, source: 'the First Call form' }, 'mock');
+    expect(notificationDeliveryFixtures.filter((d) => d.channel === 'in_app')).toHaveLength(1);
+  });
+
+  it('suppresses a type the person turned off, even though its category is on', async () => {
+    preference({ typeOverrides: { 'case.created': false } });
+    await notifyCaseCreated(ctx(), { case: CASE, source: 'the First Call form' }, 'mock');
+    expect(notificationDeliveryFixtures).toHaveLength(0);
+  });
+
+  it('keeps the other half of the category working', async () => {
+    preference({ typeOverrides: { 'document.jotform_pdf_imported': false } });
+
+    await notifyJotformPdfImported(ctx(), { case: CASE, submissionId: 's1', formLabel: 'Arrangement Form' }, 'mock');
+    expect(notificationDeliveryFixtures).toHaveLength(0);
+
+    await notifyJotformPdfImportFailed(ctx(), { case: CASE, submissionId: 's2', formLabel: 'Arrangement Form' }, 'mock');
+    expect(notificationDeliveryFixtures.filter((d) => d.channel === 'in_app')).toHaveLength(1);
+  });
+
+  it('respects a category switched off, whatever the individual choice says', async () => {
+    preference({
+      categoryOverrides: { case: { inAppEnabled: false, emailEnabled: false, smsEnabled: false } },
+      typeOverrides: { 'case.created': true },
+    });
+    await notifyCaseCreated(ctx(), { case: CASE, source: 'the First Call form' }, 'mock');
+    expect(notificationDeliveryFixtures).toHaveLength(0);
+  });
+
+  it('respects in-app switched off globally, whatever the individual choice says', async () => {
+    preference({ inAppEnabled: false, typeOverrides: { 'case.created': true } });
+    await notifyCaseCreated(ctx(), { case: CASE, source: 'the First Call form' }, 'mock');
+    expect(notificationDeliveryFixtures).toHaveLength(0);
+  });
+
+  it('never turns an individual ON into email or sms', async () => {
+    // Email and SMS are real in production; an individual preference must
+    // not become a way to reach them.
+    preference({ emailEnabled: true, smsEnabled: true, typeOverrides: { 'case.created': true } });
+    await notifyCaseCreated(ctx(), { case: CASE, source: 'the First Call form' }, 'mock');
+
+    const channels = new Set(notificationDeliveryFixtures.map((d) => d.channel));
+    expect(channels.has('in_app')).toBe(true);
+    expect(channels.has('email')).toBe(false);
+    expect(channels.has('sms')).toBe(false);
+  });
+
+  it('applies defaults to a preference row that predates individual controls', async () => {
+    // An existing row carries {} — successes stay quiet, failures do not.
+    preference({ typeOverrides: {} });
+
+    await notifyJotformPdfImported(ctx(), { case: CASE, submissionId: 's1', formLabel: 'Arrangement Form' }, 'mock');
+    expect(notificationDeliveryFixtures).toHaveLength(0);
+
+    await notifyJotformPdfImportFailed(ctx(), { case: CASE, submissionId: 's2', formLabel: 'Arrangement Form' }, 'mock');
+    expect(notificationDeliveryFixtures.filter((d) => d.channel === 'in_app')).toHaveLength(1);
+  });
+});

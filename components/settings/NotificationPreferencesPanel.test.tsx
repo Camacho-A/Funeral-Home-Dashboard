@@ -146,3 +146,59 @@ describe('NotificationPreferencesPanel', () => {
     await waitFor(() => expect(notificationsClient.updateNotificationPreferences).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, { categoryOverrides: {} }));
   });
 });
+
+/**
+ * Individual event toggles (2026-10) — the control a category cannot
+ * express.
+ */
+describe('individual notification toggles', () => {
+  it('lists events grouped the way staff think about them', async () => {
+    renderPanel();
+    expect(await screen.findByText('Individual Notifications')).toBeInTheDocument();
+    expect(screen.getByText('Case Management')).toBeInTheDocument();
+    // "Documents" is also a category label in the table above, so this
+    // asserts the individual group by one of its own event rows.
+    expect(screen.getByText('Form PDF Imported')).toBeInTheDocument();
+    expect(screen.getByText('Payment Requires Attention')).toBeInTheDocument();
+  });
+
+  it('explains what each alert is for', async () => {
+    renderPanel();
+    expect(await screen.findByText('New Case Created')).toBeInTheDocument();
+    expect(screen.getByText('Receive an alert when a new case is created.')).toBeInTheDocument();
+    expect(screen.getByText('Form PDF Import Failed')).toBeInTheDocument();
+  });
+
+  it('shows the defaults for someone who has never chosen', async () => {
+    renderPanel();
+    const imported = await screen.findByRole('checkbox', { name: /Form PDF Imported/i });
+    const failed = screen.getByRole('checkbox', { name: /Form PDF Import Failed/i });
+    // Routine success off, failure on.
+    expect(imported).not.toBeChecked();
+    expect(failed).toBeChecked();
+  });
+
+  it('saves an explicit choice through the existing preferences API', async () => {
+    renderPanel();
+    const created = await screen.findByRole('checkbox', { name: /New Case Created/i });
+    fireEvent.click(created);
+
+    // Written as an explicit false, not as a removed key: "I turned this
+    // off" and "I have never said" must stay distinguishable.
+    await waitFor(() =>
+      expect(vi.mocked(notificationsClient.updateNotificationPreferences)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ typeOverrides: expect.objectContaining({ 'case.created': false }) }),
+      ),
+    );
+  });
+
+  it('offers no switch for an event SOLIS cannot emit', async () => {
+    renderPanel();
+    await screen.findByText('Individual Notifications');
+    // Registered but never wired — must not appear as though it works.
+    expect(screen.queryByText('Team Member Joined')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calendar Sync Failed')).not.toBeInTheDocument();
+  });
+});
+

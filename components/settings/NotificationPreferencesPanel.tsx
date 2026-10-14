@@ -1,6 +1,7 @@
 'use client';
 
 import { useOrganization } from '@/hooks/useOrganization';
+import { NOTIFICATION_PREFERENCE_GROUPS, isTypeEnabled } from '@/domain/notifications/notificationDefaults';
 import { useNotificationPreferences, useUpdateNotificationPreferences } from '@/hooks/useNotifications';
 import { useMyIdentityProfile } from '@/hooks/useIdentityProfile';
 import { SelectField } from '@/components/ui/SelectField';
@@ -63,6 +64,16 @@ export function NotificationPreferencesPanel() {
       delete next[category];
     }
     updatePreferences.mutate({ categoryOverrides: next });
+  }
+
+  /**
+   * One event's own switch (2026-10). Written as an explicit true/false
+   * rather than removing the key, so "I turned this off" and "I have never
+   * said" stay distinguishable — the second is what lets defaults keep
+   * applying to staff who have never opened this page.
+   */
+  function setTypeEnabled(typeKey: string, enabled: boolean) {
+    updatePreferences.mutate({ typeOverrides: { ...preferences.typeOverrides, [typeKey]: enabled } });
   }
 
   function patchCategoryOverride(category: NotificationCategory, patch: Partial<NotificationCategoryOverride>) {
@@ -244,6 +255,58 @@ export function NotificationPreferencesPanel() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/*
+        Individual events (2026-10). The control a category cannot express:
+        a category covers "documents", but staff need "tell me when a PDF
+        import fails, not when it succeeds" — both are the same category.
+
+        Only events SOLIS can actually emit are listed. Offering a switch
+        for something that never fires would leave somebody waiting for a
+        notification that cannot arrive.
+
+        A list of rows rather than a table: this is one switch per line
+        with an explanation, which reads the same on a phone as on a
+        desktop and needs no horizontal scrolling.
+      */}
+      <section className="sx-settings-section">
+        <h3 className="sx-settings-section-title">Individual Notifications</h3>
+        <p className="sx-help">
+          Choose which alerts you receive. These apply on top of the settings above — turning the in-app channel or a
+          whole category off still silences everything in it.
+        </p>
+
+        {NOTIFICATION_PREFERENCE_GROUPS.map((group) => (
+          <div key={group.label} style={{ marginTop: 18 }}>
+            <span className="sx-label">{group.label}</span>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {group.types.map((type) => {
+                const enabled = isTypeEnabled(preferences.typeOverrides, type.key);
+                return (
+                  <label
+                    key={type.key}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      disabled={updatePreferences.isPending}
+                      onChange={(e) => setTypeEnabled(type.key, e.target.checked)}
+                      style={{ marginTop: 3, flexShrink: 0 }}
+                    />
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', fontWeight: 500 }}>{type.label}</span>
+                      <span className="sx-help" style={{ display: 'block', margin: 0 }}>
+                        {type.description}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </section>
     </div>
   );

@@ -44,6 +44,16 @@ export type NotificationPreference = {
       for a category means "use the global toggle." Never a category
       key that isn't a real `NotificationCategory`. */
   categoryOverrides: Partial<Record<NotificationCategory, NotificationCategoryOverride>>;
+  /** Per-NOTIFICATION-TYPE on/off (2026-10) — the control a category
+      cannot express, e.g. "tell me when a PDF import fails but not when it
+      succeeds", where both are the `document` category.
+      Absent for a type means "never said", so the type's own default
+      applies (domain/notifications/notificationDefaults.ts). Additive: a
+      preference row written before this existed has `{}` and behaves
+      exactly as it did. It can only ever turn a type OFF relative to the
+      category/global switches — it never re-enables a channel those have
+      disabled, and never affects permissions. */
+  typeOverrides: Record<string, boolean>;
   /** Null until this identity's first digest send. Anchors the
       `digestFrequency` interval check — see
       `services/notificationDigestService.ts`. Never touched by anything
@@ -56,6 +66,7 @@ export type NotificationPreferencePatch = {
   emailEnabled?: boolean;
   inAppEnabled?: boolean;
   smsEnabled?: boolean;
+  typeOverrides?: Record<string, boolean>;
   digestFrequency?: DigestFrequency;
   quietHoursStart?: string | null;
   quietHoursEnd?: string | null;
@@ -70,5 +81,6 @@ export const DEFAULT_NOTIFICATION_PREFERENCE: Omit<NotificationPreference, 'id' 
   quietHoursEnd: null,
   smsEnabled: false,
   categoryOverrides: {},
+  typeOverrides: {},
   lastDigestSentAt: null,
 };
