@@ -62,20 +62,24 @@ const NOTICE_MESSAGES: Record<string, string> = {
  * still exactly "SOLIS". No authentication/form/validation behavior
  * changed.
  *
- * Organization branding (2026-10): staff now see their own funeral home's
- * logo and name above the lockup, so signing in looks like signing in to
- * THEIR organization rather than to a generic product, and the whole card
- * is centered around that. SOLIS is unchanged and still the `<h1>` — the
- * organization block is additive, sits outside the heading, and never
- * becomes the page's accessible name. Which organization is resolved from
- * the deployment, never from the request (see ./branding.ts and
- * domain/organization/loginBranding.ts); when that is ambiguous or
- * anything fails, the card falls back to the SOLIS lockup alone.
+ * Login page branding refinement (2026-10). SOLIS leads: its lockup and
+ * "Built with Balance." sit at the top of the card as the primary
+ * identity, with the organization's own branding below a divider as the
+ * secondary "which workspace is this" signal — the organization logo used
+ * to dominate, which inverted the hierarchy of a product sign-in screen.
+ * A quiet "Powered by SOLIS" closes the card.
  *
- * The organization NAME renders as real text only when there is no logo.
- * A funeral home's logo is normally a full lockup that already contains
- * its name (Manors' does), and setting that name a second time underneath
- * in the app's own sans-serif reads as a mistake, not as branding.
+ * SOLIS remains the `<h1>`: the organization block is additive, sits
+ * outside the heading, and never becomes the page's accessible name.
+ *
+ * Which organization is resolved from the DEPLOYMENT — its hostname map
+ * or its single-tenant configuration — never from user input, and never
+ * by inference (see ./branding.ts and domain/organization/loginBranding.ts).
+ * A generic SOLIS login, or any failure resolving branding, renders the
+ * SOLIS half of the card alone and no tenant's logo.
+ *
+ * Nothing about authentication, validation, error/notice messaging, the
+ * form, or the password-reset link changes here — this is layout only.
  */
 export default async function LoginPage({
   searchParams,
@@ -92,22 +96,29 @@ export default async function LoginPage({
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        {organization && (
-          <div className={styles.organization}>
-            {organization.logoUrl ? (
-              /* A remote, operator-uploaded asset of unknown dimensions —
-                 next/image has no precedent here and buys nothing (see
-                 ProductBrand's own identical note). */
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={organization.logoUrl} alt={organization.name} className={styles.organizationLogo} />
-            ) : (
-              <span className={styles.organizationName}>{organization.name}</span>
-            )}
-          </div>
-        )}
         <h1 className={styles.title}>
           <ProductBrand markSize={40} className={styles.brandLockup} />
         </h1>
+        <p className={styles.tagline}>Built with Balance.</p>
+
+        {organization && (
+          <div className={styles.organization}>
+            {organization.logoUrl && (
+              <span className={styles.organizationLogoFrame}>
+                {/* A remote, operator-uploaded asset of unknown dimensions —
+                    next/image has no precedent here and buys nothing (see
+                    ProductBrand's own identical note). `alt=""` because the
+                    workspace line directly below carries the same
+                    information as real text; announcing the organization
+                    twice helps nobody. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={organization.logoUrl} alt="" className={styles.organizationLogo} />
+              </span>
+            )}
+            <span className={styles.organizationName}>{organization.name} Workspace</span>
+          </div>
+        )}
+
         <p className={styles.subtitle}>Sign in to continue.</p>
 
         {errorMessage && (
@@ -158,6 +169,11 @@ export default async function LoginPage({
             Mock mode — sign in with {MOCK_LOGIN_EMAIL} / {MOCK_LOGIN_PASSWORD}
           </p>
         )}
+
+        {/* Deliberately the quietest thing on the card — the primary SOLIS
+            identity is the lockup at the top, and this must not compete
+            with it. */}
+        <p className={styles.poweredBy}>Powered by SOLIS</p>
       </div>
     </div>
   );

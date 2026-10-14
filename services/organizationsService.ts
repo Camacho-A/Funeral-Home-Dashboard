@@ -1,7 +1,7 @@
 import type { Organization, OrganizationContext } from '../types/organization';
 import type { OrganizationBranding } from '../types/organizationBranding';
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, queryAllWixDataItems } from '../lib/wixDataApi';
+import { queryWixDataItems } from '../lib/wixDataApi';
 import { mapWixOrganizationItem, type WixOrganizationItem } from '../lib/wixOrganizationMapper';
 import { mockOrganizationFixtures } from './__mocks__/authFixtures';
 
@@ -56,29 +56,6 @@ export async function getForOrganization(organizationId: string, dataAdapterMode
     paging: { limit: 1 },
   });
   return mapWixOrganizationItem(response.dataItems[0]?.data);
-}
-
-/**
- * Sign-in branding (2026-10). Every active organization in this
- * deployment, server-side — the sign-in screen has no session to resolve
- * a tenant from, so it needs to know whether this deployment holds
- * exactly one organization (see domain/organization/loginBranding.ts).
- *
- * Server-safe like `getForOrganization` above, not a `fetch` wrapper:
- * its only caller is the Login Server Component, which has no origin to
- * fetch itself from.
- *
- * Paginated via `queryAllWixDataItems`, because "how many are there"
- * is exactly the question a 50-row default page size would answer wrong.
- */
-export async function listActiveOrganizations(dataAdapterMode: DataAdapterMode = 'mock'): Promise<Organization[]> {
-  if (dataAdapterMode === 'mock') {
-    return mockOrganizationFixtures.filter((org) => org.isActive);
-  }
-  const items = await queryAllWixDataItems<WixOrganizationItem>('organizations', { isActive: true });
-  return items
-    .map((item) => mapWixOrganizationItem(item.data))
-    .filter((org): org is Organization => org !== null && org.isActive);
 }
 
 /** Manors cleanup phase (Task #4). Same client-only HTTP-wrapper shape as
@@ -139,4 +116,4 @@ export async function removeBrandingLogo(
   return parseBrandingResponse(response);
 }
 
-export const organizationsService = { get, getForOrganization, listActiveOrganizations, getBranding, uploadBrandingLogo, removeBrandingLogo };
+export const organizationsService = { get, getForOrganization, getBranding, uploadBrandingLogo, removeBrandingLogo };

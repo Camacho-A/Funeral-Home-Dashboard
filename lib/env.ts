@@ -172,20 +172,36 @@ export function getAppBaseUrl(): string {
 }
 
 /**
- * Sign-in branding (2026-10). Which organization's logo the login screen
- * shows, when the deployment wants to say so explicitly.
+ * Sign-in branding (2026-10). Which organization the login screen is
+ * branded for, on a deployment that serves exactly one.
  *
- * Optional by design and unset today: a deployment holding exactly one
- * active organization resolves its own logo without configuration (see
- * domain/organization/loginBranding.ts). This exists so that stays true
- * when a second organization is added — each domain then names its own
- * tenant instead of the login screen having to guess between them.
+ * Both this and `getLoginOrganizationHosts()` below are optional, and
+ * when neither resolves an organization the login screen shows SOLIS
+ * branding alone — never some tenant's logo picked by inference (see
+ * domain/organization/loginBranding.ts).
  *
- * Never throws and has no production-only behaviour: branding on a login
- * screen is cosmetic, and a missing value must degrade to the SOLIS
- * lockup alone, never to a failed sign-in.
+ * Neither throws, and neither has production-only behaviour: branding on
+ * a login screen is cosmetic, and a missing value must degrade to the
+ * SOLIS lockup, never to a failed sign-in.
  */
 export function getLoginOrganizationId(): string | null {
   const value = process.env.LOGIN_ORGANIZATION_ID?.trim();
+  return value ? value : null;
+}
+
+/**
+ * Sign-in branding (2026-10). The hostname-to-organization map that lets
+ * ONE deployment brand its login screen per domain — the multi-
+ * organization answer, since each funeral home gets its own hostname:
+ *
+ *     LOGIN_ORGANIZATION_HOSTS="solis.manorscremation.com=managed-cremations,beacon.manorscremation.com=managed-cremations"
+ *
+ * A hostname is trusted here only because the DEPLOYMENT named it. An
+ * unmapped host resolves to no organization at all, so an unrecognised
+ * (or forged) Host header shows generic SOLIS branding rather than
+ * anyone's tenant.
+ */
+export function getLoginOrganizationHosts(): string | null {
+  const value = process.env.LOGIN_ORGANIZATION_HOSTS?.trim();
   return value ? value : null;
 }

@@ -3,10 +3,9 @@ import { render, screen } from '@testing-library/react';
 import LoginPage from './page';
 import type { LoginOrganization } from './branding';
 
-/** The organization logo the page should render, swapped per test.
-    `null` — the default — is mock mode's own real answer, since the mock
-    fixtures hold two active organizations and the deployment therefore
-    cannot resolve one (domain/organization/loginBranding.ts). */
+/** The organization the page is branded for, swapped per test. `null` —
+    the default — is the generic SOLIS login: no hostname mapping and no
+    single-tenant configuration (domain/organization/loginBranding.ts). */
 let loginOrganization: LoginOrganization | null = null;
 vi.mock('./branding', () => ({ loadLoginOrganization: async () => loginOrganization }));
 
@@ -75,74 +74,86 @@ describe('LoginPage', () => {
    * Organization logo (2026-10). Staff sign in to THEIR funeral home, so
    * its logo appears above the lockup — without SOLIS losing its place.
    */
+  /**
+   * Login page branding refinement (2026-10). SOLIS leads; the
+   * organization identifies the workspace below it.
+   */
   describe('organization branding', () => {
     afterEach(() => {
       loginOrganization = null;
     });
 
-    it('renders the organization logo above the SOLIS lockup', async () => {
-      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
-      render(await renderLoginPage());
+    it('puts SOLIS first and the organization below it', async () => {
+      loginOrganization = { name: 'Manors Cremation', logoUrl: 'https://blob.example.com/logo.png' };
+      const { container } = render(await renderLoginPage());
 
-      const logo = screen.getByAltText('MANORS CREMATION');
-      expect(logo).toHaveAttribute('src', 'https://blob.example.com/logo.png');
-
-      // Order matters: the funeral home's own mark reads first.
       const heading = screen.getByRole('heading', { name: 'SOLIS' });
-      expect(logo.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const workspace = screen.getByText('Manors Cremation Workspace');
+      // SOLIS is the primary identity: it must come first in the document.
+      expect(heading.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(container.querySelector('img[src="https://blob.example.com/logo.png"]')).toBeTruthy();
     });
 
-    it('keeps SOLIS — the logo is added beside it, never in place of it', async () => {
-      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
+    it("renders SOLIS's own tagline under the lockup", async () => {
       render(await renderLoginPage());
-
-      expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
-      expect(screen.getByRole('presentation', { hidden: true })).toHaveAttribute('src', '/brand/soliscode-mark.png');
+      expect(screen.getByText('Built with Balance.')).toBeInTheDocument();
     });
 
-    it('does not become the page heading — SOLIS is still the only one', async () => {
-      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
-      render(await renderLoginPage());
+    it('names the workspace rather than repeating the organization in two voices', async () => {
+      loginOrganization = { name: 'Manors Cremation', logoUrl: 'https://blob.example.com/logo.png' };
+      const { container } = render(await renderLoginPage());
 
-      const headings = screen.getAllByRole('heading');
-      expect(headings).toHaveLength(1);
-      expect(headings[0]).toHaveAccessibleName('SOLIS');
+      expect(screen.getByText('Manors Cremation Workspace')).toBeInTheDocument();
+      // The logo is decorative: the workspace line already carries the
+      // name as real text, so a screen reader must not hear it twice.
+      const logo = container.querySelector('img[src="https://blob.example.com/logo.png"]');
+      expect(logo).toHaveAttribute('alt', '');
+      expect(screen.queryByAltText('Manors Cremation')).not.toBeInTheDocument();
     });
 
-    it('falls back to the organization name as text when no logo is uploaded', async () => {
-      // A logo is normally a lockup that already carries the name, so the
-      // name is set in type ONLY when there is no artwork to show.
-      loginOrganization = { name: 'MANORS CREMATION', logoUrl: null };
-      render(await renderLoginPage());
+    it('identifies the workspace even when no logo is configured', async () => {
+      loginOrganization = { name: 'Gus Camacho Jr. Funeral Home', logoUrl: null };
+      const { container } = render(await renderLoginPage());
 
-      expect(screen.getByText('MANORS CREMATION')).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
+      expect(screen.getByText('Gus Camacho Jr. Funeral Home Workspace')).toBeInTheDocument();
+      // Only the decorative SOLIS mark — no broken organization image.
+      expect(container.querySelectorAll('img')).toHaveLength(1);
     });
 
-    it('does not repeat the name in text beside a logo that already contains it', async () => {
-      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
-      render(await renderLoginPage());
-
-      // Present as the image's accessible name, never a second time as
-      // app-font text underneath the artwork.
-      expect(screen.getByAltText('MANORS CREMATION')).toBeInTheDocument();
-      expect(screen.queryByText('MANORS CREMATION')).not.toBeInTheDocument();
-    });
-
-    it('renders the card exactly as before when no organization resolves', async () => {
+    it('shows SOLIS branding only on a generic login — never a default tenant', async () => {
       loginOrganization = null;
-      render(await renderLoginPage());
+      const { container } = render(await renderLoginPage());
 
       expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
+      expect(screen.getByText('Built with Balance.')).toBeInTheDocument();
+      expect(screen.queryByText(/Workspace$/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Manors/i)).not.toBeInTheDocument();
+      expect(container.querySelectorAll('img')).toHaveLength(1);
+    });
+
+    it('closes the card with an understated "Powered by SOLIS"', async () => {
+      render(await renderLoginPage());
+      const poweredBy = screen.getByText('Powered by SOLIS');
+      expect(poweredBy).toBeInTheDocument();
+      // Last thing on the card, so it cannot compete with the lockup.
+      const heading = screen.getByRole('heading', { name: 'SOLIS' });
+      expect(heading.compareDocumentPosition(poweredBy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('leaves the sign-in form, its messaging, and password reset untouched', async () => {
+      loginOrganization = { name: 'Manors Cremation', logoUrl: 'https://blob.example.com/logo.png' };
+      render(await renderLoginPage({ error: 'invalid_credentials' }));
+
+      expect(screen.getByText('Sign in to continue.')).toBeInTheDocument();
       expect(screen.getByLabelText('Email')).toBeInTheDocument();
       expect(screen.getByLabelText('Password')).toBeInTheDocument();
-      // Only the decorative SOLIS mark — no second, unexplained image.
-      expect(document.querySelectorAll('img')).toHaveLength(1);
+      expect(screen.getByRole('button', { name: /Sign In/i })).toBeInTheDocument();
+      expect(screen.getByText('Invalid email or password.')).toBeInTheDocument();
     });
 
     it('still signs people in when branding is unavailable', async () => {
-      // loadLoginLogo swallows its own failures (./branding.ts); this pins
-      // that a null result never costs the form.
+      // loadLoginOrganization swallows its own failures (./branding.ts);
+      // this pins that a null result never costs the form.
       loginOrganization = null;
       render(await renderLoginPage({ error: 'invalid_credentials' }));
 

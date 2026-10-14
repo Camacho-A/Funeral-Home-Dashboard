@@ -4,6 +4,9 @@
   align-items: center;
   justify-content: center;
   background: var(--color-surface-page);
+  /* Padding, not a fixed height, so a short viewport scrolls the card as
+     a whole instead of clipping it against the top of the window. */
+  padding: var(--space-10) var(--space-5);
 }
 
 .card {
@@ -13,47 +16,66 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-12) var(--space-10);
-  /* Centered around the organization's own mark — the card reads as one
-     brand moment rather than a left-aligned form with a logo on top.
-     Field labels opt back out below: a centered label floating over the
-     left edge of its own input reads as broken, not as symmetry. */
+  /* Centered: the card reads as one brand moment rather than a
+     left-aligned form with logos on top. Field labels opt back out
+     below — a centered label floating over the left edge of its own
+     input reads as broken, not as symmetry. */
   text-align: center;
 }
 
-/* The organization's own logo, above the SOLIS lockup. Constrained by
-   HEIGHT rather than width so wordmark-shaped and square logos both land
-   at the same optical weight — a width cap would render a wide wordmark
-   tiny and a square one enormous. */
-/* The hairline separates the two identities the card now carries: whose
-   organization this is, above; which product it is, below. Without it
-   the organization's mark and the SOLIS lockup read as one stack of two
-   logos. */
+/* The organization block — secondary to SOLIS above it, and separated by
+   a hairline so the card reads as "SOLIS, for this workspace" rather than
+   as two competing logos stacked together. */
 .organization {
   display: flex;
-  justify-content: center;
-  padding-bottom: var(--space-7);
-  margin-bottom: var(--space-7);
-  border-bottom: 1px solid var(--color-border);
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  padding-top: var(--space-10);
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  margin-bottom: var(--space-10);
 }
 
 /* Capped on BOTH axes, because a funeral home's logo can arrive in any
-   proportion: a wide wordmark needs the width cap, and the square
-   "profile picture" export most brand packages ship (Manors' included —
-   its artwork sits inside a lot of empty canvas) needs the height cap or
-   it dwarfs the form it sits above. */
+   proportion: a wide wordmark needs the width cap, and a square export
+   needs the height cap or it dwarfs the form below it. `object-fit`
+   never crops or stretches — whatever the shape, the whole logo is shown
+   at its own proportions.
+
+   The fixed-height BOX (not just a max on the image) reserves the space
+   before the image paints, so nothing below it shifts on load. */
+.organizationLogoFrame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  width: 100%;
+}
+
 .organizationLogo {
-  max-height: 132px;
+  max-height: 100%;
   max-width: 100%;
   width: auto;
+  height: auto;
   object-fit: contain;
 }
 
-/* Only for an organization with no logo uploaded at all. */
+/* "<Organization> Workspace" — which workspace you are signing in to.
+   Quieter than the SOLIS wordmark above by every available means: size,
+   weight, and color.
+
+   Set as an uppercase label rather than sentence text, because an
+   organization's stored name is whatever its own staff typed: Manors is
+   recorded as "MANORS CREMATION", and "MANORS CREMATION Workspace" in
+   running text reads as shouting. As a letter-spaced label, every
+   tenant's name looks deliberate whichever case it was entered in. */
 .organizationName {
-  font-size: var(--font-size-15);
+  font-size: var(--font-size-11-5);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  color: var(--color-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
 }
 
 /* ProductBrand lays the mark and wordmark out with flex, so centering the
@@ -66,7 +88,17 @@
   font-size: var(--font-size-26);
   font-weight: var(--font-weight-bold);
   letter-spacing: var(--tracking-tight);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+/* The product's own line, directly under the lockup it belongs to. The
+   margin keeps it from colliding with whatever follows — the divider on a
+   branded card, "Sign in to continue." on a generic one. */
+.tagline {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  letter-spacing: var(--tracking-wide);
+  margin-bottom: var(--space-6);
 }
 
 .subtitle {
@@ -147,4 +179,29 @@
 
 .hintLink {
   color: var(--color-brand);
+}
+
+/* The card's quietest line by design — see page.tsx. Separated by space
+   alone, not another rule, so it never reads as a second section. */
+.poweredBy {
+  margin-top: var(--space-12);
+  font-size: var(--font-size-11-5);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-muted, var(--color-text-secondary));
+  opacity: 0.75;
+}
+
+/* Phones: the card gives up its outer breathing room to the content, and
+   the organization logo shrinks with it, so everything from the SOLIS
+   lockup to "Forgot password?" still fits without scrolling. */
+@media (max-width: 420px) {
+  .card {
+    width: 100%;
+    max-width: 100%;
+    padding: var(--space-10) var(--space-7);
+  }
+
+  .organizationLogoFrame {
+    height: 44px;
+  }
 }
