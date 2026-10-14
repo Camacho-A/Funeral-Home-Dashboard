@@ -3,6 +3,7 @@
 import { use, useEffect, useRef, useState } from 'react';
 import { useCase } from '@/hooks/useCase';
 import { Button } from '@/components/ui/Button';
+import { StalledLoading } from '@/components/ui/StalledLoading';
 import { useResetMainContentScrollOnChange } from '@/hooks/useResetMainContentScrollOnChange';
 import { useCaseViewModel } from '@/hooks/useCaseViewModel';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
@@ -108,7 +109,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const caseLog = useCaseLog(caseId);
   const caseTasks = useCaseTasks(caseId);
 
-  if (isPending) return <p className={styles.loading}>Loading case…</p>;
+  // Keeps the stalled-loading watchdog where it still matters: this is
+  // the case page's OWN pending state, not a route-level Suspense shell.
+  if (isPending) return <StalledLoading label="Loading case…" />;
 
   /**
    * A case that failed to load says so, and offers a way to try again
