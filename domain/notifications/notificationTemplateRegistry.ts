@@ -68,6 +68,12 @@ export type NotificationTokens = {
   submissionReference?: string;
   reason?: string;
   receivedAt?: string;
+  /** Everyday operations (2026-10). Where a case came from — "the First
+      Call form", "the Cremation Arrangement Form", "the New Case form" —
+      so one notification can name its own origin instead of needing a
+      separate type per creation path. A caller-supplied display phrase,
+      same "formatted string in" boundary as every token above. */
+  sourceLabel?: string;
 };
 
 const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
@@ -85,6 +91,7 @@ const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
   'submissionReference',
   'reason',
   'receivedAt',
+  'sourceLabel',
 ];
 
 type TemplateDefinition = {
@@ -130,16 +137,44 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
     bodyTemplate: '{{entityTitle}} was declined for case {{caseNumber}} ({{decedentName}})',
   },
   'case.created': {
-    titleTemplate: 'New case',
-    bodyTemplate: 'A new case was created: {{decedentName}} ({{caseNumber}})',
+    titleTemplate: 'New Case Created',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. Created from {{sourceLabel}}.',
+  },
+  'case.arrangement_received': {
+    titleTemplate: 'Arrangement Form Received',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. The Cremation Arrangement Form was received.',
+  },
+  'case.vital_statistics_received': {
+    titleTemplate: 'Vital Statistics Received',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. Vital Statistics information has been received.',
+  },
+  'case.completed': {
+    titleTemplate: 'Case Completed',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. All required case steps are complete.',
+  },
+  'document.jotform_pdf_imported': {
+    titleTemplate: 'Form PDF Imported',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. The {{formLabel}} PDF was attached to the case.',
+  },
+  'document.jotform_pdf_import_failed': {
+    titleTemplate: 'PDF Import Failed',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. The {{formLabel}} PDF could not be imported.',
+  },
+  'document.generation_failed': {
+    titleTemplate: 'Document Generation Failed',
+    bodyTemplate: 'The {{entityTitle}} for {{caseNumber}} could not be generated.',
   },
   'document.generated': {
     titleTemplate: 'Document generated',
     bodyTemplate: '{{entityTitle}} was generated for case {{caseNumber}}',
   },
   'payment.received': {
-    titleTemplate: 'Payment received',
-    bodyTemplate: 'A payment was received for case {{caseNumber}}',
+    titleTemplate: 'Payment Received',
+    /* "was recorded", not "settled" or "processed": SOLIS records a
+       payment, and for a manual entry nothing has been confirmed by a
+       bank or processor. Saying more than that would describe money as
+       cleared when it may not be. */
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. A payment of {{amountDisplay}} was recorded.',
   },
   'organization.member_joined': {
     titleTemplate: 'Team member joined',

@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import * as casesService from '@/services/casesService';
+import { composeDecedentName } from '@/domain/cases/decedentName';
 import { authenticateJotformSubmission } from '@/lib/jotform/jotformSubmissionAuthenticity';
 import { parseJotformWebhookBody, extractHiddenFieldByQid } from '@/domain/externalForms/parseWebhookPayload';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
@@ -12,6 +14,20 @@ import { recordExternalFormSubmissionReceived, recordExternalFormSubmissionUnmat
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { createCaseFromIntakeSubmission } from '@/services/externalFormIntakeService';
 import { notifyIntakeSubmissionNeedsAttention } from '@/services/intakeNotifications';
+import {
+  notifyCaseCreated,
+  notifyArrangementReceived,
+  notifyVitalStatisticsReceived,
+  notifyJotformPdfImported,
+  notifyJotformPdfImportFailed,
+  type CaseCreationSource,
+  type NotifiableCase,
+} from '@/services/caseNotifications';
+import {
+  ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+  VITAL_STATISTICS_EXTERNAL_FORM_ID,
+  FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
+} from '@/domain/externalForms/fieldMapping';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -91,6 +107,45 @@ import { notifyIntakeSubmissionNeedsAttention } from '@/services/intakeNotificat
  * cleanup that is now safe to perform.
  */
 const MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024; // 2MB — generous for a funeral-intake form's rawRequest JSON blob, bounded against abuse
+
+/**
+ * Which form a submission came through, in the words a notification uses.
+ *
+ * Everyday notifications (2026-10): one `case.created` type carries its
+ * origin in the body rather than fragmenting the inbox into one type per
+ * form — the staff action is the same however the case arrived.
+ */
+function creationSourceFor(externalFormId: string): CaseCreationSource {
+  if (externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return 'the Cremation Arrangement Form';
+  if (externalFormId === FIRST_CALL_SHEET_EXTERNAL_FORM_ID) return 'the First Call form';
+  return 'an intake form';
+}
+
+/**
+ * The case a notification describes, looked up only to name it.
+ *
+ * Returns null rather than throwing: announcing is best-effort, and a case
+ * that cannot be read is a case not worth announcing — never a reason to
+ * fail the webhook that already stored the submission.
+ */
+async function notifiableCase(
+  caseId: string,
+  organizationId: string,
+  dataAdapterMode: ReturnType<typeof getDataAdapterMode>,
+): Promise<NotifiableCase | null> {
+  try {
+    const found = await casesService.get({ organizationId }, caseId, dataAdapterMode);
+    if (!found) return null;
+    return {
+      id: found.id,
+      caseNumber: found.caseNumber,
+      decedentName: composeDecedentName(found.decedentName, found.decedentMiddleName),
+    };
+  } catch (error) {
+    console.error('Failed to load the case for a notification:', error instanceof Error ? error.message : error);
+    return null;
+  }
+}
 
 export async function POST(request: Request) {
   const declaredLength = request.headers.get('content-length');
@@ -290,7 +345,34 @@ export async function POST(request: Request) {
      */
     if (outcome.created) {
       const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
-      await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode);
+      const pdfResult = await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode);
+
+      /**
+       * Everyday notifications (2026-10). ONE notification for a case this
+       * submission created, naming the form it came from — never both a
+       * "new case" and a separate "arrangement received" for the same
+       * arrival. Keyed on the case id, so a webhook redelivery announces
+       * nothing the second time.
+       */
+      const created = await notifiableCase(outcome.caseId, config.organizationId, dataAdapterMode);
+      if (created) {
+        await notifyCaseCreated(activityCtx, { case: created, source: creationSourceFor(config.externalFormId) }, dataAdapterMode);
+        // `already_stored` is the idempotent retry finding the document
+        // already attached — not news, and deliberately silent.
+        if (pdfResult.outcome === 'stored') {
+          await notifyJotformPdfImported(
+            activityCtx,
+            { case: created, submissionId: submission.id, formLabel: config.label },
+            dataAdapterMode,
+          );
+        } else if (pdfResult.outcome === 'failed') {
+          await notifyJotformPdfImportFailed(
+            activityCtx,
+            { case: created, submissionId: submission.id, formLabel: config.label },
+            dataAdapterMode,
+          );
+        }
+      }
     }
 
     return NextResponse.json({ received: true, caseCreated: outcome.created });
@@ -308,7 +390,34 @@ export async function POST(request: Request) {
     // submission's own receipt — a failure here is recorded on the
     // submission itself (pdfStatus: 'failed') and retried later, never
     // surfaced as a webhook failure to Jotform.
-    await preservePdfForSubmission(submission, resolvedLink.caseId, activityCtx, dataAdapterMode);
+    const pdfResult = await preservePdfForSubmission(submission, resolvedLink.caseId, activityCtx, dataAdapterMode);
+
+    /**
+     * A form that landed on a case that already existed. Keyed on the
+     * submission id, so a redelivery is a no-op; the case-creation branch
+     * above never reaches here, so no arrival is announced twice.
+     */
+    const updated = await notifiableCase(resolvedLink.caseId, config.organizationId, dataAdapterMode);
+    if (updated) {
+      if (config.externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) {
+        await notifyArrangementReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
+      } else if (config.externalFormId === VITAL_STATISTICS_EXTERNAL_FORM_ID) {
+        await notifyVitalStatisticsReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
+      }
+      if (pdfResult.outcome === 'stored') {
+        await notifyJotformPdfImported(
+          activityCtx,
+          { case: updated, submissionId: submission.id, formLabel: config.label },
+          dataAdapterMode,
+        );
+      } else if (pdfResult.outcome === 'failed') {
+        await notifyJotformPdfImportFailed(
+          activityCtx,
+          { case: updated, submissionId: submission.id, formLabel: config.label },
+          dataAdapterMode,
+        );
+      }
+    }
 
     // Manors workflow reconciliation (2026-09): a normally-received
     // submission is exactly the same "Arrangement Form now linked" fact

@@ -65,7 +65,42 @@ export const NOTIFICATION_TYPES = {
   SIGNATURE_COMPLETED: { key: 'signature.completed', category: 'signature' as NotificationCategory, displayName: 'Document Signed' },
   SIGNATURE_DECLINED: { key: 'signature.declined', category: 'signature' as NotificationCategory, displayName: 'Signature Declined' },
 
-  // Reserved this phase — real registry entries, no wired emitter yet (see ADR-032).
+  /**
+   * Everyday operations (2026-10). These are WIRED — each has a real
+   * emitter on the path that performs the work, not a reserved entry.
+   * See services/caseNotifications.ts and the call sites it lists.
+   */
+  CASE_ARRANGEMENT_RECEIVED: {
+    key: 'case.arrangement_received',
+    category: 'case' as NotificationCategory,
+    displayName: 'Arrangement Form Received',
+  },
+  CASE_VITAL_STATISTICS_RECEIVED: {
+    key: 'case.vital_statistics_received',
+    category: 'case' as NotificationCategory,
+    displayName: 'Vital Statistics Received',
+  },
+  CASE_COMPLETED: { key: 'case.completed', category: 'case' as NotificationCategory, displayName: 'Case Completed' },
+  /** Import of the PDF a JotForm submission carries. Success is noise for
+      most staff and defaults OFF; failure is actionable and defaults ON —
+      see domain/notifications/notificationDefaults.ts. */
+  JOTFORM_PDF_IMPORTED: {
+    key: 'document.jotform_pdf_imported',
+    category: 'document' as NotificationCategory,
+    displayName: 'Form PDF Imported',
+  },
+  JOTFORM_PDF_IMPORT_FAILED: {
+    key: 'document.jotform_pdf_import_failed',
+    category: 'document' as NotificationCategory,
+    displayName: 'Form PDF Import Failed',
+  },
+  DOCUMENT_GENERATION_FAILED: {
+    key: 'document.generation_failed',
+    category: 'document' as NotificationCategory,
+    displayName: 'Document Generation Failed',
+  },
+
+  // Wired this phase — see services/caseNotifications.ts.
   CASE_CREATED: { key: 'case.created', category: 'case' as NotificationCategory, displayName: 'New Case' },
   DOCUMENT_GENERATED: { key: 'document.generated', category: 'document' as NotificationCategory, displayName: 'Document Generated' },
   PAYMENT_RECEIVED: { key: 'payment.received', category: 'payment' as NotificationCategory, displayName: 'Payment Received' },
