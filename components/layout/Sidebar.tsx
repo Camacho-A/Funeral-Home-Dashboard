@@ -184,12 +184,11 @@ export function Sidebar({
           `branding?.logoUrl` is the per-organization logo configured via
           onboarding's Branding step (types/organizationBranding.ts) —
           distinct from `ProductBrand` above, which is the SOLIS platform
-          mark, not any one tenant's own logo. Manors' real logo asset
-          (public/brand/manors-logo.png) is now connected via
-          `organizationBrandingFixtures` in mock mode; a production
-          (wix-mode) organization with no branding row configured yet
-          simply renders nothing here, same as before — no further code
-          change needed once one is set.
+          mark, not any one tenant's own logo. Mock mode renders a
+          stand-in from `organizationBrandingFixtures` (no real customer's
+          artwork ships in this repo); an organization with no branding
+          row configured yet simply renders nothing here, same as before
+          — no further code change needed once one is set.
           SOLIS true redesign, Phase 1 (2026-10): the footer is now a
           compact horizontal card (logo left, name + staff-online stacked
           right) per the approved design, instead of the prior centered

@@ -201,11 +201,11 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
   it('renders the current logo with accessible alt text, and a "Change Logo" / "Remove Logo" pair, when one is configured', async () => {
     mockPermissions(['organization.manage']);
     mockProfile();
-    mockBranding('https://example.com/manors-logo.png');
+    mockBranding('https://example.com/org-logo.png');
     renderPanel();
 
     const img = await screen.findByRole('img', { name: "MANOR'S CREMATION logo" });
-    expect(img).toHaveAttribute('src', 'https://example.com/manors-logo.png');
+    expect(img).toHaveAttribute('src', 'https://example.com/org-logo.png');
     expect(screen.getByRole('button', { name: 'Change logo' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Logo' })).toBeInTheDocument();
     expect(screen.queryByText('No organization logo uploaded.')).not.toBeInTheDocument();
@@ -260,7 +260,7 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
   it('removing a logo (after confirmation) clears the preview back to the no-logo state', async () => {
     mockPermissions(['organization.manage']);
     mockProfile();
-    mockBranding('https://example.com/manors-logo.png');
+    mockBranding('https://example.com/org-logo.png');
     vi.spyOn(organizationsService, 'removeBrandingLogo').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
       logoUrl: null,

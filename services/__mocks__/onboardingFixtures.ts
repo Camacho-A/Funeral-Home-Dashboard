@@ -74,16 +74,21 @@ export const onboardingSessionFixtures: OnboardingSession[] = [
 export const organizationBrandingFixtures: OrganizationBranding[] = [
   {
     organizationId: DEFAULT_ORGANIZATION_ID,
-    // Manors branding follow-up (2026-10). The real Manors logo asset —
-    // public/brand/manors-logo.png — connected here via the one field
-    // this type exists to hold. `logoUrl` is a plain URL string by
-    // design (this type's own header comment: "no field capable of
-    // holding binary/base64 image data"), and Next.js serves everything
-    // under public/ at its own path, so the asset's existing site path
-    // is all this needs — no new upload/storage mechanism, no second
-    // branding system. Sidebar.tsx's `useOrganizationBranding()` picks
-    // this up automatically.
-    logoUrl: '/brand/manors-logo.png',
+    // A stand-in logo, deliberately not any real funeral home's artwork
+    // (2026-10). This used to point at public/brand/manors-logo.png — a
+    // live customer's own file, which meant one organization's artwork
+    // shipped inside every build and was publicly served from every
+    // deployment, purely to give mock mode something to render.
+    //
+    // An inline SVG data URI instead: `logoUrl` is a plain URL string by
+    // design (see types/organizationBranding.ts — "no field capable of
+    // holding binary/base64 image data"), a data URI satisfies that and
+    // needs no asset at all, and Sidebar.tsx's `useOrganizationBranding()`
+    // renders it exactly like any uploaded logo. Real organizations are
+    // unaffected: their logos live in their own branding rows, uploaded
+    // through Settings.
+    logoUrl:
+      "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231f3a5f'/><path d='M20 42V26l12-8 12 8v16H36v-10h-8v10z' fill='%23ffffff'/></svg>",
     signInLogoUrl: null,
     primaryColor: null,
     secondaryColor: null,

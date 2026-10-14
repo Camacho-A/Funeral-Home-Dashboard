@@ -300,7 +300,7 @@ describe('Sidebar — organization logo (Manors cleanup phase, Task #4)', () => 
   it('renders the configured logo image once branding.logoUrl is set', async () => {
     vi.spyOn(organizationsService, 'getBranding').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
-      logoUrl: 'https://example.com/manors-logo.png',
+      logoUrl: 'https://example.com/org-logo.png',
       signInLogoUrl: null,
       primaryColor: null,
       secondaryColor: null,
@@ -313,13 +313,13 @@ describe('Sidebar — organization logo (Manors cleanup phase, Task #4)', () => 
     mockPermissions([]);
     renderSidebar('mock');
     const logo = await screen.findByRole('img', { name: 'Manors Cremation logo' });
-    expect(logo).toHaveAttribute('src', 'https://example.com/manors-logo.png');
+    expect(logo).toHaveAttribute('src', 'https://example.com/org-logo.png');
   });
 
   it('still renders the staff-online status alongside the logo — the logo never replaces it', async () => {
     vi.spyOn(organizationsService, 'getBranding').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
-      logoUrl: 'https://example.com/manors-logo.png',
+      logoUrl: 'https://example.com/org-logo.png',
       signInLogoUrl: null,
       primaryColor: null,
       secondaryColor: null,

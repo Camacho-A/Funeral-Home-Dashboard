@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
+import { organizationBrandingFixtures } from '@/services/__mocks__/onboardingFixtures';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({
@@ -19,12 +20,15 @@ beforeEach(() => {
 });
 
 /**
- * Manors branding/visibility follow-up (2026-10). Covers both the route's
- * own auth boundary and, directly, that the real logo asset placed in
- * this phase (public/brand/manors-logo.png) is actually connected —
- * `services/__mocks__/onboardingFixtures.ts#organizationBrandingFixtures`
- * now sets `logoUrl` to that path for Manors, and this is the one route
- * that surfaces it to the portal (Sidebar's own `useOrganizationBranding()`).
+ * Organization branding route (2026-10). Covers the route's own auth
+ * boundary, and that the configured `logoUrl` reaches the portal at all —
+ * this is the one route that surfaces it (Sidebar's own
+ * `useOrganizationBranding()`).
+ *
+ * The assertion is deliberately against whatever the fixture holds rather
+ * than a literal path: no real customer's artwork lives in this repo, so
+ * what matters is that the route returns the organization's OWN
+ * configured logo, not which stand-in mock mode happens to use.
  */
 describe('GET /api/organizations/[organizationId]/branding', () => {
   it('returns 401 with no session', async () => {
@@ -36,10 +40,13 @@ describe('GET /api/organizations/[organizationId]/branding', () => {
     expect((await getRequest(SECOND_MOCK_ORGANIZATION_ID)).status).toBe(403);
   });
 
-  it('returns the real connected Manors logo asset path', async () => {
+  it("returns the organization's own configured logo", async () => {
+    const configured = organizationBrandingFixtures.find((b) => b.organizationId === DEFAULT_ORGANIZATION_ID)?.logoUrl;
+    expect(configured).toBeTruthy();
+
     const response = await getRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.branding.logoUrl).toBe('/brand/manors-logo.png');
+    expect(body.branding.logoUrl).toBe(configured);
   });
 });
