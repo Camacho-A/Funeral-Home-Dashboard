@@ -110,10 +110,15 @@ async function parseBrandingResponse(response: Response): Promise<OrganizationBr
     route's own comment). Returns the updated `OrganizationBranding` so
     callers can update their cache directly from the server's own
     response, never an optimistic guess. */
-export async function uploadBrandingLogo(organizationId: string, file: File): Promise<OrganizationBranding> {
+export async function uploadBrandingLogo(
+  organizationId: string,
+  file: File,
+  slot: 'mark' | 'signIn' = 'mark',
+): Promise<OrganizationBranding> {
   const formData = new FormData();
   formData.set('organizationId', organizationId);
   formData.set('file', file);
+  formData.set('slot', slot);
   const response = await fetch('/api/organization/branding/logo', { method: 'POST', body: formData });
   return parseBrandingResponse(response);
 }
@@ -122,11 +127,14 @@ export async function uploadBrandingLogo(organizationId: string, file: File): Pr
     — clears `logoUrl` back to `null`; never deletes the underlying Blob
     (see `services/organizationProvisioningService.ts#removeBrandingLogo`'s
     own comment on why). */
-export async function removeBrandingLogo(organizationId: string): Promise<OrganizationBranding> {
+export async function removeBrandingLogo(
+  organizationId: string,
+  slot: 'mark' | 'signIn' = 'mark',
+): Promise<OrganizationBranding> {
   const response = await fetch('/api/organization/branding/logo', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId }),
+    body: JSON.stringify({ organizationId, slot }),
   });
   return parseBrandingResponse(response);
 }

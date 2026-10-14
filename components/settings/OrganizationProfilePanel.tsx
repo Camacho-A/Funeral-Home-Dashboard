@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationProfile, useUpdateOrganizationProfile, useUpdatePrimaryLocationProfile } from '@/hooks/useOrganizationProfile';
-import { useOrganizationBranding, useUploadBrandingLogo, useRemoveBrandingLogo } from '@/hooks/useOrganizationBranding';
+import { useOrganizationBranding, useUploadBrandingLogo, useRemoveBrandingLogo, type BrandingLogoSlot } from '@/hooks/useOrganizationBranding';
 import { OrganizationProfileValidationError, type OrganizationProfileFields, type PrimaryLocationFields } from '@/lib/organizationProfileClient';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
@@ -311,14 +311,90 @@ function PrimaryLocationForm({ organizationId, initial }: { organizationId: stri
  */
 function BrandingSection({ organizationName }: { organizationName: string }) {
   const brandingQuery = useOrganizationBranding();
-  const uploadLogo = useUploadBrandingLogo();
-  const removeLogo = useRemoveBrandingLogo();
+
+  return (
+    <section className="sx-settings-section">
+      <h3 className="sx-settings-section-title">Organization Branding</h3>
+
+      {brandingQuery.isPending ? (
+        <p className="sx-help">Loading…</p>
+      ) : (
+        <>
+          <LogoSlot
+            slot="mark"
+            label="Logo"
+            url={brandingQuery.data?.logoUrl ?? null}
+            organizationName={organizationName}
+            emptyHelp="No organization logo uploaded."
+            guidance="Shown small, beside your organization's name in the sidebar. A compact mark works best. PNG, JPEG, or WEBP. Up to 5MB."
+            uploadInputLabel="Upload organization logo"
+            actionNoun="logo"
+            removeButtonLabel="Remove Logo"
+            removeTitle="Remove Logo"
+            removeMessage="This organization's logo will be removed from the sidebar. You can upload a new one at any time."
+          />
+          <div style={{ marginTop: 20 }}>
+            <LogoSlot
+              slot="signIn"
+              label="Sign-in logo"
+              url={brandingQuery.data?.signInLogoUrl ?? null}
+              organizationName={organizationName}
+              emptyHelp="No sign-in logo uploaded — the sidebar logo is used instead."
+              guidance="Shown large on the sign-in screen. Use your full logo, including your organization's name. PNG, JPEG, or WEBP. Up to 5MB."
+              uploadInputLabel="Upload sign-in logo"
+              actionNoun="sign-in logo"
+              removeButtonLabel="Remove Sign-in Logo"
+              removeTitle="Remove Sign-in Logo"
+              removeMessage="Your sign-in screen will fall back to the sidebar logo. You can upload a new one at any time."
+            />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * One uploadable logo (2026-10). Extracted from BrandingSection unchanged
+ * in behaviour so the sidebar mark and the sign-in logo are the same
+ * control twice over, rather than a duplicated second implementation that
+ * could drift — the two slots differ only in which field they write and
+ * in the words describing where each one appears.
+ */
+function LogoSlot({
+  slot,
+  label,
+  url,
+  organizationName,
+  emptyHelp,
+  guidance,
+  uploadInputLabel,
+  actionNoun,
+  removeButtonLabel,
+  removeTitle,
+  removeMessage,
+}: {
+  slot: BrandingLogoSlot;
+  label: string;
+  url: string | null;
+  organizationName: string;
+  emptyHelp: string;
+  guidance: string;
+  /* Every visible string is passed in rather than derived from `label`,
+     so the sidebar slot keeps the exact wording it already had — a
+     refactor that quietly renames a button is a behaviour change. */
+  uploadInputLabel: string;
+  actionNoun: string;
+  removeButtonLabel: string;
+  removeTitle: string;
+  removeMessage: string;
+}) {
+  const uploadLogo = useUploadBrandingLogo(slot);
+  const removeLogo = useRemoveBrandingLogo(slot);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  const logoUrl = brandingQuery.data?.logoUrl ?? null;
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -353,68 +429,60 @@ function BrandingSection({ organizationName }: { organizationName: string }) {
   const pending = uploadLogo.isPending || removeLogo.isPending;
 
   return (
-    <section className="sx-settings-section">
-      <h3 className="sx-settings-section-title">Organization Branding</h3>
+    <>
+      <span className="sx-label">{label}</span>
+      <div className="sx-logo" style={{ marginTop: 6 }}>
+        <div className="sx-logo-preview" data-empty={url ? undefined : true}>
+          {url ? <img src={url} alt={`${organizationName} ${label.toLowerCase()}`} /> : <span>No logo</span>}
+        </div>
+        <div>
+          {!url && <p className="sx-help" style={{ margin: '0 0 8px' }}>{emptyHelp}</p>}
 
-      {brandingQuery.isPending ? (
-        <p className="sx-help">Loading…</p>
-      ) : (
-        <>
-          <span className="sx-label">Logo</span>
-          <div className="sx-logo" style={{ marginTop: 6 }}>
-            <div className="sx-logo-preview" data-empty={logoUrl ? undefined : true}>
-              {logoUrl ? <img src={logoUrl} alt={`${organizationName} logo`} /> : <span>No logo</span>}
-            </div>
-            <div>
-              {!logoUrl && <p className="sx-help" style={{ margin: '0 0 8px' }}>No organization logo uploaded.</p>}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={LOGO_ACCEPT}
+            aria-label={uploadInputLabel}
+            className="sr-only"
+            onChange={handleFileSelected}
+          />
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={LOGO_ACCEPT}
-                aria-label="Upload organization logo"
-                className="sr-only"
-                onChange={handleFileSelected}
-              />
-
-              <div className="sx-logo-actions">
-                <button type="button" className="sx-btn sx-btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={pending}>
-                  {uploadLogo.isPending ? 'Uploading…' : logoUrl ? 'Change logo' : 'Upload logo'}
-                </button>
-                {logoUrl && (
-                  <button type="button" className="sx-btn sx-btn-ghost" style={{ color: 'var(--sx-red)' }} onClick={() => setRemoveConfirmOpen(true)} disabled={pending}>
-                    Remove Logo
-                  </button>
-                )}
-              </div>
-
-              <p className="sx-help" style={{ margin: '8px 0 0' }} role="note">
-                PNG, JPEG, or WEBP. Up to 5MB.
-              </p>
-
-              {localError && (
-                <div className="sx-error-state" role="alert" style={{ marginTop: 8 }}>
-                  {localError}
-                </div>
-              )}
-              {savedAt && !localError && (
-                <p className="sr-only" role="status">
-                  Logo updated.
-                </p>
-              )}
-            </div>
+          <div className="sx-logo-actions">
+            <button type="button" className="sx-btn sx-btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={pending}>
+              {uploadLogo.isPending ? 'Uploading…' : url ? `Change ${actionNoun}` : `Upload ${actionNoun}`}
+            </button>
+            {url && (
+              <button type="button" className="sx-btn sx-btn-ghost" style={{ color: 'var(--sx-red)' }} onClick={() => setRemoveConfirmOpen(true)} disabled={pending}>
+                {removeButtonLabel}
+              </button>
+            )}
           </div>
-        </>
-      )}
+
+          <p className="sx-help" style={{ margin: '8px 0 0' }} role="note">
+            {guidance}
+          </p>
+
+          {localError && (
+            <div className="sx-error-state" role="alert" style={{ marginTop: 8 }}>
+              {localError}
+            </div>
+          )}
+          {savedAt && !localError && (
+            <p className="sr-only" role="status">
+              {label} updated.
+            </p>
+          )}
+        </div>
+      </div>
 
       <ConfirmActionDialog
         open={removeConfirmOpen}
         onClose={() => setRemoveConfirmOpen(false)}
-        title="Remove Logo"
-        message="This organization's logo will be removed from the sidebar. You can upload a new one at any time."
+        title={removeTitle}
+        message={removeMessage}
         confirmLabel="Remove"
         onConfirm={handleRemove}
       />
-    </section>
+    </>
   );
 }

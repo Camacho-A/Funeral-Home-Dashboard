@@ -30,7 +30,7 @@ function mockPermissions(permissions: string[]) {
 // Branding tests below override this per-case.
 function mockBranding(logoUrl: string | null = null) {
   vi.spyOn(organizationsService, 'getBranding').mockResolvedValue(
-    logoUrl === null ? null : { organizationId: DEFAULT_ORGANIZATION_ID, logoUrl, primaryColor: null, secondaryColor: null, accentColor: null, emailFromName: null, documentFooter: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    logoUrl === null ? null : { organizationId: DEFAULT_ORGANIZATION_ID, logoUrl, signInLogoUrl: null, primaryColor: null, secondaryColor: null, accentColor: null, emailFromName: null, documentFooter: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
   );
 }
 
@@ -218,6 +218,7 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
     vi.spyOn(organizationsService, 'uploadBrandingLogo').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
       logoUrl: 'https://example.com/new-logo.png',
+      signInLogoUrl: null,
       primaryColor: null,
       secondaryColor: null,
       accentColor: null,
@@ -235,7 +236,9 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
 
     expect(await screen.findByText('Logo updated.')).toBeInTheDocument();
     expect(await screen.findByRole('img', { name: "MANOR'S CREMATION logo" })).toHaveAttribute('src', 'https://example.com/new-logo.png');
-    expect(organizationsService.uploadBrandingLogo).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, file);
+    // 'mark' pins the slot: this control must write the sidebar logo,
+    // never the sign-in one (2026-10).
+    expect(organizationsService.uploadBrandingLogo).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, file, 'mark');
   });
 
   it('a failed upload shows the error and never falsely updates the preview', async () => {
@@ -261,6 +264,7 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
     vi.spyOn(organizationsService, 'removeBrandingLogo').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
       logoUrl: null,
+      signInLogoUrl: null,
       primaryColor: null,
       secondaryColor: null,
       accentColor: null,
@@ -275,6 +279,39 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
 
     await waitFor(() => expect(screen.getByText('No organization logo uploaded.')).toBeInTheDocument());
-    expect(organizationsService.removeBrandingLogo).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID);
+    expect(organizationsService.removeBrandingLogo).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'mark');
+  });
+
+  /**
+   * Sign-in logo (2026-10). A second, separate slot: the sidebar renders
+   * its logo at 30px, where a full lockup is an unreadable smudge, while
+   * the sign-in card wants exactly that lockup because it carries the
+   * organization's name.
+   */
+  it('uploads the sign-in logo to its own slot, leaving the sidebar logo alone', async () => {
+    mockBranding('https://blob.example.com/mark.png');
+    vi.spyOn(organizationsService, 'uploadBrandingLogo').mockResolvedValue({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      logoUrl: 'https://blob.example.com/mark.png',
+      signInLogoUrl: 'https://blob.example.com/signin.png',
+      primaryColor: null,
+      secondaryColor: null,
+      accentColor: null,
+      emailFromName: null,
+      documentFooter: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    renderPanel();
+
+    const file = new File(['x'], 'lockup.png', { type: 'image/png' });
+    const input = await screen.findByLabelText('Upload sign-in logo');
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(organizationsService.uploadBrandingLogo).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, file, 'signIn'),
+    );
+    // The sidebar slot is untouched — two logos, two independent controls.
+    expect(organizationsService.uploadBrandingLogo).toHaveBeenCalledTimes(1);
   });
 });

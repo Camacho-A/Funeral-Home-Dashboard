@@ -2,7 +2,7 @@ import { getAuthAdapterMode } from '@/lib/env';
 import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/authFixtures';
 import { sanitizeRedirectPath } from '@/lib/auth/redirect';
 import { ProductBrand } from '@/components/layout/ProductBrand';
-import { loadLoginLogo } from './branding';
+import { loadLoginOrganization } from './branding';
 import { loginAction } from './actions';
 import styles from './page.module.css';
 
@@ -62,15 +62,20 @@ const NOTICE_MESSAGES: Record<string, string> = {
  * still exactly "SOLIS". No authentication/form/validation behavior
  * changed.
  *
- * Organization logo (2026-10): staff now see their own funeral home's
- * logo above the lockup, so signing in looks like signing in to THEIR
- * organization rather than to a generic product. SOLIS is unchanged and
- * still the `<h1>` — the logo is additive, sits outside the heading, and
- * never becomes the page's accessible name. Which organization is
- * resolved from the deployment, never from the request (see
- * ./branding.ts and domain/organization/loginBranding.ts); when that is
- * ambiguous or anything fails, the card renders exactly as it did
- * before.
+ * Organization branding (2026-10): staff now see their own funeral home's
+ * logo and name above the lockup, so signing in looks like signing in to
+ * THEIR organization rather than to a generic product, and the whole card
+ * is centered around that. SOLIS is unchanged and still the `<h1>` — the
+ * organization block is additive, sits outside the heading, and never
+ * becomes the page's accessible name. Which organization is resolved from
+ * the deployment, never from the request (see ./branding.ts and
+ * domain/organization/loginBranding.ts); when that is ambiguous or
+ * anything fails, the card falls back to the SOLIS lockup alone.
+ *
+ * The organization NAME renders as real text only when there is no logo.
+ * A funeral home's logo is normally a full lockup that already contains
+ * its name (Manors' does), and setting that name a second time underneath
+ * in the app's own sans-serif reads as a mistake, not as branding.
  */
 export default async function LoginPage({
   searchParams,
@@ -81,23 +86,27 @@ export default async function LoginPage({
   const next = sanitizeRedirectPath(rawNext);
   const authAdapter = getAuthAdapterMode();
   const errorMessage = error ? (ERROR_MESSAGES[error] ?? ERROR_MESSAGES.unknown) : null;
-  const organizationLogo = await loadLoginLogo();
+  const organization = await loadLoginOrganization();
   const noticeMessage = !errorMessage && notice ? NOTICE_MESSAGES[notice] : null;
 
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        {organizationLogo && (
-          <div className={styles.organizationLogo}>
-            {/* A remote, operator-uploaded asset of unknown dimensions —
-                next/image has no precedent here and buys nothing (see
-                ProductBrand's own identical note). */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={organizationLogo.url} alt={organizationLogo.organizationName} />
+        {organization && (
+          <div className={styles.organization}>
+            {organization.logoUrl ? (
+              /* A remote, operator-uploaded asset of unknown dimensions —
+                 next/image has no precedent here and buys nothing (see
+                 ProductBrand's own identical note). */
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={organization.logoUrl} alt={organization.name} className={styles.organizationLogo} />
+            ) : (
+              <span className={styles.organizationName}>{organization.name}</span>
+            )}
           </div>
         )}
         <h1 className={styles.title}>
-          <ProductBrand markSize={40} />
+          <ProductBrand markSize={40} className={styles.brandLockup} />
         </h1>
         <p className={styles.subtitle}>Sign in to continue.</p>
 

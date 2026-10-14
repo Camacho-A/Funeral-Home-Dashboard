@@ -84,6 +84,7 @@ export const organizationBrandingFixtures: OrganizationBranding[] = [
     // branding system. Sidebar.tsx's `useOrganizationBranding()` picks
     // this up automatically.
     logoUrl: '/brand/manors-logo.png',
+    signInLogoUrl: null,
     primaryColor: null,
     secondaryColor: null,
     accentColor: null,

@@ -962,6 +962,7 @@ export async function getBranding(organizationId: string, dataAdapterMode: DataA
 
 export type SaveBrandingInput = {
   logoUrl?: string | null;
+  signInLogoUrl?: string | null;
   primaryColor?: string | null;
   secondaryColor?: string | null;
   accentColor?: string | null;
@@ -1004,6 +1005,7 @@ export async function saveBranding(
   const branding: OrganizationBranding = {
     organizationId,
     logoUrl: input.logoUrl ?? null,
+    signInLogoUrl: input.signInLogoUrl ?? null,
     primaryColor: input.primaryColor ?? null,
     secondaryColor: input.secondaryColor ?? null,
     accentColor: input.accentColor ?? null,
@@ -1028,8 +1030,17 @@ export async function saveBranding(
   return mapped;
 }
 
+/**
+ * Which branding slot an upload fills (2026-10). `'mark'` is the original
+ * compact logo every pre-existing caller means — it stays the default so
+ * nothing had to change. `'signIn'` is the full lockup shown on the login
+ * card.
+ */
+export type BrandingLogoSlot = 'mark' | 'signIn';
+
 export type UploadBrandingLogoInput = {
   organizationId: string;
+  slot?: BrandingLogoSlot;
   fileBuffer: Buffer;
   mimeType: string;
   fileExtension: string;
@@ -1053,9 +1064,12 @@ export type UploadBrandingLogoInput = {
  * dependency-injection convention for testability.
  */
 export async function uploadBrandingLogo(input: UploadBrandingLogoInput, dataAdapterMode: DataAdapterMode): Promise<OrganizationBranding> {
-  const key = `branding/${input.organizationId}/logo-${input.idFactory()}.${input.fileExtension}`;
+  const slot = input.slot ?? 'mark';
+  const prefix = slot === 'signIn' ? 'signin-logo' : 'logo';
+  const key = `branding/${input.organizationId}/${prefix}-${input.idFactory()}.${input.fileExtension}`;
   const { url } = await uploadPublicBrandingAsset(key, input.fileBuffer, input.mimeType);
-  return saveBranding(input.organizationId, { logoUrl: url }, dataAdapterMode);
+  const patch: SaveBrandingInput = slot === 'signIn' ? { signInLogoUrl: url } : { logoUrl: url };
+  return saveBranding(input.organizationId, patch, dataAdapterMode);
 }
 
 /**
@@ -1072,8 +1086,12 @@ export async function uploadBrandingLogo(input: UploadBrandingLogoInput, dataAda
  * exists for a future, deliberate cleanup pass once ownership can be
  * confirmed.
  */
-export async function removeBrandingLogo(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<OrganizationBranding> {
-  return saveBranding(organizationId, { logoUrl: null }, dataAdapterMode);
+export async function removeBrandingLogo(
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+  slot: BrandingLogoSlot = 'mark',
+): Promise<OrganizationBranding> {
+  return saveBranding(organizationId, slot === 'signIn' ? { signInLogoUrl: null } : { logoUrl: null }, dataAdapterMode);
 }
 
 // ---------------------------------------------------------------------------

@@ -297,6 +297,7 @@ describe('Sidebar — organization logo (Manors cleanup phase, Task #4)', () => 
     vi.spyOn(organizationsService, 'getBranding').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
       logoUrl: 'https://example.com/manors-logo.png',
+      signInLogoUrl: null,
       primaryColor: null,
       secondaryColor: null,
       accentColor: null,
@@ -315,6 +316,7 @@ describe('Sidebar — organization logo (Manors cleanup phase, Task #4)', () => 
     vi.spyOn(organizationsService, 'getBranding').mockResolvedValue({
       organizationId: DEFAULT_ORGANIZATION_ID,
       logoUrl: 'https://example.com/manors-logo.png',
+      signInLogoUrl: null,
       primaryColor: null,
       secondaryColor: null,
       accentColor: null,

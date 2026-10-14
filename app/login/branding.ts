@@ -3,17 +3,21 @@ import { resolveLoginOrganizationId } from '@/domain/organization/loginBranding'
 import { listActiveOrganizations } from '@/services/organizationsService';
 import { getBranding } from '@/services/organizationProvisioningService';
 
-export type LoginLogo = {
+export type LoginOrganization = {
+  /** The organization's display name, shown as real text on the card. */
+  name: string;
   /** A public branding-asset URL (services/organizationProvisioningService.ts
       #uploadBrandingLogo stores logos as public blobs), so rendering it on an
-      unauthenticated page exposes nothing that wasn't already public. */
-  url: string;
-  /** The organization's display name — the logo's alt text. */
-  organizationName: string;
+      unauthenticated page exposes nothing that wasn't already public.
+      Prefers the sign-in lockup — the asset that carries the company name —
+      and falls back to the compact mark for an organization that has only
+      uploaded one. Null when neither exists; the name alone then identifies
+      the organization, so the card is never left blank. */
+  logoUrl: string | null;
 };
 
 /**
- * The organization logo for the sign-in screen, or null.
+ * The organization the sign-in screen is branded for, or null.
  *
  * Kept out of app/login/page.tsx so that file stays what its own comment
  * promises: markup and a message lookup, with no data or auth logic.
@@ -27,10 +31,10 @@ export type LoginLogo = {
  * **Never throws.** A funeral home's staff must be able to sign in while
  * Wix is slow, misconfigured, or down — so every failure here degrades to
  * the SOLIS lockup alone rather than an error page in front of the login
- * form. The same reasoning applies to an organization with no logo
- * uploaded, which is simply the normal state and not an error.
+ * form. An organization with no logo uploaded is not a failure either —
+ * its name is returned with a null `logoUrl`.
  */
-export async function loadLoginLogo(): Promise<LoginLogo | null> {
+export async function loadLoginOrganization(): Promise<LoginOrganization | null> {
   try {
     const dataAdapterMode = getDataAdapterMode();
     const organizations = await listActiveOrganizations(dataAdapterMode);
@@ -40,12 +44,14 @@ export async function loadLoginLogo(): Promise<LoginLogo | null> {
     });
     if (!organizationId) return null;
 
-    const branding = await getBranding(organizationId, dataAdapterMode);
-    const url = branding?.logoUrl?.trim();
-    if (!url) return null;
-
     const organization = organizations.find((org) => org.id === organizationId);
-    return { url, organizationName: organization?.name ?? '' };
+    const name = organization?.name?.trim();
+    // A configured id naming an organization this deployment doesn't hold
+    // leaves nothing to show — better blank than a logo with no owner.
+    if (!name) return null;
+
+    const branding = await getBranding(organizationId, dataAdapterMode);
+    return { name, logoUrl: branding?.signInLogoUrl?.trim() || branding?.logoUrl?.trim() || null };
   } catch {
     // Branding is cosmetic; signing in is not.
     return null;

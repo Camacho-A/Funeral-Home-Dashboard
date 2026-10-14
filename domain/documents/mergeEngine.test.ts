@@ -105,6 +105,7 @@ function makeBranding(overrides: Partial<OrganizationBranding> = {}): Organizati
   return {
     organizationId: 'org-1',
     logoUrl: null,
+    signInLogoUrl: null,
     primaryColor: null,
     secondaryColor: null,
     accentColor: null,

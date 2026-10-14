@@ -3,6 +3,7 @@ import type { OrganizationBranding } from '../types/organizationBranding';
 export type WixOrganizationBrandingItem = {
   organizationId?: unknown;
   logoUrl?: unknown;
+  signInLogoUrl?: unknown;
   primaryColor?: unknown;
   secondaryColor?: unknown;
   accentColor?: unknown;
@@ -25,6 +26,7 @@ export function mapWixOrganizationBrandingItem(item: WixOrganizationBrandingItem
   return {
     organizationId: item.organizationId,
     logoUrl: typeof item.logoUrl === 'string' ? item.logoUrl : null,
+    signInLogoUrl: typeof item.signInLogoUrl === 'string' ? item.signInLogoUrl : null,
     primaryColor: typeof item.primaryColor === 'string' ? item.primaryColor : null,
     secondaryColor: typeof item.secondaryColor === 'string' ? item.secondaryColor : null,
     accentColor: typeof item.accentColor === 'string' ? item.accentColor : null,
@@ -39,6 +41,7 @@ export function buildWixOrganizationBrandingData(branding: OrganizationBranding)
   return {
     organizationId: branding.organizationId,
     logoUrl: branding.logoUrl,
+    signInLogoUrl: branding.signInLogoUrl,
     primaryColor: branding.primaryColor,
     secondaryColor: branding.secondaryColor,
     accentColor: branding.accentColor,
@@ -58,6 +61,7 @@ export function applyOrganizationBrandingUpdateToWixData(
 ): WixOrganizationBrandingItem {
   const next: WixOrganizationBrandingItem = { ...existing };
   if (patch.logoUrl !== undefined) next.logoUrl = patch.logoUrl;
+  if (patch.signInLogoUrl !== undefined) next.signInLogoUrl = patch.signInLogoUrl;
   if (patch.primaryColor !== undefined) next.primaryColor = patch.primaryColor;
   if (patch.secondaryColor !== undefined) next.secondaryColor = patch.secondaryColor;
   if (patch.accentColor !== undefined) next.accentColor = patch.accentColor;

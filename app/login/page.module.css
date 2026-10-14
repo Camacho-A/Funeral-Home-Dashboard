@@ -13,6 +13,11 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-12) var(--space-10);
+  /* Centered around the organization's own mark — the card reads as one
+     brand moment rather than a left-aligned form with a logo on top.
+     Field labels opt back out below: a centered label floating over the
+     left edge of its own input reads as broken, not as symmetry. */
+  text-align: center;
 }
 
 /* The organization's own logo, above the SOLIS lockup. Constrained by
@@ -21,19 +26,40 @@
    tiny and a square one enormous. */
 /* The hairline separates the two identities the card now carries: whose
    organization this is, above; which product it is, below. Without it
-   the logo and the SOLIS lockup read as one stack of two marks. */
-.organizationLogo {
+   the organization's mark and the SOLIS lockup read as one stack of two
+   logos. */
+.organization {
   display: flex;
+  justify-content: center;
   padding-bottom: var(--space-7);
   margin-bottom: var(--space-7);
   border-bottom: 1px solid var(--color-border);
 }
 
-.organizationLogo img {
-  max-height: 52px;
+/* Capped on BOTH axes, because a funeral home's logo can arrive in any
+   proportion: a wide wordmark needs the width cap, and the square
+   "profile picture" export most brand packages ship (Manors' included —
+   its artwork sits inside a lot of empty canvas) needs the height cap or
+   it dwarfs the form it sits above. */
+.organizationLogo {
+  max-height: 132px;
   max-width: 100%;
   width: auto;
   object-fit: contain;
+}
+
+/* Only for an organization with no logo uploaded at all. */
+.organizationName {
+  font-size: var(--font-size-15);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-primary);
+}
+
+/* ProductBrand lays the mark and wordmark out with flex, so centering the
+   lockup is its own alignment, not inherited from text-align. */
+.brandLockup {
+  justify-content: center;
 }
 
 .title {
@@ -77,6 +103,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* See .card — a label belongs over the left edge of its own input. */
+  text-align: left;
   font-size: var(--font-size-12-5);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);

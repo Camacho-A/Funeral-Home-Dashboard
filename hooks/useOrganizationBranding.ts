@@ -26,20 +26,28 @@ export function useOrganizationBranding() {
   });
 }
 
-export function useUploadBrandingLogo() {
+/**
+ * Which logo a mutation targets (2026-10). Defaults to `'mark'` — the
+ * compact sidebar logo, the only slot that existed before — so both hooks
+ * keep their original meaning for every pre-existing caller. Either slot
+ * writes the same branding row, so both share one cache key.
+ */
+export type BrandingLogoSlot = 'mark' | 'signIn';
+
+export function useUploadBrandingLogo(slot: BrandingLogoSlot = 'mark') {
   const { organizationId } = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => organizationsService.uploadBrandingLogo(organizationId, file),
+    mutationFn: (file: File) => organizationsService.uploadBrandingLogo(organizationId, file, slot),
     onSuccess: (branding) => queryClient.setQueryData(brandingKey(organizationId), branding),
   });
 }
 
-export function useRemoveBrandingLogo() {
+export function useRemoveBrandingLogo(slot: BrandingLogoSlot = 'mark') {
   const { organizationId } = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => organizationsService.removeBrandingLogo(organizationId),
+    mutationFn: () => organizationsService.removeBrandingLogo(organizationId, slot),
     onSuccess: (branding) => queryClient.setQueryData(brandingKey(organizationId), branding),
   });
 }

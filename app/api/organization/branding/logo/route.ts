@@ -4,7 +4,7 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canManageOrganization } from '@/services/authorizationPolicyService';
-import { uploadBrandingLogo, removeBrandingLogo } from '@/services/organizationProvisioningService';
+import { uploadBrandingLogo, removeBrandingLogo, type BrandingLogoSlot } from '@/services/organizationProvisioningService';
 import { BrandingStorageNotConfiguredError } from '@/lib/vercelBlob/vercelBlobConfig';
 import { getDataAdapterMode } from '@/lib/env';
 
@@ -20,6 +20,18 @@ const MIME_TO_EXTENSION: Record<string, string> = {
 };
 
 type UploadedFilePart = { name: string; type: string; size: number; arrayBuffer(): Promise<ArrayBuffer> };
+
+/**
+ * Which branding slot the request targets (2026-10). Absent means the
+ * compact mark — the only slot that existed before, so every pre-existing
+ * caller keeps its exact meaning. An unrecognised value is rejected
+ * rather than quietly treated as the mark, so a typo can never overwrite
+ * the wrong logo.
+ */
+function parseSlot(value: FormDataEntryValue | string | null | undefined): BrandingLogoSlot | null {
+  if (value === null || value === undefined || value === '') return 'mark';
+  return value === 'mark' || value === 'signIn' ? value : null;
+}
 
 /** Duck-typed, not `instanceof File` — same reasoning as the case-document
     upload route's own identical helper. */
@@ -59,7 +71,11 @@ export async function POST(request: Request) {
 
   const organizationId = formData.get('organizationId');
   const file = formData.get('file');
+  const slot = parseSlot(formData.get('slot'));
 
+  if (slot === null) {
+    return NextResponse.json({ error: 'Unknown branding slot.' }, { status: 400 });
+  }
   if (typeof organizationId !== 'string') {
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
@@ -90,7 +106,7 @@ export async function POST(request: Request) {
 
   try {
     const branding = await uploadBrandingLogo(
-      { organizationId: resolvedOrganizationId, fileBuffer, mimeType: file.type, fileExtension: extension, idFactory: () => crypto.randomUUID() },
+      { organizationId: resolvedOrganizationId, slot, fileBuffer, mimeType: file.type, fileExtension: extension, idFactory: () => crypto.randomUUID() },
       dataAdapterMode,
     );
     return NextResponse.json({ branding }, { status: 200 });
@@ -114,8 +130,12 @@ export async function DELETE(request: Request) {
 
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
-  const { organizationId } = parsed.body;
+  const { organizationId, slot: rawSlot } = parsed.body;
+  const slot = parseSlot(typeof rawSlot === 'string' ? rawSlot : null);
 
+  if (slot === null) {
+    return NextResponse.json({ error: 'Unknown branding slot.' }, { status: 400 });
+  }
   if (typeof organizationId !== 'string') {
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
@@ -129,6 +149,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Not authorized to manage branding for this organization.' }, { status: 403 });
   }
 
-  const branding = await removeBrandingLogo(resolvedOrganizationId, dataAdapterMode);
+  const branding = await removeBrandingLogo(resolvedOrganizationId, dataAdapterMode, slot);
   return NextResponse.json({ branding }, { status: 200 });
 }

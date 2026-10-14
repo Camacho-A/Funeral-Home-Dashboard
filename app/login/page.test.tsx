@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import LoginPage from './page';
-import type { LoginLogo } from './branding';
+import type { LoginOrganization } from './branding';
 
 /** The organization logo the page should render, swapped per test.
     `null` — the default — is mock mode's own real answer, since the mock
     fixtures hold two active organizations and the deployment therefore
     cannot resolve one (domain/organization/loginBranding.ts). */
-let loginLogo: LoginLogo | null = null;
-vi.mock('./branding', () => ({ loadLoginLogo: async () => loginLogo }));
+let loginOrganization: LoginOrganization | null = null;
+vi.mock('./branding', () => ({ loadLoginOrganization: async () => loginOrganization }));
 
 function renderLoginPage(searchParams: { next?: string; error?: string; notice?: string } = {}) {
   return LoginPage({ searchParams: Promise.resolve(searchParams) });
@@ -75,13 +75,13 @@ describe('LoginPage', () => {
    * Organization logo (2026-10). Staff sign in to THEIR funeral home, so
    * its logo appears above the lockup — without SOLIS losing its place.
    */
-  describe('organization logo', () => {
+  describe('organization branding', () => {
     afterEach(() => {
-      loginLogo = null;
+      loginOrganization = null;
     });
 
     it('renders the organization logo above the SOLIS lockup', async () => {
-      loginLogo = { url: 'https://blob.example.com/logo.png', organizationName: 'MANORS CREMATION' };
+      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
       render(await renderLoginPage());
 
       const logo = screen.getByAltText('MANORS CREMATION');
@@ -93,7 +93,7 @@ describe('LoginPage', () => {
     });
 
     it('keeps SOLIS — the logo is added beside it, never in place of it', async () => {
-      loginLogo = { url: 'https://blob.example.com/logo.png', organizationName: 'MANORS CREMATION' };
+      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
       render(await renderLoginPage());
 
       expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
@@ -101,7 +101,7 @@ describe('LoginPage', () => {
     });
 
     it('does not become the page heading — SOLIS is still the only one', async () => {
-      loginLogo = { url: 'https://blob.example.com/logo.png', organizationName: 'MANORS CREMATION' };
+      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
       render(await renderLoginPage());
 
       const headings = screen.getAllByRole('heading');
@@ -109,8 +109,28 @@ describe('LoginPage', () => {
       expect(headings[0]).toHaveAccessibleName('SOLIS');
     });
 
-    it('renders the card exactly as before when no logo resolves', async () => {
-      loginLogo = null;
+    it('falls back to the organization name as text when no logo is uploaded', async () => {
+      // A logo is normally a lockup that already carries the name, so the
+      // name is set in type ONLY when there is no artwork to show.
+      loginOrganization = { name: 'MANORS CREMATION', logoUrl: null };
+      render(await renderLoginPage());
+
+      expect(screen.getByText('MANORS CREMATION')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
+    });
+
+    it('does not repeat the name in text beside a logo that already contains it', async () => {
+      loginOrganization = { name: 'MANORS CREMATION', logoUrl: 'https://blob.example.com/logo.png' };
+      render(await renderLoginPage());
+
+      // Present as the image's accessible name, never a second time as
+      // app-font text underneath the artwork.
+      expect(screen.getByAltText('MANORS CREMATION')).toBeInTheDocument();
+      expect(screen.queryByText('MANORS CREMATION')).not.toBeInTheDocument();
+    });
+
+    it('renders the card exactly as before when no organization resolves', async () => {
+      loginOrganization = null;
       render(await renderLoginPage());
 
       expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
@@ -123,7 +143,7 @@ describe('LoginPage', () => {
     it('still signs people in when branding is unavailable', async () => {
       // loadLoginLogo swallows its own failures (./branding.ts); this pins
       // that a null result never costs the form.
-      loginLogo = null;
+      loginOrganization = null;
       render(await renderLoginPage({ error: 'invalid_credentials' }));
 
       expect(screen.getByText('Invalid email or password.')).toBeInTheDocument();
