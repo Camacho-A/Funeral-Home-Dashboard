@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { isCaseDocumentDownloadable, isCaseDocumentHistorical, isCaseDocumentEligibleForBulkAction } from './caseDocumentDisplay';
+import { isCaseDocumentDownloadable, isCaseDocumentHistorical, isCaseDocumentEligibleForBulkAction ,
+  isFailedDocumentResolvedByLaterSuccess,
+} from './caseDocumentDisplay';
 import type { CaseDocumentStatus } from '@/types/caseDocument';
 
 /**
@@ -91,5 +93,55 @@ describe('isCaseDocumentHistorical / isCaseDocumentEligibleForBulkAction invaria
         expect(isCaseDocumentEligibleForBulkAction(status)).toBe(expectedEligible);
       }
     }
+  });
+});
+
+/**
+ * A failed generation that a later attempt succeeded past (2026-10).
+ * B2026-038's v1 failed and v2 succeeded; v1 had been sitting in the
+ * active Documents list ever since as an unfixable "Generation Failed"
+ * row with no file behind it.
+ */
+describe('isFailedDocumentResolvedByLaterSuccess', () => {
+  const failed = { status: 'failed' as const, documentTypeKey: 'financial.statement_goods_services' };
+
+  it('is resolved once a successful version of the same type exists', () => {
+    const active = { status: 'active' as const, documentTypeKey: 'financial.statement_goods_services' };
+    expect(isFailedDocumentResolvedByLaterSuccess(failed, [failed, active])).toBe(true);
+  });
+
+  it('stays in the primary list while the failure is the latest word', () => {
+    // Staff need to see that generating did not work, so they can retry.
+    expect(isFailedDocumentResolvedByLaterSuccess(failed, [failed])).toBe(false);
+  });
+
+  it('a second failure does not resolve the first', () => {
+    const otherFailed = { status: 'failed' as const, documentTypeKey: 'financial.statement_goods_services' };
+    expect(isFailedDocumentResolvedByLaterSuccess(failed, [failed, otherFailed])).toBe(false);
+  });
+
+  it('a pending attempt does not resolve it — nothing has succeeded yet', () => {
+    const pending = { status: 'pending' as const, documentTypeKey: 'financial.statement_goods_services' };
+    expect(isFailedDocumentResolvedByLaterSuccess(failed, [failed, pending])).toBe(false);
+  });
+
+  it('a superseded or archived version still counts as having succeeded', () => {
+    // Both have a real storage object; the type demonstrably generated.
+    for (const status of ['superseded', 'archived'] as const) {
+      expect(
+        isFailedDocumentResolvedByLaterSuccess(failed, [failed, { status, documentTypeKey: failed.documentTypeKey }]),
+        status,
+      ).toBe(true);
+    }
+  });
+
+  it('a success of a DIFFERENT type does not resolve it', () => {
+    const otherType = { status: 'active' as const, documentTypeKey: 'statement.account' };
+    expect(isFailedDocumentResolvedByLaterSuccess(failed, [failed, otherType])).toBe(false);
+  });
+
+  it('never applies to a document that did not fail', () => {
+    const active = { status: 'active' as const, documentTypeKey: 'financial.statement_goods_services' };
+    expect(isFailedDocumentResolvedByLaterSuccess(active, [active, failed])).toBe(false);
   });
 });

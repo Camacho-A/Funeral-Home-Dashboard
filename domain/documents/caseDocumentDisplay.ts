@@ -93,3 +93,41 @@ export function isCaseDocumentHistorical(status: CaseDocumentStatus): boolean {
 export function isCaseDocumentEligibleForBulkAction(status: CaseDocumentStatus): boolean {
   return status === 'active';
 }
+
+/**
+ * A failed generation that a later attempt already succeeded past
+ * (2026-10).
+ *
+ * `isCaseDocumentHistorical` deliberately leaves `failed` in the primary
+ * Documents view, and that is right while the failure is the LATEST word
+ * on that document — staff need to see that generating it did not work so
+ * they can try again.
+ *
+ * Once a successful version of the same document type exists on the case,
+ * the failed row is settled: it has no storage object, so it can never be
+ * viewed, downloaded or printed, and no later action can ever resolve it.
+ * It then sits in the active list permanently as an unfixable
+ * "Generation Failed" row. B2026-038 shows exactly this — v1 failed, v2
+ * succeeded, and v1 has been cluttering Documents ever since.
+ *
+ * Such a row moves to History rather than disappearing: the attempt is
+ * part of the case's record, and History already withholds
+ * View/Download/Print for anything `isCaseDocumentDownloadable` rejects,
+ * so it offers no broken actions there.
+ *
+ * Deliberately NOT keyed on version numbers or timestamps — the question
+ * is only "did this document type ever succeed on this case", which is
+ * what makes the failed attempt unactionable.
+ */
+export function isFailedDocumentResolvedByLaterSuccess(
+  doc: { status: CaseDocumentStatus; documentTypeKey: string | null },
+  siblings: readonly { status: CaseDocumentStatus; documentTypeKey: string | null }[],
+): boolean {
+  if (doc.status !== 'failed') return false;
+  return siblings.some(
+    (other) =>
+      other !== doc &&
+      other.documentTypeKey === doc.documentTypeKey &&
+      (other.status === 'active' || other.status === 'superseded' || other.status === 'archived'),
+  );
+}

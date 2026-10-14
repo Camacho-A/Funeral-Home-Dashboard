@@ -1017,3 +1017,48 @@ describe('CaseDocumentsTab — View shows the document in the browser', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
+
+describe('CaseDocumentsTab — a failed generation that was later succeeded past', () => {
+  const FAILED = {
+    ...makeDocument(),
+    id: 'doc-failed',
+    fileName: 'Statement of Funeral Goods and Services Selected.pdf',
+    documentTypeKey: 'financial.statement_goods_services',
+    status: 'failed' as const,
+    version: 1,
+  };
+  const SUCCEEDED = {
+    ...makeDocument(),
+    id: 'doc-active',
+    fileName: 'Statement of Funeral Goods and Services Selected.pdf',
+    documentTypeKey: 'financial.statement_goods_services',
+    status: 'active' as const,
+    version: 2,
+  };
+
+  it('is not shown in the primary Documents list', async () => {
+    // Exactly B2026-038: v1 failed, v2 succeeded, and v1 sat in the active
+    // list permanently as an unfixable row with no file behind it.
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([FAILED, SUCCEEDED]);
+    renderTab();
+
+    await screen.findByText('Statement of Funeral Goods and Services Selected.pdf');
+    expect(screen.queryByText('Generation Failed')).not.toBeInTheDocument();
+  });
+
+  it('is kept under History rather than disappearing', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([FAILED, SUCCEEDED]);
+    renderTab();
+
+    await screen.findByText('Statement of Funeral Goods and Services Selected.pdf');
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('Generation Failed')).toBeInTheDocument();
+  });
+
+  it('a failure with no later success still shows in Documents, so staff can retry', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([FAILED]);
+    renderTab();
+
+    expect(await screen.findByText('Generation Failed')).toBeInTheDocument();
+  });
+});

@@ -21,6 +21,7 @@ import {
   caseDocumentStatusVariant,
   isCaseDocumentDownloadable,
   isCaseDocumentHistorical,
+  isFailedDocumentResolvedByLaterSuccess,
   isCaseDocumentEligibleForBulkAction,
 } from '@/domain/documents/caseDocumentDisplay';
 import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
@@ -161,8 +162,14 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const canRequestSignature = (permissions === null || permissions.includes('signature.request')) && signatureRequestsEnabled;
 
   const documents = documentsQuery.data ?? [];
-  const currentDocuments = documents.filter((doc) => !isCaseDocumentHistorical(doc.status));
-  const historicalDocuments = documents.filter((doc) => isCaseDocumentHistorical(doc.status));
+  // A failed generation stays in the primary list only while it is the
+  // latest word on that document; once a later attempt succeeded it is
+  // unactionable and belongs with the record. See
+  // isFailedDocumentResolvedByLaterSuccess.
+  const isHistorical = (doc: (typeof documents)[number]) =>
+    isCaseDocumentHistorical(doc.status) || isFailedDocumentResolvedByLaterSuccess(doc, documents);
+  const currentDocuments = documents.filter((doc) => !isHistorical(doc));
+  const historicalDocuments = documents.filter(isHistorical);
   const generatedDocuments = currentDocuments.filter((doc) => doc.origin === 'generated');
   const uploadedDocuments = currentDocuments.filter((doc) => doc.origin !== 'generated');
   const eligibleForBulkActions = documents.filter((doc) => isCaseDocumentEligibleForBulkAction(doc.status));
