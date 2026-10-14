@@ -170,3 +170,22 @@ export function getAppBaseUrl(): string {
 
   return 'http://localhost:3000';
 }
+
+/**
+ * Sign-in branding (2026-10). Which organization's logo the login screen
+ * shows, when the deployment wants to say so explicitly.
+ *
+ * Optional by design and unset today: a deployment holding exactly one
+ * active organization resolves its own logo without configuration (see
+ * domain/organization/loginBranding.ts). This exists so that stays true
+ * when a second organization is added — each domain then names its own
+ * tenant instead of the login screen having to guess between them.
+ *
+ * Never throws and has no production-only behaviour: branding on a login
+ * screen is cosmetic, and a missing value must degrade to the SOLIS
+ * lockup alone, never to a failed sign-in.
+ */
+export function getLoginOrganizationId(): string | null {
+  const value = process.env.LOGIN_ORGANIZATION_ID?.trim();
+  return value ? value : null;
+}

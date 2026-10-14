@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import LoginPage from './page';
+import type { LoginLogo } from './branding';
+
+/** The organization logo the page should render, swapped per test.
+    `null` — the default — is mock mode's own real answer, since the mock
+    fixtures hold two active organizations and the deployment therefore
+    cannot resolve one (domain/organization/loginBranding.ts). */
+let loginLogo: LoginLogo | null = null;
+vi.mock('./branding', () => ({ loadLoginLogo: async () => loginLogo }));
 
 function renderLoginPage(searchParams: { next?: string; error?: string; notice?: string } = {}) {
   return LoginPage({ searchParams: Promise.resolve(searchParams) });
@@ -60,6 +68,66 @@ describe('LoginPage', () => {
       const mark = screen.getByRole('presentation', { hidden: true });
       expect(mark).toHaveAttribute('width', '40');
       expect(mark).toHaveAttribute('height', '40');
+    });
+  });
+
+  /**
+   * Organization logo (2026-10). Staff sign in to THEIR funeral home, so
+   * its logo appears above the lockup — without SOLIS losing its place.
+   */
+  describe('organization logo', () => {
+    afterEach(() => {
+      loginLogo = null;
+    });
+
+    it('renders the organization logo above the SOLIS lockup', async () => {
+      loginLogo = { url: 'https://blob.example.com/logo.png', organizationName: 'MANORS CREMATION' };
+      render(await renderLoginPage());
+
+      const logo = screen.getByAltText('MANORS CREMATION');
+      expect(logo).toHaveAttribute('src', 'https://blob.example.com/logo.png');
+
+      // Order matters: the funeral home's own mark reads first.
+      const heading = screen.getByRole('heading', { name: 'SOLIS' });
+      expect(logo.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('keeps SOLIS — the logo is added beside it, never in place of it', async () => {
+      loginLogo = { url: 'https://blob.example.com/logo.png', organizationName: 'MANORS CREMATION' };
+      render(await renderLoginPage());
+
+      expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
+      expect(screen.getByRole('presentation', { hidden: true })).toHaveAttribute('src', '/brand/soliscode-mark.png');
+    });
+
+    it('does not become the page heading — SOLIS is still the only one', async () => {
+      loginLogo = { url: 'https://blob.example.com/logo.png', organizationName: 'MANORS CREMATION' };
+      render(await renderLoginPage());
+
+      const headings = screen.getAllByRole('heading');
+      expect(headings).toHaveLength(1);
+      expect(headings[0]).toHaveAccessibleName('SOLIS');
+    });
+
+    it('renders the card exactly as before when no logo resolves', async () => {
+      loginLogo = null;
+      render(await renderLoginPage());
+
+      expect(screen.getByRole('heading', { name: 'SOLIS' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+      expect(screen.getByLabelText('Password')).toBeInTheDocument();
+      // Only the decorative SOLIS mark — no second, unexplained image.
+      expect(document.querySelectorAll('img')).toHaveLength(1);
+    });
+
+    it('still signs people in when branding is unavailable', async () => {
+      // loadLoginLogo swallows its own failures (./branding.ts); this pins
+      // that a null result never costs the form.
+      loginLogo = null;
+      render(await renderLoginPage({ error: 'invalid_credentials' }));
+
+      expect(screen.getByText('Invalid email or password.')).toBeInTheDocument();
+      expect(screen.getByRole('button')).toBeInTheDocument();
     });
   });
 });
