@@ -10,6 +10,9 @@ import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services
 import type { CaseDocumentWithActorName } from '@/types/caseDocument';
 import type { Organization } from '@/types/organization';
 
+/** What a .docx is stored as — the one uploadable type no browser renders. */
+const WORD_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
   return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn(), generateCaseDocument: vi.fn() };
@@ -967,8 +970,16 @@ describe('CaseDocumentsTab — Documents/History separation (Task #12 follow-up,
  * In-app document viewer (2026-10). "View" opened the inline download URL
  * as a top-level navigation. Chrome's "Download PDFs instead of
  * automatically opening them" setting overrides `Content-Disposition:
- * inline` for top-level navigations, so View saved the file and handed it
- * to the OS viewer. An embedded document is not subject to that setting.
+ * inline`, so View saved the file and handed it to the OS viewer.
+ *
+ * An <object> embed was tried next and did NOT help — that setting also
+ * makes Chrome refuse to render a PDF inside an embed, which produced the
+ * "This file can't be displayed in the browser" fallback staff reported.
+ * SOLIS now renders PDFs itself (components/documents/PdfViewer.tsx), so
+ * these tests pin the fetch of the authenticated inline URL rather than
+ * any embed element. pdf.js cannot rasterise in jsdom, so what is
+ * verifiable here is WHICH URL is read and that nothing navigates away;
+ * that it actually renders was verified in a real browser.
  */
 describe('CaseDocumentsTab — View shows the document in the browser', () => {
   it('opens an in-app viewer rather than navigating away', async () => {
@@ -980,13 +991,56 @@ describe('CaseDocumentsTab — View shows the document in the browser', () => {
     expect(dialog).toBeInTheDocument();
   });
 
-  it('embeds the document inline, with the disposition=inline URL', async () => {
-    const { container } = renderTab();
+  it('reads the document from the authenticated disposition=inline URL', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(new ArrayBuffer(8), { status: 200 }));
+    try {
+      renderTab();
+      fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      const [requestedUrl, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(requestedUrl).toContain('disposition=inline');
+      // Same-origin and cookie-bearing: the viewer reads the SAME guarded
+      // route Download uses. No blob URL, no signed URL, nothing new exposed.
+      expect(requestedUrl.startsWith('http')).toBe(false);
+      expect(init.credentials).toBe('include');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('does not embed the file — the browser PDF plugin is never involved', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(new ArrayBuffer(8), { status: 200 }));
+    try {
+      const { container } = renderTab();
+      fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+      await screen.findByRole('dialog');
+
+      // An <object>/<embed>/<iframe> would put Chrome's PDF setting back in
+      // charge of whether View works, which is the whole defect.
+      expect(container.querySelector('object')).toBeNull();
+      expect(container.querySelector('embed')).toBeNull();
+      expect(container.querySelector('iframe')).toBeNull();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('tells staff to use Download when the file is not one the browser can show', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
+      makeDocument({ fileName: 'RECEIPT OF PAYMENT.docx', mimeType: WORD_MIME_TYPE }),
+    ]);
+    renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'View' }));
 
-    const embed = container.querySelector('object[type="application/pdf"]');
-    expect(embed).toBeTruthy();
-    expect(embed?.getAttribute('data')).toContain('disposition=inline');
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/can.t be shown in the browser/i)).toBeInTheDocument();
+    // The way out is still offered, rather than a dead empty frame.
+    expect(within(dialog).getByRole('link', { name: 'Download' })).toBeInTheDocument();
   });
 
   it('is not an anchor — nothing hands the file to the browser to save', async () => {

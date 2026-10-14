@@ -1,0 +1,78 @@
+/* In-browser PDF viewer (2026-10). Deliberately plain — the document is
+   the content; the chrome around it should not compete with it. */
+.viewer {
+  display: flex;
+  flex-direction: column;
+  height: 70vh;
+}
+
+.canvasScroll {
+  flex: 1;
+  overflow: auto;
+  background: var(--sx-surface-2, #f3f5f8);
+  padding: 12px;
+}
+
+/* The canvas measures ITS parent to size the page, so that parent must be
+   the padding-free content box — measuring .canvasScroll would include its
+   padding and render every page 24px too wide. */
+.canvasFrame {
+  display: flex;
+  justify-content: center;
+}
+
+/* A page reads as a sheet of paper on the grey ground. */
+.canvas {
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.16);
+  max-width: 100%;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--sx-border, #d8dde5);
+}
+
+.pagerButton {
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface, #fff);
+  color: var(--sx-text, #16202c);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pagerButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pagerLabel {
+  font-size: 13px;
+  color: var(--sx-text-muted, #5b6675);
+  font-variant-numeric: tabular-nums;
+}
+
+.message {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--sx-text-muted, #5b6675);
+  font-size: 14px;
+}
+
+.errorText {
+  margin: 0 0 6px;
+  color: var(--sx-red, #b42318);
+  font-weight: 600;
+}
+
+.errorHint {
+  margin: 0;
+  font-size: 13px;
+}

@@ -33,6 +33,7 @@ import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
 import { CaseFormsSection } from './CaseFormsSection';
 import { Modal } from '@/components/ui/Modal';
+import { DocumentPreview } from '@/components/documents/DocumentPreview';
 import { printStoredDocument } from '@/utils/print';
 
 /**
@@ -82,13 +83,16 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
    * download URL as a top-level navigation. That is correct HTTP — the
    * route already sends `Content-Disposition: inline` with the stored
    * `application/pdf` — but Chrome's "Download PDFs instead of
-   * automatically opening them" setting overrides inline for top-level
-   * navigations, so View saved the file and handed it to Preview instead
-   * of showing it. That setting does not apply to an EMBEDDED document,
-   * so viewing in-app renders reliably whatever the browser is set to,
-   * and keeps staff inside the case rather than in a stray tab.
+   * automatically opening them" setting overrides inline, so View saved
+   * the file and handed it to Preview instead of showing it.
+   *
+   * An <object> embed was tried next and does NOT help: that setting also
+   * makes Chrome refuse to render a PDF inside an embed, which is what
+   * produced the "This file can't be displayed in the browser" fallback.
+   * Since no response header can beat a client setting, SOLIS now renders
+   * PDFs itself — see components/documents/DocumentPreview.tsx.
    */
-  const [viewingDoc, setViewingDoc] = useState<{ id: string; fileName: string; url: string } | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<{ id: string; fileName: string; mimeType: string | null; url: string } | null>(null);
   const [printError, setPrintError] = useState<{ docId: string; message: string } | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkExcluded, setBulkExcluded] = useState<{ action: 'Print All' | 'Download All'; items: BulkDocumentExclusion[] } | null>(null);
@@ -202,7 +206,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
 
     const items: RowMenuItem[] = [];
     if (canDownload) {
-      items.push({ label: 'View', onSelect: () => setViewingDoc({ id: doc.id, fileName: doc.fileName, url: viewUrl }) });
+      items.push({ label: 'View', onSelect: () => setViewingDoc({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType, url: viewUrl }) });
       items.push({ label: 'Download', href: downloadUrl, onSelect: () => {} });
       items.push({ label: printingDocId === doc.id ? 'Preparing…' : 'Print', onSelect: () => handlePrint(doc), disabled: printingDocId === doc.id });
     }
@@ -251,7 +255,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               <button
                 type="button"
                 className="sx-btn sx-btn-ghost sx-btn-sm sx-doc-view"
-                onClick={() => setViewingDoc({ id: doc.id, fileName: doc.fileName, url: viewUrl })}
+                onClick={() => setViewingDoc({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType, url: viewUrl })}
               >
                 View
               </button>
@@ -283,22 +287,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             </button>
           </div>
           <div className="sx-modal-body" style={{ padding: 0 }}>
-            <object
-              data={viewingDoc.url}
-              type="application/pdf"
-              aria-label={viewingDoc.fileName}
-              style={{ width: '100%', height: '70vh', border: 0, display: 'block' }}
-            >
-              {/* Shown only if the browser cannot embed this type at all —
-                  a working way out rather than a blank panel. */}
-              <p style={{ padding: 16 }}>
-                This file can&rsquo;t be displayed in the browser.{' '}
-                <a href={viewingDoc.url} target="_blank" rel="noopener noreferrer">
-                  Open it in a new tab
-                </a>
-                .
-              </p>
-            </object>
+            <DocumentPreview url={viewingDoc.url} fileName={viewingDoc.fileName} mimeType={viewingDoc.mimeType} />
           </div>
           <div className="sx-modal-footer">
             <a className="sx-btn sx-btn-secondary" href={buildCaseDocumentDownloadUrl(organizationId, caseId, viewingDoc.id)}>
