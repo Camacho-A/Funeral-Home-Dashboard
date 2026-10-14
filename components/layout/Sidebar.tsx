@@ -135,8 +135,8 @@ export function Sidebar({
       <div className={styles.navList}>
         <SidebarNavItem href="/dashboard" label="Dashboard" icon="dashboard" onNavigate={onClose} />
         <SidebarNavItem href="/tasks" label="Tasks" icon="tasks" onNavigate={onClose} />
-        <SidebarNavItem href="/notifications" label="Notifications" icon="notifications" onNavigate={onClose} />
         <SidebarNavItem href="/calendar" label="Calendar" icon="calendar" onNavigate={onClose} />
+        <SidebarNavItem href="/notifications" label="Notifications" icon="notifications" onNavigate={onClose} />
       </div>
 
       {/* SOLIS true redesign, Phase 1 (2026-10): Reports/Accounting grouped

@@ -503,3 +503,51 @@ describe('Sidebar organization branding follows the active organization', () => 
     );
   });
 });
+
+/**
+ * Navigation order (2026-10). Calendar sits directly above Notifications.
+ * One list serves both the desktop sidebar and the mobile drawer, so this
+ * covers both.
+ */
+describe('Sidebar navigation order', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPermissions([]);
+  });
+
+  it('puts Calendar directly above Notifications', async () => {
+    renderSidebar('mock');
+
+    const calendar = await screen.findByRole('link', { name: 'Calendar' });
+    const notifications = await screen.findByRole('link', { name: 'Notifications' });
+
+    expect(calendar.compareDocumentPosition(notifications) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('leaves the rest of the order alone', async () => {
+    renderSidebar('mock');
+    await screen.findByRole('link', { name: 'Calendar' });
+
+    const order = ['Dashboard', 'Tasks', 'Calendar', 'Notifications'].map(
+      (label) => screen.getByRole('link', { name: label }),
+    );
+    for (let i = 0; i < order.length - 1; i++) {
+      expect(order[i].compareDocumentPosition(order[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it('keeps both destinations pointing where they did', async () => {
+    renderSidebar('mock');
+    expect(await screen.findByRole('link', { name: 'Calendar' })).toHaveAttribute('href', '/calendar');
+    expect(screen.getByRole('link', { name: 'Notifications' })).toHaveAttribute('href', '/notifications');
+  });
+
+  it('keeps the same order in the mobile drawer', async () => {
+    renderSidebar('mock', { mobileOpen: true });
+
+    const calendar = await screen.findByRole('link', { name: 'Calendar' });
+    const notifications = screen.getByRole('link', { name: 'Notifications' });
+    expect(calendar.compareDocumentPosition(notifications) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
