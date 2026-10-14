@@ -1,4 +1,8 @@
 import { createHash } from 'crypto';
+import { notifyPaymentReceived, notifyPaymentFailed } from '@/services/caseNotifications';
+import { composeDecedentName } from '@/domain/cases/decedentName';
+import { formatCentsAsCurrency } from '@/utils/format';
+import * as casesService from '@/services/casesService';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { cloverProvider } from '@/lib/clover/cloverProvider';
@@ -198,6 +202,40 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         console.error('Failed to record payment activity event:', error instanceof Error ? error.message : error);
+      }
+    }
+
+    /**
+     * Everyday notifications (2026-10). A provider-verified outcome, so
+     * this is the one place a payment failure may be announced — SOLIS
+     * never infers one from a missing payment.
+     *
+     * Reached only after the event-fingerprint claim above, and keyed on
+     * the payment id, so a Clover redelivery announces nothing twice.
+     * Best-effort: a notification must never turn a real webhook success
+     * into a 503.
+     */
+    if (updated.status === 'succeeded' || updated.status === 'failed') {
+      try {
+        const case_ = await casesService.get({ organizationId: record.organizationId }, record.caseId, dataAdapterMode);
+        if (case_) {
+          const notifiable = {
+            id: case_.id,
+            caseNumber: case_.caseNumber,
+            decedentName: composeDecedentName(case_.decedentName, case_.decedentMiddleName),
+          };
+          if (updated.status === 'succeeded') {
+            await notifyPaymentReceived(
+              activityCtx,
+              { case: notifiable, paymentId: record.id, amountDisplay: formatCentsAsCurrency(updated.amount, updated.currency ?? 'usd') },
+              dataAdapterMode,
+            );
+          } else {
+            await notifyPaymentFailed(activityCtx, { case: notifiable, paymentId: record.id }, dataAdapterMode);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to notify about a payment outcome:', error instanceof Error ? error.message : error);
       }
     }
 

@@ -176,6 +176,13 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
        cleared when it may not be. */
     bodyTemplate: '{{caseNumber}} — {{decedentName}}. A payment of {{amountDisplay}} was recorded.',
   },
+  'payment.failed': {
+    titleTemplate: 'Payment Requires Attention',
+    /* States that it could not be completed and stops: the provider's own
+       reason is recorded on the payment record, not copied into several
+       inboxes, and no card detail travels here. */
+    bodyTemplate: 'A payment for case {{caseNumber}} could not be completed.',
+  },
   'organization.member_joined': {
     titleTemplate: 'Team member joined',
     bodyTemplate: '{{entityTitle}} joined the organization',

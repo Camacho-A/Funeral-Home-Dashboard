@@ -104,6 +104,10 @@ export const NOTIFICATION_TYPES = {
   CASE_CREATED: { key: 'case.created', category: 'case' as NotificationCategory, displayName: 'New Case' },
   DOCUMENT_GENERATED: { key: 'document.generated', category: 'document' as NotificationCategory, displayName: 'Document Generated' },
   PAYMENT_RECEIVED: { key: 'payment.received', category: 'payment' as NotificationCategory, displayName: 'Payment Received' },
+  /** Only ever emitted from a provider-verified failure — the Clover
+      webhook, after signature and merchant checks. SOLIS never infers a
+      failure from a missing or late payment. */
+  PAYMENT_FAILED: { key: 'payment.failed', category: 'payment' as NotificationCategory, displayName: 'Payment Requires Attention' },
   ORGANIZATION_MEMBER_JOINED: { key: 'organization.member_joined', category: 'organization' as NotificationCategory, displayName: 'Team Member Joined' },
   SYSTEM_ANNOUNCEMENT: { key: 'system.announcement', category: 'system' as NotificationCategory, displayName: 'System Announcement' },
   /** Phase 34. Delivered via recipientScope: 'individual' to the owning

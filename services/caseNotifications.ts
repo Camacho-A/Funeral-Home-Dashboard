@@ -380,6 +380,37 @@ export async function notifyPaymentReceived(
 }
 
 /**
+ * A payment the PROVIDER reported as failed.
+ *
+ * Emitted only from a verified provider event — the Clover webhook, after
+ * its signature, merchant and event-fingerprint checks. SOLIS never
+ * infers a failure from a payment that is merely missing or late, and
+ * nothing here changes a transaction's state or retries anything.
+ *
+ * Keyed on the payment id, so a webhook redelivery announces once.
+ */
+export async function notifyPaymentFailed(
+  ctx: ActivityContext,
+  params: { case: NotifiableCase; paymentId: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ notified: number }> {
+  return emit(
+    ctx,
+    {
+      organizationId: ctx.organizationId,
+      notificationType: NOTIFICATION_TYPES.PAYMENT_FAILED.key,
+      permission: PAYMENT_READ,
+      eventKey: params.paymentId,
+      entityType: 'payment',
+      entityId: params.paymentId,
+      actionUrl: caseUrl(params.case.id),
+      tokens: { caseNumber: params.case.caseNumber, decedentName: params.case.decedentName },
+    },
+    dataAdapterMode,
+  );
+}
+
+/**
  * A generated document succeeded or failed.
  *
  * Success defaults OFF (staff generate documents deliberately and watch it

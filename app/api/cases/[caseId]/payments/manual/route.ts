@@ -1,4 +1,8 @@
 import { NextResponse } from 'next/server';
+import { notifyPaymentReceived } from '@/services/caseNotifications';
+import { composeDecedentName } from '@/domain/cases/decedentName';
+import { formatCentsAsCurrency } from '@/utils/format';
+import * as casesService from '@/services/casesService';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
@@ -168,6 +172,38 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     await recordPaymentRecorded(activityCtx, caseId, record.id, record.amount, dataAdapterMode);
   } catch (error) {
     console.error('Failed to record payment.recorded activity event:', error instanceof Error ? error.message : error);
+  }
+
+  /**
+   * Everyday notifications (2026-10). Reached only on the `isNew` path —
+   * a repeat of the same idempotencyKey returned above without posting
+   * the ledger entry again, and without announcing it again.
+   *
+   * The body says the amount was RECORDED, which is all that is true of a
+   * manual entry: nothing has been confirmed by a bank or a processor,
+   * and describing it as settled would overstate it. No card detail
+   * travels with it. Gated on `payment.read`, so only staff who may see
+   * money are told.
+   */
+  try {
+    const case_ = await casesService.get({ organizationId }, caseId, dataAdapterMode);
+    if (case_) {
+      await notifyPaymentReceived(
+        activityCtx,
+        {
+          case: {
+            id: case_.id,
+            caseNumber: case_.caseNumber,
+            decedentName: composeDecedentName(case_.decedentName, case_.decedentMiddleName),
+          },
+          paymentId: record.id,
+          amountDisplay: formatCentsAsCurrency(record.amount, record.currency ?? 'usd'),
+        },
+        dataAdapterMode,
+      );
+    }
+  } catch (error) {
+    console.error('Failed to notify about a recorded payment:', error instanceof Error ? error.message : error);
   }
 
   return NextResponse.json({ payment: record }, { status: 201 });
