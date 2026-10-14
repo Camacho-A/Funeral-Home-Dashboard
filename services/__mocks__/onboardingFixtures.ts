@@ -2,7 +2,7 @@ import type { OrganizationLocation } from '../../types/organizationLocation';
 import type { OnboardingSession } from '../../types/onboarding';
 import type { OrganizationBranding } from '../../types/organizationBranding';
 import type { OnboardingAuditEntry } from '../../types/onboardingAudit';
-import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './organizationIds';
 
 /**
  * Phase 20 (Organization Onboarding & Tenant Provisioning). Mock-mode
@@ -89,6 +89,27 @@ export const organizationBrandingFixtures: OrganizationBranding[] = [
     secondaryColor: null,
     accentColor: null,
     emailFromName: "Manor's Cremation",
+    documentFooter: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    // A SECOND organization with its OWN logo (2026-10). Multi-tenant
+    // branding is only really demonstrated by two tenants that differ, so
+    // dev and tests can both show that the login card and sidebar follow
+    // the organization rather than a hardcoded asset.
+    //
+    // An inline SVG rather than a file: no real funeral home's artwork
+    // belongs in the product repo as sample data, and a data URI needs no
+    // asset at all.
+    organizationId: SECOND_MOCK_ORGANIZATION_ID,
+    logoUrl:
+      "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='28' fill='%23166534'/><path d='M32 14c8 10 8 26 0 36-8-10-8-26 0-36z' fill='%23ffffff'/></svg>",
+    signInLogoUrl: null,
+    primaryColor: null,
+    secondaryColor: null,
+    accentColor: null,
+    emailFromName: 'Evergreen Memorial Group',
     documentFooter: null,
     createdAt: NOW,
     updatedAt: NOW,

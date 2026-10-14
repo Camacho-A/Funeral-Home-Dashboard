@@ -6,7 +6,7 @@ import { Sidebar } from './Sidebar';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as identityAuthClient from '@/lib/identityAuthClient';
 import { organizationsService } from '@/services/organizationsService';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 // Addendum 2, item #6 (2026-10): a mutable vi.fn (not a plain arrow
 // function) so the new "Settings expanded" describe block below can
@@ -34,11 +34,15 @@ function mockPermissions(permissions: string[] = []) {
 function renderSidebar(
   authAdapterMode?: 'mock' | 'wix' | 'identity',
   drawerProps: { mobileOpen?: boolean; onClose?: () => void } = {},
+  /* Which tenant is mounted. Switching organizations re-runs the portal
+     layout on the server and re-renders the provider with the new id, so
+     mounting a different id is exactly what a switch produces here. */
+  organizationId: string = DEFAULT_ORGANIZATION_ID,
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+      <OrganizationProvider organizationId={organizationId}>
         <Sidebar authAdapterMode={authAdapterMode} {...drawerProps} />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -433,3 +437,69 @@ describe('Sidebar — staff online popover (Addendum 2, item #1, 2026-10)', () =
   });
 });
 
+/**
+ * Multi-tenant branding (2026-10). The sidebar must follow the ACTIVE
+ * organization — switching organizations re-resolves the tenant on the
+ * server and re-renders the provider, so a different organization must
+ * bring its own logo and name with it.
+ */
+describe('Sidebar organization branding follows the active organization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPermissions([]);
+  });
+
+  function brandingFor(organizationId: string, logoUrl: string | null) {
+    return {
+      organizationId,
+      logoUrl,
+      signInLogoUrl: null,
+      primaryColor: null,
+      secondaryColor: null,
+      accentColor: null,
+      emailFromName: null,
+      documentFooter: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+  }
+
+  it('renders the second organization\'s own logo and name, not the first\'s', async () => {
+    vi.spyOn(organizationsService, 'get').mockResolvedValue({
+      id: SECOND_MOCK_ORGANIZATION_ID,
+      name: 'Evergreen Memorial Group',
+      isActive: true,
+    });
+    vi.spyOn(organizationsService, 'getBranding').mockResolvedValue(
+      brandingFor(SECOND_MOCK_ORGANIZATION_ID, 'https://example.com/evergreen.png'),
+    );
+
+    renderSidebar('mock', {}, SECOND_MOCK_ORGANIZATION_ID);
+
+    const logo = await screen.findByRole('img', { name: 'Evergreen Memorial Group logo' });
+    expect(logo).toHaveAttribute('src', 'https://example.com/evergreen.png');
+    expect(screen.getByText('Evergreen Memorial Group')).toBeInTheDocument();
+    // No trace of the other tenant.
+    expect(screen.queryByText('Manors Cremation')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Manors/i })).not.toBeInTheDocument();
+  });
+
+  it('reads branding scoped to the organization it was mounted for', async () => {
+    vi.spyOn(organizationsService, 'get').mockResolvedValue({
+      id: SECOND_MOCK_ORGANIZATION_ID,
+      name: 'Evergreen Memorial Group',
+      isActive: true,
+    });
+    const getBranding = vi
+      .spyOn(organizationsService, 'getBranding')
+      .mockResolvedValue(brandingFor(SECOND_MOCK_ORGANIZATION_ID, null));
+
+    renderSidebar('mock', {}, SECOND_MOCK_ORGANIZATION_ID);
+
+    // The query is keyed and called per organization, so a switch cannot
+    // show the previous tenant's cached logo.
+    await waitFor(() =>
+      expect(getBranding).toHaveBeenCalledWith(expect.objectContaining({ organizationId: SECOND_MOCK_ORGANIZATION_ID })),
+    );
+  });
+});

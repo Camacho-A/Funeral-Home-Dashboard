@@ -43,9 +43,12 @@ function removeRequest(body: unknown, headers: Record<string, string> = { origin
   return DELETE(new Request('http://localhost/api/organization/branding/logo', { method: 'DELETE', headers, body: JSON.stringify(body) }));
 }
 
-function sampleFormData(overrides: { organizationId?: string; mimeType?: string; fileName?: string; bytes?: Uint8Array } = {}) {
+function sampleFormData(
+  overrides: { organizationId?: string; mimeType?: string; fileName?: string; bytes?: Uint8Array; slot?: string } = {},
+) {
   const formData = new FormData();
   formData.set('organizationId', overrides.organizationId ?? DEFAULT_ORGANIZATION_ID);
+  if (overrides.slot !== undefined) formData.set('slot', overrides.slot);
   const bytes = overrides.bytes ?? new Uint8Array([1, 2, 3]);
   formData.set('file', new File([bytes.buffer as ArrayBuffer], overrides.fileName ?? 'logo.png', { type: overrides.mimeType ?? 'image/png' }));
   return formData;
@@ -157,6 +160,40 @@ describe('POST /api/organization/branding/logo', () => {
     const response = await uploadRequest(sampleFormData({ organizationId: SECOND_MOCK_ORGANIZATION_ID }));
     expect(response.status).toBe(403);
     expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Sign-in logo slot (2026-10). The second slot must be exactly as
+   * tenant-isolated as the first — a new field is a new way to get this
+   * wrong, so it gets its own proof rather than inheriting the one above.
+   */
+  it("an administrator of Organization A cannot write Organization B's SIGN-IN logo either", async () => {
+    const response = await uploadRequest(sampleFormData({ organizationId: SECOND_MOCK_ORGANIZATION_ID, slot: 'signIn' }));
+    expect(response.status).toBe(403);
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown slot rather than silently writing the wrong logo', async () => {
+    const response = await uploadRequest(sampleFormData({ slot: 'sidebar' }));
+    expect(response.status).toBe(400);
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it('an authorized administrator can upload a sign-in logo, which persists to signInLogoUrl and leaves logoUrl alone', async () => {
+    const before = organizationBrandingFixtures.find((b) => b.organizationId === DEFAULT_ORGANIZATION_ID)?.logoUrl ?? null;
+
+    const response = await uploadRequest(sampleFormData({ slot: 'signIn' }));
+    expect(response.status).toBe(200);
+
+    // The slot picks its own storage key, so the two logos can never
+    // overwrite each other in the Blob store.
+    const [key] = mockPut.mock.calls[0];
+    expect(key).toMatch(/^branding\/managed-cremations\/signin-logo-.+\.png$/);
+
+    const stored = organizationBrandingFixtures.find((b) => b.organizationId === DEFAULT_ORGANIZATION_ID);
+    expect(stored?.signInLogoUrl).toBe('https://example-blob.public.blob.vercel-storage.com/branding/managed-cremations/logo-abc123.png');
+    // The sidebar mark is a different asset for a different job.
+    expect(stored?.logoUrl).toBe(before);
   });
 
   it('an authorized administrator can upload a logo, which persists to OrganizationBranding.logoUrl', async () => {
