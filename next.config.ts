@@ -3,6 +3,34 @@ import path from 'path';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  /**
+   * Router cache staleness (2026-10) — fixes cases and dashboards that sat
+   * on "Loading…" indefinitely.
+   *
+   * Measured against production: the server renders a full case page,
+   * sidebar and all, in ~660ms. The page still hung, because the App
+   * Router was rendering from its own client-side cache rather than from
+   * the server. With a `loading.tsx` boundary present, a PREFETCH of a
+   * dynamic route deliberately returns only the loading shell — measured
+   * at 2,508 bytes containing nothing but "Loading…", against 22,636
+   * bytes for the real document. Next's default `dynamic` staleTime then
+   * let the router keep reusing that shell entry, so navigating to a case
+   * rendered the skeleton and never went back for the content.
+   *
+   * `dynamic: 0` makes the router treat dynamic segments as immediately
+   * stale, so every navigation fetches the real thing instead of
+   * re-rendering a cached shell. The server is fast enough that this
+   * costs well under a second; being stuck cost staff 40+ seconds and
+   * usually never resolved.
+   *
+   * This changes CLIENT-side caching only. Nothing about authentication,
+   * authorization, tenant isolation, or server rendering changes: every
+   * request still re-resolves session, membership and permissions
+   * server-side exactly as before.
+   */
+  experimental: {
+    staleTimes: { dynamic: 0, static: 0 },
+  },
   // Pins the workspace root to this project explicitly — without this, Next.js
   // walks up looking for lockfiles and can pick up an unrelated one in a parent
   // directory (e.g. a stray package-lock.json in the user's home directory).
