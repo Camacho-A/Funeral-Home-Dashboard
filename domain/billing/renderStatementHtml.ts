@@ -1,4 +1,5 @@
 import { formatCents, escapeHtml, formatStatementDate } from './renderUtil';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import { FTC_CLASS } from './ftcComplianceRegistry';
 import type { BillingStatementModel, StatementLineItem } from './billingModels';
 
@@ -46,8 +47,8 @@ function renderProviderHeader(provider: BillingStatementModel['provider']): stri
     .map((line) => escapeHtml(line))
     .join('<br/>');
   const contactLines = [
-    provider.phone ? `Phone: ${escapeHtml(provider.phone)}` : null,
-    provider.fax ? `Fax: ${escapeHtml(provider.fax)}` : null,
+    provider.phone ? `Phone: ${escapeHtml(formatPhoneNumber(provider.phone))}` : null,
+    provider.fax ? `Fax: ${escapeHtml(formatPhoneNumber(provider.fax))}` : null,
     provider.email ? `Email: ${escapeHtml(provider.email)}` : null,
   ]
     .filter((line): line is string => line !== null)

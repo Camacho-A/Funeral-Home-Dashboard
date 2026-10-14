@@ -1,4 +1,5 @@
 import type { Case } from '@/types/case';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import type { CaseOrder } from '@/types/caseOrder';
 import type { Organization } from '@/types/organization';
 import type { OrganizationBranding } from '@/types/organizationBranding';
@@ -182,7 +183,9 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     exampleValue: '(555) 010-1234',
     category: 'contact',
     wired: true,
-    resolve: (source) => source.case.nextOfKinPhone || null,
+    // Formatted at resolve time so every generated document carries
+    // the same phone format the app shows on screen.
+    resolve: (source) => formatPhoneNumber(source.case.nextOfKinPhone) || null,
   },
   'organization.name': {
     identifier: 'organization.name',
@@ -202,7 +205,7 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     exampleValue: '(555) 555-0100',
     category: 'organization',
     wired: true,
-    resolve: (source) => source.organization.primaryPhone || null,
+    resolve: (source) => formatPhoneNumber(source.organization.primaryPhone) || null,
   },
   'organization.email': {
     identifier: 'organization.email',

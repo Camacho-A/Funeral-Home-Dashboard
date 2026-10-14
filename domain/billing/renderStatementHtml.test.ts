@@ -135,11 +135,14 @@ describe('renderStatementHtml — Manors business identity + Cash Advance suppre
   });
 
   it('3: contains the phone number', () => {
-    expect(renderStatementHtml(manorsModel())).toContain('954-884-5770');
+    // Standardized phone formatting (2026-10): the stored digits are
+    // unchanged; the statement now presents them the way the whole app
+    // does — see domain/contact/phoneNumber.ts.
+    expect(renderStatementHtml(manorsModel())).toContain('(954) 884-5770');
   });
 
   it('4: contains the fax number', () => {
-    expect(renderStatementHtml(manorsModel())).toContain('305-603-9250');
+    expect(renderStatementHtml(manorsModel())).toContain('(305) 603-9250');
   });
 
   it('5: contains the email address', () => {
@@ -218,7 +221,7 @@ describe('renderStatementHtml — redundant branding cleanup (Manors cleanup pha
     const html = renderStatementHtml(manorsModel());
     expect(html).toContain('<img');
     expect(html).toContain('481 E Commercial Blvd');
-    expect(html).toContain('954-884-5770');
+    expect(html).toContain('(954) 884-5770');
   });
 
   it('does not render the redundant top heading', () => {

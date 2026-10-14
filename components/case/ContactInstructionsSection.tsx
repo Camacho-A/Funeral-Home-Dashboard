@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import type { CaseUpdate } from '@/types/case';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Modal } from '@/components/ui/Modal';
@@ -181,6 +182,7 @@ export function ContactInstructionsSection({
             />
             <InlineField
               label="Contact phone"
+              kind="phone"
               value={arrangementContactPhone ?? ''}
               readOnly={readOnly}
               onSave={(v) => onUpdateCaseInfo({ arrangementContactPhone: nullIfBlank(v) })}
@@ -339,7 +341,9 @@ function InlineField({
   label: string;
   value: string;
   onSave: (next: string) => void;
-  kind?: 'text' | 'email';
+  /** `'phone'` formats the DISPLAYED value only — the draft, and so
+      typing and pasting, stay on the raw stored string. */
+  kind?: 'text' | 'email' | 'phone';
   uppercase?: boolean;
   readOnly?: boolean;
   trailingBadge?: React.ReactNode;
@@ -395,22 +399,26 @@ function InlineField({
     );
   }
 
+  const presented = kind === 'phone' ? formatPhoneNumber(display) : display;
+
   return (
     <div>
       <div className={styles.fieldLabel}>{label}</div>
       <div className={styles.valueRow}>
         {readOnly ? (
-          <span className={styles.readOnlyValue}>{display || '—'}</span>
+          <span className={styles.readOnlyValue}>{presented || '—'}</span>
         ) : (
           <button
             type="button"
             className={styles.editableValue}
             onClick={() => {
+              // Seeded from `display`, never `presented`: editing works on
+              // the raw stored string so no keystroke is fought.
               setDraft(display);
               setIsEditing(true);
             }}
           >
-            {display || '—'}
+            {presented || '—'}
           </button>
         )}
         {trailingBadge}

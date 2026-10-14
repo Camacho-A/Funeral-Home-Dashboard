@@ -1,4 +1,5 @@
 import type { AllCaseDataRow } from '../../services/allCaseDataReportService';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 
 /**
  * Manors cleanup phase (Task #8, "All Case Data" report — PDF export).
@@ -28,7 +29,7 @@ const PDF_COLUMNS: ReadonlyArray<{ header: string; value: (row: AllCaseDataRow) 
   { header: 'DOB', value: (r) => r.dateOfBirth },
   { header: 'DOD', value: (r) => r.dateOfDeath },
   { header: 'Next of Kin', value: (r) => r.nextOfKinName },
-  { header: 'NOK Phone', value: (r) => r.nextOfKinPhone },
+  { header: 'NOK Phone', value: (r) => formatPhoneNumber(r.nextOfKinPhone) },
   { header: 'Tag #', value: (r) => r.tagNumber },
   { header: 'Balance Due', value: (r) => r.balanceDue },
   { header: 'Payment Status', value: (r) => r.paymentStatus },

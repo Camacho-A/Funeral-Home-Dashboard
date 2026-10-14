@@ -1,4 +1,5 @@
 import { formatCents, escapeHtml } from './renderUtil';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import { FTC_CLASS } from './ftcComplianceRegistry';
 import type { GeneralPriceListModel, GplServiceLine } from './billingModels';
 
@@ -52,7 +53,7 @@ export function renderGeneralPriceListHtml(model: GeneralPriceListModel): string
   return `
     <header>
       <h1 style="margin-bottom:2px;">General Price List</h1>
-      <p style="margin:0;"><strong>${escapeHtml(model.provider.name)}</strong><br/>${escapeHtml(model.provider.addressLine)}<br/>${escapeHtml(model.provider.phone)}</p>
+      <p style="margin:0;"><strong>${escapeHtml(model.provider.name)}</strong><br/>${escapeHtml(model.provider.addressLine)}<br/>${escapeHtml(formatPhoneNumber(model.provider.phone))}</p>
       <p style="margin:6px 0 0; font-size:0.9em;">These prices are effective as of ${escapeHtml(model.effectiveDate)} and are subject to change without notice.</p>
     </header>
     ${servicesSection}

@@ -1,3 +1,4 @@
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import {
   RECEIPT_STATUS_LABEL,
   formatReceiptMoney,
@@ -178,7 +179,7 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
     <div style="margin-top:26px; text-align:center; font-size:10.5pt; line-height:1.5;">
       <div>${escapeHtml(model.footer.thanksLine)}</div>
       ${model.footer.legalEntityLine ? `<div style="font-weight:700;">${escapeHtml(model.footer.legalEntityLine)}</div>` : ''}
-      <div>Phone: ${escapeHtml(model.provider.phone ?? '')} | ${escapeHtml((model.provider.addressLine ?? '').replace(/\n/g, ' '))}</div>
+      <div>Phone: ${escapeHtml(formatPhoneNumber(model.provider.phone))} | ${escapeHtml((model.provider.addressLine ?? '').replace(/\n/g, ' '))}</div>
     </div>
   </div>`;
 }

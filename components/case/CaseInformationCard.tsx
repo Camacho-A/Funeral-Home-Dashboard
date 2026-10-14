@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, type ComponentProps, ty
 import { Checkbox as BaseCheckbox } from '@/components/ui/Checkbox';
 import { SelectField as BaseSelectField } from '@/components/ui/SelectField';
 import textFieldStyles from '@/components/ui/TextField.module.css';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import type { CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import type { VaStepViewModel } from '@/types/caseViewModel';
 import {
@@ -130,7 +131,10 @@ function EditableField({
   label: string;
   value: string;
   onSave: (newValue: string) => void;
-  kind?: 'text' | 'date' | 'time' | 'email';
+  /** `'phone'` formats the DISPLAYED value only (see presentedValue
+      below) — editing, typing, and pasting all work on the raw stored
+      string, so no keystroke is ever fought and no digit rewritten. */
+  kind?: 'text' | 'date' | 'time' | 'email' | 'phone';
   uppercase?: boolean;
   /** Solis go-live checkpoint. 'date'-kind only — a relative-to-another-
       field check (DOB/DOD ordering, DOD-not-in-the-future) that a single
@@ -166,6 +170,13 @@ function EditableField({
   }, [value, pendingValue]);
 
   const displayValue = pendingValue ?? value;
+  /**
+   * What staff READ. Editing still works on `displayValue`, the raw
+   * stored string — a phone field that reformatted mid-edit would fight
+   * the person typing it, and reformatting on save would rewrite stored
+   * data this change deliberately leaves alone.
+   */
+  const presentedValue = kind === 'phone' ? formatPhoneNumber(displayValue) : displayValue;
 
   function startEditing() {
     setDraft(displayValue);
@@ -302,7 +313,7 @@ function EditableField({
         <div className={styles.editableValueRow}>
           {readOnly ? (
             <span className={`${styles.readOnlyValue} ${valueClassName ?? ''}`}>
-              {displayValue || emptyLabel || '—'}
+              {presentedValue || emptyLabel || '—'}
             </span>
           ) : (
             <button
@@ -310,7 +321,7 @@ function EditableField({
               className={`${styles.editableValue} ${trailingBadge ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
               onClick={startEditing}
             >
-              {displayValue || emptyLabel || '—'}
+              {presentedValue || emptyLabel || '—'}
             </button>
           )}
           {trailingBadge}
@@ -886,6 +897,7 @@ export function CaseInformationCard({
         />
         <EditableField
           label="NOK phone"
+          kind="phone"
           value={nextOfKinPhone}
           onSave={(v) => onUpdateCaseInfo({ nextOfKinPhone: v })}
         />
@@ -950,6 +962,7 @@ export function CaseInformationCard({
         />
         <EditableField
           label="Certifier phone"
+          kind="phone"
           value={certifierPhone ?? ''}
           onSave={(v) => onSaveCertifierPhone(v.trim().length > 0 ? v.trim() : null)}
         />
@@ -961,6 +974,7 @@ export function CaseInformationCard({
         />
         <EditableField
           label="Certifier fax"
+          kind="phone"
           value={certifierFax ?? ''}
           onSave={(v) => onSaveCertifierFax(v.trim().length > 0 ? v.trim() : null)}
         />

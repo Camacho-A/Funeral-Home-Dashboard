@@ -1,4 +1,5 @@
 import { useEffect, useState, type FocusEvent, type KeyboardEvent } from 'react';
+import { formatPhoneNumber } from '@/domain/contact/phoneNumber';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
@@ -68,6 +69,7 @@ function ChecklistFieldInput({
   disabled,
   onCommit,
   uppercase,
+  isPhone = false,
   validate,
   invalidMessage,
 }: {
@@ -76,6 +78,10 @@ function ChecklistFieldInput({
   disabled: boolean;
   onCommit: (newValue: string) => void;
   uppercase?: boolean;
+  /** Formats the value shown when the field is NOT focused. The draft —
+      and so everything typed or pasted — stays the raw stored string, so
+      formatting can never interfere with entry. */
+  isPhone?: boolean;
   validate?: (value: string) => boolean;
   invalidMessage?: string;
 }) {
@@ -124,7 +130,7 @@ function ChecklistFieldInput({
       <TextField
         className={styles.fieldInput}
         type={isPassword ? 'password' : 'text'}
-        value={isFocused ? draft : displayValue}
+        value={isFocused ? draft : isPhone ? formatPhoneNumber(displayValue) : displayValue}
         onFocus={() => {
           setDraft(displayValue);
           setIsFocused(true);
@@ -309,13 +315,14 @@ type RequiredCaseFieldMeta = {
   uppercase?: boolean;
   validate?: (value: string) => boolean;
   invalidMessage?: string;
+  isPhone?: boolean;
 };
 
 const REQUIRED_CASE_FIELD_META: Record<string, RequiredCaseFieldMeta> = {
   certifierName: { label: 'Certifier name' },
-  certifierPhone: { label: 'Certifier phone' },
+  certifierPhone: { label: 'Certifier phone', isPhone: true },
   nextOfKinName: { label: 'Next of kin', uppercase: true },
-  nextOfKinPhone: { label: 'NOK phone' },
+  nextOfKinPhone: { label: 'NOK phone', isPhone: true },
   nextOfKinEmail: { label: 'NOK email', validate: isValidEmail, invalidMessage: 'Enter a valid email address.' },
 };
 
@@ -374,6 +381,7 @@ function RequiredCaseFieldsGroup({
                 isPassword={false}
                 disabled={disabled}
                 uppercase={meta.uppercase}
+                isPhone={meta.isPhone}
                 validate={meta.validate}
                 invalidMessage={meta.invalidMessage}
                 onCommit={(newValue) => {
