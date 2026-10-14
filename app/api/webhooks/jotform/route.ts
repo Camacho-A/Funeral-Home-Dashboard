@@ -20,7 +20,7 @@ import {
   notifyVitalStatisticsReceived,
   notifyJotformPdfImported,
   notifyJotformPdfImportFailed,
-  type CaseCreationSource,
+  type CaseNotificationOrigin,
   type NotifiableCase,
 } from '@/services/caseNotifications';
 import {
@@ -115,7 +115,7 @@ const MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024; // 2MB — generous for a funera
  * origin in the body rather than fragmenting the inbox into one type per
  * form — the staff action is the same however the case arrived.
  */
-function creationSourceFor(externalFormId: string): CaseCreationSource {
+function creationSourceFor(externalFormId: string): CaseNotificationOrigin {
   if (externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return 'the Cremation Arrangement Form';
   if (externalFormId === FIRST_CALL_SHEET_EXTERNAL_FORM_ID) return 'the First Call form';
   return 'an intake form';

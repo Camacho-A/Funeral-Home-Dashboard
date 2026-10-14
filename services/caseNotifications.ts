@@ -169,7 +169,7 @@ function caseUrl(caseId: string): string {
  * fragmenting the inbox into one type per creation path — the staff action
  * is identical whichever way the case arrived.
  */
-export type CaseCreationSource = 'the First Call form' | 'the Cremation Arrangement Form' | 'the New Case form' | 'an intake form';
+export type CaseNotificationOrigin = 'the First Call form' | 'the Cremation Arrangement Form' | 'the New Case form' | 'an intake form';
 
 /**
  * A genuinely new case exists.
@@ -184,7 +184,7 @@ export type CaseCreationSource = 'the First Call form' | 'the Cremation Arrangem
  */
 export async function notifyCaseCreated(
   ctx: ActivityContext,
-  params: { case: NotifiableCase; source: CaseCreationSource },
+  params: { case: NotifiableCase; source: CaseNotificationOrigin },
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ notified: number }> {
   return emit(

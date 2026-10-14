@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import { notifyCaseCreated } from '@/services/caseNotifications';
+import { composeDecedentName } from '@/domain/cases/decedentName';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem } from '@/lib/wixDataApi';
 import { mapWixCaseItem, buildWixCaseData, isValidNextOfKinRelationship, describeMapWixCaseItemFailure, type WixCaseItem } from '@/lib/wixCaseMapper';
 import {
@@ -646,6 +648,9 @@ export async function POST(request: Request) {
     // be advanced past the preserved number after the Case is created —
     // see the `historicalPreservedCaseNumber` block below.
     let historicalPreservedCaseNumber: string | null = null;
+    /** How this case came to exist — decides whether it is announced (see
+        the notification block after creation). */
+    let creationSource: CaseCreationSource = 'staff';
     /** The external form a historical import came from — see below. */
     let historicalImportFormId: string | null = null;
     if (typeof b.historicalCaseNumberAuthorization === 'string') {
@@ -786,7 +791,7 @@ export async function POST(request: Request) {
       // from the trusted config row and captured on the event, so the
       // activity line stays accurate even if the form is renamed later.
       const externalFormId = intakeAuthorization?.externalFormId ?? historicalImportFormId;
-      const source: CaseCreationSource = intakeAuthorization
+      creationSource = intakeAuthorization
         ? 'external_form_webhook'
         : historicalImportFormId
           ? 'external_form_import'
@@ -812,10 +817,38 @@ export async function POST(request: Request) {
         created.id,
         { caseNumber: created.caseNumber, decedentName: created.decedentName },
         'wix',
-        { source, formLabel, ...(externalFormId ? { externalFormId } : {}) },
+        { source: creationSource, formLabel, ...(externalFormId ? { externalFormId } : {}) },
       );
     } catch (error) {
       console.error('Failed to record case.created activity event:', error instanceof Error ? error.message : error);
+    }
+
+    /**
+     * Everyday notifications (2026-10). Only a case a STAFF MEMBER created
+     * is announced here.
+     *
+     * `external_form_import` is a historical backfill — announcing a
+     * bulk import would fill every inbox with decades of old cases, which
+     * is exactly what the brief forbids. `external_form_webhook` is
+     * announced by the webhook itself, at the point it knows which form
+     * the case came from; notifying here too would say it twice.
+     *
+     * Best-effort and last: the case is already created and returned
+     * whatever happens here.
+     */
+    if (creationSource === 'staff') {
+      await notifyCaseCreated(
+        { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+        {
+          case: {
+            id: created.id,
+            caseNumber: created.caseNumber,
+            decedentName: composeDecedentName(created.decedentName, created.decedentMiddleName),
+          },
+          source: 'the New Case form',
+        },
+        'wix',
+      );
     }
 
     return NextResponse.json({ case: created }, { status: 201 });
