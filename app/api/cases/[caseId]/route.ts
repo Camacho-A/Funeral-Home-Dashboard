@@ -27,6 +27,8 @@ import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { becameComplete, touchesWorkflowCompletion } from '@/domain/cases/workflowCompletion';
+import { notifyCaseCompleted } from '@/services/caseNotifications';
+import { composeDecedentName } from '@/domain/cases/decedentName';
 import { archivedCaseWriteRefusal } from '@/domain/cases/archivedCaseWrites';
 import { syncExpectedPickupForCase } from '@/services/cremainsPickupService';
 import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
@@ -401,6 +403,42 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
           'Failed to automatically archive a completed case (the case update itself succeeded):',
           error instanceof Error ? error.message : error,
         );
+      }
+
+      /**
+       * Everyday notifications (2026-10). This block is the canonical
+       * completion transition, which is exactly what makes it the right
+       * place to announce one: `becameComplete` is true only when the
+       * case was incomplete BEFORE this patch and is complete after.
+       *
+       * That rules out, with no extra bookkeeping, every case the brief
+       * names: viewing a completed case (no patch), reconciliation
+       * running again (no transition — it was already complete), an edit
+       * that doesn't change completion, a restored archive (a restored
+       * case is already complete, so there is no new transition), and
+       * historical imports (which never pass through PATCH).
+       *
+       * Keyed on the case id as a second guard, so even concurrent
+       * patches that both observe the transition announce it once.
+       *
+       * Deliberately OUTSIDE the archive try/catch above: a case that
+       * completed but failed to archive has still completed, and staff
+       * should still hear about it.
+       */
+      try {
+        await notifyCaseCompleted(
+          { organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true },
+          {
+            case: {
+              id: result.id,
+              caseNumber: result.caseNumber,
+              decedentName: composeDecedentName(result.decedentName, result.decedentMiddleName),
+            },
+          },
+          'wix',
+        );
+      } catch (error) {
+        console.error('Failed to announce a completed case:', error instanceof Error ? error.message : error);
       }
     }
 

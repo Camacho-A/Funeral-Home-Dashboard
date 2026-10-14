@@ -18,6 +18,9 @@ import { mapWixOrganizationBrandingItem, type WixOrganizationBrandingItem } from
 import { mapWixOrganizationLocationItem, type WixOrganizationLocationItem } from '../lib/wixOrganizationLocationMapper';
 import type { CaseDocument, CaseDocumentStatus, CaseDocumentWithActorName, NewGeneratedDocumentInput, NewUploadedDocumentInput } from '../types/caseDocument';
 import type { Case } from '../types/case';
+import * as casesService from './casesService';
+import { composeDecedentName } from '../domain/cases/decedentName';
+import { notifyDocumentGenerated, notifyDocumentGenerationFailed } from './caseNotifications';
 import type { Organization } from '../types/organization';
 import { caseFixtures } from './__mocks__/fixtures';
 import { mockOrganizationFixtures } from './__mocks__/authFixtures';
@@ -410,6 +413,55 @@ async function nextDocumentVersion(organizationId: string, caseId: string, templ
     set (the row it names is superseded once the new row is active).
     `params.templateVersion` is the explicit-choice override (Invariant):
     omitted resolves to the template's current latest version. */
+
+/**
+ * Announce a generated document, or its failure (2026-10).
+ *
+ * Shared by both generation paths so a template-rendered document and a
+ * system-rendered billing document can never drift in what they say.
+ *
+ * Keyed on the DOCUMENT id: a deliberate regeneration mints a new id and
+ * is therefore genuinely new news, while repeated reports of the same
+ * attempt are not. A preview never reaches here — nothing is persisted —
+ * and neither does opening or downloading an existing document.
+ *
+ * Best-effort: the document is already stored (or already recorded as
+ * failed) by the time this runs, and announcing must never be what undoes
+ * that. The failure body names the document and the case and stops there
+ * — the provider's own error text stays in the thrown
+ * DocumentServiceError and the logs, never in an inbox.
+ */
+async function announceGeneration(
+  ctx: ActivityContext,
+  params: { caseId: string; documentId: string; documentTitle: string; succeeded: boolean },
+  dataAdapterMode: DataAdapterMode,
+): Promise<void> {
+  try {
+    const case_ = await casesService.get({ organizationId: ctx.organizationId }, params.caseId, dataAdapterMode);
+    if (!case_) return;
+    const notifiable = {
+      id: case_.id,
+      caseNumber: case_.caseNumber,
+      decedentName: composeDecedentName(case_.decedentName, case_.decedentMiddleName),
+    };
+    if (params.succeeded) {
+      await notifyDocumentGenerated(
+        ctx,
+        { case: notifiable, documentId: params.documentId, documentTitle: params.documentTitle },
+        dataAdapterMode,
+      );
+    } else {
+      await notifyDocumentGenerationFailed(
+        ctx,
+        { case: notifiable, failureKey: params.documentId, documentTitle: params.documentTitle },
+        dataAdapterMode,
+      );
+    }
+  } catch (error) {
+    console.error('Failed to announce a document generation outcome:', error instanceof Error ? error.message : error);
+  }
+}
+
 export async function generate(
   params: NewGeneratedDocumentInput & { idFactory: () => string; now?: string },
   ctx: ActivityContext,
@@ -486,8 +538,10 @@ export async function generate(
     );
   } catch (error) {
     await completeDocumentGeneration(ctx.organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode);
+    await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: template.name, succeeded: false }, dataAdapterMode);
     throw new DocumentServiceError(`Document generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+  await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: template.name, succeeded: true }, dataAdapterMode);
 
   if (params.existingDocumentId) {
     await updateDocumentStatus(ctx.organizationId, params.existingDocumentId, 'superseded', dataAdapterMode);
@@ -588,8 +642,10 @@ export async function generateBillingDocument(
     );
   } catch (error) {
     await completeDocumentGeneration(ctx.organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode);
+    await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: params.fileName.replace(/\.pdf$/i, ''), succeeded: false }, dataAdapterMode);
     throw new DocumentServiceError(`Billing document generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+  await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: params.fileName.replace(/\.pdf$/i, ''), succeeded: true }, dataAdapterMode);
 
   // Phase 39 audit trail: a system-rendered compliance document is still a
   // CaseDocument — reuse the existing document.generated/.regenerated events
