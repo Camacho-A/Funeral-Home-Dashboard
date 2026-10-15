@@ -161,3 +161,38 @@ describe('GET /api/family/cases', () => {
     expect(body.cases).toHaveLength(0);
   });
 });
+
+describe('GET /api/family/cases — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('never lists a case whose organization this deployment does not serve, even with an active grant', async () => {
+    const { findOrCreatePortalUser } = await import('@/services/portal/portalUserService');
+    const { createPortalSession } = await import('@/services/portal/portalSessionService');
+    const { portalUser } = await findOrCreatePortalUser(
+      { email: 'family-cases-allowlist@example.com', displayName: 'Pat Family', passwordHash: hashPassword('Password123!'), idFactory },
+      'mock',
+    );
+    const session = await createPortalSession({ portalUserId: portalUser.id, deviceId: 'device-1', idFactory }, 'mock');
+    familySession = { portalUserId: portalUser.id, sessionId: session.id, aud: 'family', issuedAt: 0, expiresAt: Number.MAX_SAFE_INTEGER };
+    caseFixtures.push(makeCase({ organizationId: SECOND_MOCK_ORGANIZATION_ID }));
+    portalAccessFixtures.push({
+      id: 'access-allowlist-1',
+      portalUserId: portalUser.id,
+      organizationId: SECOND_MOCK_ORGANIZATION_ID,
+      caseId: 'case-family-list-1',
+      relationshipType: 'primary_next_of_kin',
+      status: 'active',
+      grantedFromInvitationId: 'invitation-1',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    });
+
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    expect((await (await GET()).json()).cases).toHaveLength(0);
+
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = `gus-camacho-jr,${SECOND_MOCK_ORGANIZATION_ID}`;
+    expect((await (await GET()).json()).cases).toHaveLength(1);
+  });
+});

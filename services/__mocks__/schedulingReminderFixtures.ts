@@ -1,5 +1,6 @@
 import type { AppointmentReminder } from '../../types/appointmentReminder';
 import type { SchedulingReminderPolicy } from '../../types/schedulingReminderPolicy';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
@@ -10,5 +11,5 @@ import type { SchedulingReminderPolicy } from '../../types/schedulingReminderPol
  * branch, reset between tests by each test file itself
  * (`fixtures.length = 0`), never by this module.
  */
-export const appointmentReminderFixtures: AppointmentReminder[] = [];
-export const schedulingReminderPolicyFixtures: SchedulingReminderPolicy[] = [];
+export const appointmentReminderFixtures: AppointmentReminder[] = mockCollection('appointmentReminderFixtures', (): AppointmentReminder[] => []);
+export const schedulingReminderPolicyFixtures: SchedulingReminderPolicy[] = mockCollection('schedulingReminderPolicyFixtures', (): SchedulingReminderPolicy[] => []);

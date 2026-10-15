@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getAuthAdapterMode, getDataAdapterMode } from '@/lib/env';
+import { isNonIdentityAuthorizationPermitted } from '@/lib/auth/authorize';
 import { verifyMockCredentials } from '@/lib/auth/mockAuth';
 import { loginWithWix } from '@/lib/auth/wixAuth';
 import { createSession, clearSession, getSession } from '@/lib/auth/session';
@@ -44,6 +45,15 @@ export async function loginAction(formData: FormData): Promise<void> {
   const nextParam = encodeURIComponent(next);
 
   const authAdapter = getAuthAdapterMode();
+
+  // Tenant-isolation hardening (2026-10): mock and Wix-Members logins
+  // authorize against the in-repo mock membership fixtures, so they are
+  // refused outright when DATA_ADAPTER=wix (real, shared, multi-tenant
+  // data) — fail closed, never a session that would be trusted against
+  // live data. Checked before any credential is even looked at.
+  if (authAdapter !== 'identity' && !isNonIdentityAuthorizationPermitted()) {
+    redirect(`/login?error=auth_adapter_not_allowed&next=${nextParam}`);
+  }
 
   if (authAdapter === 'mock') {
     const result = verifyMockCredentials(email, password);

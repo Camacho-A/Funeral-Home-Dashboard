@@ -60,7 +60,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
   }
 
   try {
-    const source = typeof b.caseId === 'string' ? await resolveMergeSourceData(organizationId, b.caseId, dataAdapterMode) : buildSampleMergeSourceData();
+    const source = typeof b.caseId === 'string' ? await resolveMergeSourceData(organizationId, b.caseId, dataAdapterMode) : buildSampleMergeSourceData(organizationId);
     const html = previewTemplate(templateBody, source);
     return NextResponse.json({ html });
   } catch (error) {

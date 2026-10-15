@@ -10,6 +10,7 @@ import type { PortalAccess } from '../../types/portalAccess';
 import type { PortalRelationshipType } from '../../domain/portal/portalRelationshipRegistry';
 import { hasPortalCapability, type PortalCapabilityKey } from '../../domain/portal/portalCapabilityPolicy';
 import { portalAccessFixtures } from '../__mocks__/portalFixtures';
+import { isOrganizationAllowedInDeployment } from '../../lib/auth/deploymentOrganizations';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). The only writer of
@@ -147,7 +148,9 @@ export async function listPortalAccessForPortalUser(portalUserId: string, dataAd
     there is no active grant at all. */
 export async function getPrimaryOrganizationIdForPortalUser(portalUserId: string, dataAdapterMode: DataAdapterMode): Promise<string | null> {
   const access = await listPortalAccessForPortalUser(portalUserId, dataAdapterMode);
-  return access.find((a) => a.status === 'active')?.organizationId ?? null;
+  // Deployment organization restrictions (2026-10): only grants for an
+  // organization this deployment serves are ever attributed.
+  return access.find((a) => a.status === 'active' && isOrganizationAllowedInDeployment(a.organizationId))?.organizationId ?? null;
 }
 
 async function patchPortalAccess(accessId: string, patch: Partial<PortalAccess>, dataAdapterMode: DataAdapterMode): Promise<PortalAccess | null> {

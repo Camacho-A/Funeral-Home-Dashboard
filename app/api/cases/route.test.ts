@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
@@ -62,9 +63,23 @@ vi.mock('@/services/organizationProvisioningService', () => ({
 // comment in app/api/organizations/[organizationId]/route.test.ts. Tests
 // that legitimately need to reach the second organization use
 // mockMultiOrgUser, which has active memberships in both.
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 const { GET, POST } = await import('./route');
@@ -226,7 +241,7 @@ beforeEach(() => {
   mockReserveNextCaseNumber = vi.fn().mockResolvedValue('B2026-001');
   mockAdvanceCaseSequencePast = vi.fn().mockResolvedValue({ nextSequence: 1, advanced: false });
   mockGetOrganization = vi.fn().mockResolvedValue(null);
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
 });
 
 afterEach(() => {
@@ -274,7 +289,7 @@ describe('GET /api/cases — mock mode', () => {
   });
 
   it("a user authorized for the second organization gets an empty list for it (it has no case fixtures), never organization A's cases", async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const response = await GET(requestFor(SECOND_MOCK_ORGANIZATION_ID));
     const body = await response.json();
     expect(body.cases).toEqual([]);
@@ -705,7 +720,7 @@ describe('GET /api/cases — mock mode pagination (Case list scalability, Phase 
   }
 
   beforeEach(() => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
   });
 
   afterEach(() => {
@@ -1331,9 +1346,10 @@ describe('POST /api/cases — creation', () => {
       await POST(postRequest(VALID_CREATE_BODY));
 
       // The third argument is the organization's own case-number prefix
-      // (2026-10). Manors has never set one, so it is undefined and
-      // resolves to the default 'B' — its numbers are unchanged.
-      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026, undefined);
+      // (2026-10), now resolved explicitly via resolveCaseNumberPrefix.
+      // Manors has never set one, so it resolves to 'B' — its numbers are
+      // unchanged.
+      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026, 'B');
     });
 
     it('rolls the case number to the new year before UTC does, for a timezone ahead of UTC', async () => {
@@ -1349,7 +1365,7 @@ describe('POST /api/cases — creation', () => {
 
       await POST(postRequest(VALID_CREATE_BODY));
 
-      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2027, undefined);
+      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2027, 'B');
     });
   });
 
@@ -2243,7 +2259,7 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
   }
 
   beforeEach(() => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
   });
 
   afterEach(() => {
@@ -2435,7 +2451,7 @@ describe('GET /api/cases — Manors combined intake stage filter', () => {
 
   beforeEach(() => {
     process.env.DATA_ADAPTER = 'mock';
-    mockSession = { user: mockDefaultUser };
+    mockSession = fixtureIdentitySession(mockDefaultUser);
   });
 
   afterEach(() => {
@@ -2740,5 +2756,85 @@ describe('GET /api/cases — search reaches the archive (2026-10)', () => {
     } finally {
       archived.restore();
     }
+  });
+});
+
+/**
+ * Organization-specific case numbering (2026-10). The prefix passed to
+ * reserveNextCaseNumber and the prefix a preserved historical number must
+ * carry both come from resolveCaseNumberPrefix(organization) — never a
+ * hardcoded "B". The session fixture only has memberships in the Manors
+ * mock organization, so the organization RECORD is what varies here.
+ */
+describe('POST /api/cases — organization-specific case-number prefix', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    mockEnabledTemplate();
+    mockInsertWixDataItem.mockImplementation((_collectionId: string, data: Record<string, unknown>, itemId: string) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data: { ...data, beaconCaseId: itemId } }),
+    );
+  });
+
+  it('passes the legacy "B" prefix for Manors when its record carries no prefix (existing behaviour preserved)', async () => {
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    expect(response.status).toBe(201);
+    expect(mockReserveNextCaseNumber.mock.calls[0][2]).toBe('B');
+  });
+
+  it("passes the organization record's own prefix to reserveNextCaseNumber", async () => {
+    mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: 'Org', isActive: true, caseNumberPrefix: 'M' });
+    mockReserveNextCaseNumber.mockResolvedValue('M2026-001');
+    const response = await POST(postRequest(VALID_CREATE_BODY));
+    const body = await response.json();
+    expect(response.status).toBe(201);
+    expect(mockReserveNextCaseNumber.mock.calls[0][2]).toBe('M');
+    expect(body.case.caseNumber).toBe('M2026-001');
+  });
+
+  it('rejects a historical import whose number carries a different prefix than the organization (B into an M org)', async () => {
+    mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: 'Org', isActive: true, caseNumberPrefix: 'M' });
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-prefix',
+      caseNumber: 'B2026-035',
+    });
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    const body = await response.json();
+    expect(response.status).toBe(422);
+    expect(body.historicalPrefixMismatch).toBe(true);
+    expect(body.error).toMatch(/does not match this organization's case-number prefix "M"/);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    expect(mockReserveNextCaseNumber).not.toHaveBeenCalled();
+    expect(mockAdvanceCaseSequencePast).not.toHaveBeenCalled();
+  });
+
+  it('rejects an M number imported into the (B) Manors organization', async () => {
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-prefix',
+      caseNumber: 'M2026-035',
+    });
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    expect(response.status).toBe(422);
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('accepts a matching-prefix historical number and advances that organization sequence past it', async () => {
+    mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, name: 'Org', isActive: true, caseNumberPrefix: 'M' });
+    const token = await createHistoricalCaseNumberAuthorization({
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      externalFormId: '261945978664175',
+      externalSubmissionId: 'sub-synthetic-prefix',
+      caseNumber: 'M2026-012',
+    });
+    const response = await POST(postRequest({ ...VALID_CREATE_BODY, historicalCaseNumberAuthorization: token }));
+    const body = await response.json();
+    expect(response.status).toBe(201);
+    expect(body.case.caseNumber).toBe('M2026-012');
+    expect(mockAdvanceCaseSequencePast).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026, 12);
   });
 });

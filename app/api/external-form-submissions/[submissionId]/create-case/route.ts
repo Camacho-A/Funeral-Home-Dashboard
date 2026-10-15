@@ -122,6 +122,7 @@ async function loadVerifiedFields(
     // Re-fetching by id still proves the submission genuinely exists on
     // this form, which is the provenance check that matters here.
     skipAgeCheck: true,
+    ...(config.apiKeyReference ? { apiKeyReference: config.apiKeyReference } : {}),
   });
   if (!authenticated.authentic) {
     return {
@@ -132,7 +133,7 @@ async function loadVerifiedFields(
       ),
     };
   }
-  return { ok: true, fields: extractMappedFieldsForForm(config.provider, config.externalFormId, authenticated.answers) };
+  return { ok: true, fields: extractMappedFieldsForForm(config, authenticated.answers) };
 }
 
 async function organizationCases(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<Case[]> {

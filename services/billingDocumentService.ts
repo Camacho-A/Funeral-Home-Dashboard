@@ -21,7 +21,7 @@ import {
 } from '../domain/billing/receiptOfPayment';
 import { composeDecedentName } from '../domain/cases/decedentName';
 import { listPaymentRecordsForCase } from './paymentsService';
-import { MANORS_ORGANIZATION_ID, MANORS_STATEMENT_PROVIDER_IDENTITY, shouldShowCashAdvanceSection, receiptFooterFor } from '../domain/billing/organizationStatementOverrides';
+import { resolveStatementProviderIdentity, shouldShowCashAdvanceSection, receiptFooterFor } from '../domain/billing/organizationStatementOverrides';
 import { renderGeneralPriceListHtml } from '../domain/billing/renderGeneralPriceListHtml';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
 import type { Organization } from '../types/organization';
@@ -83,13 +83,16 @@ function providerIdentity(organization: Organization, location: OrganizationLoca
 }
 
 /** Item #2 (2026-09). Statement-only identity resolution — see
-    domain/billing/organizationStatementOverrides.ts for why Manor's
-    Cremation Services gets a fixed override here instead of reading its
-    (currently placeholder) live Organization/Location data. The General
-    Price List keeps calling providerIdentity() directly, unaffected. */
+    domain/billing/organizationStatementOverrides.ts. 2026-10: no longer a
+    Manors id check — an organization's profile letterhead
+    (domain/organization/organizationProfiles.ts), when it has one, is
+    overlaid on the identity built from its OWN Organization/Location
+    record; with no profile letterhead (e.g. Gus Camacho Jr., until
+    configured) the header is entirely record-driven. Manors' output is
+    unchanged. The General Price List keeps calling providerIdentity()
+    directly, unaffected. */
 function statementProviderIdentity(organizationId: string, organization: Organization, location: OrganizationLocation | null): ProviderIdentity {
-  if (organizationId === MANORS_ORGANIZATION_ID) return MANORS_STATEMENT_PROVIDER_IDENTITY;
-  return providerIdentity(organization, location);
+  return resolveStatementProviderIdentity(organizationId, providerIdentity(organization, location));
 }
 
 /**

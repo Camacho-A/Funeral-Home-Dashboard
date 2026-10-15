@@ -9,7 +9,8 @@ import type { OrganizationRoleWriteClaim } from '../../types/organizationRoleWri
 import { PERMISSION_KEYS, PERMISSION_DESCRIPTIONS, permissionCategory } from '../../domain/rbac/permissionCatalog';
 import { DEFAULT_ROLE_DEFINITIONS } from '../../domain/rbac/defaultRoles';
 import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId } from '../../domain/rbac/deterministicIds';
-import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
+import { DEFAULT_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 22 (Role-Based Access Control). Mock-mode fixtures — same
@@ -35,15 +36,15 @@ import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
  */
 const NOW = '2026-07-27T00:00:00.000Z';
 
-export const permissionFixtures: Permission[] = PERMISSION_KEYS.map((key) => ({
+export const permissionFixtures: Permission[] = mockCollection('permissionFixtures', (): Permission[] => PERMISSION_KEYS.map((key) => ({
   id: permissionFixtureId(key),
   key,
   category: permissionCategory(key),
   description: PERMISSION_DESCRIPTIONS[key],
   createdAt: NOW,
-}));
+})));
 
-export const roleFixtures: Role[] = DEFAULT_ROLE_DEFINITIONS.map((def) => ({
+export const roleFixtures: Role[] = mockCollection('roleFixtures', (): Role[] => DEFAULT_ROLE_DEFINITIONS.map((def) => ({
   id: defaultRoleFixtureId(def.key),
   key: def.key,
   name: def.name,
@@ -52,16 +53,16 @@ export const roleFixtures: Role[] = DEFAULT_ROLE_DEFINITIONS.map((def) => ({
   isSystemDefault: true,
   createdAt: NOW,
   updatedAt: NOW,
-}));
+})));
 
-export const rolePermissionFixtures: RolePermission[] = DEFAULT_ROLE_DEFINITIONS.flatMap((def) =>
+export const rolePermissionFixtures: RolePermission[] = mockCollection('rolePermissionFixtures', (): RolePermission[] => DEFAULT_ROLE_DEFINITIONS.flatMap((def) =>
   def.permissions.map((permissionKey) => ({
     id: defaultRolePermissionFixtureId(def.key, permissionKey),
     roleId: defaultRoleFixtureId(def.key),
     permissionKey,
     createdAt: NOW,
   })),
-);
+));
 
 /**
  * Manors role-model correction (2026-09): Manor's Cremation's authoritative
@@ -76,16 +77,30 @@ export const rolePermissionFixtures: RolePermission[] = DEFAULT_ROLE_DEFINITIONS
  */
 const MANORS_ENABLED_ROLE_KEYS: readonly string[] = ['administrator', 'manager', 'funeralDirector', 'officeStaff', 'accounting', 'readOnly', 'dispatch'];
 
-export const organizationRoleFixtures: OrganizationRoleEnablement[] = DEFAULT_ROLE_DEFINITIONS.filter((def) =>
-  MANORS_ENABLED_ROLE_KEYS.includes(def.key),
-).map((def) => ({
-  id: organizationRoleFixtureId(DEFAULT_ORGANIZATION_ID, def.key),
-  organizationId: DEFAULT_ORGANIZATION_ID,
-  roleId: defaultRoleFixtureId(def.key),
-  createdAt: NOW,
-}));
+/**
+ * Gus Camacho Jr. Funeral Home (mock/local development only): the same
+ * seven default roles enabled for Gus — what `RoleService.seedDefaultRoles`
+ * would produce for a newly-provisioned organization with Manors' roster.
+ * Role permissions themselves are the shared platform-default grants
+ * above; nothing Gus-specific is granted here.
+ */
+const GUS_ENABLED_ROLE_KEYS: readonly string[] = MANORS_ENABLED_ROLE_KEYS;
 
-export const organizationRoleAuditEntryFixtures: OrganizationRoleAuditEntry[] = [];
-export const organizationRolePermissionOverrideFixtures: OrganizationRolePermissionOverride[] = [];
-export const organizationRoleLockFixtures: OrganizationRoleLock[] = [];
-export const organizationRoleWriteClaimFixtures: OrganizationRoleWriteClaim[] = [];
+function enablementRows(organizationId: string, roleKeys: readonly string[]): OrganizationRoleEnablement[] {
+  return DEFAULT_ROLE_DEFINITIONS.filter((def) => roleKeys.includes(def.key)).map((def) => ({
+    id: organizationRoleFixtureId(organizationId, def.key),
+    organizationId,
+    roleId: defaultRoleFixtureId(def.key),
+    createdAt: NOW,
+  }));
+}
+
+export const organizationRoleFixtures: OrganizationRoleEnablement[] = mockCollection('organizationRoleFixtures', (): OrganizationRoleEnablement[] => [
+  ...enablementRows(DEFAULT_ORGANIZATION_ID, MANORS_ENABLED_ROLE_KEYS),
+  ...enablementRows(GUS_ORGANIZATION_ID, GUS_ENABLED_ROLE_KEYS),
+]);
+
+export const organizationRoleAuditEntryFixtures: OrganizationRoleAuditEntry[] = mockCollection('organizationRoleAuditEntryFixtures', (): OrganizationRoleAuditEntry[] => []);
+export const organizationRolePermissionOverrideFixtures: OrganizationRolePermissionOverride[] = mockCollection('organizationRolePermissionOverrideFixtures', (): OrganizationRolePermissionOverride[] => []);
+export const organizationRoleLockFixtures: OrganizationRoleLock[] = mockCollection('organizationRoleLockFixtures', (): OrganizationRoleLock[] => []);
+export const organizationRoleWriteClaimFixtures: OrganizationRoleWriteClaim[] = mockCollection('organizationRoleWriteClaimFixtures', (): OrganizationRoleWriteClaim[] => []);

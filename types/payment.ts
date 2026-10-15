@@ -135,8 +135,10 @@ export type PaymentRecord = {
  * that reads it, changing at all. Every reference name must be
  * environment-specific — a `sandbox` row and a future `production` row
  * for the same organization/provider must never name the same variables
- * (e.g. `CLOVER_MANORS_SANDBOX_PRIVATE_KEY` vs.
- * `CLOVER_MANORS_PRODUCTION_PRIVATE_KEY`), so activating production can
+ * (e.g. `CLOVER_<ORG>_SANDBOX_PRIVATE_KEY` vs.
+ * `CLOVER_<ORG>_PRODUCTION_PRIVATE_KEY`, where `<ORG>` is a per-
+ * organization token — each funeral home gets its own names, never
+ * another tenant's), so activating production can
  * never accidentally run against sandbox credentials or vice versa.
  */
 export type PaymentIntegration = {
@@ -152,10 +154,10 @@ export type PaymentIntegration = {
       mixed Wix-field/env-var split. */
   merchantIdReference: string;
   /** Name of the environment variable holding the provider's private
-      API key/OAuth token — e.g. 'CLOVER_MANORS_SANDBOX_PRIVATE_KEY'. */
+      API key/OAuth token — e.g. 'CLOVER_<ORG>_SANDBOX_PRIVATE_KEY'. */
   credentialReference: string;
   /** Name of the environment variable holding the webhook signing
-      secret — e.g. 'CLOVER_MANORS_SANDBOX_WEBHOOK_SECRET'. */
+      secret — e.g. 'CLOVER_<ORG>_SANDBOX_WEBHOOK_SECRET'. */
   webhookSecretReference: string;
   isEnabled: boolean;
   createdAt: string;

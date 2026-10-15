@@ -1,4 +1,5 @@
 import type { IdentityMessage, IdentityMessageSender } from '../../lib/identity/messageSender';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 21 security correction (2026-07-25). The test-only capturing
@@ -9,7 +10,7 @@ import type { IdentityMessage, IdentityMessageSender } from '../../lib/identity/
  * matching every other `services/__mocks__/*` fixture's "reset the shared
  * array in beforeEach/afterEach" convention.
  */
-export const capturedIdentityMessages: IdentityMessage[] = [];
+export const capturedIdentityMessages: IdentityMessage[] = mockCollection('capturedIdentityMessages', (): IdentityMessage[] => []);
 
 /**
  * Manors go-live invitation-lifecycle fix (2026-09). Lets a test simulate

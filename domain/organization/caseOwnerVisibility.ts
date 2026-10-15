@@ -12,16 +12,15 @@
  * still reads/writes the real field exactly as before. Only the Owner
  * *editor* in Case Information is hidden for this one organization.
  *
- * Same hardcoded-organization-ID pattern every other Manors-specific UI
- * decision in this codebase already uses (see
- * domain/organization/caseOrderTerminology.ts's own identical comment) —
- * deliberately not a new org-level feature-flag system for what is, today,
- * a single customer's presentation preference. Other organizations may
- * need individual case assignment and keep the existing Owner field
- * exactly as it already works.
+ * 2026-10: resolved through the organization profile
+ * (`features.caseOwnerVisible`, domain/organization/organizationProfiles.ts)
+ * rather than a hardcoded id. Manors: hidden. Every other organization
+ * keeps the existing Owner field exactly as it already works.
  */
-const MANORS_ORGANIZATION_ID = 'managed-cremations';
+import { getRegisteredOrganizationProfile } from './organizationProfiles';
 
+/** 2026-10: now a profile preference (`features.caseOwnerVisible`, see
+    domain/organization/organizationProfiles.ts) rather than a hardcoded id. */
 export function shouldShowCaseOwner(organizationId: string): boolean {
-  return organizationId !== MANORS_ORGANIZATION_ID;
+  return getRegisteredOrganizationProfile(organizationId).features.caseOwnerVisible;
 }

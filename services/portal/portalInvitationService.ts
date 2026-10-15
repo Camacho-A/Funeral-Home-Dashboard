@@ -19,6 +19,7 @@ import { portalActivityContext } from './portalActivityContext';
 import { recordPortalInvited, recordPortalAccepted, recordPortalAccessRevoked, type ActivityContext } from '../activityService';
 import { isFamilyPortalEnabledForOrganizationId } from '../organizationFamilyPortalCapabilityService';
 import { portalInvitationFixtures } from '../__mocks__/portalFixtures';
+import { isOrganizationAllowedInDeployment } from '../../lib/auth/deploymentOrganizations';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). The only writer of
@@ -129,7 +130,10 @@ export async function resolveInvitationToken(rawToken: string, dataAdapterMode: 
     invitation = mapWixPortalInvitationItem(response.dataItems[0]?.data);
   }
 
-  if (!invitation) {
+  // Deployment organization restrictions (2026-10): an invitation for an
+  // organization this deployment does not serve is indistinguishable from
+  // a missing one — it can never be previewed or accepted here.
+  if (!invitation || !isOrganizationAllowedInDeployment(invitation.organizationId)) {
     throw new PortalInvitationServiceError('This invitation link is invalid or has expired.');
   }
   if (invitation.status === 'pending' && new Date(invitation.expiresAt).getTime() < Date.now()) {

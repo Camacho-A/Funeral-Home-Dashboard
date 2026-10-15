@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
@@ -14,9 +15,23 @@ function idFactory(): string {
   return `simulate-route-test-${idCounter}`;
 }
 
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 const { POST } = await import('./route');
@@ -38,7 +53,7 @@ let originalCaseFixture: (typeof caseFixtures)[number];
 
 beforeEach(async () => {
   process.env.DATA_ADAPTER = 'mock';
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
   paymentRecordFixtures.length = 0;
   await seedChartOfAccounts(DEFAULT_ORGANIZATION_ID, idFactory, 'mock');
 

@@ -161,8 +161,15 @@ export async function authenticateJotformSubmission(params: {
    * The webhook never passes this.
    */
   skipAgeCheck?: boolean;
+  /**
+   * Multi-tenant hardening (2026-10): the trusted config's
+   * `apiKeyReference` (an env var NAME), so a form owned by a different
+   * Jotform account is verified with that account's key. Omitted = the
+   * default `JOTFORM_API_KEY`. See lib/jotform/jotformClient.ts.
+   */
+  apiKeyReference?: string | null;
 }): Promise<JotformSubmissionAuthenticity> {
-  const { claimedFormId, claimedSubmissionId, skipAgeCheck = false } = params;
+  const { claimedFormId, claimedSubmissionId, skipAgeCheck = false, apiKeyReference } = params;
   const now = params.now ?? Date.now();
 
   if (!NUMERIC_ID_PATTERN.test(claimedFormId) || !NUMERIC_ID_PATTERN.test(claimedSubmissionId)) {
@@ -171,7 +178,9 @@ export async function authenticateJotformSubmission(params: {
 
   let retrieved;
   try {
-    retrieved = await fetchSubmissionAnswers(claimedSubmissionId);
+    retrieved = apiKeyReference
+      ? await fetchSubmissionAnswers(claimedSubmissionId, { apiKeyReference })
+      : await fetchSubmissionAnswers(claimedSubmissionId);
   } catch (error) {
     // A missing key or a network fault is OUR problem, not an inauthentic
     // delivery — answer 503 so Jotform retries rather than dropping a

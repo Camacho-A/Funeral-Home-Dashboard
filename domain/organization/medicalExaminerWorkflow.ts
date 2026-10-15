@@ -1,4 +1,5 @@
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
+import { getRegisteredOrganizationProfile, registeredProfileMap, type MedicalExaminerStageConfig } from './organizationProfiles';
 
 /**
  * Medical Examiner cases (2026-10).
@@ -48,83 +49,27 @@ import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
  * shows too much rather than the wrong thing.
  */
 
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
+export type { MedicalExaminerStageConfig };
 
-/** Where the Medical-Examiner-owned items live, and what they must say
-    for the swap to apply. */
-export type MedicalExaminerStageConfig = {
-  displayStage: number;
-  /** Indices replaced when the case is a Medical Examiner case. */
-  replacedIndices: readonly number[];
-  /** Each replaced index's expected label — the shape guard. A list of
-      alternatives accepts any one of them, so a template that has since
-      been relabelled still matches rather than silently opting out. */
-  expectedLabels: readonly (string | readonly string[])[];
-  /** The items shown instead, at indices the standard template never uses
-      so neither set can overwrite the other. May be empty: an ME case can
-      simply not be ASKED something, with nothing substituted. */
-  verificationItems: readonly ChecklistItemTemplate[];
-};
-
-export const MEDICAL_EXAMINER_STAGES: Record<string, readonly MedicalExaminerStageConfig[]> = {
-  [MANORS_ORGANIZATION_ID]: [
-    /**
-     * "First Call & Payment" — the intake stage (2026-10).
-     *
-     * On an ME case these three are not the funeral home's to answer. The
-     * Medical Examiner holds the decedent, determines the time of death,
-     * and IS the certifier; the weight is taken when the body is received
-     * from them. Asking for all three at intake blocks the case at step 1
-     * waiting on information that does not exist yet by definition —
-     * which is exactly where B2026-037 (died at MEDICAL EXAMINERS DEPT)
-     * sat, with payment settled and everything else done.
-     *
-     * Nothing is substituted here and nothing is marked done: the items
-     * are simply not asked at intake. The data is still captured —
-     * Case Information keeps every field editable and shows "Pending
-     * Medical Examiner" in place of a blank (see
-     * pendingMedicalExaminerPlaceholder) — and the EDRS stage's "Required
-     * ME information confirmed" below is the gate that says the ME
-     * supplied what was owed. So the case moves to the step where this
-     * information is actually obtainable, instead of stalling before it.
-     */
-    {
-      displayStage: 0,
-      replacedIndices: [3, 5, 6],
-      expectedLabels: [
-        'Weight',
-        'Time of death',
-        // Both the current and the pre-2026-09 label, so an older frozen
-        // snapshot still matches.
-        ['Certifier Information', 'Certifier name & phone'],
-      ],
-      verificationItems: [],
-    },
-    /** "EDRS & Doctor / Cause of Death" — the ME did this work; staff
-        verify it rather than repeat it. */
-    {
-      displayStage: 2,
-      replacedIndices: [0, 1, 2],
-      expectedLabels: [
-        'EDRS submitted & sent to doctor',
-        'Cause of death entered',
-        'Hardsave for state approval if not an online doctor',
-      ],
-      verificationItems: [
-        { index: 3, label: 'Medical Examiner EDRS entry verified', hasField: false },
-        { index: 4, label: 'Medical Examiner cause of death verified', hasField: false },
-        { index: 5, label: 'Required ME information confirmed', hasField: false },
-      ],
-    },
-  ],
-};
+/**
+ * 2026-10: each organization's ME variant now lives in its profile
+ * (`features.medicalExaminerStages`, domain/organization/organizationProfiles.ts,
+ * where Manors' two stage configs — intake and EDRS — and their reasoning
+ * now live). This map is derived from that registry, kept for existing
+ * importers.
+ */
+export const MEDICAL_EXAMINER_STAGES: Record<string, readonly MedicalExaminerStageConfig[]> = registeredProfileMap(
+  (profile) => profile.features.medicalExaminerStages,
+  (profile) => profile.features.medicalExaminerStages.length > 0,
+);
 
 /** Whether this organization has a Medical Examiner variant at all. */
 export function medicalExaminerStageFor(
   organizationId: string | null | undefined,
   displayStage: number,
 ): MedicalExaminerStageConfig | null {
-  const configs = organizationId ? MEDICAL_EXAMINER_STAGES[organizationId] : undefined;
+  const configs = organizationId ? getRegisteredOrganizationProfile(organizationId).features.medicalExaminerStages : undefined;
   return configs?.find((config) => config.displayStage === displayStage) ?? null;
 }
 

@@ -12,24 +12,29 @@
  * its FTC classification (see domain/billing/ftcClassification.ts,
  * unchanged).
  *
- * Hardcoded to the one real Manors organization id, matching every other
- * Manors-specific constant in this codebase (e.g. the case-numbering
- * cutover route's own `MANORS_ORGANIZATION_ID`) — deliberately not a new
- * org-level feature-flag/config system for what is, today, a single
- * customer's terminology preference.
+ * 2026-10: no longer hardcoded to the Manors organization id — whether
+ * an organization uses this wording is its profile's
+ * `features.additionalItemsTerminology` (domain/organization/organizationProfiles.ts).
+ * Manors: on. Every other organization (including Gus Camacho Jr.): off.
  */
-const MANORS_ORGANIZATION_ID = 'managed-cremations';
+import { getRegisteredOrganizationProfile } from './organizationProfiles';
 
-export function isManorsOrganization(organizationId: string): boolean {
-  return organizationId === MANORS_ORGANIZATION_ID;
+/** 2026-10: now a profile preference (`features.additionalItemsTerminology`,
+    see domain/organization/organizationProfiles.ts). */
+export function usesAdditionalItemsTerminology(organizationId: string): boolean {
+  return getRegisteredOrganizationProfile(organizationId).features.additionalItemsTerminology;
 }
+
+/** @deprecated Use `usesAdditionalItemsTerminology` — kept so any
+    in-flight caller keeps compiling; it no longer means "is Manors". */
+export const isManorsOrganization = usesAdditionalItemsTerminology;
 
 /** The button/modal-title label for adding a line item to an EXISTING
     Case Order — never for the first-time "Set Up Services & Charges"
     flow, which always keeps its original label regardless of
     organization (that's the original arrangement, not an addition). */
 export function additionalItemsLabel(organizationId: string): string {
-  return isManorsOrganization(organizationId) ? 'Additional Items & Services' : 'Edit Services';
+  return usesAdditionalItemsTerminology(organizationId) ? 'Additional Items & Services' : 'Edit Services';
 }
 
 export const ADDITIONAL_ITEMS_SUPPORTING_TEXT = 'Add items or services the family requests after the original arrangements.';

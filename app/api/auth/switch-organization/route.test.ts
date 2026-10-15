@@ -28,6 +28,7 @@ beforeEach(() => {
   lengths = { identity: identityFixtures.length, membership: membershipFixtures.length, sessions: identitySessionFixtures.length };
 });
 afterEach(() => {
+  delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
   identityFixtures.length = lengths.identity;
   membershipFixtures.length = lengths.membership;
   identitySessionFixtures.length = lengths.sessions;
@@ -75,5 +76,33 @@ describe('POST /api/auth/switch-organization', () => {
 
     const response = await postRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('POST /api/auth/switch-organization — deployment organization allowlist (2026-10)', () => {
+  it('refuses (403) to switch to an organization this deployment does not serve, even with an active Membership, and leaves the session untouched', async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = DEFAULT_ORGANIZATION_ID;
+    const { findOrCreateIdentity, updateIdentity } = await import('@/services/identityService');
+    const { createMembership } = await import('@/services/membershipService');
+    const { createIdentitySession, setSessionOrganization, getSessionById } = await import('@/services/sessionService');
+    const { identity } = await findOrCreateIdentity({ email: 'allowlist-switcher@example.com', displayName: 'Allowlist Switcher', idFactory }, 'mock');
+    await updateIdentity(identity.id, { status: 'active' }, 'mock');
+    await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
+    await createMembership({ identityId: identity.id, organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'owner', status: 'active', invitedBy: null, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
+    await setSessionOrganization(session.id, DEFAULT_ORGANIZATION_ID, 'mock');
+    mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
+
+    const refused = await postRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
+    expect(refused.status).toBe(403);
+    expect((await getSessionById(session.id, 'mock'))?.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+
+    const allowed = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
+    expect(allowed.status).toBe(200);
+  });
+
+  it('rejects a mock-source session outright (401)', async () => {
+    mockSession = { user: { id: 'mock-user-dana', email: 'dana@beacon.test', displayName: 'Dana', source: 'mock' } };
+    expect((await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID })).status).toBe(401);
   });
 });

@@ -1,5 +1,6 @@
 import type { Case } from '../../types/case';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
+import { getRegisteredOrganizationProfile } from '../organization/organizationProfiles';
 
 /**
  * Legacy Certifier presentation compatibility (2026-09, ADR-041 follow-up).
@@ -23,7 +24,9 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
  * `isCertifierItemNeedingStructuredEditor` for both shapes and why a v5
  * Case is deliberately left untouched.
  *
- * Narrowly scoped to managed-cremations (`case_.organizationId` checked
+ * Narrowly scoped to organizations whose profile enables
+ * `features.legacyCertifierPresentation` (2026-10: Manors only — see
+ * domain/organization/organizationProfiles.ts; `case_.organizationId` checked
  * explicitly) — matching on literal English text is inherently fragile,
  * appropriate only for these specific, permanently-frozen snapshot
  * artifacts, never generalized into
@@ -39,6 +42,11 @@ import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 export const LEGACY_CERTIFIER_ITEM_LABEL = 'Hospice or physician who will sign the DC — name & phone number';
 export const CERTIFIER_INFORMATION_LABEL = 'Certifier Information';
 const CERTIFIER_REQUIRED_CASE_FIELDS = ['certifierName', 'certifierPhone'];
+
+/** Whether this organization's frozen snapshots need the relabel. */
+export function usesLegacyCertifierPresentation(organizationId: string): boolean {
+  return getRegisteredOrganizationProfile(organizationId).features.legacyCertifierPresentation;
+}
 
 function nonEmpty(value: string | null): boolean {
   return typeof value === 'string' && value.trim().length > 0;
@@ -102,7 +110,7 @@ function withStructuredCertifierEditor(item: ChecklistItemViewModel, case_: Case
  * for an already-completed stage).
  */
 export function presentedChecklistItemLabel(label: string, organizationId: string): string {
-  return organizationId === 'managed-cremations' && label === LEGACY_CERTIFIER_ITEM_LABEL
+  return label === LEGACY_CERTIFIER_ITEM_LABEL && usesLegacyCertifierPresentation(organizationId)
     ? CERTIFIER_INFORMATION_LABEL
     : label;
 }
@@ -147,9 +155,9 @@ export function presentedChecklistItemLabel(label: string, organizationId: strin
  *   (`Case.certifierName`/`certifierPhone` are genuinely null) — the old
  *   fieldValues text is never guessed into them.
  *
- * A no-op (returns `items` unchanged) for any organization other than
- * managed-cremations, and for any item list that doesn't contain the
- * legacy label at all (every v5+ Case, where the persisted label is
+ * A no-op (returns `items` unchanged) for any organization whose profile
+ * does not enable it (every organization but managed-cremations today),
+ * and for any item list that doesn't contain the legacy label at all (every v5+ Case, where the persisted label is
  * already "Certifier Information").
  */
 export function applyLegacyCertifierPresentation(
@@ -157,7 +165,7 @@ export function applyLegacyCertifierPresentation(
   case_: Case,
   isPastStage: boolean,
 ): ChecklistItemViewModel[] {
-  if (case_.organizationId !== 'managed-cremations') return items;
+  if (!usesLegacyCertifierPresentation(case_.organizationId)) return items;
   const idx = items.findIndex(isCertifierItemNeedingStructuredEditor);
   if (idx === -1) return items;
 

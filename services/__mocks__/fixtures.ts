@@ -7,6 +7,8 @@ import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './workflowTemplates';
 import { buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
 import { formatCaseNumber } from '../../domain/cases/caseNumber';
+import { mockCollection } from './mockStore';
+import { buildGusCaseFixtures, buildGusStaffFixtures, buildGusTaskFixtures } from './gusFixtures';
 
 /**
  * Re-exported from ./organizationIds (not declared here) so
@@ -33,7 +35,7 @@ const STAFF_FIXTURES_NOW = '2026-07-24T00:00:00.000Z';
  * that eliminates the `authFixtures.ts` → `fixtures.ts` edge could
  * collapse this duplication.
  */
-export const staffFixtures: StaffProfile[] = [
+export const staffFixtures: StaffProfile[] = mockCollection('staffFixtures', (): StaffProfile[] => [
   {
     id: 'staff-dana',
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -67,7 +69,10 @@ export const staffFixtures: StaffProfile[] = [
     createdAt: STAFF_FIXTURES_NOW,
     updatedAt: STAFF_FIXTURES_NOW,
   },
-];
+  // Gus Camacho Jr. demo roster (mock/local development only) — appended
+  // after Manors' rows so every existing index-based reference is unchanged.
+  ...buildGusStaffFixtures(),
+]);
 
 function staffIdForOwnerName(ownerName: string): string | null {
   if (ownerName === '—') return null;
@@ -287,7 +292,8 @@ const standardCremationV1 = standardCremationWorkflowTemplateFixture.versions[0]
  * exact sequence (see services/casesService.ts's create()), so the very
  * next one created is B2026-009.
  */
-export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw, index) => ({
+export const caseFixtures: Case[] = mockCollection('caseFixtures', (): Case[] => [
+  ...RAW_SEED_CASES.map((raw, index): Case => ({
   id: raw.id,
   organizationId: DEFAULT_ORGANIZATION_ID,
   caseNumber: formatCaseNumber(2026, index + 1),
@@ -337,13 +343,17 @@ export const caseFixtures: Case[] = RAW_SEED_CASES.map((raw, index) => ({
   workflowTemplateVersion: standardCremationV1.version,
   caseType: 'cremation',
   workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, standardCremationV1),
-}));
+  })),
+  // Gus Camacho Jr. demo cases (M<current year>-001...) — appended after
+  // Manors' seed cases; see services/__mocks__/gusFixtures.ts.
+  ...buildGusCaseFixtures(),
+]);
 
 /**
  * Ported verbatim from design/support.js's initial `tasks` state (3 seed
  * tasks, none case-linked in the source data).
  */
-export const taskFixtures: CaseTask[] = [
+export const taskFixtures: CaseTask[] = mockCollection('taskFixtures', (): CaseTask[] => [
   {
     id: 'task-1',
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -374,15 +384,16 @@ export const taskFixtures: CaseTask[] = [
     dueDate: null,
     createdAt: '07/14/2026',
   },
-];
+  ...buildGusTaskFixtures(),
+]);
 
 /**
  * Both start empty — matching design/support.js's initial `logState: {}`
  * and `uploadedDocs: {}` exactly: no case in the prototype's seed data has
  * any case log entries or uploaded documents until a user adds them.
  */
-export const caseLogFixtures: CaseLogEntry[] = [];
-export const documentFixtures: CaseDocument[] = [];
+export const caseLogFixtures: CaseLogEntry[] = mockCollection('caseLogFixtures', (): CaseLogEntry[] => []);
+export const documentFixtures: CaseDocument[] = mockCollection('documentFixtures', (): CaseDocument[] => []);
 
 /**
  * Uploaded documents' actual browser File objects, keyed by document id —
@@ -391,4 +402,4 @@ export const documentFixtures: CaseDocument[] = [];
  * docs/ARCHITECTURE.md). Used only by documentsService's mock
  * implementation to support the Print feature (utils/print.ts's printFile).
  */
-export const documentFilesById = new Map<string, File>();
+export const documentFilesById: Map<string, File> = mockCollection('documentFilesById', () => new Map<string, File>());

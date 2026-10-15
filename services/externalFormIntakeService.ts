@@ -5,6 +5,7 @@ import type { ExternalFormSubmission } from '../types/externalFormSubmission';
 import type { MappedSolisField } from '../domain/externalForms/fieldMapping';
 import { isCaseCreationClaimToken } from '../types/externalFormSubmission';
 import { createExternalFormIntakeAuthorization } from '../lib/auth/externalFormIntakeAuthorization';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
 import * as externalFormSubmissionService from './externalFormSubmissionService';
 import * as caseFormLinkService from './caseFormLinkService';
 import { findDuplicateCandidates, type DuplicateCandidate } from '../domain/externalForms/duplicateCandidates';
@@ -106,7 +107,13 @@ async function findDuplicateCandidatesForOrganization(
     const cases = items
       .map((item) => mapWixCaseItem(item.data as never))
       .filter((c): c is Case => c !== null);
-    return findDuplicateCandidates(mappedFields, cases);
+    // Belt and braces (2026-10): the query is organization-filtered, but a
+    // candidate from another organization must never be offered to staff
+    // as "the same case", so the filter is re-applied on the mapped rows.
+    return findDuplicateCandidates(
+      mappedFields,
+      cases.filter((c) => c.organizationId === organizationId),
+    );
   } catch (error) {
     // A lookup failure must not silently disable the guard and let a
     // duplicate through. Treat it as "cannot establish safety" and
@@ -142,6 +149,21 @@ export async function createCaseFromIntakeSubmission(
   dataAdapterMode: DataAdapterMode,
 ): Promise<FormIntakeOutcome> {
   const { config, submission, mappedFields, request, acknowledgedDuplicates = false } = params;
+
+  // Multi-tenant hardening (2026-10). A case is only ever created in the
+  // organization that owns BOTH the config and the submission, and only
+  // when this deployment serves that organization. Every caller already
+  // guarantees this; refusing here makes it impossible to get wrong.
+  if (submission.organizationId !== config.organizationId) {
+    console.error(
+      `[form intake] Submission ${submission.id} does not belong to the config's organization — no case created.`,
+    );
+    return { created: false, reason: 'organization_mismatch' };
+  }
+  if (!isOrganizationAllowedInDeployment(config.organizationId)) {
+    console.error(`[form intake] Organization is not served by this deployment — submission ${submission.id} left unmatched.`);
+    return { created: false, reason: 'organization_not_served' };
+  }
 
   const missing = REQUIRED_FOR_CREATION.filter((field) => !mappedFields[field]?.trim());
   if (missing.length > 0) {

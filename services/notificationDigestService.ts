@@ -3,6 +3,7 @@ import { listAllQueuedForDigestDeliveries, flushDigestGroup, getPreferences } fr
 import { getForOrganization as getOrganizationForDigest } from './organizationsService';
 import { isDigestGroupEligible } from '../domain/notifications/digestTiming';
 import type { NotificationDelivery } from '../types/notificationDelivery';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
 
 /**
  * Phase 33 (Real Notification Delivery). The thin, cron-triggered
@@ -43,7 +44,8 @@ function groupByOrganizationAndIdentity(deliveries: NotificationDelivery[]): Map
 }
 
 /**
- * Runs one sweep: finds every queued delivery across every organization,
+ * Runs one sweep: finds every queued delivery across every organization
+ * this deployment serves (DEPLOYMENT_ORGANIZATION_IDS),
  * groups by (organizationId, identityId), re-checks each group's
  * eligibility against that identity's *current* preference (never a
  * snapshot taken when the row was queued), and flushes every group
@@ -60,6 +62,13 @@ export async function runNotificationDigestSweep(dataAdapterMode: DataAdapterMod
 
   for (const [key, deliveries] of groups) {
     const [organizationId, identityId] = key.split('::');
+    // Scheduled-job isolation (2026-10): the query is already scoped to this
+    // deployment; re-checked per group before any preference/organization
+    // read or send (defense in depth — docs/SCHEDULED_JOBS.md).
+    if (!isOrganizationAllowedInDeployment(organizationId)) {
+      result.groupsSkipped += 1;
+      continue;
+    }
     const [preference, organization] = await Promise.all([
       getPreferences(organizationId, identityId, dataAdapterMode),
       getOrganizationForDigest(organizationId, dataAdapterMode),
@@ -79,9 +88,15 @@ export async function runNotificationDigestSweep(dataAdapterMode: DataAdapterMod
       continue;
     }
 
-    await flushDigestGroup(organizationId, identityId, deliveries, dataAdapterMode);
+    const { flushed } = await flushDigestGroup(organizationId, identityId, deliveries, dataAdapterMode);
+    if (flushed === 0) {
+      // Every delivery was claimed by an overlapping sweep (or the group is
+      // outside this deployment) — nothing sent by this run.
+      result.groupsSkipped += 1;
+      continue;
+    }
     result.groupsFlushed += 1;
-    result.deliveriesFlushed += deliveries.length;
+    result.deliveriesFlushed += flushed;
   }
 
   return result;

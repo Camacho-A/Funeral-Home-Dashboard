@@ -21,9 +21,16 @@ vi.mock('./session', () => ({
 
 const { requireAuthorizedOrganization } = await import('./requireAuthorizedOrganization');
 
+const HARDENING_ENV_KEYS = ['DATA_ADAPTER', 'AUTH_ADAPTER', 'DEPLOYMENT_ORGANIZATION_IDS'] as const;
+const originalHardeningEnv = Object.fromEntries(HARDENING_ENV_KEYS.map((key) => [key, process.env[key]]));
+
 beforeEach(() => {
   mockSession = { user: mockDefaultUser };
   mockCreateSession.mockClear();
+  HARDENING_ENV_KEYS.forEach((key) => {
+    if (originalHardeningEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = originalHardeningEnv[key];
+  });
 });
 
 describe('requireAuthorizedOrganization — authorized access', () => {
@@ -214,5 +221,78 @@ describe('requireAuthorizedOrganization — AUTH_ADAPTER=identity sessions', () 
     const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
     expect(result.authorized).toBe(false);
     if (!result.authorized) expect(result.response.status).toBe(401);
+  });
+});
+
+describe('requireAuthorizedOrganization — tenant-isolation hardening (2026-10)', () => {
+  it('rejects (401) a mock-source session whenever DATA_ADAPTER=wix — mock fixtures never authorize live data', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(401);
+  });
+
+  it('rejects (401) a mock-source session on wix data even with AUTH_ADAPTER=mock explicitly set', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.AUTH_ADAPTER = 'mock';
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(401);
+  });
+
+  it('rejects (401) a wix-members-source session on wix data', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    mockSession = { user: { ...mockDefaultUser, source: 'wix' } };
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(401);
+  });
+
+  it('fails closed (401) for a mock-source session when AUTH_ADAPTER is invalid', async () => {
+    process.env.AUTH_ADAPTER = 'definitely-not-valid';
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(401);
+  });
+
+  it('rejects (403, generic body) a requested organization outside DEPLOYMENT_ORGANIZATION_IDS, even for a genuine member', async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    const denied = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(denied.authorized).toBe(false);
+    if (!denied.authorized) {
+      expect(denied.response.status).toBe(403);
+      // Identical to every other denial — no "not served by this deployment" leak.
+      const forged = await requireAuthorizedOrganization('some-other-real-looking-org-id');
+      if (!forged.authorized) expect(await denied.response.json()).toEqual(await forged.response.json());
+    }
+  });
+
+  it('still grants an allowed organization to a member with several memberships', async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = SECOND_MOCK_ORGANIZATION_ID;
+    mockSession = { user: mockMultiOrgUser };
+    expect((await requireAuthorizedOrganization(SECOND_MOCK_ORGANIZATION_ID)).authorized).toBe(true);
+    const blocked = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(blocked.authorized).toBe(false);
+    if (!blocked.authorized) expect(blocked.response.status).toBe(403);
+  });
+
+  it('rejects (403) an identity session requesting a disallowed organization it is a member of', async () => {
+    const { findOrCreateIdentity, updateIdentity } = await import('../../services/identityService');
+    const { createMembership } = await import('../../services/membershipService');
+    const { createIdentitySession } = await import('../../services/sessionService');
+    const idFactory = (() => {
+      let n = 0;
+      return () => `require-org-allowlist-${++n}`;
+    })();
+    const { identity } = await findOrCreateIdentity({ email: 'req-org-allowlist@example.com', displayName: 'Allowlist', idFactory }, 'mock');
+    await updateIdentity(identity.id, { status: 'active' }, 'mock');
+    await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
+    const identitySession = await createIdentitySession({ identityId: identity.id, deviceId: 'device-1', passwordVersionAtIssue: identity.passwordVersion, idFactory }, 'mock');
+    mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: identitySession.id } as never;
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const result = await requireAuthorizedOrganization(DEFAULT_ORGANIZATION_ID);
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.response.status).toBe(403);
   });
 });

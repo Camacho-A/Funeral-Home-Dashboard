@@ -24,7 +24,7 @@ import {
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
 import { reserveNextCaseNumber, advanceCaseSequencePast } from '@/lib/wixCaseNumberSequence';
-import { orgLocalYear, parseCaseNumber } from '@/domain/cases/caseNumber';
+import { orgLocalYear, parseCaseNumber, resolveCaseNumberPrefix, caseNumberMatchesPrefix } from '@/domain/cases/caseNumber';
 import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { isValidEmail, getDateOfBirthFutureError, getDateOfDeathFutureError, resolveOrgLocalToday } from '@/utils/inputMask';
@@ -667,6 +667,23 @@ export async function POST(request: Request) {
         );
       }
 
+      // Organization-specific numbering (2026-10) — authoritative prefix
+      // check. A preserved number must carry THIS organization's own
+      // prefix: a Gus Camacho (M) case can never be created with a Manors
+      // (B) number or vice versa, whatever the import route derived.
+      organization ??= await getOrganization(organizationId, 'wix');
+      const expectedPrefix = resolveCaseNumberPrefix(organization, { organizationId });
+      if (!caseNumberMatchesPrefix(authPayload.caseNumber, expectedPrefix)) {
+        return NextResponse.json(
+          {
+            case: null,
+            error: `Historical case number ${authPayload.caseNumber} does not match this organization's case-number prefix "${expectedPrefix}" (expected ${expectedPrefix}YYYY-NNN).`,
+            historicalPrefixMismatch: true,
+          },
+          { status: 422 },
+        );
+      }
+
       // Authoritative, final duplicate check — never create a second Case
       // sharing a preserved historical number, regardless of any earlier
       // check the historical-import route itself already ran.
@@ -705,7 +722,7 @@ export async function POST(request: Request) {
       caseNumber = await reserveNextCaseNumber(
         organizationId,
         orgLocalYear(createdAt, organization?.timezone),
-        organization?.caseNumberPrefix,
+        resolveCaseNumberPrefix(organization, { organizationId }),
       );
     }
 
@@ -769,7 +786,7 @@ export async function POST(request: Request) {
     // same correction from the Cases collection itself.
     if (historicalPreservedCaseNumber) {
       try {
-        const parsed = parseCaseNumber(historicalPreservedCaseNumber);
+        const parsed = parseCaseNumber(historicalPreservedCaseNumber, resolveCaseNumberPrefix(organization, { organizationId }));
         if (parsed) {
           await advanceCaseSequencePast(organizationId, parsed.year, parsed.sequence);
         } else {

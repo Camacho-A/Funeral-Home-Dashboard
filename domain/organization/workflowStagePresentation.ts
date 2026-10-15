@@ -1,3 +1,5 @@
+import { getRegisteredOrganizationProfile } from './organizationProfiles';
+
 /**
  * Manors intake-stage combination (2026-10). A PRESENTATION-ONLY overlay
  * that renders two adjacent canonical display stages as one user-facing
@@ -50,10 +52,10 @@
  * canonical display stage, and is entirely unaffected.
  */
 
-/** Stable organization identifier — matches the same constant pattern
-    already used by domain/organization/moduleVisibility.ts and
-    caseOrderTerminology.ts rather than string-matching a display name. */
-const MANORS_ORGANIZATION_ID = 'managed-cremations';
+/** 2026-10: whether an organization uses this overlay is a profile
+    preference (`features.combineIntakeStages` /
+    `uppercaseCombinedIntakeLabels`, domain/organization/organizationProfiles.ts),
+    keyed on the stable organizationId — never a display-name match. */
 
 /** The two canonical display-stage labels this overlay combines. Matched
     exactly, so a restructured template is left alone. */
@@ -77,7 +79,7 @@ export type PresentedStage = {
 
 function combinesIntakeStages(organizationId: string, canonicalLabels: readonly string[]): boolean {
   return (
-    organizationId === MANORS_ORGANIZATION_ID &&
+    getRegisteredOrganizationProfile(organizationId).features.combineIntakeStages &&
     canonicalLabels[0] === FIRST_CALL_LABEL &&
     canonicalLabels[1] === JOTFORM_APPLICATION_LABEL
   );
@@ -127,7 +129,10 @@ export function presentsCombinedIntakeLabelsUppercase(
   organizationId: string,
   canonicalLabels: readonly string[],
 ): boolean {
-  return combinesIntakeStages(organizationId, canonicalLabels);
+  return (
+    getRegisteredOrganizationProfile(organizationId).features.uppercaseCombinedIntakeLabels &&
+    combinesIntakeStages(organizationId, canonicalLabels)
+  );
 }
 
 /**

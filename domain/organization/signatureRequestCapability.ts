@@ -1,4 +1,5 @@
 import type { Organization } from '../../types/organization';
+import { getOrganizationProfile, registeredProfileMap } from './organizationProfiles';
 
 /**
  * Handwritten item #4 (2026-09, Request Signature removal for Manors). The
@@ -40,18 +41,22 @@ import type { Organization } from '../../types/organization';
  * already reads through `isSignatureRequestsEnabled`/
  * `isSignatureRequestsEnabledForOrganizationId`.
  */
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
 
-export const ORGANIZATION_OVERRIDES: Record<string, boolean> = {
-  [MANORS_ORGANIZATION_ID]: false,
-};
+/**
+ * 2026-10: derived from domain/organization/organizationProfiles.ts (pinned
+ * `signatureRequestsEnabled`), kept for existing importers
+ * (services/organizationSignatureRequestCapabilityService.ts). The TODO
+ * above now means: unpin the feature in Manors' profile.
+ */
+export const ORGANIZATION_OVERRIDES: Record<string, boolean> = registeredProfileMap(
+  (profile) => profile.features.signatureRequestsEnabled,
+  (profile) => profile.pinnedFeatures.includes('signatureRequestsEnabled'),
+);
 
 /** For callers that already have a full (or partial) Organization record —
     e.g. client-side via useOrganizationRecord(). */
 export function isSignatureRequestsEnabled(organization: (Pick<Organization, 'id' | 'signatureRequestsEnabled'> & { id: string }) | null | undefined): boolean {
-  if (organization?.id && organization.id in ORGANIZATION_OVERRIDES) {
-    return ORGANIZATION_OVERRIDES[organization.id];
-  }
   if (!organization) return true;
-  return organization.signatureRequestsEnabled !== false;
+  return getOrganizationProfile(organization.id, organization).features.signatureRequestsEnabled;
 }

@@ -2,6 +2,8 @@ import type { AuthenticatedUser } from '../../types/auth';
 import type { Organization, OrganizationMembership, OrganizationRole } from '../../types/organization';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './organizationIds';
 import { staffFixtures } from './fixtures';
+import { mockCollection } from './mockStore';
+import { buildGusOrganizationFixture } from './gusFixtures';
 
 /**
  * Phase 13 (Authentication & Organizations). Mock-only identities and
@@ -11,10 +13,13 @@ import { staffFixtures } from './fixtures';
  * — see docs/AUTHENTICATION.md's "Mock vs. production identity" section.
  */
 
-export const mockOrganizationFixtures: Organization[] = [
+export const mockOrganizationFixtures: Organization[] = mockCollection('mockOrganizationFixtures', (): Organization[] => [
   { id: DEFAULT_ORGANIZATION_ID, name: "Manor's Cremation", isActive: true },
   { id: SECOND_MOCK_ORGANIZATION_ID, name: 'Evergreen Memorial Group', isActive: true },
-];
+  // Gus Camacho Jr. Funeral Home (mock/local development only) — case
+  // prefix 'M'. See services/__mocks__/gusFixtures.ts.
+  buildGusOrganizationFixture(),
+]);
 
 /**
  * The default mock user — used by the mock login flow and local dev.
@@ -101,7 +106,7 @@ export const mockDispatchUser: AuthenticatedUser = {
   source: 'mock',
 };
 
-export const mockMembershipFixtures: OrganizationMembership[] = [
+export const mockMembershipFixtures: OrganizationMembership[] = mockCollection('mockMembershipFixtures', (): OrganizationMembership[] => [
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockMultiOrgUser.id, role: 'staff', isActive: true },
   { organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockMultiOrgUser.id, role: 'caseManager', isActive: true },
@@ -118,7 +123,7 @@ export const mockMembershipFixtures: OrganizationMembership[] = [
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockAccountingUser.id, role: 'accounting' as OrganizationRole, isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockReadOnlyUser.id, role: 'readOnly', isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockDispatchUser.id, role: 'dispatch' as OrganizationRole, isActive: true },
-];
+]);
 
 /**
  * Obviously-fake, dev-only mock login credentials — never validated

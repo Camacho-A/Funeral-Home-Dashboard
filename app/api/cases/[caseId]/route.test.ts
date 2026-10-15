@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
-import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockMultiOrgUser, mockMembershipFixtures, mockOrganizationFixtures } from '@/services/__mocks__/authFixtures';
 import { standardCremationWorkflowTemplateFixture } from '@/services/__mocks__/workflowTemplates';
 import { buildCaseWorkflowSnapshot, latestTemplateVersion } from '@/domain/workflow/snapshot';
 
@@ -43,9 +44,23 @@ vi.mock('@/lib/wixDataApi', async () => {
 // comment in app/api/organizations/[organizationId]/route.test.ts. Tests
 // that legitimately need to reach the second organization use
 // mockMultiOrgUser, which has active memberships in both.
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 // Task #15 (2026-09, future-historical-date validation): the PATCH route
@@ -159,7 +174,7 @@ beforeEach(() => {
   mockUpdateWixDataItem = vi.fn();
   mockInsertWixDataItem = vi.fn().mockResolvedValue({ id: 'activity-event-mock', dataCollectionId: 'activityEvents', data: {} });
   mockGetOrganization = vi.fn().mockResolvedValue(null);
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
 });
 
 afterEach(() => {
@@ -246,7 +261,7 @@ describe('GET /api/cases/[caseId] — archived cases open', () => {
 
   it('is still organization-scoped — archiving does not open a cross-tenant door', async () => {
     const status = await withArchivedFixture(async (archivedId) => {
-      mockSession = { user: mockMultiOrgUser };
+      mockSession = fixtureIdentitySession(mockMultiOrgUser);
       return (await requestFor(archivedId, SECOND_MOCK_ORGANIZATION_ID)).status;
     });
     expect(status).toBe(404);
@@ -271,7 +286,7 @@ describe('GET /api/cases/[caseId] — mock mode', () => {
   });
 
   it('returns 404 when the case exists but belongs to a different organization the caller IS authorized for', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const known = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
     const response = await requestFor(known.id, SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(404);
@@ -349,7 +364,7 @@ describe('GET /api/cases/[caseId] — wix mode', () => {
   });
 
   it('returns 404 when the case exists in Wix under a different organization the caller IS authorized for (compound filter finds nothing)', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';
@@ -409,7 +424,7 @@ describe('PATCH /api/cases/[caseId]', () => {
     });
 
     it("returns 404 (not the case's real data) when the case belongs to a different organization the caller IS authorized for — cross-tenant update rejected", async () => {
-      mockSession = { user: mockMultiOrgUser };
+      mockSession = fixtureIdentitySession(mockMultiOrgUser);
       mockWixQueries([]); // compound filter finds nothing for org B
       const response = await patchRequest('1042', { organizationId: SECOND_MOCK_ORGANIZATION_ID, patch: { decedentName: 'x' } });
       expect(response.status).toBe(404);
@@ -2360,5 +2375,63 @@ describe('PATCH /api/cases/[caseId] — Medical Examiner classification (2026-10
     mockAdminQueries({ ...EXISTING_WIX_CASE_DATA, isMedicalExaminerCase: true });
     await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { tagNumber: 'T-4' } });
     expect(mockUpdateWixDataItem.mock.calls.at(-1)![2]).toMatchObject({ isMedicalExaminerCase: true });
+  });
+});
+
+describe('GET /api/cases/[caseId] — tenant-isolation hardening (2026-10)', () => {
+  const GUS_ORGANIZATION_ID = 'gus-camacho-jr';
+
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+    const membershipIndex = mockMembershipFixtures.findIndex((m) => m.organizationId === GUS_ORGANIZATION_ID && m.userId === mockDefaultUser.id);
+    if (membershipIndex !== -1) mockMembershipFixtures.splice(membershipIndex, 1);
+    const organizationIndex = mockOrganizationFixtures.findIndex((o) => o.id === GUS_ORGANIZATION_ID);
+    if (organizationIndex !== -1) mockOrganizationFixtures.splice(organizationIndex, 1);
+  });
+
+  it('a mock-source session is rejected (401) on wix data before any case query', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    mockWixQueries();
+    mockSession = { user: mockDefaultUser };
+
+    const response = await requestFor('1042', DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(401);
+    expect(mockQueryWixDataItems).not.toHaveBeenCalledWith('cases', expect.anything());
+  });
+
+  it('the Gus deployment (DEPLOYMENT_ORGANIZATION_IDS=gus-camacho-jr) cannot read a managed-cremations case by id, even for an administrator of both', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = GUS_ORGANIZATION_ID;
+    mockOrganizationFixtures.push({ id: GUS_ORGANIZATION_ID, name: 'Gus Camacho Jr. Funeral Home', isActive: true });
+    mockMembershipFixtures.push({ organizationId: GUS_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true });
+    mockSession = fixtureIdentitySession(mockDefaultUser);
+    // Filter-honoring 'cases' lookup: the Manors case row exists in the
+    // shared backend and is only ever returned for its own organization.
+    mockWixQueries();
+    const baseImplementation = mockQueryWixDataItems.getMockImplementation()!;
+    mockQueryWixDataItems.mockImplementation((collectionId: string, options?: { filter?: Record<string, unknown> }) => {
+      if (collectionId === 'cases') {
+        const matches = options?.filter?.organizationId === DEFAULT_ORGANIZATION_ID && options?.filter?.beaconCaseId === '1042';
+        return Promise.resolve({ dataItems: matches ? [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }] : [] });
+      }
+      return baseImplementation(collectionId, options);
+    });
+
+    // Explicitly requesting the Manors organization: generic 403, no case query at all.
+    const explicit = await requestFor('1042', DEFAULT_ORGANIZATION_ID);
+    expect(explicit.status).toBe(403);
+    expect(mockQueryWixDataItems).not.toHaveBeenCalledWith('cases', expect.anything());
+
+    // Requesting the Gus organization: authorized, but the query is scoped
+    // to gus-camacho-jr, so the Manors case is simply not found.
+    const viaGus = await requestFor('1042', GUS_ORGANIZATION_ID);
+    expect(viaGus.status).toBe(404);
+    for (const call of mockQueryWixDataItems.mock.calls.filter(([collectionId]) => collectionId === 'cases')) {
+      expect(call[1]?.filter?.organizationId).toBe(GUS_ORGANIZATION_ID);
+    }
   });
 });

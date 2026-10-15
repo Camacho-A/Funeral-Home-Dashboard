@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { AuthorizationContext } from '../../types/authorization';
 import { getSession, createSession } from './session';
-import { resolveAuthorizationContext } from './authorize';
+import { resolveAuthorizationContext, isNonIdentityAuthorizationPermitted } from './authorize';
+import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
 import { resolveIdentitySession } from './resolveIdentitySession';
 import { resolveMembershipAuthorizationContext } from './resolveMembershipAuthorizationContext';
 import { getDataAdapterMode } from '../env';
@@ -51,6 +52,17 @@ import { getDataAdapterMode } from '../env';
  * the Membership model at all — this is the one central point that keeps
  * every already-existing protected route working for the new auth mode
  * with no per-route change required.
+ *
+ * Tenant-isolation hardening (2026-10):
+ * - A non-identity (`mock`/`wix`) session is rejected with 401 unless the
+ *   process runs on mock data with a compatible AUTH_ADAPTER
+ *   (authorize.ts's isNonIdentityAuthorizationPermitted — fails closed on
+ *   misconfiguration). Mock-fixture memberships never authorize live Wix
+ *   data.
+ * - A requested organization this deployment does not serve
+ *   (DEPLOYMENT_ORGANIZATION_IDS) is rejected with the same generic 403 as
+ *   any other denial, before any membership lookup; implicit selection is
+ *   restricted the same way inside both resolvers.
  */
 export type RouteAuthorizationResult =
   | { authorized: true; context: AuthorizationContext }
@@ -68,6 +80,14 @@ export async function requireAuthorizedOrganization(
   const session = await getSession();
   if (!session) {
     return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
+  }
+
+  if (session.user.source !== 'identity' && !isNonIdentityAuthorizationPermitted()) {
+    return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
+  }
+
+  if (!isOrganizationAllowedInDeployment(requestedOrganizationId)) {
+    return { authorized: false, response: FORBIDDEN_RESPONSE() };
   }
 
   if (session.user.source === 'identity') {

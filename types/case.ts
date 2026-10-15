@@ -61,7 +61,14 @@ export type VaPublishChoice = 'publish' | 'private';
     never silently treated as `'family'`-equivalent). `'family'` means the
     internal VA Notification checklist (`VA_STEPS`) does not apply — Manors
     staff are never required to complete it, and the case is never flagged
-    as needing attention for it. */
+    as needing attention for it.
+
+    Multi-tenant (2026-10): `'manors'` is a LEGACY STORED KEY meaning "this
+    funeral home (the case's own organization) is handling it" — kept
+    verbatim so no stored case data is rewritten. It is never shown to
+    staff as-is: the label comes from the organization's profile (see
+    domain/organization/organizationProfiles.ts#vaNotificationFuneralHomeLabel
+    and VA_FUNERAL_HOME_RESPONSIBILITY_KEY). */
 export type VaNotificationResponsibility = 'manors' | 'family';
 /** Manors launch-prep. Whether cremated remains are still with the
     provider or have been released to the family — the answer staff need

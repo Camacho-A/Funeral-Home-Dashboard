@@ -52,7 +52,12 @@ export type AuthAdapterMode = 'mock' | 'wix' | 'identity';
  * docs/adr/ADR-025-identity-authentication-architecture.md.
  */
 export function getAuthAdapterMode(): AuthAdapterMode {
-  const raw = (process.env.AUTH_ADAPTER ?? 'mock').trim().toLowerCase();
+  // Tenant-isolation hardening (2026-10): with real (shared, multi-tenant)
+  // Wix data, an unset AUTH_ADAPTER fails closed to the real identity
+  // system — never to the mock fixtures, whose memberships would otherwise
+  // be trusted against live data. See isAuthAdapterAllowedForDataAdapter.
+  const fallback = getDataAdapterMode() === 'wix' ? 'identity' : 'mock';
+  const raw = (process.env.AUTH_ADAPTER ?? fallback).trim().toLowerCase();
   if (raw !== 'mock' && raw !== 'wix' && raw !== 'identity') {
     throw new Error(
       `Invalid AUTH_ADAPTER value "${process.env.AUTH_ADAPTER}" — must be "mock", "wix", or "identity". See docs/AUTHENTICATION.md.`,
@@ -204,4 +209,61 @@ export function getLoginOrganizationId(): string | null {
 export function getLoginOrganizationHosts(): string | null {
   const value = process.env.LOGIN_ORGANIZATION_HOSTS?.trim();
   return value ? value : null;
+}
+
+/**
+ * Tenant-isolation hardening (2026-10). Mock and Wix-Members logins
+ * authorize against the in-repo mock membership fixtures
+ * (lib/auth/authorize.ts), so they may only ever be paired with mock
+ * data. Real (shared, multi-tenant) Wix data requires the identity system,
+ * whose memberships live in Wix itself. Callers that accept a session or a
+ * login treat `false` as fail-closed.
+ */
+export function isAuthAdapterAllowedForDataAdapter(
+  authAdapterMode: AuthAdapterMode = getAuthAdapterMode(),
+  dataAdapterMode: DataAdapterMode = getDataAdapterMode(),
+): boolean {
+  return dataAdapterMode === 'mock' || authAdapterMode === 'identity';
+}
+
+/** Organization ids are slugs (e.g. `gus-camacho-jr`) or onboarding UUIDs. */
+const ORGANIZATION_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+
+export function isValidOrganizationId(value: string): boolean {
+  return ORGANIZATION_ID_PATTERN.test(value);
+}
+
+/**
+ * Deployment organization allowlist (2026-10). Several SOLIS deployments
+ * (e.g. Manors' and Gus Camacho's) can share one multi-tenant Beacon
+ * backend; DEPLOYMENT_ORGANIZATION_IDS (comma-separated organization ids)
+ * names the only organizations THIS deployment may serve or process —
+ * staff routes, family/public token routes, webhooks and scheduled jobs
+ * all consult it through lib/auth/deploymentOrganizations.ts.
+ *
+ * Returns `null` ("unrestricted") only outside production or with mock
+ * data. A production deployment on real Wix data with no allowlist fails
+ * closed: this throws rather than silently serving every tenant.
+ */
+export function getDeploymentOrganizationIds(): readonly string[] | null {
+  const raw = process.env.DEPLOYMENT_ORGANIZATION_IDS?.trim();
+  if (!raw) {
+    if (process.env.NODE_ENV === 'production' && getDataAdapterMode() === 'wix') {
+      throw new Error(
+        'DEPLOYMENT_ORGANIZATION_IDS is not set. A production deployment on shared Wix data must name the ' +
+          'organization(s) it serves (e.g. DEPLOYMENT_ORGANIZATION_IDS=managed-cremations). Refusing to serve every tenant.',
+      );
+    }
+    return null;
+  }
+
+  const ids = raw.split(',').map((id) => id.trim()).filter(Boolean);
+  const invalid = ids.filter((id) => !isValidOrganizationId(id));
+  if (ids.length === 0 || invalid.length > 0) {
+    throw new Error(
+      `Invalid DEPLOYMENT_ORGANIZATION_IDS value "${raw}" — expected comma-separated organization ids ` +
+        `(lowercase letters, digits and hyphens)${invalid.length ? `; invalid: ${invalid.join(', ')}` : ''}.`,
+    );
+  }
+  return Array.from(new Set(ids));
 }

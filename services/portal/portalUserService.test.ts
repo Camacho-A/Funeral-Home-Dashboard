@@ -2,6 +2,13 @@ import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { portalUserFixtures } from '../__mocks__/portalFixtures';
 import { hashPassword } from '../../lib/identity/passwordHashing';
 
+/** A reset-token expiry always in the future relative to "now" — a hardcoded
+    calendar date (previously 2026-09-01) silently expires once the wall clock
+    passes it, turning the "valid token" tests into expired-token tests. */
+function futureExpiry(): string {
+  return new Date(Date.now() + 60 * 60 * 1000).toISOString();
+}
+
 let idCounter = 0;
 function idFactory(): string {
   idCounter += 1;
@@ -86,10 +93,10 @@ describe('portalUserService', () => {
       'mock',
     );
 
-    const updated = await requestPortalPasswordReset({ email: 'reset.me@example.com', tokenHash: 'a'.repeat(64), expiresAt: '2026-09-01T00:00:00.000Z' }, 'mock');
+    const updated = await requestPortalPasswordReset({ email: 'reset.me@example.com', tokenHash: 'a'.repeat(64), expiresAt: futureExpiry() }, 'mock');
     expect(updated?.passwordResetTokenHash).toBe('a'.repeat(64));
 
-    expect(await requestPortalPasswordReset({ email: 'no-such-email@example.com', tokenHash: 'b'.repeat(64), expiresAt: '2026-09-01T00:00:00.000Z' }, 'mock')).toBeNull();
+    expect(await requestPortalPasswordReset({ email: 'no-such-email@example.com', tokenHash: 'b'.repeat(64), expiresAt: futureExpiry() }, 'mock')).toBeNull();
   });
 
   it('resetPortalPasswordWithToken sets the new password and clears the token — never replayable', async () => {
@@ -98,7 +105,7 @@ describe('portalUserService', () => {
       { email: 'reset.consume@example.com', displayName: 'Reset Consume', passwordHash: hashPassword('OldPassword1!'), idFactory },
       'mock',
     );
-    await requestPortalPasswordReset({ email: 'reset.consume@example.com', tokenHash: 'c'.repeat(64), expiresAt: '2026-09-01T00:00:00.000Z' }, 'mock');
+    await requestPortalPasswordReset({ email: 'reset.consume@example.com', tokenHash: 'c'.repeat(64), expiresAt: futureExpiry() }, 'mock');
 
     const updated = await resetPortalPasswordWithToken('c'.repeat(64), hashPassword('NewPassword1!'), 'mock');
     expect(updated?.id).toBe(portalUser.id);

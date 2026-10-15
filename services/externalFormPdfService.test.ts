@@ -12,12 +12,12 @@ vi.mock('./documentService', async () => {
   return { ...actual, upload: vi.fn() };
 });
 
-const CTX = { organizationId: 'org-1', actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'corr-1', isSystemGenerated: true };
+const CTX = { organizationId: 'managed-cremations', actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'corr-1', isSystemGenerated: true };
 
 function makeSubmission(overrides: Partial<ExternalFormSubmission> = {}): ExternalFormSubmission {
   return {
     id: 'sub-1',
-    organizationId: 'org-1',
+    organizationId: 'managed-cremations',
     provider: 'jotform',
     externalFormId: '261945978664175',
     externalSubmissionId: 'ext-sub-1',
@@ -162,5 +162,46 @@ describe('preservePdfForSubmission', () => {
     expect(updatedArrangement?.documentId).toBe('doc-arrangement');
     expect(updatedVital?.documentId).toBe('doc-vital');
     expect(updatedArrangement?.documentId).not.toBe(updatedVital?.documentId);
+  });
+});
+
+describe('preservePdfForSubmission — organization-aware document typing (2026-10)', () => {
+  it('a submission of another organization carrying a Manors form id is filed generically, never under the Manors document type', async () => {
+    const { fetchSubmissionPdf } = await import('../lib/jotform/jotformClient');
+    const { upload } = await import('./documentService');
+    vi.mocked(fetchSubmissionPdf).mockResolvedValue(Buffer.from('%PDF-1.4 synthetic'));
+    vi.mocked(upload).mockResolvedValue({ id: 'document-gus' } as never);
+
+    const submission = makeSubmission({ id: 'sub-gus', organizationId: 'gus-camacho-jr', externalFormId: '261945978664175' });
+    externalFormSubmissionFixtures.push(submission);
+
+    const { preservePdfForSubmission } = await import('./externalFormPdfService');
+    await preservePdfForSubmission(submission, 'case-gus', { ...CTX, organizationId: 'gus-camacho-jr' }, 'mock');
+
+    const [uploadParams] = vi.mocked(upload).mock.calls[0];
+    expect(uploadParams.fileName).toBe('261945978664175.pdf');
+    expect(uploadParams.documentTypeKey).toBeUndefined();
+  });
+
+  it("uses the config's own Jotform account key, and ignores a config that is not the submission's own", async () => {
+    const { fetchSubmissionPdf } = await import('../lib/jotform/jotformClient');
+    const { upload } = await import('./documentService');
+    vi.mocked(fetchSubmissionPdf).mockResolvedValue(Buffer.from('%PDF-1.4 synthetic'));
+    vi.mocked(upload).mockResolvedValue({ id: 'document-key' } as never);
+
+    const gusSubmission = makeSubmission({ id: 'sub-gus-key', organizationId: 'gus-camacho-jr', externalFormId: '300000000000001' });
+    externalFormSubmissionFixtures.push(gusSubmission);
+    const { preservePdfForSubmission } = await import('./externalFormPdfService');
+    await preservePdfForSubmission(gusSubmission, 'case-gus', CTX, 'mock', {
+      config: { organizationId: 'gus-camacho-jr', provider: 'jotform', externalFormId: '300000000000001', apiKeyReference: 'JOTFORM_API_KEY_GUS' },
+    });
+    expect(vi.mocked(fetchSubmissionPdf).mock.calls[0]).toEqual(['300000000000001', 'ext-sub-1', { apiKeyReference: 'JOTFORM_API_KEY_GUS' }]);
+
+    const other = makeSubmission({ id: 'sub-other-key', externalSubmissionId: 'ext-sub-2' });
+    externalFormSubmissionFixtures.push(other);
+    await preservePdfForSubmission(other, 'case-m', CTX, 'mock', {
+      config: { organizationId: 'gus-camacho-jr', provider: 'jotform', externalFormId: '300000000000001', apiKeyReference: 'JOTFORM_API_KEY_GUS' },
+    });
+    expect(vi.mocked(fetchSubmissionPdf).mock.calls[1]).toEqual(['261945978664175', 'ext-sub-2']);
   });
 });

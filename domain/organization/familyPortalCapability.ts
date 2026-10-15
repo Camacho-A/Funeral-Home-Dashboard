@@ -1,4 +1,5 @@
 import type { Organization } from '../../types/organization';
+import { getOrganizationProfile, registeredProfileMap } from './organizationProfiles';
 
 /**
  * Handwritten item #3 (2026-09, Family Portal removal for Manors). The
@@ -31,18 +32,25 @@ import type { Organization } from '../../types/organization';
  * Manors, `ORGANIZATION_OVERRIDES` can simply be emptied; no other file
  * needs to change.
  */
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
 
-export const ORGANIZATION_OVERRIDES: Record<string, boolean> = {
-  [MANORS_ORGANIZATION_ID]: false,
-};
+/**
+ * 2026-10: the override now lives in domain/organization/organizationProfiles.ts
+ * as a PINNED profile feature (profile wins over the record). This map is
+ * derived from that registry and kept only for existing importers
+ * (services/organizationFamilyPortalCapabilityService.ts short-circuits on
+ * it without fetching the Organization). To drop Manors' override, unpin
+ * `familyPortalEnabled` in its profile — no other file changes.
+ */
+export const ORGANIZATION_OVERRIDES: Record<string, boolean> = registeredProfileMap(
+  (profile) => profile.features.familyPortalEnabled,
+  (profile) => profile.pinnedFeatures.includes('familyPortalEnabled'),
+);
 
 /** For callers that already have a full (or partial) Organization record —
     e.g. client-side via useOrganizationRecord(). */
 export function isFamilyPortalEnabled(organization: (Pick<Organization, 'id' | 'familyPortalEnabled'> & { id: string }) | null | undefined): boolean {
-  if (organization?.id && organization.id in ORGANIZATION_OVERRIDES) {
-    return ORGANIZATION_OVERRIDES[organization.id];
-  }
   if (!organization) return true;
-  return organization.familyPortalEnabled !== false;
+  // Pinned profile value > explicit record field > profile > platform default.
+  return getOrganizationProfile(organization.id, organization).features.familyPortalEnabled;
 }

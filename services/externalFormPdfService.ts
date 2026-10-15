@@ -3,6 +3,8 @@ import { fetchSubmissionPdf, JotformClientError } from '../lib/jotform/jotformCl
 import { upload as uploadDocument } from './documentService';
 import * as externalFormSubmissionService from './externalFormSubmissionService';
 import type { ExternalFormSubmission } from '../types/externalFormSubmission';
+import type { ExternalFormConfig } from '../types/externalFormConfig';
+import { resolveFormLayout } from '../domain/externalForms/formRegistry';
 import type { ActivityContext } from './activityService';
 import { recordExternalFormPdfStored, recordExternalFormPdfFailed } from './activityService';
 
@@ -22,9 +24,21 @@ import { recordExternalFormPdfStored, recordExternalFormPdfFailed } from './acti
  * safe no-op check, never a second `documentService.upload()` call.
  */
 
-const DOCUMENT_TYPE_BY_FORM: Record<string, { documentTypeKey: string; displayFileName: string }> = {
-  '262605621454050': { documentTypeKey: 'external_form.vital_statistics', displayFileName: 'Vital Statistics Information Sheet.pdf' },
-  '261945978664175': { documentTypeKey: 'external_form.arrangement_forms', displayFileName: 'Arrangement Forms.pdf' },
+/*
+ * Document type / display name per form (2026-10 multi-tenant hardening):
+ * resolved from the organization-aware form registry
+ * (domain/externalForms/formRegistry.ts) rather than a table keyed by
+ * Manors' form ids. A form whose organization has no registered layout is
+ * filed under the generic `{formId}.pdf` name with no document type —
+ * exactly what an unknown form always got.
+ */
+
+export type PreservePdfOptions = {
+  /** The trusted config the submission came through. When supplied, its
+      `mappingKey` selects the layout and its `apiKeyReference` selects the
+      Jotform account key. When omitted, the layout is the submission's own
+      organization's binding for its form id, and the default key is used. */
+  config?: Pick<ExternalFormConfig, 'organizationId' | 'provider' | 'externalFormId' | 'mappingKey' | 'apiKeyReference'> | null;
 };
 
 export type PreservePdfResult = { outcome: 'already_stored' | 'stored' | 'failed'; documentId: string | null };
@@ -40,17 +54,30 @@ export async function preservePdfForSubmission(
   caseId: string,
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
+  options: PreservePdfOptions = {},
 ): Promise<PreservePdfResult> {
   if (submission.pdfStatus === 'stored' && submission.documentId) {
     return { outcome: 'already_stored', documentId: submission.documentId };
   }
 
-  const typeInfo = DOCUMENT_TYPE_BY_FORM[submission.externalFormId];
+  // A supplied config is only honoured when it is genuinely this
+  // submission's own config — never a way to borrow another
+  // organization's layout or key.
+  const config =
+    options.config &&
+    options.config.organizationId === submission.organizationId &&
+    options.config.provider === submission.provider &&
+    options.config.externalFormId === submission.externalFormId
+      ? options.config
+      : null;
+  const typeInfo = resolveFormLayout(config ?? submission)?.pdfDocument ?? null;
   const fileName = typeInfo?.displayFileName ?? `${submission.externalFormId}.pdf`;
   const documentTypeKey = typeInfo?.documentTypeKey;
 
   try {
-    const buffer = await fetchSubmissionPdf(submission.externalFormId, submission.externalSubmissionId);
+    const buffer = config?.apiKeyReference
+      ? await fetchSubmissionPdf(submission.externalFormId, submission.externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+      : await fetchSubmissionPdf(submission.externalFormId, submission.externalSubmissionId);
 
     const document = await uploadDocument(
       {

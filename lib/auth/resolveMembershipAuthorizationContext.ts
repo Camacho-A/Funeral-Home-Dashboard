@@ -3,6 +3,7 @@ import type { AuthorizationContext } from '../../types/authorization';
 import type { DataAdapterMode } from '../env';
 import { listMembershipsForIdentity, isActiveMembership } from '../../services/membershipService';
 import { setSessionOrganization } from '../../services/sessionService';
+import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). The
@@ -20,16 +21,40 @@ import { setSessionOrganization } from '../../services/sessionService';
  * can still pass `requestedOrganizationId` explicitly (used by
  * /switch-organization itself, before it calls setSessionOrganization).
  */
+/**
+ * Deployment organization restrictions (2026-10): only memberships whose
+ * organization THIS deployment serves (lib/auth/deploymentOrganizations.ts)
+ * are ever considered — for an explicit request, for the session's stored
+ * organization, and for implicit single-membership auto-selection alike.
+ *
+ * `organization_not_allowed` is returned (never a silent switch to some
+ * other organization) when the explicitly requested organization, or the
+ * session's previously-selected one, is outside this deployment. Signing
+ * in again (a fresh session has no stored organization) or an explicit
+ * /api/auth/switch-organization to an allowed organization recovers.
+ */
 export type MembershipAuthorizeResult =
   | { granted: true; context: AuthorizationContext }
-  | { granted: false; reason: 'no_active_membership' | 'organization_mismatch' | 'selection_required' };
+  | {
+      granted: false;
+      reason: 'no_active_membership' | 'organization_mismatch' | 'selection_required' | 'organization_not_allowed';
+    };
 
 export async function resolveMembershipAuthorizationContext(
   identitySession: IdentitySession,
   dataAdapterMode: DataAdapterMode,
   requestedOrganizationId?: string,
 ): Promise<MembershipAuthorizeResult> {
-  const memberships = (await listMembershipsForIdentity(identitySession.identityId, dataAdapterMode)).filter(isActiveMembership);
+  if (requestedOrganizationId != null && !isOrganizationAllowedInDeployment(requestedOrganizationId)) {
+    return { granted: false, reason: 'organization_not_allowed' };
+  }
+  if (identitySession.organizationId != null && requestedOrganizationId == null && !isOrganizationAllowedInDeployment(identitySession.organizationId)) {
+    return { granted: false, reason: 'organization_not_allowed' };
+  }
+
+  const memberships = (await listMembershipsForIdentity(identitySession.identityId, dataAdapterMode))
+    .filter(isActiveMembership)
+    .filter((membership) => isOrganizationAllowedInDeployment(membership.organizationId));
 
   if (memberships.length === 0) {
     return { granted: false, reason: 'no_active_membership' };

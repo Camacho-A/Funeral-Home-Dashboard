@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import {
   mockDefaultUser,
@@ -18,9 +19,23 @@ import { defaultRoleDefinition, type DefaultRoleKey } from '@/domain/rbac/defaul
  * real eligibility gate rather than a stand-in.
  */
 
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 let mockQueryWixDataItems = vi.fn();
@@ -112,7 +127,7 @@ beforeEach(() => {
   process.env.DATA_ADAPTER = 'wix';
   process.env.WIX_API_KEY = 'test-key';
   process.env.WIX_SITE_ID = 'test-site';
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
   mockQueryWixDataItems = vi.fn().mockResolvedValue({ dataItems: [] });
   mockInsertWixDataItem = vi.fn();
   mockUpdateWixDataItem = vi.fn();
@@ -142,7 +157,7 @@ describe('GET /api/organization/case-sequence/manors-go-live-cutover', () => {
     // officeStaff on DEFAULT_ORGANIZATION_ID, no organization.manage — the
     // default mock (empty roles/rolePermissions from beforeEach) already
     // grants nothing, so canManageOrganization resolves false naturally.
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const response = await getRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(403);
   });
@@ -151,7 +166,7 @@ describe('GET /api/organization/case-sequence/manors-go-live-cutover', () => {
     // mockMultiOrgUser has membership in SECOND_MOCK_ORGANIZATION_ID, so
     // requireAuthorizedOrganization succeeds and we reach the eligibility
     // gate itself, proving THIS check (not auth) is what blocks it.
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     seedState({ sequenceRow: caseSequenceRow(SECOND_MOCK_ORGANIZATION_ID, 2026, 34) });
     const response = await getRequest(SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(200);
@@ -303,7 +318,7 @@ describe('POST /api/organization/case-sequence/manors-go-live-cutover', () => {
   });
 
   it('a non-authorized user cannot execute the cutover', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
     expect(response.status).toBe(403);
     expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
@@ -365,14 +380,14 @@ function seedRoleWithoutCaseNumberManage(roleKey: DefaultRoleKey) {
 
 describe('GET/POST /api/organization/case-sequence/manors-go-live-cutover — Manors RBAC restriction (2026-09), per non-authorized role', () => {
   it.each(NON_AUTHORIZED_MANORS_ROLES)('GET returns 403 for $roleKey (holds its real other permissions, never caseNumber.manage)', async ({ roleKey, user }) => {
-    mockSession = { user };
+    mockSession = fixtureIdentitySession(user);
     seedRoleWithoutCaseNumberManage(roleKey);
     const response = await getRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(403);
   });
 
   it.each(NON_AUTHORIZED_MANORS_ROLES)('POST returns 403 for $roleKey (holds its real other permissions, never caseNumber.manage)', async ({ roleKey, user }) => {
-    mockSession = { user };
+    mockSession = fixtureIdentitySession(user);
     seedRoleWithoutCaseNumberManage(roleKey);
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
     expect(response.status).toBe(403);

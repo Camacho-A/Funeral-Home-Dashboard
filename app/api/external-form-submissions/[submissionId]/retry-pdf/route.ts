@@ -6,6 +6,7 @@ import { canEditCase } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import * as caseFormLinkService from '@/services/caseFormLinkService';
+import * as externalFormConfigService from '@/services/externalFormConfigService';
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 
 /**
@@ -101,6 +102,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     correlationId: crypto.randomUUID(),
   };
 
-  const pdfResult = await preservePdfForSubmission(submission, link.caseId, activityCtx, dataAdapterMode);
+  // The link's own config (same organization by construction) supplies
+  // the registered layout and the Jotform account key for this form.
+  const config = await externalFormConfigService.getById(organizationId, link.formConfigId, dataAdapterMode);
+  const pdfResult = await preservePdfForSubmission(submission, link.caseId, activityCtx, dataAdapterMode, { config });
   return NextResponse.json({ submissionId: submission.id, caseId: link.caseId, pdf: pdfResult });
 }

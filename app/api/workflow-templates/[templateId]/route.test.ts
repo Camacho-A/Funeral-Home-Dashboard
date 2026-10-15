@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID } from '@/services/__mocks__/workflowTemplates';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
@@ -22,9 +23,23 @@ vi.mock('@/lib/wixDataApi', async () => {
 // comment in app/api/organizations/[organizationId]/route.test.ts. Tests
 // that legitimately need to reach the second organization use
 // mockMultiOrgUser, which has active memberships in both.
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 const { GET } = await import('./route');
@@ -40,7 +55,7 @@ beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
 });
 
 afterEach(() => {
@@ -76,7 +91,7 @@ describe('GET /api/workflow-templates/[templateId] — mock mode', () => {
   });
 
   it('returns 404 when the template id exists but belongs to a different organization the caller IS authorized for', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const response = await requestFor(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(404);
   });
@@ -154,7 +169,7 @@ describe('GET /api/workflow-templates/[templateId] — wix mode', () => {
   });
 
   it('returns 404 when the template exists in Wix but under a different organization the caller IS authorized for', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     process.env.DATA_ADAPTER = 'wix';
     process.env.WIX_API_KEY = 'test-key';
     process.env.WIX_SITE_ID = 'test-site';

@@ -1,5 +1,5 @@
 import { insertWixDataItem, updateWixDataItem, incrementWixDataField, queryWixDataItems, WixDataApiError } from './wixDataApi';
-import { formatCaseNumber } from '../domain/cases/caseNumber';
+import { formatCaseNumber, isValidCaseNumberPrefix } from '../domain/cases/caseNumber';
 
 const CASE_SEQUENCES_COLLECTION = 'caseSequences';
 
@@ -53,6 +53,16 @@ export async function reserveNextCaseNumber(
       every existing caller and every existing sequence is unchanged. */
   prefix?: string | null,
 ): Promise<string> {
+  // Organization-specific numbering (2026-10): an explicitly supplied but
+  // invalid prefix is a configuration error — fail loudly BEFORE consuming
+  // a sequence number, never silently fall back to another organization's
+  // prefix (callers resolve it via resolveCaseNumberPrefix first).
+  if (typeof prefix === 'string' && prefix.trim() !== '' && !isValidCaseNumberPrefix(prefix.trim().toUpperCase())) {
+    throw new Error(`Invalid case-number prefix "${prefix}" for ${organizationId} — must be 1-3 letters A-Z.`);
+  }
+  if (!Number.isInteger(year) || year < 2000 || year > 2999) {
+    throw new Error(`Invalid case-number year ${year} for ${organizationId}.`);
+  }
   const sequenceId = `${organizationId}-${year}`;
 
   try {

@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { runAppointmentReminderSweep } from '@/services/appointmentReminderService';
+import { cronHandler } from '../_lib/cronRoute';
 
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
@@ -16,18 +16,16 @@ import { runAppointmentReminderSweep } from '@/services/appointmentReminderServi
  * means this route can never be triggered (503), and a missing/wrong
  * bearer token is rejected (401) — never a silently-accepted
  * unauthenticated sweep.
+ *
+ * Scheduled-job isolation (2026-10).
+ * Manors keeps these routes POST-only for now: Vercel Cron sends GET, so a
+ * scheduled run still gets 405 exactly as before and no previously
+ * nonfunctional schedule starts running as a side effect of this port
+ * (enabling GET is a separate, reviewed rollout — docs/SCHEDULED_JOBS.md).
+ * POST (manual trigger) uses one constant-time
+ * `CRON_SECRET` bearer check (`app/api/cron/_lib/cronRoute.ts`); the sweep
+ * only ever processes this deployment's organizations
+ * (`DEPLOYMENT_ORGANIZATION_IDS`). `vercel.json` is unchanged by this port.
  */
-export async function POST(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: 'CRON_SECRET is not configured.' }, { status: 503 });
-  }
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
-  }
+export const POST = cronHandler(() => runAppointmentReminderSweep(getDataAdapterMode()));
 
-  const dataAdapterMode = getDataAdapterMode();
-  const result = await runAppointmentReminderSweep(dataAdapterMode);
-  return NextResponse.json({ result });
-}

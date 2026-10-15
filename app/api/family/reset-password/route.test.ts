@@ -52,7 +52,7 @@ describe('POST /api/family/reset-password', () => {
     );
     const oldSession = await createPortalSession({ portalUserId: portalUser.id, deviceId: 'device-1', idFactory }, 'mock');
     const { token, tokenHash } = generateToken();
-    await requestPortalPasswordReset({ email: 'family-reset@example.com', tokenHash, expiresAt: '2026-12-31T00:00:00.000Z' }, 'mock');
+    await requestPortalPasswordReset({ email: 'family-reset@example.com', tokenHash, expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, 'mock');
 
     const response = await resetRequest({ token, password: 'NewPassword1!' });
     expect(response.status).toBe(200);

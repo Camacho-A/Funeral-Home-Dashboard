@@ -1,6 +1,8 @@
 import type { DataAdapterMode } from '../lib/env';
 import { isTypeEnabled, IMPLEMENTED_NOTIFICATION_TYPES } from '../domain/notifications/notificationDefaults';
 import { countWixDataItems, queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
+import { asNullableString, claimWixSweepRow, deploymentOrganizationWixFilter, isClaimFresh, retainDeploymentRecords } from './scheduledJobs/sweepSupport';
 import { mapWixNotificationItem, buildWixNotificationData, applyNotificationPatchToWixData, type WixNotificationItem } from '../lib/wixNotificationMapper';
 import {
   mapWixNotificationRecipientItem,
@@ -915,17 +917,65 @@ export async function getUnreadCount(organizationId: string, identityId: string,
 // ---------------------------------------------------------------------------
 
 /** Every NotificationDelivery currently holding a digest/quiet-hours
-    deferral, across every organization — the one input
-    services/notificationDigestService.ts's sweep needs. */
+    deferral, across every organization THIS DEPLOYMENT serves — the one
+    input services/notificationDigestService.ts's sweep needs.
+    Scheduled-job isolation (2026-10): the deployment allowlist is pushed
+    into the query and every row is re-checked (docs/SCHEDULED_JOBS.md). */
 export async function listAllQueuedForDigestDeliveries(dataAdapterMode: DataAdapterMode): Promise<NotificationDelivery[]> {
   if (dataAdapterMode === 'mock') {
-    return notificationDeliveryFixtures.filter((d) => d.status === 'queued_for_digest');
+    return retainDeploymentRecords('notification-digest', notificationDeliveryFixtures.filter((d) => d.status === 'queued_for_digest'), (d) => d.organizationId);
   }
   // Paginated (2026-10): a sweep that silently processed only the first
   // WIX_FETCH_WINDOW rows would strand the rest indefinitely, and a
   // backlog is exactly the state this sweep exists to clear.
-  const items = await queryAllWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', { status: 'queued_for_digest' });
-  return items.map((item) => mapWixNotificationDeliveryItem(item.data)).filter((d): d is NotificationDelivery => d !== null);
+  const items = await queryAllWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', { ...deploymentOrganizationWixFilter(), status: 'queued_for_digest' });
+  const deliveries = items.map((item) => mapWixNotificationDeliveryItem(item.data)).filter((d): d is NotificationDelivery => d !== null);
+  return retainDeploymentRecords('notification-digest', deliveries, (d) => d.organizationId);
+}
+
+/**
+ * Scheduled-job isolation (2026-10) — claim-before-send for digest
+ * deliveries, using the EXISTING `lastAttemptAt` field (no schema change).
+ * A `queued_for_digest` row never has `lastAttemptAt` set by anything else
+ * (dispatchChannel queues with null; every real attempt moves the row out
+ * of `queued_for_digest`), so a queued row with a fresh `lastAttemptAt` is
+ * "being flushed by another sweep right now" and is skipped. The claim is
+ * a compare-and-swap on (status, lastAttemptAt) — of two overlapping
+ * sweeps reading the same row, exactly one wins. A claim older than
+ * SWEEP_CLAIM_TTL_MS (a crashed sweep) becomes reclaimable, so a row is
+ * never stranded (at-least-once for that rare crash window).
+ */
+async function claimDigestDelivery(delivery: NotificationDelivery, claimAt: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const nowMs = new Date(claimAt).getTime();
+  if (dataAdapterMode === 'mock') {
+    const index = notificationDeliveryFixtures.findIndex((d) => d.id === delivery.id && d.organizationId === delivery.organizationId);
+    if (index === -1) return false;
+    const current = notificationDeliveryFixtures[index];
+    if (current.status !== 'queued_for_digest' || current.lastAttemptAt !== delivery.lastAttemptAt || isClaimFresh(current.lastAttemptAt, nowMs)) return false;
+    notificationDeliveryFixtures[index] = { ...current, lastAttemptAt: claimAt };
+    return true;
+  }
+  const response = await queryWixDataItems<WixNotificationDeliveryItem>('notificationDeliveries', {
+    filter: { organizationId: delivery.organizationId, beaconNotificationDeliveryId: delivery.id },
+    paging: { limit: 1 },
+  });
+  const item = response.dataItems[0];
+  if (!item) return false;
+  const observed = asNullableString(item.data.lastAttemptAt);
+  if (item.data.status !== 'queued_for_digest' || isClaimFresh(observed, nowMs)) return false;
+  const outcome = await claimWixSweepRow({
+    collection: 'notificationDeliveries',
+    wixItemId: item.id,
+    fieldPath: 'lastAttemptAt',
+    claimValue: claimAt,
+    condition: { status: { $eq: 'queued_for_digest' }, lastAttemptAt: { $eq: observed } },
+    isUnchanged: (data) => data.status === 'queued_for_digest' && asNullableString(data.lastAttemptAt) === observed,
+  });
+  if (outcome === 'unverifiable') {
+    console.warn('[notification-digest] conditional claim not applied by the backend; flushing without a claim (pre-2026-10 behaviour).');
+    return true;
+  }
+  return outcome === 'claimed';
 }
 
 /**
@@ -938,14 +988,32 @@ export async function listAllQueuedForDigestDeliveries(dataAdapterMode: DataAdap
  * persist-attempt-then-record shape, adapted for "N notifications
  * flushed at once" instead of one. `caseId: null` on every activity
  * event: a digest can span multiple cases, so no single case owns it.
+ *
+ * Scheduled-job isolation (2026-10): refuses an organization outside this
+ * deployment, and claims each delivery before sending (claimDigestDelivery)
+ * so overlapping sweeps never email the same delivery twice. `flushed` is
+ * the number of deliveries this call actually claimed and sent/failed.
  */
 export async function flushDigestGroup(
   organizationId: string,
   identityId: string,
   deliveries: NotificationDelivery[],
   dataAdapterMode: DataAdapterMode,
-): Promise<{ succeeded: boolean }> {
+): Promise<{ succeeded: boolean; flushed: number }> {
   const now = nowIso();
+  // Defense in depth (2026-10): never send for an organization this
+  // deployment does not serve, whatever the caller passed in.
+  if (!isOrganizationAllowedInDeployment(organizationId)) return { succeeded: false, flushed: 0 };
+  const inScope = deliveries.filter((d) => d.organizationId === organizationId && d.identityId === identityId);
+  // Claim-before-send: only deliveries this sweep exclusively claimed are
+  // included in (and marked by) this digest — see claimDigestDelivery.
+  const claimed: NotificationDelivery[] = [];
+  for (const delivery of inScope) {
+    if (await claimDigestDelivery(delivery, now, dataAdapterMode)) claimed.push(delivery);
+  }
+  if (claimed.length === 0) return { succeeded: false, flushed: 0 };
+  deliveries = claimed;
+
   const notifications = (await Promise.all(deliveries.map((d) => getNotification(organizationId, d.notificationId, dataAdapterMode)))).filter(
     (n): n is Notification => n !== null,
   );
@@ -995,5 +1063,5 @@ export async function flushDigestGroup(
     await patchPreference(organizationId, identityId, { lastDigestSentAt: now }, dataAdapterMode);
   }
 
-  return { succeeded };
+  return { succeeded, flushed: deliveries.length };
 }

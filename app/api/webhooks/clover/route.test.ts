@@ -503,3 +503,36 @@ describe('POST /api/webhooks/clover — no sensitive data ever appears in error 
     expect(text).not.toContain(WEBHOOK_SECRET);
   });
 });
+
+describe('POST /api/webhooks/clover — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it("never verifies or processes an event for an organization this deployment does not serve — acknowledged with 200 so Clover does not retry it here", async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const now = Math.floor(Date.now() / 1000);
+
+    const response = await POST(signedRequest(eventBody(), now));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true });
+
+    const record = paymentRecordFixtures.find((p) => p.id === 'payment-1')!;
+    expect(record.status).toBe('pending');
+    expect(record.providerPaymentId).toBeNull();
+    expect(webhookEventFixtures.size).toBe(0);
+    expect(activityEventFixtures).toHaveLength(0);
+    expect(caseFixtures[caseFixtureIndex].paymentStatus).toBe('awaiting_payment');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).not.toMatch(/checkout-uuid-1|payment-uuid-1|Clover-Signature/);
+    warn.mockRestore();
+  });
+
+  it('still processes the event when the organization is served', async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = `gus-camacho-jr,${DEFAULT_ORGANIZATION_ID}`;
+    const now = Math.floor(Date.now() / 1000);
+    expect((await POST(signedRequest(eventBody(), now))).status).toBe(200);
+    expect(paymentRecordFixtures.find((p) => p.id === 'payment-1')!.status).toBe('succeeded');
+  });
+});

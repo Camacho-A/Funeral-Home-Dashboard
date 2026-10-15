@@ -7,7 +7,7 @@ import { getById as getExternalFormConfigById } from './externalFormConfigServic
 import { resolveChecklist } from '../domain/workflow/resolveChecklist';
 import { checklistItemKey } from '../domain/workflow/checklistItemKey';
 import { findStageByRawStage } from '../domain/workflow/resolveStages';
-import { ARRANGEMENT_FORMS_EXTERNAL_FORM_ID } from '../domain/externalForms/fieldMapping';
+import { resolveFormRole } from '../domain/externalForms/formRegistry';
 import type { Case } from '../types/case';
 import type { StageTemplate } from '../types/workflowTemplate';
 
@@ -63,7 +63,9 @@ async function isArrangementFormLinked(organizationId: string, caseId: string, d
   for (const link of links) {
     if (!isFormLinkReceived(link.status) || !link.submissionId) continue;
     const config = await getExternalFormConfigById(organizationId, link.formConfigId, dataAdapterMode);
-    if (config?.externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return true;
+    // Organization-aware (2026-10): any form registered as this org's
+    // arrangement layout — Manors' legacy form id or another home's own form.
+    if (config && resolveFormRole(config) === 'arrangement') return true;
   }
   return false;
 }

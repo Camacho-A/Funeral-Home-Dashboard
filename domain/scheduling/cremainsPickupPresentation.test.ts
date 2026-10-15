@@ -133,3 +133,21 @@ describe('formatCaseDateOfDeath (2026-10)', () => {
     expect(formatCaseDateOfDeath('12/31/2026')).toBe('Thursday, December 31, 2026');
   });
 });
+
+describe('cremains labels use the case own number/prefix (organization-specific numbering, 2026-10)', () => {
+  it('compacts a Gus Camacho (M) number without assuming "B"', () => {
+    expect(compactCaseNumber('M2026-004')).toBe('004');
+    expect(compactCaseNumber('AB2027-1200')).toBe('1200');
+  });
+
+  it('renders an M case with its own number in full and compact forms', () => {
+    const gusCase = { caseNumber: 'M2026-004', decedentName: 'JOHN TEST DOE' };
+    expect(cremainsChipLabel(gusCase)).toBe('M2026-004 · Doe');
+    expect(cremainsChipLabel(gusCase, { compact: true })).toBe('004 · Doe');
+  });
+
+  it('never rewrites a number into another prefix', () => {
+    expect(cremainsChipLabel({ caseNumber: 'M2026-004', decedentName: '' })).toBe('M2026-004');
+    expect(compactCaseNumber('m2026-004')).toBe('m2026-004');
+  });
+});

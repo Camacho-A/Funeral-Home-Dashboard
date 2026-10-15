@@ -39,7 +39,8 @@
  */
 import type { ExternalFormConfig } from '@/types/externalFormConfig';
 import type { NextOfKinRelationship } from '@/types/case';
-import { ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, VITAL_STATISTICS_EXTERNAL_FORM_ID, ARRANGEMENT_NOK_RELATIONSHIP_REVERSE_MAP } from './fieldMapping';
+import { ARRANGEMENT_NOK_RELATIONSHIP_REVERSE_MAP } from './fieldMapping';
+import { resolveFormLayout } from './formRegistry';
 
 export type PrefillableCaseValues = {
   caseNumber: string;
@@ -68,17 +69,11 @@ function splitName(fullName: string | null): { first: string; last: string } {
   return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
 }
 
-/** Prefill-only targets — values Solis sends TO the form but never reads
-    back FROM a submission (case number is display/reference only, never
-    the authoritative linkage — see the opaque token instead). Distinct
-    from domain/externalForms/fieldMapping.ts's reconciliation field map. */
-const CASE_NUMBER_QIDS: Record<string, string[]> = {
-  // Arrangement Forms carries the case number in two separate fields.
-  '261945978664175': [
-    'caseNo', // qid=1
-    'caseNo198', // qid=198
-  ],
-};
+/* Prefill-only targets (the staff case-number reference fields) are now
+   part of each form's registered layout — `caseNumberPrefillFields` in
+   domain/externalForms/formRegistry.ts — rather than a table keyed by a
+   Manors form id. Case number is display/reference only, never the
+   authoritative linkage (see the opaque token instead). */
 
 /**
  * `qid` is accepted (and deliberately unused for the key) so every caller
@@ -118,6 +113,11 @@ export function buildJotformPrefillUrl(config: ExternalFormConfig, values: Prefi
   const params = new URLSearchParams();
   const decedent = splitName(values.decedentName);
   const nok = splitName(values.nextOfKinName);
+  // Organization-aware (2026-10): the form-specific blocks below run only
+  // for a config whose OWN organization registered that layout (or that
+  // opts into it via `mappingKey`). An unregistered form — e.g. any new
+  // organization's form — gets only the link token.
+  const layout = resolveFormLayout(config);
 
   // Vital Statistics only (2026-09 outbound-prefill fix). This block used
   // to run unconditionally for every form. A historical-import
@@ -126,7 +126,7 @@ export function buildJotformPrefillUrl(config: ExternalFormConfig, values: Prefi
   // or (qid 10) belong to a completely different field there (Arrangement's
   // own Date of Death, not Date of Birth) — so this block must only ever
   // run for the one form these qids actually belong to.
-  if (config.externalFormId === VITAL_STATISTICS_EXTERNAL_FORM_ID) {
+  if (layout?.prefill === 'vital_statistics') {
     appendParam(params, '3', 'nameof', 'first', decedent.first);
     appendParam(params, '3', 'nameof', 'last', decedent.last);
     appendDateParam(params, '10', 'dateof10', values.dateOfBirth);
@@ -144,7 +144,7 @@ export function buildJotformPrefillUrl(config: ExternalFormConfig, values: Prefi
   // entirely independent). Arrangement has no confirmed qid for
   // nextOfKinEmail, so none is sent — the dedicated NOK block below
   // (qids 277-279) is this form's only NOK prefill mechanism.
-  if (config.externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) {
+  if (layout?.prefill === 'arrangement') {
     appendParam(params, '87', 'name87', 'first', decedent.first);
     appendParam(params, '87', 'name87', 'last', decedent.last);
     appendDateParam(params, '8', 'dateOf', values.dateOfBirth);
@@ -153,11 +153,9 @@ export function buildJotformPrefillUrl(config: ExternalFormConfig, values: Prefi
 
   // Staff-audience-only: the visible case-number reference fields.
   if (config.audience === 'staff') {
-    const caseNoFieldNames = CASE_NUMBER_QIDS[config.externalFormId] ?? [];
-    const qids = ['1', '198'];
-    caseNoFieldNames.forEach((name, i) => {
-      appendParam(params, qids[i], name, undefined, values.caseNumber);
-    });
+    for (const field of layout?.caseNumberPrefillFields ?? []) {
+      appendParam(params, field.qid, field.jotformName, undefined, values.caseNumber);
+    }
   }
 
   // Arrangement Forms only (Phase A.2, 2026-09): the dedicated Next of
@@ -168,7 +166,7 @@ export function buildJotformPrefillUrl(config: ExternalFormConfig, values: Prefi
   // time. If the human answers "No," these values save re-typing an
   // already-known NOK; if "Yes," extraction (arrangementNokDerivation.ts)
   // discards whatever is here regardless of these prefilled/stale values.
-  if (config.externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) {
+  if (layout?.prefill === 'arrangement') {
     appendParam(params, '277', 'nextOf', 'first', nok.first);
     appendParam(params, '277', 'nextOf', 'last', nok.last);
     if (values.nextOfKinPhone) appendParam(params, '278', 'nextOf278', 'full', values.nextOfKinPhone);

@@ -233,3 +233,26 @@ describe('portalInvitationService', () => {
     }
   });
 });
+
+describe('portalInvitationService — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('acceptInvitation treats an invitation for an organization this deployment does not serve as invalid — nothing activated or created', async () => {
+    const { issueInvitation, acceptInvitation } = await import('./portalInvitationService');
+    const { invitation, rawToken } = await issueInvitation(
+      { organizationId: 'org-1', caseId: 'case-allowlist', email: 'allowlist@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin', idFactory },
+      staffCtx(),
+      'mock',
+    );
+    const usersBefore = portalUserFixtures.length;
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const result = await acceptInvitation({ token: rawToken, password: 'Password123!', deviceId: 'device-1', idFactory }, 'mock');
+    expect(result).toEqual({ success: false, reason: 'invalid_or_expired' });
+    expect(portalInvitationFixtures.find((i) => i.id === invitation.id)!.status).toBe('pending');
+    expect(portalAccessFixtures.find((a) => a.id === invitation.linkedPortalAccessId)!.status).toBe('pending');
+    expect(portalUserFixtures.length).toBe(usersBefore);
+  });
+});

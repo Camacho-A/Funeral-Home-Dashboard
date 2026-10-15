@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import {
   mockDefaultUser,
@@ -21,9 +22,23 @@ import {
  * normally-allocated case would duplicate it.
  */
 
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 let mockQueryWixDataItems = vi.fn();
@@ -143,7 +158,7 @@ beforeEach(() => {
   process.env.DATA_ADAPTER = 'wix';
   process.env.WIX_API_KEY = 'test-key';
   process.env.WIX_SITE_ID = 'test-site';
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
   mockQueryWixDataItems = vi.fn().mockResolvedValue({ dataItems: [] });
   mockInsertWixDataItem = insertRejectingExistingSequenceRow();
   mockUpdateWixDataItem = vi.fn((collectionId: string, itemId: string, data: Record<string, unknown>) =>
@@ -235,14 +250,34 @@ describe('GET /api/organization/case-sequence/resync', () => {
   });
 
   it('J: a user without caseNumber.manage cannot even read the plan', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     expect((await getRequest(DEFAULT_ORGANIZATION_ID, '2026')).status).toBe(403);
   });
 
-  it('K: 400s outside DATA_ADAPTER=wix', async () => {
+  it('K: with mock data, GET returns a read-only plan derived from the mock cases (never a resync)', async () => {
+    // Intended change (2026-10): Case Numbering must render in local mock
+    // development. The plan is read-only and computed from the mock cases;
+    // POST (the only mutation) stays Wix-only — see K2.
     process.env.DATA_ADAPTER = 'mock';
-    seedState({ sequenceRow: caseSequenceRow(DEFAULT_ORGANIZATION_ID, 2026, 36) });
     const response = await getRequest(DEFAULT_ORGANIZATION_ID, '2026');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.caseNumberPrefix).toBe('B');
+    expect(body.needsResync).toBe(false);
+    expect(body.collidingCaseNumbers).toEqual([]);
+    const { caseFixtures } = await import('@/services/__mocks__/fixtures');
+    const existing = caseFixtures
+      .filter((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && /^B2026-\d{3}$/.test(c.caseNumber))
+      .map((c) => Number(c.caseNumber.split('-')[1]));
+    expect(body.nextCaseNumber).toBe(`B2026-${String(Math.max(0, ...existing) + 1).padStart(3, '0')}`);
+    expect(mockQueryWixDataItems).not.toHaveBeenCalled();
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('K2: with mock data, POST still refuses (resync only applies to Wix data)', async () => {
+    process.env.DATA_ADAPTER = 'mock';
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026 });
     expect(response.status).toBe(400);
     expect((await response.json()).error).toMatch(/only applies when DATA_ADAPTER=wix/);
   });
@@ -365,7 +400,7 @@ describe('POST /api/organization/case-sequence/resync', () => {
   });
 
   it('X: works for an organization other than Manors — this is not a one-org action', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     mockGetOrganization.mockResolvedValue({ id: SECOND_MOCK_ORGANIZATION_ID, timezone: 'America/New_York' });
     seedState({ sequenceRow: caseSequenceRow(SECOND_MOCK_ORGANIZATION_ID, 2026, 12), existingCaseNumbers: ['B2026-012'], organizationId: SECOND_MOCK_ORGANIZATION_ID });
     const response = await postRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, year: 2026 });
@@ -384,12 +419,77 @@ describe('RBAC — only roles holding caseNumber.manage can resync', () => {
   ];
 
   it.each(unauthorized)('%s is refused on both GET and POST', async (_label, user) => {
-    mockSession = { user };
+    mockSession = fixtureIdentitySession(user);
     // Roles/permissions deliberately left empty, so the policy resolves
     // false naturally rather than via a hardcoded role list here.
     mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
     expect((await getRequest(DEFAULT_ORGANIZATION_ID, '2026')).status).toBe(403);
     expect((await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026 })).status).toBe(403);
     expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Organization-specific case numbering (2026-10). The resync probe uses
+ * the organization's OWN prefix (resolveCaseNumberPrefix) — an M
+ * organization (Gus Camacho) only ever probes M numbers, never B. The
+ * session fixture's memberships are Manors-only, so the organization
+ * RECORD's caseNumberPrefix is what varies.
+ */
+describe('resync — organization-specific prefix', () => {
+  function caseNumbersProbed(): string[] {
+    return mockQueryWixDataItems.mock.calls
+      .filter(([collectionId]) => collectionId === 'cases')
+      .map(([, options]) => (options as { filter: { caseNumber: string } }).filter.caseNumber);
+  }
+
+  it('an M organization probes M numbers only and ignores same-sequence B numbers', async () => {
+    mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, timezone: 'America/New_York', caseNumberPrefix: 'M' });
+    seedState({ sequenceRow: caseSequenceRow(DEFAULT_ORGANIZATION_ID, 2026, 12), existingCaseNumbers: ['M2026-012', 'B2026-013'] });
+    const response = await getRequest(DEFAULT_ORGANIZATION_ID, '2026');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.caseNumberPrefix).toBe('M');
+    expect(body.currentCaseNumber).toBe('M2026-012');
+    expect(body.collidingCaseNumbers).toEqual(['M2026-012']);
+    expect(body.targetCaseNumber).toBe('M2026-013');
+    expect(body.nextCaseNumber).toBe('M2026-012');
+    const probed = caseNumbersProbed();
+    expect(probed.length).toBeGreaterThan(0);
+    expect(probed.every((n) => n.startsWith('M'))).toBe(true);
+  });
+
+  it('POST for an M organization advances forward only and reports an M number', async () => {
+    mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, timezone: 'America/New_York', caseNumberPrefix: 'M' });
+    seedState({ sequenceRow: caseSequenceRow(DEFAULT_ORGANIZATION_ID, 2026, 12), existingCaseNumbers: ['M2026-012'] });
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, year: 2026 });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.nextCaseNumber).toBe('M2026-013');
+    expect(body.nextSequence).toBeGreaterThan(12);
+    expect(caseNumbersProbed().every((n) => n.startsWith('M'))).toBe(true);
+  });
+
+  it('Manors without a stored prefix keeps probing B numbers (legacy default preserved)', async () => {
+    seedState({ sequenceRow: caseSequenceRow(DEFAULT_ORGANIZATION_ID, 2026, 36), existingCaseNumbers: ['B2026-036'] });
+    const body = await (await getRequest(DEFAULT_ORGANIZATION_ID, '2026')).json();
+    expect(body.caseNumberPrefix).toBe('B');
+    expect(body.targetCaseNumber).toBe('B2026-037');
+    expect(caseNumbersProbed().every((n) => n.startsWith('B'))).toBe(true);
+  });
+
+  it('with no sequence row yet, reports the year-first number for the org prefix and current org-local year', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2031-03-01T12:00:00.000Z'));
+    try {
+      mockGetOrganization.mockResolvedValue({ id: DEFAULT_ORGANIZATION_ID, timezone: 'America/New_York', caseNumberPrefix: 'M' });
+      seedState({ sequenceRow: null });
+      const body = await (await getRequest(DEFAULT_ORGANIZATION_ID)).json();
+      expect(body.year).toBe(2031);
+      expect(body.nextCaseNumber).toBe('M2031-001');
+      expect(body.needsResync).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

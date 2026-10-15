@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { sendResendEmail, isResendConfigured, ResendApiError } from './resendClient';
+import { sendResendEmail, isResendConfigured, ResendApiError, UNCONFIGURED_SENDER_ADDRESS } from './resendClient';
 
 beforeEach(() => {
   process.env.RESEND_API_KEY = 'fake-resend-key';
@@ -44,15 +44,36 @@ describe('sendResendEmail', () => {
     });
   });
 
-  it('falls back to the default from-address when RESEND_FROM_ADDRESS is unset — display name is "SOLIS", matching current product branding', async () => {
+  /* Multi-tenant hardening (2026-10) — INTENDED behaviour change: the
+     unset-env fallback used to be `notifications@beacon.app`. It is now a
+     reserved `.invalid` address that belongs to no tenant and can never be
+     verified, so an unconfigured deployment fails safe at Resend instead of
+     sending under another product's/tenant's domain. */
+  it('falls back to a reserved, never-deliverable placeholder (no tenant or Beacon domain) when RESEND_FROM_ADDRESS is unset — display name is still "SOLIS"', async () => {
     delete process.env.RESEND_FROM_ADDRESS;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal('fetch', fetchMock);
 
     await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
 
     const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(sentBody.from).toBe('SOLIS <notifications@beacon.app>');
+    expect(sentBody.from).toBe(`SOLIS <${UNCONFIGURED_SENDER_ADDRESS}>`);
+    expect(sentBody.from).toMatch(/\.invalid>$/);
+    expect(sentBody.from).not.toMatch(/beacon|manors/i);
+    warn.mockRestore();
+  });
+
+  it('treats a RESEND_FROM_ADDRESS with no usable address as unset (placeholder, never a malformed sender)', async () => {
+    process.env.RESEND_FROM_ADDRESS = 'SOLIS <>';
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendResendEmail({ to: 'a@b.com', subject: 'S', html: 'H', text: 'T' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.from).toBe(`SOLIS <${UNCONFIGURED_SENDER_ADDRESS}>`);
   });
 
   it('throws ResendApiError with the real HTTP status on a non-ok response', async () => {

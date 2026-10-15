@@ -38,10 +38,41 @@ export class JotformClientError extends Error {
   }
 }
 
-function getJotformApiKey(): string {
-  const key = process.env.JOTFORM_API_KEY;
+export const DEFAULT_JOTFORM_API_KEY_REFERENCE = 'JOTFORM_API_KEY';
+
+/**
+ * Per-integration API key (2026-10 multi-tenant hardening). An
+ * `ExternalFormConfig` may name — by env var NAME, never by value, the
+ * same reference pattern Clover's `PaymentIntegration` uses — a different
+ * server-only variable holding the key for ITS organization's Jotform
+ * account (e.g. `JOTFORM_API_KEY_GUS_CAMACHO_JR`). Absent = the default
+ * `JOTFORM_API_KEY`, so every existing Manors row is unchanged.
+ *
+ * The name is constrained to the `JOTFORM_API_KEY` family so a config row
+ * can never direct this module to send an unrelated server secret (Wix,
+ * Clover, session keys...) to Jotform in the `APIKEY` header.
+ */
+const API_KEY_REFERENCE_PATTERN = /^JOTFORM_API_KEY(?:_[A-Z0-9]+)*$/;
+
+export function isValidJotformApiKeyReference(reference: string): boolean {
+  return API_KEY_REFERENCE_PATTERN.test(reference);
+}
+
+export type JotformRequestOptions = {
+  /** Env var NAME holding the API key; see DEFAULT_JOTFORM_API_KEY_REFERENCE. */
+  apiKeyReference?: string | null;
+};
+
+function getJotformApiKey(options?: JotformRequestOptions): string {
+  const reference = options?.apiKeyReference || DEFAULT_JOTFORM_API_KEY_REFERENCE;
+  if (!isValidJotformApiKeyReference(reference)) {
+    // Same category as an unset key: a configuration problem on our side,
+    // answered 503 by the authenticity check, never an "inauthentic" 401.
+    throw new JotformClientError('The configured Jotform API key reference is not an allowed name.', 'missing_api_key');
+  }
+  const key = process.env[reference];
   if (!key) {
-    throw new JotformClientError('JOTFORM_API_KEY is not configured.', 'missing_api_key');
+    throw new JotformClientError(`${reference} is not configured.`, 'missing_api_key');
   }
   return key;
 }
@@ -59,8 +90,8 @@ function hasPdfMagicBytes(buffer: Buffer): boolean {
  * services/externalFormPdfService.ts) — never the raw underlying error
  * message, which could echo request details.
  */
-export async function fetchSubmissionPdf(formId: string, submissionId: string): Promise<Buffer> {
-  const apiKey = getJotformApiKey();
+export async function fetchSubmissionPdf(formId: string, submissionId: string, options?: JotformRequestOptions): Promise<Buffer> {
+  const apiKey = getJotformApiKey(options);
   const url = `${JOTFORM_API_BASE}/pdf-converter/${encodeURIComponent(formId)}/fill-pdf?download=1&submissionID=${encodeURIComponent(submissionId)}`;
 
   let response: Response;
@@ -120,8 +151,8 @@ export type JotformSubmissionAnswers = {
  * passes into `extractMappedFields` (the exact same trusted, minimizing
  * mapping used by the webhook).
  */
-export async function fetchSubmissionAnswers(submissionId: string): Promise<JotformSubmissionAnswers> {
-  const apiKey = getJotformApiKey();
+export async function fetchSubmissionAnswers(submissionId: string, options?: JotformRequestOptions): Promise<JotformSubmissionAnswers> {
+  const apiKey = getJotformApiKey(options);
   const url = `${JOTFORM_API_BASE}/submission/${encodeURIComponent(submissionId)}`;
 
   let response: Response;

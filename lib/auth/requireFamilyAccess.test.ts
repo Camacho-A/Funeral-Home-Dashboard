@@ -24,6 +24,7 @@ beforeEach(() => {
   lengths = { users: portalUserFixtures.length, sessions: portalSessionFixtures.length, access: portalAccessFixtures.length };
 });
 afterEach(() => {
+  delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
   portalUserFixtures.length = lengths.users;
   portalSessionFixtures.length = lengths.sessions;
   portalAccessFixtures.length = lengths.access;
@@ -106,5 +107,27 @@ describe('requireFamilyAccess', () => {
     const result = await requireFamilyAccess('case-safe', 'document.read');
     expect(result.authorized).toBe(true);
     if (result.authorized) expect(result.organizationId).toBe('org-real');
+  });
+});
+
+describe('requireFamilyAccess — deployment organization allowlist (2026-10)', () => {
+  it("denies (generic 403) an otherwise-valid grant whose organization this deployment does not serve", async () => {
+    await seedActiveGrant('primary_next_of_kin', 'case-allowlist', 'org-not-served');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const denied = await requireFamilyAccess('case-allowlist', 'document.read');
+    expect(denied.authorized).toBe(false);
+    if (!denied.authorized) {
+      expect(denied.response.status).toBe(403);
+      // Same body as a case the user was never granted — no existence leak.
+      const neverGranted = await requireFamilyAccess('case-never-granted', 'document.read');
+      if (!neverGranted.authorized) expect(await denied.response.json()).toEqual(await neverGranted.response.json());
+    }
+  });
+
+  it('still grants a grant whose organization is served', async () => {
+    await seedActiveGrant('primary_next_of_kin', 'case-allowlist-ok', 'gus-camacho-jr');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    expect((await requireFamilyAccess('case-allowlist-ok', 'document.read')).authorized).toBe(true);
   });
 });

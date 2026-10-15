@@ -8,9 +8,10 @@ import {
   useExecuteManorsCutover,
   useCaseSequenceResyncPlan,
   useExecuteCaseSequenceResync,
+  isManorsCutoverOrganization,
 } from '@/hooks/useCaseNumbering';
 import { useManorsCaseNumberManageMigrationStatus, useExecuteManorsCaseNumberManageMigration } from '@/hooks/useManorsRbacMigration';
-import { formatCaseNumber } from '@/domain/cases/caseNumber';
+import { formatCaseNumber, resolveCaseNumberPrefix } from '@/domain/cases/caseNumber';
 import { Modal } from '@/components/ui/Modal';
 
 /**
@@ -37,6 +38,13 @@ import { Modal } from '@/components/ui/Modal';
  * early-returned on that 403 before ever reaching the migration control,
  * which meant Administrator had no way to reach the very control that
  * fixes the underlying gap. See TopBar.tsx's matching nav-link fix.
+ *
+ * Organization-specific numbering (2026-10): the one-time go-live cutover
+ * (and its Manors wording) is rendered ONLY for the Manors organization —
+ * its eligibility endpoint is never even queried for any other
+ * organization. Every other organization (e.g. Gus Camacho, prefix M)
+ * gets the generic content: its own prefix, the current org-local year
+ * and the next number, all computed server-side by the resync route.
  *
  * SOLIS Tasks/Calendar/Settings phase, §3.5 (design S4): restyled to the
  * sx- form/settings-section system. Renders as `{children}` inside
@@ -118,7 +126,18 @@ export function CaseNumberingPanel() {
         <p className="sx-help">Case Numbering access must be enabled before this section is available.</p>
       )}
 
-      {canManageCaseNumber && <NormalCaseNumberingContent eligibilityQuery={eligibilityQuery} cutover={cutover} result={result} confirmOpen={confirmOpen} setConfirmOpen={setConfirmOpen} handleConfirm={handleConfirm} />}
+      {canManageCaseNumber && isManorsCutoverOrganization(organizationId) && (
+        <NormalCaseNumberingContent
+          eligibilityQuery={eligibilityQuery}
+          cutover={cutover}
+          result={result}
+          confirmOpen={confirmOpen}
+          setConfirmOpen={setConfirmOpen}
+          handleConfirm={handleConfirm}
+          caseNumberPrefix={resolveCaseNumberPrefix(null, { organizationId })}
+        />
+      )}
+      {canManageCaseNumber && !isManorsCutoverOrganization(organizationId) && <GenericCaseNumberingContent />}
     </div>
   );
 }
@@ -224,6 +243,53 @@ function CaseSequenceResyncSection() {
   );
 }
 
+/** The prefix + next-number summary shared by both content variants. */
+function NextCaseNumberSummary({ year, caseNumberPrefix, nextCaseNumber }: { year: number; caseNumberPrefix: string; nextCaseNumber: string | null }) {
+  return (
+    <section className="sx-settings-section">
+      <h3 className="sx-settings-section-title">{year} Case Numbering</h3>
+      <div style={{ display: 'inline-block', border: '1px solid var(--sx-border)', borderRadius: 10, padding: '16px 18px' }}>
+        <div style={{ fontSize: 12.5, color: 'var(--sx-muted)' }}>Next Case Number:</div>
+        <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--sx-text)' }}>{nextCaseNumber ?? '—'}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--sx-muted)', marginTop: 6 }}>
+          Case number prefix: <span data-testid="case-number-prefix">{caseNumberPrefix}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Organization-specific numbering (2026-10). Content for every
+ * organization OTHER than Manors: no go-live cutover, no Manors wording.
+ * The year (org-local, never hardcoded), prefix and next number all come
+ * from the server (resync GET), which resolves the prefix through
+ * resolveCaseNumberPrefix — the client never assumes "B".
+ */
+function GenericCaseNumberingContent() {
+  const { organizationId } = useOrganization();
+  const planQuery = useCaseSequenceResyncPlan(organizationId);
+
+  if (planQuery.isPending) {
+    return <p className="sx-help">Loading case numbering…</p>;
+  }
+  if (planQuery.isError) {
+    return <div className="sx-error-state" role="alert">{(planQuery.error as Error).message}</div>;
+  }
+  const plan = planQuery.data;
+  if (!plan) return null;
+
+  const caseNumberPrefix = plan.caseNumberPrefix ?? resolveCaseNumberPrefix(null, { organizationId });
+  const nextCaseNumber = plan.nextCaseNumber ?? (plan.currentNextSequence !== null ? formatCaseNumber(plan.year, plan.currentNextSequence, caseNumberPrefix) : formatCaseNumber(plan.year, 1, caseNumberPrefix));
+
+  return (
+    <>
+      <NextCaseNumberSummary year={plan.year} caseNumberPrefix={caseNumberPrefix} nextCaseNumber={nextCaseNumber} />
+      <CaseSequenceResyncSection />
+    </>
+  );
+}
+
 /** The pre-existing "current sequence + one-time cutover" content,
     factored out so its own loading/error/data states never affect
     whether the migration control above renders — it is only ever mounted
@@ -235,7 +301,9 @@ function NormalCaseNumberingContent({
   confirmOpen,
   setConfirmOpen,
   handleConfirm,
+  caseNumberPrefix,
 }: {
+  caseNumberPrefix: string;
   eligibilityQuery: ReturnType<typeof useManorsCutoverEligibility>;
   cutover: ReturnType<typeof useExecuteManorsCutover>;
   result: { nextSequence: number } | null;
@@ -253,23 +321,17 @@ function NormalCaseNumberingContent({
   const data = eligibilityQuery.data;
   if (!data) return null;
 
-  const currentCaseNumber = data.currentNextSequence !== null ? formatCaseNumber(data.year, data.currentNextSequence) : null;
+  const currentCaseNumber = data.currentNextSequence !== null ? formatCaseNumber(data.year, data.currentNextSequence, caseNumberPrefix) : null;
 
   return (
     <>
-      <section className="sx-settings-section">
-        <h3 className="sx-settings-section-title">{data.year} Case Numbering</h3>
-        <div style={{ display: 'inline-block', border: '1px solid var(--sx-border)', borderRadius: 10, padding: '16px 18px' }}>
-          <div style={{ fontSize: 12.5, color: 'var(--sx-muted)' }}>Next Case Number:</div>
-          <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--sx-text)' }}>{currentCaseNumber ?? '—'}</div>
-        </div>
-      </section>
+      <NextCaseNumberSummary year={data.year} caseNumberPrefix={caseNumberPrefix} nextCaseNumber={currentCaseNumber} />
 
       <CaseSequenceResyncSection />
 
       {result && (
         <p className="sx-help" style={{ color: 'var(--sx-green-text)' }}>
-          Case numbering is ready. The next new SOLIS case will be {formatCaseNumber(data.year, result.nextSequence)}.
+          Case numbering is ready. The next new SOLIS case will be {formatCaseNumber(data.year, result.nextSequence, caseNumberPrefix)}.
         </p>
       )}
 

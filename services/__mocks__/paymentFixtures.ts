@@ -1,6 +1,7 @@
 import type { PaymentIntegration, PaymentRecord } from '../../types/payment';
 import type { WebhookEventRecord } from '../../types/webhookEvent';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Mock-mode fixtures for
@@ -18,7 +19,7 @@ import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
  */
 export const CLOVER_INTEGRATION_MOCK_ID = `${DEFAULT_ORGANIZATION_ID}-clover`;
 
-export const paymentIntegrationFixtures: PaymentIntegration[] = [
+export const paymentIntegrationFixtures: PaymentIntegration[] = mockCollection('paymentIntegrationFixtures', (): PaymentIntegration[] => [
   {
     id: CLOVER_INTEGRATION_MOCK_ID,
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -31,12 +32,12 @@ export const paymentIntegrationFixtures: PaymentIntegration[] = [
     createdAt: '2026-07-24T00:00:00.000Z',
     updatedAt: '2026-07-24T00:00:00.000Z',
   },
-];
+]);
 
 /** No seeded payment records — every mock-mode test/demo case starts with
     an empty payment history, matching every other mock entity's "start
     from a clean, explicit fixture" convention. */
-export const paymentRecordFixtures: PaymentRecord[] = [];
+export const paymentRecordFixtures: PaymentRecord[] = mockCollection('paymentRecordFixtures', (): PaymentRecord[] => []);
 
 /**
  * Mock-mode-only webhook event lifecycle tracking — a plain in-memory
@@ -49,4 +50,4 @@ export const paymentRecordFixtures: PaymentRecord[] = [];
  * markWebhookEventCompleted/markWebhookEventFailed and
  * lib/wixWebhookEventMapper.ts.
  */
-export const webhookEventFixtures: Map<string, WebhookEventRecord> = new Map();
+export const webhookEventFixtures: Map<string, WebhookEventRecord> = mockCollection('webhookEventFixtures', (): Map<string, WebhookEventRecord> => new Map());

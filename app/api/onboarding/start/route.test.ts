@@ -100,3 +100,56 @@ describe('POST /api/onboarding/start — success', () => {
     expect(secondBody.isNew).toBe(false);
   });
 });
+
+describe('POST /api/onboarding/start — chosen organization id (safe onboarding, 2026-10)', () => {
+  let priorAllowlist: string | undefined;
+  beforeEach(() => {
+    priorAllowlist = process.env.DEPLOYMENT_ORGANIZATION_IDS;
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+  afterEach(() => {
+    if (priorAllowlist === undefined) delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+    else process.env.DEPLOYMENT_ORGANIZATION_IDS = priorAllowlist;
+  });
+
+  it('creates the organization under the chosen id', async () => {
+    const response = await postRequest({ ...VALID_BODY, idempotencyKey: 'chosen-1', organizationId: 'route-chosen-org-a' });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.organization.id).toBe('route-chosen-org-a');
+  });
+
+  it('400 for a malformed or non-string id', async () => {
+    expect((await postRequest({ ...VALID_BODY, idempotencyKey: 'chosen-2', organizationId: 'Bad Id' })).status).toBe(400);
+    expect((await postRequest({ ...VALID_BODY, idempotencyKey: 'chosen-3', organizationId: 12 })).status).toBe(400);
+  });
+
+  it('400 for a reserved id (managed-cremations included) and the Manors row is untouched', async () => {
+    const manorsBefore = JSON.stringify(mockOrganizationFixtures.find((o) => o.id === 'managed-cremations'));
+    const response = await postRequest({ ...VALID_BODY, idempotencyKey: 'chosen-4', organizationId: 'managed-cremations' });
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe('reserved_organization_id');
+    expect(JSON.stringify(mockOrganizationFixtures.find((o) => o.id === 'managed-cremations'))).toBe(manorsBefore);
+  });
+
+  it('409 for an id that already exists — never merged', async () => {
+    const response = await postRequest({ ...VALID_BODY, idempotencyKey: 'chosen-5', organizationId: 'evergreen-memorial-group' });
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('organization_exists');
+  });
+
+  it('403 for an id outside the deployment allowlist', async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    const response = await postRequest({ ...VALID_BODY, idempotencyKey: 'chosen-6', organizationId: 'route-chosen-org-b' });
+    expect(response.status).toBe(403);
+  });
+
+  it('same key + same id → 200 resume; same key + different id → 409', async () => {
+    const body = { ...VALID_BODY, idempotencyKey: 'chosen-7', organizationId: 'route-chosen-org-c' };
+    expect((await postRequest(body)).status).toBe(201);
+    expect((await postRequest(body)).status).toBe(200);
+    const conflict = await postRequest({ ...body, organizationId: 'route-chosen-org-d' });
+    expect(conflict.status).toBe(409);
+    expect((await conflict.json()).code).toBe('idempotency_key_conflict');
+  });
+});

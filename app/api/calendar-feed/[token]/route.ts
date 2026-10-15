@@ -4,6 +4,7 @@ import { listAppointments } from '@/services/schedulingService';
 import { resolveLocationText } from '@/services/scheduling/appointmentLocationText';
 import { buildIcsCalendar, type IcsEventInput } from '@/lib/icsService';
 import { getDataAdapterMode } from '@/lib/env';
+import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
@@ -27,7 +28,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   const dataAdapterMode = getDataAdapterMode();
 
   const feedToken = await resolveFeedToken(rawToken, dataAdapterMode);
-  if (!feedToken) {
+  // Deployment organization restrictions (2026-10): a feed token for an
+  // organization this deployment does not serve is answered exactly like
+  // an invalid one (same 404 + message, no existence leak).
+  if (!feedToken || !isOrganizationAllowedInDeployment(feedToken.organizationId)) {
     return NextResponse.json({ error: 'Invalid or revoked feed link.' }, { status: 404 });
   }
 

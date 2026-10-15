@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { formatCaseNumber, parseCaseNumber, orgLocalYear, isValidCaseNumberPrefix, caseNumberPrefixFor } from './caseNumber';
+import {
+  formatCaseNumber,
+  parseCaseNumber,
+  orgLocalYear,
+  isValidCaseNumberPrefix,
+  caseNumberPrefixFor,
+  resolveCaseNumberPrefix,
+  parseAnyCaseNumber,
+  caseNumberMatchesPrefix,
+  DEFAULT_CASE_NUMBER_PREFIX,
+} from './caseNumber';
 
 describe('formatCaseNumber', () => {
   it('formats with a 3-digit, zero-padded sequence', () => {
@@ -153,3 +163,56 @@ describe('organization-specific case number prefixes', () => {
   });
 });
 
+
+/**
+ * resolveCaseNumberPrefix (2026-10) — the single source of truth for an
+ * organization's prefix: record -> profile default -> known org default ->
+ * legacy "B".
+ */
+describe('resolveCaseNumberPrefix', () => {
+  it("prefers the organization record's own valid caseNumberPrefix", () => {
+    expect(resolveCaseNumberPrefix({ id: 'managed-cremations', caseNumberPrefix: 'M' })).toBe('M');
+    expect(resolveCaseNumberPrefix({ id: 'x', caseNumberPrefix: ' gcj ' })).toBe('GCJ');
+  });
+
+  it('falls back to the organization-profile default when the record has none (or an invalid one)', () => {
+    expect(resolveCaseNumberPrefix({ id: 'x' }, { profileDefault: 'Q' })).toBe('Q');
+    expect(resolveCaseNumberPrefix({ id: 'x', caseNumberPrefix: 'B1' }, { profileDefault: 'Q' })).toBe('Q');
+  });
+
+  it('knows Gus Camacho is M and Manors is B even without a stored prefix', () => {
+    expect(resolveCaseNumberPrefix(null, { organizationId: 'gus-camacho-jr' })).toBe('M');
+    expect(resolveCaseNumberPrefix({ id: 'gus-camacho-jr' })).toBe('M');
+    expect(resolveCaseNumberPrefix(null, { organizationId: 'managed-cremations' })).toBe('B');
+  });
+
+  it('uses the legacy "B" default only for an unknown organization with nothing configured', () => {
+    expect(resolveCaseNumberPrefix(null)).toBe(DEFAULT_CASE_NUMBER_PREFIX);
+    expect(resolveCaseNumberPrefix(undefined, { organizationId: 'evergreen-memorial-group' })).toBe('B');
+    expect(resolveCaseNumberPrefix({ id: 'constructor' })).toBe('B');
+  });
+});
+
+describe('generic, prefix-aware format/parse', () => {
+  it('formats and parses M numbers (Gus Camacho)', () => {
+    expect(formatCaseNumber(2026, 1, 'M')).toBe('M2026-001');
+    expect(parseCaseNumber('M2026-001', 'M')).toEqual({ year: 2026, sequence: 1 });
+  });
+
+  it('parseAnyCaseNumber reads any valid prefix', () => {
+    expect(parseAnyCaseNumber('M2026-004')).toEqual({ prefix: 'M', year: 2026, sequence: 4 });
+    expect(parseAnyCaseNumber('GCJ2027-1200')).toEqual({ prefix: 'GCJ', year: 2027, sequence: 1200 });
+    expect(parseAnyCaseNumber('2026-004')).toBeNull();
+    expect(parseAnyCaseNumber('ABCD2026-004')).toBeNull();
+    expect(parseAnyCaseNumber('m2026-004')).toBeNull();
+  });
+
+  it('caseNumberMatchesPrefix rejects mismatched or invalid prefixes', () => {
+    expect(caseNumberMatchesPrefix('M2026-001', 'M')).toBe(true);
+    expect(caseNumberMatchesPrefix('B2026-001', 'M')).toBe(false);
+    expect(caseNumberMatchesPrefix('M2026-001', 'B')).toBe(false);
+    // An invalid prefix must never fall back to the default and "match" B.
+    expect(caseNumberMatchesPrefix('B2026-001', 'b1')).toBe(false);
+    expect(caseNumberMatchesPrefix('B2026-001', '')).toBe(false);
+  });
+});

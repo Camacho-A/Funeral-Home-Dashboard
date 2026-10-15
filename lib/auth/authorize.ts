@@ -3,6 +3,29 @@ import type { AuthorizationContext } from '../../types/authorization';
 import type { OrganizationMembership } from '../../types/organization';
 import { mockMembershipFixtures, mockOrganizationFixtures } from '../../services/__mocks__/authFixtures';
 import { isAdminTier } from '../../services/authorizationPolicyService';
+import { getAuthAdapterMode, getDataAdapterMode, isAuthAdapterAllowedForDataAdapter } from '../env';
+import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
+
+/**
+ * Tenant-isolation hardening (2026-10). Whether a NON-identity session
+ * (`source: 'mock' | 'wix'`, authorized against the in-repo mock membership
+ * fixtures below) may be honored at all in this process. Only ever true
+ * with mock data: real (shared, multi-tenant) Wix data requires the
+ * identity system, whose memberships live in Wix itself — a mock-fixture
+ * membership must never authorize a read or write of live tenant data.
+ *
+ * Fails closed: any misconfiguration (invalid DATA_ADAPTER/AUTH_ADAPTER)
+ * makes this false rather than throwing past a caller's guard.
+ */
+export function isNonIdentityAuthorizationPermitted(): boolean {
+  try {
+    const dataAdapterMode = getDataAdapterMode();
+    if (dataAdapterMode !== 'mock') return false;
+    return isAuthAdapterAllowedForDataAdapter(getAuthAdapterMode(), dataAdapterMode);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Phase 13 (Authentication & Organizations). Looks up a user's ACTIVE,
@@ -14,8 +37,14 @@ import { isAdminTier } from '../../services/authorizationPolicyService';
  * access even for an otherwise-valid member.
  */
 function findActiveMemberships(userId: string): OrganizationMembership[] {
+  // Tenant-isolation hardening (2026-10): defense in depth on top of every
+  // caller's own source check — the mock fixtures never grant anything
+  // unless the process is on mock data with a compatible auth adapter, and
+  // never for an organization this deployment does not serve.
+  if (!isNonIdentityAuthorizationPermitted()) return [];
   return mockMembershipFixtures.filter((membership) => {
     if (membership.userId !== userId || !membership.isActive) return false;
+    if (!isOrganizationAllowedInDeployment(membership.organizationId)) return false;
     const organization = mockOrganizationFixtures.find((org) => org.id === membership.organizationId);
     return organization?.isActive === true;
   });

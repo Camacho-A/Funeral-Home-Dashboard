@@ -9,6 +9,27 @@ import * as externalFormSubmissionService from '@/services/externalFormSubmissio
 import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
+import { queryWixDataItems } from '@/lib/wixDataApi';
+import type { DataAdapterMode } from '@/lib/env';
+
+/**
+ * Multi-tenant hardening (2026-10). The client-supplied `caseId` must name
+ * a case of the AUTHORIZED organization — previously it was trusted as-is,
+ * so a submission could be linked onto (and its PDF filed against, and
+ * workflow reconciled for) another organization's case id.
+ */
+async function caseExistsInOrganization(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  if (dataAdapterMode === 'mock') {
+    const { caseFixtures } = await import('@/services/__mocks__/fixtures');
+    return caseFixtures.some((c) => c.id === caseId && c.organizationId === organizationId);
+  }
+  const response = await queryWixDataItems<{ organizationId?: unknown }>('cases', {
+    filter: { _id: caseId, organizationId },
+    paging: { limit: 1 },
+  });
+  const item = response.dataItems[0];
+  return Boolean(item && item.data?.organizationId === organizationId);
+}
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). The
@@ -59,6 +80,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     return NextResponse.json({ error: 'Form configuration not found.' }, { status: 404 });
   }
 
+  if (!(await caseExistsInOrganization(organizationId, b.caseId, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Case not found.' }, { status: 404 });
+  }
+
   const link = await caseFormLinkService.linkExistingSubmission(organizationId, b.caseId, config.provider, config.id, submission.id, dataAdapterMode);
   const updatedSubmission = await externalFormSubmissionService.markLinked(submission.id, link.id, dataAdapterMode);
 
@@ -69,7 +94,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     console.error('Failed to record external_form.submission_linked activity event:', error instanceof Error ? error.message : error);
   }
 
-  const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, b.caseId, activityCtx, dataAdapterMode);
+  const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, b.caseId, activityCtx, dataAdapterMode, { config });
 
   // Manors workflow reconciliation (2026-09): same reasoning as the other
   // form-link call sites.

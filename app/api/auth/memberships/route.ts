@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
 import { listMembershipsForIdentity, isActiveMembership } from '@/services/membershipService';
 import { getOrganization } from '@/services/organizationProvisioningService';
+import { filterToDeploymentOrganizations } from '@/lib/auth/deploymentOrganizations';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). Backs the
@@ -17,7 +18,13 @@ export async function GET() {
   if (!access.authorized) return access.response;
   const { identitySession, dataAdapterMode } = access;
 
-  const memberships = (await listMembershipsForIdentity(identitySession.identityId, dataAdapterMode)).filter(isActiveMembership);
+  // Deployment allowlist (2026-10): the organization switcher only ever
+  // offers organizations this deployment serves — switch-organization
+  // refuses the rest anyway.
+  const memberships = filterToDeploymentOrganizations(
+    (await listMembershipsForIdentity(identitySession.identityId, dataAdapterMode)).filter(isActiveMembership),
+    (m) => m.organizationId,
+  );
 
   const organizations = await Promise.all(
     memberships.map(async (m) => {

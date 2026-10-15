@@ -9,6 +9,7 @@ import { isValidPortalRelationshipType, PORTAL_RELATIONSHIP_TYPES } from '@/doma
 import { isValidEmailShape } from '@/domain/identity/email';
 import { getIdentityMessageSender } from '@/lib/identity/messageSender';
 import { isFamilyPortalEnabledForOrganizationId } from '@/services/organizationFamilyPortalCapabilityService';
+import { getFamilyCase } from '@/services/portal/portalCaseService';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). Staff-side —
@@ -79,6 +80,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   if (!(await isFamilyPortalEnabledForOrganizationId(organizationId, dataAdapterMode))) {
     return NextResponse.json({ error: 'Family Portal is not available for this organization.' }, { status: 403 });
+  }
+
+  // Tenant-isolation hardening (2026-10): the path's caseId is untrusted
+  // input — confirm it names a case owned by the AUTHORIZED organization
+  // before creating any invitation/PortalAccess row against it. Answered
+  // as a plain 404 (never "belongs to another organization").
+  if (!(await getFamilyCase(organizationId, caseId, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Case not found.' }, { status: 404 });
   }
 
   try {

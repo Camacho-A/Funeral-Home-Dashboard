@@ -4,8 +4,8 @@ import { CaseSearchProvider } from '@/hooks/useCaseSearch';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { SessionProvider } from '@/hooks/useSession';
 import type { Session } from '@/types/session';
-import { getSession, clearSession } from '@/lib/auth/session';
-import { resolveAuthorizationContext } from '@/lib/auth/authorize';
+import { getSession, clearSessionPath } from '@/lib/auth/session';
+import { resolveAuthorizationContext, isNonIdentityAuthorizationPermitted } from '@/lib/auth/authorize';
 import { resolveIdentitySession } from '@/lib/auth/resolveIdentitySession';
 import { resolveMembershipAuthorizationContext } from '@/lib/auth/resolveMembershipAuthorizationContext';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
@@ -37,6 +37,14 @@ import { getDataAdapterMode, getAuthAdapterMode } from '@/lib/env';
  * organization membership. A session that fails resolveIdentitySession is
  * treated exactly like no session at all: the stale cookie is cleared and
  * the user is sent back to login, never left retrying with it.
+ *
+ * 2026-10: "cleared" happens in the GET /api/auth/clear-session Route
+ * Handler, never here — a Server Component may not modify cookies during
+ * render (Next.js throws). This layout only ever READS the cookie and
+ * redirects. The same handler discards a mock/wix-login session presented
+ * to a deployment on real Wix data (isNonIdentityAuthorizationPermitted):
+ * those sessions authorize against in-repo mock memberships, so they fail
+ * closed rather than ever being trusted against live tenant data.
  */
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -47,11 +55,14 @@ export default async function PortalLayout({ children }: { children: React.React
   const dataAdapterMode = getDataAdapterMode();
   const authAdapterMode = getAuthAdapterMode();
 
+  if (session.user.source !== 'identity' && !isNonIdentityAuthorizationPermitted()) {
+    redirect(clearSessionPath('auth_adapter_not_allowed'));
+  }
+
   if (session.user.source === 'identity') {
     const resolved = await resolveIdentitySession(session, dataAdapterMode);
     if (!resolved.valid) {
-      await clearSession();
-      redirect(`/login?error=${resolved.reason}`);
+      redirect(clearSessionPath(resolved.reason));
     }
 
     const membershipResult = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode);

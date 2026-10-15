@@ -12,6 +12,7 @@ import {
 import { organizationLocationFixtures } from '@/services/__mocks__/onboardingFixtures';
 import { organizationRolePermissionOverrideFixtures } from '@/services/__mocks__/rbacFixtures';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
 
 /**
  * Settings → Organization Profile (2026-09). Every test runs under
@@ -363,6 +364,86 @@ describe('PATCH /api/organization/profile — primary location section', () => {
   it('9/10. cross-organization location update is rejected, and never touches another organization\'s location', async () => {
     mockSession = { user: mockMultiOrgUser };
     const response = await patchRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, location: VALID_LOCATION_PATCH });
+    expect(response.status).toBe(403);
+  });
+});
+
+/**
+ * Organization-specific case numbering (2026-10). An authorized admin
+ * (organization.manage AND caseNumber.manage) can view and set the
+ * organization's case-number prefix. Existing case numbers are never
+ * renumbered, so the prefix can only CHANGE while the organization has no
+ * cases yet.
+ */
+describe('Organization Profile — case-number prefix', () => {
+  function withoutOrganizationCases<T>(organizationId: string, fn: () => Promise<T>): Promise<T> {
+    const snapshot = [...caseFixtures];
+    caseFixtures.splice(0, caseFixtures.length, ...snapshot.filter((c) => c.organizationId !== organizationId));
+    return fn().finally(() => caseFixtures.splice(0, caseFixtures.length, ...snapshot));
+  }
+
+  it('GET reports the resolved prefix — legacy "B" for Manors when none is stored', async () => {
+    const body = await (await getRequest(DEFAULT_ORGANIZATION_ID)).json();
+    expect(body.caseNumbering).toEqual({ caseNumberPrefix: 'B', prefixIsExplicit: false });
+  });
+
+  it('refuses to CHANGE the prefix of an organization that already has cases (existing numbers preserved)', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, caseNumbering: { caseNumberPrefix: 'M' } });
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/cannot be changed from "B" to "M" because this organization already has cases/);
+    expect(mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)?.caseNumberPrefix).toBeUndefined();
+  });
+
+  it('allows recording the prefix already in effect, even with existing cases', async () => {
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, caseNumbering: { caseNumberPrefix: 'b' } });
+    expect(response.status).toBe(200);
+    expect((await response.json()).caseNumbering).toEqual({ caseNumberPrefix: 'B', prefixIsExplicit: true });
+    expect(mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)?.caseNumberPrefix).toBe('B');
+  });
+
+  it('sets a new prefix (normalized to upper case) for an organization with no cases yet', async () => {
+    await withoutOrganizationCases(DEFAULT_ORGANIZATION_ID, async () => {
+      const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, caseNumbering: { caseNumberPrefix: ' m ' } });
+      expect(response.status).toBe(200);
+      expect((await response.json()).caseNumbering).toEqual({ caseNumberPrefix: 'M', prefixIsExplicit: true });
+      const read = await (await getRequest(DEFAULT_ORGANIZATION_ID)).json();
+      expect(read.caseNumbering.caseNumberPrefix).toBe('M');
+    });
+  });
+
+  it('rejects invalid prefix values without writing', async () => {
+    await withoutOrganizationCases(DEFAULT_ORGANIZATION_ID, async () => {
+      for (const bad of ['', '  ', 'M1', 'ABCD', '!', 5, null]) {
+        const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, caseNumbering: { caseNumberPrefix: bad } });
+        expect(response.status, String(bad)).toBe(400);
+      }
+      expect(mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)?.caseNumberPrefix).toBeUndefined();
+    });
+  });
+
+  it('requires caseNumber.manage in addition to organization.manage', async () => {
+    organizationRolePermissionOverrideFixtures.push({
+      id: 'ov-grant-org-manage-only',
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      roleKey: 'officeStaff',
+      permissionKey: 'organization.manage',
+      action: 'grant',
+      reason: 'test',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'mock-user-dana',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockSession = { user: mockOfficeStaffUser };
+    await withoutOrganizationCases(DEFAULT_ORGANIZATION_ID, async () => {
+      const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, caseNumbering: { caseNumberPrefix: 'M' } });
+      expect(response.status).toBe(403);
+    });
+    expect(mockOrganizationFixtures.find((o) => o.id === DEFAULT_ORGANIZATION_ID)?.caseNumberPrefix).toBeUndefined();
+  });
+
+  it('a caller without organization.manage cannot set the prefix at all', async () => {
+    mockSession = { user: mockReadOnlyUser };
+    const response = await patchRequest({ organizationId: DEFAULT_ORGANIZATION_ID, caseNumbering: { caseNumberPrefix: 'B' } });
     expect(response.status).toBe(403);
   });
 });

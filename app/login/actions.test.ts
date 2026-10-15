@@ -71,13 +71,38 @@ afterEach(() => {
 });
 
 describe('loginAction — branches on AUTH_ADAPTER, not DATA_ADAPTER', () => {
-  it('uses mock login when AUTH_ADAPTER=mock, even with DATA_ADAPTER=wix (real Wix data, mock auth)', async () => {
+  // Tenant-isolation hardening (2026-10) — INTENDED behaviour change: this
+  // test used to assert that AUTH_ADAPTER=mock + DATA_ADAPTER=wix signs the
+  // mock user in. Mock login authorizes against in-repo mock memberships,
+  // so against real (shared, multi-tenant) Wix data it must now fail closed.
+  it('refuses mock login when DATA_ADAPTER=wix (mock auth never trusted against real Wix data)', async () => {
     process.env.DATA_ADAPTER = 'wix';
     process.env.AUTH_ADAPTER = 'mock';
 
     await expect(loginAction(formData(MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD))).rejects.toThrow('REDIRECT:');
 
     expect(loginWithWix).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(redirectCalls[0]).toBe('/login?error=auth_adapter_not_allowed&next=%2Fdashboard');
+  });
+
+  it('refuses Wix-Members login when DATA_ADAPTER=wix (only the identity system may front real Wix data)', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.AUTH_ADAPTER = 'wix';
+
+    await expect(loginAction(formData('someone@example.com', 'whatever'))).rejects.toThrow('REDIRECT:');
+
+    expect(loginWithWix).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+    expect(redirectCalls[0]).toBe('/login?error=auth_adapter_not_allowed&next=%2Fdashboard');
+  });
+
+  it('still uses mock login when AUTH_ADAPTER=mock with DATA_ADAPTER=mock', async () => {
+    process.env.DATA_ADAPTER = 'mock';
+    process.env.AUTH_ADAPTER = 'mock';
+
+    await expect(loginAction(formData(MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD))).rejects.toThrow('REDIRECT:');
+
     expect(createSession).toHaveBeenCalledWith(mockDefaultUser);
     expect(redirectCalls[0]).toBe('/dashboard');
   });

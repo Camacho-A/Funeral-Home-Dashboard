@@ -1,3 +1,14 @@
+// @vitest-environment node
+//
+// This route is server-only and reads a multipart body via
+// `request.formData()`. Under the project's global jsdom test environment,
+// `FormData`/`File` are jsdom's classes while `Request` is Node's native
+// (undici) one; undici doesn't recognise a foreign FormData, so it
+// stringifies it ("[object FormData]", content-type text/plain) and
+// `request.formData()` throws — the route then correctly answers 400 before
+// ever reaching auth/permission checks. Running this file in Node's own
+// environment (same as the sibling logo-upload and bulk-print route tests)
+// uses one consistent, real implementation — the one Next.js uses in prod.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';

@@ -3,6 +3,8 @@ import type { OnboardingSession } from '../../types/onboarding';
 import type { OrganizationBranding } from '../../types/organizationBranding';
 import type { OnboardingAuditEntry } from '../../types/onboardingAudit';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './organizationIds';
+import { mockCollection } from './mockStore';
+import { buildGusBrandingFixture } from './gusFixtures';
 
 /**
  * Phase 20 (Organization Onboarding & Tenant Provisioning). Mock-mode
@@ -23,7 +25,7 @@ const NOW = '2026-07-24T00:00:00.000Z';
 export const MANORS_PRIMARY_LOCATION_ID = `${DEFAULT_ORGANIZATION_ID}-primary-location`;
 export const MANORS_ONBOARDING_SESSION_ID = `${DEFAULT_ORGANIZATION_ID}-onboarding`;
 
-export const organizationLocationFixtures: OrganizationLocation[] = [
+export const organizationLocationFixtures: OrganizationLocation[] = mockCollection('organizationLocationFixtures', (): OrganizationLocation[] => [
   {
     id: MANORS_PRIMARY_LOCATION_ID,
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -42,9 +44,9 @@ export const organizationLocationFixtures: OrganizationLocation[] = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-];
+]);
 
-export const onboardingSessionFixtures: OnboardingSession[] = [
+export const onboardingSessionFixtures: OnboardingSession[] = mockCollection('onboardingSessionFixtures', (): OnboardingSession[] => [
   {
     id: MANORS_ONBOARDING_SESSION_ID,
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -69,9 +71,9 @@ export const onboardingSessionFixtures: OnboardingSession[] = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-];
+]);
 
-export const organizationBrandingFixtures: OrganizationBranding[] = [
+export const organizationBrandingFixtures: OrganizationBranding[] = mockCollection('organizationBrandingFixtures', (): OrganizationBranding[] => [
   {
     organizationId: DEFAULT_ORGANIZATION_ID,
     // A stand-in logo, deliberately not any real funeral home's artwork
@@ -119,6 +121,8 @@ export const organizationBrandingFixtures: OrganizationBranding[] = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-];
+  // Gus Camacho Jr. (mock/local development only): name only, no logo.
+  buildGusBrandingFixture(),
+]);
 
-export const onboardingAuditFixtures: OnboardingAuditEntry[] = [];
+export const onboardingAuditFixtures: OnboardingAuditEntry[] = mockCollection('onboardingAuditFixtures', (): OnboardingAuditEntry[] => []);

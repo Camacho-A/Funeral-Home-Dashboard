@@ -1,8 +1,18 @@
+import crypto from 'crypto';
 import type { DataAdapterMode } from '../lib/env';
+import { getDeploymentOrganizationIds } from '../lib/env';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import { isAdminTier } from './authorizationPolicyService';
 import { seedDefaultRoles } from './roleService';
 import { resolveRoleForKey } from './permissionService';
+import { getMembership, createMembership } from './membershipService';
+import { getIdentityById } from './identityService';
+import { ensureStaffProfileForActivatedMembership } from './staffProfileService';
+import { inviteToOrganization, type InviteToOrganizationResult } from './invitationService';
+import { mapWixMembershipItem, buildWixMembershipData, type WixMembershipItem } from '../lib/wixMembershipMapper';
+import type { Membership } from '../types/membership';
+import { resolveOnboardingOrganizationId, type OrganizationIdResolutionError } from '../domain/onboarding/organizationId';
 import {
   mapWixOrganizationItem,
   buildWixOrganizationData,
@@ -67,6 +77,7 @@ import {
 import { STARTER_WORKFLOW, MINIMAL_WORKFLOW, type StarterWorkflowContent } from '../domain/onboarding/starterWorkflow';
 import { STARTER_SERVICE_CATALOG } from '../domain/onboarding/starterServiceCatalog';
 import { mockOrganizationFixtures, mockMembershipFixtures } from './__mocks__/authFixtures';
+import { membershipFixtures } from './__mocks__/identityFixtures';
 import { workflowTemplateFixtures } from './__mocks__/workflowTemplates';
 import { serviceCatalogFixtures } from './__mocks__/pricingFixtures';
 import {
@@ -257,9 +268,13 @@ export async function findResumableSessionForUser(
   userId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<OnboardingSession | null> {
+  // Safe onboarding (2026-10): never offer to resume a session for an
+  // organization this deployment does not serve.
   if (dataAdapterMode === 'mock') {
     return (
-      onboardingSessionFixtures.find((s) => s.startedByUserId === userId && s.status !== 'completed') ?? null
+      onboardingSessionFixtures.find(
+        (s) => s.startedByUserId === userId && s.status !== 'completed' && isOrganizationAllowedInDeployment(s.organizationId),
+      ) ?? null
     );
   }
   const response = await queryWixDataItems<WixOnboardingSessionItem>('onboardingSessions', {
@@ -267,7 +282,7 @@ export async function findResumableSessionForUser(
   });
   const sessions = response.dataItems
     .map((item) => mapWixOnboardingSessionItem(item.data))
-    .filter((s): s is OnboardingSession => s !== null && s.status !== 'completed');
+    .filter((s): s is OnboardingSession => s !== null && s.status !== 'completed' && isOrganizationAllowedInDeployment(s.organizationId));
   return sessions[0] ?? null;
 }
 
@@ -286,7 +301,48 @@ export type StartOnboardingInput = {
   defaultCurrency: string;
   actorUserId: string;
   idFactory: () => string;
+  /**
+   * Safe onboarding (2026-10): optional caller-chosen organization id
+   * (e.g. `gus-camacho-jr`). Validated by
+   * `domain/onboarding/organizationId.ts#resolveOnboardingOrganizationId`
+   * (format, reserved ids, deployment allowlist) and then required not to
+   * exist yet. Omitted on an unrestricted deployment → a UUID from
+   * `idFactory` (the original behaviour).
+   */
+  organizationId?: unknown;
 };
+
+export type OnboardingStartErrorCode =
+  | OrganizationIdResolutionError
+  | 'organization_exists'
+  | 'idempotency_key_conflict';
+
+/** A refusal `/api/onboarding/start` turns into a 4xx — never a partial
+    write: every check that can raise this runs before (or instead of) any
+    write to an organization that is not this onboarding's own. */
+export class OnboardingStartError extends Error {
+  readonly code: OnboardingStartErrorCode;
+  readonly status: 400 | 403 | 409;
+  constructor(code: OnboardingStartErrorCode, message: string) {
+    super(message);
+    this.name = 'OnboardingStartError';
+    this.code = code;
+    this.status =
+      code === 'organization_exists' || code === 'idempotency_key_conflict'
+        ? 409
+        : code === 'organization_not_allowed_in_deployment'
+          ? 403
+          : 400;
+  }
+}
+
+/** Deterministic onboarding-session id for a chosen organization id. Wix
+    item ids are unique, so two different idempotency keys racing to
+    onboard the same chosen id can never both claim a session — the loser's
+    insert conflicts and is reported as `organization_exists`. */
+export function onboardingSessionIdForOrganization(organizationId: string): string {
+  return `onboarding-${organizationId}`;
+}
 
 async function persistOrganization(organization: Organization, dataAdapterMode: DataAdapterMode): Promise<Organization> {
   if (dataAdapterMode === 'mock') {
@@ -357,11 +413,37 @@ export async function startOnboarding(
   input: StartOnboardingInput,
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ organization: Organization; session: OnboardingSession; isNew: boolean }> {
-  const organizationId = input.idFactory();
+  const resolution = resolveOnboardingOrganizationId(input.organizationId, getDeploymentOrganizationIds());
+  if (!resolution.ok) throw new OnboardingStartError(resolution.code, resolution.message);
+  const chosenOrganizationId = resolution.organizationId;
+
+  // 1. Same idempotency key seen before → resume that draft, but only if it
+  //    is for the same organization id (a key can never be re-pointed).
+  const priorSession = await findOnboardingSessionByIdempotencyKey(input.idempotencyKey, dataAdapterMode);
+  if (priorSession) {
+    if (chosenOrganizationId !== null && priorSession.organizationId !== chosenOrganizationId) {
+      throw new OnboardingStartError(
+        'idempotency_key_conflict',
+        'This idempotency key was already used to onboard a different organization.',
+      );
+    }
+    if (!isOrganizationAllowedInDeployment(priorSession.organizationId)) {
+      throw new OnboardingStartError('organization_not_allowed_in_deployment', 'That onboarding belongs to an organization this deployment does not serve.');
+    }
+  } else if (chosenOrganizationId !== null) {
+    // 2. New key + chosen id → the id must be completely unused: no
+    //    organization row and no other onboarding session. Never merge
+    //    into, or overwrite, an existing tenant.
+    if ((await getOrganization(chosenOrganizationId, dataAdapterMode)) || (await findOnboardingSessionForOrganization(chosenOrganizationId, dataAdapterMode))) {
+      throw new OnboardingStartError('organization_exists', `Organization "${chosenOrganizationId}" already exists.`);
+    }
+  }
+
+  const organizationId = priorSession?.organizationId ?? chosenOrganizationId ?? input.idFactory();
   const now = nowIso();
 
   const draftSession: OnboardingSession = {
-    id: input.idFactory(),
+    id: priorSession?.id ?? (chosenOrganizationId !== null ? onboardingSessionIdForOrganization(chosenOrganizationId) : input.idFactory()),
     organizationId,
     status: 'in_progress',
     currentStep: 'organization_profile',
@@ -375,31 +457,64 @@ export async function startOnboarding(
     updatedAt: now,
   };
 
-  const { session, isNew } = await persistOnboardingSessionWithIdempotencyKey(draftSession, input.idempotencyKey, dataAdapterMode);
+  let claimed: { session: OnboardingSession; isNew: boolean };
+  try {
+    claimed = priorSession
+      ? { session: priorSession, isNew: false }
+      : await persistOnboardingSessionWithIdempotencyKey(draftSession, input.idempotencyKey, dataAdapterMode);
+  } catch (error) {
+    // A conflict that is NOT our own key (see persistOnboardingSessionWithIdempotencyKey)
+    // means another key just claimed this chosen organization id.
+    if (chosenOrganizationId !== null && isWixConflict(error)) {
+      throw new OnboardingStartError('organization_exists', `Organization "${chosenOrganizationId}" is already being onboarded.`);
+    }
+    throw error;
+  }
+  const { session, isNew } = claimed;
+  if (chosenOrganizationId !== null && session.organizationId !== chosenOrganizationId) {
+    throw new OnboardingStartError('idempotency_key_conflict', 'This idempotency key was already used to onboard a different organization.');
+  }
 
   let organization = await getOrganization(session.organizationId, dataAdapterMode);
+  if (organization && isNew) {
+    // The organization appeared between the existence check and our claim
+    // (created out-of-band). Never adopt it.
+    throw new OnboardingStartError('organization_exists', `Organization "${session.organizationId}" already exists.`);
+  }
+  if (organization && session.status !== 'completed' && organization.status !== 'draft' && organization.status !== 'onboarding') {
+    // A resumed draft whose organization is already live/suspended was not
+    // created by this onboarding — refuse rather than re-seed or re-activate it.
+    throw new OnboardingStartError('organization_exists', `Organization "${session.organizationId}" is not an onboarding draft.`);
+  }
   if (!organization) {
     // Either genuinely new, or a prior attempt's organization write failed
     // — either way, create it now using the session's own fixed id.
     const slug = await generateUniqueSlug(input.displayName, dataAdapterMode);
-    organization = await persistOrganization(
-      {
-        id: session.organizationId,
-        name: input.displayName,
-        isActive: false,
-        legalName: input.legalName,
-        slug,
-        status: 'draft',
-        timezone: input.timezone,
-        defaultCurrency: input.defaultCurrency.toLowerCase(),
-        primaryEmail: input.primaryEmail,
-        primaryPhone: input.primaryPhone,
-        website: input.website ?? null,
-        createdAt: now,
-        updatedAt: now,
-      },
-      dataAdapterMode,
-    );
+    try {
+      organization = await persistOrganization(
+        {
+          id: session.organizationId,
+          name: input.displayName,
+          isActive: false,
+          legalName: input.legalName,
+          slug,
+          status: 'draft',
+          timezone: input.timezone,
+          defaultCurrency: input.defaultCurrency.toLowerCase(),
+          primaryEmail: input.primaryEmail,
+          primaryPhone: input.primaryPhone,
+          website: input.website ?? null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        dataAdapterMode,
+      );
+    } catch (error) {
+      if (isWixConflict(error)) {
+        throw new OnboardingStartError('organization_exists', `Organization "${session.organizationId}" already exists.`);
+      }
+      throw error;
+    }
     await recordOnboardingAudit(
       { organizationId: session.organizationId, actorUserId: input.actorUserId, action: 'organization_created', metadata: { slug } },
       input.idFactory,
@@ -413,19 +528,13 @@ export async function startOnboarding(
   }
 
   // Phase 22 (Role-Based Access Control) integration: every organization
-  // gets its RBAC roster (platform permissions/default roles seeded
-  // globally, then enabled for this specific organization) as soon as it
-  // exists — before Step 3 (`assignInitialAdministrator`) can possibly
-  // run, and long before `completeOnboarding` can activate it. Called
-  // unconditionally on every `startOnboarding` invocation, not only when
-  // `isNew` — `seedDefaultRoles`/`seedPlatformDefaultRoles` are fully
-  // idempotent (deterministic ids; a conflict on re-seeding is treated as
-  // "already seeded," never an error), so a resumed/retried onboarding
-  // session that already has RBAC seeded incurs a handful of cheap
-  // no-op lookups, not a duplicate-creation risk. `organization.status`
-  // is passed through so seedDefaultRoles can tell it's still safe to
-  // keep completing this organization's roster — see that function's own
-  // comment for the role-subset-integrity correction this is part of.
+  // gets its RBAC roster as soon as it exists — before Step 3
+  // (`assignInitialAdministrator`) can run. Idempotent (deterministic ids).
+  // Safe onboarding (2026-10): seeding only ever writes rows scoped to THIS
+  // organization (enablements + org-scoped grant overrides); the shared
+  // default-role rows every other tenant resolves through are never
+  // written unless the backend has no default roles at all — see
+  // roleService.seedPlatformDefaultRoles.
   await seedDefaultRoles(session.organizationId, dataAdapterMode, organization.status);
 
   return { organization, session, isNew };
@@ -579,7 +688,7 @@ export async function updatePrimaryLocation(
 // 3. assignInitialAdministrator (Step 3)
 // ---------------------------------------------------------------------------
 
-async function findAdminMembership(
+async function findLegacyAdminMembership(
   organizationId: string,
   userId: string,
   dataAdapterMode: DataAdapterMode,
@@ -603,72 +712,196 @@ async function findAdminMembership(
   };
 }
 
+export type OnboardingAdministratorErrorCode = 'identity_not_found' | 'membership_not_assignable';
+
+export class OnboardingAdministratorError extends Error {
+  readonly code: OnboardingAdministratorErrorCode;
+  constructor(code: OnboardingAdministratorErrorCode, message: string) {
+    super(message);
+    this.name = 'OnboardingAdministratorError';
+    this.code = code;
+  }
+}
+
+/** Deterministic id for the first administrator's membership row, so a
+    double-submitted Step 3 can never create two rows. */
+export function initialAdministratorMembershipId(organizationId: string, identityId: string): string {
+  const readable = `membership-${organizationId}-${identityId}`;
+  if (readable.length <= 128) return readable;
+  const digest = crypto.createHash('sha256').update(`membership|${organizationId}|${identityId}`).digest('hex').slice(0, 40);
+  return `membership-h-${digest}`;
+}
+
+function toLegacyShape(membership: Membership): OrganizationMembership {
+  return {
+    organizationId: membership.organizationId,
+    userId: membership.identityId,
+    role: membership.role as OrganizationMembership['role'],
+    isActive: membership.status === 'active',
+  };
+}
+
 /**
- * Assigns the organization-scoped `administrator` role — never any other
- * role, regardless of what a caller might request, matching "Do not allow
- * the client to assign arbitrary platform-level permissions" (there is no
- * platform-level role this function can grant at all; the only role it
- * ever writes is the literal string `'administrator'`). Idempotent: an
- * existing active membership for this (organizationId, userId) pair is
- * returned unchanged rather than duplicated.
+ * Step 3 — the first administrator. Only ever assigns the literal
+ * `'administrator'` role (no parameter through which a caller could ask for
+ * another), and refuses unless that role resolves for this organization.
  *
- * Phase 22 (Role-Based Access Control) integration: refuses to assign the
- * literal `'administrator'` role unless it actually resolves to a real
- * `Role` for this organization first (`resolveRoleForKey`) — in ordinary
- * operation this always succeeds, since `startOnboarding` (Step 1) already
- * seeded the organization's RBAC roster before this step can run; the
- * check exists as defense in depth against any future call path that
- * might reach this function without going through `startOnboarding`
- * first, rather than silently writing a role assignment that would
- * resolve to zero permissions.
+ * Safe onboarding correction (2026-10) — membership format: this used to
+ * write the legacy row shape (`userId`, `identitySource: 'wix'`, no
+ * `identityId`/`status`), which identity-mode login
+ * (`membershipService.listMembershipsForIdentity` → filter by
+ * `identityId`, `mapWixMembershipItem` → requires `status`, timestamps,
+ * `beaconMembershipId`) cannot read — the new organization's first
+ * administrator could never sign into it. On Wix data (always identity
+ * auth — see lib/env.ts#isAuthAdapterAllowedForDataAdapter) it now writes
+ * the CURRENT identity format, `status: 'active'`, for an existing
+ * `Identity` (`administratorUserId` is an identity id), plus the legacy
+ * `userId`/`isActive` fields on the same row so legacy readers
+ * (`countAdminMemberships`, `findLegacyAdminMembership`) keep working.
+ * An unknown identity is refused (`identity_not_found`) — onboard a
+ * person who has no identity yet with `inviteInitialAdministrator`
+ * (the existing invitation flow: email verification + password) instead.
+ * A StaffProfile is provisioned best-effort, like every other activation
+ * path (invitation acceptance, reactivation).
+ *
+ * Mock data keeps the legacy fixture write (mock/wix-login sessions read
+ * `mockMembershipFixtures`) and, when the user is also a mock identity,
+ * adds the identity-format membership too.
+ *
+ * Idempotent: an existing active membership for the pair is returned
+ * unchanged (never re-roled); a disabled/removed one is refused rather than
+ * silently reactivated.
  */
 export async function assignInitialAdministrator(
   organizationId: string,
   administratorUserId: string,
   idFactory: () => string,
   dataAdapterMode: DataAdapterMode,
-): Promise<{ membership: OrganizationMembership; isNew: boolean }> {
-  const existing = await findAdminMembership(organizationId, administratorUserId, dataAdapterMode);
-  if (existing) return { membership: existing, isNew: false };
-
+  options?: { invitedByIdentityId?: string | null },
+): Promise<{ membership: OrganizationMembership; isNew: boolean; identityMembership?: Membership }> {
   const administratorRole = await resolveRoleForKey('administrator', organizationId, dataAdapterMode);
   if (!administratorRole) {
     throw new Error(`The administrator role is not yet resolvable for organization ${organizationId} — its RBAC roster has not been seeded.`);
   }
 
-  const membership: OrganizationMembership = {
-    organizationId,
-    userId: administratorUserId,
-    role: 'administrator',
-    isActive: true,
-  };
-
   if (dataAdapterMode === 'mock') {
-    mockMembershipFixtures.push(membership);
-    return { membership, isNew: true };
+    let legacy = await findLegacyAdminMembership(organizationId, administratorUserId, dataAdapterMode);
+    let isNew = false;
+    if (!legacy) {
+      legacy = { organizationId, userId: administratorUserId, role: 'administrator', isActive: true };
+      mockMembershipFixtures.push(legacy);
+      isNew = true;
+    }
+    const identity = await getIdentityById(administratorUserId, dataAdapterMode);
+    if (!identity) return { membership: legacy, isNew };
+    const { membership: identityMembership, isNew: identityIsNew } = await createMembership(
+      {
+        identityId: identity.id,
+        organizationId,
+        role: 'administrator',
+        status: 'active',
+        invitedBy: options?.invitedByIdentityId ?? null,
+        idFactory: () => initialAdministratorMembershipId(organizationId, identity.id),
+      },
+      dataAdapterMode,
+    );
+    return { membership: legacy, isNew: isNew || identityIsNew, identityMembership };
   }
 
-  const id = idFactory();
-  // Phase 20 is the first code path that ever writes to the live
-  // `organizationMemberships` collection (Phase 13/14A created it, but
-  // application code has only ever read mock fixtures for membership
-  // resolution — see lib/auth/authorize.ts's own comment). `identitySource`
-  // is derived from `dataAdapterMode` itself as a reasonable simplification
-  // (AUTH_ADAPTER/DATA_ADAPTER are typically aligned in practice) since no
-  // established convention exists yet for determining it independently.
-  await insertWixDataItem(
-    'organizationMemberships',
-    {
-      beaconMembershipId: id,
-      organizationId,
-      userId: administratorUserId,
-      identitySource: 'wix',
-      role: 'administrator',
-      isActive: true,
-    },
-    id,
+  const existing = await getMembership(administratorUserId, organizationId, dataAdapterMode);
+  if (existing) {
+    if (existing.status === 'active' || existing.status === 'invited') {
+      return { membership: toLegacyShape(existing), isNew: false, identityMembership: existing };
+    }
+    throw new OnboardingAdministratorError(
+      'membership_not_assignable',
+      `This person's membership in the organization is ${existing.status}; change it in Settings → Team instead.`,
+    );
+  }
+
+  const identity = await getIdentityById(administratorUserId, dataAdapterMode);
+  if (!identity) {
+    throw new OnboardingAdministratorError(
+      'identity_not_found',
+      'No SOLIS identity exists for that administrator. Invite them by email instead (administratorEmail).',
+    );
+  }
+
+  const now = nowIso();
+  const membership: Membership = {
+    id: initialAdministratorMembershipId(organizationId, identity.id),
+    identityId: identity.id,
+    organizationId,
+    role: 'administrator',
+    status: 'active',
+    invitedBy: options?.invitedByIdentityId ?? null,
+    joinedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await insertWixDataItem<WixMembershipItem & Record<string, unknown>>(
+      'organizationMemberships',
+      {
+        ...buildWixMembershipData(membership),
+        // Legacy-reader compatibility on the same row (see this function's comment).
+        userId: identity.id,
+        isActive: true,
+        identitySource: 'identity',
+      },
+      membership.id,
+    );
+  } catch (error) {
+    if (!isWixConflict(error)) throw error;
+    const landed = await getMembership(identity.id, organizationId, dataAdapterMode);
+    if (!landed) throw error;
+    return { membership: toLegacyShape(landed), isNew: false, identityMembership: landed };
+  }
+
+  try {
+    await ensureStaffProfileForActivatedMembership(
+      {
+        organizationId,
+        identityId: identity.id,
+        membershipId: membership.id,
+        displayName: identity.displayName,
+        membershipRole: membership.role,
+        idFactory,
+      },
+      dataAdapterMode,
+    );
+  } catch (error) {
+    console.error(`[assignInitialAdministrator] StaffProfile provisioning failed for membershipId=${membership.id}:`, error);
+  }
+
+  return { membership: toLegacyShape(membership), isNew: true, identityMembership: membership };
+}
+
+/**
+ * Step 3, alternative path — the first administrator has no SOLIS identity
+ * yet. Reuses the existing invitation flow unchanged
+ * (`invitationService.inviteToOrganization`: identity + `invited`
+ * membership + verification token; acceptance verifies email, sets the
+ * password, activates the membership and provisions the StaffProfile). The
+ * caller delivers the token exactly like `POST /api/auth/invitations`.
+ * Until the invitation is accepted the organization has no ACTIVE
+ * administrator, so `validateLaunchReadiness` keeps blocking launch.
+ */
+export async function inviteInitialAdministrator(
+  organizationId: string,
+  params: { email: string; displayName: string; invitedByIdentityId: string },
+  idFactory: () => string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<InviteToOrganizationResult> {
+  const administratorRole = await resolveRoleForKey('administrator', organizationId, dataAdapterMode);
+  if (!administratorRole) {
+    throw new Error(`The administrator role is not yet resolvable for organization ${organizationId} — its RBAC roster has not been seeded.`);
+  }
+  return inviteToOrganization(
+    { email: params.email, displayName: params.displayName, organizationId, role: 'administrator', invitedByIdentityId: params.invitedByIdentityId, idFactory },
+    dataAdapterMode,
   );
-  return { membership, isNew: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +958,9 @@ async function fetchSourceTemplateContent(
         })();
 
   if (!source || source.versions.length === 0) return null;
+  // Safe onboarding (2026-10): never read another deployment's tenant data
+  // as a clone source (e.g. a Gus deployment cloning Manors' workflow).
+  if (source.organizationId && !isOrganizationAllowedInDeployment(source.organizationId)) return null;
   const latest = source.versions[source.versions.length - 1];
   // Deep clone — "Never share a mutable workflow instance between
   // organizations" means byte-for-byte independent data, not merely a new
@@ -1137,22 +1373,37 @@ export async function validateLaunchReadiness(
  * permission is granted to.
  */
 async function countAdminMemberships(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<number> {
-  type RoleBearingMembership = { userId: string; role: string };
-  let candidates: RoleBearingMembership[];
+  // Safe onboarding (2026-10): counts BOTH membership shapes — identity
+  // format (`identityId` + `status: 'active'`, what identity login reads)
+  // and the legacy shape (`userId` + `isActive`) — deduplicated by person.
+  const candidates = new Map<string, string>();
 
   if (dataAdapterMode === 'mock') {
-    candidates = mockMembershipFixtures.filter((m) => m.organizationId === organizationId && m.isActive);
+    for (const m of mockMembershipFixtures) {
+      if (m.organizationId === organizationId && m.isActive) candidates.set(m.userId, m.role);
+    }
+    for (const m of membershipFixtures) {
+      if (m.organizationId === organizationId && m.status === 'active' && !candidates.has(m.identityId)) candidates.set(m.identityId, m.role);
+    }
   } else {
     const response = await queryWixDataItems<Record<string, unknown>>('organizationMemberships', {
-      filter: { organizationId, isActive: true },
+      filter: { organizationId },
     });
-    candidates = response.dataItems
-      .filter((item): item is typeof item & { data: { userId: string; role: string } } => typeof item.data.userId === 'string' && typeof item.data.role === 'string')
-      .map((item) => ({ userId: item.data.userId, role: item.data.role }));
+    for (const item of response.dataItems) {
+      const identityMembership = mapWixMembershipItem(item.data as WixMembershipItem);
+      if (identityMembership) {
+        if (identityMembership.status === 'active') candidates.set(identityMembership.identityId, identityMembership.role);
+        continue;
+      }
+      const data = item.data;
+      if (data.isActive === true && typeof data.userId === 'string' && typeof data.role === 'string' && !candidates.has(data.userId)) {
+        candidates.set(data.userId, data.role);
+      }
+    }
   }
 
   const adminChecks = await Promise.all(
-    candidates.map((m) => isAdminTier({ identityId: m.userId, organizationId, roleKey: m.role }, dataAdapterMode)),
+    [...candidates].map(([userId, role]) => isAdminTier({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode)),
   );
   return adminChecks.filter(Boolean).length;
 }

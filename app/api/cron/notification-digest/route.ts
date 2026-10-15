@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { runNotificationDigestSweep } from '@/services/notificationDigestService';
+import { cronHandler } from '../_lib/cronRoute';
 
 /**
  * Phase 33 (Real Notification Delivery). The one cron-triggered Route
@@ -18,18 +18,16 @@ import { runNotificationDigestSweep } from '@/services/notificationDigestService
  * configured" gate this phase introduced (`RESEND_API_KEY`/`TWILIO_*`) —
  * failing closed, never accepting an unauthenticated sweep trigger just
  * because the operator hasn't set the secret yet.
+ *
+ * Scheduled-job isolation (2026-10).
+ * Manors keeps these routes POST-only for now: Vercel Cron sends GET, so a
+ * scheduled run still gets 405 exactly as before and no previously
+ * nonfunctional schedule starts running as a side effect of this port
+ * (enabling GET is a separate, reviewed rollout — docs/SCHEDULED_JOBS.md).
+ * POST (manual trigger) uses one constant-time
+ * `CRON_SECRET` bearer check (`app/api/cron/_lib/cronRoute.ts`); the sweep
+ * only ever processes this deployment's organizations
+ * (`DEPLOYMENT_ORGANIZATION_IDS`). `vercel.json` is unchanged by this port.
  */
-export async function POST(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: 'CRON_SECRET is not configured.' }, { status: 503 });
-  }
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
-  }
+export const POST = cronHandler(() => runNotificationDigestSweep(getDataAdapterMode()));
 
-  const dataAdapterMode = getDataAdapterMode();
-  const result = await runNotificationDigestSweep(dataAdapterMode);
-  return NextResponse.json({ result });
-}

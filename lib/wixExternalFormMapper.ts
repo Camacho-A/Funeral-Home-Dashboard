@@ -25,6 +25,8 @@ export type WixExternalFormConfigItem = {
   linkTokenFieldName?: unknown;
   linkTokenFieldQid?: unknown;
   webhookAuthFieldQid?: unknown;
+  mappingKey?: unknown;
+  apiKeyReference?: unknown;
   isEnabled?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -80,6 +82,12 @@ export function mapWixExternalFormConfigItem(id: string, item: WixExternalFormCo
     linkTokenFieldName: item.linkTokenFieldName,
     linkTokenFieldQid: item.linkTokenFieldQid,
     webhookAuthFieldQid: item.webhookAuthFieldQid,
+    // Optional (2026-10) — absent on every row seeded before multi-tenant
+    // hardening, which correctly reads as "legacy binding / default key".
+    // Read as plain strings only; their VALIDITY is enforced by
+    // services/externalFormConfigService.ts#validateExternalFormConfigs.
+    ...(typeof item.mappingKey === 'string' && item.mappingKey ? { mappingKey: item.mappingKey } : {}),
+    ...(typeof item.apiKeyReference === 'string' && item.apiKeyReference ? { apiKeyReference: item.apiKeyReference } : {}),
     isEnabled: item.isEnabled,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,

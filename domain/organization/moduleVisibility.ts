@@ -1,4 +1,5 @@
 import type { Organization } from '@/types/organization';
+import { getOrganizationProfile, registeredProfileMap } from './organizationProfiles';
 
 /**
  * Manors launch-prep. The lightest possible module-visibility mechanism —
@@ -100,11 +101,16 @@ export type HideableModuleKey = (typeof HIDEABLE_MODULE_KEYS)[number];
  * and is set for `managed-cremations`, delete the entry below (or empty
  * the whole map) — every call site already reads through `isModuleHidden`.
  */
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
 
-export const HIDDEN_MODULE_OVERRIDES: Record<string, readonly HideableModuleKey[]> = {
-  [MANORS_ORGANIZATION_ID]: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
-};
+/** 2026-10: the override now lives in domain/organization/organizationProfiles.ts
+    (Manors' `features.hiddenModules`, PINNED so it wins over the record).
+    This map is derived from that registry and kept for existing importers;
+    the TODO above now means "unpin `hiddenModules` in Manors' profile". */
+export const HIDDEN_MODULE_OVERRIDES: Record<string, readonly HideableModuleKey[]> = registeredProfileMap(
+  (profile) => profile.features.hiddenModules,
+  (profile) => profile.pinnedFeatures.includes('hiddenModules'),
+);
 
 /** `hiddenModules` absent/null and no override — every organization,
     including every pre-existing one, sees this by default (the opposite
@@ -113,9 +119,7 @@ export function isModuleHidden(
   organization: (Pick<Organization, 'hiddenModules'> & { id: string }) | null | undefined,
   key: HideableModuleKey,
 ): boolean {
-  if (organization?.id && organization.id in HIDDEN_MODULE_OVERRIDES) {
-    return HIDDEN_MODULE_OVERRIDES[organization.id].includes(key);
-  }
-  if (!organization?.hiddenModules) return false;
-  return organization.hiddenModules.includes(key);
+  if (!organization) return false;
+  // Pinned profile value > record `hiddenModules` > profile > none hidden.
+  return getOrganizationProfile(organization.id, { hiddenModules: organization.hiddenModules ?? null }).features.hiddenModules.includes(key);
 }

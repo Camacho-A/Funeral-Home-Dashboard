@@ -374,3 +374,106 @@ describe('advanceCaseSequencePast', () => {
     expect(seen).toEqual(['query:2026', 'insert:manors-2026']);
   });
 });
+
+/**
+ * Organization-specific case numbering (2026-10). Manors
+ * (`managed-cremations`, prefix B) and Gus Camacho (`gus-camacho-jr`,
+ * prefix M) share one multi-tenant backend, so their sequences must be
+ * fully independent per organization AND per year. Driven through an
+ * in-memory fake of the two Wix operations reserveNextCaseNumber relies
+ * on (atomic INCREMENT_FIELD PATCH, `_id`-unique INSERT), so concurrent
+ * interleavings genuinely exercise the 404 -> insert -> 409 -> retry paths.
+ */
+describe('reserveNextCaseNumber — two organizations, independent sequences', () => {
+  function stubInMemoryCaseSequences(seed: Record<string, number> = {}) {
+    const rows = new Map<string, number>(Object.entries(seed));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        // Yield first so concurrent callers genuinely interleave.
+        await Promise.resolve();
+        const reply = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+        if (init.method === 'PATCH') {
+          const id = decodeURIComponent(url.split('/items/')[1]);
+          if (!rows.has(id)) return reply(404, {});
+          rows.set(id, (rows.get(id) as number) + 1);
+          return reply(200, { dataItem: { id, dataCollectionId: 'caseSequences', data: { nextSequence: rows.get(id) } } });
+        }
+        if (init.method === 'POST' && url.endsWith('/items')) {
+          const parsed = JSON.parse(init.body as string);
+          const id = parsed.dataItem.id as string;
+          if (rows.has(id)) return reply(409, {});
+          rows.set(id, parsed.dataItem.data.nextSequence);
+          return reply(200, { dataItem: { id, dataCollectionId: 'caseSequences', data: parsed.dataItem.data } });
+        }
+        return reply(500, {});
+      }),
+    );
+    return rows;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('concurrent creation in two organizations yields independent, gap-free, duplicate-free sequences with each org prefix', async () => {
+    const rows = stubInMemoryCaseSequences();
+    const reservations = await Promise.all([
+      ...Array.from({ length: 5 }, () => reserveNextCaseNumber('managed-cremations', 2026, 'B')),
+      ...Array.from({ length: 5 }, () => reserveNextCaseNumber('gus-camacho-jr', 2026, 'M')),
+    ]);
+    const manors = reservations.filter((n) => n.startsWith('B')).sort();
+    const gus = reservations.filter((n) => n.startsWith('M')).sort();
+    expect(manors).toEqual(['B2026-001', 'B2026-002', 'B2026-003', 'B2026-004', 'B2026-005']);
+    expect(gus).toEqual(['M2026-001', 'M2026-002', 'M2026-003', 'M2026-004', 'M2026-005']);
+    expect(new Set(reservations).size).toBe(10);
+    expect(rows.get('managed-cremations-2026')).toBe(6);
+    expect(rows.get('gus-camacho-jr-2026')).toBe(6);
+  });
+
+  it("a new organization's first case never touches or resets an existing organization's sequence", async () => {
+    const rows = stubInMemoryCaseSequences({ 'managed-cremations-2026': 58 });
+    expect(await reserveNextCaseNumber('gus-camacho-jr', 2026, 'M')).toBe('M2026-001');
+    expect(await reserveNextCaseNumber('gus-camacho-jr', 2026, 'M')).toBe('M2026-002');
+    expect(rows.get('managed-cremations-2026')).toBe(58);
+    // Manors' next number continues exactly where it was.
+    expect(await reserveNextCaseNumber('managed-cremations', 2026, 'B')).toBe('B2026-058');
+  });
+
+  it('year rollover (Dec 31 -> Jan 1, org-local) restarts at 001 for each organization with the right year', async () => {
+    const { orgLocalYear } = await import('../domain/cases/caseNumber');
+    stubInMemoryCaseSequences({ 'managed-cremations-2026': 120, 'gus-camacho-jr-2026': 40 });
+    vi.useFakeTimers({ toFake: ['Date'] });
+
+    // 23:59 on Dec 31 in America/New_York (UTC-5): still the old year.
+    vi.setSystemTime(new Date('2027-01-01T04:59:00.000Z'));
+    const lateYear = orgLocalYear(new Date().toISOString(), 'America/New_York');
+    expect(await reserveNextCaseNumber('managed-cremations', lateYear, 'B')).toBe(`B${lateYear}-120`);
+    expect(await reserveNextCaseNumber('gus-camacho-jr', lateYear, 'M')).toBe(`M${lateYear}-040`);
+
+    // 00:01 on Jan 1 local: a new year, each organization restarts at 001.
+    vi.setSystemTime(new Date('2027-01-01T05:01:00.000Z'));
+    const newYear = orgLocalYear(new Date().toISOString(), 'America/New_York');
+    expect(newYear).toBe(lateYear + 1);
+    expect(await reserveNextCaseNumber('gus-camacho-jr', newYear, 'M')).toBe(`M${newYear}-001`);
+    expect(await reserveNextCaseNumber('managed-cremations', newYear, 'B')).toBe(`B${newYear}-001`);
+    expect(await reserveNextCaseNumber('gus-camacho-jr', newYear, 'M')).toBe(`M${newYear}-002`);
+  });
+});
+
+describe('reserveNextCaseNumber — invalid prefix/year fail before consuming a number', () => {
+  it('rejects an invalid explicit prefix without calling Wix', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(reserveNextCaseNumber('gus-camacho-jr', 2026, 'M1')).rejects.toThrow(/Invalid case-number prefix/);
+    await expect(reserveNextCaseNumber('gus-camacho-jr', 2026, 'ABCD')).rejects.toThrow(/Invalid case-number prefix/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-4-digit year without calling Wix', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(reserveNextCaseNumber('gus-camacho-jr', 26, 'M')).rejects.toThrow(/Invalid case-number year/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

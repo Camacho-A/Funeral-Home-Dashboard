@@ -102,6 +102,15 @@ export type ExternalFormConfig = {
    * starts reading this again.
    */
   webhookAuthFieldQid: string;
+  /** Multi-tenant hardening (2026-10). Optional key of a registered form
+      layout (domain/externalForms/formRegistry.ts). Absent = the legacy
+      per-organization binding for this form id, else generic handling. */
+  mappingKey?: string | null;
+  /** Multi-tenant hardening (2026-10). Optional NAME of the server env var
+      holding the Jotform API key for this form's account (must match
+      `JOTFORM_API_KEY` or `JOTFORM_API_KEY_<SUFFIX>`). Absent = the
+      default `JOTFORM_API_KEY`. Never the key itself. */
+  apiKeyReference?: string | null;
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;

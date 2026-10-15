@@ -21,6 +21,8 @@ import { NOTIFICATION_TYPES } from '../domain/notifications/notificationTypeRegi
 import { recordCalendarSyncFailed } from './activityService';
 import { getAppBaseUrl } from '../lib/env';
 import { calendarEventLinkFixtures } from './__mocks__/calendarFixtures';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
+import { asNullableString, claimWixSweepRow, deploymentOrganizationWixFilter, isClaimFresh, retainDeploymentRecords } from './scheduledJobs/sweepSupport';
 
 /**
  * Phase 34 (Scheduling Integrations, Calendar Sync & Automated
@@ -96,8 +98,10 @@ async function patchLink(
   id: string,
   patch: Partial<Pick<CalendarEventLink, 'externalEventId' | 'syncStatus' | 'beaconAppointmentVersion' | 'lastSyncedAt' | 'lastError' | 'retryCount' | 'updatedAt'>>,
   dataAdapterMode: DataAdapterMode,
+  options: { releaseSweepClaim?: boolean } = {},
 ): Promise<void> {
   if (dataAdapterMode === 'mock') {
+    if (options.releaseSweepClaim) mockSweepClaims.delete(`${organizationId}::${id}`);
     const index = calendarEventLinkFixtures.findIndex((l) => l.id === id && l.organizationId === organizationId);
     if (index === -1) return; // already gone (e.g. deleted by a concurrent sweep tick) — nothing to patch
     calendarEventLinkFixtures[index] = { ...calendarEventLinkFixtures[index], ...patch };
@@ -107,6 +111,7 @@ async function patchLink(
   const existingItem = response.dataItems[0];
   if (!existingItem) return;
   const merged = applyCalendarEventLinkUpdateToWixData(existingItem.data, patch);
+  if (options.releaseSweepClaim) (merged as WixCalendarEventLinkItem & { sweepClaimedAt?: unknown }).sweepClaimedAt = null;
   await updateWixDataItem<WixCalendarEventLinkItem>('calendarEventLinks', existingItem.id, merged);
 }
 
@@ -114,6 +119,7 @@ async function deleteLinkRow(organizationId: string, id: string, dataAdapterMode
   if (dataAdapterMode === 'mock') {
     const index = calendarEventLinkFixtures.findIndex((l) => l.id === id && l.organizationId === organizationId);
     if (index !== -1) calendarEventLinkFixtures.splice(index, 1);
+    mockSweepClaims.delete(`${organizationId}::${id}`);
     return;
   }
   const response = await queryWixDataItems<WixCalendarEventLinkItem>('calendarEventLinks', { filter: { organizationId, beaconCalendarEventLinkId: id }, paging: { limit: 1 } });
@@ -236,27 +242,87 @@ function isRetryDue(link: CalendarEventLink, nowMs: number): boolean {
 }
 
 /**
- * Wix Data has no `IN`-filter support (confirmed negative, Phase 22) —
- * two single-value queries for `'pending'`/`'retry_pending'`, merged and
- * capped in-process, exactly the same workaround shape this codebase
- * already uses wherever a multi-value Wix filter would otherwise be
- * needed. Org-agnostic — the sweep's one deliberate exception (a cron
- * job has no per-request organization to scope to), mirroring
- * `appointmentReminderService.ts#listDueReminders`'s own documented
- * exception and structurally contained to this one call site.
+ * Two single-value queries for `'pending'`/`'retry_pending'`, merged and
+ * capped in-process (bounded per run — every link costs real provider
+ * calls). Cross-organization by nature (a cron job has no per-request
+ * organization), structurally contained to this one call site.
+ *
+ * Scheduled-job isolation (2026-10, docs/SCHEDULED_JOBS.md): both queries
+ * are scoped to this deployment's organizations (DEPLOYMENT_ORGANIZATION_IDS)
+ * and every link is re-checked before any token refresh or provider call —
+ * another deployment's links are never touched with this deployment's
+ * calendar OAuth credentials / CALENDAR_TOKEN_ENCRYPTION_KEY. The raw
+ * optional `sweepClaimedAt` field (see claimLink) is carried alongside.
  */
-async function listSweepCandidates(dataAdapterMode: DataAdapterMode): Promise<CalendarEventLink[]> {
+type SweepCandidate = { link: CalendarEventLink; wixItemId: string | null; sweepClaimedAt: string | null };
+
+async function listSweepCandidates(dataAdapterMode: DataAdapterMode): Promise<SweepCandidate[]> {
   if (dataAdapterMode === 'mock') {
-    return calendarEventLinkFixtures.filter((l) => l.syncStatus === 'pending' || l.syncStatus === 'retry_pending').slice(0, WIX_FETCH_WINDOW);
+    const links = calendarEventLinkFixtures.filter((l) => l.syncStatus === 'pending' || l.syncStatus === 'retry_pending');
+    return retainDeploymentRecords('calendar-sync', links, (l) => l.organizationId)
+      .slice(0, WIX_FETCH_WINDOW)
+      .map((link) => ({ link, wixItemId: null, sweepClaimedAt: mockSweepClaims.get(`${link.organizationId}::${link.id}`) ?? null }));
   }
+  const orgFilter = deploymentOrganizationWixFilter();
   const [pending, retryPending] = await Promise.all([
-    queryWixDataItems<WixCalendarEventLinkItem>('calendarEventLinks', { filter: { syncStatus: 'pending' }, paging: { limit: WIX_FETCH_WINDOW } }),
-    queryWixDataItems<WixCalendarEventLinkItem>('calendarEventLinks', { filter: { syncStatus: 'retry_pending' }, paging: { limit: WIX_FETCH_WINDOW } }),
+    queryWixDataItems<WixCalendarEventLinkItem>('calendarEventLinks', { filter: { ...orgFilter, syncStatus: 'pending' }, paging: { limit: WIX_FETCH_WINDOW } }),
+    queryWixDataItems<WixCalendarEventLinkItem>('calendarEventLinks', { filter: { ...orgFilter, syncStatus: 'retry_pending' }, paging: { limit: WIX_FETCH_WINDOW } }),
   ]);
-  return [...pending.dataItems, ...retryPending.dataItems]
-    .map((item) => mapWixCalendarEventLinkItem(item.data))
-    .filter((l): l is CalendarEventLink => l !== null)
-    .slice(0, WIX_FETCH_WINDOW);
+  const candidates = [...pending.dataItems, ...retryPending.dataItems].flatMap((item): SweepCandidate[] => {
+    const link = mapWixCalendarEventLinkItem(item.data);
+    if (!link) return [];
+    return [{ link, wixItemId: item.id, sweepClaimedAt: asNullableString((item.data as WixCalendarEventLinkItem & { sweepClaimedAt?: unknown }).sweepClaimedAt) }];
+  });
+  return retainDeploymentRecords('calendar-sync', candidates, (c) => c.link.organizationId).slice(0, WIX_FETCH_WINDOW);
+}
+
+/**
+ * Mock-mode stand-in for the optional `sweepClaimedAt` Wix field — keyed
+ * `${organizationId}::${linkId}`; never touches the shared fixtures' shape.
+ */
+const mockSweepClaims = new Map<string, string>();
+
+/**
+ * Claim-before-sync (2026-10). Two overlapping sweeps processing the same
+ * fresh `pending` link would both call `createEvent` — a duplicate event in
+ * the staff member's real calendar. No existing field fits a claim marker
+ * (`updatedAt` drives retry backoff and is legitimately bumped by every
+ * re-mark), so this uses ONE optional field, `sweepClaimedAt` (Text/ISO,
+ * nullable) on `calendarEventLinks` — documented as a production dependency
+ * in docs/SCHEDULED_JOBS.md. Compare-and-swap from the observed value;
+ * fresh claim → skip; claim older than SWEEP_CLAIM_TTL_MS → reclaimable
+ * (provider updates are idempotent; only a crash between createEvent and
+ * the link write could duplicate, the pre-existing at-least-once window).
+ * Graceful fallback: if the backend does not apply the condition at all
+ * (field not accepted), the claim is 'unverifiable' and the link is synced
+ * exactly as before this change, with a warning. Every sweep-side link
+ * write releases the claim (`releaseSweepClaim`).
+ */
+async function claimLink(candidate: SweepCandidate, claimAt: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const nowMs = new Date(claimAt).getTime();
+  const { link } = candidate;
+  if (dataAdapterMode === 'mock') {
+    const key = `${link.organizationId}::${link.id}`;
+    const current = mockSweepClaims.get(key) ?? null;
+    if (current !== candidate.sweepClaimedAt || isClaimFresh(current, nowMs)) return false;
+    mockSweepClaims.set(key, claimAt);
+    return true;
+  }
+  if (isClaimFresh(candidate.sweepClaimedAt, nowMs) || !candidate.wixItemId) return false;
+  const observed = candidate.sweepClaimedAt;
+  const outcome = await claimWixSweepRow({
+    collection: 'calendarEventLinks',
+    wixItemId: candidate.wixItemId,
+    fieldPath: 'sweepClaimedAt',
+    claimValue: claimAt,
+    condition: { syncStatus: { $eq: link.syncStatus }, sweepClaimedAt: { $eq: observed } },
+    isUnchanged: (data) => data.syncStatus === link.syncStatus && asNullableString(data.sweepClaimedAt) === observed,
+  });
+  if (outcome === 'unverifiable') {
+    console.warn('[calendar-sync] conditional claim not applied by the backend (is the optional sweepClaimedAt field accepted?); syncing without a claim (pre-2026-10 behaviour).');
+    return true;
+  }
+  return outcome === 'claimed';
 }
 
 function buildEventDraft(appointment: Appointment): CalendarEventDraft {
@@ -284,7 +350,7 @@ async function processLink(link: CalendarEventLink, dataAdapterMode: DataAdapter
     // which would require that file to depend back on this one
     // (calendarSyncService already depends on calendarConnectionService
     // for connection/token access). Never retried once here (§16).
-    await patchLink(link.organizationId, link.id, { syncStatus: 'disconnected', updatedAt: nowIso() }, dataAdapterMode);
+    await patchLink(link.organizationId, link.id, { syncStatus: 'disconnected', updatedAt: nowIso() }, dataAdapterMode, { releaseSweepClaim: true });
     return;
   }
 
@@ -322,6 +388,7 @@ async function processLink(link: CalendarEventLink, dataAdapterMode: DataAdapter
       link.id,
       { syncStatus: 'synced', externalEventId, beaconAppointmentVersion: appointment.appointmentVersion, lastSyncedAt: nowIso(), lastError: null, retryCount: 0, updatedAt: nowIso() },
       dataAdapterMode,
+      { releaseSweepClaim: true },
     );
   } catch (error) {
     await recordSyncFailure(link, error, dataAdapterMode);
@@ -334,11 +401,11 @@ async function recordSyncFailure(link: CalendarEventLink, error: unknown, dataAd
   const now = nowIso();
 
   if (nextRetryCount > MAX_RETRY_COUNT) {
-    await patchLink(link.organizationId, link.id, { syncStatus: 'failed', lastError: message, retryCount: nextRetryCount, updatedAt: now }, dataAdapterMode);
+    await patchLink(link.organizationId, link.id, { syncStatus: 'failed', lastError: message, retryCount: nextRetryCount, updatedAt: now }, dataAdapterMode, { releaseSweepClaim: true });
     await notifySyncFailed(link, dataAdapterMode);
     return;
   }
-  await patchLink(link.organizationId, link.id, { syncStatus: 'retry_pending', lastError: message, retryCount: nextRetryCount, updatedAt: now }, dataAdapterMode);
+  await patchLink(link.organizationId, link.id, { syncStatus: 'retry_pending', lastError: message, retryCount: nextRetryCount, updatedAt: now }, dataAdapterMode, { releaseSweepClaim: true });
 }
 
 /** Fires exactly once, on the `retry_pending -> failed` terminal
@@ -386,8 +453,12 @@ export async function runCalendarSyncSweep(dataAdapterMode: DataAdapterMode, now
   const candidates = await listSweepCandidates(dataAdapterMode);
   const nowMs = new Date(now).getTime();
   let processed = 0;
-  for (const link of candidates) {
+  for (const candidate of candidates) {
+    const { link } = candidate;
+    // Defense in depth — re-checked immediately before any token refresh or provider call.
+    if (!isOrganizationAllowedInDeployment(link.organizationId)) continue;
     if (!isRetryDue(link, nowMs)) continue;
+    if (!(await claimLink(candidate, now, dataAdapterMode))) continue;
     await processLink(link, dataAdapterMode);
     processed += 1;
   }

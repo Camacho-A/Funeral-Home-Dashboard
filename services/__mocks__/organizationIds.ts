@@ -23,3 +23,14 @@ export const DEFAULT_ORGANIZATION_ID = 'managed-cremations';
  * limits" section.
  */
 export const SECOND_MOCK_ORGANIZATION_ID = 'evergreen-memorial-group';
+
+/**
+ * Gus Camacho Jr. Funeral Home (2026-10) — the second real tenant of the
+ * shared Beacon backend (its own SOLIS deployment). Mock-mode only here: a
+ * fictional demo roster, cases and families (see
+ * services/__mocks__/gusFixtures.ts) used by the cross-tenant isolation
+ * tests, and to run locally as the Gus deployment if needed
+ * (docs/LOCAL_DEVELOPMENT.md). DEFAULT_ORGANIZATION_ID above stays
+ * Manors' — every existing test is written against it.
+ */
+export const GUS_ORGANIZATION_ID = 'gus-camacho-jr';

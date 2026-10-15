@@ -3,6 +3,7 @@ import type { PortalUser } from '../../types/portalUser';
 import type { PortalAccess } from '../../types/portalAccess';
 import type { DataAdapterMode } from '../env';
 import { requireFamilySession } from './requireFamilySession';
+import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
 import { getPortalAccessForPortalUserAndCase } from '../../services/portal/portalAccessService';
 import { hasPortalCapability, type PortalCapabilityKey } from '../../domain/portal/portalCapabilityPolicy';
 import { isFamilyPortalEnabledForOrganizationId } from '../../services/organizationFamilyPortalCapabilityService';
@@ -48,7 +49,15 @@ export async function requireFamilyAccess(caseId: string, requiredCapability: Po
   }
 
   const access = await getPortalAccessForPortalUserAndCase(sessionResult.portalUser.id, caseId, sessionResult.dataAdapterMode);
-  if (!access || access.status !== 'active' || !hasPortalCapability(access, requiredCapability)) {
+  // Deployment organization restrictions (2026-10): a grant for an
+  // organization this deployment does not serve is denied with the same
+  // generic response as every other reason (no existence leak).
+  if (
+    !access ||
+    access.status !== 'active' ||
+    !isOrganizationAllowedInDeployment(access.organizationId) ||
+    !hasPortalCapability(access, requiredCapability)
+  ) {
     return { authorized: false, response: FORBIDDEN_RESPONSE() };
   }
 

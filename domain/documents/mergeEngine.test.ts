@@ -268,3 +268,37 @@ describe('mergeTemplate', () => {
     expect(() => mergeTemplate('{{a.b}} and {{c.d}}', {})).toThrow(/a\.b.*c\.d|c\.d.*a\.b/);
   });
 });
+
+/** Multi-tenant hardening (2026-10): preview sample data is org-neutral or
+    the previewing organization's own — never another tenant's identity. */
+describe('buildSampleMergeSourceData — organization-aware sample values', () => {
+  it('no organization / unknown organization: neutral sample identity, no Manors data', async () => {
+    const { buildSampleMergeSourceData, SAMPLE_ORGANIZATION_NAME } = await import('./mergeEngine');
+    for (const sample of [buildSampleMergeSourceData(), buildSampleMergeSourceData('some-future-funeral-home')]) {
+      expect(sample.organization.name).toBe(SAMPLE_ORGANIZATION_NAME);
+      expect(JSON.stringify(sample)).not.toMatch(/manor|managed-cremations/i);
+    }
+  });
+
+  it("Gus: its own name and M prefix, no Manors data", async () => {
+    const { buildSampleMergeSourceData } = await import('./mergeEngine');
+    const sample = buildSampleMergeSourceData('gus-camacho-jr');
+    expect(sample.organization.name).toBe('Gus Camacho Jr. Funeral Home');
+    expect(sample.case.caseNumber).toMatch(/^M\d{4}-\d{3}$/);
+    expect(JSON.stringify(sample)).not.toMatch(/manor/i);
+  });
+
+  it("Manors: its own name and B prefix (preview unchanged for Manors' templates)", async () => {
+    const { buildSampleMergeSourceData } = await import('./mergeEngine');
+    const sample = buildSampleMergeSourceData('managed-cremations');
+    expect(sample.organization.name).toBe("Manor's Cremation");
+    expect(sample.case.caseNumber).toBe('B2026-014');
+  });
+
+  it('catalog example values carry no tenant identity', async () => {
+    const { MERGE_FIELD_CATALOG } = await import('./mergeEngine');
+    for (const field of Object.values(MERGE_FIELD_CATALOG)) {
+      expect(field.exampleValue).not.toMatch(/manor/i);
+    }
+  });
+});

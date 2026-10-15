@@ -44,8 +44,15 @@ const MANORS_ORGANIZATION_ID = 'managed-cremations';
 const TARGET_YEAR = 2026;
 const EXPECTED_CURRENT_NEXT_SEQUENCE = 34;
 const TARGET_NEXT_SEQUENCE = 36;
-const HISTORICAL_CASE_NUMBERS = [formatCaseNumber(TARGET_YEAR, 34), formatCaseNumber(TARGET_YEAR, 35)];
-const FIRST_NORMAL_CASE_NUMBER = formatCaseNumber(TARGET_YEAR, TARGET_NEXT_SEQUENCE);
+/** Manors' own prefix, stated explicitly (2026-10) rather than inherited
+    from the legacy default — this one-time cutover is Manors-only and must
+    never change if the default ever does. */
+const MANORS_CASE_NUMBER_PREFIX = 'B';
+const HISTORICAL_CASE_NUMBERS = [
+  formatCaseNumber(TARGET_YEAR, 34, MANORS_CASE_NUMBER_PREFIX),
+  formatCaseNumber(TARGET_YEAR, 35, MANORS_CASE_NUMBER_PREFIX),
+];
+const FIRST_NORMAL_CASE_NUMBER = formatCaseNumber(TARGET_YEAR, TARGET_NEXT_SEQUENCE, MANORS_CASE_NUMBER_PREFIX);
 
 /** A pure existence check — deliberately NOT going through
     `mapWixCaseItem`'s full Case validation (unlike the similar helpers in

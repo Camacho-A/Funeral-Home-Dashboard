@@ -9,6 +9,7 @@ const TEST_ORGANIZATION_ID = SECOND_MOCK_ORGANIZATION_ID;
 import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { portalInvitationFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({ getSession: async () => mockSession }));
@@ -18,6 +19,17 @@ const { DELETE } = await import('./route');
 const { POST: createInvitation } = await import('../route');
 
 const TEST_CASE_ID = 'case-portal-invitation-delete-route-test';
+
+// Tenant-isolation hardening (2026-10): POST now refuses to issue an
+// invitation for a caseId the authorized organization does not own, so
+// seeding through POST needs a real case row in TEST_ORGANIZATION_ID.
+function seedTestCase() {
+  caseFixtures.push({ ...caseFixtures[0], id: TEST_CASE_ID, organizationId: TEST_ORGANIZATION_ID, isDeleted: false });
+}
+function removeTestCase() {
+  const index = caseFixtures.findIndex((c) => c.id === TEST_CASE_ID);
+  if (index !== -1) caseFixtures.splice(index, 1);
+}
 
 function revokeRequest(invitationId: string, organizationId: string | null, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
   const params = new URLSearchParams({ ...(organizationId ? { organizationId } : {}) });
@@ -48,6 +60,7 @@ beforeEach(() => {
   // organization (now Family Portal-disabled) — grant it administrator
   // in this file's arbitrary test organization too.
   mockMembershipFixtures.push({ organizationId: TEST_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+  seedTestCase();
 });
 afterEach(() => {
   portalInvitationFixtures.length = 0;
@@ -55,6 +68,7 @@ afterEach(() => {
   activityEventFixtures.length = 0;
   const index = mockMembershipFixtures.findIndex((m) => m.organizationId === TEST_ORGANIZATION_ID && m.userId === mockDefaultUser.id);
   if (index !== -1) mockMembershipFixtures.splice(index, 1);
+  removeTestCase();
 });
 
 describe('DELETE /api/cases/[caseId]/portal-invitations/[invitationId]', () => {

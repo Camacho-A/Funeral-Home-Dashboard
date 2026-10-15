@@ -4,7 +4,7 @@ import type { ExternalFormConfig } from '@/types/externalFormConfig';
 
 const VITAL_STATISTICS_CONFIG: ExternalFormConfig = {
   id: 'config-vs',
-  organizationId: 'org-1',
+  organizationId: 'managed-cremations',
   provider: 'jotform',
   externalFormId: '262605621454050',
   label: 'Vital Statistics',

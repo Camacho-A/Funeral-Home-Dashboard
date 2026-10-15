@@ -3,6 +3,7 @@ import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/auth
 import { sanitizeRedirectPath } from '@/lib/auth/redirect';
 import { ProductBrand } from '@/components/layout/ProductBrand';
 import { loadLoginOrganization } from './branding';
+import { loginDemoAccount } from './demoAccount';
 import { loginAction } from './actions';
 import styles from './page.module.css';
 
@@ -28,6 +29,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   password_changed: 'Your password was recently changed. Please sign in again.',
   session_not_found: 'Your session is no longer valid. Please sign in again.',
   identity_not_active: 'Your account is not currently active.',
+  identity_not_found: 'Your session is no longer valid. Please sign in again.',
+  missing_session_id: 'Your session is no longer valid. Please sign in again.',
+  organization_not_allowed: 'Your account is not associated with an organization served by this site.',
+  auth_adapter_not_allowed: 'This sign-in method is not available for this deployment. Contact your administrator.',
   unknown: 'Something went wrong. Please try again.',
 };
 
@@ -91,6 +96,7 @@ export default async function LoginPage({
   const authAdapter = getAuthAdapterMode();
   const errorMessage = error ? (ERROR_MESSAGES[error] ?? ERROR_MESSAGES.unknown) : null;
   const organization = await loadLoginOrganization();
+  const demoAccount = loginDemoAccount();
   const noticeMessage = !errorMessage && notice ? NOTICE_MESSAGES[notice] : null;
 
   return (
@@ -162,6 +168,11 @@ export default async function LoginPage({
         {authAdapter === 'identity' && (
           <p className={styles.hint}>
             <a className={styles.hintLink} href="/forgot-password">Forgot password?</a>
+          </p>
+        )}
+        {demoAccount && (
+          <p className={styles.hint}>
+            Local demo data — sign in with {demoAccount.email} / {demoAccount.password}
           </p>
         )}
         {authAdapter === 'mock' && (

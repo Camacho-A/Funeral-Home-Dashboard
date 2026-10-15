@@ -1,5 +1,10 @@
 import type { ProviderIdentity } from './billingModels';
 import { MANORS_LOGO_DATA_URI } from './manorsLogoAsset';
+import {
+  MANORS_ORGANIZATION_ID,
+  getRegisteredOrganizationProfile,
+  type OrganizationLetterhead,
+} from '../organization/organizationProfiles';
 
 /**
  * Item #2 (2026-09, Manors Statement branding). A single, explicit,
@@ -25,57 +30,103 @@ import { MANORS_LOGO_DATA_URI } from './manorsLogoAsset';
  * it lives — reused by both statement-model assemblers, easy to find, easy
  * to correct later if the underlying Organization/Location rows are ever
  * brought current.
+ *
+ * 2026-10 (multi-tenant hardening): the Manors letterhead, receipt footer
+ * and Cash Advance preference now live in Manors' organization profile
+ * (domain/organization/organizationProfiles.ts). This module turns ANY
+ * organization's profile letterhead into a `ProviderIdentity`, falling back
+ * field-by-field to the identity built from that organization's own
+ * Organization/Location record. An organization with no profile letterhead
+ * (e.g. Gus Camacho Jr. Funeral Home, until configured) therefore gets an
+ * entirely record-driven header — never another tenant's data. Manors'
+ * rendered output is byte-identical to before.
  */
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+export { MANORS_ORGANIZATION_ID };
 
-/** Address is two literal lines (street, then city/state/zip) — the
-    renderer splits on `\n` and joins with `<br/>`, escaping each line. */
-export const MANORS_STATEMENT_PROVIDER_IDENTITY: ProviderIdentity = {
-  name: 'MANORS CREMATION SERVICES',
-  addressLine: '481 E Commercial Blvd\nOakland Park, FL 33334',
-  phone: '954-884-5770',
-  fax: '305-603-9250',
-  email: 'contact@manorscremation.com',
-  logoDataUri: MANORS_LOGO_DATA_URI,
+/**
+ * Logo assets by profile `letterhead.logoAssetKey`. Server-side only in
+ * practice (the Statement renderer); keyed so organizationProfiles.ts can
+ * stay free of the base64 bytes. Only the Manors profile references
+ * `'manors-logo'`.
+ */
+const LETTERHEAD_LOGO_ASSETS: Readonly<Record<string, string>> = {
+  'manors-logo': MANORS_LOGO_DATA_URI,
 };
 
-/** Manor's Cremation does not use the Cash Advance Items section in its
-    normal workflow (it has no cash-advance line items to itemize) — the
-    section is omitted entirely, both from this organization's Statement
-    and from BillingCard's cash-advance editor. Every other organization
-    keeps its existing behavior unchanged. */
+export function letterheadLogoDataUri(logoAssetKey: string | null | undefined): string | undefined {
+  return logoAssetKey ? LETTERHEAD_LOGO_ASSETS[logoAssetKey] : undefined;
+}
+
+/**
+ * Overlays a profile letterhead onto a record-derived fallback identity.
+ * Optional keys (fax/email/logo) are only present when there is a value, so
+ * the renderer's "no value → no line" convention holds.
+ */
+export function providerIdentityFromLetterhead(
+  letterhead: OrganizationLetterhead | null,
+  fallback: ProviderIdentity,
+): ProviderIdentity {
+  if (!letterhead) return fallback;
+  const identity: ProviderIdentity = {
+    name: letterhead.name ?? fallback.name,
+    // Two literal lines (street, then city/state/zip) — the renderer
+    // splits on `\n` and joins with `<br/>`, escaping each line.
+    addressLine: letterhead.addressLines && letterhead.addressLines.length > 0 ? letterhead.addressLines.join('\n') : fallback.addressLine,
+    phone: letterhead.phone ?? fallback.phone,
+  };
+  const fax = letterhead.fax ?? fallback.fax;
+  if (fax) identity.fax = fax;
+  const email = letterhead.email ?? fallback.email;
+  if (email) identity.email = email;
+  const logoDataUri = letterheadLogoDataUri(letterhead.logoAssetKey) ?? fallback.logoDataUri;
+  if (logoDataUri) identity.logoDataUri = logoDataUri;
+  return identity;
+}
+
+/**
+ * Statement/Receipt identity for one organization: its profile letterhead
+ * (when it has one) over `recordIdentity`, the identity built from its own
+ * Organization/Location record.
+ */
+export function resolveStatementProviderIdentity(organizationId: string, recordIdentity: ProviderIdentity): ProviderIdentity {
+  return providerIdentityFromLetterhead(getRegisteredOrganizationProfile(organizationId).letterhead, recordIdentity);
+}
+
+/** Manors' letterhead as a `ProviderIdentity` — derived from its profile;
+    kept as a named export for existing importers/tests. */
+export const MANORS_STATEMENT_PROVIDER_IDENTITY: ProviderIdentity = providerIdentityFromLetterhead(
+  getRegisteredOrganizationProfile(MANORS_ORGANIZATION_ID).letterhead,
+  { name: '', addressLine: '', phone: '' },
+);
+
+/** Whether an organization uses the Cash Advance Items section — its
+    profile's `features.cashAdvanceOnStatement`. Manor's Cremation does not
+    (it has no cash-advance line items to itemize), so the section is
+    omitted both from its Statement and from BillingCard's cash-advance
+    editor. Every other organization keeps the existing behavior. */
 export function shouldShowCashAdvanceSection(organizationId: string): boolean {
-  return organizationId !== MANORS_ORGANIZATION_ID;
+  return getRegisteredOrganizationProfile(organizationId).features.cashAdvanceOnStatement;
 }
 
 /**
  * Receipt of Payment footer (2026-10).
  *
- * Manors' own receipt names the legal entity behind the trading name —
- * "Cremations America of Broward, LLC DBA MANORS CREMATION" — which is
- * specific to that organization and must never appear on anybody else's
- * document. Every other organization gets a footer built from its OWN
- * provider identity, so onboarding a funeral home needs no change here;
- * it only needs an entry if its legal entity differs from its trading
- * name the way Manors' does.
+ * An organization whose legal entity differs from its trading name (Manors:
+ * "Cremations America of Broward, LLC DBA MANORS CREMATION") configures
+ * `receiptFooter` in its profile; that text must never appear on anybody
+ * else's document. Every other organization gets a footer built from its
+ * OWN provider identity.
  */
 export type ReceiptFooter = {
   thanksLine: string;
   legalEntityLine: string | null;
 };
 
-const RECEIPT_FOOTERS: Record<string, ReceiptFooter> = {
-  [MANORS_ORGANIZATION_ID]: {
-    thanksLine: 'Thank you for your trust in Cremations America of Broward, LLC',
-    legalEntityLine: 'DBA MANORS CREMATION',
-  },
-};
-
 export function receiptFooterFor(organizationId: string, providerName: string): ReceiptFooter {
-  return (
-    RECEIPT_FOOTERS[organizationId] ?? {
-      thanksLine: `Thank you for your trust in ${providerName}`,
-      legalEntityLine: null,
-    }
-  );
+  const configured = getRegisteredOrganizationProfile(organizationId).receiptFooter;
+  if (configured) return { thanksLine: configured.thanksLine, legalEntityLine: configured.legalEntityLine };
+  return {
+    thanksLine: `Thank you for your trust in ${providerName}`,
+    legalEntityLine: null,
+  };
 }

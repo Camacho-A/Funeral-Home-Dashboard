@@ -3,6 +3,7 @@ import type { NotificationRecipient } from '../../types/notificationRecipient';
 import type { NotificationDelivery } from '../../types/notificationDelivery';
 import type { NotificationDeliveryAttempt } from '../../types/notificationDeliveryAttempt';
 import type { NotificationPreference } from '../../types/notificationPreference';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 28 (Communications & Notifications). Mock-mode, in-process
@@ -12,8 +13,8 @@ import type { NotificationPreference } from '../../types/notificationPreference'
  * tests by each test file itself (`fixtures.length = 0`), never by this
  * module.
  */
-export const notificationFixtures: Notification[] = [];
-export const notificationRecipientFixtures: NotificationRecipient[] = [];
-export const notificationDeliveryFixtures: NotificationDelivery[] = [];
-export const notificationDeliveryAttemptFixtures: NotificationDeliveryAttempt[] = [];
-export const notificationPreferenceFixtures: NotificationPreference[] = [];
+export const notificationFixtures: Notification[] = mockCollection('notificationFixtures', (): Notification[] => []);
+export const notificationRecipientFixtures: NotificationRecipient[] = mockCollection('notificationRecipientFixtures', (): NotificationRecipient[] => []);
+export const notificationDeliveryFixtures: NotificationDelivery[] = mockCollection('notificationDeliveryFixtures', (): NotificationDelivery[] => []);
+export const notificationDeliveryAttemptFixtures: NotificationDeliveryAttempt[] = mockCollection('notificationDeliveryAttemptFixtures', (): NotificationDeliveryAttempt[] => []);
+export const notificationPreferenceFixtures: NotificationPreference[] = mockCollection('notificationPreferenceFixtures', (): NotificationPreference[] => []);

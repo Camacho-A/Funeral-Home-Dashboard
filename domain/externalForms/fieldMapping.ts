@@ -311,10 +311,12 @@ export const FIELD_MAP_FIRST_CALL_SHEET: FieldMapEntry[] = [
   { qid: '24', jotformName: 'nextOf24', solisField: 'nextOfKinEmail' },
 ];
 
-export function fieldMapForForm(provider: string, externalFormId: string): FieldMapEntry[] {
-  if (provider !== 'jotform') return [];
-  if (externalFormId === VITAL_STATISTICS_EXTERNAL_FORM_ID) return FIELD_MAP_VITAL_STATISTICS;
-  if (externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return FIELD_MAP_ARRANGEMENT_FORMS;
-  if (externalFormId === FIRST_CALL_SHEET_EXTERNAL_FORM_ID) return FIELD_MAP_FIRST_CALL_SHEET;
-  return [];
-}
+/*
+ * Form-id -> field-map LOOKUP no longer lives here (2026-10 multi-tenant
+ * hardening). The three Manors form ids and maps above are DATA consumed
+ * by the Manors entry in domain/externalForms/formRegistry.ts, which
+ * resolves a config's layout per organization (`resolveFormLayout`,
+ * `fieldMapForConfig`). The `*_EXTERNAL_FORM_ID` constants are Manors-only
+ * and must never be compared against in an organization-generic code path
+ * — use `resolveFormRole(config)` instead.
+ */

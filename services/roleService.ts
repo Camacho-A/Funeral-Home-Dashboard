@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import { mapWixRoleItem, buildWixRoleData, applyRoleUpdateToWixData, type WixRoleItem } from '../lib/wixRoleMapper';
 import { mapWixRolePermissionItem, buildWixRolePermissionData, type WixRolePermissionItem } from '../lib/wixRolePermissionMapper';
@@ -9,6 +10,8 @@ import {
   type WixOrganizationRoleAuditEntryItem,
 } from '../lib/wixOrganizationRoleAuditEntryMapper';
 import { buildWixPermissionData, type WixPermissionItem } from '../lib/wixPermissionMapper';
+import { buildWixOrganizationRolePermissionOverrideData, type WixOrganizationRolePermissionOverrideItem } from '../lib/wixOrganizationRolePermissionOverrideMapper';
+import type { OrganizationRolePermissionOverride } from '../types/organizationRolePermissionOverride';
 import type { Role } from '../types/role';
 import type { RolePermission } from '../types/rolePermission';
 import type { OrganizationRoleEnablement } from '../types/organizationRole';
@@ -17,8 +20,15 @@ import type { PermissionKey } from '../domain/rbac/permissionCatalog';
 import { PERMISSION_KEYS, PERMISSION_DESCRIPTIONS, permissionCategory } from '../domain/rbac/permissionCatalog';
 import type { Membership, MembershipStatus } from '../types/membership';
 import type { OrganizationStatus } from '../types/organization';
-import { DEFAULT_ROLE_DEFINITIONS } from '../domain/rbac/defaultRoles';
-import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId, customRolePermissionId } from '../domain/rbac/deterministicIds';
+import { DEFAULT_ROLE_DEFINITIONS, isDefaultRoleKey, defaultRoleDefinition, type DefaultRoleKey } from '../domain/rbac/defaultRoles';
+import {
+  permissionFixtureId,
+  defaultRoleFixtureId,
+  defaultRolePermissionFixtureId,
+  organizationRoleFixtureId,
+  customRolePermissionId,
+  organizationRolePermissionOverrideId,
+} from '../domain/rbac/deterministicIds';
 import { updateMembership } from './membershipService';
 import { resolveRoleForKey, resolvePermissionKeysForRole } from './permissionService';
 import { getIdentityById } from './identityService';
@@ -32,6 +42,7 @@ import {
   rolePermissionFixtures,
   organizationRoleFixtures,
   organizationRoleAuditEntryFixtures,
+  organizationRolePermissionOverrideFixtures,
 } from './__mocks__/rbacFixtures';
 
 /**
@@ -235,13 +246,37 @@ export async function seedPermissionCatalog(dataAdapterMode: DataAdapterMode): P
 }
 
 /**
- * Creates the seven platform-default `roles` (+ their `rolePermissions`)
- * if they don't already exist — a one-time, global, idempotent bootstrap,
- * safe under concurrent calls (deterministic ids; every insert treats a
- * conflict as "already seeded," never an error). In mock mode these are
- * already statically seeded (`services/__mocks__/rbacFixtures.ts`).
+ * Creates the platform-default `roles` (+ their `rolePermissions`) ONLY on
+ * a fresh backend — when not one of the default roles exists yet. In mock
+ * mode these are already statically seeded
+ * (`services/__mocks__/rbacFixtures.ts`).
+ *
+ * Safe-onboarding correction (2026-10): this used to insert any code-defined
+ * grant missing from the GLOBAL default-role `rolePermissions` rows on
+ * every call. Those rows (organizationId null) are shared by every tenant
+ * on the backend, so onboarding a new organization silently changed every
+ * existing organization's effective permissions (Manors included). Now:
+ * - no default role exists at all → fresh backend: create roles + grants
+ *   exactly as before (nobody else can be affected yet);
+ * - any default role exists → strictly read-only: return the roles that
+ *   exist and never insert, update or delete a global role or grant row.
+ *   A grant the code defines but the live rows lack is given to a new
+ *   organization through its own org-scoped override rows instead (see
+ *   `seedDefaultRoles`). A default role missing from a partially seeded
+ *   backend is skipped, not created (creating it would also change what
+ *   that role key resolves to for every other tenant).
  */
 export async function seedPlatformDefaultRoles(dataAdapterMode: DataAdapterMode): Promise<Role[]> {
+  const existing = await Promise.all(DEFAULT_ROLE_DEFINITIONS.map((definition) => getRole(defaultRoleFixtureId(definition.key), dataAdapterMode)));
+  const present = existing.filter((role): role is Role => role !== null);
+  if (present.length > 0) {
+    if (present.length < DEFAULT_ROLE_DEFINITIONS.length) {
+      const missing = DEFAULT_ROLE_DEFINITIONS.filter((_, index) => existing[index] === null).map((d) => d.key);
+      console.warn(`[seedPlatformDefaultRoles] Shared default roles missing on this backend (not created, to avoid changing other tenants): ${missing.join(', ')}`);
+    }
+    return present;
+  }
+
   const roles: Role[] = [];
   const now = nowIso();
   for (const definition of DEFAULT_ROLE_DEFINITIONS) {
@@ -312,13 +347,13 @@ export async function seedDefaultRoles(
   organizationId: string,
   dataAdapterMode: DataAdapterMode,
   organizationStatus?: OrganizationStatus,
-): Promise<{ enablements: OrganizationRoleEnablement[]; isNew: boolean }> {
+): Promise<{ enablements: OrganizationRoleEnablement[]; isNew: boolean; orgScopedGrants: OrgScopedDefaultGrant[] }> {
   const before = await listOrganizationRoleEnablements(organizationId, dataAdapterMode);
   const isNew = before.length === 0;
   const stillProvisioning = organizationStatus === 'draft' || organizationStatus === 'onboarding';
 
   if (!isNew && !stillProvisioning) {
-    return { enablements: before, isNew: false };
+    return { enablements: before, isNew: false, orgScopedGrants: [] };
   }
 
   const defaultRoles = await seedPlatformDefaultRoles(dataAdapterMode);
@@ -329,7 +364,88 @@ export async function seedDefaultRoles(
     await insertOrganizationRoleEnablementIdempotent(enablement, dataAdapterMode);
     enablements.push(enablement);
   }
-  return { enablements, isNew };
+  const orgScopedGrants = await seedOrganizationScopedDefaultGrants(organizationId, defaultRoles, dataAdapterMode);
+  return { enablements, isNew, orgScopedGrants };
+}
+
+// ---------------------------------------------------------------------------
+// Org-scoped completion of the shared default roles (safe onboarding, 2026-10)
+// ---------------------------------------------------------------------------
+
+export const ONBOARDING_SEED_ACTOR = 'system:onboarding-seed';
+
+export type OrgScopedDefaultGrant = { roleKey: DefaultRoleKey; permissionKey: PermissionKey; overrideId: string };
+
+/** Code-defined grants the live GLOBAL row set for each default role lacks.
+    Read-only. */
+export async function computeMissingDefaultRoleGrants(
+  roles: Role[],
+  dataAdapterMode: DataAdapterMode,
+): Promise<Array<{ roleKey: DefaultRoleKey; permissionKey: PermissionKey }>> {
+  const missing: Array<{ roleKey: DefaultRoleKey; permissionKey: PermissionKey }> = [];
+  for (const role of roles) {
+    if (role.organizationId !== null || !isDefaultRoleKey(role.key)) continue;
+    const live = new Set((await listRolePermissions(role.id, dataAdapterMode)).map((rp) => rp.permissionKey));
+    for (const permissionKey of defaultRoleDefinition(role.key).permissions) {
+      if (!live.has(permissionKey)) missing.push({ roleKey: role.key, permissionKey });
+    }
+  }
+  return missing;
+}
+
+/**
+ * Gives ONE organization every grant `DEFAULT_ROLE_DEFINITIONS` defines but
+ * the shared default-role rows lack — as `organizationRolePermissionOverrides`
+ * `grant` rows scoped to that organization (the existing org-scoped layer
+ * `permissionService.resolvePermissionKeysForRole` applies), never by
+ * writing to the shared `rolePermissions` rows. Insert-only with
+ * deterministic ids: an override row that already exists for the tuple
+ * (including a deliberate `revoke`) is left untouched. Only called while an
+ * organization is new or still provisioning (see `seedDefaultRoles`), so it
+ * never touches an active organization's curated roster.
+ */
+async function seedOrganizationScopedDefaultGrants(
+  organizationId: string,
+  roles: Role[],
+  dataAdapterMode: DataAdapterMode,
+): Promise<OrgScopedDefaultGrant[]> {
+  const missing = await computeMissingDefaultRoleGrants(roles, dataAdapterMode);
+  const now = nowIso();
+  const written: OrgScopedDefaultGrant[] = [];
+  for (const { roleKey, permissionKey } of missing) {
+    const override: OrganizationRolePermissionOverride = {
+      id: organizationRolePermissionOverrideId(organizationId, roleKey, permissionKey),
+      organizationId,
+      roleKey,
+      permissionKey,
+      action: 'grant',
+      reason: 'Platform default grant not present on the shared role rows; granted to this organization only at provisioning.',
+      createdAt: now,
+      createdBy: ONBOARDING_SEED_ACTOR,
+      updatedAt: now,
+    };
+    await insertOrganizationOverrideIdempotent(override, dataAdapterMode);
+    written.push({ roleKey, permissionKey, overrideId: override.id });
+  }
+  return written;
+}
+
+async function insertOrganizationOverrideIdempotent(override: OrganizationRolePermissionOverride, dataAdapterMode: DataAdapterMode): Promise<void> {
+  if (dataAdapterMode === 'mock') {
+    if (organizationRolePermissionOverrideFixtures.some((o) => o.id === override.id)) return;
+    organizationRolePermissionOverrideFixtures.push(override);
+    return;
+  }
+  try {
+    await insertWixDataItem<WixOrganizationRolePermissionOverrideItem>(
+      'organizationRolePermissionOverrides',
+      buildWixOrganizationRolePermissionOverrideData(override),
+      override.id,
+    );
+  } catch (error) {
+    if (error instanceof WixDataApiError && error.status === 409) return;
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +467,18 @@ export async function seedDefaultRoles(
 // ---------------------------------------------------------------------------
 
 const MANORS_CASE_NUMBER_MANAGE_PERMISSION: PermissionKey = 'caseNumber.manage';
+/** The only organization this one-time migration exists for. */
+export const MANORS_RBAC_MIGRATION_ORGANIZATION_ID = 'managed-cremations';
+
+/** Safe onboarding (2026-10): the migration writes SHARED default-role
+    grant rows, so it is inert unless the target is Manors AND this
+    deployment actually serves Manors — a Gus deployment can never run it,
+    whatever organization id reaches this service. */
+function assertManorsMigrationTarget(organizationId: string): void {
+  if (organizationId !== MANORS_RBAC_MIGRATION_ORGANIZATION_ID || !isOrganizationAllowedInDeployment(MANORS_RBAC_MIGRATION_ORGANIZATION_ID)) {
+    throw new RoleServiceError('The Manors case-numbering RBAC migration only applies to the Manors organization in the Manors deployment.');
+  }
+}
 const MANORS_CASE_NUMBER_MANAGE_ROLE_KEYS = ['administrator', 'funeralDirector'] as const;
 type ManorsCaseNumberManageRoleKey = (typeof MANORS_CASE_NUMBER_MANAGE_ROLE_KEYS)[number];
 
@@ -382,6 +510,7 @@ export async function getManorsCaseNumberManageMigrationStatus(
   organizationId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<ManorsCaseNumberManageMigrationStatus> {
+  assertManorsMigrationTarget(organizationId);
   const [administrator, funeralDirector] = await Promise.all([
     resolveCaseNumberManageGrantStatus('administrator', organizationId, dataAdapterMode),
     resolveCaseNumberManageGrantStatus('funeralDirector', organizationId, dataAdapterMode),
@@ -418,6 +547,7 @@ export async function seedManorsCaseNumberManagePermission(
   params: { organizationId: string; actorIdentityId: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ManorsCaseNumberManageMigrationResult> {
+  assertManorsMigrationTarget(params.organizationId);
   const now = nowIso();
   const newlyGranted: Record<ManorsCaseNumberManageRoleKey, boolean> = { administrator: false, funeralDirector: false };
 

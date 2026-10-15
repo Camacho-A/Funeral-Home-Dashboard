@@ -2,6 +2,10 @@ import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, extname } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Relative, never a fixed calendar date — a hardcoded expiry silently turns
+// into an expired token once that date passes.
+const FUTURE_EXPIRY = new Date(Date.now() + 30 * 24 * 3_600_000).toISOString();
+
 const mockRenderHtmlToPdf = vi.fn();
 const mockUploadFile = vi.fn();
 const mockDownloadFile = vi.fn();
@@ -265,11 +269,11 @@ describe('createSignatureRequest', () => {
   it('respects an explicit expiration date when given', async () => {
     const doc = await createSampleDocument();
     const request = await createSignatureRequest(
-      { caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', expiresAt: '2026-12-25T00:00:00.000Z', idFactory },
+      { caseId: TEST_CASE_ID, documentId: doc.id, signerName: 'Jane Doe', signerEmail: 'jane@example.com', signerRole: 'next_of_kin', expiresAt: FUTURE_EXPIRY, idFactory },
       ctx(),
       'mock',
     );
-    expect(request.expiresAt).toBe('2026-12-25T00:00:00.000Z');
+    expect(request.expiresAt).toBe(FUTURE_EXPIRY);
   });
 
   it('rejects a second active request for the same document', async () => {

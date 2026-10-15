@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, SECOND_ORG_WORKFLOW_TEMPLATE_ID } from '@/services/__mocks__/workflowTemplates';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
@@ -28,9 +29,23 @@ vi.mock('@/lib/wixDataApi', async () => {
 // to mockDefaultUser (member of DEFAULT_ORGANIZATION_ID only); tests that
 // need the second organization use mockMultiOrgUser instead, which has
 // active memberships in both.
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 const { GET } = await import('./route');
@@ -46,7 +61,7 @@ beforeEach(() => {
   originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
 });
 
 afterEach(() => {
@@ -100,7 +115,7 @@ describe('GET /api/workflow-templates — mock mode', () => {
   });
 
   it("returns the second organization's own, differently-shaped template under its own context", async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const response = await GET(requestFor(SECOND_MOCK_ORGANIZATION_ID));
     const body = await response.json();
 
@@ -109,7 +124,7 @@ describe('GET /api/workflow-templates — mock mode', () => {
   });
 
   it("a user with memberships in both organizations still only gets the requested organization's templates, never both at once", async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     const response = await GET(requestFor(DEFAULT_ORGANIZATION_ID));
     const body = await response.json();
 

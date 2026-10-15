@@ -170,3 +170,26 @@ describe('GET /api/signing/[token]', () => {
     expect(bodyText).not.toContain(request.id);
   });
 });
+
+describe('GET /api/signing/[token] — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('answers a valid token for an organization this deployment does not serve exactly like an invalid one, without marking it viewed', async () => {
+    const { rawToken } = await seedActiveRequestAndToken();
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const response = await signingRequest(rawToken);
+    expect(response.status).toBe(404);
+    const garbage = await signingRequest('not-a-real-token');
+    expect(await response.json()).toEqual(await garbage.json());
+    expect(signatureRequestFixtures[0].status).not.toBe('viewed');
+  });
+
+  it('still resolves the token when its organization is served', async () => {
+    const { rawToken } = await seedActiveRequestAndToken();
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = `gus-camacho-jr,${SECOND_MOCK_ORGANIZATION_ID}`;
+    expect((await signingRequest(rawToken)).status).toBe(200);
+  });
+});

@@ -5,6 +5,7 @@ import { formatCentsAsCurrency } from '@/utils/format';
 import * as casesService from '@/services/casesService';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 import { cloverProvider } from '@/lib/clover/cloverProvider';
 import { getCloverMerchantId } from '@/lib/clover/cloverConfig';
 import {
@@ -82,6 +83,24 @@ export async function POST(request: Request) {
     // Return promptly with 200 — nothing to retry; Solis has no record
     // of this checkout session at all (stale, foreign, or malformed), so
     // there's nothing actionable here regardless of signature validity.
+    return NextResponse.json({ received: true });
+  }
+
+  // Deployment organization restrictions (2026-10). Several SOLIS
+  // deployments share one Beacon backend, so a payment record found here
+  // may belong to an organization THIS deployment does not serve. Such an
+  // event is never verified or processed here (no integration/secret
+  // lookup, no claim, no write). Answered with the same 200
+  // `{received: true}` as the "no record"/"no integration" branches above:
+  // nothing about it is actionable by this deployment, and a non-2xx would
+  // only make Clover retry the same misrouted delivery until it gives up
+  // (or disables the webhook). The PaymentRecord stays 'pending' for the
+  // deployment that does serve the organization — whose own webhook URL
+  // must be the one configured for that merchant. A warning (organization
+  // id only — no payload, headers or payment details) makes a misrouted
+  // webhook visible in logs.
+  if (!isOrganizationAllowedInDeployment(record.organizationId)) {
+    console.warn(`Clover webhook ignored: organization "${record.organizationId}" is not served by this deployment.`);
     return NextResponse.json({ received: true });
   }
 

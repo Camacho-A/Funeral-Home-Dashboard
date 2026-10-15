@@ -3,6 +3,7 @@ import type { CaseOrder, CaseOrderLineItem } from '../../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../../types/caseOrderAudit';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { SERVICE_CODES } from '../../domain/pricing/serviceCodes';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). Mock-mode
@@ -18,7 +19,7 @@ const NOW = '2026-07-20T00:00:00.000Z';
 
 export const MANORS_SERVICE_CATALOG_ID_PREFIX = `${DEFAULT_ORGANIZATION_ID}-svc`;
 
-export const serviceCatalogFixtures: ServiceCatalogItem[] = [
+export const serviceCatalogFixtures: ServiceCatalogItem[] = mockCollection('serviceCatalogFixtures', (): ServiceCatalogItem[] => [
   {
     id: `${MANORS_SERVICE_CATALOG_ID_PREFIX}-direct-cremation`,
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -124,8 +125,8 @@ export const serviceCatalogFixtures: ServiceCatalogItem[] = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-];
+]);
 
-export const caseOrderFixtures: CaseOrder[] = [];
-export const caseOrderLineItemFixtures: CaseOrderLineItem[] = [];
-export const caseOrderAuditFixtures: CaseOrderAuditEntry[] = [];
+export const caseOrderFixtures: CaseOrder[] = mockCollection('caseOrderFixtures', (): CaseOrder[] => []);
+export const caseOrderLineItemFixtures: CaseOrderLineItem[] = mockCollection('caseOrderLineItemFixtures', (): CaseOrderLineItem[] => []);
+export const caseOrderAuditFixtures: CaseOrderAuditEntry[] = mockCollection('caseOrderAuditFixtures', (): CaseOrderAuditEntry[] => []);

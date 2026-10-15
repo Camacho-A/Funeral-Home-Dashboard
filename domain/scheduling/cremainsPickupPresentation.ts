@@ -1,7 +1,7 @@
 import type { Appointment } from '../../types/appointment';
 import { APPOINTMENT_TYPES } from './appointmentTypeRegistry';
 import { isPickupOverdue, localAllDayWindow, organizationLocalDate, type LocalDate } from './cremainsPickupSchedule';
-import { parseCaseNumber } from '../cases/caseNumber';
+import { parseAnyCaseNumber } from '../cases/caseNumber';
 import { toDisplayTitleCase } from '../../utils/string';
 
 /**
@@ -134,12 +134,14 @@ export function deriveSurname(fullName: string | null | undefined): string | nul
 }
 
 /**
- * The sequence portion of a case number ("B2026-035" -> "035"), for cells
- * too tight for the whole thing. Falls back to the full value rather than
+ * The sequence portion of a case number ("B2026-035" -> "035",
+ * "M2026-004" -> "004"), for cells too tight for the whole thing. Works for
+ * ANY organization's prefix — the label always derives from the case's own
+ * number, never an assumed "B". Falls back to the full value rather than
  * inventing a shortened form it cannot parse.
  */
 export function compactCaseNumber(caseNumber: string): string {
-  const parsed = parseCaseNumber(caseNumber);
+  const parsed = parseAnyCaseNumber(caseNumber);
   if (!parsed) return caseNumber;
   return String(parsed.sequence).padStart(3, '0');
 }

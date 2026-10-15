@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { getDeploymentOrganizationIds } from '../lib/env';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import { buildWixRolePermissionData, type WixRolePermissionItem } from '../lib/wixRolePermissionMapper';
 import { buildWixRbacReconciliationRecordData, type WixRbacReconciliationRecordItem } from '../lib/wixRbacReconciliationRecordMapper';
@@ -110,6 +111,29 @@ async function persistRecord(record: RbacReconciliationRecord, dataAdapterMode: 
   );
 }
 
+/** The exact `confirm` value `POST /api/rbac/integrity/reconcile` requires
+    for `apply` — an explicit acknowledgement that it changes every
+    tenant's shared rows. */
+export const GLOBAL_RECONCILIATION_CONFIRMATION = 'apply-to-all-organizations';
+
+export class GlobalRbacMutationRefusedError extends Error {
+  constructor() {
+    super(
+      'Global RBAC reconciliation (apply) is refused on a deployment restricted by DEPLOYMENT_ORGANIZATION_IDS: ' +
+        'the default-role grant rows are shared by every organization on the backend, so changing them from one ' +
+        "tenant's deployment would change other tenants' permissions. Run a dry run, or apply from an unrestricted maintenance context.",
+    );
+    this.name = 'GlobalRbacMutationRefusedError';
+  }
+}
+
+/** Safe onboarding (2026-10): shared (organizationId null) RBAC rows may
+    only be mutated from an UNRESTRICTED context — never from a deployment
+    that serves a named subset of tenants (e.g. the Gus deployment). */
+export function isGlobalRbacMutationAllowed(): boolean {
+  return getDeploymentOrganizationIds() === null;
+}
+
 /**
  * Runs a reconciliation of the GLOBAL platform-default roles.
  * - `dry_run`: read-only. Computes and returns the plan, persists NOTHING,
@@ -124,6 +148,9 @@ export async function runDefaultRoleReconciliation(
   params: { mode: RbacReconciliationMode; actor?: string; idFactory: () => string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<RbacReconciliationRecord> {
+  if (params.mode === 'apply' && !isGlobalRbacMutationAllowed()) {
+    throw new GlobalRbacMutationRefusedError();
+  }
   const startedAt = nowIso();
   const rows = await readDefaultRoleGrantRows(dataAdapterMode);
   const now = nowIso();

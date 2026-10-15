@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { canManageOrganization } from '@/services/authorizationPolicyService';
+import { canManageOrganization, canManageCaseNumbering } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
 import { getOrganization, updateOrganization, getPrimaryLocation, updatePrimaryLocation } from '@/services/organizationProvisioningService';
-import { validateOrganizationProfileUpdate, validatePrimaryLocationUpdate } from '@/domain/organization/organizationProfileValidation';
+import {
+  validateOrganizationProfileUpdate,
+  validatePrimaryLocationUpdate,
+  validateCaseNumberPrefixValue,
+  validateCaseNumberPrefixChange,
+} from '@/domain/organization/organizationProfileValidation';
+import { resolveCaseNumberPrefix } from '@/domain/cases/caseNumber';
+import { queryWixDataItems } from '@/lib/wixDataApi';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
+import type { DataAdapterMode } from '@/lib/env';
 import { normalizeOrganizationProfileTextFields, normalizePrimaryLocationTextFields } from '@/domain/organization/textNormalization';
 import type { Organization } from '@/types/organization';
 import type { OrganizationLocation } from '@/types/organizationLocation';
@@ -32,6 +41,13 @@ import type { OrganizationLocation } from '@/types/organizationLocation';
  * right place to reason about. Never creates a primary location if one
  * doesn't exist — `updatePrimaryLocation` returns `null` in that case,
  * surfaced here as a clear 404, never a silent no-op or a fabricated row.
+ *
+ * Organization-specific case numbering (2026-10): GET also returns
+ * `caseNumbering` (the resolved prefix); PATCH accepts
+ * `caseNumbering: { caseNumberPrefix }`, which additionally requires
+ * `caseNumber.manage`, validates 1-3 letters A-Z, and may only CHANGE the
+ * prefix while the organization has no cases (existing case numbers are
+ * never renumbered — see validateCaseNumberPrefixChange).
  *
  * `updateOrganization`/`updatePrimaryLocation` (`organizationProvisioningService.ts`)
  * already implement the load-current → merge → write-full-record pattern
@@ -70,6 +86,29 @@ function sanitizeLocation(location: OrganizationLocation): SanitizedLocation {
   };
 }
 
+/** Organization-specific case numbering (2026-10). The prefix this
+    organization's case numbers carry, as resolved by the single source of
+    truth (`resolveCaseNumberPrefix`), plus whether it is stored explicitly
+    on the record or inherited from a default. */
+type CaseNumberingSettings = { caseNumberPrefix: string; prefixIsExplicit: boolean };
+
+function caseNumberingSettings(org: Organization, resolvedOrgId: string): CaseNumberingSettings {
+  return {
+    caseNumberPrefix: resolveCaseNumberPrefix(org, { organizationId: resolvedOrgId }),
+    prefixIsExplicit: typeof org.caseNumberPrefix === 'string' && org.caseNumberPrefix.trim() !== '',
+  };
+}
+
+/** Whether ANY case (active or archived) exists for the organization — the
+    input to validateCaseNumberPrefixChange's "no renumbering" rule. */
+async function countExistingCases(resolvedOrgId: string, mode: DataAdapterMode): Promise<number> {
+  if (mode === 'mock') {
+    return caseFixtures.filter((c) => c.organizationId === resolvedOrgId).length;
+  }
+  const response = await queryWixDataItems('cases', { filter: { organizationId: resolvedOrgId }, paging: { limit: 1 } });
+  return response.dataItems.length;
+}
+
 async function authorizeRequest(requestedOrganizationId: string) {
   const authResult = await requireAuthorizedOrganization(requestedOrganizationId);
   if (!authResult.authorized) {
@@ -82,7 +121,7 @@ async function authorizeRequest(requestedOrganizationId: string) {
     return { ok: false as const, response: NextResponse.json({ error: 'Not authorized.' }, { status: 403 }) };
   }
 
-  return { ok: true as const, organizationId, mode };
+  return { ok: true as const, organizationId, userId, role, mode };
 }
 
 export async function GET(request: Request) {
@@ -100,6 +139,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     organization: sanitizeOrganization(organization),
     location: location ? sanitizeLocation(location) : null,
+    caseNumbering: caseNumberingSettings(organization, auth.organizationId),
   });
 }
 
@@ -123,16 +163,47 @@ export async function PATCH(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
-  const b = body as { organizationId?: unknown; organization?: unknown; location?: unknown };
+  const b = body as { organizationId?: unknown; organization?: unknown; location?: unknown; caseNumbering?: unknown };
   if (typeof b.organizationId !== 'string') {
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
-  if (b.organization === undefined && b.location === undefined) {
-    return NextResponse.json({ error: 'Nothing to update — provide "organization" and/or "location".' }, { status: 400 });
+  if (b.organization === undefined && b.location === undefined && b.caseNumbering === undefined) {
+    return NextResponse.json({ error: 'Nothing to update — provide "organization", "location" and/or "caseNumbering".' }, { status: 400 });
   }
 
   const auth = await authorizeRequest(b.organizationId);
   if (!auth.ok) return auth.response;
+
+  // Organization-specific case numbering (2026-10). Applied FIRST and
+  // fully validated before any other section is written, so a rejected
+  // prefix change never leaves a half-applied request. Requires
+  // caseNumber.manage in addition to the route's organization.manage gate.
+  let updatedCaseNumbering: CaseNumberingSettings | undefined;
+  if (b.caseNumbering !== undefined) {
+    if (typeof b.caseNumbering !== 'object' || b.caseNumbering === null) {
+      return NextResponse.json({ error: '"caseNumbering" must be an object.' }, { status: 400 });
+    }
+    if (!(await canManageCaseNumbering({ identityId: auth.userId, organizationId: auth.organizationId, roleKey: auth.role }, auth.mode))) {
+      return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+    }
+    const { errors, normalized } = validateCaseNumberPrefixValue((b.caseNumbering as Record<string, unknown>).caseNumberPrefix);
+    if (errors.length > 0 || normalized === null) {
+      return NextResponse.json({ error: 'Validation failed.', fieldErrors: errors }, { status: 400 });
+    }
+    const current = await getOrganization(auth.organizationId, auth.mode);
+    if (!current) return NextResponse.json({ error: 'Organization not found.' }, { status: 404 });
+    const changeError = validateCaseNumberPrefixChange({
+      requestedPrefix: normalized,
+      currentEffectivePrefix: resolveCaseNumberPrefix(current, { organizationId: auth.organizationId }),
+      existingCaseCount: await countExistingCases(auth.organizationId, auth.mode),
+    });
+    if (changeError) {
+      return NextResponse.json({ error: changeError.message, fieldErrors: [changeError] }, { status: 409 });
+    }
+    const updated = await updateOrganization(auth.organizationId, { caseNumberPrefix: normalized }, auth.mode);
+    if (!updated) return NextResponse.json({ error: 'Organization not found.' }, { status: 404 });
+    updatedCaseNumbering = caseNumberingSettings(updated, auth.organizationId);
+  }
 
   let updatedOrganization: SanitizedOrganization | undefined;
   if (b.organization !== undefined) {
@@ -189,5 +260,5 @@ export async function PATCH(request: Request) {
     updatedLocation = sanitizeLocation(updated);
   }
 
-  return NextResponse.json({ organization: updatedOrganization, location: updatedLocation });
+  return NextResponse.json({ organization: updatedOrganization, location: updatedLocation, caseNumbering: updatedCaseNumbering });
 }

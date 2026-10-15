@@ -3,7 +3,12 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canManageRoles } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
-import { getManorsCaseNumberManageMigrationStatus, seedManorsCaseNumberManagePermission } from '@/services/roleService';
+import {
+  getManorsCaseNumberManageMigrationStatus,
+  seedManorsCaseNumberManagePermission,
+  MANORS_RBAC_MIGRATION_ORGANIZATION_ID,
+} from '@/services/roleService';
+import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 
 /**
  * Manors RBAC production migration (2026-09) — a narrowly-scoped, ONE-TIME
@@ -32,7 +37,15 @@ import { getManorsCaseNumberManageMigrationStatus, seedManorsCaseNumberManagePer
  * other default role, including Funeral Director, holds it) — the correct
  * "can administer this organization's RBAC" authority for this action.
  */
-const MANORS_ORGANIZATION_ID = 'managed-cremations';
+const MANORS_ORGANIZATION_ID = MANORS_RBAC_MIGRATION_ORGANIZATION_ID;
+
+/** Safe onboarding (2026-10): this migration writes the SHARED default-role
+    grant rows, so it is inert (never reads or writes migration state) on any
+    deployment that does not serve Manors — e.g. the Gus deployment — and for
+    every organization other than Manors. */
+function migrationAvailableInThisDeployment(): boolean {
+  return isOrganizationAllowedInDeployment(MANORS_ORGANIZATION_ID);
+}
 
 /** GET — read-only status check, used to decide whether to show the
     "Enable Case Numbering Access" action at all. Never mutates. */
@@ -52,7 +65,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
-  if (resolvedOrganizationId !== MANORS_ORGANIZATION_ID) {
+  if (resolvedOrganizationId !== MANORS_ORGANIZATION_ID || !migrationAvailableInThisDeployment()) {
     return NextResponse.json({ organizationId: resolvedOrganizationId, applicable: false, needsMigration: false });
   }
 
@@ -90,7 +103,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
-  if (organizationId !== MANORS_ORGANIZATION_ID) {
+  if (organizationId !== MANORS_ORGANIZATION_ID || !migrationAvailableInThisDeployment()) {
     return NextResponse.json({ error: 'This action is only available for the Manors organization.' }, { status: 400 });
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveHistoricalCaseNumber } from './historicalCaseNumber';
+import { deriveHistoricalCaseNumber, describePrefixMismatch } from './historicalCaseNumber';
 
 // Synthetic fixtures only — no real family/decedent/case data.
 
@@ -74,5 +74,41 @@ describe('deriveHistoricalCaseNumber', () => {
     const answers = { '1': { answer: '2026-1200' } };
     const result = deriveHistoricalCaseNumber(answers);
     expect(result).toEqual({ status: 'ok', caseNumber: 'B2026-1200' });
+  });
+});
+
+/**
+ * Organization-specific numbering (2026-10): the importing organization's
+ * prefix is applied, and a raw value carrying a different explicit prefix
+ * is rejected — a Gus (M) import can never accept or produce a B number.
+ */
+describe('deriveHistoricalCaseNumber — prefix-aware', () => {
+  it('formats an unprefixed raw value with the organization prefix (M for Gus)', () => {
+    const answers = { '1': { answer: '2026-012' }, '198': { answer: '2026-012' } };
+    expect(deriveHistoricalCaseNumber(answers, 'M')).toEqual({ status: 'ok', caseNumber: 'M2026-012' });
+  });
+
+  it('accepts a raw value already carrying the matching prefix (any case)', () => {
+    expect(deriveHistoricalCaseNumber({ '1': { answer: 'M2026-012' } }, 'M')).toEqual({ status: 'ok', caseNumber: 'M2026-012' });
+    expect(deriveHistoricalCaseNumber({ '1': { answer: 'm2026-12' } }, 'M')).toEqual({ status: 'ok', caseNumber: 'M2026-012' });
+    expect(deriveHistoricalCaseNumber({ '1': { answer: 'B2026-035' } })).toEqual({ status: 'ok', caseNumber: 'B2026-035' });
+  });
+
+  it('rejects a B number imported into an M organization with a clear reason', () => {
+    const result = deriveHistoricalCaseNumber({ '1': { answer: 'B2026-035' } }, 'M');
+    expect(result).toEqual({ status: 'prefix_mismatch', raw: 'B2026-035', foundPrefix: 'B', expectedPrefix: 'M' });
+    if (result.status === 'prefix_mismatch') {
+      expect(describePrefixMismatch(result)).toMatch(/uses the "B" case-number prefix, but this organization's case numbers use "M"/);
+    }
+  });
+
+  it('rejects an M number imported into the (B) Manors organization', () => {
+    expect(deriveHistoricalCaseNumber({ '1': { answer: 'M2026-004' } }, 'B').status).toBe('prefix_mismatch');
+    expect(deriveHistoricalCaseNumber({ '1': { answer: 'M2026-004' } }).status).toBe('prefix_mismatch');
+  });
+
+  it('rejects a mismatched prefix on the secondary (qid 198) cross-check too', () => {
+    const answers = { '1': { answer: '2026-012' }, '198': { answer: 'B2026-012' } };
+    expect(deriveHistoricalCaseNumber(answers, 'M').status).toBe('prefix_mismatch');
   });
 });

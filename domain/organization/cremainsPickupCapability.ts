@@ -1,4 +1,5 @@
 import type { Organization } from '../../types/organization';
+import { getRegisteredOrganizationProfile, registeredProfileMap, type CremainsPickupSettings } from './organizationProfiles';
 import {
   DEFAULT_MINIMUM_PROCESSING_DAYS,
   DEFAULT_PICKUP_WEEKDAYS,
@@ -37,89 +38,26 @@ import {
  * requires no production schema migration to ship.
  */
 
-export type CremainsPickupSettings = {
-  /** Master switch. False (or an unconfigured organization) means no
-      automatic scheduling and no cremains events anywhere. */
-  automaticSchedulingEnabled: boolean;
-  /** Calendar days between paperwork completion and the earliest pickup. */
-  minimumProcessingDays: number;
-  /** Which weekdays this organization's crematory releases cremains on. */
-  allowedPickupWeekdays: readonly Weekday[];
-  /**
-   * Which workflow stage represents "crematory paperwork has been sent".
-   *
-   * A canonical `displayStage` index plus the stage label it is expected
-   * to carry. The INDEX is the stable identifier; the label is a SHAPE
-   * GUARD, not a lookup key — the same discipline
-   * domain/organization/workflowStagePresentation.ts uses. If a template
-   * is restructured so the label no longer matches, scheduling stops
-   * rather than firing off the wrong stage.
-   *
-   * Scheduling triggers when every item in `items` below is complete —
-   * i.e. the paperwork was genuinely sent — never merely because the case
-   * entered the stage.
-   */
-  paperworkStage: {
-    displayStage: number;
-    expectedLabel: string;
-    /**
-     * The SPECIFIC checklist items that constitute "the paperwork was
-     * sent", by their stable in-stage index, each with the label it is
-     * expected to carry as a per-item shape guard.
-     *
-     * Narrowed from "every item in the stage" (2026-10) so that an item
-     * added to this stage later for an unrelated reason can never delay a
-     * pickup. Index is the stable identifier; the label is only ever a
-     * guard, never a lookup key — a mismatch disables scheduling rather
-     * than firing off the wrong task.
-     *
-     * For Manors this is both of the stage's current items: a permit and
-     * an authorization of release are each genuinely part of the packet
-     * sent to the crematory, so the paperwork is "sent" when both are.
-     * There is no single unambiguous "paperwork sent" item in this
-     * template, and none is invented here.
-     */
-    items: ReadonlyArray<{ index: number; expectedLabel: string }>;
-  };
-  /**
-   * The existing checklist item that already means "cremains are
-   * physically here". Receipt integrates with this item rather than
-   * introducing a competing source of truth.
-   */
-  receiptChecklistItem: { displayStage: number; index: number; expectedLabel: string };
-};
-
-/** Manors' stable organization id — the same constant the other
-    capability modules already key on. */
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+export type { CremainsPickupSettings };
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
 
 /**
  * Per-organization configuration, used until the live Wix field exists.
  *
- * Manors Cremation: Tuesdays and Fridays, seven calendar days. Confirmed
- * with the business, not inferred.
+ * 2026-10: each organization's settings now live in its profile
+ * (`features.cremainsPickup`, domain/organization/organizationProfiles.ts —
+ * Manors: Tuesdays and Fridays, seven calendar days, confirmed with the
+ * business). This map is derived from that registry, kept for existing
+ * importers.
  */
-export const ORGANIZATION_DEFAULTS: Record<string, CremainsPickupSettings> = {
-  [MANORS_ORGANIZATION_ID]: {
-    automaticSchedulingEnabled: true,
-    minimumProcessingDays: DEFAULT_MINIMUM_PROCESSING_DAYS,
-    allowedPickupWeekdays: DEFAULT_PICKUP_WEEKDAYS,
-    // Read from Manors' own live workflow snapshot, not guessed: display
-    // stage 3 holds "Permit sent to crematory" and "Authorization of
-    // release sent to crematory".
-    paperworkStage: {
-      displayStage: 3,
-      expectedLabel: 'Permit & Authorization Sent to Crematory',
-      items: [
-        { index: 0, expectedLabel: 'Permit sent to crematory' },
-        { index: 1, expectedLabel: 'Authorization of release sent to crematory' },
-      ],
-    },
-    // Display stage 5, item 0 — the item Manors already uses to record
-    // that the ashes are back.
-    receiptChecklistItem: { displayStage: 5, index: 0, expectedLabel: 'Ashes picked up (Tue/Fri)' },
-  },
-};
+export const ORGANIZATION_DEFAULTS: Record<string, CremainsPickupSettings> = registeredProfileMap(
+  (profile) => profile.features.cremainsPickup as CremainsPickupSettings,
+  (profile) => profile.features.cremainsPickup !== null,
+);
+
+function profileSettings(organizationId: string | null | undefined): CremainsPickupSettings | null {
+  return organizationId ? getRegisteredOrganizationProfile(organizationId).features.cremainsPickup : null;
+}
 
 /** What an organization with no configuration at all gets: nothing
     changes for it. */
@@ -186,7 +124,7 @@ export function resolveCremainsPickupSettings(
   organization: (Pick<Organization, 'id'> & { cremainsPickupSettings?: unknown }) | null | undefined,
 ): CremainsPickupSettings {
   const organizationId = organization?.id;
-  const fallback = (organizationId && ORGANIZATION_DEFAULTS[organizationId]) || DISABLED_SETTINGS;
+  const fallback = profileSettings(organizationId) ?? DISABLED_SETTINGS;
   if (organization && organization.cremainsPickupSettings !== undefined && organization.cremainsPickupSettings !== null) {
     return normalize(organization.cremainsPickupSettings, fallback);
   }
@@ -196,7 +134,7 @@ export function resolveCremainsPickupSettings(
 /** Convenience for callers that only have an id and no record yet. */
 export function resolveCremainsPickupSettingsById(organizationId: string | null | undefined): CremainsPickupSettings {
   if (!organizationId) return DISABLED_SETTINGS;
-  return ORGANIZATION_DEFAULTS[organizationId] ?? DISABLED_SETTINGS;
+  return profileSettings(organizationId) ?? DISABLED_SETTINGS;
 }
 
 export function isCremainsSchedulingEnabled(

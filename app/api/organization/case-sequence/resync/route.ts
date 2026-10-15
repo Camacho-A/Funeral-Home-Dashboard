@@ -5,11 +5,12 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { canManageCaseNumbering } from '@/services/authorizationPolicyService';
 import { getDataAdapterMode, type DataAdapterMode } from '@/lib/env';
 import { getCaseSequenceState, initializeCaseSequence } from '@/lib/wixCaseNumberSequence';
-import { formatCaseNumber, orgLocalYear } from '@/domain/cases/caseNumber';
+import { formatCaseNumber, orgLocalYear, parseCaseNumber, resolveCaseNumberPrefix } from '@/domain/cases/caseNumber';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import type { WixCaseItem } from '@/lib/wixCaseMapper';
 import { recordCaseSequenceInitialized } from '@/services/activityService';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
 
 /**
  * Case-number sequence resync (2026-10). Corrects a counter that has
@@ -79,7 +80,11 @@ type ResyncPlan = {
  * as the immediate pre-mutation revalidation. Never assumes the caller
  * already validated anything.
  */
-async function buildResyncPlan(organizationId: string, year: number): Promise<ResyncPlan> {
+async function buildResyncPlan(organizationId: string, year: number, prefix: string): Promise<ResyncPlan> {
+  // Organization-specific numbering (2026-10): every probe uses THIS
+  // organization's own prefix, so an M organization only ever probes M
+  // numbers (and Manors only B numbers).
+  const format = (sequence: number) => formatCaseNumber(year, sequence, prefix);
   const state = await getCaseSequenceState(organizationId, year);
   const currentNextSequence = state?.nextSequence ?? null;
 
@@ -96,7 +101,7 @@ async function buildResyncPlan(organizationId: string, year: number): Promise<Re
   const collidingCaseNumbers: string[] = [];
   for (let offset = 0; offset <= MAX_PROBE; offset += 1) {
     const candidate = currentNextSequence + offset;
-    if (!(await caseNumberExists(organizationId, formatCaseNumber(year, candidate)))) {
+    if (!(await caseNumberExists(organizationId, format(candidate)))) {
       return {
         currentNextSequence,
         targetNextSequence: candidate,
@@ -105,10 +110,10 @@ async function buildResyncPlan(organizationId: string, year: number): Promise<Re
         reason:
           candidate > currentNextSequence
             ? null
-            : `The ${year} sequence is already correct — ${formatCaseNumber(year, currentNextSequence)} is not in use.`,
+            : `The ${year} sequence is already correct — ${format(currentNextSequence)} is not in use.`,
       };
     }
-    collidingCaseNumbers.push(formatCaseNumber(year, candidate));
+    collidingCaseNumbers.push(format(candidate));
   }
 
   // Fail closed rather than guess: never skip past an unexplained block
@@ -118,22 +123,61 @@ async function buildResyncPlan(organizationId: string, year: number): Promise<Re
     targetNextSequence: null,
     needsResync: false,
     collidingCaseNumbers,
-    reason: `More than ${MAX_PROBE} consecutive case numbers starting at ${formatCaseNumber(year, currentNextSequence)} already exist — refusing to resync automatically. Please review the case list.`,
+    reason: `More than ${MAX_PROBE} consecutive case numbers starting at ${format(currentNextSequence)} already exist — refusing to resync automatically. Please review the case list.`,
   };
 }
 
-/** Resolves the year to operate on: an explicit `year` when given,
-    otherwise the organization's own LOCAL calendar year — the same year
-    `reserveNextCaseNumber` would use for a case created right now (see
-    domain/cases/caseNumber.ts#orgLocalYear), never the server's/UTC's. */
-async function resolveYear(organizationId: string, explicit: unknown): Promise<number | null> {
+/** Resolves the year and prefix to operate on: an explicit `year` when
+    given, otherwise the organization's own LOCAL calendar year — the same
+    year `reserveNextCaseNumber` would use for a case created right now
+    (see domain/cases/caseNumber.ts#orgLocalYear), never the server's/
+    UTC's and never hardcoded. The prefix is always the organization's own
+    (resolveCaseNumberPrefix), never assumed to be "B". */
+async function resolveNumberingContext(
+  organizationId: string,
+  explicit: unknown,
+): Promise<{ year: number; prefix: string } | null> {
+  const organization = await getOrganization(organizationId, 'wix');
+  const prefix = resolveCaseNumberPrefix(organization, { organizationId });
   if (explicit !== undefined && explicit !== null && explicit !== '') {
     const year = Number(explicit);
     if (!Number.isInteger(year) || year < 2000 || year > 2999) return null;
-    return year;
+    return { year, prefix };
   }
-  const organization = await getOrganization(organizationId, 'wix');
-  return orgLocalYear(new Date().toISOString(), organization?.timezone);
+  return { year: orgLocalYear(new Date().toISOString(), organization?.timezone), prefix };
+}
+
+/** Mock-mode GET response (see GET): the next number is one past the
+    highest existing mock case number for this organization's own prefix
+    and year — the same rule mock case creation uses. */
+async function buildMockPlanResponse(organizationId: string, explicitYear: string | null) {
+  const organization = await getOrganization(organizationId, 'mock');
+  const prefix = resolveCaseNumberPrefix(organization, { organizationId });
+  const parsedYear = explicitYear ? Number(explicitYear) : NaN;
+  const year = Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2999
+    ? parsedYear
+    : orgLocalYear(new Date().toISOString(), organization?.timezone);
+  const highest = caseFixtures
+    .filter((c) => c.organizationId === organizationId)
+    .reduce((max, c) => {
+      const parsed = parseCaseNumber(c.caseNumber, prefix);
+      return parsed && parsed.year === year && parsed.sequence > max ? parsed.sequence : max;
+    }, 0);
+  const next = highest + 1;
+  const nextCaseNumber = formatCaseNumber(year, next, prefix);
+  return {
+    organizationId,
+    year,
+    caseNumberPrefix: prefix,
+    currentCaseNumber: nextCaseNumber,
+    targetCaseNumber: nextCaseNumber,
+    nextCaseNumber,
+    currentNextSequence: next,
+    targetNextSequence: next,
+    needsResync: false,
+    collidingCaseNumbers: [] as string[],
+    reason: 'Local mock data — the sequence is derived from the existing mock cases.',
+  };
 }
 
 /** GET — read-only. Reports whether the counter has fallen behind and
@@ -155,20 +199,29 @@ export async function GET(request: Request) {
   }
 
   if (mode !== 'wix') {
-    return NextResponse.json({ error: 'Case sequence resync only applies when DATA_ADAPTER=wix.' }, { status: 400 });
+    // Local mock data (2026-10): a read-only plan computed from the mock
+    // cases, so Case Numbering renders in local development. Mock mode has
+    // no sequence row to fall behind, so it never needs a resync — and
+    // POST (the only mutation) stays Wix-only below.
+    return NextResponse.json(await buildMockPlanResponse(resolvedOrganizationId, url.searchParams.get('year')));
   }
 
-  const year = await resolveYear(resolvedOrganizationId, url.searchParams.get('year'));
-  if (year === null) {
+  const numbering = await resolveNumberingContext(resolvedOrganizationId, url.searchParams.get('year'));
+  if (numbering === null) {
     return NextResponse.json({ error: 'year must be a 4-digit integer.' }, { status: 400 });
   }
+  const { year, prefix } = numbering;
 
-  const plan = await buildResyncPlan(resolvedOrganizationId, year);
+  const plan = await buildResyncPlan(resolvedOrganizationId, year, prefix);
   return NextResponse.json({
     organizationId: resolvedOrganizationId,
     year,
-    currentCaseNumber: plan.currentNextSequence !== null ? formatCaseNumber(year, plan.currentNextSequence) : null,
-    targetCaseNumber: plan.targetNextSequence !== null ? formatCaseNumber(year, plan.targetNextSequence) : null,
+    caseNumberPrefix: prefix,
+    currentCaseNumber: plan.currentNextSequence !== null ? formatCaseNumber(year, plan.currentNextSequence, prefix) : null,
+    targetCaseNumber: plan.targetNextSequence !== null ? formatCaseNumber(year, plan.targetNextSequence, prefix) : null,
+    // What the next new case will actually be numbered: the queued number
+    // when a sequence row exists, otherwise the year's first number.
+    nextCaseNumber: formatCaseNumber(year, plan.currentNextSequence ?? 1, prefix),
     ...plan,
   });
 }
@@ -203,10 +256,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Case sequence resync only applies when DATA_ADAPTER=wix.' }, { status: 400 });
   }
 
-  const year = await resolveYear(organizationId, b.year);
-  if (year === null) {
+  const numbering = await resolveNumberingContext(organizationId, b.year);
+  if (numbering === null) {
     return NextResponse.json({ error: 'year must be a 4-digit integer.' }, { status: 400 });
   }
+  const { year, prefix } = numbering;
 
   // Immediate pre-mutation revalidation — never relies on an earlier GET,
   // which could be stale by the time the user confirms. Wix provides no
@@ -214,7 +268,7 @@ export async function POST(request: Request) {
   // lib/wixCaseNumberSequence.ts); recomputing as close to the write as
   // possible and failing closed on any mismatch is the best available
   // mitigation, not a claim of full serializability.
-  const plan = await buildResyncPlan(organizationId, year);
+  const plan = await buildResyncPlan(organizationId, year, prefix);
   if (!plan.needsResync || plan.targetNextSequence === null || plan.currentNextSequence === null) {
     return NextResponse.json(
       { error: plan.reason ?? 'Nothing to resync.', needsResync: false, currentNextSequence: plan.currentNextSequence },
@@ -251,7 +305,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     organizationId,
     year,
+    caseNumberPrefix: prefix,
     nextSequence: result.nextSequence,
-    nextCaseNumber: formatCaseNumber(year, result.nextSequence),
+    nextCaseNumber: formatCaseNumber(year, result.nextSequence, prefix),
   });
 }

@@ -23,11 +23,8 @@ import {
   type CaseNotificationOrigin,
   type NotifiableCase,
 } from '@/services/caseNotifications';
-import {
-  ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
-  VITAL_STATISTICS_EXTERNAL_FORM_ID,
-  FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
-} from '@/domain/externalForms/fieldMapping';
+import { resolveFormRole, type ExternalFormRole } from '@/domain/externalForms/formRegistry';
+import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -100,6 +97,31 @@ import {
  * formId is not secret — it is derivable from the form's own public URL —
  * so this leaks nothing.
  *
+ * MULTI-TENANT HARDENING (2026-10) — one Beacon backend, several
+ * organizations:
+ *   - Step 3 reads EVERY enabled config for the formId
+ *     (`resolveByProviderFormId`). More than one (the same Jotform form
+ *     configured in two organizations, or twice in one), or a config that
+ *     fails validation, is rejected 409 BEFORE Jotform is called and
+ *     before anything is written — the delivery is logged by form id and
+ *     organization ids only, never processed into any organization. There
+ *     is no "first match wins".
+ *   - The resolved organization must be served by THIS deployment
+ *     (`isOrganizationAllowedInDeployment`). Otherwise the delivery is
+ *     answered exactly like an unknown form (404) — nothing written, and
+ *     nothing revealed about which deployment owns the form.
+ *   - Verification uses the config's own `apiKeyReference` (an env var
+ *     name; default `JOTFORM_API_KEY`), so an organization with its own
+ *     Jotform account is verified with its own key.
+ *   - Form-specific behaviour (field mapping, notifications, PDF document
+ *     type) comes from the organization-aware registry
+ *     (domain/externalForms/formRegistry.ts), never from comparing against
+ *     another organization's form ids. An unregistered form is handled
+ *     generically.
+ *   - A link token only ever updates a case of the config's OWN
+ *     organization (see the guard below); link tokens are only issued
+ *     after an organization-scoped case lookup (generate-link route).
+ *
  * `webhookAuthFieldQid` remains on the config type and on the live rows
  * but is NO LONGER READ by this handler. It is retained rather than
  * dropped so that retiring the mechanism does not require a data
@@ -115,9 +137,9 @@ const MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024; // 2MB — generous for a funera
  * origin in the body rather than fragmenting the inbox into one type per
  * form — the staff action is the same however the case arrived.
  */
-function creationSourceFor(externalFormId: string): CaseNotificationOrigin {
-  if (externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) return 'the Cremation Arrangement Form';
-  if (externalFormId === FIRST_CALL_SHEET_EXTERNAL_FORM_ID) return 'the First Call form';
+function creationSourceFor(role: ExternalFormRole | null): CaseNotificationOrigin {
+  if (role === 'arrangement') return 'the Cremation Arrangement Form';
+  if (role === 'first_call') return 'the First Call form';
   return 'an intake form';
 }
 
@@ -173,13 +195,36 @@ export async function POST(request: Request) {
   }
 
   const dataAdapterMode = getDataAdapterMode();
-  const config = await externalFormConfigService.findByProviderFormId('jotform', parsed.formId, dataAdapterMode);
-  if (!config) {
+  const resolution = await externalFormConfigService.resolveByProviderFormId('jotform', parsed.formId, dataAdapterMode);
+  if (resolution.status === 'ambiguous' || resolution.status === 'invalid') {
+    // Fail closed: the owning organization cannot be decided safely, so
+    // nothing is verified, stored or attached anywhere. Logged by form id
+    // and organization ids only — never submission content.
+    console.error(
+      `[POST /api/webhooks/jotform] Form ${parsed.formId} has ${resolution.status} configuration (${
+        resolution.issues.map((i) => `${i.code}:${i.organizationIds.join('|')}`).join(', ') || 'unmappable row'
+      }) — delivery ${parsed.submissionId} rejected, nothing processed.`,
+    );
+    return NextResponse.json({ error: 'Form configuration conflict — delivery not processed.' }, { status: 409 });
+  }
+  if (resolution.status !== 'resolved') {
     // Unknown or disabled form: reject outright. No auth-field guessing,
     // no submission row, no case-related action — see the module doc
     // comment for why this is now a rejection rather than a soft 200 ack.
     return NextResponse.json({ error: 'Unrecognized or disabled form.' }, { status: 404 });
   }
+  const config = resolution.config;
+
+  // Deployment boundary: a form belonging to an organization this
+  // deployment does not serve is answered exactly like an unknown form —
+  // no Jotform call, no write, and no hint of where the form does belong.
+  if (!isOrganizationAllowedInDeployment(config.organizationId)) {
+    console.error(
+      `[POST /api/webhooks/jotform] Form ${config.externalFormId} belongs to an organization this deployment does not serve — delivery not processed.`,
+    );
+    return NextResponse.json({ error: 'Unrecognized or disabled form.' }, { status: 404 });
+  }
+  const formRole = resolveFormRole(config);
 
   // Authenticate against Jotform itself. Everything below this point
   // uses `authenticated.answers` — Jotform's own record of what was
@@ -188,6 +233,7 @@ export async function POST(request: Request) {
   const authenticated = await authenticateJotformSubmission({
     claimedFormId: config.externalFormId,
     claimedSubmissionId: parsed.submissionId,
+    ...(config.apiKeyReference ? { apiKeyReference: config.apiKeyReference } : {}),
   });
   if (!authenticated.authentic) {
     return NextResponse.json(
@@ -219,7 +265,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, authenticated.answers);
+  const mappedFields = extractMappedFieldsForForm(config, authenticated.answers);
 
   const correlationId = crypto.randomUUID();
   const activityCtx = {
@@ -345,7 +391,7 @@ export async function POST(request: Request) {
      */
     if (outcome.created) {
       const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
-      const pdfResult = await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode);
+      const pdfResult = await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode, { config });
 
       /**
        * Everyday notifications (2026-10). ONE notification for a case this
@@ -356,7 +402,7 @@ export async function POST(request: Request) {
        */
       const created = await notifiableCase(outcome.caseId, config.organizationId, dataAdapterMode);
       if (created) {
-        await notifyCaseCreated(activityCtx, { case: created, source: creationSourceFor(config.externalFormId) }, dataAdapterMode);
+        await notifyCaseCreated(activityCtx, { case: created, source: creationSourceFor(formRole) }, dataAdapterMode);
         // `already_stored` is the idempotent retry finding the document
         // already attached — not news, and deliberately silent.
         if (pdfResult.outcome === 'stored') {
@@ -390,7 +436,7 @@ export async function POST(request: Request) {
     // submission's own receipt — a failure here is recorded on the
     // submission itself (pdfStatus: 'failed') and retried later, never
     // surfaced as a webhook failure to Jotform.
-    const pdfResult = await preservePdfForSubmission(submission, resolvedLink.caseId, activityCtx, dataAdapterMode);
+    const pdfResult = await preservePdfForSubmission(submission, resolvedLink.caseId, activityCtx, dataAdapterMode, { config });
 
     /**
      * A form that landed on a case that already existed. Keyed on the
@@ -399,9 +445,9 @@ export async function POST(request: Request) {
      */
     const updated = await notifiableCase(resolvedLink.caseId, config.organizationId, dataAdapterMode);
     if (updated) {
-      if (config.externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) {
+      if (formRole === 'arrangement') {
         await notifyArrangementReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
-      } else if (config.externalFormId === VITAL_STATISTICS_EXTERNAL_FORM_ID) {
+      } else if (formRole === 'vital_statistics') {
         await notifyVitalStatisticsReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
       }
       if (pdfResult.outcome === 'stored') {

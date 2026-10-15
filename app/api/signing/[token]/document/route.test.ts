@@ -146,3 +146,18 @@ describe('GET /api/signing/[token]/document', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('GET /api/signing/[token]/document — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('never serves the document bytes for an organization this deployment does not serve', async () => {
+    const { rawToken } = await seedActiveRequestAndToken();
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const response = await documentRequest(rawToken);
+    expect(response.status).toBe(404);
+    expect(response.headers.get('content-type')).not.toMatch(/pdf/);
+  });
+});

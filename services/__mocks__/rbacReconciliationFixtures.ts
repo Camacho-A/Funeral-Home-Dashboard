@@ -1,4 +1,5 @@
 import type { RbacReconciliationRecord } from '../../types/rbacReconciliationRecord';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 38 (RBAC Grant Hygiene). Mock-mode store for the
@@ -7,4 +8,4 @@ import type { RbacReconciliationRecord } from '../../types/rbacReconciliationRec
  * Tests push/inspect records here exactly as `rbacFixtures.ts` does for the
  * other RBAC collections.
  */
-export const rbacReconciliationRecordFixtures: RbacReconciliationRecord[] = [];
+export const rbacReconciliationRecordFixtures: RbacReconciliationRecord[] = mockCollection('rbacReconciliationRecordFixtures', (): RbacReconciliationRecord[] => []);

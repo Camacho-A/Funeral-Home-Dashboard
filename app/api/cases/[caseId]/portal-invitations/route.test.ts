@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMultiOrgUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { portalInvitationFixtures, portalAccessFixtures } from '@/services/__mocks__/portalFixtures';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
 vi.mock('@/lib/auth/session', () => ({ getSession: async () => mockSession }));
@@ -145,6 +146,13 @@ describe('POST /api/cases/[caseId]/portal-invitations', () => {
     // issuance mechanics, so it runs against a second organization where
     // Family Portal remains enabled (existing behavior preserved).
     mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+    // Tenant-isolation hardening (2026-10): the case must exist in the
+    // authorized organization before an invitation can be issued for it.
+    caseFixtures.push({ ...caseFixtures[0], id: TEST_CASE_ID, organizationId: SECOND_MOCK_ORGANIZATION_ID, isDeleted: false });
+    onTestFinished(() => {
+      const index = caseFixtures.findIndex((c) => c.id === TEST_CASE_ID);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    });
 
     const response = await createRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat Family', relationshipType: 'primary_next_of_kin' });
     expect(response.status).toBe(201);
@@ -166,5 +174,36 @@ describe('POST /api/cases/[caseId]/portal-invitations', () => {
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.error).not.toMatch(/token|stack|internal/i);
+  });
+});
+
+describe('POST /api/cases/[caseId]/portal-invitations — case ownership (tenant-isolation hardening, 2026-10)', () => {
+  it('refuses (404, nothing written) to invite to a caseId that does not exist in the authorized organization', async () => {
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+    onTestFinished(() => {
+      mockMembershipFixtures.pop();
+    });
+
+    const response = await createRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat', relationshipType: 'primary_next_of_kin' });
+    expect(response.status).toBe(404);
+    expect(portalInvitationFixtures).toHaveLength(0);
+    expect(portalAccessFixtures).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+  });
+
+  it("refuses to invite to another organization's case even when the caller administers both organizations", async () => {
+    mockMembershipFixtures.push({ organizationId: SECOND_MOCK_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true } as never);
+    // The case exists — but in DEFAULT_ORGANIZATION_ID, not the authorized one.
+    caseFixtures.push({ ...caseFixtures[0], id: TEST_CASE_ID, organizationId: DEFAULT_ORGANIZATION_ID, isDeleted: false });
+    onTestFinished(() => {
+      mockMembershipFixtures.pop();
+      const index = caseFixtures.findIndex((c) => c.id === TEST_CASE_ID);
+      if (index !== -1) caseFixtures.splice(index, 1);
+    });
+
+    const response = await createRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID, email: 'family@example.com', displayName: 'Pat', relationshipType: 'primary_next_of_kin' });
+    expect(response.status).toBe(404);
+    expect(portalInvitationFixtures).toHaveLength(0);
+    expect(portalAccessFixtures).toHaveLength(0);
   });
 });

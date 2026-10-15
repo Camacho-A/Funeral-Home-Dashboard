@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { fieldMapForForm } from './formRegistry';
 import {
-  fieldMapForForm,
   FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
   ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
   VITAL_STATISTICS_EXTERNAL_FORM_ID,

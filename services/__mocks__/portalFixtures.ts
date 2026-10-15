@@ -3,6 +3,7 @@ import type { PortalSession } from '../../types/portalSession';
 import type { PortalAccess } from '../../types/portalAccess';
 import type { PortalInvitation } from '../../types/portalInvitation';
 import type { PortalMessage } from '../../types/portalMessage';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). Mock-mode fixtures —
@@ -13,8 +14,8 @@ import type { PortalMessage } from '../../types/portalMessage';
  * tenant until a real invitation is sent and accepted, mirroring
  * refinement #15's "no family self-registration."
  */
-export const portalUserFixtures: PortalUser[] = [];
-export const portalSessionFixtures: PortalSession[] = [];
-export const portalAccessFixtures: PortalAccess[] = [];
-export const portalInvitationFixtures: PortalInvitation[] = [];
-export const portalMessageFixtures: PortalMessage[] = [];
+export const portalUserFixtures: PortalUser[] = mockCollection('portalUserFixtures', (): PortalUser[] => []);
+export const portalSessionFixtures: PortalSession[] = mockCollection('portalSessionFixtures', (): PortalSession[] => []);
+export const portalAccessFixtures: PortalAccess[] = mockCollection('portalAccessFixtures', (): PortalAccess[] => []);
+export const portalInvitationFixtures: PortalInvitation[] = mockCollection('portalInvitationFixtures', (): PortalInvitation[] => []);
+export const portalMessageFixtures: PortalMessage[] = mockCollection('portalMessageFixtures', (): PortalMessage[] => []);

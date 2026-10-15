@@ -5,7 +5,7 @@ import type { WorkflowTemplate } from '../types/workflowTemplate';
 import type { DataAdapterMode } from '../lib/env';
 import { assertIntakeOwnerUnchanged, assertCreatedByUnchanged } from '../domain/cases/intakeOwnership';
 import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
-import { formatCaseNumber, parseCaseNumber, assertCaseNumberUnchanged } from '../domain/cases/caseNumber';
+import { formatCaseNumber, parseCaseNumber, assertCaseNumberUnchanged, resolveCaseNumberPrefix } from '../domain/cases/caseNumber';
 import { assertStaffProfileIsActiveAndInOrganization } from './staffProfileService';
 import { caseFixtures } from './__mocks__/fixtures';
 import { queryAllWixDataItems } from '../lib/wixDataApi';
@@ -235,13 +235,15 @@ export function matchesSearch(case_: Case, query: string): boolean {
  * lib/wixCaseNumberSequence.ts's reserveNextCaseNumber for that one.
  */
 function nextMockCaseNumber(organizationId: string, year: number): string {
+  // Organization-specific prefix (2026-10): e.g. Gus Camacho → M, Manors → B.
+  const prefix = resolveCaseNumberPrefix(null, { organizationId });
   const highestSequence = caseFixtures
     .filter((c) => c.organizationId === organizationId)
     .reduce((max, c) => {
-      const parsed = parseCaseNumber(c.caseNumber);
+      const parsed = parseCaseNumber(c.caseNumber, prefix);
       return parsed && parsed.year === year && parsed.sequence > max ? parsed.sequence : max;
     }, 0);
-  return formatCaseNumber(year, highestSequence + 1);
+  return formatCaseNumber(year, highestSequence + 1, prefix);
 }
 
 function listMock(context: OrganizationContext, filters: CaseFilters): Case[] {

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { hasAdminTierMembership, resolveAuthorizationContext } from './authorize';
+import { afterEach, describe, expect, it } from 'vitest';
+import { hasAdminTierMembership, isNonIdentityAuthorizationPermitted, resolveAuthorizationContext } from './authorize';
 import type { AuthSession } from '../../types/auth';
 import {
   mockDefaultUser,
@@ -119,5 +119,63 @@ describe('hasAdminTierMembership', () => {
 
   it('returns false for a user with no membership in the organization at all', async () => {
     expect(await hasAdminTierMembership('mock-user-nobody', DEFAULT_ORGANIZATION_ID)).toBe(false);
+  });
+});
+
+describe('tenant-isolation hardening (2026-10) — mock-fixture memberships never authorize live data', () => {
+  const ENV_KEYS = ['DATA_ADAPTER', 'AUTH_ADAPTER', 'DEPLOYMENT_ORGANIZATION_IDS'] as const;
+  const original = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+  afterEach(() => {
+    ENV_KEYS.forEach((key) => {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    });
+  });
+
+  it('resolveAuthorizationContext grants nothing when DATA_ADAPTER=wix — implicit or explicit', () => {
+    process.env.DATA_ADAPTER = 'wix';
+    expect(resolveAuthorizationContext(sessionFor(mockDefaultUser))).toEqual({ granted: false, reason: 'no_active_membership' });
+    expect(resolveAuthorizationContext(sessionFor(mockDefaultUser), DEFAULT_ORGANIZATION_ID)).toEqual({ granted: false, reason: 'no_active_membership' });
+  });
+
+  it('resolveAuthorizationContext grants nothing even with an explicit AUTH_ADAPTER=mock on wix data', () => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.AUTH_ADAPTER = 'mock';
+    expect(resolveAuthorizationContext(sessionFor(mockDefaultUser), DEFAULT_ORGANIZATION_ID).granted).toBe(false);
+  });
+
+  it('fails closed on a misconfigured adapter value', () => {
+    process.env.AUTH_ADAPTER = 'not-a-real-adapter';
+    expect(isNonIdentityAuthorizationPermitted()).toBe(false);
+    expect(resolveAuthorizationContext(sessionFor(mockDefaultUser), DEFAULT_ORGANIZATION_ID).granted).toBe(false);
+    process.env.AUTH_ADAPTER = 'mock';
+    process.env.DATA_ADAPTER = 'bogus';
+    expect(isNonIdentityAuthorizationPermitted()).toBe(false);
+  });
+
+  it('is permitted on mock data (local development unchanged)', () => {
+    expect(isNonIdentityAuthorizationPermitted()).toBe(true);
+    expect(resolveAuthorizationContext(sessionFor(mockDefaultUser)).granted).toBe(true);
+  });
+
+  it('hasAdminTierMembership is false when DATA_ADAPTER=wix', async () => {
+    process.env.DATA_ADAPTER = 'wix';
+    expect(await hasAdminTierMembership(mockDefaultUser.id, DEFAULT_ORGANIZATION_ID)).toBe(false);
+  });
+
+  it('the deployment allowlist blocks an explicitly requested organization the user is a member of', () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = SECOND_MOCK_ORGANIZATION_ID;
+    expect(resolveAuthorizationContext(sessionFor(mockMultiOrgUser), DEFAULT_ORGANIZATION_ID).granted).toBe(false);
+    expect(resolveAuthorizationContext(sessionFor(mockMultiOrgUser), SECOND_MOCK_ORGANIZATION_ID).granted).toBe(true);
+  });
+
+  it('implicit selection never resolves to an organization outside the allowlist', () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    // mockDefaultUser's only membership is managed-cremations.
+    expect(resolveAuthorizationContext(sessionFor(mockDefaultUser))).toEqual({ granted: false, reason: 'no_active_membership' });
+    // A multi-org user with exactly one allowed membership is resolved to that one only.
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = SECOND_MOCK_ORGANIZATION_ID;
+    const implicit = resolveAuthorizationContext(sessionFor(mockMultiOrgUser));
+    expect(implicit.granted && implicit.context.organizationId).toBe(SECOND_MOCK_ORGANIZATION_ID);
   });
 });

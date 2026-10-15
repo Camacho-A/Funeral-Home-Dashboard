@@ -172,3 +172,18 @@ describe('POST /api/signing/[token]/decline', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('POST /api/signing/[token]/decline — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('refuses (404) to decline a request for an organization this deployment does not serve', async () => {
+    const { rawToken } = await seedActiveRequestAndToken();
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const response = await declineRequest(rawToken, {});
+    expect(response.status).toBe(404);
+    expect(signatureRequestFixtures[0].status).not.toBe('declined');
+  });
+});

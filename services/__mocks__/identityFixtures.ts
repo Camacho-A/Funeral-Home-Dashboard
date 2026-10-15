@@ -7,6 +7,8 @@ import type { LoginActivityEvent } from '../../types/loginActivityEvent';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { hashPassword } from '../../lib/identity/passwordHashing';
 import { mockDefaultUser } from './authFixtures';
+import { mockCollection } from './mockStore';
+import { buildGusIdentityFixtures, buildGusMembershipFixtures } from './gusFixtures';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). Mock-mode
@@ -70,7 +72,7 @@ export const MANORS_PRIYA_MEMBERSHIP_ID = 'membership-manors-priya';
 // AppShell on hydration. A getter defers that call until something actually
 // reads `.passwordHash` — which only ever happens server-side (`identityService.ts`'s
 // mock branch, called only from Server Actions/Route Handlers).
-export const identityFixtures: MockIdentityRecord[] = [
+export const identityFixtures: MockIdentityRecord[] = mockCollection('identityFixtures', (): MockIdentityRecord[] => [
   {
     id: MANORS_ADMIN_IDENTITY_ID,
     email: mockDefaultUser.email,
@@ -125,9 +127,11 @@ export const identityFixtures: MockIdentityRecord[] = [
     mfaVerifiedAt: null,
     mfaRecoveryCodeHashes: [],
   },
-];
+  // Gus Camacho Jr. demo identities (mock/local development only).
+  ...buildGusIdentityFixtures(),
+]);
 
-export const membershipFixtures: Membership[] = [
+export const membershipFixtures: Membership[] = mockCollection('membershipFixtures', (): Membership[] => [
   {
     id: MANORS_ADMIN_MEMBERSHIP_ID,
     identityId: MANORS_ADMIN_IDENTITY_ID,
@@ -161,9 +165,11 @@ export const membershipFixtures: Membership[] = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-];
+  // Gus Camacho Jr. demo memberships — Gus only, never Manors.
+  ...buildGusMembershipFixtures(),
+]);
 
-export const identitySessionFixtures: IdentitySession[] = [];
-export const emailVerificationTokenFixtures: EmailVerificationToken[] = [];
-export const passwordResetTokenFixtures: PasswordResetToken[] = [];
-export const loginActivityEventFixtures: LoginActivityEvent[] = [];
+export const identitySessionFixtures: IdentitySession[] = mockCollection('identitySessionFixtures', (): IdentitySession[] => []);
+export const emailVerificationTokenFixtures: EmailVerificationToken[] = mockCollection('emailVerificationTokenFixtures', (): EmailVerificationToken[] => []);
+export const passwordResetTokenFixtures: PasswordResetToken[] = mockCollection('passwordResetTokenFixtures', (): PasswordResetToken[] => []);
+export const loginActivityEventFixtures: LoginActivityEvent[] = mockCollection('loginActivityEventFixtures', (): LoginActivityEvent[] => []);

@@ -174,3 +174,18 @@ describe('POST /api/signing/[token]/complete', () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe('POST /api/signing/[token]/complete — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('refuses (404, nothing recorded) to complete a request for an organization this deployment does not serve', async () => {
+    const { rawToken } = await seedActiveRequestAndToken();
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const response = await completeRequest(rawToken, { signedName: 'Jane Doe', consentAcknowledged: true });
+    expect(response.status).toBe(404);
+    expect(signatureRecordFixtures).toHaveLength(0);
+  });
+});

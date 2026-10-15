@@ -1,4 +1,5 @@
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
+import { getRegisteredOrganizationProfile, registeredProfileMap, type RetiredChecklistItem } from './organizationProfiles';
 
 /**
  * Retired checklist items (2026-10).
@@ -35,30 +36,16 @@ import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
  * rather than the wrong one quietly disappearing.
  */
 
-export type RetiredChecklistItem = {
-  /** Canonical display stage the item belongs to. */
-  displayStage: number;
-  /** Position within that stage's checklist — the stable identifier. */
-  index: number;
-  /** The label that index must carry for the retirement to apply. */
-  expectedLabel: string;
-};
+export type { RetiredChecklistItem };
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
 
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
-
-export const RETIRED_CHECKLIST_ITEMS: Record<string, readonly RetiredChecklistItem[]> = {
-  [MANORS_ORGANIZATION_ID]: [
-    // "Ready for Pickup / Contact Family", item 1. Manors no longer
-    // photographs the tag; the adjacent "Tag/name/cert cross-checked" item
-    // remains and is unaffected.
-    { displayStage: 5, index: 1, expectedLabel: 'Tag photo taken' },
-    // "Payment collected" (index 8) and this item asked the same question
-    // twice — one payment, two boxes. Combined into index 8, which covers
-    // a card taken by phone as readily as any other method. Retired
-    // rather than deleted so no stored checklistState key shifts meaning.
-    { displayStage: 0, index: 9, expectedLabel: 'Credit card payment collected by phone' },
-  ],
-};
+/** 2026-10: each organization's retirements now live in its profile
+    (`features.retiredChecklistItems`, domain/organization/organizationProfiles.ts).
+    This map is derived from that registry, kept for existing importers. */
+export const RETIRED_CHECKLIST_ITEMS: Record<string, readonly RetiredChecklistItem[]> = registeredProfileMap(
+  (profile) => profile.features.retiredChecklistItems,
+  (profile) => profile.features.retiredChecklistItems.length > 0,
+);
 
 /**
  * The indices to hide for one organization's stage, verified against the
@@ -72,7 +59,7 @@ export function retiredChecklistIndices(
   displayStage: number,
   items: readonly Pick<ChecklistItemTemplate, 'label' | 'index'>[],
 ): ReadonlySet<number> {
-  const retired = organizationId ? RETIRED_CHECKLIST_ITEMS[organizationId] : undefined;
+  const retired = organizationId ? getRegisteredOrganizationProfile(organizationId).features.retiredChecklistItems : undefined;
   if (!retired || retired.length === 0) return EMPTY;
 
   const indices = new Set<number>();

@@ -4,6 +4,7 @@ import type { OnboardingSession } from '../../types/onboarding';
 import { getDataAdapterMode } from '../env';
 import { getOnboardingSessionById } from '../../services/organizationProvisioningService';
 import { requireOnboardingSessionAccess } from '../auth/requireOnboardingAccess';
+import { isOrganizationAllowedInDeployment } from '../auth/deploymentOrganizations';
 
 /**
  * Phase 20 (Organization Onboarding & Tenant Provisioning). The one
@@ -25,7 +26,9 @@ export async function resolveOnboardingSessionAccess(
   }
 
   const onboardingSession = await getOnboardingSessionById(onboardingSessionId, getDataAdapterMode());
-  if (!onboardingSession) {
+  // Safe onboarding (2026-10): a session for an organization this
+  // deployment does not serve is indistinguishable from a missing one.
+  if (!onboardingSession || !isOrganizationAllowedInDeployment(onboardingSession.organizationId)) {
     return { ok: false, response: NextResponse.json({ error: 'Onboarding session not found.' }, { status: 404 }) };
   }
 

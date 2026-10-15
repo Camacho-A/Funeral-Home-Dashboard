@@ -12,7 +12,8 @@ import {
   PAYMENT_CONFIRMATION_LABEL,
 } from '../../domain/cases/checklist';
 import { getSlaTargetDays } from '../../domain/cases/sla';
-import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
+import { mockCollection } from './mockStore';
 import { JOTFORM_INTEGRATION_ID } from './externalFormIntegrations';
 
 /**
@@ -458,7 +459,52 @@ export const secondOrgWorkflowTemplateFixture: WorkflowTemplate = {
   ],
 };
 
-export const workflowTemplateFixtures: WorkflowTemplate[] = [
+/**
+ * Gus Camacho Jr. Funeral Home (2026-10, mock/local development only). Gus
+ * starts on the SAME stage/checklist/intake machinery Manors' current
+ * (v5) template uses — the dashboard's "Cases by stage", "Needs
+ * attention", Case Detail checklists and the New Case intake all resolve
+ * from a case's frozen workflowSnapshot, so Gus' demo cases exercise
+ * exactly the production code paths. Two deliberate differences:
+ * - it is Gus' OWN template row (organizationId gus-camacho-jr), never
+ *   a reference to Manors' template, so tenant scoping is real;
+ * - no checklist item points at Manors' JotForm integration
+ *   (externalFormIntegrationId null): Gus' own intake forms are not
+ *   configured yet, and a cross-tenant integration reference would be
+ *   exactly the kind of leak the multi-tenant hardening forbids.
+ * Built fresh (deep-cloned) so nothing is shared with Manors' template.
+ */
+export const GUS_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-standard-cremation';
+
+export function buildGusWorkflowTemplateFixture(): WorkflowTemplate {
+  return {
+    id: GUS_WORKFLOW_TEMPLATE_ID,
+    organizationId: GUS_ORGANIZATION_ID,
+    name: 'Standard Cremation Workflow',
+    isEnabled: true,
+    caseTypes: ['cremation'],
+    versions: [
+      {
+        version: 1,
+        caseTypes: ['cremation'],
+        stages: structuredClone(standardCremationStagesV5).map((stage) => ({
+          ...stage,
+          checklist: {
+            ...stage.checklist,
+            items: stage.checklist.items.map((item) => ({ ...item, externalFormIntegrationId: null })),
+          },
+        })),
+        intake: structuredClone(standardCremationIntakeV5),
+        createdAt: '2026-10-01T00:00:00.000Z',
+      },
+    ],
+  };
+}
+
+export const gusWorkflowTemplateFixture: WorkflowTemplate = buildGusWorkflowTemplateFixture();
+
+export const workflowTemplateFixtures: WorkflowTemplate[] = mockCollection('workflowTemplateFixtures', (): WorkflowTemplate[] => [
   standardCremationWorkflowTemplateFixture,
   secondOrgWorkflowTemplateFixture,
-];
+  gusWorkflowTemplateFixture,
+]);

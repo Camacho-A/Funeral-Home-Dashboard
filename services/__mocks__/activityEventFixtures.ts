@@ -1,4 +1,5 @@
 import type { ActivityEvent } from '../../types/activityEvent';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). Mock-mode fixtures —
@@ -7,4 +8,4 @@ import type { ActivityEvent } from '../../types/activityEvent';
  * Starts empty: unlike RBAC's seeded roster, there is no "day one" activity
  * history to seed for Manor's Cremation.
  */
-export const activityEventFixtures: ActivityEvent[] = [];
+export const activityEventFixtures: ActivityEvent[] = mockCollection('activityEventFixtures', (): ActivityEvent[] => []);

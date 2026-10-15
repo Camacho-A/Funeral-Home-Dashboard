@@ -59,3 +59,45 @@ export async function clearSession(): Promise<void> {
   const store = await cookies();
   store.delete(SESSION_COOKIE_NAME);
 }
+
+/**
+ * Stale/invalid-session handling (2026-10). A Server Component (e.g. the
+ * portal layout) must never mutate cookies during render — Next.js throws
+ * "Cookies can only be modified in a Server Action or Route Handler". So a
+ * layout that finds the session cookie unusable redirects to this Route
+ * Handler instead, which deletes the cookie and then sends the browser to
+ * `/login?error=<reason>`.
+ *
+ * `reason` travels through a URL, so it is validated against this fixed
+ * allowlist on BOTH ends: the handler never echoes an arbitrary value, and
+ * only ever redirects to the fixed internal `/login` path (no open
+ * redirect).
+ */
+export const CLEAR_SESSION_ROUTE = '/api/auth/clear-session';
+
+export const CLEAR_SESSION_REASONS = [
+  'missing_session_id',
+  'session_not_found',
+  'revoked',
+  'expired',
+  'password_changed',
+  'identity_not_found',
+  'identity_not_active',
+  'auth_adapter_not_allowed',
+  'organization_not_allowed',
+] as const;
+
+export type ClearSessionReason = (typeof CLEAR_SESSION_REASONS)[number];
+
+export const DEFAULT_CLEAR_SESSION_REASON: ClearSessionReason = 'session_not_found';
+
+export function isClearSessionReason(value: unknown): value is ClearSessionReason {
+  return typeof value === 'string' && (CLEAR_SESSION_REASONS as readonly string[]).includes(value);
+}
+
+/** The internal path a Server Component redirects to when its session
+    cookie must be discarded. Unknown reasons collapse to the default. */
+export function clearSessionPath(reason: string): string {
+  const safeReason = isClearSessionReason(reason) ? reason : DEFAULT_CLEAR_SESSION_REASON;
+  return `${CLEAR_SESSION_ROUTE}?reason=${safeReason}`;
+}

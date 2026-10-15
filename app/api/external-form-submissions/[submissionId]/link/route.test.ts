@@ -45,6 +45,7 @@ describe('POST /api/external-form-submissions/[submissionId]/link', () => {
     const { receive } = await import('@/services/externalFormSubmissionService');
     const { caseFixtures } = await import('@/services/__mocks__/fixtures');
     const casesBefore = caseFixtures.length;
+    const manorsCaseId = caseFixtures.find((c) => c.organizationId === 'managed-cremations')!.id;
 
     const { submission } = await receive(
       {
@@ -62,7 +63,10 @@ describe('POST /api/external-form-submissions/[submissionId]/link', () => {
     const { VITAL_STATISTICS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
     const { POST } = await import('./route');
     const response = await POST(
-      linkRequest({ organizationId: 'managed-cremations', caseId: 'existing-case-1', formConfigId: VITAL_STATISTICS_FORM_CONFIG_ID }),
+      // Multi-tenant hardening (2026-10): the case must genuinely exist in
+      // the authorized organization now, so this uses a real Manors case
+      // fixture instead of an arbitrary id the route used to accept blindly.
+      linkRequest({ organizationId: 'managed-cremations', caseId: manorsCaseId, formConfigId: VITAL_STATISTICS_FORM_CONFIG_ID }),
       { params: Promise.resolve({ submissionId: submission.id }) },
     );
 
@@ -119,5 +123,35 @@ describe('POST /api/external-form-submissions/[submissionId]/link', () => {
       { params: Promise.resolve({ submissionId: submission.id }) },
     );
     expect(response.status).toBe(404);
+  });
+
+  it('refuses (404) a caseId that is not a case of the authorized organization — nothing linked, nothing written', async () => {
+    const { receive } = await import('@/services/externalFormSubmissionService');
+    const { caseFixtures } = await import('@/services/__mocks__/fixtures');
+    const { submission } = await receive(
+      {
+        organizationId: 'managed-cremations',
+        provider: 'jotform',
+        externalFormId: '262605621454050',
+        externalSubmissionId: 'cross-org-case-sub',
+        caseFormLinkId: null,
+        mappedFields: '{}',
+        pdfStatus: 'pending',
+      },
+      'mock',
+    );
+    const foreignCaseId = caseFixtures.find((c) => c.organizationId !== 'managed-cremations')?.id ?? 'case-of-another-organization';
+    const linksBefore = caseFormLinkFixtures.length;
+
+    const { POST } = await import('./route');
+    const response = await POST(linkRequest({ organizationId: 'managed-cremations', caseId: foreignCaseId }), {
+      params: Promise.resolve({ submissionId: submission.id }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(caseFormLinkFixtures.length).toBe(linksBefore);
+    expect(externalFormSubmissionFixtures.find((s) => s.id === submission.id)?.status).toBe('unmatched');
+    const { fetchSubmissionPdf } = await import('@/lib/jotform/jotformClient');
+    expect(fetchSubmissionPdf).not.toHaveBeenCalled();
   });
 });

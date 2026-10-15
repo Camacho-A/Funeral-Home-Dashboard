@@ -4,6 +4,7 @@ import type { PurchaseOrderLineItem } from '../../types/purchaseOrderLineItem';
 import type { VendorBill } from '../../types/vendorBill';
 import type { VendorBillLineItem } from '../../types/vendorBillLineItem';
 import type { BillPayment } from '../../types/billPayment';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 36 (Procurement & Accounts Payable). Mock fixtures for the six new
@@ -13,9 +14,9 @@ import type { BillPayment } from '../../types/billPayment';
  * the Phase 35 merchandise fixtures do. Mutable arrays so mock-mode writes
  * push/splice into them. See docs/adr/ADR-040-procurement-and-accounts-payable.md.
  */
-export const supplierFixtures: Supplier[] = [];
-export const purchaseOrderFixtures: PurchaseOrder[] = [];
-export const purchaseOrderLineItemFixtures: PurchaseOrderLineItem[] = [];
-export const vendorBillFixtures: VendorBill[] = [];
-export const vendorBillLineItemFixtures: VendorBillLineItem[] = [];
-export const billPaymentFixtures: BillPayment[] = [];
+export const supplierFixtures: Supplier[] = mockCollection('supplierFixtures', (): Supplier[] => []);
+export const purchaseOrderFixtures: PurchaseOrder[] = mockCollection('purchaseOrderFixtures', (): PurchaseOrder[] => []);
+export const purchaseOrderLineItemFixtures: PurchaseOrderLineItem[] = mockCollection('purchaseOrderLineItemFixtures', (): PurchaseOrderLineItem[] => []);
+export const vendorBillFixtures: VendorBill[] = mockCollection('vendorBillFixtures', (): VendorBill[] => []);
+export const vendorBillLineItemFixtures: VendorBillLineItem[] = mockCollection('vendorBillLineItemFixtures', (): VendorBillLineItem[] => []);
+export const billPaymentFixtures: BillPayment[] = mockCollection('billPaymentFixtures', (): BillPayment[] => []);

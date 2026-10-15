@@ -73,14 +73,35 @@ function extractSenderEmail(fromValue: string): string {
     no possible value of `RESEND_FROM_ADDRESS` can ever produce anything
     but "SOLIS <that address>" — fixing it no longer requires editing
     the env var itself, only the actual email address portion if that
-    ever needs to change. The literal fallback address below only ever
-    applies when `RESEND_FROM_ADDRESS` is unset entirely (local/dev,
-    where sends go through `consoleIdentityMessageSender` instead and
-    this value is never actually used to send real mail). */
+    ever needs to change.
+
+    Multi-tenant hardening (2026-10): no tenant's (or the retired
+    "Beacon" product's) address is baked in any more — previously the
+    unset-env fallback was `notifications@beacon.app`. SOLIS sends for
+    several funeral homes, so the real sending address is always an
+    explicit deployment decision via `RESEND_FROM_ADDRESS`. When it is
+    unset (or carries no usable address) the fallback is
+    `UNCONFIGURED_SENDER_ADDRESS`, on the RFC 2606 reserved `.invalid`
+    TLD: it can never belong to anyone, can never be verified with
+    Resend, and so fails safe exactly as the old unverified fallback did
+    (Resend rejects the send; the caller surfaces a delivery failure) —
+    rather than throwing here, which would change every caller's
+    console/test path. A one-time warning names the missing variable
+    (never any value). Local/dev without `RESEND_API_KEY` never reaches
+    this — `isResendConfigured()` routes to the console adapters. */
+export const UNCONFIGURED_SENDER_ADDRESS = 'notifications@unconfigured-sender.invalid';
+
+let warnedUnconfiguredSender = false;
+
 function getResendFromAddress(): string {
   const configured = process.env.RESEND_FROM_ADDRESS;
-  const email = configured ? extractSenderEmail(configured) : 'notifications@beacon.app';
-  return `SOLIS <${email}>`;
+  const extracted = configured ? extractSenderEmail(configured) : '';
+  const usable = extracted.length > 0 && isValidEmail(extracted);
+  if (!usable && !warnedUnconfiguredSender) {
+    warnedUnconfiguredSender = true;
+    console.warn('RESEND_FROM_ADDRESS is not set to a valid sender address; outbound email will be rejected until it is configured.');
+  }
+  return `SOLIS <${usable ? extracted : UNCONFIGURED_SENDER_ADDRESS}>`;
 }
 
 /** Reply-To (2026-10, invitation deliverability follow-up). A single,
@@ -103,6 +124,7 @@ function getResendReplyToAddress(): string | undefined {
 
 export async function sendResendEmail(request: ResendEmailRequest): Promise<void> {
   const apiKey = getResendApiKey();
+  const from = getResendFromAddress();
   const replyTo = getResendReplyToAddress();
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -111,7 +133,7 @@ export async function sendResendEmail(request: ResendEmailRequest): Promise<void
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      from: getResendFromAddress(),
+      from,
       to: request.to,
       subject: request.subject,
       html: request.html,

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
+import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 import { resolveSigningToken, markSignatureViewed, getSigningPageContext, SignatureServiceError } from '@/services/signatureService';
 
 /**
@@ -22,6 +23,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   let signatureRequest;
   try {
     signatureRequest = await resolveSigningToken(token, dataAdapterMode);
+    // Deployment organization restrictions (2026-10): a token for an
+    // organization this deployment does not serve is indistinguishable
+    // from an invalid one (same 404 + message, no existence leak).
+    if (!isOrganizationAllowedInDeployment(signatureRequest.organizationId)) {
+      throw new SignatureServiceError('This signing link is invalid or has expired.');
+    }
   } catch (error) {
     if (error instanceof SignatureServiceError) {
       return NextResponse.json({ error: error.message }, { status: 404 });

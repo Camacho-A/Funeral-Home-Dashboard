@@ -1,6 +1,13 @@
 import { Checkbox } from '@/components/ui/Checkbox';
 import type { VaStepViewModel } from '@/types/caseViewModel';
 import type { VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
+import { useOrganization } from '@/hooks/useOrganization';
+import {
+  getOrganizationProfile,
+  VA_FUNERAL_HOME_RESPONSIBILITY_KEY,
+  vaNotificationFuneralHomeLabel,
+  vaNotificationStaffPhrase,
+} from '@/domain/organization/organizationProfiles';
 import styles from './VaNotificationPanel.module.css';
 
 /**
@@ -17,6 +24,12 @@ import styles from './VaNotificationPanel.module.css';
  * — "fail safely," never assumed to be either answer). See
  * domain/cases/veteran.ts#isVaComplete, which mirrors this exact
  * three-way branch for the "needs attention" calculation.
+ *
+ * Multi-tenant (2026-10): the stored value stays `'manors'` — the legacy
+ * key for "this funeral home is handling it", never rewritten — but the
+ * button label and the family note come from the current organization's
+ * profile (domain/organization/organizationProfiles.ts): "MANORS" for
+ * Manors exactly as before, the organization's own short name otherwise.
  */
 export function VaNotificationPanel({
   vaSteps,
@@ -26,6 +39,8 @@ export function VaNotificationPanel({
   onToggleStep,
   onSetPublishChoice,
   onSetVaNotificationResponsibility,
+  organizationId: organizationIdProp,
+  organizationName,
 }: {
   vaSteps: VaStepViewModel[];
   vaCallbackDone: boolean;
@@ -34,7 +49,17 @@ export function VaNotificationPanel({
   onToggleStep: (index: number, newDone: boolean) => void;
   onSetPublishChoice: (choice: VaPublishChoice) => void;
   onSetVaNotificationResponsibility: (responsibility: VaNotificationResponsibility) => void;
+  /** Defaults to the current organization (useOrganization()). */
+  organizationId?: string;
+  /** Organization record name, when the caller has it — used only for an
+      organization with no registered profile name. */
+  organizationName?: string | null;
 }) {
+  const { organizationId: contextOrganizationId } = useOrganization();
+  const profile = getOrganizationProfile(organizationIdProp ?? contextOrganizationId);
+  const nameSource = organizationName && !profile.registered ? { ...profile, displayName: organizationName } : profile;
+  const funeralHomeLabel = vaNotificationFuneralHomeLabel(nameSource);
+  const staffPhrase = vaNotificationStaffPhrase(nameSource);
   return (
     <div className={styles.panel}>
       <div className={styles.title}>VA notification</div>
@@ -43,10 +68,10 @@ export function VaNotificationPanel({
       <div className={styles.publishButtons}>
         <button
           type="button"
-          className={`${styles.publishButton} ${vaNotificationResponsibility === 'manors' ? styles.publishButtonActive : styles.publishButtonInactive}`}
-          onClick={() => onSetVaNotificationResponsibility('manors')}
+          className={`${styles.publishButton} ${vaNotificationResponsibility === VA_FUNERAL_HOME_RESPONSIBILITY_KEY ? styles.publishButtonActive : styles.publishButtonInactive}`}
+          onClick={() => onSetVaNotificationResponsibility(VA_FUNERAL_HOME_RESPONSIBILITY_KEY)}
         >
-          MANORS
+          {funeralHomeLabel}
         </button>
         <button
           type="button"
@@ -59,11 +84,11 @@ export function VaNotificationPanel({
 
       {vaNotificationResponsibility === 'family' && (
         <p className={styles.familyNote}>
-          Family is handling VA notification — no action needed from Manors staff.
+          Family is handling VA notification — no action needed from {staffPhrase}.
         </p>
       )}
 
-      {vaNotificationResponsibility === 'manors' && (
+      {vaNotificationResponsibility === VA_FUNERAL_HOME_RESPONSIBILITY_KEY && (
         <div className={styles.stepsSection}>
           {vaSteps.map((step) => (
             <div

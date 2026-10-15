@@ -6,6 +6,7 @@ import { caseFixtures } from '../__mocks__/fixtures';
 import { listPortalAccessForPortalUser } from './portalAccessService';
 import { buildPortalCaseView, type PortalCaseView } from '../../domain/portal/portalCaseView';
 import { isFamilyPortalEnabledForOrganizationId } from '../organizationFamilyPortalCapabilityService';
+import { filterToDeploymentOrganizations } from '../../lib/auth/deploymentOrganizations';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). A thin wrapper — the
@@ -42,7 +43,12 @@ export async function getFamilyCase(organizationId: string, caseId: string, data
     depth. */
 export async function listFamilyCases(portalUserId: string, dataAdapterMode: DataAdapterMode): Promise<PortalCaseView[]> {
   const access = await listPortalAccessForPortalUser(portalUserId, dataAdapterMode);
-  const activeGrants = access.filter((a) => a.status === 'active');
+  // Deployment organization restrictions (2026-10): grants for an
+  // organization this deployment does not serve are never listed.
+  const activeGrants = filterToDeploymentOrganizations(
+    access.filter((a) => a.status === 'active'),
+    (a) => a.organizationId,
+  );
 
   const enabledGrants = (
     await Promise.all(

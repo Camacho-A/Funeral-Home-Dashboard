@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import {
   mockDefaultUser,
@@ -19,9 +20,23 @@ import { resolveRoleKeyAlias } from '@/domain/rbac/legacyRoleAliases';
  * logic, not a stand-in.
  */
 
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 let mockQueryWixDataItems = vi.fn();
@@ -134,7 +149,7 @@ beforeEach(() => {
   process.env.DATA_ADAPTER = 'wix';
   process.env.WIX_API_KEY = 'test-key';
   process.env.WIX_SITE_ID = 'test-site';
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
   mockQueryWixDataItems = vi.fn().mockResolvedValue({ dataItems: [] });
   mockInsertWixDataItem = vi.fn().mockImplementation((collectionId: string, data: Record<string, unknown>, itemId: string) => Promise.resolve({ id: itemId, dataCollectionId: collectionId, data }));
 });
@@ -154,14 +169,14 @@ describe('POST /api/organization/rbac/seed-case-number-manage — authorization'
   });
 
   it('B: Funeral Director cannot execute the migration', async () => {
-    mockSession = { user: mockFuneralDirectorUser };
+    mockSession = fixtureIdentitySession(mockFuneralDirectorUser);
     seedRoles({ callerRoleKey: 'funeralDirector', grantUserManageRoles: false });
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
     expect(response.status).toBe(403);
   });
 
   it('C: Manager cannot execute the migration', async () => {
-    mockSession = { user: mockManagerUser };
+    mockSession = fixtureIdentitySession(mockManagerUser);
     seedRoles({ callerRoleKey: 'manager', grantUserManageRoles: false });
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
     expect(response.status).toBe(403);
@@ -173,7 +188,7 @@ describe('POST /api/organization/rbac/seed-case-number-manage — authorization'
     ['readOnly', () => mockReadOnlyUser],
     ['dispatch', () => mockDispatchUser],
   ])('D: %s cannot execute the migration', async (roleKey, getUser) => {
-    mockSession = { user: getUser() };
+    mockSession = fixtureIdentitySession(getUser());
     seedRoles({ callerRoleKey: roleKey, grantUserManageRoles: false });
     const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID });
     expect(response.status).toBe(403);
@@ -184,7 +199,7 @@ describe('POST /api/organization/rbac/seed-case-number-manage — authorization'
     // (role 'caseManager' there) — seed that role with user.manageRoles so
     // authorization itself would succeed, isolating the organization
     // hardcode as the only thing that can be blocking this request.
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     seedRoles({ callerRoleKey: 'caseManager' });
     const response = await postRequest({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
     expect(response.status).toBe(400);
@@ -208,7 +223,7 @@ describe('POST /api/organization/rbac/seed-case-number-manage — authorization'
 
 describe('POST /api/organization/rbac/seed-case-number-manage — migration behavior', () => {
   beforeEach(() => {
-    mockSession = { user: mockDefaultUser };
+    mockSession = fixtureIdentitySession(mockDefaultUser);
   });
 
   it('F: creates the Administrator grant when missing', async () => {
@@ -389,7 +404,7 @@ describe('GET /api/organization/rbac/seed-case-number-manage', () => {
   });
 
   it('reports applicable: false for a non-Manors organization', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     seedRoles({ callerRoleKey: 'caseManager' });
     const response = await getRequest(SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(200);
@@ -398,7 +413,7 @@ describe('GET /api/organization/rbac/seed-case-number-manage', () => {
   });
 
   it('a non-authorized caller cannot even read migration status', async () => {
-    mockSession = { user: mockFuneralDirectorUser };
+    mockSession = fixtureIdentitySession(mockFuneralDirectorUser);
     seedRoles({ callerRoleKey: 'funeralDirector', grantUserManageRoles: false });
     const response = await getRequest(DEFAULT_ORGANIZATION_ID);
     expect(response.status).toBe(403);

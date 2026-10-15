@@ -14,6 +14,7 @@ beforeEach(() => {
   lengths = { identity: identityFixtures.length, membership: membershipFixtures.length, sessions: identitySessionFixtures.length };
 });
 afterEach(() => {
+  delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
   identityFixtures.length = lengths.identity;
   membershipFixtures.length = lengths.membership;
   identitySessionFixtures.length = lengths.sessions;
@@ -147,5 +148,70 @@ describe('resolveMembershipAuthorizationContext', () => {
 
     const result = await resolveMembershipAuthorizationContext(session, 'mock');
     expect(result).toEqual({ granted: false, reason: 'no_active_membership' });
+  });
+});
+
+describe('resolveMembershipAuthorizationContext — deployment organization allowlist (2026-10)', () => {
+  async function seedTwoOrgIdentity(identityId: string) {
+    const { createMembership } = await import('../../services/membershipService');
+    await createMembership({ identityId, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
+    await createMembership({ identityId, organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'owner', status: 'active', invitedBy: null, idFactory }, 'mock');
+  }
+
+  it('rejects an explicitly requested organization outside the allowlist, even with an active membership', async () => {
+    const { resolveMembershipAuthorizationContext } = await import('./resolveMembershipAuthorizationContext');
+    await seedTwoOrgIdentity('allowlist-requested-identity');
+    const session = await seedSession('allowlist-requested-identity');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const result = await resolveMembershipAuthorizationContext(session, 'mock', DEFAULT_ORGANIZATION_ID);
+    expect(result).toEqual({ granted: false, reason: 'organization_not_allowed' });
+  });
+
+  it("never honors a session's stored organization outside the allowlist — and never silently switches to another one", async () => {
+    const { createMembership } = await import('../../services/membershipService');
+    const { resolveMembershipAuthorizationContext } = await import('./resolveMembershipAuthorizationContext');
+    const { getSessionById } = await import('../../services/sessionService');
+    await seedTwoOrgIdentity('allowlist-stored-identity');
+    await createMembership({ identityId: 'allowlist-stored-identity', organizationId: 'gus-camacho-jr', role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
+    const session = await seedSession('allowlist-stored-identity', DEFAULT_ORGANIZATION_ID);
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = `gus-camacho-jr,${SECOND_MOCK_ORGANIZATION_ID}`;
+
+    const result = await resolveMembershipAuthorizationContext(session, 'mock');
+    expect(result).toEqual({ granted: false, reason: 'organization_not_allowed' });
+    expect((await getSessionById(session.id, 'mock'))?.organizationId).toBe(DEFAULT_ORGANIZATION_ID);
+  });
+
+  it('a stored disallowed organization is refused even when exactly one allowed membership exists (no silent switch)', async () => {
+    const { resolveMembershipAuthorizationContext } = await import('./resolveMembershipAuthorizationContext');
+    await seedTwoOrgIdentity('allowlist-stored-single-identity');
+    const session = await seedSession('allowlist-stored-single-identity', DEFAULT_ORGANIZATION_ID);
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = SECOND_MOCK_ORGANIZATION_ID;
+
+    expect(await resolveMembershipAuthorizationContext(session, 'mock')).toEqual({ granted: false, reason: 'organization_not_allowed' });
+    // An explicit switch to the allowed organization still works.
+    const switched = await resolveMembershipAuthorizationContext(session, 'mock', SECOND_MOCK_ORGANIZATION_ID);
+    expect(switched.granted && switched.context.organizationId).toBe(SECOND_MOCK_ORGANIZATION_ID);
+  });
+
+  it('implicit selection only considers allowed memberships (auto-selects the one allowed organization)', async () => {
+    const { resolveMembershipAuthorizationContext } = await import('./resolveMembershipAuthorizationContext');
+    const { getSessionById } = await import('../../services/sessionService');
+    await seedTwoOrgIdentity('allowlist-implicit-identity');
+    const session = await seedSession('allowlist-implicit-identity');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = SECOND_MOCK_ORGANIZATION_ID;
+
+    const result = await resolveMembershipAuthorizationContext(session, 'mock');
+    expect(result).toEqual({ granted: true, context: { userId: 'allowlist-implicit-identity', organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'owner' } });
+    expect((await getSessionById(session.id, 'mock'))?.organizationId).toBe(SECOND_MOCK_ORGANIZATION_ID);
+  });
+
+  it('an identity whose memberships are all outside the allowlist has no usable membership here', async () => {
+    const { resolveMembershipAuthorizationContext } = await import('./resolveMembershipAuthorizationContext');
+    await seedTwoOrgIdentity('allowlist-none-identity');
+    const session = await seedSession('allowlist-none-identity');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    expect(await resolveMembershipAuthorizationContext(session, 'mock')).toEqual({ granted: false, reason: 'no_active_membership' });
   });
 });

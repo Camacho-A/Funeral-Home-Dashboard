@@ -6,6 +6,21 @@ import type { OrganizationBranding } from '@/types/organizationBranding';
 import type { OrganizationLocation } from '@/types/organizationLocation';
 import type { Appointment } from '@/types/appointment';
 import { formatCentsAsCurrency } from '@/utils/format';
+import { getRegisteredOrganizationProfile, hasRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
+
+/**
+ * Org-neutral sample values (2026-10, multi-tenant hardening). Previously
+ * the catalog/sample used Manors' own name and a manorscremation.com
+ * address; preview data must never show one tenant's identity to another.
+ * `buildSampleMergeSourceData(organizationId)` substitutes the previewing
+ * organization's own registered name/case prefix where it has them.
+ */
+export const SAMPLE_ORGANIZATION_NAME = 'Sample Funeral Home';
+export const SAMPLE_ORGANIZATION_EMAIL = 'office@example.com';
+/** Platform-default case-number prefix used only for the static catalog
+    example (domain/cases/caseNumber.ts's DEFAULT_CASE_NUMBER_PREFIX). */
+const SAMPLE_CASE_NUMBER_PREFIX = 'B';
+const SAMPLE_CASE_NUMBER_SUFFIX = '2026-014';
 
 /**
  * Phase 25 (Document Generation & Template Management). The strongly-typed
@@ -110,7 +125,7 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     displayName: 'Case Number',
     dataType: 'string',
     description: "The case's human-facing identifier.",
-    exampleValue: 'B2026-014',
+    exampleValue: `${SAMPLE_CASE_NUMBER_PREFIX}${SAMPLE_CASE_NUMBER_SUFFIX}`,
     category: 'case',
     wired: true,
     resolve: (source) => source.case.caseNumber,
@@ -192,7 +207,7 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     displayName: 'Organization Name',
     dataType: 'string',
     description: "The funeral home's display name.",
-    exampleValue: "Manor's Cremation",
+    exampleValue: SAMPLE_ORGANIZATION_NAME,
     category: 'organization',
     wired: true,
     resolve: (source) => source.organization.name,
@@ -212,7 +227,7 @@ export const MERGE_FIELD_CATALOG: Record<string, MergeFieldDefinition> = {
     displayName: 'Organization Email',
     dataType: 'string',
     description: "The organization's primary email address.",
-    exampleValue: 'office@manorscremation.com',
+    exampleValue: SAMPLE_ORGANIZATION_EMAIL,
     category: 'organization',
     wired: true,
     resolve: (source) => source.organization.primaryEmail || null,
@@ -331,11 +346,21 @@ export function mergeTemplate(templateBody: string, resolved: Record<string, str
  * separate hand-maintained copies. Never used for anything but preview —
  * `services/documentService.ts`'s real `generate()` always resolves
  * against genuine Case/CaseOrder/Organization data.
+ *
+ * With an `organizationId` that has a registered profile
+ * (domain/organization/organizationProfiles.ts), the sample organization
+ * name and case-number prefix are that organization's own — so a preview
+ * reads like the previewing funeral home's document; those two fields then
+ * intentionally differ from the static catalog `exampleValue`. Every other
+ * value stays neutral sample data (555 numbers, example.com).
  */
-export function buildSampleMergeSourceData(): MergeSourceData {
+export function buildSampleMergeSourceData(organizationId?: string): MergeSourceData {
+  const profile = hasRegisteredOrganizationProfile(organizationId) ? getRegisteredOrganizationProfile(organizationId) : null;
+  const organizationName = profile?.displayName ?? SAMPLE_ORGANIZATION_NAME;
+  const caseNumberPrefix = profile?.caseNumberPrefix ?? SAMPLE_CASE_NUMBER_PREFIX;
   return {
     case: {
-      caseNumber: 'B2026-014',
+      caseNumber: `${caseNumberPrefix}${SAMPLE_CASE_NUMBER_SUFFIX}`,
       decedentName: 'Robert Ellison',
       dateOfBirth: '04/12/1951',
       dateOfDeath: '01/02/2026',
@@ -347,9 +372,9 @@ export function buildSampleMergeSourceData(): MergeSourceData {
       balanceDue: 0,
     } as unknown as CaseOrder,
     organization: {
-      name: "Manor's Cremation",
+      name: organizationName,
       primaryPhone: '(555) 555-0100',
-      primaryEmail: 'office@manorscremation.com',
+      primaryEmail: SAMPLE_ORGANIZATION_EMAIL,
       defaultCurrency: 'usd',
     } as unknown as Organization,
     branding: {

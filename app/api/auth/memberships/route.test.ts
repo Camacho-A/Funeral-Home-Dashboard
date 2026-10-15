@@ -54,6 +54,26 @@ describe('GET /api/auth/memberships', () => {
     expect(body.organizations.find((o: { organizationId: string }) => o.organizationId === SECOND_MOCK_ORGANIZATION_ID).isCurrent).toBe(false);
   });
 
+  it('only offers organizations this deployment serves (DEPLOYMENT_ORGANIZATION_IDS)', async () => {
+    const { findOrCreateIdentity, updateIdentity } = await import('@/services/identityService');
+    const { createMembership } = await import('@/services/membershipService');
+    const { createIdentitySession } = await import('@/services/sessionService');
+    const { identity } = await findOrCreateIdentity({ email: 'memberships.allowlist@example.com', displayName: 'Allowlist', idFactory }, 'mock');
+    await updateIdentity(identity.id, { status: 'active' }, 'mock');
+    await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role: 'staff', status: 'active', invitedBy: null, idFactory }, 'mock');
+    await createMembership({ identityId: identity.id, organizationId: SECOND_MOCK_ORGANIZATION_ID, role: 'owner', status: 'active', invitedBy: null, idFactory }, 'mock');
+    const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
+    mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
+
+    vi.stubEnv('DEPLOYMENT_ORGANIZATION_IDS', SECOND_MOCK_ORGANIZATION_ID);
+    try {
+      const body = await (await GET()).json();
+      expect(body.organizations.map((o: { organizationId: string }) => o.organizationId)).toEqual([SECOND_MOCK_ORGANIZATION_ID]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('excludes invited (not-yet-accepted) memberships', async () => {
     const { findOrCreateIdentity, updateIdentity } = await import('@/services/identityService');
     const { createMembership } = await import('@/services/membershipService');

@@ -105,3 +105,25 @@ describe('GET /api/calendar-feed/[token]', () => {
     expect(persisted.lastAccessedAt).not.toBeNull();
   });
 });
+
+describe('GET /api/calendar-feed/[token] — deployment organization allowlist (2026-10)', () => {
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+  });
+
+  it('answers a valid feed token for an organization this deployment does not serve exactly like an invalid one, without touching it', async () => {
+    const { rawToken } = await generateFeedToken(DEFAULT_ORGANIZATION_ID, 'staff-dana', idFactory, 'mock');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+
+    const response = await feedRequest(rawToken);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual(await (await feedRequest('not-a-real-token')).json());
+    expect(calendarFeedTokenFixtures[0].lastAccessedAt ?? null).toBeNull();
+  });
+
+  it('still serves the feed when the organization is served', async () => {
+    const { rawToken } = await generateFeedToken(DEFAULT_ORGANIZATION_ID, 'staff-dana', idFactory, 'mock');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = DEFAULT_ORGANIZATION_ID;
+    expect((await feedRequest(rawToken)).status).toBe(200);
+  });
+});

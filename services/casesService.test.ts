@@ -4,7 +4,7 @@ import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
 import type { Case } from '../types/case';
 import { DEFAULT_ORGANIZATION_ID, caseFixtures, staffFixtures } from './__mocks__/fixtures';
-import { SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
+import { GUS_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import { standardCremationWorkflowTemplateFixture } from './__mocks__/workflowTemplates';
 import { buildCaseWorkflowSnapshot } from '../domain/workflow/snapshot';
 import { resolveChecklist } from '../domain/workflow/resolveChecklist';
@@ -512,6 +512,20 @@ describe('casesService.create — mock-mode Case Number generation (Phase 16B)',
   it('never assigns the same caseNumber twice among existing fixtures', () => {
     const caseNumbers = caseFixtures.map((c) => c.caseNumber);
     expect(new Set(caseNumbers).size).toBe(caseNumbers.length);
+  });
+
+  it("uses the organization's own prefix — Gus Camacho cases are M{YYYY}-{###}, continuing its own sequence", async () => {
+    const gusContext: OrganizationContext = { organizationId: GUS_ORGANIZATION_ID };
+    const year = new Date().getFullYear();
+    const existingGus = caseFixtures.filter((c) => c.organizationId === GUS_ORGANIZATION_ID && c.caseNumber.startsWith(`M${year}-`));
+    const highest = Math.max(0, ...existingGus.map((c) => Number(c.caseNumber.split('-')[1])));
+    const newCase = await casesService.create(
+      gusContext,
+      { decedentName: 'Gus Prefix Test', nextOfKinName: '', nextOfKinPhone: '' },
+      sessionFor(staffFixtures[0].id),
+      template,
+    );
+    expect(newCase.caseNumber).toBe(`M${year}-${String(highest + 1).padStart(3, '0')}`);
   });
 
   it('scopes the sequence per organization — a different organization starts its own count', async () => {

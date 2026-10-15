@@ -123,7 +123,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
 
   let jotformSubmission;
   try {
-    jotformSubmission = await fetchSubmissionAnswers(externalSubmissionId);
+    jotformSubmission = config.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+      : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });
   }
@@ -173,7 +175,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   let jotformSubmission;
   try {
-    jotformSubmission = await fetchSubmissionAnswers(externalSubmissionId);
+    jotformSubmission = config.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+      : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });
   }
@@ -182,7 +186,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'This Jotform submission does not belong to the selected form.' }, { status: 400 });
   }
 
-  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, jotformSubmission.answers);
+  const mappedFields = extractMappedFieldsForForm(config, jotformSubmission.answers);
 
   const { submission } = await externalFormSubmissionService.receive(
     {
@@ -219,7 +223,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     console.error('Failed to record external_form.submission_linked activity event:', error instanceof Error ? error.message : error);
   }
 
-  const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode);
+  const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode, { config });
 
   // Manors workflow reconciliation (2026-09): same reasoning as the
   // historical-import route — this case's Arrangement Form is now a

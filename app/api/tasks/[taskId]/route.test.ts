@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { mockDefaultUser, mockMultiOrgUser } from '@/services/__mocks__/authFixtures';
 
@@ -41,9 +42,23 @@ vi.mock('@/lib/wixDataApi', async () => {
   };
 });
 
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 const { PATCH, DELETE } = await import('./route');
@@ -93,7 +108,7 @@ beforeEach(() => {
   );
   mockDeleteWixDataItem = vi.fn().mockResolvedValue(undefined);
   mockInsertWixDataItem = vi.fn().mockResolvedValue({ id: 'activity-event-mock', dataCollectionId: 'activityEvents', data: {} });
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
 });
 
 afterEach(() => {
@@ -130,7 +145,7 @@ describe('PATCH /api/tasks/[taskId] — authorization', () => {
   });
 
   it("returns 404 when the task belongs to a different organization the caller IS authorized for — cross-tenant update rejected", async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
     const response = await patchRequest('task-100', { organizationId: SECOND_MOCK_ORGANIZATION_ID, patch: { text: 'x' } });
     expect(response.status).toBe(404);
@@ -286,7 +301,7 @@ describe('DELETE /api/tasks/[taskId] — authorization', () => {
   });
 
   it("returns 404 when the task belongs to a different organization the caller IS authorized for — cross-tenant delete rejected", async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     mockQueryWixDataItems.mockResolvedValue({ dataItems: [] });
     const response = await deleteRequest('task-100', SECOND_MOCK_ORGANIZATION_ID);
     expect(response.status).toBe(404);

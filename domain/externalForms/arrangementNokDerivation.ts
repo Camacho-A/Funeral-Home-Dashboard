@@ -21,12 +21,11 @@
  */
 import { readAnswerValue, type JotformAnswerMap } from './extractMappedFields';
 import {
-  ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
   ARRANGEMENT_NOK_RELATIONSHIP_VALUE_MAP,
-  fieldMapForForm,
   type FieldMapEntry,
   type MappedSolisField,
 } from './fieldMapping';
+import { legacyLayoutForForm, resolveFormLayout, type ExternalFormLayout, type FormLayoutSubject } from './formRegistry';
 import { extractMappedFields } from './extractMappedFields';
 
 const QID_INFORMANT_IS_NOK = '276';
@@ -141,12 +140,39 @@ export function extractArrangementFormsMappedFields(
  * extractMappedFields call it always used.
  */
 export function extractMappedFieldsForForm(
+  config: FormLayoutSubject,
+  answers: JotformAnswerMap,
+): Partial<Record<MappedSolisField, string>>;
+/** @deprecated organization-blind legacy form; pass the trusted config. */
+export function extractMappedFieldsForForm(
   provider: string,
   externalFormId: string,
   answers: JotformAnswerMap,
+): Partial<Record<MappedSolisField, string>>;
+/**
+ * Multi-tenant hardening (2026-10): the preferred form takes the TRUSTED
+ * server-side config, so the layout is resolved per organization through
+ * domain/externalForms/formRegistry.ts — a config whose organization has
+ * no registered layout gets generic handling (nothing mapped), never
+ * another organization's mapping. The (provider, externalFormId) form is
+ * kept for older callers/tests and resolves registered bindings only.
+ */
+export function extractMappedFieldsForForm(
+  configOrProvider: FormLayoutSubject | string,
+  externalFormIdOrAnswers: string | JotformAnswerMap,
+  maybeAnswers?: JotformAnswerMap,
 ): Partial<Record<MappedSolisField, string>> {
-  const fieldMap = fieldMapForForm(provider, externalFormId);
-  if (provider === 'jotform' && externalFormId === ARRANGEMENT_FORMS_EXTERNAL_FORM_ID) {
+  let layout: ExternalFormLayout | null;
+  let answers: JotformAnswerMap;
+  if (typeof configOrProvider === 'string') {
+    layout = legacyLayoutForForm(configOrProvider, externalFormIdOrAnswers as string);
+    answers = maybeAnswers ?? {};
+  } else {
+    layout = resolveFormLayout(configOrProvider);
+    answers = externalFormIdOrAnswers as JotformAnswerMap;
+  }
+  const fieldMap = [...(layout?.fieldMap ?? [])];
+  if (layout?.extraction === 'arrangement_nok_derivation') {
     return extractArrangementFormsMappedFields(fieldMap, answers);
   }
   return extractMappedFields(fieldMap, answers);

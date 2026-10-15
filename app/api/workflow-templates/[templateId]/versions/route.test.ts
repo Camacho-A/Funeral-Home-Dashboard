@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import {
   standardCremationWorkflowTemplateFixture,
@@ -31,9 +32,23 @@ vi.mock('@/lib/wixDataApi', async () => {
   };
 });
 
-let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
+let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
+  createSession: async () => undefined,
+  clearSession: async () => undefined,
+}));
+// Tenant-isolation hardening (2026-10): with DATA_ADAPTER=wix, staff routes
+// only honor identity-source sessions (a mock-fixture session is a 401,
+// as in production). Sessions here are identity sessions for the same
+// authFixtures users, authorized by the REAL
+// resolveMembershipAuthorizationContext; only its two Wix-backed lookups
+// are replaced by fixtures derived 1:1 from mockMembershipFixtures — see
+// lib/auth/testing/fixtureIdentityAuth.ts.
+vi.mock('@/lib/auth/resolveIdentitySession', async () => (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureResolveIdentitySessionModule);
+vi.mock('@/services/membershipService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/membershipService')>()),
+  listMembershipsForIdentity: (await import('@/lib/auth/testing/fixtureIdentityAuth')).fixtureListMembershipsForIdentity,
 }));
 
 // Task #11 security follow-up (2026-09). The POST route now calls
@@ -121,7 +136,7 @@ beforeEach(() => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   mockQueryWixDataItems = vi.fn();
   mockInsertWixDataItem = vi.fn();
-  mockSession = { user: mockDefaultUser };
+  mockSession = fixtureIdentitySession(mockDefaultUser);
   mockCanPublishWorkflow = realCanPublishWorkflow;
 });
 
@@ -187,7 +202,7 @@ describe('POST /api/workflow-templates/[templateId]/versions — authorization',
  */
 describe('POST /api/workflow-templates/[templateId]/versions — RBAC (Task #11 security follow-up, 2026-09)', () => {
   it('denies an authenticated organization member without workflow.publish (readOnly)', async () => {
-    mockSession = { user: mockReadOnlyUser };
+    mockSession = fixtureIdentitySession(mockReadOnlyUser);
     const beforeCount = standardCremationWorkflowTemplateFixture.versions.length;
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
       organizationId: DEFAULT_ORGANIZATION_ID,
@@ -212,7 +227,7 @@ describe('POST /api/workflow-templates/[templateId]/versions — RBAC (Task #11 
   });
 
   it('allows an authorized manager (workflow.publish via the base role, distinct from administrator) to save a new version', async () => {
-    mockSession = { user: mockManagerUser };
+    mockSession = fixtureIdentitySession(mockManagerUser);
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
       organizationId: DEFAULT_ORGANIZATION_ID,
       stages: [stage(0, 'Renamed by manager')],
@@ -221,7 +236,7 @@ describe('POST /api/workflow-templates/[templateId]/versions — RBAC (Task #11 
   });
 
   it('cross-tenant: a caller with no membership in the target organization is denied at the organization-authorization step, before the RBAC/permission check ever runs', async () => {
-    mockSession = { user: mockMultiOrgUser }; // no membership row in DEFAULT_ORGANIZATION_ID at all
+    mockSession = fixtureIdentitySession(mockMultiOrgUser); // no membership row in DEFAULT_ORGANIZATION_ID at all
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
       organizationId: DEFAULT_ORGANIZATION_ID,
       stages: [stage(0, 'X')],
@@ -241,7 +256,7 @@ describe('POST /api/workflow-templates/[templateId]/versions — RBAC (Task #11 
       createdBy: 'test-admin',
       updatedAt: '2026-09-28T00:00:00.000Z',
     });
-    mockSession = { user: mockReadOnlyUser };
+    mockSession = fixtureIdentitySession(mockReadOnlyUser);
     const response = await postRequest(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, {
       organizationId: DEFAULT_ORGANIZATION_ID,
       stages: [stage(0, 'Renamed via granted readOnly')],
@@ -383,7 +398,7 @@ describe('POST /api/workflow-templates/[templateId]/versions — mock mode', () 
   });
 
   it('returns 404 for a template id that does not belong to this organization', async () => {
-    mockSession = { user: mockMultiOrgUser };
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
     // mockMultiOrgUser's membership in SECOND_MOCK_ORGANIZATION_ID uses the
     // legacy 'caseManager' role string, which resolves no real RBAC grants
     // at all — irrelevant to what this test actually checks (tenant-scoped

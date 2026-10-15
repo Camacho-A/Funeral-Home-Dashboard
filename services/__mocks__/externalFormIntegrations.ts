@@ -1,5 +1,6 @@
 import type { ExternalFormIntegration } from '../../types/externalFormIntegration';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
+import { mockCollection } from './mockStore';
 
 /**
  * The "Jotform application completed" checklist item (Managed Cremations'
@@ -10,11 +11,11 @@ import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
  */
 export const JOTFORM_INTEGRATION_ID = 'integration-jotform-managed-cremations';
 
-export const externalFormIntegrationFixtures: ExternalFormIntegration[] = [
+export const externalFormIntegrationFixtures: ExternalFormIntegration[] = mockCollection('externalFormIntegrationFixtures', (): ExternalFormIntegration[] => [
   {
     id: JOTFORM_INTEGRATION_ID,
     organizationId: DEFAULT_ORGANIZATION_ID,
     provider: 'jotform',
     label: 'JotForm intake application',
   },
-];
+]);

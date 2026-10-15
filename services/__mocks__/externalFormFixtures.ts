@@ -8,6 +8,7 @@ import {
   FIELD_MAP_FIRST_CALL_SHEET,
   FIRST_CALL_SHEET_EXTERNAL_FORM_ID,
 } from '@/domain/externalForms/fieldMapping';
+import { mockCollection } from './mockStore';
 
 /** Manors Jotform integration (case-first architecture, 2026-09). The two
     real Manors form configurations, discovered via the read-only Jotform
@@ -29,7 +30,7 @@ function flattenForDisplay(entries: { qid: string; solisField: string }[]): stri
   return JSON.stringify(Object.fromEntries(entries.map((e) => [e.qid, e.solisField])));
 }
 
-export const externalFormConfigFixtures: ExternalFormConfig[] = [
+export const externalFormConfigFixtures: ExternalFormConfig[] = mockCollection('externalFormConfigFixtures', (): ExternalFormConfig[] => [
   {
     id: VITAL_STATISTICS_FORM_CONFIG_ID,
     organizationId: DEFAULT_ORGANIZATION_ID,
@@ -98,7 +99,7 @@ export const externalFormConfigFixtures: ExternalFormConfig[] = [
     createdAt: '2026-10-06T00:00:00.000Z',
     updatedAt: '2026-10-06T00:00:00.000Z',
   },
-];
+]);
 
-export const caseFormLinkFixtures: CaseFormLink[] = [];
-export const externalFormSubmissionFixtures: ExternalFormSubmission[] = [];
+export const caseFormLinkFixtures: CaseFormLink[] = mockCollection('caseFormLinkFixtures', (): CaseFormLink[] => []);
+export const externalFormSubmissionFixtures: ExternalFormSubmission[] = mockCollection('externalFormSubmissionFixtures', (): ExternalFormSubmission[] => []);

@@ -52,4 +52,42 @@ describe('POST /api/rbac/integrity/reconcile', () => {
     expect(body.record.scopeMarker).toBe('PLATFORM');
     expect(body.record.summary.requiredChanges).toBe(0);
   });
+
+  describe('safe onboarding (2026-10): global apply guard', () => {
+    let priorAllowlist: string | undefined;
+    beforeEach(() => {
+      priorAllowlist = process.env.DEPLOYMENT_ORGANIZATION_IDS;
+      delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+      process.env.PLATFORM_ADMIN_USER_IDS = 'platform-admin-1';
+      mockSession = { user: { id: 'platform-admin-1', email: 'a@b.c', displayName: 'A', source: 'identity' } };
+    });
+    afterEach(() => {
+      if (priorAllowlist === undefined) delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+      else process.env.DEPLOYMENT_ORGANIZATION_IDS = priorAllowlist;
+    });
+
+    it('409 for apply on a deployment restricted by DEPLOYMENT_ORGANIZATION_IDS (e.g. Gus), even with confirmation', async () => {
+      process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+      const response = await post({ mode: 'apply', confirm: 'apply-to-all-organizations' });
+      expect(response.status).toBe(409);
+      expect((await response.json()).code).toBe('global_rbac_mutation_refused');
+    });
+
+    it('dry_run is still allowed on a restricted deployment (read-only)', async () => {
+      process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+      expect((await post({ mode: 'dry_run' })).status).toBe(200);
+    });
+
+    it('400 for apply without the explicit confirmation on an unrestricted deployment', async () => {
+      const response = await post({ mode: 'apply' });
+      expect(response.status).toBe(400);
+      expect((await response.json()).code).toBe('confirmation_required');
+    });
+
+    it('200 for a confirmed apply on an unrestricted deployment (mock data converged → 0 changes)', async () => {
+      const response = await post({ mode: 'apply', confirm: 'apply-to-all-organizations' });
+      expect(response.status).toBe(200);
+      expect((await response.json()).record.summary.requiredChanges).toBe(0);
+    });
+  });
 });

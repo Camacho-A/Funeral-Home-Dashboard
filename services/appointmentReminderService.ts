@@ -1,5 +1,7 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
+import { asNullableString, claimWixSweepRow, deploymentOrganizationWixFilter, isClaimFresh, retainDeploymentRecords } from './scheduledJobs/sweepSupport';
 import {
   mapWixAppointmentReminderItem,
   buildWixAppointmentReminderData,
@@ -259,7 +261,9 @@ async function upsertReminderRow(
     // never a duplicate row. cancelledAt cleared since it's live again.
     if (dataAdapterMode === 'mock') {
       const index = appointmentReminderFixtures.findIndex((r) => r.id === id);
-      appointmentReminderFixtures[index] = { ...appointmentReminderFixtures[index], scheduledFor, status: target.status, cancelledAt: null, updatedAt: now };
+      // sentAt cleared too: on a still-'scheduled'/'cancelled' row it can only
+      // be a sweep's interrupted send claim (see claimReminder), never a real send.
+      appointmentReminderFixtures[index] = { ...appointmentReminderFixtures[index], scheduledFor, status: target.status, cancelledAt: null, sentAt: null, updatedAt: now };
       return;
     }
     const response = await queryWixDataItems<WixAppointmentReminderItem>('appointmentReminders', {
@@ -268,7 +272,7 @@ async function upsertReminderRow(
     });
     const existingItem = response.dataItems[0];
     if (!existingItem) return;
-    const merged = applyAppointmentReminderUpdateToWixData(existingItem.data, { status: target.status, cancelledAt: null, updatedAt: now });
+    const merged = applyAppointmentReminderUpdateToWixData(existingItem.data, { status: target.status, cancelledAt: null, sentAt: null, updatedAt: now });
     // scheduledFor isn't covered by applyAppointmentReminderUpdateToWixData's
     // narrow patch surface (deliberately immutable-looking elsewhere) — set
     // it directly here, the one field a reschedule genuinely needs to move.
@@ -336,24 +340,78 @@ export async function rescheduleRemindersForAppointment(appointment: Appointment
 // ---------------------------------------------------------------------------
 // Reminder sweep support (Phase 34) — the sole, deliberate second
 // instance of "every query in this codebase is organization-scoped"
-// being relaxed for a genuinely system-level cron job. Mirrors
-// notificationService.ts's own equivalent digest-sweep query exactly —
-// org-agnostic, bounded, and structurally contained to the one sweep
-// function below (see notificationService.test.ts's own precedent for
-// the shape of the containing structural test this file gets too).
+// being relaxed for a genuinely system-level cron job, structurally
+// contained to the one sweep function below.
+//
+// Scheduled-job isolation (2026-10, docs/SCHEDULED_JOBS.md): the query is
+// now scoped to this deployment's organizations (DEPLOYMENT_ORGANIZATION_IDS)
+// with every row re-checked before acting; the due-time filter is pushed
+// into the query (`scheduledFor <= now`, ascending) and fully paginated —
+// previously one 250-row page of ALL scheduled rows (including far-future
+// ones) was read and filtered in app code, so a large future backlog could
+// hide due reminders; and each reminder is claimed before sending
+// (claimReminder) so overlapping sweeps never double-send.
 // ---------------------------------------------------------------------------
 
-async function listDueReminders(nowIsoValue: string, dataAdapterMode: DataAdapterMode): Promise<AppointmentReminder[]> {
+type DueReminder = { reminder: AppointmentReminder; wixItemId: string | null };
+
+async function listDueReminders(nowIsoValue: string, dataAdapterMode: DataAdapterMode): Promise<DueReminder[]> {
   if (dataAdapterMode === 'mock') {
-    return appointmentReminderFixtures.filter((r) => r.status === 'scheduled' && r.scheduledFor <= nowIsoValue).slice(0, WIX_FETCH_WINDOW);
+    const due = appointmentReminderFixtures.filter((r) => r.status === 'scheduled' && r.scheduledFor <= nowIsoValue);
+    return retainDeploymentRecords('appointment-reminders', due, (r) => r.organizationId).map((reminder) => ({ reminder, wixItemId: null }));
   }
-  const response = await queryWixDataItems<WixAppointmentReminderItem>('appointmentReminders', {
-    filter: { status: 'scheduled' },
-    paging: { limit: WIX_FETCH_WINDOW },
+  const items = await queryAllWixDataItems<WixAppointmentReminderItem>(
+    'appointmentReminders',
+    { ...deploymentOrganizationWixFilter(), status: 'scheduled', scheduledFor: { $lte: nowIsoValue } },
+    { sort: [{ fieldName: 'scheduledFor', order: 'ASC' }] },
+  );
+  const due = items.flatMap((item): DueReminder[] => {
+    const reminder = mapWixAppointmentReminderItem(item.data);
+    return reminder && reminder.status === 'scheduled' && reminder.scheduledFor <= nowIsoValue ? [{ reminder, wixItemId: item.id }] : [];
   });
-  return response.dataItems
-    .map((item) => mapWixAppointmentReminderItem(item.data))
-    .filter((r): r is AppointmentReminder => r !== null && r.scheduledFor <= nowIsoValue);
+  return retainDeploymentRecords('appointment-reminders', due, (d) => d.reminder.organizationId);
+}
+
+/**
+ * Claim-before-send using the EXISTING `sentAt` field (no schema change):
+ * a compare-and-swap of `sentAt` from the observed value (null) to the
+ * sweep's own timestamp while `status` is still 'scheduled'. Of two
+ * overlapping sweeps only one can win; the loser skips. A 'scheduled' row
+ * with a non-null `sentAt` is therefore "claimed": while fresh it is
+ * skipped; once older than SWEEP_CLAIM_TTL_MS (the claiming sweep crashed
+ * or timed out mid-send) it is marked 'failed' rather than re-sent — a
+ * reminder may already have gone out, and a duplicate family-facing
+ * reminder is worse than a visible, operator-actionable failure.
+ */
+type ClaimDecision = 'claimed' | 'in_flight' | 'abandoned';
+
+async function claimReminder(due: DueReminder, nowIsoValue: string, dataAdapterMode: DataAdapterMode): Promise<ClaimDecision> {
+  const { reminder } = due;
+  const nowMs = new Date(nowIsoValue).getTime();
+  if (dataAdapterMode === 'mock') {
+    const index = appointmentReminderFixtures.findIndex((r) => r.id === reminder.id && r.organizationId === reminder.organizationId);
+    if (index === -1) return 'in_flight';
+    const current = appointmentReminderFixtures[index];
+    if (current.status !== 'scheduled') return 'in_flight';
+    if (current.sentAt) return isClaimFresh(current.sentAt, nowMs) ? 'in_flight' : 'abandoned';
+    appointmentReminderFixtures[index] = { ...current, sentAt: nowIsoValue };
+    return 'claimed';
+  }
+  if (reminder.sentAt) return isClaimFresh(reminder.sentAt, nowMs) ? 'in_flight' : 'abandoned';
+  if (!due.wixItemId) return 'in_flight';
+  const outcome = await claimWixSweepRow({
+    collection: 'appointmentReminders',
+    wixItemId: due.wixItemId,
+    fieldPath: 'sentAt',
+    claimValue: nowIsoValue,
+    condition: { status: { $eq: 'scheduled' }, sentAt: { $eq: null } },
+    isUnchanged: (data) => data.status === 'scheduled' && asNullableString(data.sentAt) === null,
+  });
+  if (outcome === 'unverifiable') {
+    console.warn('[appointment-reminders] conditional claim not applied by the backend; sending without a claim (pre-2026-10 behaviour).');
+    return 'claimed';
+  }
+  return outcome === 'claimed' ? 'claimed' : 'in_flight';
 }
 
 export type AppointmentReminderSweepResult = {
@@ -378,8 +436,22 @@ export async function runAppointmentReminderSweep(dataAdapterMode: DataAdapterMo
 
   const result: AppointmentReminderSweepResult = { considered: due.length, sent: 0, skipped: 0, failed: 0 };
 
-  for (const reminder of due) {
-    await processReminder(reminder, nowIsoValue, dataAdapterMode, result);
+  for (const entry of due) {
+    // Defense in depth — re-checked immediately before acting.
+    if (!isOrganizationAllowedInDeployment(entry.reminder.organizationId)) continue;
+    const claim = await claimReminder(entry, nowIsoValue, dataAdapterMode);
+    if (claim === 'in_flight') continue;
+    if (claim === 'abandoned') {
+      await patchReminder(
+        entry.reminder.organizationId,
+        entry.reminder.id,
+        { status: 'failed', failureReason: 'Reminder send was interrupted (claim expired); not retried to avoid a duplicate reminder.' },
+        dataAdapterMode,
+      );
+      result.failed += 1;
+      continue;
+    }
+    await processReminder(entry.reminder, nowIsoValue, dataAdapterMode, result);
   }
 
   return result;
@@ -393,7 +465,7 @@ async function processReminder(reminder: AppointmentReminder, nowIsoValue: strin
   // appointment here means those hooks somehow didn't run (or ran
   // between the sweep's own read and write, a genuinely narrow race).
   if (!appointment || appointment.status === 'cancelled' || appointment.status === 'completed' || appointment.status === 'no_show') {
-    await patchReminder(reminder.organizationId, reminder.id, { status: 'skipped', failureReason: 'Appointment no longer active.' }, dataAdapterMode);
+    await patchReminder(reminder.organizationId, reminder.id, { status: 'skipped', failureReason: 'Appointment no longer active.', sentAt: null }, dataAdapterMode);
     result.skipped += 1;
     return;
   }
@@ -433,7 +505,7 @@ async function processReminder(reminder: AppointmentReminder, nowIsoValue: strin
     }
   } catch (error) {
     const failureReason = error instanceof Error ? error.message : String(error);
-    await patchReminder(reminder.organizationId, reminder.id, { status: 'failed', failureReason }, dataAdapterMode);
+    await patchReminder(reminder.organizationId, reminder.id, { status: 'failed', failureReason, sentAt: null }, dataAdapterMode);
     result.failed += 1;
     try {
       await recordAppointmentReminderFailed(

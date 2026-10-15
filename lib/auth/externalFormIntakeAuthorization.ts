@@ -1,4 +1,5 @@
 import { getSessionSecret } from '../env';
+import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
 
 /**
  * Automated Jotform intake (2026-10). A short-lived, signed assertion that
@@ -166,6 +167,10 @@ export async function verifyExternalFormIntakeAuthorization(
     if (!isValidShape(payload)) return null;
     if (payload.aud !== EXTERNAL_FORM_INTAKE_AUDIENCE) return null;
     if (payload.expiresAt < now) return null;
+    // Multi-tenant hardening (2026-10): a token for an organization this
+    // deployment does not serve authorizes nothing here, even if signed
+    // with a session secret another deployment happens to share.
+    if (!isOrganizationAllowedInDeployment(payload.organizationId)) return null;
     return payload;
   } catch {
     return null;

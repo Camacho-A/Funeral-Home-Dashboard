@@ -31,14 +31,18 @@
  * exactly like signatureRequestCapability.ts's own disclosed interim
  * state.
  */
-export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+import { getRegisteredOrganizationProfile, registeredProfileMap } from './organizationProfiles';
 
-export const ORGANIZATION_OVERRIDES: Record<string, boolean> = {
-  [MANORS_ORGANIZATION_ID]: false,
-};
+export { MANORS_ORGANIZATION_ID } from './organizationProfiles';
+
+/** 2026-10: derived from domain/organization/organizationProfiles.ts
+    (`features.documentArchivingEnabled`), kept for existing importers. */
+export const ORGANIZATION_OVERRIDES: Record<string, boolean> = registeredProfileMap(
+  (profile) => profile.features.documentArchivingEnabled,
+  (profile) => profile.features.documentArchivingEnabled !== true,
+);
 
 export function isDocumentArchivingEnabled(organizationId: string | null | undefined): boolean {
   if (!organizationId) return true;
-  if (organizationId in ORGANIZATION_OVERRIDES) return ORGANIZATION_OVERRIDES[organizationId];
-  return true;
+  return getRegisteredOrganizationProfile(organizationId).features.documentArchivingEnabled;
 }

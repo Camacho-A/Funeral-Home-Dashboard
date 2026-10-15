@@ -8,7 +8,7 @@ import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
 import { useOrganization } from '@/hooks/useOrganization';
 import { selectionsFromLineItems, customItemSelectionsFromLineItems } from '@/domain/pricing/calculateOrder';
-import { additionalItemsLabel, isManorsOrganization, ADDITIONAL_ITEMS_SUPPORTING_TEXT } from '@/domain/organization/caseOrderTerminology';
+import { additionalItemsLabel, usesAdditionalItemsTerminology, ADDITIONAL_ITEMS_SUPPORTING_TEXT } from '@/domain/organization/caseOrderTerminology';
 import type { CaseOrder, CaseOrderLineItem, ServiceSelections, CustomLineItemSelection } from '@/types/caseOrder';
 import styles from './EditServicesModal.module.css';
 
@@ -91,7 +91,7 @@ export function EditServicesModal({
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <div className={styles.header}>{title}</div>
-      {order && isManorsOrganization(organizationId) && (
+      {order && usesAdditionalItemsTerminology(organizationId) && (
         <p className={styles.supportingText}>{ADDITIONAL_ITEMS_SUPPORTING_TEXT}</p>
       )}
 

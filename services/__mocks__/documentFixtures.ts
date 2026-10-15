@@ -2,6 +2,7 @@ import type { DocumentTemplate } from '../../types/documentTemplate';
 import type { CaseDocument } from '../../types/caseDocument';
 import type { SignatureRequest } from '../../types/signatureRequest';
 import type { SignatureRecord } from '../../types/signatureRecord';
+import { mockCollection } from './mockStore';
 
 /**
  * Phase 25 (Document Generation & Template Management). Mock-mode
@@ -14,10 +15,10 @@ import type { SignatureRecord } from '../../types/signatureRecord';
  * exactly matching `services/__mocks__/workflowTemplates.ts`'s own
  * precedent for `WorkflowTemplate`.
  */
-export const documentTemplateFixtures: DocumentTemplate[] = [];
-export const caseDocumentFixtures: CaseDocument[] = [];
+export const documentTemplateFixtures: DocumentTemplate[] = mockCollection('documentTemplateFixtures', (): DocumentTemplate[] => []);
+export const caseDocumentFixtures: CaseDocument[] = mockCollection('caseDocumentFixtures', (): CaseDocument[] => []);
 
 /** Phase 26 (Electronic Signatures & Authorization Workflows). Same
     convention — both start empty. */
-export const signatureRequestFixtures: SignatureRequest[] = [];
-export const signatureRecordFixtures: SignatureRecord[] = [];
+export const signatureRequestFixtures: SignatureRequest[] = mockCollection('signatureRequestFixtures', (): SignatureRequest[] => []);
+export const signatureRecordFixtures: SignatureRecord[] = mockCollection('signatureRecordFixtures', (): SignatureRecord[] => []);

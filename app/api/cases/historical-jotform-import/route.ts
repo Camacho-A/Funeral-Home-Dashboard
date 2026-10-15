@@ -18,7 +18,8 @@ import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { latestTemplateVersion } from '@/domain/workflow/snapshot';
 import { buildIntakeFieldValues } from '@/domain/workflow/resolveIntake';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
-import { deriveHistoricalCaseNumber, type HistoricalCaseNumberResult } from '@/domain/externalForms/historicalCaseNumber';
+import { deriveHistoricalCaseNumber, describePrefixMismatch, type HistoricalCaseNumberResult } from '@/domain/externalForms/historicalCaseNumber';
+import { resolveCaseNumberPrefix } from '@/domain/cases/caseNumber';
 import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { externalFormSubmissionId, isCaseCreationClaimToken } from '@/types/externalFormSubmission';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
@@ -126,6 +127,9 @@ function describeHistoricalCaseNumberBlock(result: Exclude<HistoricalCaseNumberR
   if (result.status === 'malformed') {
     return `The historical case number on this submission ("${result.raw}") is not in the expected YYYY-NNN format.`;
   }
+  if (result.status === 'prefix_mismatch') {
+    return describePrefixMismatch(result);
+  }
   return `The Case No. fields on this submission disagree (${result.primary} vs ${result.secondary}) — this requires manual review before import.`;
 }
 
@@ -173,13 +177,15 @@ export async function GET(request: Request) {
 
   let jotformSubmission;
   try {
-    jotformSubmission = await fetchSubmissionAnswers(externalSubmissionId);
+    jotformSubmission = config.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+      : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });
   }
 
   const matchesConfig = jotformSubmission.formId === config.externalFormId;
-  const mapped = matchesConfig ? extractMappedFieldsForForm(config.provider, config.externalFormId, jotformSubmission.answers) : {};
+  const mapped = matchesConfig ? extractMappedFieldsForForm(config, jotformSubmission.answers) : {};
 
   // Read-only lookup — never inserts. Purely informational, so the UI can
   // warn "already imported" before the staff member fills anything in.
@@ -195,7 +201,7 @@ export async function GET(request: Request) {
   let historicalCaseNumberBlockedReason: string | null = null;
   let historicalDuplicateCaseId: string | null = null;
   if (matchesConfig) {
-    const historicalResult = deriveHistoricalCaseNumber(jotformSubmission.answers);
+    const historicalResult = deriveHistoricalCaseNumber(jotformSubmission.answers, resolveCaseNumberPrefix(null, { organizationId: resolvedOrganizationId }));
     if (historicalResult.status === 'ok') {
       historicalCaseNumber = historicalResult.caseNumber;
       const duplicate = await findCaseByCaseNumber(resolvedOrganizationId, historicalCaseNumber, dataAdapterMode);
@@ -262,7 +268,9 @@ export async function POST(request: Request) {
 
   let jotformSubmission;
   try {
-    jotformSubmission = await fetchSubmissionAnswers(externalSubmissionId);
+    jotformSubmission = config.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+      : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });
   }
@@ -271,7 +279,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This Jotform submission does not belong to the selected form.' }, { status: 400 });
   }
 
-  const mappedFields = extractMappedFieldsForForm(config.provider, config.externalFormId, jotformSubmission.answers);
+  const mappedFields = extractMappedFieldsForForm(config, jotformSubmission.answers);
 
   // Claim the submission itself — shared with the "link to existing case"
   // importer via the same deterministic id.
@@ -325,7 +333,7 @@ export async function POST(request: Request) {
       // claim and blocks — this route exists specifically to preserve a
       // legitimate historical number, so silently falling back to a
       // fresh production number would reproduce the exact bug this fixes.
-      const historicalResult = deriveHistoricalCaseNumber(jotformSubmission.answers);
+      const historicalResult = deriveHistoricalCaseNumber(jotformSubmission.answers, resolveCaseNumberPrefix(null, { organizationId }));
       if (historicalResult.status !== 'ok') {
         await externalFormSubmissionService.revertCaseCreationClaim(submission.id, claim.claimToken, dataAdapterMode);
         return NextResponse.json(
@@ -442,7 +450,7 @@ export async function POST(request: Request) {
     console.error('Failed to record external_form.submission_linked activity event:', error instanceof Error ? error.message : error);
   }
 
-  const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode);
+  const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode, { config });
 
   return NextResponse.json({ caseId, caseNumber, alreadyImported: false, link, submission: updatedSubmission, pdf: pdfResult });
 }

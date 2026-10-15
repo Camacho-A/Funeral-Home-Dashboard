@@ -83,11 +83,11 @@ function mockFetchFor(options: {
   });
 }
 
-function renderPanel() {
-  const queryClient = new QueryClient();
+function renderPanel(organizationId?: string, options: { retry?: boolean } = {}) {
+  const queryClient = options.retry === false ? new QueryClient({ defaultOptions: { queries: { retry: false } } }) : new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={organizationId}>
         <CaseNumberingPanel />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -277,5 +277,77 @@ describe('CaseNumberingPanel — case-number sequence resync', () => {
     await screen.findByText("You don't have access to Case Numbering.");
     await act(async () => {});
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/case-sequence/resync'))).toBe(false);
+  });
+});
+
+/**
+ * Organization-specific numbering (2026-10). Gus Camacho (`gus-camacho-jr`,
+ * prefix M) gets generic content — its own prefix and next number from the
+ * server — and never sees (or queries) the Manors-only go-live cutover.
+ */
+describe('CaseNumberingPanel — organization-specific prefix', () => {
+  const GUS_PLAN_BODY = {
+    organizationId: 'gus-camacho-jr',
+    year: 2026,
+    caseNumberPrefix: 'M',
+    currentNextSequence: null,
+    targetNextSequence: null,
+    currentCaseNumber: null,
+    targetCaseNumber: null,
+    nextCaseNumber: 'M2026-001',
+    needsResync: false,
+    collidingCaseNumbers: [],
+    reason: 'No 2026 case sequence exists yet for this organization, so there is nothing to resync.',
+  };
+
+  it('Gus shows its own M prefix and next number, with no Manors cutover or wording', async () => {
+    const fetchMock = mockFetchFor({ permissions: ['caseNumber.manage', 'user.manageRoles'], resyncBody: GUS_PLAN_BODY, migrationBody: { organizationId: 'gus-camacho-jr', applicable: false, needsMigration: false } });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel('gus-camacho-jr');
+    expect(await screen.findByText('M2026-001')).toBeInTheDocument();
+    expect(screen.getByTestId('case-number-prefix')).toHaveTextContent('M');
+    expect(screen.getByText('2026 Case Numbering')).toBeInTheDocument();
+    await act(async () => {});
+    expect(screen.queryByText('Prepare SOLIS Case Numbering')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Manors/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/B20\d\d-/)).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('manors-go-live-cutover'))).toBe(false);
+  });
+
+  it('Gus surfaces a lag with M numbers only', async () => {
+    const fetchMock = mockFetchFor({
+      permissions: ['caseNumber.manage'],
+      resyncBody: {
+        ...GUS_PLAN_BODY,
+        currentNextSequence: 12,
+        targetNextSequence: 13,
+        currentCaseNumber: 'M2026-012',
+        targetCaseNumber: 'M2026-013',
+        nextCaseNumber: 'M2026-012',
+        needsResync: true,
+        collidingCaseNumbers: ['M2026-012'],
+        reason: null,
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel('gus-camacho-jr');
+    expect(await screen.findByText(/Case M2026-012 already exists/)).toBeInTheDocument();
+    expect(screen.getByText(/make M2026-013 the next number/)).toBeInTheDocument();
+  });
+
+  it('Gus shows a clear error when the numbering state cannot be loaded', async () => {
+    const fetchMock = mockFetchFor({ permissions: ['caseNumber.manage'], resyncStatus: 400, resyncBody: { error: 'Case sequence resync only applies when DATA_ADAPTER=wix.' } });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel('gus-camacho-jr', { retry: false });
+    expect(await screen.findByRole('alert')).toHaveTextContent('only applies when DATA_ADAPTER=wix');
+  });
+
+  it('Manors keeps its B prefix and its cutover content', async () => {
+    const fetchMock = mockFetchFor({ permissions: ['caseNumber.manage'], eligibilityStatus: 200, eligibilityBody: { ...ELIGIBILITY_BODY, eligible: true, currentNextSequence: 34 } });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel('managed-cremations');
+    expect(await screen.findByText('B2026-034')).toBeInTheDocument();
+    expect(screen.getByTestId('case-number-prefix')).toHaveTextContent('B');
+    expect(screen.getAllByText('Prepare SOLIS Case Numbering').length).toBeGreaterThan(0);
   });
 });
