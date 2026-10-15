@@ -333,21 +333,19 @@ function BrandingSection({ organizationName }: { organizationName: string }) {
             removeTitle="Remove Logo"
             removeMessage="This organization's logo will be removed from the sidebar. You can upload a new one at any time."
           />
-          <div style={{ marginTop: 20 }}>
-            <LogoSlot
-              slot="signIn"
-              label="Sign-in logo"
-              url={brandingQuery.data?.signInLogoUrl ?? null}
-              organizationName={organizationName}
-              emptyHelp="No sign-in logo uploaded — the sidebar logo is used instead."
-              guidance="Shown large on the sign-in screen. Use your full logo, including your organization's name. PNG, JPEG, or WEBP. Up to 5MB."
-              uploadInputLabel="Upload sign-in logo"
-              actionNoun="sign-in logo"
-              removeButtonLabel="Remove Sign-in Logo"
-              removeTitle="Remove Sign-in Logo"
-              removeMessage="Your sign-in screen will fall back to the sidebar logo. You can upload a new one at any time."
-            />
-          </div>
+          {/*
+            The sign-in logo upload was removed from Settings (2026-10) at
+            the owner's request: one logo control is what this screen is
+            meant to offer.
+
+            Only the CONTROL is gone. `signInLogoUrl` remains on the
+            branding record, the upload route still accepts the `signIn`
+            slot, and app/login/branding.ts still prefers it when set —
+            so no stored value is lost and nothing has to be migrated. The
+            sign-in screen falls back to the sidebar logo, which is what
+            every organization is already using (Manors' value is null).
+            Restoring the control is re-adding this block.
+          */}
         </>
       )}
     </section>

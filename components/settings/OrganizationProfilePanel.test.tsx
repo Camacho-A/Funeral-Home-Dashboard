@@ -283,35 +283,30 @@ describe('OrganizationProfilePanel — Organization Branding (logo)', () => {
   });
 
   /**
-   * Sign-in logo (2026-10). A second, separate slot: the sidebar renders
-   * its logo at 30px, where a full lockup is an unreadable smudge, while
-   * the sign-in card wants exactly that lockup because it carries the
-   * organization's name.
+   * The sign-in logo upload was removed from Settings (2026-10) at the
+   * owner's request: this screen offers one logo control.
+   *
+   * Only the CONTROL went. `signInLogoUrl`, the route's `signIn` slot and
+   * the login screen's preference for it all remain, so no stored value
+   * is lost — which is why this pins the ABSENCE of the control rather
+   * than the absence of the feature.
    */
-  it('uploads the sign-in logo to its own slot, leaving the sidebar logo alone', async () => {
-    mockBranding('https://blob.example.com/mark.png');
-    vi.spyOn(organizationsService, 'uploadBrandingLogo').mockResolvedValue({
-      organizationId: DEFAULT_ORGANIZATION_ID,
-      logoUrl: 'https://blob.example.com/mark.png',
-      signInLogoUrl: 'https://blob.example.com/signin.png',
-      primaryColor: null,
-      secondaryColor: null,
-      accentColor: null,
-      emailFromName: null,
-      documentFooter: null,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    });
+  it('offers one logo control, not two', async () => {
+    mockBranding('https://example.com/org-logo.png');
     renderPanel();
 
-    const file = new File(['x'], 'lockup.png', { type: 'image/png' });
-    const input = await screen.findByLabelText('Upload sign-in logo');
-    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByLabelText('Upload organization logo')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Upload sign-in logo')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign-in logo')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove Sign-in Logo' })).not.toBeInTheDocument();
+  });
 
-    await waitFor(() =>
-      expect(organizationsService.uploadBrandingLogo).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, file, 'signIn'),
-    );
-    // The sidebar slot is untouched — two logos, two independent controls.
-    expect(organizationsService.uploadBrandingLogo).toHaveBeenCalledTimes(1);
+  it("leaves the organization's own logo and its controls untouched", async () => {
+    mockBranding('https://example.com/org-logo.png');
+    renderPanel();
+
+    const img = await screen.findByRole('img', { name: /logo/i });
+    expect(img).toHaveAttribute('src', 'https://example.com/org-logo.png');
+    expect(screen.getByRole('button', { name: 'Remove Logo' })).toBeInTheDocument();
   });
 });
