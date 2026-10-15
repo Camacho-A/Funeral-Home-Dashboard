@@ -1,5 +1,5 @@
 import { getWixServerConfig } from './env';
-import { invalidateRequestScoped } from './requestScope';
+import { invalidateRequestScoped } from './requestMemo';
 
 /**
  * Phase 15A (Wix Organization Read Integration). Direct Wix Data REST API

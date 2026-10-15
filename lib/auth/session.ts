@@ -1,4 +1,7 @@
 import { cookies } from 'next/headers';
+// Registers request-scoped memoization (lib/requestMemo.ts) on the server;
+// every authenticated server path loads this module.
+import '../requestScope';
 import type { AuthSession } from '../../types/auth';
 import { SESSION_COOKIE_NAME, createSessionToken, verifySessionToken, sessionDurationSecondsFor } from './sessionToken';
 

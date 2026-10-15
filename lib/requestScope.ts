@@ -1,7 +1,10 @@
 import { headers } from 'next/headers';
+import { registerRequestMemo } from './requestMemo';
 
 /**
- * Request-scoped memoization (performance phase 1, 2026-10).
+ * Request-scoped memoization (performance phase 1, 2026-10) — the
+ * server-only implementation behind lib/requestMemo.ts, which is what
+ * callers import. Loading this module registers it.
  *
  * Deduplicates identical backend reads made more than once while serving
  * ONE request — e.g. two permission checks in the same Route Handler that
@@ -69,3 +72,5 @@ export async function invalidateRequestScoped(prefix: string): Promise<void> {
     if (key.startsWith(prefix)) scope.delete(key);
   }
 }
+
+registerRequestMemo({ memo: requestScopedMemo, invalidate: invalidateRequestScoped });

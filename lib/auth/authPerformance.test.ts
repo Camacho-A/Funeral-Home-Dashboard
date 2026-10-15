@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWix } from './__tests__/fakeWix';
+// ./session is mocked below, so load the request-scope implementation the
+// way the real lib/auth/session.ts does.
+import '../requestScope';
 
 /**
  * Performance phase 1 (2026-10) — Wix round-trips and security behaviour of

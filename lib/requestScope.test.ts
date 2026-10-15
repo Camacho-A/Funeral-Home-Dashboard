@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const request = vi.hoisted(() => ({ current: {} as object | null }));
 vi.mock('next/headers', () => ({
+  cookies: async () => ({ get: () => undefined, set: () => undefined, delete: () => undefined }),
   headers: async () => {
     if (!request.current) throw new Error('`headers` was called outside a request scope.');
     return request.current;
@@ -65,5 +66,29 @@ describe('requestScopedMemo', () => {
     await requestScopedMemo('permissions:x', compute);
     await requestScopedMemo('other', compute);
     expect(compute).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('registration (lib/requestMemo.ts)', () => {
+  it('loading the server session module registers the request-scope implementation', async () => {
+    vi.resetModules();
+    const registry = await import('./requestMemo');
+    expect(registry.isRequestMemoRegistered()).toBe(false);
+    await import('./auth/session');
+    expect(registry.isRequestMemoRegistered()).toBe(true);
+
+    const compute = vi.fn(async () => 'value');
+    await registry.requestScopedMemo('k', compute);
+    await registry.requestScopedMemo('k', compute);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it('unregistered (e.g. in the browser), every call computes directly', async () => {
+    vi.resetModules();
+    const registry = await import('./requestMemo');
+    const compute = vi.fn(async () => 'value');
+    await registry.requestScopedMemo('k', compute);
+    await registry.requestScopedMemo('k', compute);
+    expect(compute).toHaveBeenCalledTimes(2);
   });
 });

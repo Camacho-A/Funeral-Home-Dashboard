@@ -8,7 +8,7 @@ import type { RolePermission } from '../types/rolePermission';
 import type { PermissionKey } from '../domain/rbac/permissionCatalog';
 import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
 import { applyPermissionOverrides } from '../domain/rbac/permissionOverrides';
-import { requestScopedMemo } from '../lib/requestScope';
+import { requestScopedMemo } from '../lib/requestMemo';
 import { roleFixtures, rolePermissionFixtures, organizationRolePermissionOverrideFixtures } from './__mocks__/rbacFixtures';
 
 /**
