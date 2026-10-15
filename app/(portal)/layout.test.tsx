@@ -106,9 +106,14 @@ async function renderLayoutFresh(): Promise<{ element: ReactElement | null; redi
 }
 
 function organizationIdOf(element: ReactElement): string {
-  // <CaseSearchProvider><OrganizationProvider organizationId=...>
-  const organizationProvider = (element.props as { children: ReactElement }).children;
+  // <ScopedQueryClientProvider><CaseSearchProvider><OrganizationProvider organizationId=...>
+  const caseSearchProvider = (element.props as { children: ReactElement }).children;
+  const organizationProvider = (caseSearchProvider.props as { children: ReactElement }).children;
   return (organizationProvider.props as { organizationId: string }).organizationId;
+}
+
+function queryCacheScopeOf(element: ReactElement): string | null {
+  return element.key;
 }
 
 describe('PortalLayout — identity login over mock data', () => {
@@ -121,6 +126,8 @@ describe('PortalLayout — identity login over mock data', () => {
 
     expect(result.redirect).toBeNull();
     expect(organizationIdOf(result.element!)).toBe(GUS_ORGANIZATION_ID);
+    // The client query cache belongs to this identity in this organization only.
+    expect(queryCacheScopeOf(result.element!)).toMatch(new RegExp(`^staff:[^:]+:${GUS_ORGANIZATION_ID}$`));
     expect(jar.mutationsDuringRender).toBe(0);
   });
 

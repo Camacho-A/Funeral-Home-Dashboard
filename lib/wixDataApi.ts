@@ -1,4 +1,5 @@
 import { getWixServerConfig } from './env';
+import { invalidateRequestScoped } from './requestScope';
 
 /**
  * Phase 15A (Wix Organization Read Integration). Direct Wix Data REST API
@@ -181,6 +182,20 @@ function wixDataHeaders(apiKey: string, siteId: string) {
 }
 
 /**
+ * Every Wix write goes through here (performance phase 1, 2026-10): once a
+ * request has written anything, the reads it memoized earlier in the same
+ * request (lib/requestScope.ts — e.g. a resolved role's permissions) may be
+ * out of date, so they are all dropped, whether the write succeeded or not.
+ */
+async function wixWriteFetch(input: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } finally {
+    await invalidateRequestScoped('');
+  }
+}
+
+/**
  * Phase 16 (Wix Write Integration). Inserts a new item. `itemId`, if
  * given, becomes the Wix item's own system `_id` — see
  * docs/WIX_DATA_SCHEMA.md's "Known limitations": `cases` (and, for the
@@ -199,7 +214,7 @@ export async function insertWixDataItem<Item = Record<string, unknown>>(
 ): Promise<WixDataItem<Item>> {
   const { apiKey, siteId } = getWixServerConfig();
 
-  const response = await fetch('https://www.wixapis.com/wix-data/v2/items', {
+  const response = await wixWriteFetch('https://www.wixapis.com/wix-data/v2/items', {
     method: 'POST',
     headers: wixDataHeaders(apiKey, siteId),
     body: JSON.stringify({
@@ -238,7 +253,7 @@ export async function updateWixDataItem<Item = Record<string, unknown>>(
 ): Promise<WixDataItem<Item>> {
   const { apiKey, siteId } = getWixServerConfig();
 
-  const response = await fetch(
+  const response = await wixWriteFetch(
     `https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}?dataCollectionId=${encodeURIComponent(dataCollectionId)}`,
     {
       method: 'PUT',
@@ -261,7 +276,7 @@ export async function updateWixDataItem<Item = Record<string, unknown>>(
 export async function deleteWixDataItem(dataCollectionId: string, wixItemId: string): Promise<void> {
   const { apiKey, siteId } = getWixServerConfig();
 
-  const response = await fetch(
+  const response = await wixWriteFetch(
     `https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}?dataCollectionId=${encodeURIComponent(dataCollectionId)}`,
     {
       method: 'DELETE',
@@ -321,7 +336,7 @@ export async function conditionalPatchWixDataItem<Item = Record<string, unknown>
 ): Promise<{ applied: true; dataItem: WixDataItem<Item> } | { applied: false }> {
   const { apiKey, siteId } = getWixServerConfig();
 
-  const response = await fetch(`https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}`, {
+  const response = await wixWriteFetch(`https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}`, {
     method: 'PATCH',
     headers: wixDataHeaders(apiKey, siteId),
     body: JSON.stringify({
@@ -363,7 +378,7 @@ export async function incrementWixDataField<Item = Record<string, unknown>>(
 ): Promise<WixDataItem<Item>> {
   const { apiKey, siteId } = getWixServerConfig();
 
-  const response = await fetch(
+  const response = await wixWriteFetch(
     `https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}`,
     {
       method: 'PATCH',

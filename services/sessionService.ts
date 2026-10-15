@@ -175,7 +175,19 @@ async function persistSessionUpdate(
 export async function touchSession(sessionId: string, dataAdapterMode: DataAdapterMode): Promise<IdentitySession | null> {
   const session = await getSessionById(sessionId, dataAdapterMode);
   if (!session) return null;
+  return touchLoadedSession(session, dataAdapterMode);
+}
 
+/**
+ * Performance phase 1 (2026-10): `touchSession` for a caller that has
+ * just read the row itself (lib/auth/resolveIdentitySession.ts) — the
+ * same throttle and the same write, without reading the same row a second
+ * time. The throttle decision uses that caller's fresh read; the write
+ * itself still re-reads the row (persistSessionUpdate) and merges onto
+ * it, exactly as before.
+ */
+export async function touchLoadedSession(session: IdentitySession, dataAdapterMode: DataAdapterMode): Promise<IdentitySession | null> {
+  const sessionId = session.id;
   const now = Date.now();
   if (now - new Date(session.lastSeenAt).getTime() < SESSION_TOUCH_THROTTLE_MS) {
     return session;

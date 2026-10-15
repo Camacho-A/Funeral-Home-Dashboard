@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
+import { ScopedQueryClientProvider } from '@/components/providers/ScopedQueryClientProvider';
 import { CaseSearchProvider } from '@/hooks/useCaseSearch';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { SessionProvider } from '@/hooks/useSession';
@@ -7,7 +8,7 @@ import type { Session } from '@/types/session';
 import { getSession, clearSessionPath } from '@/lib/auth/session';
 import { resolveAuthorizationContext, isNonIdentityAuthorizationPermitted } from '@/lib/auth/authorize';
 import { resolveIdentitySession } from '@/lib/auth/resolveIdentitySession';
-import { resolveMembershipAuthorizationContext } from '@/lib/auth/resolveMembershipAuthorizationContext';
+import { resolveMembershipAuthorizationContext, prefetchMembershipsForSession } from '@/lib/auth/resolveMembershipAuthorizationContext';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode, getAuthAdapterMode } from '@/lib/env';
 
@@ -60,12 +61,15 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   if (session.user.source === 'identity') {
+    // Performance phase 1 (2026-10): memberships are read alongside the
+    // session check; they are only used if that check passes.
+    const prefetched = prefetchMembershipsForSession(session.user.id, dataAdapterMode);
     const resolved = await resolveIdentitySession(session, dataAdapterMode);
     if (!resolved.valid) {
       redirect(clearSessionPath(resolved.reason));
     }
 
-    const membershipResult = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode);
+    const membershipResult = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, undefined, prefetched);
     if (!membershipResult.granted) {
       redirect(`/login?error=${membershipResult.reason}`);
     }
@@ -73,13 +77,15 @@ export default async function PortalLayout({ children }: { children: React.React
     const currentSession = await resolveCurrentSession(membershipResult.context, session.user.displayName, session.user.email, dataAdapterMode);
 
     return (
-      <CaseSearchProvider>
-        <OrganizationProvider organizationId={membershipResult.context.organizationId} dataAdapterMode={dataAdapterMode}>
-          <SessionProvider value={currentSession}>
-            <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
-          </SessionProvider>
-        </OrganizationProvider>
-      </CaseSearchProvider>
+      <ScopedQueryClientProvider key={queryCacheScope(membershipResult.context)}>
+        <CaseSearchProvider>
+          <OrganizationProvider organizationId={membershipResult.context.organizationId} dataAdapterMode={dataAdapterMode}>
+            <SessionProvider value={currentSession}>
+              <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
+            </SessionProvider>
+          </OrganizationProvider>
+        </CaseSearchProvider>
+      </ScopedQueryClientProvider>
     );
   }
 
@@ -91,14 +97,22 @@ export default async function PortalLayout({ children }: { children: React.React
   const currentSession = await resolveCurrentSession(result.context, session.user.displayName, session.user.email, dataAdapterMode);
 
   return (
-    <CaseSearchProvider>
-      <OrganizationProvider organizationId={result.context.organizationId} dataAdapterMode={dataAdapterMode}>
-        <SessionProvider value={currentSession}>
-          <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
-        </SessionProvider>
-      </OrganizationProvider>
-    </CaseSearchProvider>
+    <ScopedQueryClientProvider key={queryCacheScope(result.context)}>
+        <CaseSearchProvider>
+        <OrganizationProvider organizationId={result.context.organizationId} dataAdapterMode={dataAdapterMode}>
+          <SessionProvider value={currentSession}>
+            <AppShell authAdapterMode={authAdapterMode}>{children}</AppShell>
+          </SessionProvider>
+        </OrganizationProvider>
+      </CaseSearchProvider>
+      </ScopedQueryClientProvider>
   );
+}
+
+/** Performance phase 1 (2026-10): the client query cache belongs to one
+    validated identity in one organization — see ScopedQueryClientProvider. */
+function queryCacheScope(context: { userId: string; organizationId: string }): string {
+  return `staff:${context.userId}:${context.organizationId}`;
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { IdentitySession } from '../../types/identitySession';
 import type { AuthorizationContext } from '../../types/authorization';
+import type { Membership } from '../../types/membership';
 import type { DataAdapterMode } from '../env';
 import { listMembershipsForIdentity, isActiveMembership } from '../../services/membershipService';
 import { setSessionOrganization } from '../../services/sessionService';
@@ -40,10 +41,28 @@ export type MembershipAuthorizeResult =
       reason: 'no_active_membership' | 'organization_mismatch' | 'selection_required' | 'organization_not_allowed';
     };
 
+/** Memberships a caller started reading in parallel with session
+    validation (performance phase 1, 2026-10 — see
+    `prefetchMembershipsForSession`). Used only when `identityId` matches
+    the validated session's own identity; otherwise ignored and re-read. */
+export type PrefetchedMemberships = { identityId: string; memberships: Promise<Membership[]> };
+
+/** Starts the membership read for the identity a signed cookie names, so
+    it runs alongside resolveIdentitySession instead of after it. Read-only;
+    the result is only ever used once that session has been validated (and
+    resolveIdentitySession has confirmed the session row belongs to this
+    same identity). */
+export function prefetchMembershipsForSession(identityId: string, dataAdapterMode: DataAdapterMode): PrefetchedMemberships {
+  const memberships = listMembershipsForIdentity(identityId, dataAdapterMode);
+  memberships.catch(() => {});
+  return { identityId, memberships };
+}
+
 export async function resolveMembershipAuthorizationContext(
   identitySession: IdentitySession,
   dataAdapterMode: DataAdapterMode,
   requestedOrganizationId?: string,
+  prefetched?: PrefetchedMemberships,
 ): Promise<MembershipAuthorizeResult> {
   if (requestedOrganizationId != null && !isOrganizationAllowedInDeployment(requestedOrganizationId)) {
     return { granted: false, reason: 'organization_not_allowed' };
@@ -52,7 +71,11 @@ export async function resolveMembershipAuthorizationContext(
     return { granted: false, reason: 'organization_not_allowed' };
   }
 
-  const memberships = (await listMembershipsForIdentity(identitySession.identityId, dataAdapterMode))
+  const allMemberships =
+    prefetched && prefetched.identityId === identitySession.identityId
+      ? await prefetched.memberships
+      : await listMembershipsForIdentity(identitySession.identityId, dataAdapterMode);
+  const memberships = allMemberships
     .filter(isActiveMembership)
     .filter((membership) => isOrganizationAllowedInDeployment(membership.organizationId));
 

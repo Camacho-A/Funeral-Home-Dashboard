@@ -8,6 +8,7 @@ import type { RolePermission } from '../types/rolePermission';
 import type { PermissionKey } from '../domain/rbac/permissionCatalog';
 import { resolveRoleKeyAlias } from '../domain/rbac/legacyRoleAliases';
 import { applyPermissionOverrides } from '../domain/rbac/permissionOverrides';
+import { requestScopedMemo } from '../lib/requestScope';
 import { roleFixtures, rolePermissionFixtures, organizationRolePermissionOverrideFixtures } from './__mocks__/rbacFixtures';
 
 /**
@@ -140,10 +141,28 @@ async function fetchOrganizationRoleOverrides(
     `canXxx` check in the codebase) receives the effective, override-aware
     set automatically, with no change needed at any other call site. */
 export async function resolvePermissionKeysForRole(roleKey: string, organizationId: string, dataAdapterMode: DataAdapterMode): Promise<Set<PermissionKey>> {
+  if (dataAdapterMode === 'mock') return resolvePermissionKeysForRoleFresh(roleKey, organizationId, dataAdapterMode);
+  // Performance phase 1 (2026-10): deduplicated within ONE request only
+  // (lib/requestScope.ts) — never across requests, so the "every check
+  // reads the current role/permission state" guarantee above still holds
+  // per request. Keyed by every input. Each caller gets its own copy, so
+  // mutating a returned Set can never affect another check.
+  const canonicalKey = resolveRoleKeyAlias(roleKey);
+  const shared = await requestScopedMemo(`permissions:${dataAdapterMode}:${organizationId}:${canonicalKey}`, () =>
+    resolvePermissionKeysForRoleFresh(roleKey, organizationId, dataAdapterMode),
+  );
+  return new Set(shared);
+}
+
+async function resolvePermissionKeysForRoleFresh(roleKey: string, organizationId: string, dataAdapterMode: DataAdapterMode): Promise<Set<PermissionKey>> {
+  // The overrides read needs only the organization and role key, so it
+  // runs alongside the role lookup instead of after it. It is discarded
+  // unread when the role does not resolve (fail-closed is unchanged).
+  const overridesPromise = fetchOrganizationRoleOverrides(organizationId, resolveRoleKeyAlias(roleKey), dataAdapterMode);
+  overridesPromise.catch(() => {});
   const role = await resolveRoleForKey(roleKey, organizationId, dataAdapterMode);
   if (!role) return new Set();
-  const basePermissions = await fetchRolePermissions(role.id, dataAdapterMode);
-  const overrides = await fetchOrganizationRoleOverrides(organizationId, resolveRoleKeyAlias(roleKey), dataAdapterMode);
+  const [basePermissions, overrides] = await Promise.all([fetchRolePermissions(role.id, dataAdapterMode), overridesPromise]);
   return applyPermissionOverrides(basePermissions, overrides);
 }
 

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { createQueryClient } from '@/lib/queryClient';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { SessionProvider, DEFAULT_SESSION } from '@/hooks/useSession';
 
@@ -24,28 +25,20 @@ import { SessionProvider, DEFAULT_SESSION } from '@/hooks/useSession';
  * measured ~9s/12 retries on one newly-403ing accounting query before
  * this fix). Every other error keeps the library's normal up-to-3-retries
  * behavior — this is deliberately narrow (recognizing one error shape),
- * not a broader retry/caching redesign. Relies on `error.status` being
+ * not a broader retry/caching redesign (performance phase 1, 2026-10,
+ * moved it with the other defaults to lib/queryClient.ts). Relies on `error.status` being
  * set by the calling client's own `parseJsonOrThrow` (currently
  * `lib/identityAuthClient.ts` and `lib/accountingClient.ts` — the two
  * implicated in this task); a query whose client doesn't set `.status`
  * simply falls back to the default retry count, unchanged from before.
  */
-export function isAuthorizationError(error: unknown): boolean {
-  const status = (error as { status?: unknown } | null)?.status;
-  return status === 401 || status === 403;
-}
+export { isAuthorizationError } from '@/lib/queryClient';
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            retry: (failureCount, error) => !isAuthorizationError(error) && failureCount < 3,
-          },
-        },
-      }),
-  );
+  // Shared defaults (staleTime, retry, post-mutation staleness) live in
+  // lib/queryClient.ts. Signed-in portals replace this client with one of
+  // their own per account (components/providers/ScopedQueryClientProvider.tsx).
+  const [queryClient] = useState(createQueryClient);
 
   return (
     <QueryClientProvider client={queryClient}>

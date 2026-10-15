@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { caseDocumentsKey } from './useCaseDocumentLibrary';
 import {
   fetchCaseForms,
   generateFormLink,
@@ -111,7 +112,10 @@ export function useRetryFormPdf(organizationId: string, caseId: string) {
     mutationFn: (submissionId: string) => retryFormPdf(organizationId, submissionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: caseFormsKey(organizationId, caseId) });
-      queryClient.invalidateQueries({ queryKey: ['caseDocuments', organizationId, caseId] });
+      // Performance phase 1 (2026-10): was ['caseDocuments', …], the key of
+      // the unused hooks/useCaseDocuments.ts — the Documents tab reads
+      // caseDocumentsKey, so a retried PDF never appeared until a refetch.
+      queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) });
     },
   });
 }

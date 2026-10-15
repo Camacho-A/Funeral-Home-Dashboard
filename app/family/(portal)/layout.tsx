@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getFamilySession, clearFamilySession } from '@/lib/auth/familySession';
 import { resolveFamilySession } from '@/lib/auth/resolveFamilySession';
+import { ScopedQueryClientProvider } from '@/components/providers/ScopedQueryClientProvider';
 import { getDataAdapterMode } from '@/lib/env';
 import { FamilyShell } from '@/components/family/FamilyShell';
 
@@ -33,5 +34,11 @@ export default async function FamilyPortalLayout({ children }: { children: React
     redirect('/family/login');
   }
 
-  return <FamilyShell displayName={resolved.portalUser.displayName}>{children}</FamilyShell>;
+  // Performance phase 1 (2026-10): one client query cache per family
+  // portal account — see ScopedQueryClientProvider.
+  return (
+    <ScopedQueryClientProvider key={`family:${resolved.portalUser.id}`}>
+      <FamilyShell displayName={resolved.portalUser.displayName}>{children}</FamilyShell>
+    </ScopedQueryClientProvider>
+  );
 }

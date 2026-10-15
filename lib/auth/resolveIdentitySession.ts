@@ -2,7 +2,7 @@ import type { AuthSession } from '../../types/auth';
 import type { IdentitySession } from '../../types/identitySession';
 import type { Identity } from '../../types/identity';
 import type { DataAdapterMode } from '../env';
-import { getSessionById, touchSession } from '../../services/sessionService';
+import { getSessionById, touchLoadedSession } from '../../services/sessionService';
 import { getIdentityById } from '../../services/identityService';
 
 /**
@@ -38,8 +38,22 @@ export async function resolveIdentitySession(
     return { valid: false, reason: 'missing_session_id' };
   }
 
+  // Performance phase 1 (2026-10): the identity is read alongside the
+  // session row instead of after it. Every identity-mode cookie is minted
+  // with `user.id` = the identity's id (app/login/actions.ts,
+  // app/accept-invitation, requireIdentitySession, requireAuthorized-
+  // Organization), so the signed cookie already names the identity to
+  // fetch. The session row stays the authority: a row that belongs to a
+  // different identity than the cookie names is rejected below, and the
+  // identity read is discarded unused whenever the session fails.
+  const identityPromise = getIdentityById(session.user.id, dataAdapterMode);
+  identityPromise.catch(() => {});
+
   const identitySession = await getSessionById(session.sessionId, dataAdapterMode);
   if (!identitySession) {
+    return { valid: false, reason: 'session_not_found' };
+  }
+  if (identitySession.identityId !== session.user.id) {
     return { valid: false, reason: 'session_not_found' };
   }
   if (identitySession.revokedAt !== null) {
@@ -49,7 +63,7 @@ export async function resolveIdentitySession(
     return { valid: false, reason: 'expired' };
   }
 
-  const identity = await getIdentityById(identitySession.identityId, dataAdapterMode);
+  const identity = await identityPromise;
   if (!identity) {
     return { valid: false, reason: 'identity_not_found' };
   }
@@ -60,7 +74,8 @@ export async function resolveIdentitySession(
     return { valid: false, reason: 'identity_not_active' };
   }
 
-  await touchSession(identitySession.id, dataAdapterMode);
+  // Reuses the row read above rather than reading it again.
+  await touchLoadedSession(identitySession, dataAdapterMode);
 
   return { valid: true, identity, identitySession };
 }

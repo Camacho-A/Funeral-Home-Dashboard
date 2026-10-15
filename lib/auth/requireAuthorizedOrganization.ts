@@ -4,7 +4,7 @@ import { getSession, createSession } from './session';
 import { resolveAuthorizationContext, isNonIdentityAuthorizationPermitted } from './authorize';
 import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
 import { resolveIdentitySession } from './resolveIdentitySession';
-import { resolveMembershipAuthorizationContext } from './resolveMembershipAuthorizationContext';
+import { resolveMembershipAuthorizationContext, prefetchMembershipsForSession } from './resolveMembershipAuthorizationContext';
 import { getDataAdapterMode } from '../env';
 
 /**
@@ -92,11 +92,14 @@ export async function requireAuthorizedOrganization(
 
   if (session.user.source === 'identity') {
     const dataAdapterMode = getDataAdapterMode();
+    // Performance phase 1 (2026-10): memberships are read alongside the
+    // session check; they are only used if that check passes.
+    const prefetched = prefetchMembershipsForSession(session.user.id, dataAdapterMode);
     const resolved = await resolveIdentitySession(session, dataAdapterMode);
     if (!resolved.valid) {
       return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
     }
-    const result = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, requestedOrganizationId);
+    const result = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, requestedOrganizationId, prefetched);
     if (!result.granted) {
       return { authorized: false, response: FORBIDDEN_RESPONSE() };
     }
