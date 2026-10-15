@@ -700,7 +700,13 @@ export async function POST(request: Request) {
       // organization fetched above for date validation when one already
       // happened (Task #15), rather than fetching it a second time.
       organization ??= await getOrganization(organizationId, 'wix');
-      caseNumber = await reserveNextCaseNumber(organizationId, orgLocalYear(createdAt, organization?.timezone));
+      // The organization's own prefix (2026-10). Absent resolves to the
+      // default, so Manors' sequence and format are untouched.
+      caseNumber = await reserveNextCaseNumber(
+        organizationId,
+        orgLocalYear(createdAt, organization?.timezone),
+        organization?.caseNumberPrefix,
+      );
     }
 
     const data = buildWixCaseData({

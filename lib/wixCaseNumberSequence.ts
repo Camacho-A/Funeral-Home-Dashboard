@@ -46,7 +46,13 @@ export class CaseSequenceAlreadyInitializedError extends Error {
  *   since the row exists — so no two callers can ever be handed the same
  *   number, however many race at once.
  */
-export async function reserveNextCaseNumber(organizationId: string, year: number): Promise<string> {
+export async function reserveNextCaseNumber(
+  organizationId: string,
+  year: number,
+  /** The organization's own prefix. Omitted resolves to the default, so
+      every existing caller and every existing sequence is unchanged. */
+  prefix?: string | null,
+): Promise<string> {
   const sequenceId = `${organizationId}-${year}`;
 
   try {
@@ -56,7 +62,7 @@ export async function reserveNextCaseNumber(organizationId: string, year: number
       'nextSequence',
       1,
     );
-    return formatCaseNumber(year, patched.data.nextSequence - 1);
+    return formatCaseNumber(year, patched.data.nextSequence - 1, prefix);
   } catch (error) {
     if (!(error instanceof WixDataApiError) || error.status !== 404) {
       throw error;
@@ -72,7 +78,7 @@ export async function reserveNextCaseNumber(organizationId: string, year: number
       { organizationId, year, nextSequence: 2 },
       sequenceId,
     );
-    return formatCaseNumber(year, 1);
+    return formatCaseNumber(year, 1, prefix);
   } catch (error) {
     if (!(error instanceof WixDataApiError) || error.status !== 409) {
       throw error;
@@ -87,7 +93,7 @@ export async function reserveNextCaseNumber(organizationId: string, year: number
     'nextSequence',
     1,
   );
-  return formatCaseNumber(year, patched.data.nextSequence - 1);
+  return formatCaseNumber(year, patched.data.nextSequence - 1, prefix);
 }
 
 /** Manors launch-prep — P0 automatic case numbering. Reads the current

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCaseNumber, parseCaseNumber, orgLocalYear } from './caseNumber';
+import { formatCaseNumber, parseCaseNumber, orgLocalYear, isValidCaseNumberPrefix, caseNumberPrefixFor } from './caseNumber';
 
 describe('formatCaseNumber', () => {
   it('formats with a 3-digit, zero-padded sequence', () => {
@@ -94,3 +94,62 @@ describe('orgLocalYear — Florida must be Eastern, not Central', () => {
     expect(orgLocalYear('2026-09-30T16:31:23.798Z', 'America/Chicago')).toBe(2026);
   });
 });
+
+/**
+ * Per-organization case number prefixes (2026-10). A second funeral home
+ * is a different business with its own filing conventions; inheriting
+ * another's prefix would be an accident rather than a decision.
+ */
+describe('organization-specific case number prefixes', () => {
+  it('keeps the existing format for an organization that has never set one', () => {
+    // Manors' numbers must be byte-identical to before.
+    expect(formatCaseNumber(2026, 38)).toBe('B2026-038');
+    expect(formatCaseNumber(2026, 38, undefined)).toBe('B2026-038');
+    expect(formatCaseNumber(2026, 38, null)).toBe('B2026-038');
+    expect(formatCaseNumber(2026, 38, '')).toBe('B2026-038');
+  });
+
+  it('uses a configured prefix', () => {
+    expect(formatCaseNumber(2026, 1, 'G')).toBe('G2026-001');
+    expect(formatCaseNumber(2026, 1, 'GCJ')).toBe('GCJ2026-001');
+  });
+
+  it('normalises a prefix that was typed in lower case or padded', () => {
+    expect(formatCaseNumber(2026, 1, ' g ')).toBe('G2026-001');
+  });
+
+  it('falls back rather than producing a malformed number', () => {
+    // A prefix that could not be parsed back must never be written into a
+    // case number — better the default than an unparseable identifier.
+    for (const bad of ['B2', '!!', 'TOOLONG', '1', ' ']) {
+      expect(formatCaseNumber(2026, 1, bad)).toBe('B2026-001');
+    }
+  });
+
+  it('round-trips a number through its own prefix', () => {
+    expect(parseCaseNumber('G2026-007', 'G')).toEqual({ year: 2026, sequence: 7 });
+    expect(parseCaseNumber('B2026-038')).toEqual({ year: 2026, sequence: 38 });
+  });
+
+  it('does not read one organization\'s number as another\'s', () => {
+    // A Gus Camacho number parsed with the Manors prefix is not a match.
+    expect(parseCaseNumber('G2026-007')).toBeNull();
+    expect(parseCaseNumber('B2026-038', 'G')).toBeNull();
+  });
+
+  it('validates what may be stored as a prefix', () => {
+    expect(isValidCaseNumberPrefix('B')).toBe(true);
+    expect(isValidCaseNumberPrefix('GCJ')).toBe(true);
+    expect(isValidCaseNumberPrefix('g')).toBe(false);
+    expect(isValidCaseNumberPrefix('')).toBe(false);
+    expect(isValidCaseNumberPrefix('ABCD')).toBe(false);
+    expect(isValidCaseNumberPrefix('B1')).toBe(false);
+  });
+
+  it('resolves a stored value to the prefix actually used', () => {
+    expect(caseNumberPrefixFor(undefined)).toBe('B');
+    expect(caseNumberPrefixFor('GCJ')).toBe('GCJ');
+    expect(caseNumberPrefixFor('bad!')).toBe('B');
+  });
+});
+

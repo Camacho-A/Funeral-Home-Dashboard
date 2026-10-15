@@ -43,6 +43,7 @@ export type WixOrganizationItem = {
   primaryEmail?: unknown;
   primaryPhone?: unknown;
   website?: unknown;
+  caseNumberPrefix?: unknown;
   requireMfa?: unknown;
   familyPortalEnabled?: unknown;
   signatureRequestsEnabled?: unknown;
@@ -95,6 +96,10 @@ export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): O
     primaryEmail: typeof item.primaryEmail === 'string' ? item.primaryEmail : undefined,
     primaryPhone: typeof item.primaryPhone === 'string' ? item.primaryPhone : undefined,
     website: typeof item.website === 'string' ? item.website : item.website === null ? null : undefined,
+    // Absent for every organization that predates a configurable prefix —
+    // caseNumberPrefixFor() then resolves the default, so their numbers
+    // are unchanged.
+    caseNumberPrefix: typeof item.caseNumberPrefix === 'string' ? item.caseNumberPrefix : undefined,
     requireMfa: typeof item.requireMfa === 'boolean' ? item.requireMfa : undefined,
     familyPortalEnabled: typeof item.familyPortalEnabled === 'boolean' ? item.familyPortalEnabled : undefined,
     signatureRequestsEnabled: typeof item.signatureRequestsEnabled === 'boolean' ? item.signatureRequestsEnabled : undefined,
@@ -118,6 +123,7 @@ export function buildWixOrganizationData(organization: Organization): WixOrganiz
     primaryEmail: organization.primaryEmail,
     primaryPhone: organization.primaryPhone,
     website: organization.website,
+    caseNumberPrefix: organization.caseNumberPrefix,
     requireMfa: organization.requireMfa,
     familyPortalEnabled: organization.familyPortalEnabled,
     signatureRequestsEnabled: organization.signatureRequestsEnabled,
@@ -146,6 +152,7 @@ export function applyOrganizationUpdateToWixData(
   if (patch.primaryEmail !== undefined) next.primaryEmail = patch.primaryEmail;
   if (patch.primaryPhone !== undefined) next.primaryPhone = patch.primaryPhone;
   if (patch.website !== undefined) next.website = patch.website;
+  if (patch.caseNumberPrefix !== undefined) next.caseNumberPrefix = patch.caseNumberPrefix;
   if (patch.requireMfa !== undefined) next.requireMfa = patch.requireMfa;
   if (patch.familyPortalEnabled !== undefined) next.familyPortalEnabled = patch.familyPortalEnabled;
   if (patch.signatureRequestsEnabled !== undefined) next.signatureRequestsEnabled = patch.signatureRequestsEnabled;

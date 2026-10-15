@@ -14,8 +14,36 @@
  * want.
  */
 
-const BEACON_CASE_NUMBER_PREFIX = 'B';
-const CASE_NUMBER_PATTERN = /^B(\d{4})-(\d{3})$/;
+/**
+ * The prefix an organization's case numbers carry.
+ *
+ * `'B'` is Manors' and stays the default, so every existing case number,
+ * stored row and caller is unaffected. A second funeral home is a
+ * different business with its own filing conventions, and inheriting
+ * another's prefix would be an accident rather than a decision — so the
+ * prefix is configurable per organization (`Organization.caseNumberPrefix`)
+ * rather than a constant.
+ *
+ * Constrained to 1-3 letters: it has to stay recognisable at a glance on
+ * a case list, and the pattern below has to be able to parse it back.
+ */
+export const DEFAULT_CASE_NUMBER_PREFIX = 'B';
+
+export function isValidCaseNumberPrefix(prefix: string): boolean {
+  return /^[A-Z]{1,3}$/.test(prefix);
+}
+
+/** Resolves an organization's prefix, falling back to the default for an
+    organization that has never set one — which is every organization that
+    existed before this was configurable. */
+export function caseNumberPrefixFor(prefix: string | null | undefined): string {
+  const trimmed = (prefix ?? '').trim().toUpperCase();
+  return isValidCaseNumberPrefix(trimmed) ? trimmed : DEFAULT_CASE_NUMBER_PREFIX;
+}
+
+function caseNumberPattern(prefix: string): RegExp {
+  return new RegExp(`^${prefix}(\\d{4})-(\\d{3,})$`);
+}
 
 /**
  * Builds `B{year}-{sequence}`, e.g. `formatCaseNumber(2026, 58)` ->
@@ -24,8 +52,8 @@ const CASE_NUMBER_PATTERN = /^B(\d{4})-(\d{3})$/;
  * actual sequence value (a 4-digit sequence in a busy year still renders
  * as e.g. "1000", not silently truncated).
  */
-export function formatCaseNumber(year: number, sequence: number): string {
-  return `${BEACON_CASE_NUMBER_PREFIX}${year}-${String(sequence).padStart(3, '0')}`;
+export function formatCaseNumber(year: number, sequence: number, prefix?: string | null): string {
+  return `${caseNumberPrefixFor(prefix)}${year}-${String(sequence).padStart(3, '0')}`;
 }
 
 /**
@@ -35,8 +63,8 @@ export function formatCaseNumber(year: number, sequence: number): string {
  * back a future "search recognizes this looks like a case number" without
  * inventing a second parser).
  */
-export function parseCaseNumber(value: string): { year: number; sequence: number } | null {
-  const match = CASE_NUMBER_PATTERN.exec(value);
+export function parseCaseNumber(value: string, prefix?: string | null): { year: number; sequence: number } | null {
+  const match = caseNumberPattern(caseNumberPrefixFor(prefix)).exec(value);
   if (!match) return null;
   return { year: Number(match[1]), sequence: Number(match[2]) };
 }

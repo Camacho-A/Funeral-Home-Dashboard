@@ -1330,7 +1330,10 @@ describe('POST /api/cases — creation', () => {
 
       await POST(postRequest(VALID_CREATE_BODY));
 
-      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026);
+      // The third argument is the organization's own case-number prefix
+      // (2026-10). Manors has never set one, so it is undefined and
+      // resolves to the default 'B' — its numbers are unchanged.
+      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2026, undefined);
     });
 
     it('rolls the case number to the new year before UTC does, for a timezone ahead of UTC', async () => {
@@ -1346,7 +1349,7 @@ describe('POST /api/cases — creation', () => {
 
       await POST(postRequest(VALID_CREATE_BODY));
 
-      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2027);
+      expect(mockReserveNextCaseNumber).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 2027, undefined);
     });
   });
 

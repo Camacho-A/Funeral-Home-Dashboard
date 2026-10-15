@@ -61,6 +61,14 @@ export type Organization = {
   primaryEmail?: string;
   primaryPhone?: string;
   website?: string | null;
+  /** The prefix this organization's case numbers carry, e.g. `B` in
+      `B2026-038` (2026-10). Absent means the default — every organization
+      that existed before this was configurable keeps exactly the numbers
+      it had. A second funeral home is a different business with its own
+      filing conventions, and silently inheriting another's prefix would
+      be an accident rather than a decision. 1-3 uppercase letters; see
+      domain/cases/caseNumber.ts. */
+  caseNumberPrefix?: string;
   /** Phase 40 (MFA & Account Security). When true, every staff member of this
       organization must have MFA enabled; a member who isn't enrolled is routed
       to enrollment at login (never hard-locked out). Optional and defaults to
