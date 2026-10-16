@@ -432,6 +432,33 @@ describe('POST /api/webhooks/jotform — matched submission', () => {
     expect(link?.submissionId).toBe(submission?.id);
   });
 
+  it('imports the Arrangement PDF onto the EXISTING case it matched, under the Arrangement document type', async () => {
+    const { generateLinkForSending } = await import('@/services/caseFormLinkService');
+    const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');
+    const { rawToken } = await generateLinkForSending('managed-cremations', 'case-webhook-pdf', 'jotform', ARRANGEMENT_FORMS_FORM_CONFIG_ID, 'mock');
+    const { upload } = await import('@/services/documentService');
+    vi.mocked(upload).mockClear();
+
+    givenJotformHasSubmission({
+      formId: ARRANGEMENT_FORMS_FORM_ID,
+      submissionId: '6674600018717600001',
+      answers: { [ARRANGEMENT_LINK_QID]: rawToken },
+    });
+
+    const { POST } = await import('./route');
+    const response = await POST(webhookRequest({ formID: ARRANGEMENT_FORMS_FORM_ID, submissionID: '6674600018717600001' }));
+
+    expect(response.status).toBe(200);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const [params, , ctx] = vi.mocked(upload).mock.calls[0];
+    expect(params.caseId).toBe('case-webhook-pdf');
+    expect(params.fileName).toBe('Arrangement Forms.pdf');
+    expect(params.documentTypeKey).toBe('external_form.arrangement_forms');
+    expect(ctx.organizationId).toBe('managed-cremations');
+    const submission = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === '6674600018717600001');
+    expect(submission?.pdfStatus).toBe('stored');
+  });
+
   it('a link token present at the WRONG qid never links — the submission lands unmatched', async () => {
     const { generateLinkForSending } = await import('@/services/caseFormLinkService');
     const { ARRANGEMENT_FORMS_FORM_CONFIG_ID } = await import('@/services/__mocks__/externalFormFixtures');

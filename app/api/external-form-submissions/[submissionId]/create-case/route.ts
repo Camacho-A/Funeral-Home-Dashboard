@@ -11,6 +11,7 @@ import type { MappedSolisField } from '@/domain/externalForms/fieldMapping';
 import * as externalFormConfigService from '@/services/externalFormConfigService';
 import * as externalFormSubmissionService from '@/services/externalFormSubmissionService';
 import { createCaseFromIntakeSubmission } from '@/services/externalFormIntakeService';
+import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { authenticateJotformSubmission } from '@/lib/jotform/jotformSubmissionAuthenticity';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import { findDuplicateCandidates, type DuplicateCandidate } from '@/domain/externalForms/duplicateCandidates';
@@ -267,6 +268,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     // Everything else is a server-side failure; the reason is logged by
     // the service and deliberately not echoed to the client.
     return NextResponse.json({ error: 'Could not create a case from this submission.' }, { status: 500 });
+  }
+
+  // Import the submission's PDF onto the new case (2026-10), exactly as the
+  // webhook's own creation path does. Without this a staff-created case had
+  // no copy of its form until someone pressed "Retry PDF". Reloaded so the
+  // back-reference written during creation is present; idempotent, and a
+  // PDF failure is recorded on the submission rather than failing creation.
+  try {
+    const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
+    await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode, { config });
+  } catch (error) {
+    console.error('[create-case] Case created but its form PDF could not be imported:', error instanceof Error ? error.message : error);
   }
 
   return NextResponse.json({ case: { id: outcome.caseId, caseNumber: outcome.caseNumber } }, { status: 201 });

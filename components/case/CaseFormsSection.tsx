@@ -78,7 +78,12 @@ export function CaseFormsSection({ caseId }: { caseId: string }) {
       const result = await retryPdf.mutateAsync(submissionId);
       setRetryFeedback({
         configId,
-        message: result.pdf.outcome === 'failed' ? 'Retry failed — the document could not be retrieved. You can try again.' : 'Document retrieved successfully.',
+        message:
+          result.pdf.outcome === 'failed'
+            ? 'Retry failed — the document could not be retrieved. You can try again.'
+            : result.pdf.outcome === 'in_progress'
+              ? 'This document is already being retrieved. Refresh in a minute.'
+              : 'Document retrieved successfully.',
         isError: result.pdf.outcome === 'failed',
       });
     } catch (error) {

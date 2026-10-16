@@ -46,6 +46,11 @@ vi.mock('@/services/documentService', async () => {
   return { ...actual, upload: vi.fn().mockResolvedValue({ id: 'document-create-case-test' }) };
 });
 
+vi.mock('@/services/workflowReconciliationService', async () => {
+  const actual = await vi.importActual<typeof import('@/services/workflowReconciliationService')>('@/services/workflowReconciliationService');
+  return { ...actual, reconcileCaseWorkflow: vi.fn(actual.reconcileCaseWorkflow) };
+});
+
 let authorizedOrganizationId = DEFAULT_ORGANIZATION_ID;
 vi.mock('@/lib/auth/requireAuthorizedOrganization', () => ({
   requireAuthorizedOrganization: vi.fn(async (requested: string) => {
@@ -269,6 +274,81 @@ describe('POST .../create-case — creates a case from an unmatched submission',
     expect(response.status).toBe(201);
     expect(casePostBodies[0].decedentName).toBe('HAROLD VANCE');
     expect(caseFormLinkFixtures.at(-1)!.formConfigId).toBe(FIRST_CALL_SHEET_FORM_CONFIG_ID);
+  });
+});
+
+/**
+ * PDF import and post-creation failures (2026-10). Staff "Create Case"
+ * used to create the case without importing the submission's PDF; and a
+ * failure in any step AFTER the case existed reported the whole creation
+ * as failed, skipping the PDF and releasing the creation claim.
+ */
+describe('POST .../create-case — the form PDF', () => {
+  it('imports the submission PDF onto the case it creates', async () => {
+    const submission = await seedSubmission({
+      externalFormId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+      externalSubmissionId: '6674600018717643790',
+      answers: arrangementAnswers(),
+    });
+    const { upload } = await import('@/services/documentService');
+    const { POST } = await import('./route');
+    const response = await POST(postRequest(submission.id, { organizationId: DEFAULT_ORGANIZATION_ID }), params(submission.id));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const [uploadParams] = vi.mocked(upload).mock.calls[0];
+    expect(uploadParams.caseId).toBe(body.case.id);
+    expect(uploadParams.fileName).toBe('Arrangement Forms.pdf');
+    const stored = externalFormSubmissionFixtures.find((s) => s.id === submission.id)!;
+    expect(stored.pdfStatus).toBe('stored');
+    expect(stored.documentId).toBe('document-create-case-test');
+  });
+
+  it('a PDF failure does not fail creation — the case exists and the failure is recorded for retry', async () => {
+    const submission = await seedSubmission({
+      externalFormId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+      externalSubmissionId: '6674600018717643791',
+      answers: arrangementAnswers(),
+    });
+    const { fetchSubmissionPdf, JotformClientError } = await import('@/lib/jotform/jotformClient');
+    vi.mocked(fetchSubmissionPdf).mockRejectedValueOnce(new JotformClientError('gone', 'http_error'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { POST } = await import('./route');
+    const response = await POST(postRequest(submission.id, { organizationId: DEFAULT_ORGANIZATION_ID }), params(submission.id));
+
+    expect(response.status).toBe(201);
+    const stored = externalFormSubmissionFixtures.find((s) => s.id === submission.id)!;
+    expect(stored.pdfStatus).toBe('failed');
+    expect(stored.createdCaseId).toBeTruthy();
+    errors.mockRestore();
+  });
+
+  it('a workflow-reconciliation failure after the case exists still reports it created, imports the PDF, and keeps the claim', async () => {
+    const submission = await seedSubmission({
+      externalFormId: ARRANGEMENT_FORMS_EXTERNAL_FORM_ID,
+      externalSubmissionId: '6674600018717643792',
+      answers: arrangementAnswers(),
+    });
+    const { reconcileCaseWorkflow } = await import('@/services/workflowReconciliationService');
+    vi.mocked(reconcileCaseWorkflow).mockRejectedValueOnce(new Error('Wix unavailable'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { upload } = await import('@/services/documentService');
+    const { POST } = await import('./route');
+
+    const response = await POST(postRequest(submission.id, { organizationId: DEFAULT_ORGANIZATION_ID }), params(submission.id));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const stored = externalFormSubmissionFixtures.find((s) => s.id === submission.id)!;
+    expect(stored.createdCaseId).toBe(body.case.id);
+
+    // The claim was not released: a second request cannot open a second case.
+    const again = await POST(postRequest(submission.id, { organizationId: DEFAULT_ORGANIZATION_ID }), params(submission.id));
+    expect(again.status).toBe(409);
+    expect(casePostBodies).toHaveLength(1);
+    errors.mockRestore();
   });
 });
 

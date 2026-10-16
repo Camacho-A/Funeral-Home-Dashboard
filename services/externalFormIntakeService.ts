@@ -279,7 +279,21 @@ export async function createCaseFromIntakeSubmission(
     }
 
     const created = (await caseResponse.json()).case as { id: string; caseNumber: string };
-    await externalFormSubmissionService.markCaseCreated(submission.id, created.id, dataAdapterMode);
+
+    // From here on the case EXISTS. Nothing below may report it as not
+    // created (2026-10): that skipped its PDF import and its "case created"
+    // notice, told staff creation had failed, and — via the outer catch —
+    // released the creation claim on a submission that had in fact produced
+    // a case, re-opening it to a second "Create Case". Each remaining step is
+    // best-effort and logged instead.
+    try {
+      await externalFormSubmissionService.markCaseCreated(submission.id, created.id, dataAdapterMode);
+    } catch (error) {
+      console.error(
+        `[form intake] Case ${created.caseNumber} was created but submission ${submission.id} could not be marked created:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
 
     /**
      * Give the new case the same CaseFormLink a token-matched submission
@@ -336,7 +350,14 @@ export async function createCaseFromIntakeSubmission(
     // Same reconciliation call every other submission path makes, so a
     // webhook-created case can never end up in a different workflow state
     // than one created any other way.
-    await reconcileCaseWorkflow(config.organizationId, created.id, dataAdapterMode);
+    try {
+      await reconcileCaseWorkflow(config.organizationId, created.id, dataAdapterMode);
+    } catch (error) {
+      console.error(
+        `[form intake] Case ${created.caseNumber} was created but its workflow could not be reconciled:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
 
     return { created: true, caseId: created.id, caseNumber: created.caseNumber };
   } catch (error) {

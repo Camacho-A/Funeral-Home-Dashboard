@@ -38,7 +38,7 @@ Three forms, two behaviours, one case.
 | Manors form | Form ID | Purpose | On submission |
 |---|---|---|---|
 | Manors First Call Sheet | `262664842044055` | `case_create` | Creates a new case |
-| Manors Cremation Arrangement Forms | `261945978664175` | `case_update` | Updates the case its link token identifies |
+| Manors Cremation Arrangement Forms | `261945978664175` | `case_create` | Updates the case its link token identifies; with no token, creates a new case (Arrangement-first — no First Call needed) |
 | Manors Cremation Vital Statistics | `262605621454050` | `case_update` | Updates the case its link token identifies |
 
 The First Call form was renamed from "First Call Sheet" to **"Manors First Call Sheet"** in
@@ -449,9 +449,9 @@ map. That is all.
 | Nothing arrives at all for one form | That form has no webhook registered | Check `GET /form/{id}/webhooks`; add it in the JotForm UI |
 | Delivery 404s | Form id not configured, or `isEnabled` is false | Add/enable the config row |
 | Submission lands in Unmatched Forms instead of creating a case | Config `purpose` is not `'case_create'`, or a required field was blank | Check `purpose`; check the submission has decedent name, NOK name, NOK phone |
-| Arrangement submission created a second case | Should be impossible — only `case_create` forms create | Check that form's `purpose` is `'case_update'` |
+| Arrangement submission created a second case | Arrangement is `case_create` (live config, confirmed 2026-10), so a token-less Arrangement submission opens a case unless the duplicate guard matches an existing one | Check the duplicate candidates (same decedent name + date of birth/death); link the submission to the existing case instead |
 | Arrangement submission did not attach to its case | Link token missing, unresolvable, or belonging to another organization | Regenerate the form link from the case |
-| Case created but no PDF | PDF preservation is best-effort and independent | Retry from the submission's retry-PDF action |
+| Case created but no PDF | PDF preservation is best-effort and independent | Retry from the submission's retry-PDF action. Safe to repeat: the PDF's document id is derived from the submission, so an already-stored copy is adopted rather than stored twice (2026-10) |
 | A first-call submission still shows in Unmatched Forms after creating a case | Fixed 2026-10 — `markCaseCreated` now also sets `status: 'matched'`. Rows written before that fix keep `status: 'unmatched'` | Harmless; mark reviewed, or leave it |
 | Time of Death blank on a webhook-created case | Fixed 2026-10 — qid 9 is a compound `control_time` answer that the field map read as absent | Fixed going forward; earlier cases need the field entered by hand |
 
