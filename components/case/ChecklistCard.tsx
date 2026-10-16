@@ -321,6 +321,9 @@ type RequiredCaseFieldMeta = {
 const REQUIRED_CASE_FIELD_META: Record<string, RequiredCaseFieldMeta> = {
   certifierName: { label: 'Certifier name' },
   certifierPhone: { label: 'Certifier phone', isPhone: true },
+  // Template v7 (2026-10): the Certifier Information item asks for fax.
+  // Saved through onUpdateCaseInfo, the same patch Case Information sends.
+  certifierFax: { label: 'Certifier fax', isPhone: true },
   nextOfKinName: { label: 'Next of kin', uppercase: true },
   nextOfKinPhone: { label: 'NOK phone', isPhone: true },
   nextOfKinEmail: { label: 'NOK email', validate: isValidEmail, invalidMessage: 'Enter a valid email address.' },

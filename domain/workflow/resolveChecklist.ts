@@ -235,10 +235,22 @@ export function resolveChecklist(
    */
   const isSatisfiedByCaseData = (index: number) => canonicalFallbackValue(case_, displayStage, index) !== '';
 
+  /**
+   * Certifier fax (2026-10, template v7). The label-based Name + Phone rule
+   * above exists for snapshots whose Certifier item carries no
+   * `requiredCaseFields` (v1-v4's free-text item, v6's stripped item). An
+   * item that DOES declare its fields is judged by exactly those fields —
+   * otherwise a v7 item requiring Name + FAX would still be satisfied by a
+   * phone number. For a v5 snapshot (Name + Phone declared) the outcome is
+   * identical either way, so no existing case's completion changes.
+   */
+  const isUndeclaredCertifierItem = (item: ChecklistItemTemplate) =>
+    isCertifierItem(item.label) && (item.requiredCaseFields ?? []).length === 0;
+
   const isItemDone = (item: ChecklistItemTemplate, index: number): boolean =>
     item.label === PAYMENT_CONFIRMATION_LABEL && isPaymentConfirmed
       ? true
-      : isCertifierItem(item.label) && isCertifierKnown
+      : isUndeclaredCertifierItem(item) && isCertifierKnown
         ? true
         : item.label === FAMILY_CONTACT_ITEM_LABEL && isFamilyContactKnown
           ? true

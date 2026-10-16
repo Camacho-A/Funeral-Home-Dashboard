@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import type { IntakeFieldTemplate, IntakeFieldType, IntakeTemplate, StageTemplate } from '@/types/workflowTemplate';
+import { requiredCaseFieldsSummary } from '@/domain/workflow/requiredCaseFieldLabels';
 import styles from './WorkflowEditor.module.css';
 
 const FIELD_TYPE_OPTIONS: { value: IntakeFieldType; label: string }[] = [
@@ -270,15 +271,22 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
 
             <div className={styles.checklist}>
               <div className={styles.sectionLabel}>Checklist items</div>
-              {stage.checklist.items.map((item, itemIndex) => (
-                <TextField
-                  key={itemIndex}
-                  className={`${styles.checklistItemInput} sx-input`}
-                  value={item.label}
-                  onChange={(e) => updateChecklistItemLabel(index, itemIndex, e.target.value)}
-                  aria-label={`"${stage.label}" checklist item ${itemIndex + 1}`}
-                />
-              ))}
+              {stage.checklist.items.map((item, itemIndex) => {
+                // Read-only: which Case fields complete a derived item.
+                // Not editable here; a change needs a new template version.
+                const completedBy = requiredCaseFieldsSummary(item.requiredCaseFields);
+                return (
+                  <div key={itemIndex}>
+                    <TextField
+                      className={`${styles.checklistItemInput} sx-input`}
+                      value={item.label}
+                      onChange={(e) => updateChecklistItemLabel(index, itemIndex, e.target.value)}
+                      aria-label={`"${stage.label}" checklist item ${itemIndex + 1}`}
+                    />
+                    {completedBy && <div className={styles.completedBy}>Completed by: {completedBy}</div>}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}

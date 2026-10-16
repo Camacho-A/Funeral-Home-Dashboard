@@ -146,6 +146,12 @@
   font-size: var(--font-size-12-5);
 }
 
+.completedBy {
+  margin-top: 2px;
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-muted);
+}
+
 .saveError {
   font-size: var(--font-size-12-5);
   color: var(--color-danger-text);

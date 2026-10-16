@@ -1,0 +1,470 @@
+{
+  "organizationId": "managed-cremations",
+  "stages": [
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "Name of deceased",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 0
+          },
+          {
+            "label": "Place of death \u2014 name, address & phone number",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 1
+          },
+          {
+            "label": "Date of birth",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 2
+          },
+          {
+            "label": "Weight",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 3
+          },
+          {
+            "label": "Date of death",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 4
+          },
+          {
+            "label": "Time of death",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 5,
+            "valueKind": "time"
+          },
+          {
+            "label": "Certifier Information",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 6,
+            "requiredCaseFields": [
+              "certifierName",
+              "certifierFax"
+            ]
+          },
+          {
+            "label": "Family contact \u2014 name, phone number & email",
+            "externalFormIntegrationId": null,
+            "hasField": true,
+            "isPasswordField": false,
+            "index": 7
+          },
+          {
+            "label": "Payment collected",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 8
+          },
+          {
+            "label": "Credit card payment collected by phone",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": true,
+            "index": 9
+          },
+          {
+            "label": "Payment receipt sent \u2014 confirms cleared to dispatch",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 10
+          }
+        ]
+      },
+      "label": "First Call & Payment",
+      "displayStage": 0,
+      "slaTargetDays": 0.25,
+      "isAttentionStage": false,
+      "rawStage": 0
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "Name of deceased",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          },
+          {
+            "label": "Place of death \u2014 name, address & phone number",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 1
+          },
+          {
+            "label": "Date of birth",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 2
+          },
+          {
+            "label": "Weight",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 3
+          },
+          {
+            "label": "Date of death",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 4
+          },
+          {
+            "label": "Time of death",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 5,
+            "valueKind": "time"
+          },
+          {
+            "label": "Certifier Information",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 6,
+            "requiredCaseFields": [
+              "certifierName",
+              "certifierFax"
+            ]
+          },
+          {
+            "label": "Family contact \u2014 name, phone number & email",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 7
+          },
+          {
+            "label": "Payment collected",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 8
+          },
+          {
+            "label": "Credit card payment collected by phone",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": true,
+            "index": 9
+          },
+          {
+            "label": "Payment receipt sent \u2014 confirms cleared to dispatch",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 10
+          }
+        ]
+      },
+      "label": "First Call & Payment",
+      "displayStage": 0,
+      "slaTargetDays": 0.25,
+      "isAttentionStage": false,
+      "rawStage": 1
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "Jotform application completed",
+            "externalFormIntegrationId": "integration-jotform-managed-cremations",
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          }
+        ]
+      },
+      "label": "Jotform Application",
+      "displayStage": 1,
+      "slaTargetDays": 1,
+      "isAttentionStage": false,
+      "rawStage": 2
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "EDRS submitted & sent to doctor",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          },
+          {
+            "label": "Cause of death entered",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 1
+          },
+          {
+            "label": "Hardsave for state approval if not an online doctor",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 2
+          }
+        ]
+      },
+      "label": "EDRS & Doctor / Cause of Death",
+      "displayStage": 2,
+      "slaTargetDays": 3,
+      "isAttentionStage": true,
+      "rawStage": 3
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "Permit sent to crematory",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          },
+          {
+            "label": "Authorization of release sent to crematory",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 1
+          }
+        ]
+      },
+      "label": "Permit & Authorization Sent to Crematory",
+      "displayStage": 3,
+      "slaTargetDays": 1,
+      "isAttentionStage": false,
+      "rawStage": 4
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "DC application filled out",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          },
+          {
+            "label": "Sent day before ashes arrive",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 1
+          }
+        ]
+      },
+      "label": "DC Application Sent",
+      "displayStage": 4,
+      "slaTargetDays": 2,
+      "isAttentionStage": false,
+      "rawStage": 5
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "Ashes picked up (Tue/Fri)",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          },
+          {
+            "label": "Tag photo taken",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 1
+          },
+          {
+            "label": "Tag/name/cert cross-checked",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 2
+          },
+          {
+            "label": "Labels made",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 3
+          },
+          {
+            "label": "Transferred to urn",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 4
+          },
+          {
+            "label": "Family contacted \u2014 ashes ready for pickup",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 5
+          }
+        ]
+      },
+      "label": "Ready for Pickup / Contact Family",
+      "displayStage": 5,
+      "slaTargetDays": 5,
+      "isAttentionStage": false,
+      "rawStage": 6
+    },
+    {
+      "checklist": {
+        "items": [
+          {
+            "label": "Family picked up ashes",
+            "externalFormIntegrationId": null,
+            "hasField": false,
+            "isPasswordField": false,
+            "index": 0
+          }
+        ]
+      },
+      "label": "Completed",
+      "displayStage": 6,
+      "slaTargetDays": null,
+      "isAttentionStage": false,
+      "rawStage": 7
+    }
+  ],
+  "intake": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "checklistItemIndex": 0,
+            "key": "decedentName",
+            "label": "Name of deceased",
+            "mapsToCaseField": "decedentName"
+          },
+          {
+            "checklistItemIndex": 1,
+            "key": "placeOfDeath",
+            "label": "Place of death \u2014 name, address & phone number",
+            "mapsToCaseField": "placeOfDeath"
+          },
+          {
+            "checklistItemIndex": 2,
+            "label": "Date of birth",
+            "placeholder": "MM/DD/YYYY",
+            "key": "dateOfBirth",
+            "mapsToCaseField": "dateOfBirth"
+          },
+          {
+            "checklistItemIndex": 3,
+            "label": "Weight",
+            "placeholder": "e.g. 165 lb",
+            "key": "weight",
+            "mapsToCaseField": "weight"
+          },
+          {
+            "checklistItemIndex": 4,
+            "label": "Date of death",
+            "placeholder": "MM/DD/YYYY",
+            "key": "dateOfDeath",
+            "mapsToCaseField": "dateOfDeath"
+          },
+          {
+            "checklistItemIndex": 5,
+            "label": "Time of death",
+            "placeholder": "24hr, e.g. 14:30",
+            "key": "timeOfDeath",
+            "fieldType": "time",
+            "mapsToCaseField": "timeOfDeath"
+          }
+        ],
+        "key": "decedent",
+        "label": "Decedent"
+      },
+      {
+        "fields": [
+          {
+            "label": "Certifier \u2014 name",
+            "key": "certifierName",
+            "fieldType": "text",
+            "uppercase": true,
+            "mapsToCaseField": "certifierName"
+          },
+          {
+            "fieldType": "phone",
+            "key": "certifierPhone",
+            "label": "Certifier \u2014 phone number",
+            "mapsToCaseField": "certifierPhone"
+          },
+          {
+            "label": "Certifier \u2014 license number",
+            "key": "certifierLicenseNumber",
+            "fieldType": "text",
+            "uppercase": true,
+            "mapsToCaseField": "certifierLicenseNumber"
+          },
+          {
+            "fieldType": "phone",
+            "key": "certifierFax",
+            "label": "Certifier \u2014 fax number",
+            "mapsToCaseField": "certifierFax"
+          },
+          {
+            "checklistItemIndex": 7,
+            "key": "nextOfKinName",
+            "label": "Next of kin \u2014 name",
+            "mapsToCaseField": "nextOfKinName"
+          },
+          {
+            "checklistItemIndex": 7,
+            "key": "nextOfKinPhone",
+            "label": "Next of kin \u2014 phone number",
+            "mapsToCaseField": "nextOfKinPhone"
+          }
+        ],
+        "key": "contacts",
+        "label": "Contacts"
+      },
+      {
+        "fields": [
+          {
+            "paymentDescription": "Collected by phone at First Call \u2014 confirmed via the checklist, not stored here.",
+            "paymentPurpose": "Cremation service fee",
+            "label": "Payment",
+            "key": "payment",
+            "fieldType": "payment"
+          }
+        ],
+        "key": "payment",
+        "label": "Payment"
+      }
+    ]
+  }
+}

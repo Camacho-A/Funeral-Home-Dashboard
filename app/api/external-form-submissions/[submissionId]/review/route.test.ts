@@ -228,3 +228,57 @@ describe('POST /api/external-form-submissions/[submissionId]/review — workflow
     expect(updated?.rawStage).toBe(3); // reconciliation ran anyway and correctly advanced the case
   });
 });
+
+/**
+ * Certifier fax (2026-10). An Arrangement Form arriving for an EXISTING case
+ * can now supply the certifier fax (qid 140) that template v7 requires.
+ * The phone is still review-only and is never written by this path.
+ */
+describe('review — certifier fax from an Arrangement submission', () => {
+  async function receiveArrangement(externalSubmissionId: string, mapped: Record<string, string>) {
+    const { receive } = await import('@/services/externalFormSubmissionService');
+    const { submission } = await receive(
+      {
+        organizationId: 'managed-cremations',
+        provider: 'jotform',
+        externalFormId: '261945978664175',
+        externalSubmissionId,
+        caseFormLinkId: null,
+        mappedFields: JSON.stringify(mapped),
+        pdfStatus: 'not_applicable',
+      },
+      'mock',
+    );
+    return submission;
+  }
+
+  it('offers the fax when the case has none, and keeps the phone review-only', async () => {
+    seedCase({ certifierFax: null, certifierPhone: '555-0199' });
+    const submission = await receiveArrangement('review-fax-get', { certifierFax: '954-777-2262', certifierPhone: '954-777-0000' });
+
+    const { GET } = await import('./route');
+    const response = await GET(reviewRequest('GET', undefined, `organizationId=managed-cremations&caseId=${TEST_CASE_ID}`), {
+      params: Promise.resolve({ submissionId: submission.id }),
+    });
+    const body = await response.json();
+    const byField = Object.fromEntries(body.rows.map((r: { field: string; state: string }) => [r.field, r.state]));
+    expect(byField.certifierFax).toBe('solis_empty');
+    expect(byField.certifierPhone).toBe('review_only');
+  });
+
+  it('applying it sends only certifierFax — the stored phone is never part of the patch', async () => {
+    seedCase({ certifierFax: null, certifierPhone: '555-0199' });
+    const submission = await receiveArrangement('review-fax-apply', { certifierFax: '954-777-2262', certifierPhone: '954-777-0000' });
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case: { id: TEST_CASE_ID } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { POST } = await import('./route');
+    const response = await POST(
+      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['certifierFax'] }),
+      { params: Promise.resolve({ submissionId: submission.id }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).patch).toEqual({ certifierFax: '954-777-2262' });
+  });
+});

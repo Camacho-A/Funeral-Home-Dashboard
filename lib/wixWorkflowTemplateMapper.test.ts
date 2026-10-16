@@ -412,3 +412,30 @@ describe('validateChecklistItemPayload — requiredCaseFields round-trip', () =>
     expect(result.stages?.[0].checklist.items[0].requiredCaseFields).toBeUndefined();
   });
 });
+
+/**
+ * Certifier fax (2026-10, template v7). The v7 item's fax requirement must
+ * survive the same read -> write path, and `valueKind` — dropped by this
+ * mapper the same way, which is how live v6 lost Time of Death's 12-hour
+ * editor — must now survive it too.
+ */
+describe('validateChecklistItemPayload — v7 round-trip', () => {
+  function stageWithItems(items: Record<string, unknown>[]) {
+    return { ...validStage, checklist: { items } };
+  }
+  const faxItem = { index: 0, label: 'Certifier Information', hasField: false, requiredCaseFields: ['certifierName', 'certifierFax'] };
+  const timeItem = { index: 1, label: 'Time of death', hasField: true, valueKind: 'time' };
+
+  it('keeps the fax requirement and the time valueKind through a full round trip', () => {
+    const first = validateWorkflowStagesPayload({ stages: [stageWithItems([faxItem, timeItem])] });
+    const second = validateWorkflowStagesPayload({ stages: first.stages! });
+    expect(second.errors).toEqual([]);
+    expect(second.stages?.[0].checklist.items[0].requiredCaseFields).toEqual(['certifierName', 'certifierFax']);
+    expect(second.stages?.[0].checklist.items[1].valueKind).toBe('time');
+  });
+
+  it('drops an unknown valueKind rather than passing it through', () => {
+    const result = validateWorkflowStagesPayload({ stages: [stageWithItems([{ ...timeItem, index: 0, valueKind: 'colour' }])] });
+    expect(result.stages?.[0].checklist.items[0]).not.toHaveProperty('valueKind');
+  });
+});

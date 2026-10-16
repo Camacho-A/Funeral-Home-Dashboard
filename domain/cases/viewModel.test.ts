@@ -413,19 +413,27 @@ describe('buildCaseViewModel — Certifier Information terminology (2026-09, ADR
     expect(vm.checklist.some((i) => i.label.includes('Hospice'))).toBe(false);
   });
 
-  it('3. a new v5 Case\'s Certifier Information item requires Name + Phone (via requiredCaseFields, unaffected by this compat layer)', () => {
+  // Pinned to v5 explicitly (2026-10): v7 is now the latest mock version,
+  // and these assert v5's own frozen Name + Phone rule.
+  function v5Case(overrides: Partial<Case>): Case {
+    const template = standardCremationWorkflowTemplateFixture;
+    const v5 = template.versions.find((v) => v.version === 5)!;
+    return baseCase({ workflowTemplateVersion: 5, workflowSnapshot: buildCaseWorkflowSnapshot(template, v5), ...overrides });
+  }
+
+  it('3. a v5 Case\'s Certifier Information item requires Name + Phone (via requiredCaseFields, unaffected by this compat layer)', () => {
     const complete = buildCaseViewModel(
-      baseCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' }),
+      v5Case({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' }),
       { staffList: [] },
     );
     expect(complete.checklist[6].done).toBe(true);
 
-    const incomplete = buildCaseViewModel(baseCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER' }), { staffList: [] });
+    const incomplete = buildCaseViewModel(v5Case({ rawStage: 0, certifierName: 'DR. JANE FOSTER' }), { staffList: [] });
     expect(incomplete.checklist[6].done).toBe(false);
   });
 
   it('Task #7 reopened (2026-09): a new v5 Case\'s Certifier Information item carries requiredCaseFieldValues from Case.certifierName/certifierPhone, driving the Workflow checklist\'s dual-field editor', () => {
-    const vm = buildCaseViewModel(baseCase({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' }), {
+    const vm = buildCaseViewModel(v5Case({ rawStage: 0, certifierName: 'DR. JANE FOSTER', certifierPhone: '555-0199' }), {
       staffList: [],
     });
     expect(vm.checklist[6].requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);

@@ -83,7 +83,8 @@ describe('standardCremationWorkflowTemplateFixture — version 5 (Structured Cer
   });
 
   it('21. version 5 exists as a second, later versions[] entry (append-only, never replacing v1)', () => {
-    expect(standardCremationWorkflowTemplateFixture.versions).toHaveLength(2);
+    // v7 (Certifier fax, 2026-10) was appended after it.
+    expect(standardCremationWorkflowTemplateFixture.versions.map((v) => v.version)).toEqual([1, 5, 7]);
     expect(standardCremationWorkflowTemplateFixture.versions[0].version).toBe(1);
     expect(v5().version).toBe(5);
   });

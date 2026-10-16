@@ -91,6 +91,8 @@ export const COMPLETION_AFFECTING_FIELDS = [
   'weight',
   'certifierName',
   'certifierPhone',
+  // Template v7's Certifier Information item requires fax (2026-10).
+  'certifierFax',
   'nextOfKinName',
   'nextOfKinPhone',
   // Changes WHICH items a stage requires (the Medical Examiner variant

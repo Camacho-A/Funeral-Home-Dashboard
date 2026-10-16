@@ -34,6 +34,11 @@ const APPLIABLE_FIELDS: ReadonlySet<MappedSolisField> = new Set([
   'nextOfKinPhone',
   'nextOfKinEmail',
   'pickupReleasedTo',
+  // 2026-10: an Arrangement Form arriving for an EXISTING case can supply
+  // the certifier fax (qid 140), which template v7's Certifier item needs.
+  // Same rules as every field here: offered only when the case has none;
+  // a differing value is a conflict staff must choose explicitly.
+  'certifierFax',
 ]);
 
 function normalize(value: string | null): string {

@@ -1019,3 +1019,43 @@ describe('ChecklistCard — the Medical Examiner control is the caller\'s to off
     expect(screen.getByRole('checkbox', { name: 'Medical Examiner Case' })).toBeInTheDocument();
   });
 });
+
+/**
+ * Certifier fax (2026-10, template v7). A v7 Certifier Information item
+ * declares ['certifierName', 'certifierFax']; the editor shows a fax field
+ * bound to Case.certifierFax and saves it through the generic case-update
+ * patch — never through the phone callback.
+ */
+describe('ChecklistCard — Certifier Information on a v7 case (fax)', () => {
+  function faxItem(values: Record<string, string> = { certifierName: '', certifierFax: '' }): ChecklistItemViewModel {
+    return certifierItem({ requiredCaseFields: ['certifierName', 'certifierFax'], requiredCaseFieldValues: values });
+  }
+  const faxField = () => within(screen.getByText('Certifier fax').parentElement!).getByRole('textbox') as HTMLInputElement;
+
+  it('shows Certifier fax and no Certifier phone', () => {
+    renderChecklist([faxItem()]);
+    expect(screen.getByText('Certifier fax')).toBeInTheDocument();
+    expect(screen.queryByText('Certifier phone')).not.toBeInTheDocument();
+  });
+
+  it('reads the fax value', () => {
+    renderChecklist([faxItem({ certifierName: '', certifierFax: '555-0188' })]);
+    expect(faxField()).toHaveValue('555-0188');
+  });
+
+  it('saves to certifierFax and never calls the phone save', () => {
+    const { onUpdateCaseInfo, onSaveCertifierPhone } = renderChecklist([faxItem()]);
+    const field = faxField();
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: '555-0188' } });
+    fireEvent.blur(field);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ certifierFax: '555-0188' });
+    expect(onSaveCertifierPhone).not.toHaveBeenCalled();
+  });
+
+  it('a v5 item still shows the phone field (legacy cases unchanged)', () => {
+    renderChecklist([certifierItem()]);
+    expect(screen.getByText('Certifier phone')).toBeInTheDocument();
+    expect(screen.queryByText('Certifier fax')).not.toBeInTheDocument();
+  });
+});

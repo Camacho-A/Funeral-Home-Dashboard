@@ -306,6 +306,10 @@ function validateChecklistItemPayload(value: unknown, path: string, errors: stri
       requiredCaseFieldsValid && Array.isArray(value.requiredCaseFields)
         ? (value.requiredCaseFields as string[])
         : undefined,
+    // Same defect class as requiredCaseFields above (2026-10): never read
+    // back, so live v6 lost Time of Death's `valueKind: 'time'` when it was
+    // derived from v5. Any future version must carry it through.
+    ...(value.valueKind === 'time' ? { valueKind: 'time' as const } : {}),
   };
 }
 

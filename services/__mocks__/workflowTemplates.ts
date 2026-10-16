@@ -360,6 +360,27 @@ const standardCremationIntakeV5: IntakeTemplate = {
   ],
 };
 
+/**
+ * Certifier fax (2026-10) — version 7, mirroring the proposed live v7
+ * (docs/proposals/manors-certifier-fax-v7.md). Identical to v5 except that
+ * the Certifier Information item (index 6 of raw stages 0/1) is completed
+ * by Name + FAX instead of Name + Phone. Append-only: every case frozen
+ * under v1-v6 keeps its own rule, so no existing case gains a fax
+ * requirement or loses a completed item.
+ */
+export const CERTIFIER_FAX_REQUIRED_CASE_FIELDS = ['certifierName', 'certifierFax'];
+
+function buildChecklistItemsV7(rawStage: number): ChecklistItemTemplate[] {
+  return buildChecklistItemsV5(rawStage).map((item) =>
+    rawStage <= 1 && item.index === 6 ? { ...item, requiredCaseFields: [...CERTIFIER_FAX_REQUIRED_CASE_FIELDS] } : item,
+  );
+}
+
+const standardCremationStagesV7: StageTemplate[] = standardCremationStagesV5.map((stage) => ({
+  ...stage,
+  checklist: { items: buildChecklistItemsV7(stage.rawStage) },
+}));
+
 export const STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID = 'workflow-template-standard-cremation';
 
 export const standardCremationWorkflowTemplateFixture: WorkflowTemplate = {
@@ -382,6 +403,13 @@ export const standardCremationWorkflowTemplateFixture: WorkflowTemplate = {
       stages: standardCremationStagesV5,
       intake: standardCremationIntakeV5,
       createdAt: '2026-09-26T00:00:00.000Z',
+    },
+    {
+      version: 7,
+      caseTypes: ['cremation'],
+      stages: standardCremationStagesV7,
+      intake: standardCremationIntakeV5,
+      createdAt: '2026-10-16T00:00:00.000Z',
     },
   ],
 };

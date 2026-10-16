@@ -1030,19 +1030,36 @@ describe('NewCaseModal — Certifier fields persist on New Case creation (2026-0
       expect(resolveChecklist(items, created.rawStage, created)[6].done).toBe(false);
     });
 
-    it('11. Name + Phone -> Certifier Information checklist item is complete', async () => {
+    // Template v7 (2026-10): a NEW case's Certifier item is completed by
+    // Name + FAX. v5's Name + Phone rule is covered against a v5 snapshot
+    // in domain/cases/viewModel.test.ts.
+    async function createWithCertifier(values: { name?: string; phone?: string; fax?: string }) {
       const { container } = await renderModalWithFields();
       fillRequiredFields(container);
       const inputs = intakeInputs(container);
-      fireEvent.change(inputs[8], { target: { value: 'dr. jane foster' } });
-      fireEvent.change(inputs[9], { target: { value: '555-0199' } });
-
+      if (values.name) fireEvent.change(inputs[8], { target: { value: values.name } });
+      if (values.phone) fireEvent.change(inputs[9], { target: { value: values.phone } });
+      if (values.fax) fireEvent.change(inputs[11], { target: { value: values.fax } });
       fireEvent.click(screen.getByRole('button', { name: 'Create case' }));
       await waitFor(() => expect(pushMock).toHaveBeenCalled());
       const newCaseId = pushMock.mock.calls[0][0].split('/cases/')[1];
       const created = caseFixtures.find((c) => c.id === newCaseId)!;
       const items = created.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
-      expect(resolveChecklist(items, created.rawStage, created)[6].done).toBe(true);
+      return { created, item: resolveChecklist(items, created.rawStage, created)[6] };
+    }
+
+    it('11. Name + Fax -> Certifier Information checklist item is complete (new v7 case)', async () => {
+      const { created, item } = await createWithCertifier({ name: 'dr. jane foster', fax: '555-0188' });
+      expect(created.workflowTemplateVersion).toBe(7);
+      expect(item.requiredCaseFields).toEqual(['certifierName', 'certifierFax']);
+      expect(item.done).toBe(true);
+    });
+
+    it('11b. Name + Phone without a fax -> incomplete on a new v7 case; the phone is still stored', async () => {
+      const { created, item } = await createWithCertifier({ name: 'dr. jane foster', phone: '555-0199' });
+      expect(item.done).toBe(false);
+      expect(created.certifierPhone).toBe('555-0199');
+      expect(created.certifierFax).toBeNull();
     });
   });
 
