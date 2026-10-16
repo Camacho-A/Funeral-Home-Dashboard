@@ -686,7 +686,13 @@ describe('Medical Examiner cases (2026-10)', () => {
 
   it('a standard case still sees the doctor items', () => {
     const items = resolveChecklist(DOCTOR_ITEMS, EDRS_DISPLAY_STAGE, standardCase());
-    expect(items.map((i) => i.label)).toEqual(DOCTOR_ITEMS.map((i) => i.label));
+    expect(items.map((i) => i.index)).toEqual([0, 1, 2]);
+    expect(items.map((i) => i.label)).toEqual([
+      'EDRS submitted & sent to doctor',
+      'Cause of death entered',
+      // Display-only relabel (checklistRelabel.ts); the stored label is unchanged.
+      'Attestation Received / Hard Saved',
+    ]);
   });
 
   it('an ME case sees the verification items instead', () => {
@@ -740,5 +746,72 @@ describe('Medical Examiner cases (2026-10)', () => {
     // responsibilities and are not removed by the classification.
     const items = resolveChecklist(RAW_STAGE_0_ITEMS, 0, meCase());
     expect(items.map((i) => i.label)).toContain('Payment collected');
+  });
+});
+
+/**
+ * Relabeled checklist items (2026-10). Manors asked for "Hardsave for state
+ * approval if not an online doctor" to read "Attestation Received / Hard
+ * Saved". Every template version and frozen snapshot carries the old label,
+ * so the wording changes at presentation only — identity, position,
+ * completion state and every label-matching rule are untouched.
+ */
+describe('resolveChecklist — relabeled checklist items', () => {
+  const EDRS_STAGE = standardCremationWorkflowTemplateFixture.versions[0].stages.find((s) => s.rawStage === 3)!;
+  const EDRS_ITEMS = EDRS_STAGE.checklist.items;
+  const EDRS_DISPLAY_STAGE = EDRS_STAGE.displayStage;
+  const OLD = 'Hardsave for state approval if not an online doctor';
+  const NEW = 'Attestation Received / Hard Saved';
+
+  const edrsCase = (overrides: Partial<Case> = {}) =>
+    baseCase({ organizationId: 'managed-cremations', rawStage: 3, checklistState: {}, ...overrides });
+
+  it('targets the right item: the stored label is still the old one at index 2', () => {
+    expect(EDRS_DISPLAY_STAGE).toBe(2);
+    expect(EDRS_ITEMS.find((i) => i.index === 2)!.label).toBe(OLD);
+  });
+
+  it('shows the new wording at the same index and position, with no duplicate', () => {
+    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase());
+    expect(items.map((i) => i.index)).toEqual([0, 1, 2]);
+    expect(items[2].label).toBe(NEW);
+    expect(items.map((i) => i.label)).not.toContain(OLD);
+    expect(items.filter((i) => i.label === NEW)).toHaveLength(1);
+  });
+
+  it('preserves an existing completion stored under the original key', () => {
+    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ checklistState: { '2:0': true, '2:1': true, '2:2': true } }));
+    expect(items.every((i) => i.done)).toBe(true);
+  });
+
+  it('keeps the same locking behaviour', () => {
+    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ checklistState: { '2:0': true } }));
+    expect(items[2]).toMatchObject({ label: NEW, done: false, locked: true });
+  });
+
+  it('reads as done on a past stage, like every other item', () => {
+    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ rawStage: 6 }), { isPastStage: true });
+    expect(items[2]).toMatchObject({ label: NEW, done: true });
+  });
+
+  it('does not stop the Medical Examiner variant from matching the stored label', () => {
+    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ isMedicalExaminerCase: true }));
+    expect(items.map((i) => i.index)).toEqual([3, 4, 5]);
+  });
+
+  it('applies to no other organization', () => {
+    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ organizationId: 'gus-camacho-jr' }));
+    expect(items[2].label).toBe(OLD);
+  });
+
+  it('renames nothing if the template is restructured', () => {
+    const restructured = EDRS_ITEMS.map((i) => (i.index === 2 ? { ...i, label: 'Something else entirely' } : i));
+    const items = resolveChecklist(restructured, EDRS_DISPLAY_STAGE, edrsCase());
+    expect(items[2].label).toBe('Something else entirely');
+  });
+
+  it('renames nothing at the same index on a different stage', () => {
+    const items = resolveChecklist(EDRS_ITEMS, 3, edrsCase());
+    expect(items.find((i) => i.index === 2)!.label).toBe(OLD);
   });
 });

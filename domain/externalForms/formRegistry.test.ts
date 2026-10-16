@@ -7,6 +7,7 @@ import {
   MANORS_ARRANGEMENT_FORMS_MAPPING_KEY,
   MANORS_ORGANIZATION_ID,
   fieldMapForConfig,
+  presentedExternalFormDocument,
   resolveFormLayout,
   resolveFormRole,
 } from './formRegistry';
@@ -20,6 +21,7 @@ import {
 } from './fieldMapping';
 import { extractMappedFieldsForForm } from './arrangementNokDerivation';
 import { buildJotformPrefillUrl } from './prefillUrl';
+import { getDocumentTypeDefinition } from '../documents/documentTypeRegistry';
 
 const GUS = 'gus-camacho-jr';
 const GUS_FORM_ID = '300000000000001';
@@ -127,4 +129,56 @@ describe('Manors form ids never appear in organization-generic code paths', () =
       expect(code).not.toContain('Manors First Call Sheet');
     });
   }
+});
+
+/**
+ * First Call document name (2026-10). New First Call PDFs are filed as
+ * "First Call.pdf" under a registered type; PDFs stored earlier as the bare
+ * `{formId}.pdf` are presented under the same name without rewriting them.
+ */
+describe('First Call document naming', () => {
+  const storedLegacy = {
+    organizationId: MANORS_ORGANIZATION_ID,
+    origin: 'uploaded',
+    documentTypeKey: null as string | null,
+    fileName: `${FIRST_CALL_SHEET_EXTERNAL_FORM_ID}.pdf`,
+  };
+
+  it('files a new First Call PDF as "First Call" under its own document type', () => {
+    const pdf = resolveFormLayout(config({ externalFormId: FIRST_CALL_SHEET_EXTERNAL_FORM_ID }))!.pdfDocument!;
+    expect(pdf.displayFileName).toBe('First Call.pdf');
+    expect(getDocumentTypeDefinition(pdf.documentTypeKey)?.displayName).toBe('First Call');
+  });
+
+  it('presents a First Call PDF stored under its form id as "First Call"', () => {
+    const presented = presentedExternalFormDocument(storedLegacy);
+    expect(presented.fileName).toBe('First Call.pdf');
+    expect(getDocumentTypeDefinition(presented.documentTypeKey!)?.displayName).toBe('First Call');
+  });
+
+  it('never mutates the stored row', () => {
+    const copy = { ...storedLegacy };
+    presentedExternalFormDocument(storedLegacy);
+    expect(storedLegacy).toEqual(copy);
+  });
+
+  it('leaves another organization\'s identically-named document alone', () => {
+    const gus = { ...storedLegacy, organizationId: GUS };
+    expect(presentedExternalFormDocument(gus)).toBe(gus);
+  });
+
+  it('leaves typed, generated, and unrelated documents alone', () => {
+    const typed = { ...storedLegacy, documentTypeKey: 'external_form.arrangement_forms' };
+    const generated = { ...storedLegacy, origin: 'generated' };
+    const unrelated = { ...storedLegacy, fileName: 'death-certificate.pdf' };
+    const unboundId = { ...storedLegacy, fileName: '999999999999999.pdf' };
+    for (const doc of [typed, generated, unrelated, unboundId]) expect(presentedExternalFormDocument(doc)).toBe(doc);
+  });
+
+  it('Arrangement and Vital Statistics names are unchanged', () => {
+    expect(resolveFormLayout(config({}))!.pdfDocument!.displayFileName).toBe('Arrangement Forms.pdf');
+    expect(resolveFormLayout(config({ externalFormId: VITAL_STATISTICS_EXTERNAL_FORM_ID }))!.pdfDocument!.displayFileName).toBe(
+      'Vital Statistics Information Sheet.pdf',
+    );
+  });
 });

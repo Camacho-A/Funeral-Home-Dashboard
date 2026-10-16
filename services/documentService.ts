@@ -45,6 +45,7 @@ import {
 import { isDocumentArchivingEnabled } from '../domain/organization/documentArchiveCapability';
 import { isCaseDocumentDownloadable, isCaseDocumentEligibleForBulkAction } from '../domain/documents/caseDocumentDisplay';
 import { getIdentityById } from './identityService';
+import { presentedExternalFormDocument } from '../domain/externalForms/formRegistry';
 import {
   isPrintableMimeType,
   buildBulkDownloadZipFileName,
@@ -384,7 +385,7 @@ export async function attachDocumentActorDisplayNames(
   const nameById = new Map(uniqueIds.map((id, i) => [id, identities[i]?.displayName ?? null]));
   return documents.map((doc) => {
     const actorId = doc.generatedBy ?? doc.uploadedBy;
-    return { ...doc, actorDisplayName: actorId ? (nameById.get(actorId) ?? null) : null };
+    return { ...presentedExternalFormDocument(doc), actorDisplayName: actorId ? (nameById.get(actorId) ?? null) : null };
   });
 }
 

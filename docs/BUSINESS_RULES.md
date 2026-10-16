@@ -24,7 +24,7 @@ Each stage has a fixed, ordered checklist of required steps. Items are locked in
 |---|---|
 | **First Call & Payment** | Name of deceased · Place of death (name, address & phone) · Date of birth · Weight · Date of death · Time of death · Hospice/physician who will sign the death certificate (name & phone) · Family contact (name, phone, email) · Cardholder name, card number, expiration, CVV & billing zip · Credit card payment collected by phone · Payment receipt sent (confirms cleared to dispatch) |
 | **Jotform Application** | Jotform application completed |
-| **EDRS & Doctor / Cause of Death** | EDRS submitted & sent to doctor · Cause of death entered · Hardsave for state approval if not an online doctor |
+| **EDRS & Doctor / Cause of Death** | EDRS submitted & sent to doctor · Cause of death entered · Attestation Received / Hard Saved (Manors display wording, 2026-10; stored label "Hardsave for state approval if not an online doctor" — see domain/organization/checklistRelabel.ts) |
 | **Permit & Authorization Sent to Crematory** | Permit sent to crematory · Authorization of release sent to crematory |
 | **DC Application Sent** | DC application filled out · Sent the day before ashes arrive |
 | **Ready for Pickup / Contact Family** | Ashes picked up (scheduled Tue/Fri) · Tag photo taken · Tag/name/certificate cross-checked · Labels made · Transferred to urn · Family contacted — ashes ready for pickup |

@@ -141,9 +141,10 @@ const MANORS_LAYOUTS: readonly ExternalFormLayout[] = [
     extraction: 'standard',
     prefill: 'none',
     caseNumberPrefillFields: [],
-    // No dedicated document type was ever registered for this form; its
-    // PDF has always been filed under the generic `{formId}.pdf` name.
-    pdfDocument: null,
+    // 2026-10. Until then this form had no document type and its PDF was
+    // filed under the generic `{formId}.pdf` name; documents stored that
+    // way are presented under this name by `presentedExternalFormDocument`.
+    pdfDocument: { documentTypeKey: 'external_form.first_call', displayFileName: 'First Call.pdf' },
   },
 ];
 
@@ -228,6 +229,25 @@ export function fieldMapForForm(provider: string, externalFormId: string): Field
   const binding = EXTERNAL_FORM_BINDINGS.find((b) => b.provider === provider && b.externalFormId === externalFormId);
   if (!binding) return [];
   return [...(findLayoutByMappingKey(binding.mappingKey)?.fieldMap ?? [])];
+}
+
+/**
+ * Display name/type for an external-form PDF stored before its layout had
+ * a `pdfDocument` (2026-10: Manors' First Call Sheet). Such a document was
+ * filed as `{formId}.pdf` with no `documentTypeKey`, and that stored row is
+ * never rewritten — this only changes what staff read.
+ *
+ * Matches nothing but an uploaded, untyped `{formId}.pdf` whose form id is
+ * bound to a layout for the document's OWN organization; anything else is
+ * returned unchanged.
+ */
+export function presentedExternalFormDocument<T extends { organizationId: string; origin: string; documentTypeKey: string | null; fileName: string }>(doc: T): T {
+  if (doc.origin !== 'uploaded' || doc.documentTypeKey) return doc;
+  const match = /^(\d+)\.pdf$/.exec(doc.fileName);
+  if (!match) return doc;
+  const binding = findBinding(doc.organizationId, 'jotform', match[1]);
+  const pdfDocument = binding ? findLayoutByMappingKey(binding.mappingKey)?.pdfDocument : null;
+  return pdfDocument ? { ...doc, fileName: pdfDocument.displayFileName, documentTypeKey: pdfDocument.documentTypeKey } : doc;
 }
 
 /** Legacy, organization-blind counterpart of `resolveFormLayout`. */

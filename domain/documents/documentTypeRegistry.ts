@@ -68,6 +68,9 @@ export const DOCUMENT_TYPES = {
       always exists first, a submission only ever attaches to it. */
   EXTERNAL_FORM_VITAL_STATISTICS: { key: 'external_form.vital_statistics', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Vital Statistics Information Sheet' },
   EXTERNAL_FORM_ARRANGEMENT_FORMS: { key: 'external_form.arrangement_forms', category: 'authorization' as DocumentTemplateCategory, displayName: 'Arrangement Forms' },
+  /** 2026-10. Before this, the First Call Sheet's PDF had no type and was
+      filed under its bare form id (`{formId}.pdf`). */
+  EXTERNAL_FORM_FIRST_CALL: { key: 'external_form.first_call', category: 'internal_form' as DocumentTemplateCategory, displayName: 'First Call' },
 } as const;
 
 export type DocumentTypeDefinition = (typeof DOCUMENT_TYPES)[keyof typeof DOCUMENT_TYPES];

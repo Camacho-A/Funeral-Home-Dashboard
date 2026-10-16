@@ -3,6 +3,7 @@ import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
 import { retiredChecklistIndices } from '../organization/checklistRetirement';
+import { presentedChecklistLabel } from '../organization/checklistRelabel';
 import { applyMedicalExaminerVariant } from '../organization/medicalExaminerWorkflow';
 import { findCaseFieldForChecklistIndex } from './resolveIntake';
 import { PAYMENT_CONFIRMATION_LABEL, getChecklistLabels } from '../cases/checklist';
@@ -286,7 +287,9 @@ export function resolveChecklist(
 
     return {
       index,
-      label: item.label,
+      // Display wording only (checklistRelabel.ts) — every label-matching
+      // rule above has already run against the stored label.
+      label: presentedChecklistLabel(case_.organizationId, displayStage, item),
       done,
       locked,
       hasField: item.hasField,

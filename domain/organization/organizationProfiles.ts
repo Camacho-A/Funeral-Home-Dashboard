@@ -72,6 +72,18 @@ export type RetiredChecklistItem = {
   expectedLabel: string;
 };
 
+/** See domain/organization/checklistRelabel.ts. */
+export type RelabeledChecklistItem = {
+  /** Canonical display stage the item belongs to. */
+  displayStage: number;
+  /** Position within that stage's checklist — the stable identifier. */
+  index: number;
+  /** The frozen label(s) that index must carry for the relabel to apply. */
+  expectedLabels: readonly string[];
+  /** What staff see instead. */
+  label: string;
+};
+
 /** See domain/organization/medicalExaminerWorkflow.ts. */
 export type MedicalExaminerStageConfig = {
   displayStage: number;
@@ -164,6 +176,9 @@ export type OrganizationFeaturePreferences = {
   medicalExaminerStages: readonly MedicalExaminerStageConfig[];
   /** Checklist items retired (hidden, never deleted). Empty = none. */
   retiredChecklistItems: readonly RetiredChecklistItem[];
+  /** Display-only checklist wording changes for frozen snapshots
+      (domain/organization/checklistRelabel.ts). */
+  relabeledChecklistItems: readonly RelabeledChecklistItem[];
   /** Presentation-only intake overlay (workflowStagePresentation.ts):
       render canonical stages 0+1 as one "Intake & JotForm" stage. */
   combineIntakeStages: boolean;
@@ -249,6 +264,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   hiddenModules: [],
   medicalExaminerStages: [],
   retiredChecklistItems: [],
+  relabeledChecklistItems: [],
   combineIntakeStages: false,
   uppercaseCombinedIntakeLabels: false,
   additionalItemsTerminology: false,
@@ -334,6 +350,18 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
       // Duplicate of "Payment collected" (index 8). Retired, not deleted,
       // so no stored checklistState key shifts meaning.
       { displayStage: 0, index: 9, expectedLabel: 'Credit card payment collected by phone' },
+    ],
+    relabeledChecklistItems: [
+      // "EDRS & Doctor / Cause of Death", item 2 — wording requested by
+      // Manors (2026-10). Every template version (v1-v6) and every frozen
+      // snapshot carries the old label, so it is matched here rather than
+      // rewritten; the ME config below still matches the stored label.
+      {
+        displayStage: 2,
+        index: 2,
+        expectedLabels: ['Hardsave for state approval if not an online doctor'],
+        label: 'Attestation Received / Hard Saved',
+      },
     ],
     medicalExaminerStages: [
       // "First Call & Payment" — ME-owned items are simply not asked at
