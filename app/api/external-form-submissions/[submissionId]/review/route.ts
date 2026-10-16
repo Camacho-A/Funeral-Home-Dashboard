@@ -13,6 +13,8 @@ import type { MappedSolisField } from '@/domain/externalForms/fieldMapping';
 import { recordExternalFormFieldsApplied, recordExternalFormSubmissionReviewed } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import type { Case } from '@/types/case';
+import { caseRevision } from '@/lib/wixCaseMapper';
+import { CASE_REVISION_REQUIRED_MESSAGE, CASE_REVISION_REQUIRED_REASON, parseExpectedRevisionValue } from '@/domain/cases/caseRevisionConflict';
 
 /** Maps a MappedSolisField onto the exact Case patch shape PATCH
     /api/cases/[caseId] already validates — never a new update mechanism,
@@ -94,7 +96,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ subm
   // Data minimization (2026-09): ExternalFormSubmission no longer retains a
   // full rawPayload at all, so there is nothing left to strip here — the
   // submission object is already safe to return as-is.
-  return NextResponse.json({ submission, rows });
+  // Case concurrency (2026-10): the revision these rows were computed
+  // against — the apply POST must send it back, so fields are never
+  // applied to a case that changed after staff reviewed it.
+  return NextResponse.json({ submission, rows, caseRevision: caseRevision(theCase) });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ submissionId: string }> }) {
@@ -108,7 +113,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
-  const b = body as { organizationId?: unknown; caseId?: unknown; fieldsToApply?: unknown };
+  const b = body as { organizationId?: unknown; caseId?: unknown; fieldsToApply?: unknown; expectedRevision?: unknown };
   if (typeof b.organizationId !== 'string' || typeof b.caseId !== 'string' || !Array.isArray(b.fieldsToApply)) {
     return NextResponse.json({ error: 'organizationId, caseId, and fieldsToApply are required.' }, { status: 400 });
   }
@@ -127,11 +132,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     return NextResponse.json({ error: 'Submission not found.' }, { status: 404 });
   }
 
+  // A submission already linked to a case may only be applied to THAT case
+  // (2026-10) — never used to write its data onto a different case of the
+  // same organization. An unmatched submission is applied to the case staff
+  // chose to review it against.
+  if (submission.caseFormLinkId) {
+    const link = await caseFormLinkService.getById(submission.caseFormLinkId, dataAdapterMode);
+    if (link && link.caseId !== b.caseId) {
+      return NextResponse.json({ error: 'This submission belongs to a different case.' }, { status: 409 });
+    }
+  }
+
   const mapped = JSON.parse(submission.mappedFields) as Partial<Record<MappedSolisField, string>>;
   const fieldsToApply = (b.fieldsToApply as string[]).filter((f): f is MappedSolisField => f in mapped);
   const patch = buildCasePatch(fieldsToApply, mapped);
 
   if (Object.keys(patch).length > 0) {
+    // Case concurrency (2026-10): applied against the revision the review
+    // was computed from (GET's caseRevision). Missing → 428, nothing written;
+    // the case changed since → the PATCH's 409 is passed straight through.
+    const expectedRevision = parseExpectedRevisionValue(b.expectedRevision);
+    if (expectedRevision === 'invalid') {
+      return NextResponse.json({ error: 'expectedRevision must be a non-negative integer.' }, { status: 400 });
+    }
+    if (expectedRevision === undefined) {
+      return NextResponse.json({ error: CASE_REVISION_REQUIRED_MESSAGE, reason: CASE_REVISION_REQUIRED_REASON }, { status: 428 });
+    }
     // Reuses the EXISTING, fully-validated case-update Route Handler —
     // never a second update mechanism. An internal same-origin-shaped
     // request (explicit matching Origin/Host, the real caller's own
@@ -146,11 +172,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
         Origin: origin,
         Cookie: request.headers.get('cookie') ?? '',
       },
-      body: JSON.stringify({ organizationId, patch }),
+      body: JSON.stringify({ organizationId, patch, expectedRevision }),
     });
     if (!patchResponse.ok) {
       const errorBody = await patchResponse.json().catch(() => ({}));
-      return NextResponse.json({ error: errorBody.error ?? 'Failed to apply fields to case.' }, { status: patchResponse.status });
+      return NextResponse.json(
+        { error: errorBody.error ?? 'Failed to apply fields to case.', ...(errorBody.reason ? { reason: errorBody.reason } : {}) },
+        { status: patchResponse.status },
+      );
     }
 
     try {

@@ -358,6 +358,48 @@ export async function conditionalPatchWixDataItem<Item = Record<string, unknown>
 }
 
 /**
+ * Case concurrency (2026-10). The multi-field form of
+ * conditionalPatchWixDataItem: one PatchDataItem with a `SET_FIELD` per
+ * entry of `fields`, applied only if `condition.filter` matches — all or
+ * nothing. Returns the HTTP status on refusal so a caller can tell "the
+ * condition was not met" (428, `WDE0193`) from a missing item (404) or a
+ * failure. Identical wire format to Gus SOLIS's helper of the same name,
+ * which writes the same Wix `cases` rows.
+ */
+export async function conditionalPatchWixDataItemFields<Item = Record<string, unknown>>(
+  dataCollectionId: string,
+  wixItemId: string,
+  fields: Record<string, unknown>,
+  condition: { filter: Record<string, unknown> },
+): Promise<{ applied: true; dataItem: WixDataItem<Item> } | { applied: false; status: number }> {
+  const { apiKey, siteId } = getWixServerConfig();
+
+  const response = await wixWriteFetch(`https://www.wixapis.com/wix-data/v2/items/${encodeURIComponent(wixItemId)}`, {
+    method: 'PATCH',
+    headers: wixDataHeaders(apiKey, siteId),
+    body: JSON.stringify({
+      dataCollectionId,
+      patch: {
+        dataItemId: wixItemId,
+        fieldModifications: Object.entries(fields).map(([fieldPath, value]) => ({
+          fieldPath,
+          action: 'SET_FIELD',
+          setFieldOptions: { value },
+        })),
+      },
+      condition,
+    }),
+  });
+
+  if (!response.ok) {
+    return { applied: false, status: response.status };
+  }
+
+  const body = await response.json();
+  return { applied: true, dataItem: body.dataItem };
+}
+
+/**
  * Phase 16B (Case Number Generation). Atomically increments a numeric
  * field on an existing item via Wix's `patchDataItem` INCREMENT_FIELD
  * action — the "concurrency-safe mechanism" this feature's uniqueness

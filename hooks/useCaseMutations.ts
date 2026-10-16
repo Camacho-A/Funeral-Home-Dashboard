@@ -1,9 +1,12 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case, CaseUpdate, VaPublishChoice, VaNotificationResponsibility } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { findChecklistIndexForCaseField } from '@/domain/workflow/resolveIntake';
-import { writeChecklistValue } from '@/domain/workflow/checklistItemKey';
+import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
+import { caseRevision } from '@/lib/wixCaseMapper';
+import { captureCaseMapBaseValues, type CaseMapBaseValues } from '@/domain/cases/caseMergeBase';
+import { isCaseRevisionConflictError } from '@/domain/cases/caseRevisionConflict';
 import { findStageByRawStage } from '@/domain/workflow/resolveStages';
 import { useOrganization } from './useOrganization';
 
@@ -38,7 +41,9 @@ function buildStructuredIntakeFieldPatch<K extends keyof CaseUpdate & string>(
     // hypothetical future nullable field-backed item, never for the
     // Certifier fields below (which deliberately have no checklistItemIndex
     // at all, so this branch never runs for them regardless of value).
-    patch.fieldValues = { ...case_.fieldValues, [index]: value ?? '' };
+    // Only the key being changed (case concurrency, 2026-10): the server
+    // merges it onto the case as it is now.
+    patch.fieldValues = { [index]: value ?? '' };
   }
   return patch;
 }
@@ -75,12 +80,38 @@ export function useCaseMutations(caseId: string) {
    */
   const latestChecklistMutationId = useRef(0);
 
+  /**
+   * Case concurrency (2026-10, docs/CASE_CONCURRENCY.md). Every save carries
+   * the revision it was made against; the server refuses (409) a save the
+   * case has moved past, so one person's stale page can no longer overwrite
+   * another's work.
+   *
+   *  - Edits to one case run one at a time (`scope`), so each is sent with
+   *    the revision the previous save produced — rapid edits never conflict
+   *    with each other. `knownRevision` also remembers the newest revision
+   *    seen, in case a latest-wins guard skipped a cache write.
+   *  - Map edits (a checklist tick, one field value, one VA step) send only
+   *    the changed key plus the value it had when clicked (`baseValues`), so
+   *    an edit to an item nobody else touched still lands after someone
+   *    else's unrelated save.
+   *  - A refusal is surfaced as `conflict`; staff choose Refresh (load the
+   *    current case) or Retry (re-apply their change to it).
+   */
+  const queryKey = ['case', organization.organizationId, caseId] as const;
+  const knownRevision = useRef(0);
+  const [conflict, setConflict] = useState<{ patch: CaseUpdate; current: Case | null } | null>(null);
+
+  type CaseEdit = { patch: CaseUpdate; baseValues?: CaseMapBaseValues };
+
   const updateCase = useMutation({
-    mutationFn: (patch: Parameters<typeof casesService.update>[2]) =>
-      casesService.update(organization, caseId, patch, organization.dataAdapterMode),
-    onMutate: async (patch) => {
+    scope: { id: `case-edit:${organization.organizationId}:${caseId}` },
+    mutationFn: ({ patch, baseValues }: CaseEdit) => {
+      const cached = queryClient.getQueryData<Case>(queryKey);
+      const expectedRevision = Math.max(cached ? caseRevision(cached) : 0, knownRevision.current);
+      return casesService.update(organization, caseId, patch, organization.dataAdapterMode, { expectedRevision, baseValues });
+    },
+    onMutate: async ({ patch }) => {
       if (!('checklistState' in patch) || !patch.checklistState) return undefined;
-      const queryKey = ['case', organization.organizationId, caseId] as const;
       const mutationId = ++latestChecklistMutationId.current;
       await queryClient.cancelQueries({ queryKey });
       const previousCase = queryClient.getQueryData<Case>(queryKey);
@@ -92,7 +123,10 @@ export function useCaseMutations(caseId: string) {
       }
       return { previousCase, mutationId, queryKey };
     },
-    onError: (_err, _patch, context) => {
+    onError: (error, { patch }, context) => {
+      if (isCaseRevisionConflictError(error)) {
+        setConflict({ patch, current: error.current });
+      }
       if (!context?.previousCase) return;
       // A later checklist toggle has already superseded this one — its own
       // onSuccess/onError will settle the cache; rolling back here would
@@ -100,18 +134,51 @@ export function useCaseMutations(caseId: string) {
       if (context.mutationId !== latestChecklistMutationId.current) return;
       queryClient.setQueryData(context.queryKey, context.previousCase);
     },
-    onSuccess: (updated, _patch, context) => {
+    onSuccess: (updated, _variables, context) => {
+      knownRevision.current = Math.max(knownRevision.current, caseRevision(updated));
       // Same staleness guard for the success path: a superseded request's
       // server-confirmed data must not clobber a newer toggle's own
       // optimistic (or already-settled) state.
       if (context && context.mutationId !== latestChecklistMutationId.current) return;
-      queryClient.setQueryData(['case', organization.organizationId, caseId], updated);
+      queryClient.setQueryData(queryKey, updated);
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
     },
   });
 
+  /** Base values are read at click time, before any optimistic update. */
+  function save(patch: CaseUpdate) {
+    const baseValues = captureCaseMapBaseValues(queryClient.getQueryData<Case>(queryKey), patch);
+    updateCase.mutate({ patch, ...(baseValues ? { baseValues } : {}) });
+  }
+
   return {
     isPending: updateCase.isPending,
+
+    /** Set when a save was refused because the case had changed. */
+    conflict,
+
+    /** Show the case as it is now; the refused change is dropped. */
+    refreshAfterConflict() {
+      if (conflict?.current) {
+        queryClient.setQueryData(queryKey, conflict.current);
+        knownRevision.current = Math.max(knownRevision.current, caseRevision(conflict.current));
+      }
+      setConflict(null);
+      queryClient.invalidateQueries({ queryKey });
+    },
+
+    /** Re-apply the refused change to the case as it is now — an explicit
+        staff decision to keep their value over the newer one. */
+    retryAfterConflict() {
+      if (!conflict) return;
+      const { patch, current } = conflict;
+      if (current) {
+        queryClient.setQueryData(queryKey, current);
+        knownRevision.current = Math.max(knownRevision.current, caseRevision(current));
+      }
+      setConflict(null);
+      save(patch);
+    },
 
     /**
      * Keyed by the case's current *display* stage, not rawStage — First
@@ -126,15 +193,15 @@ export function useCaseMutations(caseId: string) {
       const displayStage = case_.workflowSnapshot
         ? findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage
         : case_.rawStage;
-      updateCase.mutate({ checklistState: writeChecklistValue(case_.checklistState, displayStage, index, newDone) });
+      save({ checklistState: { [checklistItemKey(displayStage, index)]: newDone } });
     },
 
     setFieldValue(case_: Case, index: number, value: string) {
-      updateCase.mutate({ fieldValues: { ...case_.fieldValues, [index]: value } });
+      save({ fieldValues: { [index]: value } });
     },
 
     reassignOwner(staffId: string | null) {
-      updateCase.mutate({ assignedStaffId: staffId });
+      save({ assignedStaffId: staffId });
     },
 
     /**
@@ -147,7 +214,7 @@ export function useCaseMutations(caseId: string) {
      * differently-named mutator per field.
      */
     updateCaseInfo(patch: CaseUpdate) {
-      updateCase.mutate(patch);
+      save(patch);
     },
 
     /**
@@ -173,11 +240,11 @@ export function useCaseMutations(caseId: string) {
      * a limitation of this function).
      */
     setWeight(case_: Case, value: string) {
-      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'weight', value));
+      save(buildStructuredIntakeFieldPatch(case_, 'weight', value));
     },
 
     setTimeOfDeath(case_: Case, value: string) {
-      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'timeOfDeath', value));
+      save(buildStructuredIntakeFieldPatch(case_, 'timeOfDeath', value));
     },
 
     /**
@@ -192,37 +259,37 @@ export function useCaseMutations(caseId: string) {
      * fields directly.
      */
     setCertifierName(case_: Case, value: string | null) {
-      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierName', value));
+      save(buildStructuredIntakeFieldPatch(case_, 'certifierName', value));
     },
 
     setCertifierPhone(case_: Case, value: string | null) {
-      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierPhone', value));
+      save(buildStructuredIntakeFieldPatch(case_, 'certifierPhone', value));
     },
 
     setCertifierLicenseNumber(case_: Case, value: string | null) {
-      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierLicenseNumber', value));
+      save(buildStructuredIntakeFieldPatch(case_, 'certifierLicenseNumber', value));
     },
 
     setCertifierFax(case_: Case, value: string | null) {
-      updateCase.mutate(buildStructuredIntakeFieldPatch(case_, 'certifierFax', value));
+      save(buildStructuredIntakeFieldPatch(case_, 'certifierFax', value));
     },
 
     setVeteranFlag(newValue: boolean) {
-      updateCase.mutate({ isVeteran: newValue });
+      save({ isVeteran: newValue });
     },
 
     toggleVaStep(case_: Case, index: number, newDone: boolean) {
-      updateCase.mutate({ vaStepsState: { ...case_.vaStepsState, [index]: newDone } });
+      save({ vaStepsState: { [index]: newDone } });
     },
 
     setVaPublishChoice(choice: VaPublishChoice) {
-      updateCase.mutate({ vaPublishChoice: choice });
+      save({ vaPublishChoice: choice });
     },
 
     /** VA responsibility correction (2026-09) — independent of
         setVeteranFlag; never implies/changes isVeteran. */
     setVaNotificationResponsibility(responsibility: VaNotificationResponsibility) {
-      updateCase.mutate({ vaNotificationResponsibility: responsibility });
+      save({ vaNotificationResponsibility: responsibility });
     },
   };
 }

@@ -1,4 +1,4 @@
-import { insertWixDataItem, updateWixDataItem, incrementWixDataField, queryWixDataItems, WixDataApiError } from './wixDataApi';
+import { insertWixDataItem, conditionalPatchWixDataItem, incrementWixDataField, queryWixDataItems, WixDataApiError } from './wixDataApi';
 import { formatCaseNumber, isValidCaseNumberPrefix } from '../domain/cases/caseNumber';
 
 const CASE_SEQUENCES_COLLECTION = 'caseSequences';
@@ -157,21 +157,41 @@ export async function initializeCaseSequence(
     if (!(error instanceof WixDataApiError) || error.status !== 409) throw error;
   }
 
-  const existing = await getCaseSequenceState(organizationId, year);
-  const currentNextSequence = existing?.nextSequence ?? 0;
+  /**
+   * Case concurrency (2026-10). The overwrite is CONDITIONAL on
+   * `nextSequence` still being the value just read. It used to be a
+   * read-then-full-replace, so a `reserveNextCaseNumber` increment landing
+   * in between was rolled back and that case number could be issued twice.
+   * Now a concurrent increment makes the write refuse; it re-reads, and if
+   * the counter has meanwhile reached the target, that is the answer
+   * (forward-only either way). Bounded.
+   */
+  for (let attempt = 0; attempt < SEQUENCE_WRITE_MAX_ATTEMPTS; attempt++) {
+    const existing = await getCaseSequenceState(organizationId, year);
+    const currentNextSequence = existing?.nextSequence ?? 0;
 
-  if (!options.forceOverwrite) {
-    throw new CaseSequenceAlreadyInitializedError(currentNextSequence);
-  }
-  if (nextSequence < currentNextSequence) {
-    throw new Error(
-      `Refusing to move the case-number sequence backwards for ${organizationId}-${year} (requested ${nextSequence}, currently ${currentNextSequence}) — this would allow a previously-issued case number to be reused.`,
-    );
-  }
+    if (!options.forceOverwrite) {
+      throw new CaseSequenceAlreadyInitializedError(currentNextSequence);
+    }
+    // Lost the race to a concurrent increment that already carried the
+    // counter to (or past) the target: nothing left to do.
+    if (attempt > 0 && currentNextSequence >= nextSequence) return { nextSequence: currentNextSequence };
+    if (nextSequence < currentNextSequence) {
+      throw new Error(
+        `Refusing to move the case-number sequence backwards for ${organizationId}-${year} (requested ${nextSequence}, currently ${currentNextSequence}) — this would allow a previously-issued case number to be reused.`,
+      );
+    }
+    if (nextSequence === currentNextSequence) return { nextSequence };
 
-  await updateWixDataItem<CaseSequenceItem>(CASE_SEQUENCES_COLLECTION, sequenceId, { organizationId, year, nextSequence });
-  return { nextSequence };
+    const written = await conditionalPatchWixDataItem<CaseSequenceItem>(CASE_SEQUENCES_COLLECTION, sequenceId, 'nextSequence', nextSequence, {
+      filter: { nextSequence: { $eq: currentNextSequence } },
+    });
+    if (written.applied) return { nextSequence };
+  }
+  throw new Error(`The case-number sequence for ${organizationId}-${year} kept changing; it was not moved. Try again.`);
 }
+
+const SEQUENCE_WRITE_MAX_ATTEMPTS = 3;
 
 /**
  * Historical-import sequence safety (2026-10). Ensures `nextSequence` for

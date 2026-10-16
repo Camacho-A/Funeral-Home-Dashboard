@@ -123,8 +123,14 @@ export function useRetryFormPdf(organizationId: string, caseId: string) {
 export function useApplyReconciliation(organizationId: string, caseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { submissionId: string; fieldsToApply: string[] }) =>
-      applyReconciliation(organizationId, params.submissionId, caseId, params.fieldsToApply),
+    mutationFn: (params: { submissionId: string; fieldsToApply: string[]; expectedRevision: number }) =>
+      applyReconciliation(organizationId, params.submissionId, caseId, params.fieldsToApply, params.expectedRevision),
+    // A refusal (the case changed since the review loaded) re-loads the
+    // review rows and the case, so staff decide against current data.
+    onError: (_error, params) => {
+      queryClient.invalidateQueries({ queryKey: reconciliationKey(organizationId, params.submissionId, caseId) });
+      queryClient.invalidateQueries({ queryKey: ['case', organizationId, caseId] });
+    },
     // Case progression fix (2026-09): applying reconciled fields (and/or
     // marking the submission's CaseFormLink reviewed) can advance this
     // case's rawStage server-side — this is rendered on the SAME Case

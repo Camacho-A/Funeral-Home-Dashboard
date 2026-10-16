@@ -1,7 +1,8 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, updateWixDataItem } from '../lib/wixDataApi';
-import { mapWixCaseItem, applyCaseUpdateToWixData, type WixCaseItem } from '../lib/wixCaseMapper';
+import { buildCaseFieldPatch } from '../lib/wixCaseMapper';
 import { caseFixtures } from './__mocks__/fixtures';
+import { updateCaseWithRetry, writeMockCase } from './caseWriteService';
+import type { Case, CaseUpdate } from '../types/case';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
 import { checklistItemKey } from '../domain/workflow/checklistItemKey';
 import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
@@ -96,42 +97,47 @@ export async function markCasePaidIfVerified(
     if ((refreshed?.balanceDue ?? 0) > 0) return; // still owes a balance — not fully paid yet
   }
 
-  if (dataAdapterMode === 'mock') {
-    const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === organizationId);
-    if (index === -1) return;
-    const case_ = caseFixtures[index];
+  // Case concurrency (2026-10). Only `paymentStatus` and the ONE payment
+  // checklist key are set — merged onto the case as it is at write time,
+  // conditioned on its revision, recomputed on conflict (bounded; see
+  // services/caseWriteService.ts). It used to full-replace the row from its
+  // own read, so a staff edit landing in between was undone, and a stale
+  // staff checklist save could later erase the payment tick. An archived
+  // case is still left alone, exactly as before.
+  const paidPatch = (case_: Case): CaseUpdate | null => {
+    if (case_.isDeleted) return null;
     const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
-    caseFixtures[index] = {
-      ...case_,
+    return {
       paymentStatus: 'paid_in_full',
-      checklistState:
-        paymentChecklistItem === null
-          ? case_.checklistState
-          : { ...case_.checklistState, [checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index)]: true },
+      ...(paymentChecklistItem === null
+        ? {}
+        : { checklistState: { [checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index)]: true } }),
     };
+  };
+
+  if (dataAdapterMode === 'mock') {
+    const case_ = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId);
+    const patch = case_ ? paidPatch(case_) : null;
+    if (!case_ || !patch) return;
+    writeMockCase(organizationId, caseId, (current) => ({
+      ...current,
+      ...patch,
+      checklistState: { ...current.checklistState, ...(patch.checklistState ?? {}) },
+    }));
     await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
     return;
   }
 
-  const response = await queryWixDataItems<WixCaseItem>('cases', {
-    filter: { beaconCaseId: caseId, organizationId, isArchived: false },
-    paging: { limit: 1 },
+  const outcome = await updateCaseWithRetry(organizationId, caseId, (row) => {
+    const patch = paidPatch(row.case_);
+    return patch ? buildCaseFieldPatch(row.data, patch) : null;
   });
-  const existingItem = response.dataItems[0];
-  if (!existingItem) return;
-
-  const case_ = mapWixCaseItem(existingItem.data);
-  if (!case_) return;
-
-  const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
-  const mergedData = applyCaseUpdateToWixData(existingItem.data, {
-    paymentStatus: 'paid_in_full',
-    checklistState:
-      paymentChecklistItem === null
-        ? undefined
-        : { ...case_.checklistState, [checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index)]: true },
-  });
-
-  await updateWixDataItem<WixCaseItem>('cases', existingItem.id, mergedData);
+  if (outcome.result === 'not_found') return;
+  if (outcome.result === 'conflict') {
+    // A webhook/poll redelivery converges idempotently (the decision is
+    // re-made from the case as it then is).
+    throw new Error(`Marking case ${caseId} paid lost to concurrent writes on every attempt.`);
+  }
+  if (outcome.result === 'failed') throw new Error(`Marking case ${caseId} paid failed: ${outcome.reason}`);
   await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
 }

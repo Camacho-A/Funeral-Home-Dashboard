@@ -1,4 +1,12 @@
 import type { OrganizationContext } from '../types/organization';
+import { caseRevision } from '../lib/wixCaseMapper';
+import {
+  CASE_REVISION_CONFLICT_REASON,
+  CASE_REVISION_REQUIRED_REASON,
+  CaseRevisionConflictError,
+  CaseRevisionRequiredError,
+} from '../domain/cases/caseRevisionConflict';
+import { mapKeysStillAtBase, type CaseMapBaseValues } from '../domain/cases/caseMergeBase';
 import type { Case, CaseUpdate, NewCaseInput } from '../types/case';
 import type { Session } from '../types/session';
 import type { WorkflowTemplate } from '../types/workflowTemplate';
@@ -499,11 +507,22 @@ export async function create(
   return newCase;
 }
 
+/**
+ * Case concurrency (2026-10, docs/CASE_CONCURRENCY.md). `expectedRevision`
+ * is the revision of the case the edit was made against — REQUIRED: a save
+ * without one is refused (CaseRevisionRequiredError; HTTP 428 in Wix mode)
+ * and nothing is written. A save against a revision the case has moved past
+ * throws CaseRevisionConflictError carrying the current case — unless it
+ * only changes checklist/fieldValues/VA keys that still hold `baseValues`.
+ */
+export type CaseUpdateOptions = { expectedRevision?: number; baseValues?: CaseMapBaseValues };
+
 export async function update(
   context: OrganizationContext,
   caseId: string,
   patch: CaseUpdate,
   dataAdapterMode: DataAdapterMode = 'mock',
+  options: CaseUpdateOptions = {},
 ): Promise<Case> {
   assertIntakeOwnerUnchanged(patch);
   assertCreatedByUnchanged(patch);
@@ -513,8 +532,19 @@ export async function update(
     const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ organizationId: context.organizationId, patch }),
+      body: JSON.stringify({
+        organizationId: context.organizationId,
+        patch,
+        expectedRevision: options.expectedRevision,
+        ...(options.baseValues ? { baseValues: options.baseValues } : {}),
+      }),
     });
+    if (response.status === 409 || response.status === 428) {
+      const errorBody = (await response.json().catch(() => null)) as { case?: Case | null; error?: string; reason?: string } | null;
+      if (errorBody?.reason === CASE_REVISION_CONFLICT_REASON) throw new CaseRevisionConflictError(errorBody.case ?? null);
+      if (errorBody?.reason === CASE_REVISION_REQUIRED_REASON) throw new CaseRevisionRequiredError();
+      throw new Error(errorBody?.error?.trim() ? errorBody.error : `Case ${caseId} could not be saved.`);
+    }
     if (!response.ok) {
       // Mirrors create()'s own fix above: surface the route's specific,
       // already-safe-to-display error (e.g. the pickup-release validation
@@ -535,6 +565,8 @@ export async function update(
     return body.case;
   }
 
+  if (options.expectedRevision === undefined) throw new CaseRevisionRequiredError();
+
   if (patch.assignedStaffId) {
     await assertStaffProfileIsActiveAndInOrganization(context.organizationId, patch.assignedStaffId, 'mock');
   }
@@ -543,6 +575,13 @@ export async function update(
     (c) => c.id === caseId && c.organizationId === context.organizationId,
   );
   if (index === -1) throw new Error(`Case ${caseId} not found for this organization`);
+  // Same revision rule as the Wix PATCH route (mock mode never diverges).
+  if (
+    caseRevision(caseFixtures[index]) !== options.expectedRevision &&
+    !mapKeysStillAtBase(caseFixtures[index], patch as Record<string, unknown>, options.baseValues)
+  ) {
+    throw new CaseRevisionConflictError(caseFixtures[index]);
+  }
   // Archived cases are read-only (2026-10): mirrors the Wix PATCH route's
   // identical guard, so DATA_ADAPTER=mock never diverges. Both read the
   // same shared rule — see domain/cases/archivedCaseWrites.ts.
@@ -607,7 +646,17 @@ export async function update(
       Object.assign(normalizedPatch, sync);
     }
   }
-  const updated = { ...caseFixtures[index], ...normalizedPatch };
+  // Map fields merge per key and every write bumps the revision — the same
+  // semantics as lib/wixCaseMapper.ts#buildCaseFieldPatch.
+  const existingCase = caseFixtures[index];
+  const updated: Case = {
+    ...existingCase,
+    ...normalizedPatch,
+    ...(normalizedPatch.checklistState ? { checklistState: { ...existingCase.checklistState, ...normalizedPatch.checklistState } } : {}),
+    ...(normalizedPatch.fieldValues ? { fieldValues: { ...existingCase.fieldValues, ...normalizedPatch.fieldValues } } : {}),
+    ...(normalizedPatch.vaStepsState ? { vaStepsState: { ...existingCase.vaStepsState, ...normalizedPatch.vaStepsState } } : {}),
+    revision: caseRevision(existingCase) + 1,
+  };
   caseFixtures[index] = updated;
 
   // Task #6 (2026-09, checklist completion → workflow reconciliation).
@@ -621,7 +670,7 @@ export async function update(
     try {
       const reconcileResult = await reconcileCaseWorkflow(context.organizationId, caseId, 'mock');
       if (reconcileResult.changed) {
-        result = { ...result, rawStage: reconcileResult.rawStage };
+        result = reconcileResult.case_ ?? { ...result, rawStage: reconcileResult.rawStage };
       }
     } catch (error) {
       console.error('Failed to reconcile workflow after checklist update:', error instanceof Error ? error.message : error);

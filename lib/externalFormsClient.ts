@@ -111,23 +111,25 @@ export async function fetchReconciliation(
   organizationId: string,
   submissionId: string,
   caseId: string,
-): Promise<{ rows: ReconciliationRow[] }> {
+): Promise<{ rows: ReconciliationRow[]; caseRevision: number }> {
   const params = new URLSearchParams({ organizationId, caseId });
   const response = await fetch(`/api/external-form-submissions/${encodeURIComponent(submissionId)}/review?${params.toString()}`);
   const body = await parseJsonOrThrow(response);
-  return { rows: (body.rows as ReconciliationRow[]) ?? [] };
+  return { rows: (body.rows as ReconciliationRow[]) ?? [], caseRevision: typeof body.caseRevision === 'number' ? body.caseRevision : 0 };
 }
 
+/** `expectedRevision` is the `caseRevision` the review rows came with. */
 export async function applyReconciliation(
   organizationId: string,
   submissionId: string,
   caseId: string,
   fieldsToApply: string[],
+  expectedRevision: number,
 ): Promise<void> {
   const response = await fetch(`/api/external-form-submissions/${encodeURIComponent(submissionId)}/review`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId, caseId, fieldsToApply }),
+    body: JSON.stringify({ organizationId, caseId, fieldsToApply, expectedRevision }),
   });
   await parseJsonOrThrow(response);
 }

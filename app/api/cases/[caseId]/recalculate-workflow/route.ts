@@ -42,5 +42,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   }
 
   const result = await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
-  return NextResponse.json(result);
+  return NextResponse.json({ rawStage: result.rawStage, changed: result.changed });
 }

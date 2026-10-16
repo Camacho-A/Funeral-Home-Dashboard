@@ -32,6 +32,8 @@ export class JotformClientError extends Error {
       | 'empty_response'
       | 'network_error'
       | 'invalid_submission_response',
+    /** The HTTP status Jotform answered, for an `http_error`. */
+    public readonly httpStatus: number | null = null,
   ) {
     super(message);
     this.name = 'JotformClientError';
@@ -102,7 +104,7 @@ export async function fetchSubmissionPdf(formId: string, submissionId: string, o
   }
 
   if (!response.ok) {
-    throw new JotformClientError(`Jotform PDF retrieval failed with status ${response.status}.`, 'http_error');
+    throw new JotformClientError(`Jotform PDF retrieval failed with status ${response.status}.`, 'http_error', response.status);
   }
 
   const contentType = response.headers.get('content-type');
@@ -163,7 +165,7 @@ export async function fetchSubmissionAnswers(submissionId: string, options?: Jot
   }
 
   if (!response.ok) {
-    throw new JotformClientError(`Jotform submission retrieval failed with status ${response.status}.`, 'http_error');
+    throw new JotformClientError(`Jotform submission retrieval failed with status ${response.status}.`, 'http_error', response.status);
   }
 
   let body: unknown;

@@ -450,7 +450,8 @@ export function CremainsPickupSection({
         });
       }
       caseMutations.updateCaseInfo({
-        checklistState: writeChecklistValue(case_.checklistState, item.displayStage, item.index, true),
+        // Only this key (case concurrency): the server merges it onto the case as it is now.
+        checklistState: writeChecklistValue({}, item.displayStage, item.index, true),
       });
       closeDialog();
     } catch (e) {

@@ -12,13 +12,23 @@ let originalEnv: Record<string, string | undefined>;
 let mockQueryWixDataItems = vi.fn();
 let mockUpdateWixDataItem = vi.fn();
 let mockInsertWixDataItem = vi.fn();
+/** Case rows written during the current test, overlaid on every later
+    'cases' read — so a second write (e.g. automatic archiving after the
+    edit) sees the first, as it would against Wix. Reset per test. */
+let writtenCaseRows = new Map<string, Record<string, unknown>>();
+/** Every conditional case patch sent, as (fields, condition). */
+let conditionalPatchCalls: { fields: Record<string, unknown>; condition: { filter: Record<string, { $eq: unknown }> } }[] = [];
+function overlayWrittenCaseRows(collectionId: string, response: { dataItems?: { id: string; data: unknown }[] } | undefined) {
+  if (collectionId !== 'cases' || !response?.dataItems) return response;
+  return { ...response, dataItems: response.dataItems.map((item) => (writtenCaseRows.has(item.id) ? { ...item, data: writtenCaseRows.get(item.id) } : item)) };
+}
 
 vi.mock('@/lib/wixDataApi', async () => {
   const { getWixServerConfig } = await import('@/lib/env');
   return {
-    queryWixDataItems: (...args: unknown[]) => {
+    queryWixDataItems: async (...args: unknown[]) => {
       getWixServerConfig();
-      return mockQueryWixDataItems(...args);
+      return overlayWrittenCaseRows(args[0] as string, await mockQueryWixDataItems(...args));
     },
     // Manors go-live pagination fix (2026-09): see the identical comment
     // in app/api/cases/route.test.ts.
@@ -30,6 +40,30 @@ vi.mock('@/lib/wixDataApi', async () => {
     updateWixDataItem: (...args: unknown[]) => {
       getWixServerConfig();
       return mockUpdateWixDataItem(...args);
+    },
+    // Case concurrency (2026-10): case writes are now field-scoped,
+    // revision-conditioned patches. Simulated like Wix: refused with 428
+    // unless the stored row still matches the condition; otherwise the
+    // fields are applied onto the stored row and the resulting FULL row is
+    // passed to mockUpdateWixDataItem, so every existing assertion about
+    // "what the row looks like after the write" keeps its meaning.
+    conditionalPatchWixDataItemFields: async (
+      collectionId: string,
+      itemId: string,
+      fields: Record<string, unknown>,
+      condition: { filter: Record<string, { $eq: unknown }> },
+    ) => {
+      getWixServerConfig();
+      if (collectionId === 'cases') conditionalPatchCalls.push({ fields, condition });
+      const response = overlayWrittenCaseRows(collectionId, await mockQueryWixDataItems(collectionId, { filter: { _id: itemId } }));
+      const stored = (response?.dataItems ?? []).find((item: { id: string }) => item.id === itemId);
+      if (!stored) return { applied: false, status: 404 };
+      const data = stored.data as Record<string, unknown>;
+      const matches = Object.entries(condition.filter).every(([key, test]) => (data[key] ?? null) === test.$eq);
+      if (!matches) return { applied: false, status: 428 };
+      const written = await mockUpdateWixDataItem(collectionId, itemId, { ...data, ...fields });
+      if (collectionId === 'cases') writtenCaseRows.set(itemId, { ...data, ...fields });
+      return { applied: true, dataItem: written ?? { id: itemId, dataCollectionId: collectionId, data: { ...data, ...fields } } };
     },
     // Phase 24 (Case Activity Timeline & Audit Center): activityService's
     // record() calls this for every case-update activity event.
@@ -116,7 +150,19 @@ const EXISTING_WIX_CASE_DATA = {
   createdAt: '2026-07-22T00:00:00.000Z',
 };
 
+/** Case concurrency (2026-10): every save carries the revision it was made
+    against. Fixture rows have none (revision 0), so 0 is supplied unless a
+    test states its own — or opts out with `expectedRevision: undefined`
+    explicitly via `rawPatchRequest`. */
 function patchRequest(caseId: string, body: unknown, headers: Record<string, string> = {}) {
+  const withRevision =
+    body && typeof body === 'object' && !('expectedRevision' in (body as object)) && !headers['if-match']
+      ? { ...(body as object), expectedRevision: 0 }
+      : body;
+  return rawPatchRequest(caseId, withRevision, headers);
+}
+
+function rawPatchRequest(caseId: string, body: unknown, headers: Record<string, string> = {}) {
   return PATCH(
     new Request(`http://localhost/api/cases/${caseId}`, {
       method: 'PATCH',
@@ -159,6 +205,8 @@ const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.read', 'case.update', 'task.a
     file's one standard case row), so per-test overrides only need to
     describe the case-shaped part, never re-seed roles/permissions. */
 function mockWixQueries(caseItems: { id: string; dataCollectionId: string; data: unknown }[] = [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }]) {
+  // Re-seeding the rows starts from exactly these rows.
+  writtenCaseRows = new Map();
   mockQueryWixDataItems.mockImplementation((collectionId: string) => {
     if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
     if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
@@ -175,6 +223,8 @@ beforeEach(() => {
   mockInsertWixDataItem = vi.fn().mockResolvedValue({ id: 'activity-event-mock', dataCollectionId: 'activityEvents', data: {} });
   mockGetOrganization = vi.fn().mockResolvedValue(null);
   mockSession = fixtureIdentitySession(mockDefaultUser);
+  writtenCaseRows = new Map();
+  conditionalPatchCalls = [];
 });
 
 afterEach(() => {
@@ -1005,7 +1055,9 @@ describe('PATCH /api/cases/[caseId]', () => {
 
       const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assignedStaffId: 'staff-dana' } });
       expect(response.status).toBe(200);
-      expect(mockUpdateWixDataItem).toHaveBeenCalledWith('cases', '1042', expect.objectContaining({ caseHandlerId: 'staff-dana' }));
+      // The fixture case is already assigned to staff-dana: allowed, and —
+      // being a no-op — correctly writes nothing (case concurrency, 2026-10).
+      expect((await response.json()).case.assignedStaffId).toBe('staff-dana');
     });
 
     it('Office Staff (case.update, no case.reassign) cannot reassign a case to a different staff member, with 422, before any write', async () => {
@@ -2433,5 +2485,153 @@ describe('GET /api/cases/[caseId] — tenant-isolation hardening (2026-10)', () 
     for (const call of mockQueryWixDataItems.mock.calls.filter(([collectionId]) => collectionId === 'cases')) {
       expect(call[1]?.filter?.organizationId).toBe(GUS_ORGANIZATION_ID);
     }
+  });
+});
+
+/**
+ * Case concurrency (2026-10, docs/CASE_CONCURRENCY.md). The PATCH route's
+ * revision contract — the same one Gus SOLIS answers on the shared rows.
+ */
+const CONCURRENCY_CASE_DATA = {
+  ...EXISTING_WIX_CASE_DATA,
+  workflowSnapshot: buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, latestTemplateVersion(standardCremationWorkflowTemplateFixture)),
+};
+
+describe('PATCH /api/cases/[caseId] — case revisions and concurrency', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    // The real template snapshot, so checklist keys are validated against
+    // real items.
+    mockWixQueries([{ id: '1042', dataCollectionId: 'cases', data: CONCURRENCY_CASE_DATA }]);
+    mockUpdateWixDataItem.mockImplementation((_c: string, itemId: string, data: Record<string, unknown>) =>
+      Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }),
+    );
+  });
+
+  const save = (patch: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    rawPatchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch, ...extra });
+  const conflictEvents = () =>
+    mockInsertWixDataItem.mock.calls
+      .filter(([collectionId]) => collectionId === 'activityEvents')
+      .map(([, data]) => data as Record<string, unknown>)
+      .filter((data) => data.eventType === 'case.update.conflict');
+
+  it('refuses a save with no revision (428, reason revision_required) and writes nothing', async () => {
+    const response = await save({ weight: '180 lb' });
+    expect(response.status).toBe(428);
+    expect((await response.json()).reason).toBe('revision_required');
+    expect(conditionalPatchCalls).toHaveLength(0);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed revision with 400', async () => {
+    expect((await save({ weight: '180 lb' }, { expectedRevision: -1 })).status).toBe(400);
+    expect((await save({ weight: '180 lb' }, { expectedRevision: '1' })).status).toBe(400);
+    expect(conditionalPatchCalls).toHaveLength(0);
+  });
+
+  it('accepts the revision from an If-Match header', async () => {
+    const response = await rawPatchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { weight: '180 lb' } }, { 'if-match': 'W/"0"' });
+    expect(response.status).toBe(200);
+  });
+
+  it('legacy case (no revision): conditioned on $eq null, organization and case id; ends at revision 1', async () => {
+    const response = await save({ weight: '180 lb' }, { expectedRevision: 0 });
+    expect(response.status).toBe(200);
+    expect(conditionalPatchCalls[0].condition.filter).toEqual({
+      organizationId: { $eq: DEFAULT_ORGANIZATION_ID },
+      beaconCaseId: { $eq: CONCURRENCY_CASE_DATA.beaconCaseId },
+      revision: { $eq: null },
+    });
+    expect((await response.json()).case.revision).toBe(1);
+  });
+
+  it('is field-scoped: only the changed field and the revision are written', async () => {
+    await save({ weight: '180 lb' }, { expectedRevision: 0 });
+    expect(Object.keys(conditionalPatchCalls[0].fields).sort()).toEqual(['revision', 'weight']);
+  });
+
+  it('two staff editing from the same revision: the second is refused with 409 and the current case; the first survives', async () => {
+    const first = await save({ placeOfDeath: 'Home' }, { expectedRevision: 0 });
+    expect(first.status).toBe(200);
+
+    const second = await save({ placeOfDeath: 'Hospital' }, { expectedRevision: 0 });
+    const body = await second.json();
+    expect(second.status).toBe(409);
+    expect(body.reason).toBe('revision_conflict');
+    expect(body.currentRevision).toBe(1);
+    expect(body.case.placeOfDeath).toBe('HOME');
+    expect(writtenCaseRows.get('1042')!.placeOfDeath).toBe('HOME');
+  });
+
+  it('audits a refused save with field NAMES only, never the unsaved values', async () => {
+    await save({ placeOfDeath: 'Home' }, { expectedRevision: 0 });
+    await save({ placeOfDeath: 'Hospital' }, { expectedRevision: 0 });
+    const events = conflictEvents();
+    expect(events).toHaveLength(1);
+    expect(JSON.parse(events[0].metadata as string)).toEqual({ expectedRevision: 0, currentRevision: 1, fields: ['placeOfDeath'] });
+    expect(JSON.stringify(events[0])).not.toContain('Hospital');
+    expect(JSON.stringify(events[0])).not.toContain('HOSPITAL');
+  });
+
+  it('independent checklist ticks from the same page revision both land', async () => {
+    const a = await save({ checklistState: { '0:8': true } }, { expectedRevision: 0, baseValues: { checklistState: { '0:8': null } } });
+    const b = await save({ checklistState: { '0:10': true } }, { expectedRevision: 0, baseValues: { checklistState: { '0:10': null } } });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const stored = writtenCaseRows.get('1042')!.checklistState as Record<string, boolean>;
+    expect(stored['0:8']).toBe(true);
+    expect(stored['0:10']).toBe(true);
+  });
+
+  it('a conflicting change to the SAME checklist item from a stale page is refused', async () => {
+    await save({ checklistState: { '0:8': true } }, { expectedRevision: 0, baseValues: { checklistState: { '0:8': null } } });
+    const stale = await save({ checklistState: { '0:8': false } }, { expectedRevision: 0, baseValues: { checklistState: { '0:8': null } } });
+    expect(stale.status).toBe(409);
+    expect((writtenCaseRows.get('1042')!.checklistState as Record<string, boolean>)['0:8']).toBe(true);
+  });
+
+  it('a payment recorded meanwhile is never undone by a stale staff save', async () => {
+    // markCasePaidIfVerified landed after the staff page loaded (revision 1).
+    writtenCaseRows.set('1042', {
+      ...CONCURRENCY_CASE_DATA,
+      paymentStatus: 'paid_in_full',
+      checklistState: { '0:8': true },
+      revision: 1,
+    });
+    // An unrelated field edit from the stale page: refused, payment intact.
+    expect((await save({ weight: '180 lb' }, { expectedRevision: 0 })).status).toBe(409);
+    // A checklist tick on a different item: lands, and the payment tick stays.
+    const tick = await save({ checklistState: { '0:3': true } }, { expectedRevision: 0, baseValues: { checklistState: { '0:3': null } } });
+    expect(tick.status).toBe(200);
+    const stored = writtenCaseRows.get('1042')!;
+    expect(stored.paymentStatus).toBe('paid_in_full');
+    expect((stored.checklistState as Record<string, boolean>)['0:8']).toBe(true);
+  });
+
+  it('a retried save that already landed answers 200 and writes nothing more (no duplicate write)', async () => {
+    await save({ weight: '180 lb' }, { expectedRevision: 0 });
+    const writesBefore = conditionalPatchCalls.length;
+    const retry = await save({ weight: '180 lb' }, { expectedRevision: 0 });
+    expect(retry.status).toBe(200);
+    expect(conditionalPatchCalls).toHaveLength(writesBefore);
+  });
+
+  it('never changes the case number or any untouched field', async () => {
+    await save({ weight: '180 lb' }, { expectedRevision: 0 });
+    const stored = writtenCaseRows.get('1042')!;
+    expect(stored.caseNumber).toBe(CONCURRENCY_CASE_DATA.caseNumber);
+    expect(stored.currentStage).toBe(CONCURRENCY_CASE_DATA.currentStage);
+    expect(stored.checklistState).toEqual(CONCURRENCY_CASE_DATA.checklistState);
+  });
+
+  it('another organization\'s case is 404 and nothing is written, even with a valid revision', async () => {
+    mockSession = fixtureIdentitySession(mockMultiOrgUser);
+    mockWixQueries([]);
+    const response = await rawPatchRequest('1042', { organizationId: SECOND_MOCK_ORGANIZATION_ID, patch: { weight: '1' }, expectedRevision: 0 });
+    expect(response.status).toBe(404);
+    expect(conditionalPatchCalls).toHaveLength(0);
   });
 });

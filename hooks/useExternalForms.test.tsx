@@ -82,11 +82,11 @@ describe('useApplyReconciliation — invalidates the case query alongside the ca
     const { result } = renderHook(() => useApplyReconciliation(ORGANIZATION_ID, CASE_ID), { wrapper });
 
     act(() => {
-      result.current.mutate({ submissionId: 'sub-1', fieldsToApply: ['dateOfBirth'] });
+      result.current.mutate({ submissionId: 'sub-1', fieldsToApply: ['dateOfBirth'], expectedRevision: 4 });
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(externalFormsClient.applyReconciliation).toHaveBeenCalledWith(ORGANIZATION_ID, 'sub-1', CASE_ID, ['dateOfBirth']);
+    expect(externalFormsClient.applyReconciliation).toHaveBeenCalledWith(ORGANIZATION_ID, 'sub-1', CASE_ID, ['dateOfBirth'], 4);
     const invalidatedKeys = invalidateSpy.mock.calls.map((call) => call[0]?.queryKey);
     expect(invalidatedKeys).toContainEqual(['caseForms', ORGANIZATION_ID, CASE_ID]);
     expect(invalidatedKeys).toContainEqual(['case', ORGANIZATION_ID, CASE_ID]);

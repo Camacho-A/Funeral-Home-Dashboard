@@ -187,7 +187,12 @@ export async function authenticateJotformSubmission(params: {
     // genuine submission. Anything else (notably the 401 Jotform returns
     // for a submission this account does not own) is terminal.
     const category = error instanceof JotformClientError ? error.category : null;
-    if (category === 'missing_api_key' || category === 'network_error') {
+    // (2026-10) Jotform itself rate-limiting (429) or failing (5xx) is also
+    // "could not verify right now", not "this delivery is not genuine" —
+    // answering 401 there dropped real submissions during a Jotform outage.
+    const httpStatus = error instanceof JotformClientError ? error.httpStatus : null;
+    const providerUnavailable = category === 'http_error' && httpStatus !== null && (httpStatus === 429 || httpStatus >= 500);
+    if (category === 'missing_api_key' || category === 'network_error' || providerUnavailable) {
       console.error(
         `[jotform authenticity] Could not reach Jotform to verify submission ${claimedSubmissionId} (${category}) — delivery not accepted.`,
       );

@@ -216,3 +216,10 @@
 .archivedLink:focus-visible {
   background: var(--sx-subtle, oklch(0.97 0.003 255));
 }
+
+/* Bulk advance refusals (case concurrency, 2026-10). */
+.advanceError {
+  margin: 0 0 12px;
+  font-size: var(--font-size-12-5);
+  color: var(--color-danger-text);
+}

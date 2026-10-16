@@ -205,11 +205,14 @@ describe('initializeCaseSequence (Manors launch-prep — P0 automatic case numbe
         expect(url).toBe('https://www.wixapis.com/wix-data/v2/items/query');
         return { status: 200, body: { dataItems: [{ id: 'manors-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'manors', year: 2026, nextSequence: 17 } }] } };
       }
-      expect(init.method).toBe('PUT');
-      expect(url).toBe('https://www.wixapis.com/wix-data/v2/items/manors-2026?dataCollectionId=caseSequences');
+      // Case concurrency (2026-10): a conditional patch of nextSequence
+      // alone, conditioned on the value just read — never a full replace.
+      expect(init.method).toBe('PATCH');
+      expect(url).toBe('https://www.wixapis.com/wix-data/v2/items/manors-2026');
       const parsed = JSON.parse(init.body as string);
-      expect(parsed.dataItem.data).toEqual({ organizationId: 'manors', year: 2026, nextSequence: 185 });
-      return { status: 200, body: { dataItem: { id: 'manors-2026', dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+      expect(parsed.patch.fieldModifications).toEqual([{ fieldPath: 'nextSequence', action: 'SET_FIELD', setFieldOptions: { value: 185 } }]);
+      expect(parsed.condition).toEqual({ filter: { nextSequence: { $eq: 17 } } });
+      return { status: 200, body: { dataItem: { id: 'manors-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'manors', year: 2026, nextSequence: 185 } } } };
     });
 
     const result = await initializeCaseSequence('manors', 2026, 185, { forceOverwrite: true });
@@ -285,10 +288,11 @@ describe('advanceCaseSequencePast', () => {
       }
       if (call === 2) return { status: 409, body: {} }; // initializeCaseSequence's insert — row exists
       if (call === 3) return { status: 200, body: { dataItems: [{ id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'managed-cremations', year: 2026, nextSequence: 36 } }] } };
-      expect(init.method).toBe('PUT');
+      expect(init.method).toBe('PATCH');
       const parsed = JSON.parse(init.body as string);
-      expect(parsed.dataItem.data.nextSequence).toBe(37);
-      return { status: 200, body: { dataItem: { id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+      expect(parsed.patch.fieldModifications[0].setFieldOptions.value).toBe(37);
+      expect(parsed.condition).toEqual({ filter: { nextSequence: { $eq: 36 } } });
+      return { status: 200, body: { dataItem: { id: 'managed-cremations-2026', dataCollectionId: 'caseSequences', data: { nextSequence: 37 } } } };
     });
 
     const result = await advanceCaseSequencePast('managed-cremations', 2026, 36);
@@ -332,8 +336,8 @@ describe('advanceCaseSequencePast', () => {
       }
       if (url === 'https://www.wixapis.com/wix-data/v2/items') return { status: 409, body: {} };
       const parsed = JSON.parse(init.body as string);
-      stored = parsed.dataItem.data.nextSequence;
-      return { status: 200, body: { dataItem: { id: 'manors-2026', dataCollectionId: 'caseSequences', data: parsed.dataItem.data } } };
+      stored = parsed.patch.fieldModifications[0].setFieldOptions.value;
+      return { status: 200, body: { dataItem: { id: 'manors-2026', dataCollectionId: 'caseSequences', data: { nextSequence: stored } } } };
     });
 
     expect(await advanceCaseSequencePast('manors', 2026, 36)).toEqual({ nextSequence: 37, advanced: true });
@@ -475,5 +479,38 @@ describe('reserveNextCaseNumber — invalid prefix/year fail before consuming a 
     vi.stubGlobal('fetch', fetchSpy);
     await expect(reserveNextCaseNumber('gus-camacho-jr', 26, 'M')).rejects.toThrow(/Invalid case-number year/);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Case concurrency (2026-10). The historical-import advance used to
+ * read-then-full-replace the counter, so a normal case allocation landing in
+ * between was rolled back and its number could be issued again.
+ */
+describe('advanceCaseSequencePast — concurrent allocation', () => {
+  it('never rolls back an increment that lands mid-advance: the conditional write refuses and re-reads', async () => {
+    let call = 0;
+    let stored = 36;
+    stubFetchSequence((url, init) => {
+      call += 1;
+      if (url.endsWith('/items/query')) return { status: 200, body: { dataItems: [{ id: 'm-2026', dataCollectionId: 'caseSequences', data: { organizationId: 'm', year: 2026, nextSequence: stored } }] } };
+      if (url.endsWith('/items') && init.method === 'POST') return { status: 409, body: {} };
+      // The conditional patch. On its first attempt, a normal allocation has
+      // just taken 36 → the counter is 38 now, so the condition fails.
+      const parsed = JSON.parse(init.body as string);
+      if (call <= 4) {
+        stored = 38;
+        return { status: 428, body: {} };
+      }
+      expect(parsed.condition.filter.nextSequence.$eq).toBe(stored);
+      stored = parsed.patch.fieldModifications[0].setFieldOptions.value;
+      return { status: 200, body: { dataItem: { id: 'm-2026', dataCollectionId: 'caseSequences', data: { nextSequence: stored } } } };
+    });
+
+    const result = await advanceCaseSequencePast('m', 2026, 36);
+
+    // The counter is at 38 — past the target (37) — and was never pulled back.
+    expect(stored).toBe(38);
+    expect(result.nextSequence).toBe(38);
   });
 });

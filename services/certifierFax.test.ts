@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { caseRevision } from '../lib/wixCaseMapper';
 import { casesService } from './casesService';
 import { computeFirstIncompleteRawStage } from './workflowReconciliationService';
 import { caseFixtures, DEFAULT_ORGANIZATION_ID } from './__mocks__/fixtures';
@@ -23,6 +24,20 @@ import type { CaseWorkflowSnapshot, WorkflowTemplateVersion } from '../types/wor
  */
 
 const template = standardCremationWorkflowTemplateFixture;
+
+/** Case concurrency (2026-10): a save is always made against the revision of
+    the case as the caller last saw it — here, the case's current revision. */
+function updateAtCurrentRevision(
+  context: { organizationId: string },
+  caseId: string,
+  patch: Parameters<typeof casesService.update>[2],
+  mode?: Parameters<typeof casesService.update>[3],
+) {
+  const current = caseFixtures.find((c) => c.id === caseId && c.organizationId === context.organizationId);
+  return casesService.update(context as Parameters<typeof casesService.update>[0], caseId, patch, mode, {
+    expectedRevision: current ? caseRevision(current) : 0,
+  });
+}
 const versionOf = (n: number) => template.versions.find((v) => v.version === n)!;
 
 /** Live template v6's shape: v5 with `requiredCaseFields` stripped from the
@@ -235,7 +250,7 @@ describe('editing the fax', () => {
     const case_ = buildCase('v7', { ...intakeOtherwiseComplete(), certifierName: NAME, certifierPhone: PHONE });
     caseFixtures.push(case_);
 
-    const updated = await casesService.update({ organizationId: DEFAULT_ORGANIZATION_ID }, case_.id, { certifierFax: FAX });
+    const updated = await updateAtCurrentRevision({ organizationId: DEFAULT_ORGANIZATION_ID }, case_.id, { certifierFax: FAX });
 
     expect(updated.certifierFax).toBe(FAX);
     expect(updated.certifierPhone).toBe(PHONE);
@@ -246,7 +261,7 @@ describe('editing the fax', () => {
     const case_ = buildCase('v6', { ...intakeOtherwiseComplete(), rawStage: 3, certifierName: NAME, certifierPhone: PHONE });
     caseFixtures.push(case_);
 
-    const updated = await casesService.update({ organizationId: DEFAULT_ORGANIZATION_ID }, case_.id, { certifierFax: FAX });
+    const updated = await updateAtCurrentRevision({ organizationId: DEFAULT_ORGANIZATION_ID }, case_.id, { certifierFax: FAX });
 
     expect(updated.rawStage).toBe(3);
     expect(updated.certifierPhone).toBe(PHONE);
@@ -258,7 +273,7 @@ describe('editing the fax', () => {
     caseFixtures.push(case_);
 
     await expect(
-      casesService.update({ organizationId: SECOND_MOCK_ORGANIZATION_ID }, case_.id, { certifierFax: FAX }),
+      updateAtCurrentRevision({ organizationId: SECOND_MOCK_ORGANIZATION_ID }, case_.id, { certifierFax: FAX }),
     ).rejects.toThrow(/not found/);
     expect(caseFixtures.find((c) => c.id === case_.id)!.certifierFax).toBeNull();
   });

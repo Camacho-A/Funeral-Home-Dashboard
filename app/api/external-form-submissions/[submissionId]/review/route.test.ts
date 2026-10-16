@@ -99,7 +99,7 @@ describe('POST /api/external-form-submissions/[submissionId]/review — apply', 
 
     const { POST } = await import('./route');
     const response = await POST(
-      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['nextOfKinEmail'] }),
+      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['nextOfKinEmail'], expectedRevision: 0 }),
       { params: Promise.resolve({ submissionId: submission.id }) },
     );
 
@@ -110,6 +110,8 @@ describe('POST /api/external-form-submissions/[submissionId]/review — apply', 
     expect(calledInit.method).toBe('PATCH');
     const sentBody = JSON.parse(calledInit.body);
     expect(sentBody.patch).toEqual({ nextOfKinEmail: 'family@example.com' });
+    // The revision the review was computed against is forwarded (2026-10).
+    expect(sentBody.expectedRevision).toBe(0);
 
     const reviewed = await import('@/services/externalFormSubmissionService').then((m) => m.getById(submission.id, 'mock'));
     expect(reviewed?.status).toBe('reviewed');
@@ -274,11 +276,102 @@ describe('review — certifier fax from an Arrangement submission', () => {
 
     const { POST } = await import('./route');
     const response = await POST(
-      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['certifierFax'] }),
+      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['certifierFax'], expectedRevision: 0 }),
       { params: Promise.resolve({ submissionId: submission.id }) },
     );
 
     expect(response.status).toBe(200);
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body).patch).toEqual({ certifierFax: '954-777-2262' });
+  });
+});
+
+/**
+ * Case concurrency (2026-10). Applying form data is a case write like any
+ * other: it must say which revision it was reviewed against, a stale review
+ * is refused, and a linked submission can only be applied to its own case.
+ */
+describe('review apply — revisions and case ownership', () => {
+  async function receiveDob(externalSubmissionId: string, caseFormLinkId: string | null = null) {
+    const { receive } = await import('@/services/externalFormSubmissionService');
+    const { submission } = await receive(
+      {
+        organizationId: 'managed-cremations',
+        provider: 'jotform',
+        externalFormId: '262605621454050',
+        externalSubmissionId,
+        caseFormLinkId,
+        mappedFields: JSON.stringify({ dateOfBirth: '01/03/1950' }),
+        pdfStatus: 'not_applicable',
+      },
+      'mock',
+    );
+    return submission;
+  }
+
+  it('GET returns the case revision the rows were computed against', async () => {
+    seedCase({ revision: 4 });
+    const submission = await receiveDob('rev-get');
+    const { GET } = await import('./route');
+    const response = await GET(reviewRequest('GET', undefined, `organizationId=managed-cremations&caseId=${TEST_CASE_ID}`), {
+      params: Promise.resolve({ submissionId: submission.id }),
+    });
+    expect((await response.json()).caseRevision).toBe(4);
+  });
+
+  it('refuses to apply fields without a revision (428), calling no case update', async () => {
+    seedCase();
+    const submission = await receiveDob('rev-missing');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const { POST } = await import('./route');
+    const response = await POST(reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['dateOfBirth'] }), {
+      params: Promise.resolve({ submissionId: submission.id }),
+    });
+    expect(response.status).toBe(428);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes a 409 from the case update straight through, and does not mark the submission reviewed', async () => {
+    seedCase();
+    const submission = await receiveDob('rev-stale');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ case: null, error: 'changed', reason: 'revision_conflict' }), { status: 409 })),
+    );
+    const { POST } = await import('./route');
+    const response = await POST(
+      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['dateOfBirth'], expectedRevision: 0 }),
+      { params: Promise.resolve({ submissionId: submission.id }) },
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).reason).toBe('revision_conflict');
+    const { getById } = await import('@/services/externalFormSubmissionService');
+    expect((await getById(submission.id, 'mock'))?.status).not.toBe('reviewed');
+  });
+
+  it('refuses to apply a LINKED submission to a different case', async () => {
+    seedCase();
+    caseFormLinkFixtures.push({
+      id: 'link-other-case',
+      organizationId: 'managed-cremations',
+      caseId: 'some-other-case',
+      provider: 'jotform',
+      formConfigId: 'cfg',
+      tokenHash: 'h',
+      status: 'received',
+      submissionId: null,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    } as never);
+    const submission = await receiveDob('rev-linked', 'link-other-case');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const { POST } = await import('./route');
+    const response = await POST(
+      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['dateOfBirth'], expectedRevision: 0 }),
+      { params: Promise.resolve({ submissionId: submission.id }) },
+    );
+    expect(response.status).toBe(409);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

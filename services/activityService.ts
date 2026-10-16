@@ -372,6 +372,34 @@ export function recordCaseCreated(
   );
 }
 
+/**
+ * Case concurrency (2026-10). A staff save refused with 409 because the case
+ * moved past the revision it was made against. Records field NAMES only —
+ * never the values that were not saved. Nothing was written to the case.
+ */
+export function recordCaseUpdateConflict(
+  ctx: ActivityContext,
+  caseId: string,
+  details: { expectedRevision: number; currentRevision: number | null; fields: string[] },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_UPDATE_CONFLICT,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: null,
+      description: `Case update not saved — the case had changed (${details.fields.join(', ')})`,
+      metadata: JSON.stringify(details),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCaseUpdated(ctx: ActivityContext, caseId: string, changedFields: Record<string, FieldChange>, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   const fieldNames = Object.keys(changedFields);
   return record(

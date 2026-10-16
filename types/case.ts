@@ -330,6 +330,12 @@ export type Case = {
       fixture case is given the Managed Cremations v1 snapshot, so in
       practice this is non-null for all current mock data. */
   workflowSnapshot: CaseWorkflowSnapshot | null;
+  /** Case concurrency (2026-10, docs/CASE_CONCURRENCY.md). The row's
+      optimistic-concurrency revision, bumped by every write. Absent on a
+      row nothing has written since this field existed — read as 0 by
+      clients (`caseRevision`). Wire-compatible with Gus SOLIS, which
+      shares the same Wix `cases` rows. Never client-writable. */
+  revision?: number;
 };
 
 /**
@@ -386,5 +392,6 @@ export type CaseUpdate = Partial<
     | 'workflowTemplateVersion'
     | 'workflowSnapshot'
     | 'caseNumber'
+    | 'revision'
   >
 >;

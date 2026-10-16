@@ -378,7 +378,7 @@ describe('CasesPage — case progress indicator (Case list scalability, Phase 3)
     const before = Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'));
 
     const organization = { organizationId: SECOND_MOCK_ORGANIZATION_ID, dataAdapterMode: 'mock' as const };
-    await casesService.update(organization, 'checklist-case', { checklistState: { '2:0': true, '2:1': true, '2:2': false } });
+    await casesService.update(organization, 'checklist-case', { checklistState: { '2:0': true, '2:1': true, '2:2': false } }, 'mock', { expectedRevision: 0 });
     await queryClient.invalidateQueries({ queryKey: ['cases', SECOND_MOCK_ORGANIZATION_ID] });
 
     await waitFor(() => {

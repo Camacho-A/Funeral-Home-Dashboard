@@ -116,6 +116,18 @@ describe('authenticateJotformSubmission — availability vs. authenticity', () =
     expect(result).toMatchObject({ status: 503 });
   });
 
+  it.each([429, 500, 502, 503])('a Jotform %s is "unavailable" (503, retried), never "not genuine" (2026-10)', async (status) => {
+    vi.mocked(fetchSubmissionAnswers).mockRejectedValue(new JotformClientError(`failed with status ${status}`, 'http_error', status));
+    const result = await authenticateJotformSubmission({ claimedFormId: FORM_ID, claimedSubmissionId: SUBMISSION_ID });
+    expect(result).toMatchObject({ authentic: false, reason: 'provider_unavailable', status: 503 });
+  });
+
+  it.each([401, 403, 404])('a Jotform %s stays terminal (401): the submission is not this account\'s to accept', async (status) => {
+    vi.mocked(fetchSubmissionAnswers).mockRejectedValue(new JotformClientError(`failed with status ${status}`, 'http_error', status));
+    const result = await authenticateJotformSubmission({ claimedFormId: FORM_ID, claimedSubmissionId: SUBMISSION_ID });
+    expect(result).toMatchObject({ authentic: false, reason: 'submission_not_retrievable', status: 401 });
+  });
+
   it('never throws, whatever the client does', async () => {
     vi.mocked(fetchSubmissionAnswers).mockRejectedValue(new Error('something entirely unexpected'));
 

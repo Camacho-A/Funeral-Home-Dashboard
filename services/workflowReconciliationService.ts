@@ -1,7 +1,7 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, updateWixDataItem } from '../lib/wixDataApi';
-import { mapWixCaseItem, applyCaseUpdateToWixData, type WixCaseItem } from '../lib/wixCaseMapper';
+import { buildCaseFieldPatch } from '../lib/wixCaseMapper';
 import { caseFixtures } from './__mocks__/fixtures';
+import { updateCaseWithRetry, writeMockCase } from './caseWriteService';
 import { listForCase as listCaseFormLinks } from './caseFormLinkService';
 import { getById as getExternalFormConfigById } from './externalFormConfigService';
 import { resolveChecklist } from '../domain/workflow/resolveChecklist';
@@ -134,7 +134,17 @@ export function computeFirstIncompleteRawStage(case_: Case, arrangementFormLinke
   return stages[stages.length - 1].rawStage;
 }
 
-export type ReconcileResult = { rawStage: number; changed: boolean };
+/** `case_` is the case as written when the stage changed (carrying its new
+    revision), so a caller can return it without another read. */
+export type ReconcileResult = { rawStage: number; changed: boolean; case_?: Case };
+
+/** Thrown when another write kept winning for every bounded attempt. */
+export class ReconcileConflictError extends Error {
+  constructor(caseId: string) {
+    super(`Workflow reconciliation for case ${caseId} lost to concurrent writes on every attempt.`);
+    this.name = 'ReconcileConflictError';
+  }
+}
 
 /** The one entry point every call site above uses. Loads the case fresh
     (never trusts a caller-supplied copy, since the whole point is to
@@ -142,39 +152,42 @@ export type ReconcileResult = { rawStage: number; changed: boolean };
     stage, and — only if that's further along — persists it. Safe to call
     for a case with no workflowSnapshot (returns unchanged; nothing to
     reconcile against) or a nonexistent case (returns rawStage: 0,
-    changed: false). */
+    changed: false).
+
+    Case concurrency (2026-10): the write sets ONLY `currentStage` (+ the
+    revision), conditioned on the revision it was computed from, and is
+    recomputed from a fresh read if another write landed first (bounded —
+    services/caseWriteService.ts). It used to re-send the whole row from a
+    read taken before several other Wix reads, undoing any checklist tick or
+    staff edit that landed in between. The stage still never moves
+    backwards: `max(current, computed)` is re-evaluated on every attempt. An
+    archived case is still left alone. */
 export async function reconcileCaseWorkflow(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<ReconcileResult> {
+  // Read once: whether the Arrangement Form is linked lives in CaseFormLinks,
+  // not on the case row, so it does not need re-reading per attempt.
+  const arrangementFormLinked = await isArrangementFormLinked(organizationId, caseId, dataAdapterMode);
+  const nextStageFor = (case_: Case): number | null => {
+    if (case_.isDeleted || !case_.workflowSnapshot) return null;
+    const newRawStage = Math.max(case_.rawStage, computeFirstIncompleteRawStage(case_, arrangementFormLinked));
+    return newRawStage === case_.rawStage ? null : newRawStage;
+  };
+
   if (dataAdapterMode === 'mock') {
-    const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === organizationId);
-    if (index === -1) return { rawStage: 0, changed: false };
-    const case_ = caseFixtures[index];
-    if (!case_.workflowSnapshot) return { rawStage: case_.rawStage, changed: false };
-
-    const arrangementFormLinked = await isArrangementFormLinked(organizationId, caseId, dataAdapterMode);
-    const firstIncomplete = computeFirstIncompleteRawStage(case_, arrangementFormLinked);
-    const newRawStage = Math.max(case_.rawStage, firstIncomplete);
-    if (newRawStage === case_.rawStage) return { rawStage: case_.rawStage, changed: false };
-
-    caseFixtures[index] = { ...case_, rawStage: newRawStage };
-    return { rawStage: newRawStage, changed: true };
+    const case_ = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId);
+    if (!case_) return { rawStage: 0, changed: false };
+    const newRawStage = nextStageFor(case_);
+    if (newRawStage === null) return { rawStage: case_.rawStage, changed: false };
+    const written = writeMockCase(organizationId, caseId, (current) => ({ ...current, rawStage: newRawStage }));
+    return { rawStage: newRawStage, changed: true, ...(written ? { case_: written } : {}) };
   }
 
-  const response = await queryWixDataItems<WixCaseItem>('cases', {
-    filter: { beaconCaseId: caseId, organizationId, isArchived: false },
-    paging: { limit: 1 },
+  const outcome = await updateCaseWithRetry(organizationId, caseId, (row) => {
+    const newRawStage = nextStageFor(row.case_);
+    return newRawStage === null ? null : buildCaseFieldPatch(row.data, { rawStage: newRawStage });
   });
-  const existingItem = response.dataItems[0];
-  if (!existingItem) return { rawStage: 0, changed: false };
-
-  const case_ = mapWixCaseItem(existingItem.data);
-  if (!case_ || !case_.workflowSnapshot) return { rawStage: case_?.rawStage ?? 0, changed: false };
-
-  const arrangementFormLinked = await isArrangementFormLinked(organizationId, caseId, dataAdapterMode);
-  const firstIncomplete = computeFirstIncompleteRawStage(case_, arrangementFormLinked);
-  const newRawStage = Math.max(case_.rawStage, firstIncomplete);
-  if (newRawStage === case_.rawStage) return { rawStage: case_.rawStage, changed: false };
-
-  const mergedData = applyCaseUpdateToWixData(existingItem.data, { rawStage: newRawStage });
-  await updateWixDataItem<WixCaseItem>('cases', existingItem.id, mergedData);
-  return { rawStage: newRawStage, changed: true };
+  if (outcome.result === 'not_found') return { rawStage: 0, changed: false };
+  if (outcome.result === 'unchanged') return { rawStage: outcome.case_.rawStage, changed: false };
+  if (outcome.result === 'applied') return { rawStage: outcome.case_.rawStage, changed: true, case_: outcome.case_ };
+  if (outcome.result === 'conflict') throw new ReconcileConflictError(caseId);
+  throw new Error(`Workflow reconciliation for case ${caseId} failed: ${outcome.reason}`);
 }

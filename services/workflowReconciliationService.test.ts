@@ -196,7 +196,7 @@ describe('reconcileCaseWorkflow — mock mode', () => {
 
     const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
-    expect(result).toEqual({ rawStage: 3, changed: true });
+    expect(result).toMatchObject({ rawStage: 3, changed: true });
     expect(caseFixtures.find((c) => c.id === case_.id)?.rawStage).toBe(3);
   });
 
@@ -218,7 +218,7 @@ describe('reconcileCaseWorkflow — mock mode', () => {
     const first = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
     const second = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
-    expect(first).toEqual({ rawStage: 3, changed: true });
+    expect(first).toMatchObject({ rawStage: 3, changed: true });
     expect(second).toEqual({ rawStage: 3, changed: false });
   });
 
@@ -279,7 +279,7 @@ describe('reconcileCaseWorkflow — mock mode', () => {
 
     const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
-    expect(result).toEqual({ rawStage: 2, changed: true }); // advances only to Jotform Application, not past it
+    expect(result).toMatchObject({ rawStage: 2, changed: true }); // advances only to Jotform Application, not past it
   });
 
   it('14: the resulting rawStage agrees with the effective/display stage buildCaseViewModel computes — "Step 3" as staff would actually see it is EDRS & Doctor / Cause of Death, never a mislabeled stage', async () => {
@@ -315,7 +315,7 @@ describe('reconcileCaseWorkflow — mock mode', () => {
 
     const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
-    expect(result).toEqual({ rawStage: 2, changed: true });
+    expect(result).toMatchObject({ rawStage: 2, changed: true });
   });
 });
 
@@ -402,7 +402,7 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
     linkArrangementForm(case_.id);
 
     const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
-    expect(result).toEqual({ rawStage: 5, changed: true });
+    expect(result).toMatchObject({ rawStage: 5, changed: true });
   });
 
   it('5. an incomplete DC Application Sent prerequisite correctly blocks advancement to Ready for Pickup', () => {
@@ -436,7 +436,7 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
     const first = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
     const second = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
 
-    expect(first).toEqual({ rawStage: 5, changed: true });
+    expect(first).toMatchObject({ rawStage: 5, changed: true });
     expect(second).toEqual({ rawStage: 5, changed: false });
   });
 
@@ -508,7 +508,7 @@ describe('B2026-035 regression — stage-scoped checklistState prevents cross-st
     linkArrangementForm(case_.id);
 
     const first = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock');
-    expect(first).toEqual({ rawStage: 5, changed: true });
+    expect(first).toMatchObject({ rawStage: 5, changed: true });
 
     // Simulates the UI re-sending the exact same composite-keyed patch
     // (e.g. a duplicate/retried PATCH) — the persisted state doesn't

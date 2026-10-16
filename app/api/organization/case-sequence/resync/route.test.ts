@@ -72,6 +72,16 @@ vi.mock('@/lib/wixDataApi', async () => {
       getWixServerConfig();
       return mockUpdateWixDataItem(...args);
     },
+    // Case concurrency (2026-10): the forced counter move is now a
+    // conditional single-field patch. Recorded through the same spy in the
+    // row shape the route's assertions describe (id = "{org}-{year}").
+    conditionalPatchWixDataItem: async (collectionId: string, itemId: string, fieldPath: string, value: unknown) => {
+      getWixServerConfig();
+      const split = itemId.lastIndexOf('-');
+      const data = { organizationId: itemId.slice(0, split), year: Number(itemId.slice(split + 1)), [fieldPath]: value };
+      const written = await mockUpdateWixDataItem(collectionId, itemId, data);
+      return { applied: true, dataItem: written ?? { id: itemId, dataCollectionId: collectionId, data } };
+    },
     incrementWixDataField: vi.fn(),
   };
 });

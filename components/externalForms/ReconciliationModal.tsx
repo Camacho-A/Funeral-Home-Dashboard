@@ -40,8 +40,13 @@ export function ReconciliationModal({ submissionId, caseId, onClose }: { submiss
   }
 
   async function handleApply(fields: string[]) {
-    await applyMutation.mutateAsync({ submissionId, fieldsToApply: fields });
-    onClose();
+    if (!query.data) return;
+    try {
+      await applyMutation.mutateAsync({ submissionId, fieldsToApply: fields, expectedRevision: query.data.caseRevision });
+      onClose();
+    } catch {
+      // Shown below; the rows reload against the current case.
+    }
   }
 
   const applicableRows = rows.filter((r) => r.state !== 'review_only');
@@ -88,6 +93,12 @@ export function ReconciliationModal({ submissionId, caseId, onClose }: { submiss
             <p className={styles.reviewOnly}>
               Also submitted (no matching SOLIS field): {reviewOnlyRows.map((r) => `${r.field}: ${r.incomingValue}`).join(', ')}
             </p>
+          )}
+
+          {applyMutation.error && (
+            <div className="sx-form-banner sx-form-banner-error" role="alert">
+              {applyMutation.error.message} The review has been reloaded with the case as it is now.
+            </div>
           )}
 
           <div className={styles.footer}>

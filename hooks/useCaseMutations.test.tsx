@@ -87,7 +87,10 @@ describe('useCaseMutations#setWeight — normal Case update architecture, no bes
     expect(patch.fieldValues).toEqual({ 3: '210 lb' });
   });
 
-  it('4. preserves every other existing fieldValues entry — never a bare {3: value} replacement', async () => {
+  // Case concurrency (2026-10): the patch now carries ONLY the changed key;
+  // the server merges it onto the case as it is at write time, so every
+  // other entry is preserved there — including entries this page never saw.
+  it('4. sends only the changed fieldValues key — every other entry is preserved by the server-side merge', async () => {
     const { result } = renderWithClient();
     const case_ = testCase({ fieldValues: { 0: 'JANE DOE', 1: 'ST. MARY\'S HOSPITAL', 7: 'KAREN ELLISON — 555-0100' } });
 
@@ -97,12 +100,7 @@ describe('useCaseMutations#setWeight — normal Case update architecture, no bes
 
     await waitFor(() => expect(casesService.update).toHaveBeenCalled());
     const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
-    expect(patch.fieldValues).toEqual({
-      0: 'JANE DOE',
-      1: 'ST. MARY\'S HOSPITAL',
-      7: 'KAREN ELLISON — 555-0100',
-      3: '210 lb',
-    });
+    expect(patch.fieldValues).toEqual({ 3: '210 lb' });
   });
 
   it('6. never includes checklistState in the patch — completion is derived, not manually set', async () => {
@@ -192,7 +190,8 @@ describe('useCaseMutations#setTimeOfDeath — reuses the Weight architecture, no
 
     await waitFor(() => expect(casesService.update).toHaveBeenCalled());
     const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
-    expect(patch.fieldValues).toEqual({ 0: 'JANE DOE', 3: '210 lb', 5: '15:45' });
+    // Only the changed key (case concurrency, 2026-10); the server merges.
+    expect(patch.fieldValues).toEqual({ 5: '15:45' });
   });
 
   it('7. never includes checklistState in the patch — completion is derived, not manually set', async () => {
@@ -417,7 +416,9 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     await waitFor(() => expect(casesService.update).toHaveBeenCalled());
     const [, calledCaseId, patch] = vi.mocked(casesService.update).mock.calls[0];
     expect(calledCaseId).toBe(CASE_ID);
-    expect(patch.checklistState).toEqual({ [KEY_0]: true, [KEY_1]: true });
+    // Only the toggled key (case concurrency, 2026-10) — the server merges
+    // it, so a tick from another tab ([KEY_1]) can never be erased.
+    expect(patch.checklistState).toEqual({ [KEY_0]: true });
   });
 
   it('4. a server success preserves the optimistic state (and settles the cache on the authoritative response)', async () => {
@@ -527,5 +528,82 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     // already invalidated by every other Case edit before this change) —
     // never a broader/page-wide invalidation.
     expect(invalidatedKeys).toEqual([['cases', DEFAULT_ORGANIZATION_ID]]);
+  });
+});
+
+/**
+ * Case concurrency (2026-10). What the case page sends, and how a refused
+ * save is surfaced and resolved.
+ */
+describe('useCaseMutations — case revisions', () => {
+  const caseKey = ['case', DEFAULT_ORGANIZATION_ID, CASE_ID];
+
+  it('sends the cached case revision as expectedRevision', async () => {
+    const { result, queryClient } = renderWithClient();
+    queryClient.setQueryData(caseKey, testCase({ revision: 7 }));
+    act(() => result.current.setVeteranFlag(true));
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    expect(vi.mocked(casesService.update).mock.calls[0][4]).toMatchObject({ expectedRevision: 7 });
+  });
+
+  it('a checklist tick sends only its key and the value it had when clicked', async () => {
+    const { result, queryClient } = renderWithClient();
+    queryClient.setQueryData(caseKey, testCase({ revision: 2, checklistState: { [KEY0]: false, [KEY1]: true } }));
+    act(() => result.current.toggleChecklistItem(testCase(), 0, true));
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch, , options] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ checklistState: { [KEY0]: true } });
+    expect(options).toMatchObject({ expectedRevision: 2, baseValues: { checklistState: { [KEY0]: false } } });
+  });
+
+  it('rapid saves are sent one at a time, each with the revision the previous save produced', async () => {
+    const { result, queryClient } = renderWithClient();
+    queryClient.setQueryData(caseKey, testCase({ revision: 1 }));
+    vi.mocked(casesService.update)
+      .mockResolvedValueOnce(testCase({ revision: 2 }))
+      .mockResolvedValueOnce(testCase({ revision: 3 }));
+    act(() => {
+      result.current.setVeteranFlag(true);
+      result.current.setVaPublishChoice('publish');
+    });
+    await waitFor(() => expect(casesService.update).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(casesService.update).mock.calls.map((call) => call[4]?.expectedRevision)).toEqual([1, 2]);
+  });
+
+  it('a refused save sets `conflict` and rolls back the optimistic tick', async () => {
+    const { CaseRevisionConflictError } = await import('@/domain/cases/caseRevisionConflict');
+    const { result, queryClient } = renderWithClient();
+    queryClient.setQueryData(caseKey, testCase({ revision: 1, checklistState: { [KEY0]: false } }));
+    vi.mocked(casesService.update).mockRejectedValueOnce(new CaseRevisionConflictError(testCase({ revision: 4 })));
+    act(() => result.current.toggleChecklistItem(testCase(), 0, true));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    expect(queryClient.getQueryData<Case>(caseKey)!.checklistState[KEY0]).toBe(false);
+  });
+
+  it('Refresh shows the current case and drops the refused change', async () => {
+    const { CaseRevisionConflictError } = await import('@/domain/cases/caseRevisionConflict');
+    const { result, queryClient } = renderWithClient();
+    queryClient.setQueryData(caseKey, testCase({ revision: 1 }));
+    vi.mocked(casesService.update).mockRejectedValueOnce(new CaseRevisionConflictError(testCase({ revision: 4, weight: 'THEIRS' })));
+    act(() => result.current.setVeteranFlag(true));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    act(() => result.current.refreshAfterConflict());
+    expect(result.current.conflict).toBeNull();
+    expect(queryClient.getQueryData<Case>(caseKey)!.weight).toBe('THEIRS');
+    expect(casesService.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('Retry re-applies the same change against the current revision', async () => {
+    const { CaseRevisionConflictError } = await import('@/domain/cases/caseRevisionConflict');
+    const { result, queryClient } = renderWithClient();
+    queryClient.setQueryData(caseKey, testCase({ revision: 1 }));
+    vi.mocked(casesService.update).mockRejectedValueOnce(new CaseRevisionConflictError(testCase({ revision: 4 })));
+    act(() => result.current.setVeteranFlag(true));
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    act(() => result.current.retryAfterConflict());
+    await waitFor(() => expect(casesService.update).toHaveBeenCalledTimes(2));
+    const [, , patch, , options] = vi.mocked(casesService.update).mock.calls[1];
+    expect(patch).toEqual({ isVeteran: true });
+    expect(options).toMatchObject({ expectedRevision: 4 });
   });
 });

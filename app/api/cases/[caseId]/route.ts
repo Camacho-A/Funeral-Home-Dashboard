@@ -1,7 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
-import { queryWixDataItems, updateWixDataItem } from '@/lib/wixDataApi';
-import { mapWixCaseItem, validateAndPickCaseUpdate, applyCaseUpdateToWixData, type WixCaseItem } from '@/lib/wixCaseMapper';
+import { queryWixDataItems } from '@/lib/wixDataApi';
+import { mapWixCaseItem, validateAndPickCaseUpdate, buildCaseFieldPatch, caseRevision, storedCaseRevision, type WixCaseItem } from '@/lib/wixCaseMapper';
+import { loadCaseRow, writeCaseFields, updateCaseWithRetry, CASE_WRITE_MAX_ATTEMPTS, type LoadedCaseRow } from '@/services/caseWriteService';
+import {
+  CASE_REVISION_CONFLICT_MESSAGE,
+  CASE_REVISION_CONFLICT_REASON,
+  CASE_REVISION_REQUIRED_MESSAGE,
+  CASE_REVISION_REQUIRED_REASON,
+  parseExpectedRevisionValue,
+  parseIfMatchRevision,
+} from '@/domain/cases/caseRevisionConflict';
+import { mapKeysStillAtBase, parseCaseMapBaseValues } from '@/domain/cases/caseMergeBase';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { assertAssignableStaffProfile, assertStaffProfileIsActiveAndInOrganization, resolveStaffProfileForCaller, StaffAssignmentError } from '@/services/staffProfileService';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -9,6 +19,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import {
   recordCaseUpdated,
+  recordCaseUpdateConflict,
   recordStageChanged,
   recordReturnMethodChanged,
   recordShipmentRecorded,
@@ -20,7 +31,7 @@ import {
 } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
 import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
-import type { ReturnMethod } from '@/types/case';
+import type { Case, ReturnMethod } from '@/types/case';
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
@@ -191,6 +202,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     return NextResponse.json({ case: null, error: `Invalid field(s): ${errors.join(', ')}` }, { status: 400 });
   }
 
+  // Case concurrency (2026-10, docs/CASE_CONCURRENCY.md). Every save says
+  // which revision of the case it was made against — in the body
+  // (`expectedRevision`) or an `If-Match` header. A missing revision is
+  // never permission to overwrite: 428, nothing written. `baseValues` (the
+  // value each changed checklist/fieldValues/VA key had when staff clicked)
+  // lets an edit to keys nobody else touched survive someone else's
+  // unrelated save. Same contract as Gus SOLIS on the shared rows.
+  const bodyRevision = parseExpectedRevisionValue(b.expectedRevision);
+  const headerRevision = parseIfMatchRevision(request.headers.get('if-match'));
+  if (bodyRevision === 'invalid' || headerRevision === 'invalid') {
+    return NextResponse.json({ case: null, error: 'expectedRevision must be a non-negative integer.' }, { status: 400 });
+  }
+  const expectedRevision = bodyRevision ?? headerRevision;
+  if (expectedRevision === undefined) {
+    return NextResponse.json(
+      { case: null, error: CASE_REVISION_REQUIRED_MESSAGE, reason: CASE_REVISION_REQUIRED_REASON },
+      { status: 428 },
+    );
+  }
+  const baseValues = parseCaseMapBaseValues(b.baseValues);
+  if (baseValues === 'invalid') {
+    return NextResponse.json({ case: null, error: 'baseValues is malformed.' }, { status: 400 });
+  }
+
   // Manors launch-prep (Dispatch role): `case.update` may patch anything;
   // a caller with only `pickup.update` may patch only the pickup fields —
   // see domain/cases/pickupView.ts's own comment. Checked against the
@@ -245,71 +280,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   }
 
   try {
-    // Archived cases are loaded, not filtered out (2026-10). The filter
-    // used to carry `isArchived: false`, which refused every write to an
-    // archived case by 404 — including the restore that un-archives it, so
-    // Restore could never have worked. The restriction is now explicit
-    // below, and says what it means.
-    const existingResponse = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: { beaconCaseId: caseId, organizationId },
-      paging: { limit: 1 },
-    });
-    const existingItem = existingResponse.dataItems[0];
-    const existing = existingItem ? mapWixCaseItem(existingItem.data) : null;
-    if (!existingItem || !existing) {
+    // Archived cases are loaded, not filtered out (2026-10) — the restore
+    // that un-archives one must be able to reach it. Loaded by
+    // {beaconCaseId, organizationId}: another organization's case is 404.
+    const firstRow = await loadCaseRow(organizationId, caseId);
+    if (!firstRow) {
       return NextResponse.json({ case: null }, { status: 404 });
-    }
-
-    // An archived case accepts the restore and nothing else — checked
-    // before any validation or mutation, so a refused edit never touches
-    // the record. See domain/cases/archivedCaseWrites.ts.
-    const archivedRefusal = archivedCaseWriteRefusal(existing, patch);
-    if (archivedRefusal) {
-      return NextResponse.json({ case: null, error: archivedRefusal }, { status: 409 });
-    }
-
-    // Staff-facing terminology (2026-09): a case may never persist
-    // pickupStatus === 'released' ("Family Picked Up") without a valid
-    // Released To and Released Date — see domain/cases/pickupRelease.ts's
-    // own comment. Checked against the full existing record merged with the
-    // patch, so this also catches a patch that would clear an
-    // already-released case's detail fields back to blank, not just the
-    // initial transition into 'released'.
-    try {
-      assertValidPickupReleasePatch(existing, patch);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Invalid pickup release patch.';
-      return NextResponse.json({ case: null, error: message }, { status: 422 });
-    }
-
-    // B2026-035 hardening (2026-10): no write path may introduce a new
-    // ambiguous bare-index checklist key — see
-    // domain/workflow/checklistItemKey.ts#findInvalidChecklistStatePatchEntries's
-    // own comment for exactly which entries this checks (only new/changed
-    // ones, never an unchanged legacy key merely carried forward). Checked
-    // before any mutation, so an invalid patch never touches the case.
-    if (patch.checklistState) {
-      // The classification this write will land under — a single PATCH may
-      // set `isMedicalExaminerCase` and tick an item in the same request, and
-      // the tick must be judged against the items the case will then present.
-      const invalidEntries = findInvalidChecklistStatePatchEntries(
-        existing.checklistState,
-        patch.checklistState,
-        existing.workflowSnapshot,
-        {
-          organizationId,
-          isMedicalExaminerCase:
-            patch.isMedicalExaminerCase !== undefined
-              ? patch.isMedicalExaminerCase === true
-              : existing.isMedicalExaminerCase === true,
-        },
-      );
-      if (invalidEntries.length > 0) {
-        return NextResponse.json(
-          { case: null, error: `Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}` },
-          { status: 400 },
-        );
-      }
     }
 
     // Task #15 (2026-09, future-historical-date validation): only checks a
@@ -344,12 +320,113 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       }
     }
 
-    const mergedData = applyCaseUpdateToWixData(existingItem.data, patch);
-    const updated = await updateWixDataItem<WixCaseItem>('cases', existingItem.id, mergedData);
-    let result = mapWixCaseItem(updated.data);
-    if (!result) {
-      return NextResponse.json({ case: null, error: 'Failed to update case.' }, { status: 500 });
+    /**
+     * Every check that depends on the case's current state, re-run against
+     * each row this write is attempted on (a retry re-reads the row).
+     * Returns a refusal, or null to proceed. Nothing is written on refusal.
+     */
+    const refuseAgainst = (current: Case): NextResponse | null => {
+      // An archived case accepts the restore and nothing else (see
+      // domain/cases/archivedCaseWrites.ts).
+      const archivedRefusal = archivedCaseWriteRefusal(current, patch);
+      if (archivedRefusal) return NextResponse.json({ case: null, error: archivedRefusal }, { status: 409 });
+
+      // A case may never persist pickupStatus 'released' without a valid
+      // Released To and Released Date (domain/cases/pickupRelease.ts).
+      try {
+        assertValidPickupReleasePatch(current, patch);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid pickup release patch.';
+        return NextResponse.json({ case: null, error: message }, { status: 422 });
+      }
+
+      // B2026-035 hardening: no write may introduce an ambiguous bare-index
+      // checklist key (domain/workflow/checklistItemKey.ts), judged against
+      // the items the case will present after this patch.
+      if (patch.checklistState) {
+        const invalidEntries = findInvalidChecklistStatePatchEntries(current.checklistState, patch.checklistState, current.workflowSnapshot, {
+          organizationId,
+          isMedicalExaminerCase:
+            patch.isMedicalExaminerCase !== undefined ? patch.isMedicalExaminerCase === true : current.isMedicalExaminerCase === true,
+        });
+        if (invalidEntries.length > 0) {
+          return NextResponse.json(
+            { case: null, error: `Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}` },
+            { status: 400 },
+          );
+        }
+      }
+      return null;
+    };
+
+    const conflictResponse = async (current: LoadedCaseRow | null) => {
+      try {
+        await recordCaseUpdateConflict(
+          { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+          caseId,
+          { expectedRevision, currentRevision: current ? storedCaseRevision(current.data) : null, fields: Object.keys(patch) },
+          'wix',
+        );
+      } catch (error) {
+        console.error('Failed to record case.update.conflict activity event:', error instanceof Error ? error.message : error);
+      }
+      const currentCase = current?.case_ ?? null;
+      return NextResponse.json(
+        {
+          case: currentCase && (hasFullEdit ? currentCase : toPickupOnlyView(currentCase)),
+          error: CASE_REVISION_CONFLICT_MESSAGE,
+          reason: CASE_REVISION_CONFLICT_REASON,
+          currentRevision: current ? caseRevision(current.data) : null,
+        },
+        { status: 409 },
+      );
+    };
+
+    /**
+     * Read → check → field-scoped conditional write, bounded. A stale
+     * revision is a 409 — unless the edit is checklist/fieldValues/VA keys
+     * only and every one of those keys still holds the value staff saw
+     * (`baseValues`), in which case it is applied to the case as it is now:
+     * nobody else changed what this edit changes. A retry of a save that
+     * already landed changes nothing and answers 200 (idempotent).
+     */
+    let row: LoadedCaseRow | null = firstRow;
+    let existing: Case = firstRow.case_;
+    let written: LoadedCaseRow | null = null;
+    for (let attempt = 0; attempt < CASE_WRITE_MAX_ATTEMPTS && !written; attempt++) {
+      if (attempt > 0) {
+        row = await loadCaseRow(organizationId, caseId);
+        if (!row) return NextResponse.json({ case: null }, { status: 404 });
+      }
+      const current: LoadedCaseRow = row!;
+      const refusal = refuseAgainst(current.case_);
+      if (refusal) return refusal;
+
+      const fields = buildCaseFieldPatch(current.data, patch);
+      if (Object.keys(fields).length === 0) {
+        // Already exactly as requested — nothing to write, no revision bump.
+        existing = current.case_;
+        written = current;
+        break;
+      }
+      if (caseRevision(current.data) !== expectedRevision && !mapKeysStillAtBase(current.case_, patch as Record<string, unknown>, baseValues)) {
+        return conflictResponse(current);
+      }
+
+      const outcome = await writeCaseFields(current, fields);
+      if (outcome.result === 'applied') {
+        existing = current.case_;
+        written = outcome.row;
+      } else if (outcome.result === 'not_found') {
+        return NextResponse.json({ case: null }, { status: 404 });
+      } else if (outcome.result === 'failed') {
+        return NextResponse.json({ case: null, error: `Failed to update case: ${outcome.reason}` }, { status: 503 });
+      } else {
+        row = outcome.current;
+      }
     }
+    if (!written) return conflictResponse(row);
+    let result: Case = written.case_;
 
     /**
      * Automatic archiving (2026-10). A case files itself away the moment
@@ -376,11 +453,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
      */
     if (!existing.isDeleted && becameComplete(existing, result)) {
       try {
+        // Case concurrency (2026-10): sets only the archive fields, on the
+        // case as it is NOW, conditioned on its revision — it used to
+        // re-send the whole row from the edit's own response, undoing any
+        // write that landed in between.
         const archivedAt = new Date().toISOString();
-        const archivedData = applyCaseUpdateToWixData(updated.data, { isDeleted: true, archivedAt });
-        const archived = await updateWixDataItem<WixCaseItem>('cases', existingItem.id, archivedData);
-        const remapped = mapWixCaseItem(archived.data);
-        if (remapped) result = remapped;
+        const archive = await updateCaseWithRetry(
+          organizationId,
+          caseId,
+          (current) => (current.case_.isDeleted ? null : buildCaseFieldPatch(current.data, { isDeleted: true, archivedAt })),
+          { first: written },
+        );
+        if (archive.result !== 'applied') throw new Error(`automatic archive not applied (${archive.result})`);
+        result = archive.case_;
 
         // Attributed to SOLIS itself, never to the staff member who
         // happened to make the edit that completed the case — they
@@ -474,7 +559,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       try {
         const reconcileResult = await reconcileCaseWorkflow(organizationId, caseId, 'wix');
         if (reconcileResult.changed) {
-          result = { ...result, rawStage: reconcileResult.rawStage };
+          // The reconciled case carries the revision its own write produced,
+          // so the client's next save is made against the right one.
+          result = reconcileResult.case_ ?? { ...result, rawStage: reconcileResult.rawStage };
         }
       } catch (error) {
         console.error('Failed to reconcile workflow after checklist update:', error instanceof Error ? error.message : error);

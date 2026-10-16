@@ -236,6 +236,12 @@ function CasesPageContent() {
         />
       )}
 
+      {advanceStage.error && (
+        <p className={styles.advanceError} role="alert">
+          {advanceStage.error.message}
+        </p>
+      )}
+
       {!listQuery.isLoading && listQuery.data && !archived && stage !== null && (
         <StageFilteredPanel
           cases={listViewModels.map((c) => ({ ...c, selected: Boolean(selectedCaseIds[c.id]) }))}

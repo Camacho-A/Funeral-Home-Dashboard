@@ -21,6 +21,7 @@ import { formatTimestamp } from '@/utils/format';
 import { CaseHeader } from '@/components/case/CaseHeader';
 import type { StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
+import { CaseEditConflictBanner } from '@/components/case/CaseEditConflictBanner';
 import { CaseWorkflowRepairPanel } from '@/components/case/CaseWorkflowRepairPanel';
 import { WorkflowStageOverview } from '@/components/case/WorkflowStageOverview';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
@@ -287,6 +288,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         stages={stepperStages}
         onStepClick={(index) => viewPresentedStage(index)}
       />
+
+      {/* Case concurrency (2026-10): a save refused because the case changed
+          since this page loaded it. See hooks/useCaseMutations.ts. */}
+      {mutations.conflict && (
+        <CaseEditConflictBanner onRefresh={() => mutations.refreshAfterConflict()} onRetry={() => mutations.retryAfterConflict()} />
+      )}
+      {archiveCase.error && (
+        <div className="sx-form-banner sx-form-banner-error" role="alert">
+          {archiveCase.error.message}
+        </div>
+      )}
 
       <div className={styles.tabs} role="tablist" ref={tabsRef}>
         <button

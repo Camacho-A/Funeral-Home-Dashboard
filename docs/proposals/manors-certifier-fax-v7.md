@@ -1,6 +1,7 @@
 # Proposal: Manors workflow template v7 (Certifier fax)
 
-**Status:** PROPOSED. This has not been applied to live Wix. It needs explicit approval before anyone publishes it.
+**Status:** CONTENT APPROVED (2026-10-16): both changes below, the certifier fax and the 12-hour Time of Death editor. **NOT PUBLISHED.** Publishing needs a separate final go-ahead, together with the production deployment.
+**Verified 2026-10-16:** the payload was re-diffed against a fresh read of live v6. It has exactly 4 differences (the two changes × raw stages 0 and 1) and nothing else.
 **Organization:** `managed-cremations` (Manors) only
 **Template:** `workflow-template-standard-cremation`, current live version **6**
 

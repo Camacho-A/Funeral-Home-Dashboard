@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { Case } from '@/types/case';
 import { casesService } from '@/services/casesService';
+import { caseRevision } from '@/lib/wixCaseMapper';
 import { useOrganization } from './useOrganization';
 
 /**
@@ -35,8 +37,17 @@ export function useArchiveCase() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ caseId, archived }: { caseId: string; archived: boolean }) =>
-      casesService.update(organization, caseId, { isDeleted: archived }, organization.dataAdapterMode),
+    // Case concurrency (2026-10): made against the revision of the case the
+    // page shows — the open case's own cache entry, else a fresh read — so an
+    // archive/restore can never be based on a case someone has since changed.
+    mutationFn: async ({ caseId, archived }: { caseId: string; archived: boolean }) => {
+      const cached = queryClient.getQueryData<Case>(['case', organization.organizationId, caseId]);
+      const current = cached ?? (await casesService.get(organization, caseId, organization.dataAdapterMode));
+      if (!current) throw new Error('This case could not be found.');
+      return casesService.update(organization, caseId, { isDeleted: archived }, organization.dataAdapterMode, {
+        expectedRevision: caseRevision(current),
+      });
+    },
     onSuccess: (_result, { caseId }) => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
       queryClient.invalidateQueries({ queryKey: ['case', organization.organizationId, caseId] });

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { caseRevision } from '../lib/wixCaseMapper';
+import { CaseRevisionConflictError, CaseRevisionRequiredError } from '../domain/cases/caseRevisionConflict';
 import { casesService, matchesSearch, listForOrganization } from './casesService';
 import type { OrganizationContext } from '../types/organization';
 import type { Session } from '../types/session';
@@ -11,6 +13,20 @@ import { resolveChecklist } from '../domain/workflow/resolveChecklist';
 
 const organization: OrganizationContext = { organizationId: DEFAULT_ORGANIZATION_ID };
 const template = standardCremationWorkflowTemplateFixture;
+
+/** Case concurrency (2026-10): a save is always made against the revision of
+    the case as the caller last saw it — here, the case's current revision. */
+function updateAtCurrentRevision(
+  context: { organizationId: string },
+  caseId: string,
+  patch: Parameters<typeof casesService.update>[2],
+  mode?: Parameters<typeof casesService.update>[3],
+) {
+  const current = caseFixtures.find((c) => c.id === caseId && c.organizationId === context.organizationId);
+  return casesService.update(context as Parameters<typeof casesService.update>[0], caseId, patch, mode, {
+    expectedRevision: current ? caseRevision(current) : 0,
+  });
+}
 
 function sessionFor(staffId: string): Session {
   const staff = staffFixtures.find((s) => s.id === staffId);
@@ -77,7 +93,7 @@ describe('casesService.update — intake owner immutability', () => {
     );
 
     await expect(
-      casesService.update(organization, created.id, {
+      updateAtCurrentRevision(organization, created.id, {
         intakeOwnerId: staffFixtures[1].id,
       } as unknown as Parameters<typeof casesService.update>[2]),
     ).rejects.toThrow(/intakeOwnerId cannot be changed/);
@@ -96,7 +112,7 @@ describe('casesService.update — intake owner immutability', () => {
     );
 
     const reassignedStaffId = staffFixtures[1].id;
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       assignedStaffId: reassignedStaffId,
     });
 
@@ -113,7 +129,7 @@ describe('casesService.update — intake owner immutability', () => {
       template,
     );
 
-    const updated = await casesService.update(organization, created.id, { isVeteran: true });
+    const updated = await updateAtCurrentRevision(organization, created.id, { isVeteran: true });
 
     expect(updated.isVeteran).toBe(true);
     expect(updated.intakeOwnerId).toBe(session.staffId);
@@ -138,7 +154,7 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
     const weightIndex = 3;
     expect(created.workflowSnapshot?.intake.sections.flatMap((s) => s.fields).find((f) => f.mapsToCaseField === 'weight')?.checklistItemIndex).toBe(weightIndex);
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, [weightIndex]: '178 lb' },
     });
 
@@ -156,7 +172,7 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
     );
     const timeOfDeathIndex = 5;
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, [timeOfDeathIndex]: '14:30' },
     });
 
@@ -173,7 +189,7 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
     );
     const weightIndex = 3;
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       weight: '200 lb',
       fieldValues: { ...created.fieldValues, [weightIndex]: '199 lb' },
     });
@@ -190,9 +206,9 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
       template,
     );
     const weightIndex = 3;
-    await casesService.update(organization, created.id, { fieldValues: { ...created.fieldValues, [weightIndex]: '178 lb' } });
+    await updateAtCurrentRevision(organization, created.id, { fieldValues: { ...created.fieldValues, [weightIndex]: '178 lb' } });
 
-    const afterUnrelated = await casesService.update(organization, created.id, { isVeteran: true });
+    const afterUnrelated = await updateAtCurrentRevision(organization, created.id, { isVeteran: true });
 
     expect(afterUnrelated.weight).toBe('178 lb');
     expect(afterUnrelated.isVeteran).toBe(true);
@@ -206,7 +222,7 @@ describe('casesService.update — Case Information field sync fix (2026-09)', ()
       session,
       template,
     );
-    const updated = await casesService.update(organization, created.id, { fieldValues: { ...created.fieldValues, 3: '178 lb' } });
+    const updated = await updateAtCurrentRevision(organization, created.id, { fieldValues: { ...created.fieldValues, 3: '178 lb' } });
     expect(Object.keys(updated).filter((k) => k.toLowerCase().includes('weight'))).toEqual(['weight']);
   });
 });
@@ -238,7 +254,7 @@ describe('casesService.update — ambiguous multi-field index (Family Contact) n
         .map((f) => f.mapsToCaseField),
     ).toEqual(['nextOfKinName', 'nextOfKinPhone']);
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, [familyContactIndex]: 'Emma Morales Silva — (954) 901-4165' },
     });
 
@@ -255,7 +271,7 @@ describe('casesService.update — ambiguous multi-field index (Family Contact) n
       session,
       template,
     );
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, 7: 'Someone Else — (555) 999-8888' },
     });
 
@@ -271,7 +287,7 @@ describe('casesService.update — ambiguous multi-field index (Family Contact) n
       session,
       template,
     );
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, 3: '178 lb', 7: 'Emma Morales Silva — (954) 901-4165' },
     });
 
@@ -287,7 +303,7 @@ describe('casesService.update — ambiguous multi-field index (Family Contact) n
       session,
       template,
     );
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, 3: '150 lb', 5: '09:15' },
     });
 
@@ -331,7 +347,7 @@ describe('casesService.update — legacy Time of Death (v3 shape) sync (Task #6 
     );
     stampV3Snapshot(created.id);
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, 5: '11:30AM' },
     });
 
@@ -349,7 +365,7 @@ describe('casesService.update — legacy Time of Death (v3 shape) sync (Task #6 
     );
     stampV3Snapshot(created.id);
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       fieldValues: { ...created.fieldValues, 5: 'unknown' },
     });
 
@@ -563,7 +579,7 @@ describe('casesService.update — caseNumber is always read-only (Phase 16B)', (
     );
 
     await expect(
-      casesService.update(organization, created.id, {
+      updateAtCurrentRevision(organization, created.id, {
         caseNumber: 'B2026-999',
       } as unknown as Parameters<typeof casesService.update>[2]),
     ).rejects.toThrow(/caseNumber cannot be changed/);
@@ -749,15 +765,40 @@ describe('casesService.create/update — wix mode (dataAdapterMode = "wix")', ()
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ case: fakeUpdated }) });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await casesService.update(organization, '1042', { decedentName: 'Renamed' }, 'wix');
+    const result = await casesService.update(organization, '1042', { decedentName: 'Renamed' }, 'wix', { expectedRevision: 3 });
 
     expect(result).toEqual(fakeUpdated);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/cases/1042',
       expect.objectContaining({
         method: 'PATCH',
-        body: JSON.stringify({ organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' } }),
+        body: JSON.stringify({ organizationId: DEFAULT_ORGANIZATION_ID, patch: { decedentName: 'Renamed' }, expectedRevision: 3 }),
       }),
+    );
+  });
+
+  it('update() sends baseValues for a checklist-key edit', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ case: { id: '1042' } }) });
+    vi.stubGlobal('fetch', fetchMock);
+    await casesService.update(organization, '1042', { checklistState: { '0:3': true } }, 'wix', {
+      expectedRevision: 2,
+      baseValues: { checklistState: { '0:3': false } },
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ expectedRevision: 2, baseValues: { checklistState: { '0:3': false } } });
+  });
+
+  it('update() turns a 409 revision conflict into CaseRevisionConflictError carrying the current case', async () => {
+    const current = { id: '1042', organizationId: DEFAULT_ORGANIZATION_ID, revision: 5 };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ case: current, reason: 'revision_conflict', error: 'x' }) }));
+    const error = await casesService.update(organization, '1042', { decedentName: 'Renamed' }, 'wix', { expectedRevision: 3 }).catch((e) => e);
+    expect(error).toBeInstanceOf(CaseRevisionConflictError);
+    expect(error.current).toEqual(current);
+  });
+
+  it('update() turns a 428 into CaseRevisionRequiredError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 428, json: async () => ({ case: null, reason: 'revision_required' }) }));
+    await expect(casesService.update(organization, '1042', { decedentName: 'Renamed' }, 'wix', { expectedRevision: 3 })).rejects.toBeInstanceOf(
+      CaseRevisionRequiredError,
     );
   });
 
@@ -766,14 +807,14 @@ describe('casesService.create/update — wix mode (dataAdapterMode = "wix")', ()
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      casesService.update(organization, '1042', { intakeOwnerId: 'staff-x' } as unknown as Parameters<typeof casesService.update>[2], 'wix'),
+      updateAtCurrentRevision(organization, '1042', { intakeOwnerId: 'staff-x' } as unknown as Parameters<typeof casesService.update>[2], 'wix'),
     ).rejects.toThrow(/intakeOwnerId cannot be changed/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('update() throws a clear error on a non-ok response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
-    await expect(casesService.update(organization, 'no-such-case', { decedentName: 'x' }, 'wix')).rejects.toThrow(
+    await expect(updateAtCurrentRevision(organization, 'no-such-case', { decedentName: 'x' }, 'wix')).rejects.toThrow(
       /not found for this organization/,
     );
   });
@@ -806,7 +847,7 @@ describe('casesService.update — Certifier Name/Phone on a legacy (v3) case (Ta
     };
     const beforeSnapshot = caseFixtures[index].workflowSnapshot;
 
-    const updated = await casesService.update(organization, created.id, {
+    const updated = await updateAtCurrentRevision(organization, created.id, {
       certifierName: 'DR. LINDA CHOI',
       certifierPhone: '555-0100',
     });
@@ -869,7 +910,7 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
       template,
     );
 
-    await expect(casesService.update(organization, created.id, { dateOfBirth: farFutureDate })).rejects.toThrow(
+    await expect(updateAtCurrentRevision(organization, created.id, { dateOfBirth: farFutureDate })).rejects.toThrow(
       /date of birth cannot be in the future/i,
     );
 
@@ -886,7 +927,7 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
       template,
     );
 
-    await expect(casesService.update(organization, created.id, { dateOfDeath: farFutureDate })).rejects.toThrow(
+    await expect(updateAtCurrentRevision(organization, created.id, { dateOfDeath: farFutureDate })).rejects.toThrow(
       /date of death cannot be in the future/i,
     );
   });
@@ -901,7 +942,7 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
     );
 
     await expect(
-      casesService.update(organization, created.id, { pickupReleasedTo: 'Jane Smith', pickupReleasedAt: farFutureDate }),
+      updateAtCurrentRevision(organization, created.id, { pickupReleasedTo: 'Jane Smith', pickupReleasedAt: farFutureDate }),
     ).rejects.toThrow(/released date cannot be in the future/i);
   });
 
@@ -914,7 +955,7 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
       template,
     );
 
-    await expect(casesService.update(organization, created.id, { shippingDateShipped: farFutureDate })).rejects.toThrow(
+    await expect(updateAtCurrentRevision(organization, created.id, { shippingDateShipped: farFutureDate })).rejects.toThrow(
       /date shipped cannot be in the future/i,
     );
   });
@@ -928,7 +969,7 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
       template,
     );
 
-    await expect(casesService.update(organization, created.id, { shippingDeliveredAt: farFutureDate })).rejects.toThrow(
+    await expect(updateAtCurrentRevision(organization, created.id, { shippingDeliveredAt: farFutureDate })).rejects.toThrow(
       /delivered date cannot be in the future/i,
     );
   });
@@ -948,7 +989,7 @@ describe('casesService — Task #15 (2026-09, future-historical-date validation,
     const index = caseFixtures.findIndex((c) => c.id === created.id);
     caseFixtures[index] = { ...caseFixtures[index], dateOfDeath: farFutureDate };
 
-    const updated = await casesService.update(organization, created.id, { placeOfDeath: 'HOSPITAL' });
+    const updated = await updateAtCurrentRevision(organization, created.id, { placeOfDeath: 'HOSPITAL' });
     expect(updated.placeOfDeath).toBe('HOSPITAL');
     expect(updated.dateOfDeath).toBe(farFutureDate);
   });
@@ -1051,13 +1092,13 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
   it('A. Stage 3 with Hardsave (local index 2) still incomplete remains at rawStage 3, even though the update itself carries a checklistState patch', async () => {
     const case_ = seedStage3Case({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(3);
   });
 
   it('B. Stage 3 with Hardsave checked and every other Stage 3 requirement already satisfied (by default) advances to Stage 4', async () => {
     const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
-    const updated = await casesService.update(organization, case_.id, {
+    const updated = await updateAtCurrentRevision(organization, case_.id, {
       checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true },
     });
     expect(updated.rawStage).toBe(4);
@@ -1065,13 +1106,13 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
   it('C. Partial checklist completion (only an already-default-done item re-affirmed, Hardsave itself still false) does not advance', async () => {
     const case_ = seedStage3Case({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true } });
     expect(updated.rawStage).toBe(3);
   });
 
   it('D. the checklistState patch is what triggers reconciliation — Stage 4 is the observable proof (no rawStage field appears anywhere in the request)', async () => {
     const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
-    const updated = await casesService.update(organization, case_.id, {
+    const updated = await updateAtCurrentRevision(organization, case_.id, {
       checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true },
     });
     expect(updated.rawStage).toBe(4);
@@ -1079,14 +1120,14 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
 
   it('E. an unrelated Case update WITHOUT checklistState does not trigger reconciliation, even when every prerequisite is already satisfied (would otherwise advance to Stage 4)', async () => {
     const case_ = seedStage3Case({ 2: true });
-    const updated = await casesService.update(organization, case_.id, { decedentName: 'RENAMED DECEDENT' });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { decedentName: 'RENAMED DECEDENT' });
     expect(updated.decedentName).toBe('RENAMED DECEDENT');
     expect(updated.rawStage).toBe(3);
   });
 
   it('F. mock mode produces the exact same Stage 3 -> Stage 4 outcome as Wix mode (see app/api/cases/[caseId]/route.test.ts\'s identical test B)', async () => {
     const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
-    const updated = await casesService.update(organization, case_.id, {
+    const updated = await updateAtCurrentRevision(organization, case_.id, {
       checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true },
     });
     expect(updated.rawStage).toBe(4);
@@ -1096,10 +1137,10 @@ describe('casesService.update — Task #6 (2026-09, checklist completion trigger
     const case_ = seedStage3Case({ 0: true, 1: true, 2: true });
     const patch = { checklistState: { '0:0': true, '2:0': true, '2:1': true, '2:2': true, '0:8': true, '0:9': true, '0:10': true } };
 
-    const first = await casesService.update(organization, case_.id, patch);
+    const first = await updateAtCurrentRevision(organization, case_.id, patch);
     expect(first.rawStage).toBe(4);
 
-    const second = await casesService.update(organization, case_.id, patch);
+    const second = await updateAtCurrentRevision(organization, case_.id, patch);
     expect(second.rawStage).toBe(4);
   });
 });
@@ -1186,51 +1227,51 @@ describe('casesService.update — checklistState write validation (B2026-035 har
 
   it('1. rejects a bare legacy-shaped key being newly introduced', async () => {
     const case_ = seedPermitStageCase({});
-    await expect(casesService.update(organization, case_.id, { checklistState: { '1': true } })).rejects.toThrow(/canonical/);
+    await expect(updateAtCurrentRevision(organization, case_.id, { checklistState: { '1': true } })).rejects.toThrow(/canonical/);
   });
 
   it('2. rejects a malformed composite key', async () => {
     const case_ = seedPermitStageCase({});
-    await expect(casesService.update(organization, case_.id, { checklistState: { 'a:1': true } })).rejects.toThrow(/canonical/);
+    await expect(updateAtCurrentRevision(organization, case_.id, { checklistState: { 'a:1': true } })).rejects.toThrow(/canonical/);
     const case2 = seedPermitStageCase({});
-    await expect(casesService.update(organization, case2.id, { checklistState: { '3:b': true } })).rejects.toThrow(/canonical/);
+    await expect(updateAtCurrentRevision(organization, case2.id, { checklistState: { '3:b': true } })).rejects.toThrow(/canonical/);
     const case3 = seedPermitStageCase({});
-    await expect(casesService.update(organization, case3.id, { checklistState: { '3:1:1': true } })).rejects.toThrow(/canonical/);
+    await expect(updateAtCurrentRevision(organization, case3.id, { checklistState: { '3:1:1': true } })).rejects.toThrow(/canonical/);
   });
 
   it('3. rejects a negative stage or index', async () => {
     const case_ = seedPermitStageCase({});
-    await expect(casesService.update(organization, case_.id, { checklistState: { '-3:1': true } })).rejects.toThrow(/canonical/);
+    await expect(updateAtCurrentRevision(organization, case_.id, { checklistState: { '-3:1': true } })).rejects.toThrow(/canonical/);
   });
 
   it('4. rejects a non-boolean checklist value', async () => {
     const case_ = seedPermitStageCase({});
     await expect(
-      casesService.update(organization, case_.id, { checklistState: { '3:1': 'true' as unknown as boolean } }),
+      updateAtCurrentRevision(organization, case_.id, { checklistState: { '3:1': 'true' as unknown as boolean } }),
     ).rejects.toThrow(/boolean/);
   });
 
   it('5. accepts a valid composite key that exists in the case\'s own workflow snapshot', async () => {
     const case_ = seedPermitStageCase({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:1': true } });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { checklistState: { '3:1': true } });
     expect(updated.checklistState['3:1']).toBe(true);
   });
 
   it('rejects a well-formed composite key that does not match any real item in this case\'s own workflow snapshot (e.g. a stage/index that does not exist)', async () => {
     const case_ = seedPermitStageCase({});
-    await expect(casesService.update(organization, case_.id, { checklistState: { '99:5': true } })).rejects.toThrow(/workflow snapshot/);
+    await expect(updateAtCurrentRevision(organization, case_.id, { checklistState: { '99:5': true } })).rejects.toThrow(/workflow snapshot/);
   });
 
   it('6. an invalid checklist patch performs no persistence — the case\'s checklistState is completely untouched', async () => {
     const case_ = seedPermitStageCase({ '3:1': true });
     const before = { ...caseFixtures.find((c) => c.id === case_.id)!.checklistState };
-    await expect(casesService.update(organization, case_.id, { checklistState: { '1': true } })).rejects.toThrow();
+    await expect(updateAtCurrentRevision(organization, case_.id, { checklistState: { '1': true } })).rejects.toThrow();
     expect(caseFixtures.find((c) => c.id === case_.id)!.checklistState).toEqual(before);
   });
 
   it('7. existing legacy stored state remains readable/writable during the migration compatibility window — carrying forward an unchanged legacy key never blocks an otherwise-valid update', async () => {
     const case_ = seedPermitStageCase({ '1': true }); // pre-migration bare key, already stored
-    const updated = await casesService.update(organization, case_.id, {
+    const updated = await updateAtCurrentRevision(organization, case_.id, {
       checklistState: { '1': true, '3:0': true }, // '1' unchanged, '3:0' is new and valid
     });
     expect(updated.checklistState['1']).toBe(true); // legacy key preserved, not rejected
@@ -1239,7 +1280,7 @@ describe('casesService.update — checklistState write validation (B2026-035 har
 
   it('8. a valid composite CHECK remains stage-scoped — writing Permit\'s own item 1 never satisfies DC Application Sent\'s own item 1', async () => {
     const case_ = seedPermitStageCase({});
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:1': true } });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { checklistState: { '3:1': true } });
     const dcStage = updated.workflowSnapshot!.stages.find((s) => s.rawStage === 5)!;
     const resolved = resolveChecklist(dcStage.checklist.items, dcStage.displayStage, updated, { isPastStage: false });
     expect(resolved[1].done).toBe(false);
@@ -1247,7 +1288,7 @@ describe('casesService.update — checklistState write validation (B2026-035 har
 
   it('9. a valid composite UNCHECK remains stage-scoped — unchecking Ready for Pickup\'s own item 2 never clears EDRS\'s own item 2', async () => {
     const case_ = seedPermitStageCase({ '2:2': true }); // EDRS's own last item, genuinely done
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '2:2': true, '5:2': false } });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { checklistState: { '2:2': true, '5:2': false } });
     const edrsStage = updated.workflowSnapshot!.stages.find((s) => s.rawStage === 3)!;
     const resolved = resolveChecklist(edrsStage.checklist.items, edrsStage.displayStage, updated, { isPastStage: false });
     expect(resolved[2].done).toBe(true);
@@ -1259,7 +1300,7 @@ describe('casesService.update — checklistState write validation (B2026-035 har
     // rather than merging it (see test 7's identical "'1' unchanged"
     // pattern above) — the patch itself must carry the full desired state,
     // same as a real UI PATCH would send.
-    const updated = await casesService.update(organization, case_.id, { checklistState: { '3:0': true, '3:1': true } });
+    const updated = await updateAtCurrentRevision(organization, case_.id, { checklistState: { '3:0': true, '3:1': true } });
     // Permit's own 2-item stage: item 0 already explicitly done, item 1 now
     // explicitly done too -> fully complete -> reconciliation advances past
     // it to Stage 5. Checklist default-done fix (2026-10) retired the old
@@ -1336,7 +1377,7 @@ describe('casesService — archived cases (2026-10)', () => {
   it('update() refuses an ordinary edit to an archived case', async () => {
     await withArchivedFixture(async (archivedId) => {
       await expect(
-        casesService.update(organization, archivedId, { placeOfDeath: 'SOMEWHERE ELSE' }, 'mock'),
+        updateAtCurrentRevision(organization, archivedId, { placeOfDeath: 'SOMEWHERE ELSE' }, 'mock'),
       ).rejects.toThrow(/archived/i);
     });
   });
@@ -1344,7 +1385,7 @@ describe('casesService — archived cases (2026-10)', () => {
   it('update() leaves the archived case untouched when it refuses', async () => {
     const unchanged = await withArchivedFixture(async (archivedId) => {
       const before = { ...caseFixtures.find((c) => c.id === archivedId)! };
-      await casesService.update(organization, archivedId, { placeOfDeath: 'SOMEWHERE ELSE' }, 'mock').catch(() => {});
+      await updateAtCurrentRevision(organization, archivedId, { placeOfDeath: 'SOMEWHERE ELSE' }, 'mock').catch(() => {});
       const after = caseFixtures.find((c) => c.id === archivedId)!;
       return after.placeOfDeath === before.placeOfDeath;
     });
@@ -1353,7 +1394,7 @@ describe('casesService — archived cases (2026-10)', () => {
 
   it('update() allows the restore', async () => {
     const restored = await withArchivedFixture((archivedId) =>
-      casesService.update(organization, archivedId, { isDeleted: false }, 'mock'),
+      updateAtCurrentRevision(organization, archivedId, { isDeleted: false }, 'mock'),
     );
     expect(restored.isDeleted).toBe(false);
   });
@@ -1361,8 +1402,76 @@ describe('casesService — archived cases (2026-10)', () => {
   it('update() on a live case is completely unaffected', async () => {
     const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted)!;
     const before = { ...target };
-    const updated = await casesService.update(organization, target.id, { placeOfDeath: 'GENERAL HOSPITAL' }, 'mock');
+    const updated = await updateAtCurrentRevision(organization, target.id, { placeOfDeath: 'GENERAL HOSPITAL' }, 'mock');
     expect(updated.placeOfDeath).toBe('GENERAL HOSPITAL');
     caseFixtures[caseFixtures.indexOf(caseFixtures.find((c) => c.id === target.id)!)] = before;
+  });
+});
+
+/**
+ * Case concurrency (2026-10). Mock mode applies the same revision rule as
+ * the Wix PATCH route, so tests and local development describe production.
+ */
+describe('casesService.update — case revisions (mock mode)', () => {
+  async function freshCase() {
+    return casesService.create(organization, { decedentName: 'Revision Test', nextOfKinName: '', nextOfKinPhone: '' }, sessionFor(staffFixtures[0].id), template);
+  }
+
+  it('refuses a save with no expectedRevision, writing nothing', async () => {
+    const created = await freshCase();
+    await expect(casesService.update(organization, created.id, { weight: '150 lb' })).rejects.toBeInstanceOf(CaseRevisionRequiredError);
+    expect(caseFixtures.find((c) => c.id === created.id)!.weight).toBe(created.weight);
+  });
+
+  it('bumps the revision on every save', async () => {
+    const created = await freshCase();
+    const first = await casesService.update(organization, created.id, { weight: '150 lb' }, 'mock', { expectedRevision: 0 });
+    expect(first.revision).toBe(1);
+    const second = await casesService.update(organization, created.id, { weight: '151 lb' }, 'mock', { expectedRevision: 1 });
+    expect(second.revision).toBe(2);
+  });
+
+  it('two staff editing from the same revision: the second is refused, the first survives', async () => {
+    const created = await freshCase();
+    await casesService.update(organization, created.id, { placeOfDeath: 'Home' }, 'mock', { expectedRevision: 0 });
+    const error = await casesService.update(organization, created.id, { placeOfDeath: 'Hospital' }, 'mock', { expectedRevision: 0 }).catch((e) => e);
+    expect(error).toBeInstanceOf(CaseRevisionConflictError);
+    expect(caseFixtures.find((c) => c.id === created.id)!.placeOfDeath).toBe('HOME');
+  });
+
+  it('independent checklist ticks from the same revision both land (base values unchanged)', async () => {
+    const created = await freshCase();
+    await casesService.update(organization, created.id, { checklistState: { '0:8': true } }, 'mock', {
+      expectedRevision: 0,
+      baseValues: { checklistState: { '0:8': null } },
+    });
+    await casesService.update(organization, created.id, { checklistState: { '0:10': true } }, 'mock', {
+      expectedRevision: 0,
+      baseValues: { checklistState: { '0:10': null } },
+    });
+    const stored = caseFixtures.find((c) => c.id === created.id)!;
+    expect(stored.checklistState['0:8']).toBe(true);
+    expect(stored.checklistState['0:10']).toBe(true);
+  });
+
+  it('a conflicting tick of the SAME item from a stale page is refused', async () => {
+    const created = await freshCase();
+    await casesService.update(organization, created.id, { checklistState: { '0:8': true } }, 'mock', {
+      expectedRevision: 0,
+      baseValues: { checklistState: { '0:8': null } },
+    });
+    const error = await casesService
+      .update(organization, created.id, { checklistState: { '0:8': false } }, 'mock', { expectedRevision: 0, baseValues: { checklistState: { '0:8': null } } })
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(CaseRevisionConflictError);
+    expect(caseFixtures.find((c) => c.id === created.id)!.checklistState['0:8']).toBe(true);
+  });
+
+  it('a checklist patch carrying one key never erases other keys', async () => {
+    const created = await freshCase();
+    await casesService.update(organization, created.id, { checklistState: { '0:8': true } }, 'mock', { expectedRevision: 0 });
+    await casesService.update(organization, created.id, { checklistState: { '0:10': true } }, 'mock', { expectedRevision: 1 });
+    const stored = caseFixtures.find((c) => c.id === created.id)!;
+    expect(stored.checklistState).toMatchObject({ '0:8': true, '0:10': true });
   });
 });

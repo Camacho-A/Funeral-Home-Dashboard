@@ -131,6 +131,8 @@ export type WixCaseItem = {
   createdBy?: unknown;
   isArchived?: unknown;
   createdAt?: unknown;
+  /** Case concurrency (2026-10). Optional Number; see `storedCaseRevision`. */
+  revision?: unknown;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -313,6 +315,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     workflowTemplateVersion: item.workflowTemplateVersion,
     caseType: item.caseType,
     workflowSnapshot: item.workflowSnapshot,
+    ...(typeof item.revision === 'number' ? { revision: item.revision } : {}),
   };
 }
 
@@ -773,4 +776,71 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.isMedicalExaminerCase !== undefined) next.isMedicalExaminerCase = patch.isMedicalExaminerCase;
 
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Case concurrency (2026-10). See docs/CASE_CONCURRENCY.md. Wire-compatible
+// with Gus SOLIS, which writes the same Wix `cases` rows the same way: the
+// field is `revision`, every write sets it to read + 1 under a condition on
+// the read value, and no write ever full-replaces a case row.
+// ---------------------------------------------------------------------------
+
+/**
+ * The row's revision as a write CONDITION must match it: the stored number,
+ * or `null` for a legacy row that has none. `{ $eq: null }` is the
+ * live-verified Wix form for "currently unset" (lib/wixDataApi.ts); `$eq: 0`
+ * would not match a row with no `revision` field at all.
+ */
+export function storedCaseRevision(item: Pick<WixCaseItem, 'revision'>): number | null {
+  return typeof item.revision === 'number' ? item.revision : null;
+}
+
+/** The revision a client sees and echoes back: absent reads as 0. */
+export function caseRevision(item: Pick<WixCaseItem, 'revision'> | Pick<Case, 'revision'>): number {
+  return typeof item.revision === 'number' ? item.revision : 0;
+}
+
+/**
+ * The condition every case write is made under: still this organization's
+ * case, still this case, and still the exact revision the write was computed
+ * from. If anything moved, Wix refuses the whole patch (HTTP 428) and
+ * nothing is written.
+ */
+export function caseWriteCondition(existing: WixCaseItem): { filter: Record<string, unknown> } {
+  return {
+    filter: {
+      organizationId: { $eq: existing.organizationId },
+      beaconCaseId: { $eq: existing.beaconCaseId },
+      revision: { $eq: storedCaseRevision(existing) },
+    },
+  };
+}
+
+/** The Wix fields whose value differs between two versions of a row. */
+export function changedCaseFields(before: WixCaseItem, after: WixCaseItem): Record<string, unknown> {
+  const changed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(after)) {
+    if (JSON.stringify((before as Record<string, unknown>)[key]) !== JSON.stringify(value)) changed[key] = value;
+  }
+  return changed;
+}
+
+/**
+ * The FIELD-SCOPED counterpart of applyCaseUpdateToWixData: exactly the Wix
+ * fields this patch changes on `existing`, and nothing else — so a write
+ * never rewrites a field it doesn't own from what may be a stale read.
+ *
+ * The three map fields merge at KEY level: a patch's `checklistState`,
+ * `fieldValues` and `vaStepsState` carry only the keys being changed, and
+ * every other key keeps its CURRENT value — two staff ticking different
+ * items can never undo each other. A client that still sends a whole map is
+ * merged the same way. No key is ever removed by a patch.
+ */
+export function buildCaseFieldPatch(existing: WixCaseItem, patch: CaseUpdate): Record<string, unknown> {
+  const next = applyCaseUpdateToWixData(existing, patch);
+  const asObject = (value: unknown): Record<string, unknown> => (isPlainObject(value) ? value : {});
+  if (patch.checklistState !== undefined) next.checklistState = { ...asObject(existing.checklistState), ...asObject(next.checklistState) };
+  if (patch.fieldValues !== undefined) next.fieldValues = { ...asObject(existing.fieldValues), ...asObject(next.fieldValues) };
+  if (patch.vaStepsState !== undefined) next.vaStepsState = { ...asObject(existing.vaStepsState), ...asObject(next.vaStepsState) };
+  return changedCaseFields(existing, next);
 }
