@@ -1,6 +1,6 @@
 # Manors SOLIS — production deployment plan (2026-10)
 
-**Status: PREPARED, NOT EXECUTED.** Nothing in this plan has been run against production. Every step marked **[approval]** needs the owner's explicit go-ahead.
+**Status: pre-deploy checks complete (2026-10-16).** V1 passed 8/8. `DEPLOYMENT_ORGANIZATION_IDS=managed-cremations` was confirmed in both Production and Preview. `AUTH_ADAPTER=identity` was confirmed from the live login page. The original note follows: Nothing in this plan has been run against production. Every step marked **[approval]** needs the owner's explicit go-ahead.
 
 ## 1. Commits
 
@@ -132,8 +132,8 @@ Arrangement is `case_create`. No live form changes are needed.
 
 | Risk | Status |
 |---|---|
-| V1 has not been run | **Blocker**, needs approval for one disposable live row |
-| `DEPLOYMENT_ORGANIZATION_IDS` / `AUTH_ADAPTER` values unconfirmed | **Blocker**, owner check |
+| V1 | **Cleared.** Passed 8/8 on 2026-10-16; the sandbox row was deleted |
+| `DEPLOYMENT_ORGANIZATION_IDS` / `AUTH_ADAPTER` | **Cleared.** `managed-cremations` in both Production and Preview; `identity` shown by the live login |
 | Ingestion items deferred (section 13) | Can follow deployment |
 | Client permission cache can show already-loaded data for up to 30 s after a role is revoked (server enforcement is immediate) | Can follow |
 | Payment-status poll (GET) can trigger mark-paid with organization membership only, no `can*()` check. Only a Clover-confirmed payment is written. | Can follow |

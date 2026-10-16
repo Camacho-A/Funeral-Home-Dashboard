@@ -45,11 +45,13 @@ Both apps implement the same contract:
 
 As a result, each app's writes are visible to the other app's revision checks.
 
-## Not yet verified live
+## Live verification (2026-10-16, step V1, owner-approved)
 
-The single-field conditional patch was verified live on 2026-09, on `externalFormSubmissions`. Two things have not been verified:
+These checks ran against live Beacon through the app's own `conditionalPatchWixDataItemFields`, on one disposable `cases` row under `organizationId: "verification-sandbox"` (on no allowlist). The row was deleted afterwards. All 8 checks passed:
 
-- the **multi-field** form;
-- a condition on the **`revision` field, which the live `cases` collection does not declare**.
-
-Gus's own plan carries the same gap. See the deployment plan for the approved verification step.
+- A legacy row with no `revision` is matched by `$eq: null`, and the write sets revision 1.
+- Repeating the same condition is refused with 428.
+- A **multi-field** patch against a stale revision is refused with 428, and **none** of its fields are applied.
+- A multi-field patch against the current revision applies every field, including a map.
+- A query can filter on `revision`, even though the collection does not declare the field.
+- When two writes are sent simultaneously from the same revision, exactly one wins.
