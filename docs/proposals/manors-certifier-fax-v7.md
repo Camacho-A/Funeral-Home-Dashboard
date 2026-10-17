@@ -7,7 +7,7 @@
 - All 7 existing cases (B2026-034 to B2026-040) keep their workflow version, stage, and completed checklist items.
 - That endpoint records no activity/audit event, so the version row and its timestamp are the only record.
 **Organization:** `managed-cremations` (Manors) only
-**Template:** `workflow-template-standard-cremation`, current live version **6**
+**Template:** `workflow-template-standard-cremation`, published from v6 as live version **7**
 
 ## Why a new version is needed
 
