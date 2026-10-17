@@ -1,7 +1,11 @@
 # Proposal: Manors workflow template v7 (Certifier fax)
 
-**Status:** CONTENT APPROVED (2026-10-16): both changes below, the certifier fax and the 12-hour Time of Death editor. **NOT PUBLISHED.** Publishing needs a separate final go-ahead, together with the production deployment.
-**Verified 2026-10-16:** the payload was re-diffed against a fresh read of live v6. It has exactly 4 differences (the two changes × raw stages 0 and 1) and nothing else.
+**Status: PUBLISHED** on 2026-10-17 at 00:06:38 UTC as `workflow-template-standard-cremation-v7`. A signed-in Manors administrator published it through `POST /api/workflow-templates/.../versions`, using the hash-checked console command.
+**Verified after publication (read-only):**
+- The stored v7 has 0 value differences from this payload, and exactly 4 differences from v6 (fax and the 12-hour Time of Death, each at raw stages 0 and 1).
+- The app's own template lookup resolves new cases to v7.
+- All 7 existing cases (B2026-034 to B2026-040) keep their workflow version, stage, and completed checklist items.
+- That endpoint records no activity/audit event, so the version row and its timestamp are the only record.
 **Organization:** `managed-cremations` (Manors) only
 **Template:** `workflow-template-standard-cremation`, current live version **6**
 
