@@ -14,6 +14,7 @@ import {
   updatePreferences,
   NotificationServiceError,
   markAllReadForIdentity,
+  notificationRecipientId,
 } from './notificationService';
 import {
   notificationFixtures,
@@ -836,5 +837,49 @@ describe('unread count is exact beyond the old 250-row window', () => {
       );
     }
     expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(400);
+  });
+});
+
+/**
+ * Wix _id cap (2026-10). Wix rejects any item id over 128 characters. A
+ * recipient's id was `{notificationId}-{identityId}`, so every notification
+ * with a long id (intake ones are 100 characters) failed to store its
+ * recipient: the notification stayed `queued` and nobody ever saw it. Live
+ * production had exactly that — 3 notifications, 0 recipient rows.
+ */
+describe('notification recipient ids stay within the Wix 128-character limit', () => {
+  const IDENTITY = '0f5a8f0e-6b1c-4c37-9a51-2f6a0c9b7d11';
+  const INTAKE_SHAPED_ID = 'intake-attention-managed-cremations-jotform-6679876908714870727-5e0b2c11-8d0a-4f5e-9a3b-7c1d2e3f4a5b';
+
+  it('keeps the readable natural id when it fits', () => {
+    expect(notificationRecipientId('notification-1', IDENTITY)).toBe(`notification-1-${IDENTITY}`);
+  });
+
+  it('bounds a long id deterministically, uniquely per recipient, leaving room for the channel suffix', () => {
+    expect(INTAKE_SHAPED_ID.length).toBe(100);
+    const a = notificationRecipientId(INTAKE_SHAPED_ID, IDENTITY);
+    expect(a).toBe(notificationRecipientId(INTAKE_SHAPED_ID, IDENTITY));
+    expect(a).not.toBe(notificationRecipientId(INTAKE_SHAPED_ID, '1f5a8f0e-6b1c-4c37-9a51-2f6a0c9b7d11'));
+    expect(`${a}-in_app`.length).toBeLessThanOrEqual(128);
+    expect(`${a}-email`.length).toBeLessThanOrEqual(128);
+  });
+
+  it('a notification with a 100-character id now reaches its recipient and becomes active', async () => {
+    const notification = await createNotification(
+      {
+        notificationType: 'task.assigned',
+        recipientScope: 'individual',
+        recipientIdentityId: MANORS_ADMIN_IDENTITY_ID,
+        idFactory: () => INTAKE_SHAPED_ID,
+        tokens: { actorDisplayName: 'Dana', entityTitle: 'Call the cemetery' },
+      },
+      ctx(),
+      'mock',
+    );
+
+    expect(notification.status).toBe('active');
+    expect(notificationRecipientFixtures).toHaveLength(1);
+    expect(notificationRecipientFixtures[0].id.length).toBeLessThanOrEqual(120);
+    for (const delivery of notificationDeliveryFixtures) expect(delivery.id.length).toBeLessThanOrEqual(128);
   });
 });

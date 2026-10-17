@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type { DataAdapterMode } from '../lib/env';
 import { isTypeEnabled, IMPLEMENTED_NOTIFICATION_TYPES } from '../domain/notifications/notificationDefaults';
 import { countWixDataItems, queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
@@ -494,6 +495,32 @@ function resolveEffectiveChannelToggles(
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+/**
+ * The id of one recipient's copy of a notification (2026-10).
+ *
+ * Wix Data rejects any item `_id` longer than 128 characters (WDE0075). The
+ * natural id `{notificationId}-{identityId}` — and the delivery-attempt id
+ * `{recipientId}-{channel}` derived from it — overran that for every
+ * notification whose own id is long (an intake notification is 100
+ * characters, so its recipient id was 137). The insert failed, the error
+ * stopped delivery, and the notification sat `queued` with no recipient:
+ * stored, but shown to nobody.
+ *
+ * Short enough ids keep their readable natural form, so every recipient row
+ * that already exists is untouched. A longer one becomes a fixed-length hash
+ * of the same natural id — still deterministic (a retry computes the same
+ * id, so duplicate prevention is unchanged) and still unique per
+ * (notification, recipient). Recipient ids are opaque everywhere else: the
+ * inbox reads them from the row and sends them back as-is.
+ */
+const MAX_RECIPIENT_ID_LENGTH = 120; // leaves room for the "-{channel}" delivery suffix within Wix's 128
+
+export function notificationRecipientId(notificationId: string, identityId: string): string {
+  const natural = `${notificationId}-${identityId}`;
+  if (natural.length <= MAX_RECIPIENT_ID_LENGTH) return natural;
+  return `nr-${createHash('sha256').update(natural).digest('hex').slice(0, 48)}`;
+}
+
 export async function createNotification(
   params: NewNotificationInput & { idFactory: () => string; now?: string },
   ctx: ActivityContext,
@@ -574,7 +601,7 @@ export async function createNotification(
 
   for (const identityId of recipientIdentityIds) {
     const recipient: NotificationRecipient = {
-      id: `${notificationId}-${identityId}`,
+      id: notificationRecipientId(notificationId, identityId),
       organizationId: ctx.organizationId,
       notificationId,
       identityId,

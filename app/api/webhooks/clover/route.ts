@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
+import { loadCaseOnServer } from '@/services/serverCaseLoader';
 import { notifyPaymentReceived, notifyPaymentFailed } from '@/services/caseNotifications';
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { formatCentsAsCurrency } from '@/utils/format';
-import * as casesService from '@/services/casesService';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
@@ -236,7 +236,7 @@ export async function POST(request: Request) {
      */
     if (updated.status === 'succeeded' || updated.status === 'failed') {
       try {
-        const case_ = await casesService.get({ organizationId: record.organizationId }, record.caseId, dataAdapterMode);
+        const case_ = await loadCaseOnServer(record.organizationId, record.caseId, dataAdapterMode);
         if (case_) {
           const notifiable = {
             id: case_.id,

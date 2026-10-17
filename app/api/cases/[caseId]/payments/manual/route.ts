@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
+import { loadCaseOnServer } from '@/services/serverCaseLoader';
 import { notifyPaymentReceived } from '@/services/caseNotifications';
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { formatCentsAsCurrency } from '@/utils/format';
-import * as casesService from '@/services/casesService';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
@@ -186,7 +186,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
    * money are told.
    */
   try {
-    const case_ = await casesService.get({ organizationId }, caseId, dataAdapterMode);
+    const case_ = await loadCaseOnServer(organizationId, caseId, dataAdapterMode);
     if (case_) {
       await notifyPaymentReceived(
         activityCtx,

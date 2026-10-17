@@ -93,8 +93,11 @@ vi.mock('@/services/caseNotifications', () => ({
   notifyJotformPdfImportFailed: vi.fn(),
 }));
 vi.mock('@/services/workflowReconciliationService', () => ({ reconcileCaseWorkflow: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@/services/casesService', () => ({
-  get: vi.fn(async (_ctx: { organizationId: string }, caseId: string) => ({
+// The route loads the case for its notification server-side (2026-10). It
+// used to call the browser-only casesService.get — mocked here, which is
+// exactly how that call's failure in production stayed hidden.
+vi.mock('@/services/serverCaseLoader', () => ({
+  loadCaseOnServer: vi.fn(async (_organizationId: string, caseId: string) => ({
     id: caseId,
     caseNumber: 'X0000-000',
     decedentName: 'Redacted',

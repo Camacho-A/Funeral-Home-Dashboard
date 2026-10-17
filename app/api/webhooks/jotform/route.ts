@@ -1,7 +1,7 @@
 import crypto from 'crypto';
+import { loadCaseOnServer } from '@/services/serverCaseLoader';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
-import * as casesService from '@/services/casesService';
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { authenticateJotformSubmission } from '@/lib/jotform/jotformSubmissionAuthenticity';
 import { parseJotformWebhookBody, extractHiddenFieldByQid } from '@/domain/externalForms/parseWebhookPayload';
@@ -156,7 +156,7 @@ async function notifiableCase(
   dataAdapterMode: ReturnType<typeof getDataAdapterMode>,
 ): Promise<NotifiableCase | null> {
   try {
-    const found = await casesService.get({ organizationId }, caseId, dataAdapterMode);
+    const found = await loadCaseOnServer(organizationId, caseId, dataAdapterMode);
     if (!found) return null;
     return {
       id: found.id,

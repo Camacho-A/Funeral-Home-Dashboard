@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { loadCaseOnServer } from './serverCaseLoader';
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import type { DataAdapterMode } from '../lib/env';
@@ -18,7 +19,6 @@ import { mapWixOrganizationBrandingItem, type WixOrganizationBrandingItem } from
 import { mapWixOrganizationLocationItem, type WixOrganizationLocationItem } from '../lib/wixOrganizationLocationMapper';
 import type { CaseDocument, CaseDocumentStatus, CaseDocumentWithActorName, NewGeneratedDocumentInput, NewUploadedDocumentInput } from '../types/caseDocument';
 import type { Case } from '../types/case';
-import * as casesService from './casesService';
 import { composeDecedentName } from '../domain/cases/decedentName';
 import { notifyDocumentGenerated, notifyDocumentGenerationFailed } from './caseNotifications';
 import type { Organization } from '../types/organization';
@@ -438,7 +438,7 @@ async function announceGeneration(
   dataAdapterMode: DataAdapterMode,
 ): Promise<void> {
   try {
-    const case_ = await casesService.get({ organizationId: ctx.organizationId }, params.caseId, dataAdapterMode);
+    const case_ = await loadCaseOnServer(ctx.organizationId, params.caseId, dataAdapterMode);
     if (!case_) return;
     const notifiable = {
       id: case_.id,
