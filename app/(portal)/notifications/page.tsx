@@ -10,6 +10,7 @@ import {
   useArchiveNotification,
 } from '@/hooks/useNotifications';
 import { NOTIFICATION_CATEGORY_LABEL } from '@/domain/notifications/notificationTypeRegistry';
+import { AUTO_ARCHIVE_AFTER_READ_DAYS, isArchivedForInbox } from '@/domain/notifications/inboxArchiving';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
 import styles from './page.module.css';
@@ -28,7 +29,7 @@ import styles from './page.module.css';
  * identity and organization from the session, so this page cannot ask for
  * another tenant's notifications.
  */
-type InboxTab = 'all' | 'unread' | 'attention' | 'read';
+type InboxTab = 'all' | 'unread' | 'attention' | 'read' | 'archived';
 
 /** "Needs Attention" is the subset a person still has to DO something
     about — currently the intake-failure notifications, which are the only
@@ -42,6 +43,7 @@ const TAB_LABEL: Record<InboxTab, string> = {
   unread: 'Unread',
   attention: 'Needs Attention',
   read: 'Read',
+  archived: 'Archived',
 };
 
 export default function NotificationsPage() {
@@ -51,13 +53,16 @@ export default function NotificationsPage() {
   // 'unread' is pushed down to the query so the server does the filtering;
   // the other tabs refine the same page client-side, which keeps one
   // cached query rather than four.
-  const inbox = useNotificationInbox(organizationId, { unreadOnly: tab === 'unread' });
+  // 'archived' asks the server for archived rows too, then keeps only those:
+  // archived by hand, or read long enough ago to archive themselves.
+  const inbox = useNotificationInbox(organizationId, { unreadOnly: tab === 'unread', includeArchived: tab === 'archived' });
   const markRead = useMarkNotificationRead(organizationId);
   const markAllRead = useMarkAllNotificationsRead(organizationId);
   const archive = useArchiveNotification(organizationId);
 
   const items = (inbox.data?.pages ?? []).flatMap((page) => page.items);
   const visible = items.filter(({ notification, recipient }) => {
+    if (tab === 'archived') return isArchivedForInbox(recipient);
     if (tab === 'read') return recipient.readAt !== null;
     if (tab === 'attention') return recipient.readAt === null && ATTENTION_CATEGORIES.has(notification.category);
     return true;
@@ -91,6 +96,12 @@ export default function NotificationsPage() {
           </button>
         ))}
       </div>
+
+      {tab === 'archived' && (
+        <p className={styles.loading}>
+          Read notifications move here by themselves {AUTO_ARCHIVE_AFTER_READ_DAYS} days after you read them.
+        </p>
+      )}
 
       {inbox.isPending ? (
         <p className={styles.loading}>Loading notifications…</p>
@@ -137,9 +148,11 @@ export default function NotificationsPage() {
                       Mark read
                     </button>
                   )}
-                  <button type="button" className={styles.rowButton} onClick={() => archive.mutate(recipient.id)}>
-                    Archive
-                  </button>
+                  {tab !== 'archived' && (
+                    <button type="button" className={styles.rowButton} onClick={() => archive.mutate(recipient.id)}>
+                      Archive
+                    </button>
+                  )}
                 </div>
               </li>
             );

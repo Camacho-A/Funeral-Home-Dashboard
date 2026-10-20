@@ -127,6 +127,31 @@ describe('NotificationDrawer', () => {
     expect(screen.getByText('First notification')).toBeInTheDocument();
   });
 
+  it('opening a notification with "View" marks it read and closes the drawer', async () => {
+    const { recipient, notification } = makeItem();
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({ items: [{ notification, recipient }], nextCursor: null });
+    vi.mocked(notificationsClient.markNotificationRead).mockResolvedValue({ ...recipient, readAt: '2026-08-04T13:00:00.000Z' });
+    const { onClose } = renderDrawer();
+
+    const view = await screen.findByRole('link', { name: 'View' });
+    expect(view).toHaveAttribute('href', '/cases/case-1');
+    view.addEventListener('click', (event) => event.preventDefault()); // jsdom cannot navigate
+    fireEvent.click(view);
+
+    await waitFor(() => expect(notificationsClient.markNotificationRead).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, recipient.id));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('"View" on an already-read notification does not mark it again', async () => {
+    const { recipient, notification } = makeItem({}, { readAt: '2026-08-04T12:30:00.000Z' });
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({ items: [{ notification, recipient }], nextCursor: null });
+    renderDrawer();
+    const view = await screen.findByRole('link', { name: 'View' });
+    view.addEventListener('click', (event) => event.preventDefault()); // jsdom cannot navigate
+    fireEvent.click(view);
+    expect(notificationsClient.markNotificationRead).not.toHaveBeenCalled();
+  });
+
   it('closes on Escape', async () => {
     vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({ items: [], nextCursor: null });
     const { onClose } = renderDrawer();

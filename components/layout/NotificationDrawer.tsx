@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useNotificationInbox, useMarkNotificationRead, useArchiveNotification } from '@/hooks/useNotifications';
@@ -95,9 +96,18 @@ export function NotificationDrawer({ open, onClose, organizationId }: { open: bo
                   <div className="sx-notif-meta">
                     <span style={{ marginRight: 4 }}>{formatTimestamp(notification.createdAt)}</span>
                     {notification.actionUrl && (
-                      <a href={notification.actionUrl} className="sx-btn sx-btn-ghost" style={{ color: 'var(--sx-link)' }}>
+                      <Link
+                        href={notification.actionUrl}
+                        className="sx-btn sx-btn-ghost"
+                        style={{ color: 'var(--sx-link)' }}
+                        onClick={() => {
+                          // Opening a notification reads it, as on the full Notifications page.
+                          if (isUnread) markRead.mutate(recipient.id);
+                          onClose();
+                        }}
+                      >
                         View
-                      </a>
+                      </Link>
                     )}
                     {isUnread && (
                       <button type="button" className="sx-btn sx-btn-ghost" onClick={() => markRead.mutate(recipient.id)} disabled={markRead.isPending}>

@@ -36,6 +36,7 @@ import { getIdentityById } from './identityService';
 import { getPortalUserById } from './portal/portalUserService';
 import { getForOrganization as getOrganizationForNotification } from './organizationsService';
 import { shouldDeferEmailForDigest } from '../domain/notifications/digestTiming';
+import { isArchivedForInbox } from '../domain/notifications/inboxArchiving';
 import {
   recordNotificationCreated,
   recordNotificationSent,
@@ -768,7 +769,23 @@ export async function archiveNotificationForRecipient(
   if (recipient.identityId !== identityId) throw new NotificationServiceError('This notification does not belong to the requesting identity.');
   if (recipient.archivedAt !== null) return recipient;
 
-  return patchRecipient(organizationId, notificationRecipientId, { archivedAt: nowIso() }, dataAdapterMode);
+  // Archiving something unread also reads it (2026-10). The unread badge
+  // counts in-app deliveries not yet `read`, so an unread notification
+  // archived without this kept counting in the badge with nothing left in
+  // the inbox to clear it.
+  const now = nowIso();
+  if (recipient.readAt === null) {
+    const inAppDelivery = await findDeliveryByRecipientAndChannel(organizationId, notificationRecipientId, 'in_app', dataAdapterMode);
+    if (inAppDelivery && inAppDelivery.status !== 'read') {
+      await patchDelivery(organizationId, inAppDelivery.id, { status: 'read', lastAttemptAt: now }, dataAdapterMode);
+    }
+  }
+  return patchRecipient(
+    organizationId,
+    notificationRecipientId,
+    recipient.readAt === null ? { archivedAt: now, readAt: now } : { archivedAt: now },
+    dataAdapterMode,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -853,7 +870,10 @@ export async function listForRecipient(
   );
 
   let filtered = joined.filter((row): row is { recipient: NotificationRecipient; notification: Notification } => row.notification !== null);
-  if (!filters.includeArchived) filtered = filtered.filter((row) => row.recipient.archivedAt === null);
+  // Archived by hand, or read long enough ago to archive itself
+  // (domain/notifications/inboxArchiving.ts).
+  const listedAt = new Date();
+  if (!filters.includeArchived) filtered = filtered.filter((row) => !isArchivedForInbox(row.recipient, listedAt));
   if (filters.unreadOnly) filtered = filtered.filter((row) => row.recipient.readAt === null);
   if (filters.category) filtered = filtered.filter((row) => row.notification.category === filters.category);
 

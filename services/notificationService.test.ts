@@ -518,6 +518,59 @@ describe('markRead / archiveNotificationForRecipient', () => {
   });
 });
 
+describe('read and automatic archiving (2026-10)', () => {
+  async function oneNotification() {
+    const notification = await createNotification(
+      { notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: MANORS_ADMIN_IDENTITY_ID, idFactory, tokens: {} },
+      ctx(),
+      'mock',
+    );
+    return notificationRecipientFixtures.find((r) => r.notificationId === notification.id)!;
+  }
+
+  it('archiving an unread notification also reads it, so the unread badge drops', async () => {
+    const recipient = await oneNotification();
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(1);
+
+    const archived = await archiveNotificationForRecipient(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, 'mock');
+
+    expect(archived.archivedAt).not.toBeNull();
+    expect(archived.readAt).toBe(archived.archivedAt);
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(0);
+  });
+
+  it('archiving an already-read notification keeps when it was read', async () => {
+    const recipient = await oneNotification();
+    const read = await markRead(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    const archived = await archiveNotificationForRecipient(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, 'mock');
+    expect(archived.readAt).toBe(read.readAt);
+  });
+
+  it('a notification read a week ago leaves the inbox by itself, and stays under "Show archived"', async () => {
+    const recipient = await oneNotification();
+    const index = notificationRecipientFixtures.findIndex((r) => r.id === recipient.id);
+    notificationRecipientFixtures[index] = { ...recipient, readAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString() };
+
+    const inbox = await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock');
+    expect(inbox.items).toHaveLength(0);
+    const withArchived = await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { includeArchived: true }, null, 10, 'mock');
+    expect(withArchived.items).toHaveLength(1);
+    // Nothing was written to do it.
+    expect(notificationRecipientFixtures[index].archivedAt).toBeNull();
+  });
+
+  it('a notification read today, and any unread one however old, stays in the inbox', async () => {
+    const recipient = await oneNotification();
+    await markRead(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    const old = await oneNotification();
+    const index = notificationRecipientFixtures.findIndex((r) => r.id === old.id);
+    notificationRecipientFixtures[index] = { ...old, createdAt: '2025-01-01T00:00:00.000Z' };
+
+    const inbox = await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock');
+    expect(inbox.items).toHaveLength(2);
+  });
+});
+
 describe('preferences', () => {
   it('a missing preference row resolves to both channels enabled by default', async () => {
     const prefs = await getPreferences(DEFAULT_ORGANIZATION_ID, 'identity-with-no-row', 'mock');
