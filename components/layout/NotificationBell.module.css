@@ -37,7 +37,9 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--sx-navy);
+  /* Unread alert (2026-10): red, so an unread notification stands out
+     from the navy top bar instead of blending into it. */
+  background: var(--sx-red);
   color: #fff;
   font-size: 10px;
   font-weight: 700;

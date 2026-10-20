@@ -48,7 +48,7 @@ export function NotificationBell() {
         </svg>
         <span className="sr-only">Notifications</span>
         {count > 0 && (
-          <Badge variant="brand" className={styles.countBadge}>
+          <Badge variant="danger" className={styles.countBadge} data-tone="alert">
             {count > 99 ? '99+' : count}
           </Badge>
         )}

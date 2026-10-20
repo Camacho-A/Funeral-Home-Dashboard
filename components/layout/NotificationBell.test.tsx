@@ -83,6 +83,16 @@ describe('NotificationBell', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
+  it('shows the unread badge as a red alert, not the brand navy', async () => {
+    vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(2);
+    renderBell();
+    const badge = await screen.findByText('2');
+    expect(badge).toHaveAttribute('data-tone', 'alert');
+    expect(badge.className).toMatch(/danger/);
+    const css = (await import('fs')).readFileSync('components/layout/NotificationBell.module.css', 'utf8');
+    expect(css).toMatch(/\.countBadge\s*{[^}]*background:\s*var\(--sx-red\)/);
+  });
+
   it('caps the displayed badge at "99+"', async () => {
     vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(150);
     renderBell();
