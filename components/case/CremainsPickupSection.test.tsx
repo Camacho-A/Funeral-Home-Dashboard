@@ -132,9 +132,11 @@ describe('CremainsPickupSection — an existing pickup', () => {
   it('switches to Received, drops every action, and keeps the record visible', () => {
     renderSection([pickup({ status: 'completed', ...allDayWindowFor('2020-01-03', TZ) })]);
     expect(screen.getAllByText('Received').length).toBeGreaterThan(0);
-    // Shown twice by design once received: as the date and as the actual
-    // receipt, which are the same day.
-    expect(screen.getAllByText('Friday, January 3, 2020').length).toBe(2);
+    // The appointment's date is shown once, as the expected date. It is not
+    // repeated as the date received: nothing was recorded on the case, and
+    // the expected date is not a substitute for it (2026-10 fix).
+    expect(screen.getAllByText('Friday, January 3, 2020').length).toBe(1);
+    expect(screen.getByText('Received (date not recorded)')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Mark Received' })).not.toBeInTheDocument();
     expect(screen.queryByText(/expected date has passed/i)).not.toBeInTheDocument();
   });

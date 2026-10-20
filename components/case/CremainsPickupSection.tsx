@@ -23,7 +23,7 @@ import { useCreateExpectedPickup, useUpdateExpectedPickupDate } from '@/hooks/us
 import { useConfirmAppointment } from '@/hooks/useAppointments';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { CremainsPickupError } from '@/lib/cremainsPickupClient';
-import { caseDateToIso, isoToCaseDate, receivedDateOf } from '@/domain/cases/cremationDates';
+import { caseDateToIso, dateReceivedLabel, dateReceivedOf, isoToCaseDate } from '@/domain/cases/cremationDates';
 
 /**
  * Expected Cremains Pickup — the Case Detail section (2026-10).
@@ -444,7 +444,9 @@ export function CremainsPickupSection({
   const received = status === 'received';
   const paperworkDate = pickup ? paperworkDateFromNotes(pickup.notes) : null;
   const cremationDate = caseDateToIso(case_?.dateOfCremation);
-  const receivedDate = receivedDateOf(case_, received, expected);
+  // Only the stored date — never the expected pickup date (see dateReceivedOf).
+  const dateReceived = dateReceivedOf(case_, received);
+  const receivedDate = dateReceived.kind === 'recorded' ? dateReceived.date : null;
 
   function closeDialog() {
     setDialog(null);
@@ -577,12 +579,12 @@ export function CremainsPickupSection({
           )}
         </Field>
         <Field label="Date received">
-          {receivedDate ? <strong>{formatPickupDate(receivedDate)}</strong> : 'Not yet received'}
-          {canSchedule && received && case_ && case_.isDeleted !== true && (
+          {receivedDate ? <strong>{formatPickupDate(receivedDate)}</strong> : dateReceivedLabel(dateReceived, formatPickupDate)}
+          {canSchedule && dateReceived.kind !== 'not_received' && case_ && case_.isDeleted !== true && (
             <>
               {' '}
               <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setDialog('receivedDate')} disabled={busy}>
-                Edit
+                {receivedDate ? 'Edit' : 'Add date'}
               </button>
             </>
           )}

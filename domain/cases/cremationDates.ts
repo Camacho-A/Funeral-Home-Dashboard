@@ -23,19 +23,35 @@ export function caseDateToIso(caseDate: string | null | undefined): string {
 }
 
 /**
- * The day the cremains arrived, as YYYY-MM-DD, or null if not recorded.
+ * Date received: the day Manors actually received the cremated remains.
  *
- * Before this change "Mark Received" stored the receipt date by moving the
- * pickup appointment's date onto it, and recorded nothing on the case. For
- * such a case (received, no `cremainsReceivedAt`) the appointment date IS
- * the receipt date, so it is used — but only then.
+ * It is only ever the date stored on the case (`cremainsReceivedAt`).
+ * Nothing is substituted when it is missing: not the expected pickup date,
+ * not the date of cremation, not the release date. A case marked received
+ * before the date was recorded (the old checklist and "Mark Received"
+ * workflows wrote nothing on the case) reads "Received (date not
+ * recorded)" until staff enter the real date.
+ *
+ * `received` is whether the cremains are known to have arrived (the
+ * expected pickup is complete). A stored date always counts as received.
  */
-export function receivedDateOf(
-  case_: Pick<Case, 'cremainsReceivedAt'> | null,
-  received: boolean,
-  appointmentDate: string | null,
-): string | null {
+export type DateReceived =
+  | { kind: 'recorded'; date: string }
+  | { kind: 'date_not_recorded' }
+  | { kind: 'not_received' };
+
+export const DATE_RECEIVED_NOT_RECORDED_LABEL = 'Received (date not recorded)';
+export const NOT_YET_RECEIVED_LABEL = 'Not yet received';
+
+export function dateReceivedOf(case_: Pick<Case, 'cremainsReceivedAt'> | null, received: boolean): DateReceived {
   const stored = caseDateToIso(case_?.cremainsReceivedAt);
-  if (stored) return stored;
-  return received ? appointmentDate : null;
+  if (stored) return { kind: 'recorded', date: stored };
+  return received ? { kind: 'date_not_recorded' } : { kind: 'not_received' };
+}
+
+/** The text every view shows for Date received; `formatDate` renders a
+    recorded YYYY-MM-DD date in that view's own style. */
+export function dateReceivedLabel(value: DateReceived, formatDate: (isoDate: string) => string): string {
+  if (value.kind === 'recorded') return formatDate(value.date);
+  return value.kind === 'date_not_recorded' ? DATE_RECEIVED_NOT_RECORDED_LABEL : NOT_YET_RECEIVED_LABEL;
 }

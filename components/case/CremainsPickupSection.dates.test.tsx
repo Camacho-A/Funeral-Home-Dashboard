@@ -104,9 +104,39 @@ describe('CremainsPickupSection — date of cremation, date received, expected p
     expect(Object.keys(updateCaseInfo.mock.calls[0][0].checklistState)).toHaveLength(1);
   });
 
-  it('a case received before this change shows the pickup date it was moved to as its date received', () => {
+  it('a received case with no recorded date says so — it never shows the pickup date', () => {
     renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: null });
-    expect(fieldValue('Date received')).toHaveTextContent('16');
+    expect(fieldValue('Date received')).toHaveTextContent('Received (date not recorded)');
+    expect(fieldValue('Date received')).not.toHaveTextContent('16');
+  });
+
+  it('the old checklist workflow (completed pickup, FUTURE expected date, nothing stored) shows no date — B2026-036/038', () => {
+    // Exactly how those cases look in Production: received by ticking the
+    // checklist, appointment still on its expected date of Oct 23 while
+    // "today" is earlier, and no date received on the case.
+    renderSection([pickup({ status: 'completed', ...allDayWindowFor('2099-10-23', TZ) })], {
+      cremainsReceivedAt: null,
+      dateOfCremation: '10/10/2026',
+    });
+    expect(fieldValue('Date received')).toHaveTextContent('Received (date not recorded)');
+    expect(fieldValue('Date received')).not.toHaveTextContent('2099');
+    expect(fieldValue('Date received')).not.toHaveTextContent('October 10');
+  });
+
+  it('staff can add the real date to such a case, starting from an empty date — never the expected one', () => {
+    renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Add date' }));
+    expect(screen.getByLabelText('Date received')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Date received'), { target: { value: '2026-10-12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
+    expect(updateCaseInfo).toHaveBeenCalledWith({ cremainsReceivedAt: '10/12/2026' });
+    expect(updateExpectedDate).not.toHaveBeenCalled();
+  });
+
+  it('an unreceived case reads "Not yet received" and offers no date to edit', () => {
+    renderSection([pickup()], { cremainsReceivedAt: null });
+    expect(fieldValue('Date received')).toHaveTextContent('Not yet received');
+    expect(screen.queryByRole('button', { name: 'Add date' })).not.toBeInTheDocument();
   });
 
   it('a stored date received wins over the pickup date, and can be corrected', () => {

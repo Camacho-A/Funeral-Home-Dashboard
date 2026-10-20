@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Case } from '@/types/case';
 import fs from 'fs';
 import path from 'path';
 import { OrganizationProvider } from '@/hooks/useOrganization';
@@ -90,6 +92,8 @@ vi.mock('@/hooks/useCalendarIntegrations', () => ({ useCalendarSyncLinks: () => 
 /** Captures the filters the page asks for, so the archived-case
     regression can assert the calendar looks cases up historically. */
 const useCasesSpy = vi.fn();
+/** Cases a describe block adds for its own scenarios (Date received). */
+const { extraCases } = vi.hoisted(() => ({ extraCases: [] as Record<string, unknown>[] }));
 vi.mock('@/hooks/useCases', () => ({
   useCases: (filters?: unknown) => {
     useCasesSpy(filters);
@@ -101,16 +105,27 @@ vi.mock('@/hooks/useCases', () => ({
         // "Not recorded" path is exercised on a real case rather than on
         // a missing one.
         { id: 'case-archived', caseNumber: 'B2026-035', decedentName: 'EVARISTA SILVA RIVERO', isDeleted: true, dateOfDeath: '' },
+        ...extraCases,
       ],
     };
   },
 }));
-vi.mock('@/hooks/useAppointments', () => ({ useAppointments: () => ({ data: APPOINTMENTS, isPending: false, isError: false }) }));
+vi.mock('@/hooks/useAppointments', () => ({
+  useAppointments: () => ({ data: APPOINTMENTS, isPending: false, isError: false }),
+  useConfirmAppointment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 // Wide viewport, so `effectiveView` never substitutes Agenda.
 vi.mock('@/hooks/useMediaQuery', () => ({ useMediaQuery: () => false }));
 vi.mock('@/components/scheduling/AppointmentDialog', () => ({ AppointmentDialog: () => null }));
 
+vi.mock('@/hooks/useCaseMutations', () => ({ useCaseMutations: () => ({ updateCaseInfo: vi.fn(), isPending: false }) }));
+vi.mock('@/hooks/useCremainsPickup', () => ({
+  useCreateExpectedPickup: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateExpectedPickupDate: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 const { default: CalendarPage } = await import('./page');
+const { CremainsPickupSection } = await import('@/components/case/CremainsPickupSection');
 
 function renderCalendar() {
   return render(
@@ -258,12 +273,12 @@ describe('Calendar — pickup details', () => {
     expect(within(dialog).getByText('Estimated')).toBeInTheDocument();
   });
 
-  it('says "Not received" rather than inventing a receipt date', () => {
+  it('says "Not yet received" (the same wording as the case page) rather than inventing a receipt date', () => {
     // The companion "Not recorded" assertion moved to the Date of Death
     // suite below, which is the row that now carries it.
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
-    expect(within(screen.getByRole('dialog')).getByText('Not received')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByText('Not yet received')).toBeInTheDocument();
   });
 
   it('links to the case by canonical id', () => {
@@ -348,5 +363,95 @@ describe('Calendar — the expected pickup date is editable from the details pan
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
     expect(within(screen.getByRole('dialog')).queryByRole('button', { name: /Edit date/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Date received (2026-10 fix). In Production, B2026-036 showed "Date
+ * received: Friday, October 23, 2026" on October 20: it was received
+ * through the old checklist, nothing was recorded on the case, and the
+ * calendar substituted the pickup's EXPECTED date. Date received is now only
+ * ever the recorded date.
+ */
+describe('Calendar — Date received is only the recorded date', () => {
+  const LEGACY = { id: 'case-legacy', caseNumber: 'B2026-036', decedentName: 'JANE LEGACY', dateOfDeath: '10/03/2026', dateOfCremation: '10/10/2026', cremainsReceivedAt: null };
+  const RECORDED = { id: 'case-recorded', caseNumber: 'B2026-037', decedentName: 'JOHN RECORDED', dateOfDeath: '10/01/2026', cremainsReceivedAt: '10/14/2026' };
+  const LEGACY_PICKUP = appointment({
+    id: 'cremains-pickup-legacy',
+    caseId: 'case-legacy',
+    appointmentType: 'cremains.pickup.expected',
+    title: 'Expected Cremains Pickup — B2026-036',
+    status: 'completed',
+    // AFTER "today" (Oct 15): the expected date, not the day it arrived.
+    ...allDayWindowFor('2026-10-23', TZ),
+  });
+  const RECORDED_PICKUP = appointment({
+    id: 'cremains-pickup-recorded',
+    caseId: 'case-recorded',
+    appointmentType: 'cremains.pickup.expected',
+    title: 'Expected Cremains Pickup — B2026-037',
+    status: 'completed',
+    ...allDayWindowFor('2026-10-20', TZ),
+  });
+
+  beforeEach(() => {
+    extraCases.push(LEGACY, RECORDED);
+    APPOINTMENTS.push(LEGACY_PICKUP, RECORDED_PICKUP);
+  });
+  afterEach(() => {
+    extraCases.length = 0;
+    APPOINTMENTS.splice(APPOINTMENTS.indexOf(LEGACY_PICKUP), 2);
+  });
+
+  const dateReceivedIn = (dialog: HTMLElement) => within(dialog).getByText('Date received').nextElementSibling;
+
+  function openPickup(name: RegExp) {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name }));
+    return screen.getByRole('dialog');
+  }
+
+  it('a case received through the old checklist, with a future expected date, shows "Received (date not recorded)"', () => {
+    const dialog = openPickup(/036 · Legacy/);
+    expect(dateReceivedIn(dialog)).toHaveTextContent('Received (date not recorded)');
+    expect(within(dialog).getAllByText('Friday, October 23, 2026')).toHaveLength(1); // only as Expected pickup
+    expect(dateReceivedIn(dialog)).not.toHaveTextContent('October 10'); // nor the date of cremation
+  });
+
+  it('a received case with a recorded date shows that date, not the pickup date', () => {
+    const dialog = openPickup(/037 · Recorded/);
+    expect(dateReceivedIn(dialog)).toHaveTextContent('Wednesday, October 14, 2026');
+  });
+
+  it('an unreceived case reads "Not yet received"', () => {
+    const dialog = openPickup(/040 · Boone/);
+    expect(dateReceivedIn(dialog)).toHaveTextContent('Not yet received');
+  });
+
+  it('the calendar and the case page show the same Date received for the same case', () => {
+    for (const [caseData, pickupAppt, name] of [
+      [LEGACY, LEGACY_PICKUP, /036 · Legacy/],
+      [RECORDED, RECORDED_PICKUP, /037 · Recorded/],
+    ] as const) {
+      const fromCalendar = dateReceivedIn(openPickup(name))?.textContent?.trim();
+      cleanup();
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+            <CremainsPickupSection
+              caseId={caseData.id}
+              organizationId={DEFAULT_ORGANIZATION_ID}
+              appointments={[pickupAppt]}
+              case_={{ ...caseData, organizationId: DEFAULT_ORGANIZATION_ID, isDeleted: false } as unknown as Case}
+              canSchedule={false}
+              organizationTimezone={TZ}
+            />
+          </OrganizationProvider>
+        </QueryClientProvider>,
+      );
+      const fromCasePage = screen.getByText('Date received').nextElementSibling?.textContent?.trim();
+      cleanup();
+      expect(fromCasePage, caseData.caseNumber).toBe(fromCalendar);
+    }
   });
 });

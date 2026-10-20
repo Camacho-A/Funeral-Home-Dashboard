@@ -26,7 +26,7 @@ import { APPOINTMENT_STATUS_LABEL, appointmentStatusVariant } from '@/domain/sch
 import { getAppointmentTypeDefinition } from '@/domain/scheduling/appointmentTypeRegistry';
 import { toDisplayName } from '@/utils/displayName';
 import { composeDecedentName } from '@/domain/cases/decedentName';
-import { caseDateToIso, receivedDateOf } from '@/domain/cases/cremationDates';
+import { caseDateToIso, dateReceivedLabel, dateReceivedOf } from '@/domain/cases/cremationDates';
 import { ExpectedPickupDateEditor } from '@/components/scheduling/ExpectedPickupDateEditor';
 import {
   formatAppointmentTime,
@@ -635,7 +635,7 @@ export default function CalendarPage() {
         const status = resolvePickupStatus(detailAppointment, organizationToday);
         const dateOfDeath = formatCaseDateOfDeath(case_?.dateOfDeath);
         const received = status === 'received';
-        const receivedOn = receivedDateOf(case_ ?? null, received, expected);
+        const dateReceived = dateReceivedOf(case_ ?? null, received);
         return (
           <Modal open onClose={() => setDetailAppointment(null)} title="Expected Cremains Pickup" size="lg">
             <div className="sx-modal-header">
@@ -694,7 +694,7 @@ export default function CalendarPage() {
                 <div>
                   <dt className="sx-label">Date received</dt>
                   <dd className={styles.detailValue}>
-                    {receivedOn ? formatPickupDate(receivedOn) : 'Not received'}
+                    {dateReceivedLabel(dateReceived, formatPickupDate)}
                   </dd>
                 </div>
               </dl>
