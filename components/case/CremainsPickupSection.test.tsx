@@ -119,7 +119,7 @@ describe('CremainsPickupSection — an existing pickup', () => {
 
   it('shows a staff-entered pickup as having no recorded paperwork date — never a guess', () => {
     renderSection([pickup({ notes: 'Expected pickup entered by staff for 2099-10-16.', lastModifiedBy: 'identity-dana' })]);
-    expect(screen.getByText('Not recorded')).toBeInTheDocument();
+    expect(screen.getByText('Paperwork sent').nextElementSibling).toHaveTextContent('Not recorded');
     expect(screen.getByText('Set by staff')).toBeInTheDocument();
   });
 

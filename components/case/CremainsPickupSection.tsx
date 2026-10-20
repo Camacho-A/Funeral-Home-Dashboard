@@ -23,6 +23,7 @@ import { useCreateExpectedPickup, useUpdateExpectedPickupDate } from '@/hooks/us
 import { useConfirmAppointment } from '@/hooks/useAppointments';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { CremainsPickupError } from '@/lib/cremainsPickupClient';
+import { caseDateToIso, isoToCaseDate, receivedDateOf } from '@/domain/cases/cremationDates';
 
 /**
  * Expected Cremains Pickup — the Case Detail section (2026-10).
@@ -77,7 +78,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  * system — using it is what fixes the previously cramped layout, and means
  * this dialog inherits any future change to that system.
  */
-function PickupDateDialog({
+export function PickupDateDialog({
   mode,
   initialDate,
   organizationId,
@@ -237,6 +238,86 @@ function PickupDateDialog({
   );
 }
 
+/**
+ * Date of cremation / date received (2026-10). Both are facts about the
+ * case, stored on it, and never moved onto the pickup appointment.
+ */
+function CaseDateDialog({
+  title,
+  label,
+  initialDate,
+  organizationToday,
+  busy,
+  error,
+  onCancel,
+  onSubmit,
+}: {
+  title: string;
+  label: string;
+  initialDate: string;
+  organizationToday: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSubmit: (isoDate: string) => void;
+}) {
+  const [date, setDate] = useState(initialDate);
+  const inFuture = Boolean(date) && Boolean(organizationToday) && date > organizationToday;
+
+  return (
+    <Modal open onClose={busy ? () => undefined : onCancel} title={title} size="lg">
+      <div className={`sx-modal-header ${styles.header}`}>
+        <div className={styles.headerText}>
+          <h2 className="sx-modal-title">{title}</h2>
+        </div>
+        <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onCancel} disabled={busy}>
+          ×
+        </button>
+      </div>
+      <div className={`sx-modal-body ${styles.body}`}>
+        <div className="sx-field">
+          <label className="sx-label sx-label-required" htmlFor="cremains-case-date">
+            {label}
+          </label>
+          <input
+            id="cremains-case-date"
+            type="date"
+            className={`sx-input ${styles.input}`}
+            value={date}
+            max={organizationToday || undefined}
+            onChange={(e) => setDate(e.target.value)}
+            required
+          />
+        </div>
+        {inFuture && (
+          <p className={`${styles.notice} ${styles.noticeError}`} role="alert">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>{label} cannot be in the future.</span>
+          </p>
+        )}
+        {error && (
+          <p className={`${styles.notice} ${styles.noticeError}`} role="alert">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>{error}</span>
+          </p>
+        )}
+      </div>
+      <div className="sx-modal-footer">
+        <button type="button" className="sx-btn sx-btn-secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button type="button" className="sx-btn sx-btn-primary" disabled={busy || !date || inFuture} onClick={() => onSubmit(date)}>
+          {busy ? 'Saving…' : 'Save Date'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function MarkReceivedDialog({
   expectedDate,
   organizationToday,
@@ -345,7 +426,7 @@ export function CremainsPickupSection({
 }) {
   const pickup = appointments.find(isExpectedCremainsPickup) ?? null;
 
-  const [dialog, setDialog] = useState<'add' | 'edit' | 'receive' | null>(null);
+  const [dialog, setDialog] = useState<'add' | 'edit' | 'receive' | 'cremationDate' | 'receivedDate' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [requiresReason, setRequiresReason] = useState(false);
 
@@ -362,6 +443,8 @@ export function CremainsPickupSection({
   const status = pickup ? resolvePickupStatus(pickup, organizationToday) : null;
   const received = status === 'received';
   const paperworkDate = pickup ? paperworkDateFromNotes(pickup.notes) : null;
+  const cremationDate = caseDateToIso(case_?.dateOfCremation);
+  const receivedDate = receivedDateOf(case_, received, expected);
 
   function closeDialog() {
     setDialog(null);
@@ -423,18 +506,15 @@ export function CremainsPickupSection({
 
   /**
    * Receipt. The organization's own "Ashes picked up" checklist item is the
-   * single source of truth: ticking it is what the server's own sync turns
-   * into a completed pickup, so there are never two independent receipt
-   * states to reconcile.
+   * single source of truth for WHETHER the cremains are in hand: ticking it
+   * is what the server's own sync turns into a completed pickup, so there
+   * are never two independent receipt states to reconcile.
    *
-   * If staff correct the date, the pickup is re-dated FIRST (while it is
-   * still editable) so the completed record carries the day the cremains
-   * actually arrived. If that first step fails nothing is marked received;
-   * if the second fails the date is simply updated and staff can retry —
-   * neither order can leave a conflicting state, and errors are surfaced
-   * rather than swallowed.
+   * WHEN they arrived is stored on the case (`cremainsReceivedAt`), in the
+   * same patch as the tick. It used to be stored by moving the pickup's
+   * expected date onto the receipt date, which lost the expected date.
    */
-  async function submitReceipt(input: { receivedOn: string; note: string }) {
+  function submitReceipt(input: { receivedOn: string; note: string }) {
     setError(null);
     const settings = resolveCremainsPickupSettingsById(organizationId);
     const item = settings.receiptChecklistItem;
@@ -442,21 +522,28 @@ export function CremainsPickupSection({
       setError('This organization has no cremains receipt task configured, so receipt cannot be recorded here.');
       return;
     }
-    try {
-      if (pickup && expected && input.receivedOn !== expected) {
-        await updateDate.mutateAsync({
-          expectedDate: input.receivedOn,
-          reason: input.note || 'Actual receipt date',
-        });
-      }
-      caseMutations.updateCaseInfo({
-        // Only this key (case concurrency): the server merges it onto the case as it is now.
-        checklistState: writeChecklistValue({}, item.displayStage, item.index, true),
-      });
-      closeDialog();
-    } catch (e) {
-      reportError(e);
+    const receivedAt = isoToCaseDate(input.receivedOn);
+    if (!receivedAt) {
+      setError('Enter the date the cremains were received.');
+      return;
     }
+    caseMutations.updateCaseInfo({
+      // Only this key (case concurrency): the server merges it onto the case as it is now.
+      checklistState: writeChecklistValue({}, item.displayStage, item.index, true),
+      cremainsReceivedAt: receivedAt,
+    });
+    closeDialog();
+  }
+
+  function submitCaseDate(field: 'dateOfCremation' | 'cremainsReceivedAt', isoDate: string) {
+    setError(null);
+    const value = isoToCaseDate(isoDate);
+    if (!value) {
+      setError('Enter a valid date.');
+      return;
+    }
+    caseMutations.updateCaseInfo({ [field]: value });
+    closeDialog();
   }
 
   const busy = createPickup.isPending || updateDate.isPending || confirmAppointment.isPending;
@@ -469,6 +556,38 @@ export function CremainsPickupSection({
         </h3>
         {status && <span className={`sx-status ${statusClass(status)}`}>{PICKUP_STATUS_LABEL[status]}</span>}
       </div>
+
+      <dl
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+          gap: '12px 18px',
+          margin: '12px 0 0',
+        }}
+      >
+        <Field label="Date of cremation">
+          {cremationDate ? <strong>{formatPickupDate(cremationDate)}</strong> : 'Not recorded'}
+          {canSchedule && case_ && case_.isDeleted !== true && (
+            <>
+              {' '}
+              <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setDialog('cremationDate')} disabled={busy}>
+                {cremationDate ? 'Edit' : 'Add'}
+              </button>
+            </>
+          )}
+        </Field>
+        <Field label="Date received">
+          {receivedDate ? <strong>{formatPickupDate(receivedDate)}</strong> : 'Not yet received'}
+          {canSchedule && received && case_ && case_.isDeleted !== true && (
+            <>
+              {' '}
+              <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setDialog('receivedDate')} disabled={busy}>
+                Edit
+              </button>
+            </>
+          )}
+        </Field>
+      </dl>
 
       {!pickup && (
         <>
@@ -495,14 +614,13 @@ export function CremainsPickupSection({
               margin: '12px 0 0',
             }}
           >
-            <Field label={received ? 'Received' : 'Expected pickup'}>
+            <Field label="Expected pickup">
               <strong>{formatPickupDate(expected)}</strong>
             </Field>
             <Field label="Status">{PICKUP_STATUS_LABEL[status!]}</Field>
             <Field label="Paperwork sent">
               {paperworkDate ? formatPickupDate(paperworkDate) : 'Not recorded'}
             </Field>
-            <Field label="Actual receipt">{received ? formatPickupDate(expected) : 'Not yet received'}</Field>
             <Field label="Date source">{isManuallyDecided(pickup) ? 'Set by staff' : 'Automatically calculated'}</Field>
           </dl>
 
@@ -559,6 +677,19 @@ export function CremainsPickupSection({
           requiresReason={requiresReason}
           onCancel={closeDialog}
           onSubmit={submitDate}
+        />
+      )}
+
+      {(dialog === 'cremationDate' || dialog === 'receivedDate') && (
+        <CaseDateDialog
+          title={dialog === 'cremationDate' ? 'Date of Cremation' : 'Date Cremains Received'}
+          label={dialog === 'cremationDate' ? 'Date of cremation' : 'Date received'}
+          initialDate={dialog === 'cremationDate' ? cremationDate : (receivedDate ?? '')}
+          organizationToday={organizationToday}
+          busy={caseMutations.isPending}
+          error={error}
+          onCancel={closeDialog}
+          onSubmit={(iso) => submitCaseDate(dialog === 'cremationDate' ? 'dateOfCremation' : 'cremainsReceivedAt', iso)}
         />
       )}
 

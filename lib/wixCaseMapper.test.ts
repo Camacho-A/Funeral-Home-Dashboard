@@ -1198,3 +1198,27 @@ describe('decedentMiddleName round-trips without disturbing decedentName', () =>
     expect(next.decedentName).toBe(validItem.decedentName);
   });
 });
+
+describe('cremation dates (2026-10): date of cremation and date received are separate fields', () => {
+  it('accepts a real MM/DD/YYYY date for each, and stores blank as null', () => {
+    const { patch, errors } = validateAndPickCaseUpdate({ dateOfCremation: '10/18/2026', cremainsReceivedAt: '  ' });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ dateOfCremation: '10/18/2026', cremainsReceivedAt: null });
+  });
+
+  it('rejects a date that is not a real calendar date', () => {
+    expect(validateAndPickCaseUpdate({ dateOfCremation: '2026-10-18' }).errors).toEqual(['dateOfCremation']);
+    expect(validateAndPickCaseUpdate({ cremainsReceivedAt: '02/30/2026' }).errors).toEqual(['cremainsReceivedAt']);
+    expect(validateAndPickCaseUpdate({ cremainsReceivedAt: 5 }).errors).toEqual(['cremainsReceivedAt']);
+  });
+
+  it('reads both from a row, and reads a row from before them as null', () => {
+    const withDates = mapWixCaseItem({ ...validItem, dateOfCremation: '10/18/2026', cremainsReceivedAt: '10/20/2026' });
+    const legacy = mapWixCaseItem(validItem);
+    expect(withDates?.dateOfCremation).toBe('10/18/2026');
+    expect(withDates?.cremainsReceivedAt).toBe('10/20/2026');
+    expect(legacy).not.toBeNull();
+    expect(legacy!.dateOfCremation).toBeNull();
+    expect(legacy!.cremainsReceivedAt).toBeNull();
+  });
+});

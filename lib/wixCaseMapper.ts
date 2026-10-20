@@ -1,6 +1,6 @@
 import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
-import { isValidEmail } from '../utils/inputMask';
+import { isValidEmail, isValidCalendarDate } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
 import { normalizeCaseTextFields, normalizeCaseFieldValues } from '../domain/cases/textNormalization';
 import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIntake';
@@ -115,6 +115,8 @@ export type WixCaseItem = {
   pickupReleasedTo?: unknown;
   pickupReleasedAt?: unknown;
   pickupNote?: unknown;
+  dateOfCremation?: unknown;
+  cremainsReceivedAt?: unknown;
   returnMethod?: unknown;
   shippingCarrier?: unknown;
   shippingTrackingNumber?: unknown;
@@ -233,6 +235,8 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
   const pickupReleasedTo = typeof item.pickupReleasedTo === 'string' ? item.pickupReleasedTo : null;
   const pickupReleasedAt = typeof item.pickupReleasedAt === 'string' ? item.pickupReleasedAt : null;
   const pickupNote = typeof item.pickupNote === 'string' ? item.pickupNote : null;
+  const dateOfCremation = typeof item.dateOfCremation === 'string' ? item.dateOfCremation : null;
+  const cremainsReceivedAt = typeof item.cremainsReceivedAt === 'string' ? item.cremainsReceivedAt : null;
   // Conditional shipping/tracking (2026-09). Additive field — a pre-existing
   // row (or any legacy/malformed row) has no returnMethod at all, which must
   // resolve to 'undecided', never 'pickup' — see ReturnMethod's own comment
@@ -284,6 +288,8 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     pickupReleasedTo,
     pickupReleasedAt,
     pickupNote,
+    dateOfCremation,
+    cremainsReceivedAt,
     returnMethod,
     shippingCarrier,
     shippingTrackingNumber,
@@ -509,6 +515,25 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
       else errors.push(String(key));
     }
   }
+  /** Cremation dates (2026-10): null, or a real MM/DD/YYYY calendar date.
+      Blank is stored as null. Stricter than the older date fields, which
+      accept any string. */
+  function nullableDateField(key: keyof CaseUpdate) {
+    if (!(key in b)) return;
+    const value = b[key];
+    if (value === null) {
+      (patch as Record<string, unknown>)[key] = null;
+      return;
+    }
+    if (typeof value !== 'string') {
+      errors.push(String(key));
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed === '') (patch as Record<string, unknown>)[key] = null;
+    else if (isValidCalendarDate(trimmed)) (patch as Record<string, unknown>)[key] = trimmed;
+    else errors.push(String(key));
+  }
   /** Same as nullableStringField, but additionally rejects a non-null value
       that isn't a reasonably-formatted email — "validate before saving,"
       reusing the exact same validator every other email field uses. Trims
@@ -602,6 +627,8 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   nullableStringField('pickupReleasedTo');
   nullableStringField('pickupReleasedAt');
   nullableStringField('pickupNote');
+  nullableDateField('dateOfCremation');
+  nullableDateField('cremainsReceivedAt');
   nullableStringField('shippingCarrier');
   nullableStringField('shippingTrackingNumber');
   nullableStringField('shippingDateShipped');
@@ -729,6 +756,8 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.pickupReleasedTo !== undefined) next.pickupReleasedTo = patch.pickupReleasedTo;
   if (patch.pickupReleasedAt !== undefined) next.pickupReleasedAt = patch.pickupReleasedAt;
   if (patch.pickupNote !== undefined) next.pickupNote = patch.pickupNote;
+  if (patch.dateOfCremation !== undefined) next.dateOfCremation = patch.dateOfCremation;
+  if (patch.cremainsReceivedAt !== undefined) next.cremainsReceivedAt = patch.cremainsReceivedAt;
   if (patch.returnMethod !== undefined) next.returnMethod = patch.returnMethod;
   if (patch.shippingCarrier !== undefined) next.shippingCarrier = patch.shippingCarrier;
   if (patch.shippingTrackingNumber !== undefined) next.shippingTrackingNumber = patch.shippingTrackingNumber;

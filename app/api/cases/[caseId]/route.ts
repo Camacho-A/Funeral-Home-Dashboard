@@ -300,6 +300,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       ['dateOfBirth', 'Date of Birth'],
       ['dateOfDeath', 'Date of Death'],
       ['pickupReleasedAt', 'Released date'],
+      ['dateOfCremation', 'Date of cremation'],
+      ['cremainsReceivedAt', 'Date received'],
       ['shippingDateShipped', 'Date shipped'],
       ['shippingDeliveredAt', 'Delivered date'],
     ].filter(([key]) => typeof (patch as Record<string, unknown>)[key] === 'string') as Array<[string, string]>;

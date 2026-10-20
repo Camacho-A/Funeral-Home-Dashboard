@@ -256,6 +256,17 @@ export type Case = {
   pickupReleasedTo: string | null;
   pickupReleasedAt: string | null;
   pickupNote: string | null;
+  /**
+   * Cremation dates (2026-10). Two separate facts that used to share one
+   * stored date: the day the cremation was performed, and the day the
+   * cremains arrived back at the funeral home. "Mark Received" previously
+   * overwrote the expected pickup date with the receipt date, so the
+   * expected date was lost and the cremation date was never recorded.
+   * MM/DD/YYYY strings like every other case date; optional because every
+   * case before this has neither.
+   */
+  dateOfCremation?: string | null;
+  cremainsReceivedAt?: string | null;
   /** Conditional shipping/tracking (2026-09). Defaults to `'undecided'` for
       every new case — never `'pickup'`, see `ReturnMethod`'s own comment.
       Freely editable at any point in the case's life, including after

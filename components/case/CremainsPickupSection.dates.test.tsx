@@ -1,0 +1,134 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { OrganizationProvider } from '@/hooks/useOrganization';
+import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
+import { allDayWindowFor } from '@/domain/scheduling/cremainsPickupPresentation';
+import type { Appointment } from '@/types/appointment';
+import type { Case } from '@/types/case';
+import { CremainsPickupSection } from './CremainsPickupSection';
+
+/**
+ * Cremation dates (2026-10). Date of cremation, date received and the
+ * expected pickup date are separate. "Mark Received" used to move the
+ * expected pickup date onto the receipt date; it now records the receipt
+ * date on the case and leaves the expected date alone.
+ */
+const { updateCaseInfo, updateExpectedDate } = vi.hoisted(() => ({ updateCaseInfo: vi.fn(), updateExpectedDate: vi.fn() }));
+vi.mock('@/hooks/useCaseMutations', () => ({ useCaseMutations: () => ({ updateCaseInfo, isPending: false }) }));
+vi.mock('@/hooks/useCremainsPickup', () => ({
+  useCreateExpectedPickup: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateExpectedPickupDate: () => ({ mutateAsync: updateExpectedDate, isPending: false }),
+}));
+
+const TZ = 'America/New_York';
+
+function pickup(overrides: Partial<Appointment> = {}): Appointment {
+  return {
+    id: 'cremains-pickup-case-1',
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    caseId: 'case-1',
+    appointmentType: 'cremains.pickup.expected',
+    title: 'Expected Cremains Pickup',
+    notes: null,
+    locationId: null,
+    status: 'scheduled',
+    ...allDayWindowFor('2026-10-16', TZ),
+    timezone: TZ,
+    recurrenceDefinitionId: null,
+    isRecurrenceException: false,
+    ownerStaffProfileId: null,
+    createdBy: 'system',
+    lastModifiedBy: null,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancelReason: null,
+    appointmentVersion: 1,
+    correlationId: 'c-1',
+    createdAt: '2026-10-08T18:00:00.000Z',
+    updatedAt: '2026-10-08T18:00:00.000Z',
+    ...overrides,
+  } as Appointment;
+}
+
+function renderSection(appointments: Appointment[], caseOverrides: Partial<Case> = {}) {
+  const case_ = { ...caseFixtures[0], id: 'case-1', organizationId: DEFAULT_ORGANIZATION_ID, isDeleted: false, ...caseOverrides } as Case;
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+        <CremainsPickupSection
+          caseId="case-1"
+          organizationId={DEFAULT_ORGANIZATION_ID}
+          appointments={appointments}
+          case_={case_}
+          canSchedule
+          organizationTimezone={TZ}
+        />
+      </OrganizationProvider>
+    </QueryClientProvider>,
+  );
+}
+
+const fieldValue = (label: string) => screen.getByText(label).nextElementSibling;
+
+afterEach(() => vi.clearAllMocks());
+
+describe('CremainsPickupSection — date of cremation, date received, expected pickup are separate', () => {
+  it('shows all three, each from its own source', () => {
+    renderSection([pickup()], { dateOfCremation: '10/10/2026', cremainsReceivedAt: null });
+    expect(fieldValue('Date of cremation')).toHaveTextContent('Oct');
+    expect(fieldValue('Date of cremation')).toHaveTextContent('10');
+    expect(fieldValue('Date received')).toHaveTextContent('Not yet received');
+    expect(fieldValue('Expected pickup')).toHaveTextContent('16');
+  });
+
+  it('records the date of cremation on the case, even before any pickup exists', () => {
+    renderSection([], { dateOfCremation: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.change(screen.getByLabelText('Date of cremation'), { target: { value: '2026-10-09' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
+    expect(updateCaseInfo).toHaveBeenCalledWith({ dateOfCremation: '10/09/2026' });
+  });
+
+  it('Mark Received records the receipt date on the case and never moves the expected pickup date', () => {
+    renderSection([pickup()]);
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Received' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Date Received'), { target: { value: '2026-10-14' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark Received' }));
+
+    expect(updateExpectedDate).not.toHaveBeenCalled();
+    expect(updateCaseInfo).toHaveBeenCalledTimes(1);
+    expect(updateCaseInfo.mock.calls[0][0]).toMatchObject({ cremainsReceivedAt: '10/14/2026' });
+    expect(Object.keys(updateCaseInfo.mock.calls[0][0].checklistState)).toHaveLength(1);
+  });
+
+  it('a case received before this change shows the pickup date it was moved to as its date received', () => {
+    renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: null });
+    expect(fieldValue('Date received')).toHaveTextContent('16');
+  });
+
+  it('a stored date received wins over the pickup date, and can be corrected', () => {
+    renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: '10/15/2026' });
+    expect(fieldValue('Date received')).toHaveTextContent('15');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Date received'), { target: { value: '2026-10-13' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
+    expect(updateCaseInfo).toHaveBeenCalledWith({ cremainsReceivedAt: '10/13/2026' });
+  });
+
+  it('refuses a future date', () => {
+    renderSection([], { dateOfCremation: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.change(screen.getByLabelText('Date of cremation'), { target: { value: '2099-01-01' } });
+    expect(screen.getByRole('button', { name: 'Save Date' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('cannot be in the future');
+  });
+
+  it('offers no date editing on an archived case', () => {
+    renderSection([pickup({ status: 'completed' })], { isDeleted: true, dateOfCremation: null });
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+});

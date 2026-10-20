@@ -131,6 +131,8 @@ const CASE_UPDATED_FIELD_LABEL: Partial<Record<string, string>> = {
   pickupReleasedTo: 'Pickup release info updated',
   pickupReleasedAt: 'Pickup release info updated',
   pickupNote: 'Pickup note updated',
+  dateOfCremation: 'Date of cremation updated',
+  cremainsReceivedAt: 'Date cremains received updated',
   isVeteran: 'Veteran status updated',
   isStalled: 'Stalled status updated',
   stalledReason: 'Stalled reason updated',

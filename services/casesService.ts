@@ -619,6 +619,8 @@ export async function update(
     [patch.dateOfBirth, getDateOfBirthFutureError],
     [patch.dateOfDeath, getDateOfDeathFutureError],
     [patch.pickupReleasedAt, (value) => getFutureDateError(value, 'Released date')],
+    [patch.dateOfCremation, (value) => getFutureDateError(value, 'Date of cremation')],
+    [patch.cremainsReceivedAt, (value) => getFutureDateError(value, 'Date received')],
     [patch.shippingDateShipped, (value) => getFutureDateError(value, 'Date shipped')],
     [patch.shippingDeliveredAt, (value) => getFutureDateError(value, 'Delivered date')],
   ];
