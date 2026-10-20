@@ -215,7 +215,7 @@ async function findDeliveryByRecipientAndChannel(
   channel: NotificationChannel,
   dataAdapterMode: DataAdapterMode,
 ): Promise<NotificationDelivery | null> {
-  const deliveryId = `${notificationRecipientId}-${channel}`;
+  const deliveryId = notificationDeliveryId(notificationRecipientId, channel);
   if (dataAdapterMode === 'mock') {
     return notificationDeliveryFixtures.find((d) => d.id === deliveryId && d.organizationId === organizationId) ?? null;
   }
@@ -398,7 +398,7 @@ async function dispatchChannel(
     nowIso: now,
   })) {
     const queuedDelivery: NotificationDelivery = {
-      id: `${recipient.id}-${channel}`,
+      id: notificationDeliveryId(recipient.id, channel),
       organizationId: notification.organizationId,
       notificationId: notification.id,
       notificationRecipientId: recipient.id,
@@ -414,7 +414,7 @@ async function dispatchChannel(
   }
 
   const delivery: NotificationDelivery = {
-    id: `${recipient.id}-${channel}`,
+    id: notificationDeliveryId(recipient.id, channel),
     organizationId: notification.organizationId,
     notificationId: notification.id,
     notificationRecipientId: recipient.id,
@@ -457,7 +457,7 @@ async function dispatchChannel(
 
   const attemptedAt = nowIso();
   await persistDeliveryAttempt(
-    { id: `${delivery.id}-attempt-1`, organizationId: notification.organizationId, notificationDeliveryId: delivery.id, succeeded, errorMessage, attemptedAt },
+    { id: notificationDeliveryAttemptId(delivery.id, 1), organizationId: notification.organizationId, notificationDeliveryId: delivery.id, succeeded, errorMessage, attemptedAt },
     dataAdapterMode,
   );
 
@@ -496,29 +496,43 @@ function resolveEffectiveChannelToggles(
 // ---------------------------------------------------------------------------
 
 /**
- * The id of one recipient's copy of a notification (2026-10).
+ * Ids of a notification's per-recipient rows (2026-10).
  *
- * Wix Data rejects any item `_id` longer than 128 characters (WDE0075). The
- * natural id `{notificationId}-{identityId}` — and the delivery-attempt id
- * `{recipientId}-{channel}` derived from it — overran that for every
- * notification whose own id is long (an intake notification is 100
- * characters, so its recipient id was 137). The insert failed, the error
- * stopped delivery, and the notification sat `queued` with no recipient:
- * stored, but shown to nobody.
+ * Wix Data rejects any item `_id` longer than 128 characters (WDE0075).
+ * Each row's natural id extends the one before it:
+ *   recipient  `{notificationId}-{identityId}`
+ *   delivery   `{recipientId}-{channel}`
+ *   attempt    `{deliveryId}-attempt-1`
+ * so a long notification id overran the cap somewhere down that chain. An
+ * intake notification's recipient id was 137 characters; a case-completed
+ * one's recipient id fit at 125, but its delivery id (132) did not. Either
+ * insert failed, the error stopped delivery, and the notification sat
+ * `queued`: stored, but shown to nobody.
  *
- * Short enough ids keep their readable natural form, so every recipient row
- * that already exists is untouched. A longer one becomes a fixed-length hash
- * of the same natural id — still deterministic (a retry computes the same
- * id, so duplicate prevention is unchanged) and still unique per
- * (notification, recipient). Recipient ids are opaque everywhere else: the
- * inbox reads them from the row and sends them back as-is.
+ * `boundedRowId` keeps any natural id that fits — so every row that
+ * already exists keeps its id — and replaces a longer one with a
+ * fixed-length hash of it. Still deterministic (a retry computes the same
+ * id, so duplicate prevention is unchanged) and still unique. These ids
+ * are opaque everywhere else: the inbox reads them from the row and sends
+ * them back as-is.
  */
-const MAX_RECIPIENT_ID_LENGTH = 120; // leaves room for the "-{channel}" delivery suffix within Wix's 128
+const WIX_MAX_ID_LENGTH = 128;
+
+export function boundedRowId(prefix: 'n' | 'nr' | 'nd' | 'na', natural: string): string {
+  if (natural.length <= WIX_MAX_ID_LENGTH) return natural;
+  return `${prefix}-${createHash('sha256').update(natural).digest('hex').slice(0, 48)}`;
+}
 
 export function notificationRecipientId(notificationId: string, identityId: string): string {
-  const natural = `${notificationId}-${identityId}`;
-  if (natural.length <= MAX_RECIPIENT_ID_LENGTH) return natural;
-  return `nr-${createHash('sha256').update(natural).digest('hex').slice(0, 48)}`;
+  return boundedRowId('nr', `${notificationId}-${identityId}`);
+}
+
+export function notificationDeliveryId(recipientId: string, channel: NotificationChannel): string {
+  return boundedRowId('nd', `${recipientId}-${channel}`);
+}
+
+export function notificationDeliveryAttemptId(deliveryId: string, attemptNumber: number): string {
+  return boundedRowId('na', `${deliveryId}-attempt-${attemptNumber}`);
 }
 
 export async function createNotification(
@@ -1064,7 +1078,7 @@ export async function flushDigestGroup(
   const attemptedAt = nowIso();
   for (const delivery of deliveries) {
     await persistDeliveryAttempt(
-      { id: `${delivery.id}-digest-${attemptedAt}`, organizationId, notificationDeliveryId: delivery.id, succeeded, errorMessage, attemptedAt },
+      { id: boundedRowId('na', `${delivery.id}-digest-${attemptedAt}`), organizationId, notificationDeliveryId: delivery.id, succeeded, errorMessage, attemptedAt },
       dataAdapterMode,
     );
     await patchDelivery(

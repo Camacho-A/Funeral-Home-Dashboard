@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { createNotification, getNotification } from './notificationService';
+import { boundedRowId, createNotification, getNotification } from './notificationService';
 import { NOTIFICATION_TYPES } from '../domain/notifications/notificationTypeRegistry';
 import { listMembershipsForOrganization, isActiveMembership } from './membershipService';
 import { resolvePermissions } from './permissionService';
@@ -88,7 +88,8 @@ export async function resolveIntakeNotificationRecipients(
  * somewhere else.
  */
 export function intakeNotificationId(submissionId: string, identityId: string): string {
-  return `intake-attention-${submissionId}-${identityId}`;
+  // Bounded to Wix's 128-character id cap; an id that fits is unchanged.
+  return boundedRowId('n', `intake-attention-${submissionId}-${identityId}`);
 }
 
 export type IntakeAttentionParams = {

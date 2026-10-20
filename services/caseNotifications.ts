@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
-import { createNotification, getNotification } from './notificationService';
+import { boundedRowId, createNotification, getNotification } from './notificationService';
 import { NOTIFICATION_TYPES } from '../domain/notifications/notificationTypeRegistry';
 import { listMembershipsForOrganization, isActiveMembership } from './membershipService';
 import { resolvePermissions } from './permissionService';
@@ -84,7 +84,8 @@ async function resolveRecipients(
  * creation, a submission id for a form, a payment id for a payment.
  */
 export function caseNotificationId(event: string, eventKey: string, identityId: string): string {
-  return `${event}-${eventKey}-${identityId}`;
+  // Bounded to Wix's 128-character id cap; an id that fits is unchanged.
+  return boundedRowId('n', `${event}-${eventKey}-${identityId}`);
 }
 
 type EmitParams = {

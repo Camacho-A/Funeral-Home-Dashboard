@@ -15,6 +15,8 @@ import {
   NotificationServiceError,
   markAllReadForIdentity,
   notificationRecipientId,
+  notificationDeliveryId,
+  notificationDeliveryAttemptId,
 } from './notificationService';
 import {
   notificationFixtures,
@@ -847,7 +849,7 @@ describe('unread count is exact beyond the old 250-row window', () => {
  * recipient: the notification stayed `queued` and nobody ever saw it. Live
  * production had exactly that — 3 notifications, 0 recipient rows.
  */
-describe('notification recipient ids stay within the Wix 128-character limit', () => {
+describe('notification row ids stay within the Wix 128-character limit', () => {
   const IDENTITY = '0f5a8f0e-6b1c-4c37-9a51-2f6a0c9b7d11';
   const INTAKE_SHAPED_ID = 'intake-attention-managed-cremations-jotform-6679876908714870727-5e0b2c11-8d0a-4f5e-9a3b-7c1d2e3f4a5b';
 
@@ -860,8 +862,27 @@ describe('notification recipient ids stay within the Wix 128-character limit', (
     const a = notificationRecipientId(INTAKE_SHAPED_ID, IDENTITY);
     expect(a).toBe(notificationRecipientId(INTAKE_SHAPED_ID, IDENTITY));
     expect(a).not.toBe(notificationRecipientId(INTAKE_SHAPED_ID, '1f5a8f0e-6b1c-4c37-9a51-2f6a0c9b7d11'));
-    expect(`${a}-in_app`.length).toBeLessThanOrEqual(128);
-    expect(`${a}-email`.length).toBeLessThanOrEqual(128);
+    expect(notificationDeliveryId(a, 'in_app').length).toBeLessThanOrEqual(128);
+    expect(notificationDeliveryId(a, 'email').length).toBeLessThanOrEqual(128);
+  });
+
+  it('keeps an existing id that fits, so rows already stored keep their ids', () => {
+    // Live 2026-10-20: case.completed recipient rows were stored with
+    // 125-character natural ids. A retry must compute those same ids.
+    const notificationId = 'n'.repeat(125 - 1 - IDENTITY.length);
+    expect(notificationRecipientId(notificationId, IDENTITY)).toBe(`${notificationId}-${IDENTITY}`);
+  });
+
+  it('bounds the delivery and attempt ids built on a recipient id that only just fits', () => {
+    // That same live case: its delivery id `{125}-in_app` was 132
+    // characters, so the delivery insert failed and nothing was shown.
+    const recipientId = 'r'.repeat(125);
+    const deliveryId = notificationDeliveryId(recipientId, 'in_app');
+    expect(deliveryId.length).toBeLessThanOrEqual(128);
+    expect(deliveryId).toBe(notificationDeliveryId(recipientId, 'in_app'));
+    expect(deliveryId).not.toBe(notificationDeliveryId(recipientId, 'email'));
+    expect(notificationDeliveryAttemptId(deliveryId, 1).length).toBeLessThanOrEqual(128);
+    expect(notificationDeliveryAttemptId('short', 1)).toBe('short-attempt-1');
   });
 
   it('a notification with a 100-character id now reaches its recipient and becomes active', async () => {
@@ -879,7 +900,45 @@ describe('notification recipient ids stay within the Wix 128-character limit', (
 
     expect(notification.status).toBe('active');
     expect(notificationRecipientFixtures).toHaveLength(1);
-    expect(notificationRecipientFixtures[0].id.length).toBeLessThanOrEqual(120);
-    for (const delivery of notificationDeliveryFixtures) expect(delivery.id.length).toBeLessThanOrEqual(128);
+    expectEveryRowIdWithinWixLimit();
+  });
+
+  it('a notification whose recipient id is 125 characters reaches its recipient, with every row within the limit', async () => {
+    const notificationId = 'case.completed-'.padEnd(125 - 1 - MANORS_ADMIN_IDENTITY_ID.length, 'x');
+    const notification = await createNotification(
+      {
+        notificationType: 'task.assigned',
+        recipientScope: 'individual',
+        recipientIdentityId: MANORS_ADMIN_IDENTITY_ID,
+        idFactory: () => notificationId,
+        tokens: { actorDisplayName: 'Dana', entityTitle: 'Call the cemetery' },
+      },
+      ctx(),
+      'mock',
+    );
+
+    expect(notification.status).toBe('active');
+    expect(notificationRecipientFixtures[0].id).toBe(`${notificationId}-${MANORS_ADMIN_IDENTITY_ID}`);
+    expect(notificationDeliveryFixtures.length).toBeGreaterThan(0);
+    expectEveryRowIdWithinWixLimit();
+  });
+
+  /** The mock store does not enforce Wix's cap, so the rows are checked here. */
+  function expectEveryRowIdWithinWixLimit() {
+    for (const rows of [notificationFixtures, notificationRecipientFixtures, notificationDeliveryFixtures, notificationDeliveryAttemptFixtures]) {
+      for (const row of rows) expect(row.id.length, row.id).toBeLessThanOrEqual(128);
+    }
+  }
+});
+
+describe('notification ids themselves stay within the Wix 128-character limit', () => {
+  it('a case or intake notification id that would overrun is bounded; one that fits is unchanged', async () => {
+    const { caseNotificationId } = await import('./caseNotifications');
+    const { intakeNotificationId } = await import('./intakeNotifications');
+    const identity = '0f5a8f0e-6b1c-4c37-9a51-2f6a0c9b7d11';
+    expect(caseNotificationId('case.created', 'case-1', identity)).toBe(`case.created-case-1-${identity}`);
+    expect(caseNotificationId('case.document_generated', 'd'.repeat(100), identity).length).toBeLessThanOrEqual(128);
+    expect(intakeNotificationId('s'.repeat(100), identity).length).toBeLessThanOrEqual(128);
+    expect(intakeNotificationId('sub-1', identity)).toBe(`intake-attention-sub-1-${identity}`);
   });
 });
