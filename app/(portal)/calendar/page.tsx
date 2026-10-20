@@ -26,6 +26,8 @@ import { APPOINTMENT_STATUS_LABEL, appointmentStatusVariant } from '@/domain/sch
 import { getAppointmentTypeDefinition } from '@/domain/scheduling/appointmentTypeRegistry';
 import { toDisplayName } from '@/utils/displayName';
 import { composeDecedentName } from '@/domain/cases/decedentName';
+import { caseDateToIso, receivedDateOf } from '@/domain/cases/cremationDates';
+import { ExpectedPickupDateEditor } from '@/components/scheduling/ExpectedPickupDateEditor';
 import {
   formatAppointmentTime,
   getCalendarRange,
@@ -217,7 +219,10 @@ export default function CalendarPage() {
       organization-scoped, so a stale or cross-tenant caseId simply fails
       the lookup and the chip falls back to a neutral label. */
   const caseById = useMemo(() => {
-    const map = new Map<string, { caseNumber: string; decedentName: string; dateOfDeath: string }>();
+    const map = new Map<
+      string,
+      { caseNumber: string; decedentName: string; dateOfDeath: string; dateOfCremation: string | null; cremainsReceivedAt: string | null }
+    >();
     for (const c of casesQuery.data ?? [])
       map.set(c.id, {
         caseNumber: c.caseNumber,
@@ -225,6 +230,8 @@ export default function CalendarPage() {
         // names the decedent exactly as every other surface does.
         decedentName: composeDecedentName(c.decedentName, c.decedentMiddleName),
         dateOfDeath: c.dateOfDeath,
+        dateOfCremation: c.dateOfCremation ?? null,
+        cremainsReceivedAt: c.cremainsReceivedAt ?? null,
       });
     return map;
   }, [casesQuery.data]);
@@ -247,6 +254,7 @@ export default function CalendarPage() {
 
   const permissions = myPermissionsQuery.isSuccess ? myPermissionsQuery.data.permissions : null;
   const canCreate = permissions === null || permissions.includes('schedule.create');
+  const canEditSchedule = permissions === null || permissions.includes('schedule.edit');
 
   const allAppointments = appointmentsQuery.data ?? [];
   const appointments =
@@ -627,6 +635,7 @@ export default function CalendarPage() {
         const status = resolvePickupStatus(detailAppointment, organizationToday);
         const dateOfDeath = formatCaseDateOfDeath(case_?.dateOfDeath);
         const received = status === 'received';
+        const receivedOn = receivedDateOf(case_ ?? null, received, expected);
         return (
           <Modal open onClose={() => setDetailAppointment(null)} title="Expected Cremains Pickup" size="lg">
             <div className="sx-modal-header">
@@ -647,7 +656,26 @@ export default function CalendarPage() {
                 </div>
                 <div>
                   <dt className="sx-label">Expected pickup</dt>
-                  <dd className={styles.detailValue}>{expected ? formatPickupDate(expected) : 'Not scheduled'}</dd>
+                  <dd className={styles.detailValue}>
+                    {expected ? formatPickupDate(expected) : 'Not scheduled'}
+                    {expected && canEditSchedule && case_ && detailAppointment.caseId && !isTerminalAppointmentStatus(detailAppointment.status) && (
+                      <>
+                        {' '}
+                        <ExpectedPickupDateEditor
+                          organizationId={organizationId}
+                          caseId={detailAppointment.caseId}
+                          expectedDate={expected}
+                          organizationToday={organizationToday}
+                        />
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="sx-label">Date of cremation</dt>
+                  <dd className={styles.detailValue}>
+                    {caseDateToIso(case_?.dateOfCremation) ? formatPickupDate(caseDateToIso(case_?.dateOfCremation)) : 'Not recorded'}
+                  </dd>
                 </div>
                 <div>
                   <dt className="sx-label">Status</dt>
@@ -664,9 +692,9 @@ export default function CalendarPage() {
                   <dd className={styles.detailValue}>{dateOfDeath ?? 'Not recorded'}</dd>
                 </div>
                 <div>
-                  <dt className="sx-label">Actual receipt</dt>
+                  <dt className="sx-label">Date received</dt>
                   <dd className={styles.detailValue}>
-                    {received && expected ? formatPickupDate(expected) : 'Not received'}
+                    {receivedOn ? formatPickupDate(receivedOn) : 'Not received'}
                   </dd>
                 </div>
               </dl>

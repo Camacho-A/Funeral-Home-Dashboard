@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import fs from 'fs';
 import path from 'path';
@@ -14,6 +14,21 @@ import type { Appointment } from '@/types/appointment';
  */
 const TZ = 'America/New_York';
 const MONTH_ANCHOR = new Date('2026-10-15T12:00:00.000Z');
+
+/**
+ * Every expectation here is written for "today" = MONTH_ANCHOR: the month
+ * shown, and a pickup on 2026-10-16 being upcoming (Estimated) rather than
+ * Overdue. Without pinning the clock the suite began failing on 2026-10-17,
+ * the day the real date passed that pickup. Only `Date` is faked, so
+ * React Query and testing-library timers run normally.
+ */
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(MONTH_ANCHOR);
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function appointment(overrides: Partial<Appointment> = {}): Appointment {
   return {
@@ -63,8 +78,12 @@ const APPOINTMENTS: Appointment[] = [
   appointment({ id: 'a-3', title: 'Viewing C' }),
 ];
 
+const { permissionState } = vi.hoisted(() => ({ permissionState: { permissions: ['schedule.create', 'schedule.read'] } }));
 vi.mock('@/hooks/useRbac', () => ({
-  useMyPermissions: () => ({ isSuccess: true, data: { permissions: ['schedule.create', 'schedule.read'] } }),
+  useMyPermissions: () => ({ isSuccess: true, data: { permissions: permissionState.permissions } }),
+}));
+vi.mock('@/components/scheduling/ExpectedPickupDateEditor', () => ({
+  ExpectedPickupDateEditor: ({ expectedDate }: { expectedDate: string }) => <button type="button">Edit date {expectedDate}</button>,
 }));
 vi.mock('@/hooks/useResources', () => ({ useResources: () => ({ data: [] }) }));
 vi.mock('@/hooks/useCalendarIntegrations', () => ({ useCalendarSyncLinks: () => ({ data: [] }) }));
@@ -281,8 +300,7 @@ describe('Calendar — pickup details show Date of Death', () => {
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /035 · Rivero/ }));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('Date of Death')).toBeInTheDocument();
-    expect(within(dialog).getByText('Not recorded')).toBeInTheDocument();
+    expect(within(dialog).getByText('Date of Death').nextElementSibling).toHaveTextContent('Not recorded');
   });
 
   it('works for an archived case, which keeps its full event details', () => {
@@ -297,7 +315,7 @@ describe('Calendar — pickup details show Date of Death', () => {
     renderCalendar();
     fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
     const dialog = screen.getByRole('dialog');
-    for (const label of ['Case', 'Deceased', 'Expected pickup', 'Status', 'Actual receipt']) {
+    for (const label of ['Case', 'Deceased', 'Expected pickup', 'Status', 'Date of cremation', 'Date received']) {
       expect(within(dialog).getByText(label), label).toBeInTheDocument();
     }
   });
@@ -311,5 +329,24 @@ describe('Calendar — archived cases keep their event details (2026-10)', () =>
     // never lost — the lookup just stopped returning it.
     renderCalendar();
     expect(useCasesSpy).toHaveBeenCalledWith({ scope: 'all' });
+  });
+});
+
+describe('Calendar — the expected pickup date is editable from the details panel (2026-10)', () => {
+  it('offers "Edit date" to staff who can edit appointments', () => {
+    permissionState.permissions = ['schedule.read', 'schedule.edit'];
+    try {
+      renderCalendar();
+      fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+      expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Edit date 2026-10-16' })).toBeInTheDocument();
+    } finally {
+      permissionState.permissions = ['schedule.create', 'schedule.read'];
+    }
+  });
+
+  it('does not offer it without the edit permission', () => {
+    renderCalendar();
+    fireEvent.click(screen.getByRole('button', { name: /040 · Boone/ }));
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: /Edit date/ })).not.toBeInTheDocument();
   });
 });
