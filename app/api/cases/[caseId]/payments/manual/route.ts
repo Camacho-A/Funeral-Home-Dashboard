@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { regenerateBillingDocuments } from '@/services/automaticBillingDocuments';
 import { loadCaseOnServer } from '@/services/serverCaseLoader';
 import { notifyPaymentReceived } from '@/services/caseNotifications';
 import { composeDecedentName } from '@/domain/cases/decedentName';
@@ -205,6 +207,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   } catch (error) {
     console.error('Failed to notify about a recorded payment:', error instanceof Error ? error.message : error);
   }
+
+  // Automatic Statement/Receipt (2026-10): new payments only (a repeated
+  // idempotencyKey returned above), after the response.
+  runAfterResponse(`billing documents for case ${caseId}`, () =>
+    regenerateBillingDocuments({ caseId, trigger: 'payment_succeeded' }, activityCtx, dataAdapterMode),
+  );
 
   return NextResponse.json({ payment: record }, { status: 201 });
 }

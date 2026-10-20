@@ -11,6 +11,12 @@ import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
 import type { PaymentRecord } from '@/types/payment';
 import type { WebhookEventRecord } from '@/types/webhookEvent';
 
+/** Automatic Statement/Receipt (2026-10) runs after the response; captured
+    here instead of rendering PDFs inside the test. */
+const { runAfterResponse } = vi.hoisted(() => ({ runAfterResponse: vi.fn() }));
+vi.mock('@/lib/afterResponse', () => ({ runAfterResponse }));
+
+
 let ledgerIdCounter = 0;
 function ledgerIdFactory(): string {
   ledgerIdCounter += 1;
@@ -534,5 +540,23 @@ describe('POST /api/webhooks/clover — deployment organization allowlist (2026-
     const now = Math.floor(Date.now() / 1000);
     expect((await POST(signedRequest(eventBody(), now))).status).toBe(200);
     expect(paymentRecordFixtures.find((p) => p.id === 'payment-1')!.status).toBe('succeeded');
+  });
+});
+
+describe('Clover webhook — automatic Statement and Receipt (2026-10)', () => {
+  it('schedules them once for an APPROVED payment, and not again on redelivery', async () => {
+    runAfterResponse.mockClear();
+    const now = Math.floor(Date.now() / 1000);
+    await POST(signedRequest(eventBody(), now));
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+
+    await POST(signedRequest(eventBody(), now + 1));
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it('schedules nothing for a DECLINED payment', async () => {
+    runAfterResponse.mockClear();
+    await POST(signedRequest(eventBody({ status: 'DECLINED', message: 'Card declined' }), Math.floor(Date.now() / 1000)));
+    expect(runAfterResponse).not.toHaveBeenCalled();
   });
 });

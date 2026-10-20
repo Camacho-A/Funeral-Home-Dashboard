@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { regenerateBillingDocuments } from '@/services/automaticBillingDocuments';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
@@ -158,6 +160,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     { organizationId, caseId, selections, performedBy, idFactory: () => crypto.randomUUID() },
     dataAdapterMode,
   );
+  scheduleBillingDocuments(organizationId, caseId, performedBy, dataAdapterMode);
   return NextResponse.json({ order, lineItems, auditEntries: [auditEntry] }, { status: 201 });
 }
 
@@ -180,5 +183,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     return NextResponse.json({ error: 'This case has no case order yet — create one first.' }, { status: 404 });
   }
 
+  // Only when the order actually changed: an unchanged save writes no audit entry.
+  if (result.auditEntries.length > 0) scheduleBillingDocuments(organizationId, caseId, performedBy, dataAdapterMode);
   return NextResponse.json({ order: result.order, lineItems: result.lineItems, auditEntries: result.auditEntries });
+}
+
+/** Automatic Statement/Receipt (2026-10) — after the response, never able
+    to fail this request. See services/automaticBillingDocuments.ts. */
+function scheduleBillingDocuments(organizationId: string, caseId: string, performedBy: string, dataAdapterMode: ReturnType<typeof getDataAdapterMode>) {
+  runAfterResponse(`billing documents for case ${caseId}`, () =>
+    regenerateBillingDocuments(
+      { caseId, trigger: 'order_saved' },
+      { organizationId, actorIdentityId: performedBy, actorMembershipId: null, actorRoleKey: null, correlationId: crypto.randomUUID() },
+      dataAdapterMode,
+    ),
+  );
 }

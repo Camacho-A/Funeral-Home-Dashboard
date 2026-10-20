@@ -9,6 +9,12 @@ import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures }
 import { seedChartOfAccounts } from '@/services/chartOfAccountsService';
 import type { CaseOrder } from '@/types/caseOrder';
 
+/** Automatic Statement/Receipt (2026-10) runs after the response; captured
+    here instead of rendering PDFs inside the test. */
+const { runAfterResponse } = vi.hoisted(() => ({ runAfterResponse: vi.fn() }));
+vi.mock('@/lib/afterResponse', () => ({ runAfterResponse }));
+
+
 let idCounter = 0;
 const idFactory = () => `manual-pay-test-${(idCounter += 1)}`;
 
@@ -216,5 +222,24 @@ describe('POST .../payments/manual — success', () => {
     const body = await response.json();
     expect(body.payment.cardBrand).toBeNull();
     expect(body.payment.cardLast4).toBeNull();
+  });
+});
+
+describe('POST .../payments/manual — automatic Statement and Receipt (2026-10)', () => {
+  it('schedules both documents after a new payment', async () => {
+    runAfterResponse.mockClear();
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, amountCents: 50_000 });
+    expect(response.status).toBe(201);
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it('schedules nothing for a replayed idempotencyKey', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    await postRequest(KNOWN_CASE().id, { ...VALID_BODY, amountCents: 50_000 });
+    runAfterResponse.mockClear();
+    const replay = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, amountCents: 50_000 });
+    expect(replay.status).toBe(200);
+    expect(runAfterResponse).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,8 @@ import { notifyPaymentReceived, notifyPaymentFailed } from '@/services/caseNotif
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { formatCentsAsCurrency } from '@/utils/format';
 import { NextResponse } from 'next/server';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { regenerateBillingDocuments } from '@/services/automaticBillingDocuments';
 import { getDataAdapterMode } from '@/lib/env';
 import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 import { cloverProvider } from '@/lib/clover/cloverProvider';
@@ -256,6 +258,14 @@ export async function POST(request: Request) {
       } catch (error) {
         console.error('Failed to notify about a payment outcome:', error instanceof Error ? error.message : error);
       }
+    }
+
+    // Automatic Statement/Receipt (2026-10): a Clover-confirmed payment,
+    // reached once per event fingerprint, rendered after the response.
+    if (updated.status === 'succeeded') {
+      runAfterResponse(`billing documents for case ${record.caseId}`, () =>
+        regenerateBillingDocuments({ caseId: record.caseId, trigger: 'payment_succeeded' }, activityCtx, dataAdapterMode),
+      );
     }
 
     await markWebhookEventCompleted(eventFingerprint, dataAdapterMode);

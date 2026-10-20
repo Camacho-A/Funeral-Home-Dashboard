@@ -9,6 +9,12 @@ import {
   caseOrderAuditFixtures,
 } from '@/services/__mocks__/pricingFixtures';
 
+/** Automatic Statement/Receipt (2026-10) runs after the response; captured
+    here instead of rendering PDFs inside the test. */
+const { runAfterResponse } = vi.hoisted(() => ({ runAfterResponse: vi.fn() }));
+vi.mock('@/lib/afterResponse', () => ({ runAfterResponse }));
+
+
 let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
@@ -399,5 +405,22 @@ describe('GET /api/cases/[caseId]/order — wix mode (mapper round-trip)', () =>
     const response = await getRequest('case-1', DEFAULT_ORGANIZATION_ID);
     const body = (await response.json()) as { order: unknown };
     expect(body.order).toBeNull();
+  });
+});
+
+describe('case order — automatic Statement (2026-10)', () => {
+  const selections = { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false };
+
+  it('schedules the documents when an order is created and when it changes, not for an unchanged save', async () => {
+    const caseId = KNOWN_CASE().id;
+    runAfterResponse.mockClear();
+    await postRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections });
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+
+    await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections: { ...selections, extraDeathCertificateQuantity: 2 } });
+    expect(runAfterResponse).toHaveBeenCalledTimes(2);
+
+    await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections: { ...selections, extraDeathCertificateQuantity: 2 } });
+    expect(runAfterResponse).toHaveBeenCalledTimes(2);
   });
 });
