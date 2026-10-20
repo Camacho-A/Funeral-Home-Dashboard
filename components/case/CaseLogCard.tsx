@@ -7,17 +7,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import textAreaFieldStyles from '@/components/ui/TextArea.module.css';
 import type { CaseLogEntry, NewCaseLogEntryClientInput } from '@/types/caseLogEntry';
 import { formatTimestamp } from '@/utils/format';
+import { caseLogEntryDisplay } from '@/domain/cases/caseLogDisplay';
 import styles from './CaseLogCard.module.css';
-
-function entrySummary(entry: CaseLogEntry): { headline: string | null; body: string | null } {
-  if (entry.type === 'contact') {
-    return {
-      headline: `Called ${entry.contactedWho} — spoke with ${entry.contactedSpoke}`,
-      body: entry.contactSummary,
-    };
-  }
-  return { headline: null, body: entry.text };
-}
 
 /** Passed through to `onAddEntry` as react-query's own per-call mutate
     options — CaseLogCard never touches the mutation itself, it just asks
@@ -53,7 +44,6 @@ export function CaseLogCard({
   const [logType, setLogType] = useState<'note' | 'contact'>('note');
   const [noteText, setNoteText] = useState('');
   const [contactWho, setContactWho] = useState('');
-  const [contactSpoke, setContactSpoke] = useState('');
   const [contactSummary, setContactSummary] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -105,21 +95,19 @@ export function CaseLogCard({
     }
 
     const who = contactWho.trim();
-    const spoke = contactSpoke.trim();
-    if (!who || !spoke) return;
+    const summary = contactSummary.trim();
+    if (!who || !summary) return;
     setIsSaving(true);
     onAddEntry(
       {
         type: 'contact',
         contactedWho: who,
-        contactedSpoke: spoke,
-        contactSummary: contactSummary.trim(),
+        contactSummary: summary,
       },
       {
         onSuccess: (entry) => {
           setIsSaving(false);
           setContactWho('');
-          setContactSpoke('');
           setContactSummary('');
           setJustAddedId(entry.id);
         },
@@ -130,6 +118,9 @@ export function CaseLogCard({
       },
     );
   }
+
+  const canSave =
+    logType === 'note' ? noteText.trim() !== '' : contactWho.trim() !== '' && contactSummary.trim() !== '';
 
   function handleNoteKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -148,7 +139,7 @@ export function CaseLogCard({
       </div>
       <div className={styles.description}>
         Preferences and special requests, plus every call to the ME, doctor&apos;s office, or next of
-        kin — who was contacted, who you spoke with, and when.
+        kin — who was contacted, what was said, and when.
       </div>
 
       <div className={styles.entries}>
@@ -156,7 +147,7 @@ export function CaseLogCard({
           <EmptyState message="No case log entries yet — add a note or logged call below." />
         ) : (
           entries.map((entry) => {
-            const { headline, body } = entrySummary(entry);
+            const { headline, body } = caseLogEntryDisplay(entry);
             return (
               <div
                 key={entry.id}
@@ -209,18 +200,16 @@ export function CaseLogCard({
               value={contactWho}
               onChange={(e) => setContactWho(e.target.value)}
               placeholder="Contacted — e.g. ME's office"
-            />
-            <TextField
-              value={contactSpoke}
-              onChange={(e) => setContactSpoke(e.target.value)}
-              placeholder="Spoke with — name"
+              aria-label="Contacted"
             />
           </div>
           <textarea
             className={textAreaFieldStyles.field}
             value={contactSummary}
             onChange={(e) => setContactSummary(e.target.value)}
-            placeholder="Summary (optional)"
+            placeholder="Summary of the call (required)"
+            aria-label="Summary of the call"
+            aria-required="true"
           />
         </>
       )}
@@ -232,7 +221,7 @@ export function CaseLogCard({
       )}
 
       <div className={styles.footer}>
-        <Button variant="secondary" onClick={handleAddEntry} disabled={isSaving}>
+        <Button variant="secondary" onClick={handleAddEntry} disabled={isSaving || !canSave}>
           {isSaving ? 'Saving…' : 'Add entry'}
         </Button>
       </div>

@@ -131,6 +131,40 @@ describe('POST /api/cases/[caseId]/log — author attribution', () => {
   });
 });
 
+describe('POST /api/cases/[caseId]/log — a logged call needs a summary, not "spoke with" (2026-10)', () => {
+  it('refuses a contact entry without a summary, writing nothing', async () => {
+    const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactedWho: 'Hospice', contactSummary: '  ' });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/summary/i);
+    expect(caseLogFixtures).toHaveLength(0);
+  });
+
+  it('refuses a contact entry without who was contacted', async () => {
+    const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactSummary: 'Called back' });
+    expect(response.status).toBe(400);
+    expect(caseLogFixtures).toHaveLength(0);
+  });
+
+  it('refuses an empty note', async () => {
+    const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'note', text: '' });
+    expect(response.status).toBe(400);
+  });
+
+  it('saves a contact entry with no "spoke with", and ignores one if sent', async () => {
+    const response = await postEntry('case-1', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      type: 'contact',
+      contactedWho: 'ME office',
+      contactedSpoke: 'Nurse Adams',
+      contactSummary: 'Case released',
+    });
+    expect(response.status).toBe(201);
+    const { entry } = await response.json();
+    expect(entry.contactedSpoke).toBeNull();
+    expect(entry.contactSummary).toBe('CASE RELEASED');
+  });
+});
+
 describe('POST /api/cases/[caseId]/log — validation and authorization', () => {
   it('requires organizationId', async () => {
     expect((await postEntry('case-1', { type: 'note', text: 'A note' })).status).toBe(400);

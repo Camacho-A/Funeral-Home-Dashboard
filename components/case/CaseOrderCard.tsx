@@ -1,5 +1,6 @@
 'use client';
 
+import { escapeHtml } from '@/domain/billing/renderUtil';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -126,7 +127,7 @@ export function CaseOrderCard({
     ];
     printTextLog('Case Order', caseName, caseNumber, rows, (row) => {
       const weight = row.emphasis ? '700' : '400';
-      return `<div style="display:flex;justify-content:space-between;font-weight:${weight};margin-bottom:6px"><span>${row.label}</span><span>${row.amount}</span></div>`;
+      return `<div style="display:flex;justify-content:space-between;font-weight:${weight};margin-bottom:6px"><span>${escapeHtml(row.label)}</span><span>${escapeHtml(row.amount)}</span></div>`;
     });
   }
 

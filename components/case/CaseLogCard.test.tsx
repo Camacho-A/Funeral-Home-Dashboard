@@ -137,3 +137,47 @@ describe('CaseLogCard — entries and empty state', () => {
     expect(bodies).toEqual(['Newer', 'Older']);
   });
 });
+
+describe('CaseLogCard — logged calls (2026-10): summary required, no "spoke with"', () => {
+  function openContactTab() {
+    fireEvent.click(screen.getByRole('button', { name: 'Contact' }));
+  }
+
+  it('no longer asks who you spoke with', () => {
+    renderCard();
+    openContactTab();
+    expect(screen.queryByPlaceholderText(/Spoke with/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Summary of the call')).toHaveAttribute('aria-required', 'true');
+  });
+
+  it('cannot save a call until both who was contacted and a summary are filled in', () => {
+    const { onAddEntry } = renderCard();
+    openContactTab();
+    const save = screen.getByRole('button', { name: 'Add entry' });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Contacted'), { target: { value: 'ME office' } });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Summary of the call'), { target: { value: '   ' } });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Summary of the call'), { target: { value: 'Released the case' } });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(onAddEntry).toHaveBeenCalledWith(
+      { type: 'contact', contactedWho: 'ME office', contactSummary: 'Released the case' },
+      expect.anything(),
+    );
+  });
+
+  it('shows a call logged before the change with the name it recorded, and a new one without', () => {
+    renderCard({
+      entries: [
+        { ...ENTRY, id: 'old', type: 'contact', text: null, contactedWho: 'HOSPICE', contactedSpoke: 'Nurse Adams', contactSummary: 'OK' },
+        { ...ENTRY, id: 'new', type: 'contact', text: null, contactedWho: 'ME OFFICE', contactedSpoke: null, contactSummary: 'RELEASED' },
+      ],
+    });
+    expect(screen.getByText('Called HOSPICE — spoke with Nurse Adams')).toBeInTheDocument();
+    expect(screen.getByText('Called ME OFFICE')).toBeInTheDocument();
+  });
+});

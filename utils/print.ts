@@ -1,3 +1,4 @@
+import { escapeHtml } from '../domain/billing/renderUtil';
 /**
  * Generic print-window helpers, ported from design/support.js's
  * printTextLog/printDoc. Domain-independent mechanics (opening a window,
@@ -26,8 +27,10 @@ export function printTextLog<T>(
     ? entries.map(renderEntry).join('')
     : '<p style="color:#888">Nothing logged yet.</p>';
 
-  printWindow.document.write(`<html><head><title>${title} — ${caseName} (${caseNumber})</title></head><body style="font-family:sans-serif;padding:60px">
-    <h2>${title}</h2><p style="color:#555">Case: ${caseName} · Case #${caseNumber}</p>
+  // `renderEntry` must escape its own dynamic text; the header is escaped here.
+  const [safeTitle, safeName, safeNumber] = [title, caseName, caseNumber].map(escapeHtml);
+  printWindow.document.write(`<html><head><title>${safeTitle} — ${safeName} (${safeNumber})</title></head><body style="font-family:sans-serif;padding:60px">
+    <h2>${safeTitle}</h2><p style="color:#555">Case: ${safeName} · Case #${safeNumber}</p>
     <div style="margin-top:24px">${rows}</div>
   </body></html>`);
   printWindow.document.close();

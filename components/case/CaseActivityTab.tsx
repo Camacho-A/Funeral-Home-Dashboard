@@ -1,5 +1,6 @@
 'use client';
 
+import { escapeHtml } from '@/domain/billing/renderUtil';
 import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useCaseActivity } from '@/hooks/useActivity';
@@ -106,7 +107,7 @@ export function CaseActivityTab({ caseId, caseName, caseNumber }: { caseId: stri
       );
       const what = created?.primary ?? resolveActivityDisplayDescription(event);
       const who = created?.secondary ?? activityActorLabel(event);
-      return `<div style="margin-bottom:12px"><div>${what}</div><div style="font-size:12px;color:#888">${who} · ${formatTimestamp(event.createdAt)}</div></div>`;
+      return `<div style="margin-bottom:12px"><div>${escapeHtml(what)}</div><div style="font-size:12px;color:#888">${escapeHtml(who)} · ${formatTimestamp(event.createdAt)}</div></div>`;
     });
   }
 

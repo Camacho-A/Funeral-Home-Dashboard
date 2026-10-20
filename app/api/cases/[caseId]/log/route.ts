@@ -6,6 +6,7 @@ import { canEditCase } from '@/services/authorizationPolicyService';
 import { caseLogService } from '@/services/caseLogService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import type { NewCaseLogEntryInput } from '@/types/caseLogEntry';
+import { caseLogEntryProblem } from '@/domain/cases/caseLogDisplay';
 
 /**
  * Raw-field-name leak fix follow-up (2026-10) — the Case Log tab's only
@@ -95,14 +96,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const callerProfile = await resolveStaffProfileForCaller({ userId, organizationId, role }, dataAdapterMode);
   const author = callerProfile?.displayName?.trim() || 'Office';
 
+  // 2026-10: "Spoke with" is retired — a contact entry is who was
+  // contacted plus a REQUIRED summary. Any `contactedSpoke` sent is ignored.
   const input: NewCaseLogEntryInput = {
     type: b.type,
     text: typeof b.text === 'string' ? b.text : undefined,
     contactedWho: typeof b.contactedWho === 'string' ? b.contactedWho : undefined,
-    contactedSpoke: typeof b.contactedSpoke === 'string' ? b.contactedSpoke : undefined,
     contactSummary: typeof b.contactSummary === 'string' ? b.contactSummary : undefined,
     author,
   };
+  const problem = caseLogEntryProblem(input);
+  if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
   const entry = await caseLogService.create({ organizationId }, caseId, input, dataAdapterMode);
   return NextResponse.json({ entry }, { status: 201 });
