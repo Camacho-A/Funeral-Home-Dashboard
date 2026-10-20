@@ -17,6 +17,26 @@ import styles from './ReconciliationModal.module.css';
  * [submissionId]/review/route.ts) — this component never writes a Case
  * field itself.
  */
+/** Staff-facing names for the compared fields; anything not listed shows
+    its field key, as before. */
+const FIELD_LABELS: Partial<Record<ReconciliationRow['field'], string>> = {
+  decedentName: 'Decedent name',
+  decedentMiddleName: 'Middle name',
+  dateOfBirth: 'Date of birth',
+  dateOfDeath: 'Date of death',
+  placeOfDeath: 'Place of death',
+  timeOfDeath: 'Time of death',
+  nextOfKinName: 'Next of kin name',
+  nextOfKinRelationship: 'Next of kin relationship',
+  nextOfKinPhone: 'Next of kin phone',
+  nextOfKinEmail: 'Next of kin email',
+  certifierFax: 'Certifier fax',
+};
+
+function fieldLabel(field: ReconciliationRow['field']): string {
+  return FIELD_LABELS[field] ?? field;
+}
+
 export function ReconciliationModal({ submissionId, caseId, onClose }: { submissionId: string; caseId: string; onClose: () => void }) {
   const { organizationId } = useOrganization();
   const query = useReconciliation(organizationId, submissionId, caseId, true);
@@ -50,6 +70,7 @@ export function ReconciliationModal({ submissionId, caseId, onClose }: { submiss
   }
 
   const applicableRows = rows.filter((r) => r.state !== 'review_only');
+  const conflictRows = rows.filter((r) => r.state === 'conflict');
   const reviewOnlyRows = rows.filter((r) => r.state === 'review_only');
   const emptyEligibleFields = rows.filter((r) => r.eligibleForBulkApply).map((r) => r.field);
 
@@ -59,6 +80,12 @@ export function ReconciliationModal({ submissionId, caseId, onClose }: { submiss
         <p>Loading…</p>
       ) : (
         <>
+          {conflictRows.length > 0 && (
+            <div className={styles.conflictBanner} role="status">
+              <strong>This form disagrees with the case on: {conflictRows.map((r) => fieldLabel(r.field)).join(', ')}.</strong>{' '}
+              The case keeps its current value unless you tick the field and apply the form&apos;s value.
+            </div>
+          )}
           <table className={styles.table}>
             <thead>
               <tr>
@@ -81,9 +108,12 @@ export function ReconciliationModal({ submissionId, caseId, onClose }: { submiss
                       />
                     )}
                   </td>
-                  <td>{row.field}</td>
+                  <td>{fieldLabel(row.field)}</td>
                   <td>{row.currentValue ?? '—'}</td>
-                  <td className={row.state === 'conflict' ? styles.conflictValue : undefined}>{row.incomingValue ?? '—'}</td>
+                  <td className={row.state === 'conflict' ? styles.conflictValue : undefined}>
+                    {row.incomingValue ?? '—'}
+                    {row.state === 'conflict' && <span className={styles.conflictTag}>Differs from case</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

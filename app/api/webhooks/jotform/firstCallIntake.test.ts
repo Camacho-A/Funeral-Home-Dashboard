@@ -745,6 +745,9 @@ describe('Attaching to the case it belongs to — an Arrangement after its First
     const event = activityEventFixtures.slice(before).find((e) => e.eventType === 'external_form.submission_linked');
     expect(event!.severity).toBe('warning');
     expect(event!.description).toMatch(/date of birth differs/);
+    // The case keeps its own date of birth until staff choose otherwise.
+    expect(caseFixtures.find((c) => c.id === FIRST_CALL_CASE_ID)!.dateOfBirth).toBe('03/14/2044');
+    expect(stored().status).not.toBe('reviewed');
   });
 
   it('never copies the form answers onto the case — they still go through review', async () => {

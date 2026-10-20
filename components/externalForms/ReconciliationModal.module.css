@@ -20,6 +20,24 @@
   color: var(--color-warning-text, #92400e);
 }
 
+/* A disagreement between the form and the case (2026-10) is stated in
+   words, not only by colour — e.g. a date of birth that differs on an
+   Arrangement attached automatically to its First Call case. */
+.conflictBanner {
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-warning-border, #f59e0b);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-warning-bg, #fffbeb);
+  color: var(--color-warning-text, #92400e);
+}
+
+.conflictTag {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
 /* Final polish (2026-10) — added the same hairline divider
    NewCaseModal.module.css's own reference `.footer` uses above its
    actions. `justify-content: space-between` is kept here (not changed to
