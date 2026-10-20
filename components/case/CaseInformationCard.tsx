@@ -117,6 +117,28 @@ function Checkbox(props: ComponentProps<typeof BaseCheckbox>) {
   return <BaseCheckbox {...props} disabled={readOnly || props.disabled} />;
 }
 
+/** Medical Examiner Case (2026-10). Same shape as the veteran row: a
+    case-level fact, not a checklist item. Locked by the card's read-only
+    context on an archived case. */
+function MedicalExaminerCaseRow({ checked, onToggle }: { checked: boolean; onToggle: (next: boolean) => void }) {
+  const readOnly = useIsReadOnly();
+  return (
+    <div
+      className={`${styles.veteranRow} ${readOnly ? styles.veteranRowLocked : styles.veteranRowUnlocked}`}
+      onClick={readOnly ? undefined : () => onToggle(!checked)}
+    >
+      <Checkbox
+        checked={checked}
+        onChange={readOnly ? undefined : () => onToggle(!checked)}
+        tone="brand"
+        aria-label="Medical Examiner Case"
+      />
+      <span className={styles.veteranLabel}>Medical Examiner Case</span>
+      <span className={styles.veteranLockedNote}>ME certifies cause of death and enters EDRS</span>
+    </div>
+  );
+}
+
 function EditableField({
   label,
   value,
@@ -575,6 +597,7 @@ export function CaseInformationCard({
   onArchiveChange,
   archivePending,
   isMedicalExaminerCase,
+  onToggleMedicalExaminerCase,
   caseNumber,
   decedentName,
   certifierName,
@@ -654,6 +677,11 @@ export function CaseInformationCard({
       deliberately so: a value SOLIS does not have is never invented or
       back-filled. */
   isMedicalExaminerCase?: boolean;
+  /** Medical Examiner Case control (2026-10, moved here from the intake
+      checklist). The ME handles EDRS entry and certifies cause of death,
+      so the EDRS stage's doctor items become verification items. Omit to
+      hide the control. */
+  onToggleMedicalExaminerCase?: (next: boolean) => void;
   /** Only used to name the case in the archive confirmation. */
   caseNumber?: string;
   decedentName?: string;
@@ -886,6 +914,10 @@ export function CaseInformationCard({
           trailingBadge={weightOver200 ? <span className={styles.notifyBadge}>Notify crematory</span> : null}
         />
       </div>
+
+      {onToggleMedicalExaminerCase && (
+        <MedicalExaminerCaseRow checked={isMedicalExaminerCase === true} onToggle={onToggleMedicalExaminerCase} />
+      )}
 
       <div className={styles.sectionHeading}>Next of kin / primary contact</div>
       <div className={styles.grid}>

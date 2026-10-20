@@ -298,36 +298,3 @@
   line-height: 1.45;
 }
 
-/* Medical Examiner classification (2026-10). Same shape as Case
-   Information's own boolean rows, so it reads as case-level state rather
-   than another checklist item to tick off. */
-.meRow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 12px 0 4px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: oklch(0.975 0.003 255);
-  border: 1px solid var(--solis-border-soft, var(--color-border));
-}
-
-.meRowLocked { cursor: default; }
-.meRowUnlocked { cursor: pointer; }
-
-.meLabel {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.meBadge {
-  margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 5px;
-  background: var(--sx-amber-bg, oklch(0.965 0.04 75));
-  color: var(--sx-amber-text, oklch(0.47 0.12 60));
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}

@@ -880,91 +880,21 @@ describe('ChecklistCard — contact restriction on the Family Contact item (2026
   });
 });
 
-describe('ChecklistCard — Medical Examiner classification (2026-10)', () => {
-  it('offers the classification near the top of the checklist', () => {
-    const onToggleMedicalExaminerCase = vi.fn();
-    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor' })], {
-      isMedicalExaminerCase: false,
-      onToggleMedicalExaminerCase,
-    });
-
-    const box = screen.getByLabelText('Medical Examiner Case');
-    expect(box).not.toBeChecked();
-    fireEvent.click(box);
-    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(true);
-  });
-
-  it('shows a badge once a case is classified', () => {
-    renderChecklist([item({ index: 0, label: 'Medical Examiner EDRS entry verified' })], {
-      isMedicalExaminerCase: true,
-      onToggleMedicalExaminerCase: vi.fn(),
-    });
-    expect(screen.getByLabelText('Medical Examiner Case')).toBeChecked();
-    // Label plus badge.
-    expect(screen.getAllByText('Medical Examiner Case').length).toBeGreaterThan(1);
-  });
-
-  it('hides the control entirely for callers that do not offer it', () => {
+describe('ChecklistCard — Medical Examiner Case moved to Case Information (2026-10)', () => {
+  it('the checklist no longer offers the classification control', () => {
     renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor' })]);
-    expect(screen.queryByLabelText('Medical Examiner Case')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Medical Examiner Case' })).not.toBeInTheDocument();
   });
 
-  it('stays usable while viewing a PAST stage — classification is not a checklist item', () => {
-    // Supersedes the earlier "not editable while viewing a past stage".
-    // The control now lives on the intake step only, and staff learn the
-    // Medical Examiner holds a case when they reach EDRS — after intake.
-    // Locking it alongside that stage's checklist items meant a real ME
-    // case could never be classified at the moment anyone found out, and
-    // the case sat on the doctor items waiting for work never coming.
-    const onToggleMedicalExaminerCase = vi.fn();
-    renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
-      viewingStageLabel: 'Intake & JotForm',
-      isMedicalExaminerCase: false,
-      onToggleMedicalExaminerCase,
-    });
-
-    const box = screen.getByLabelText('Medical Examiner Case');
-    expect(box).toBeEnabled();
-    fireEvent.click(box);
-    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(true);
-  });
-
-  it('the viewed stage\'s own checklist items stay read-only alongside it', () => {
-    // The ungating above is scoped to the classification. A past stage's
-    // items must not become editable just because it is being viewed.
-    const { onToggleItem } = renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
-      viewingStageLabel: 'Intake & JotForm',
-      onToggleMedicalExaminerCase: vi.fn(),
-    });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'NAME OF DECEASED' }));
-    expect(onToggleItem).not.toHaveBeenCalled();
-  });
-
-  it('can be un-classified again from the same place', () => {
-    const onToggleMedicalExaminerCase = vi.fn();
-    renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
-      viewingStageLabel: 'Intake & JotForm',
-      isMedicalExaminerCase: true,
-      onToggleMedicalExaminerCase,
-    });
-    fireEvent.click(screen.getByLabelText('Medical Examiner Case'));
-    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(false);
-  });
-
-  it('the verification items are ordinary toggleable items — nothing auto-completes them', () => {
-    const { onToggleItem } = renderChecklist(
-      [
-        item({ index: 3, label: 'Medical Examiner EDRS entry verified' }),
-        item({ index: 4, label: 'Medical Examiner cause of death verified' }),
-        item({ index: 5, label: 'Required ME information confirmed' }),
-      ],
-      { isMedicalExaminerCase: true, onToggleMedicalExaminerCase: vi.fn() },
-    );
-
+  it('the ME verification items are ordinary toggleable items — nothing auto-completes them', () => {
+    const { onToggleItem } = renderChecklist([
+      item({ index: 3, label: 'Medical Examiner EDRS entry verified' }),
+      item({ index: 4, label: 'Medical Examiner cause of death verified' }),
+      item({ index: 5, label: 'Required ME information confirmed' }),
+    ]);
     const box = screen.getByRole('checkbox', { name: 'Medical Examiner EDRS entry verified' });
     expect(box).not.toBeChecked();
     fireEvent.click(box);
-    // Ticked under its OWN index, which the doctor items never use.
     expect(onToggleItem).toHaveBeenCalledWith(3, true);
   });
 });
@@ -989,34 +919,10 @@ describe('ChecklistCard — archived cases are read-only (2026-10)', () => {
     expect(onToggleItem).not.toHaveBeenCalled();
   });
 
-  it('locks the Medical Examiner control when one is offered at all', () => {
-    const onToggleMedicalExaminerCase = vi.fn();
-    renderChecklist([item({ label: 'Permit sent to crematory' })], {
-      isArchived: true,
-      onToggleMedicalExaminerCase,
-    });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Medical Examiner Case' }));
-    expect(onToggleMedicalExaminerCase).not.toHaveBeenCalled();
-  });
-
   it('a live case is unaffected', () => {
     const { onToggleItem } = renderChecklist([item({ label: 'Permit sent to crematory' })], { isArchived: false });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Permit sent to crematory' }));
     expect(onToggleItem).toHaveBeenCalledWith(0, true);
-  });
-});
-
-describe('ChecklistCard — the Medical Examiner control is the caller\'s to offer (2026-10)', () => {
-  it('renders no classification row when the caller supplies no handler', () => {
-    // How the page keeps the control on the intake step alone: it simply
-    // does not pass a handler on any other step.
-    renderChecklist([item({ label: 'EDRS submitted & sent to doctor' })]);
-    expect(screen.queryByRole('checkbox', { name: 'Medical Examiner Case' })).not.toBeInTheDocument();
-  });
-
-  it('renders it when the caller does', () => {
-    renderChecklist([item({ label: 'Name of deceased' })], { onToggleMedicalExaminerCase: vi.fn() });
-    expect(screen.getByRole('checkbox', { name: 'Medical Examiner Case' })).toBeInTheDocument();
   });
 });
 

@@ -1882,3 +1882,54 @@ describe('CaseInformationCard — Edit Name', () => {
     expect(screen.queryByRole('button', { name: 'Edit Name' })).not.toBeInTheDocument();
   });
 });
+
+describe('CaseInformationCard — Medical Examiner Case (2026-10, moved from the intake checklist)', () => {
+  it('offers the classification with the case details, at any stage', () => {
+    const onToggleMedicalExaminerCase = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        onUpdateCaseInfo={vi.fn()}
+        isMedicalExaminerCase={false}
+        onToggleMedicalExaminerCase={onToggleMedicalExaminerCase}
+      />,
+    );
+    const box = screen.getByRole('checkbox', { name: 'Medical Examiner Case' });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(true);
+  });
+
+  it('can be cleared again', () => {
+    const onToggleMedicalExaminerCase = vi.fn();
+    render(
+      <CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} isMedicalExaminerCase onToggleMedicalExaminerCase={onToggleMedicalExaminerCase} />,
+    );
+    const box = screen.getByRole('checkbox', { name: 'Medical Examiner Case' });
+    expect(box).toBeChecked();
+    fireEvent.click(box);
+    expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(false);
+  });
+
+  it('is locked on an archived case', () => {
+    const onToggleMedicalExaminerCase = vi.fn();
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        onUpdateCaseInfo={vi.fn()}
+        isArchived
+        isMedicalExaminerCase={false}
+        onToggleMedicalExaminerCase={onToggleMedicalExaminerCase}
+      />,
+    );
+    const box = screen.getByRole('checkbox', { name: 'Medical Examiner Case' });
+    expect(box).toBeDisabled();
+    fireEvent.click(box);
+    expect(onToggleMedicalExaminerCase).not.toHaveBeenCalled();
+  });
+
+  it('is absent when the caller does not offer it', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByRole('checkbox', { name: 'Medical Examiner Case' })).not.toBeInTheDocument();
+  });
+});
