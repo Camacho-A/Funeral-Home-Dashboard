@@ -15,7 +15,7 @@ const WORD_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordproces
 
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
-  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn(), generateCaseDocument: vi.fn() };
+  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn(), generateCaseDocument: vi.fn(), generateOfficialCaseDocument: vi.fn() };
 });
 
 vi.mock('@/lib/identityAuthClient', async () => {
@@ -1114,5 +1114,48 @@ describe('CaseDocumentsTab — a failed generation that was later succeeded past
     renderTab();
 
     expect(await screen.findByText('Generation Failed')).toBeInTheDocument();
+  });
+});
+
+
+describe('CaseDocumentsTab — Envelope and Certificate of Cremation on demand (2026-10)', () => {
+  it('offers both to staff who can generate documents, for an organization that has them', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    renderTab();
+    expect(await screen.findByRole('button', { name: 'Generate Envelope' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate Certificate' })).toBeInTheDocument();
+  });
+
+  it('asks the server for the chosen document', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.generateOfficialCaseDocument).mockResolvedValue();
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate Envelope' }));
+    await waitFor(() =>
+      expect(caseDocumentsClient.generateOfficialCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ kind: 'envelope' })),
+    );
+  });
+
+  it('shows why a certificate could not be produced', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.generateOfficialCaseDocument).mockRejectedValue(new Error('Record the decedent\'s name and the date of cremation first.'));
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate Certificate' }));
+    expect(await screen.findByText(/date of cremation first/)).toBeInTheDocument();
+  });
+
+  it('is not offered without the generate permission, nor to an organization without these templates', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    mockPermissions(['document.view']);
+    const { unmount } = renderTab();
+    await screen.findByText(/No documents|documents/i);
+    expect(screen.queryByRole('button', { name: 'Generate Envelope' })).not.toBeInTheDocument();
+    unmount();
+
+    mockPermissions(['document.view', 'document.generate']);
+    mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
+    renderTab(SECOND_MOCK_ORGANIZATION_ID);
+    await screen.findAllByText(/documents/i);
+    expect(screen.queryByRole('button', { name: 'Generate Envelope' })).not.toBeInTheDocument();
   });
 });

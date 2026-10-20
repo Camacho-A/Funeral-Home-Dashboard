@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
 import { getDataAdapterMode } from '@/lib/env';
 import { notifyCaseCreated } from '@/services/caseNotifications';
 import { composeDecedentName } from '@/domain/cases/decedentName';
@@ -871,6 +873,19 @@ export async function POST(request: Request) {
           source: 'the New Case form',
         },
         'wix',
+      );
+    }
+
+    // Automatic Envelope (2026-10), after the response. Not for a historical
+    // import: that would generate envelopes for every old case at once.
+    if (creationSource !== 'external_form_import') {
+      runAfterResponse(`official documents for case ${created.id}`, () =>
+        regenerateOfficialDocumentsAfterCaseChange(
+          null,
+          created,
+          { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+          'wix',
+        ),
       );
     }
 

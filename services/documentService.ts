@@ -580,11 +580,17 @@ export async function generateBillingDocument(
     documentTypeKey: string;
     category: CaseDocument['category'];
     fileName: string;
-    bodyHtml: string;
     existingDocumentId?: string;
     idFactory: () => string;
     now?: string;
-  },
+  } & (
+    | { bodyHtml: string; buildPdf?: never }
+    /** 2026-10: a document filled from an official PDF template (Envelope,
+        Certificate of Cremation) brings its own bytes instead of HTML to
+        render. Everything else — versioning, superseding, audit, the
+        generated/failed notification — is the same path. */
+    | { buildPdf: () => Promise<Uint8Array>; bodyHtml?: never }
+  ),
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
 ): Promise<CaseDocument> {
@@ -631,7 +637,9 @@ export async function generateBillingDocument(
 
   let finalDocument: CaseDocument;
   try {
-    const pdfBuffer = await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
+    const pdfBuffer = params.buildPdf
+      ? Buffer.from(await params.buildPdf())
+      : await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
     const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
     const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.pdf`;
     const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, 'application/pdf');

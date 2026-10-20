@@ -33,6 +33,10 @@ export const DOCUMENT_TYPES = {
 
   CREMATION_FORM_PERMIT_APPLICATION: { key: 'cremation_form.permit_application', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Cremation Permit Application' },
   CREMATION_FORM_WITNESS_STATEMENT: { key: 'cremation_form.witness_statement', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Cremation Witness Statement' },
+  /** 2026-10. Filled automatically from the organization's own signed
+      certificate (services/officialDocumentTemplates.ts), never authored
+      through the template-merge path. */
+  CREMATION_FORM_CERTIFICATE_OF_CREMATION: { key: 'cremation_form.certificate_of_cremation', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Certificate of Cremation' },
 
   BURIAL_FORM_PERMIT_APPLICATION: { key: 'burial_form.permit_application', category: 'burial_form' as DocumentTemplateCategory, displayName: 'Burial Permit Application' },
   BURIAL_FORM_INTERMENT_ORDER: { key: 'burial_form.interment_order', category: 'burial_form' as DocumentTemplateCategory, displayName: 'Interment Order' },
@@ -53,6 +57,9 @@ export const DOCUMENT_TYPES = {
 
   LETTER_GENERAL: { key: 'letter.general', category: 'letter' as DocumentTemplateCategory, displayName: 'General Letter' },
   LETTER_CONDOLENCE: { key: 'letter.condolence', category: 'letter' as DocumentTemplateCategory, displayName: 'Condolence Letter' },
+  /** 2026-10. The #10 envelope the family's important documents go out in,
+      filled from the organization's own envelope (officialDocumentTemplates.ts). */
+  LETTER_ENVELOPE: { key: 'letter.envelope', category: 'letter' as DocumentTemplateCategory, displayName: 'Envelope' },
 
   INTERNAL_CHECKLIST: { key: 'internal.checklist', category: 'internal_form' as DocumentTemplateCategory, displayName: 'Internal Checklist' },
 

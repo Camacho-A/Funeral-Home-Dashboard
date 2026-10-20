@@ -38,6 +38,22 @@ export async function generateCaseDocument(params: {
   return body.document as CaseDocument;
 }
 
+/** Envelope / Certificate of Cremation from the organization's official
+    files (2026-10). */
+export async function generateOfficialCaseDocument(params: {
+  organizationId: string;
+  caseId: string;
+  kind: 'envelope' | 'certificate_of_cremation';
+}): Promise<void> {
+  const { caseId, ...rest } = params;
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/documents/official`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rest),
+  });
+  await parseJsonOrThrow(response);
+}
+
 export async function uploadCaseDocument(params: {
   organizationId: string;
   caseId: string;

@@ -1,6 +1,29 @@
 import type { NextConfig } from 'next';
 import path from 'path';
 
+const CHROMIUM_BIN = './node_modules/@sparticuz/chromium/bin/**/*';
+const DOCUMENT_TEMPLATE_ASSETS = './assets/documents/**/*';
+
+/** Routes that render HTML to PDF through Chromium, directly or after their
+    response (lib/afterResponse.ts). Keyed the way outputFileTracingIncludes
+    expects: App Router path, dynamic segments kept, no app/ prefix or
+    route suffix. */
+export const CHROMIUM_PDF_ROUTES = [
+  '/api/cases/[caseId]/billing/statement',
+  '/api/cases/[caseId]/billing/receipt',
+  '/api/cases/[caseId]/documents/generate',
+  '/api/cases/[caseId]/order',
+  '/api/cases/[caseId]/payments/manual',
+  '/api/webhooks/clover',
+  '/api/settings/price-list',
+  '/api/document-templates/[templateId]/preview',
+  '/api/reports/all-case-data/export',
+] as const;
+
+/** Routes that fill the official Envelope (assets/documents) with pdf-lib —
+    no Chromium needed. */
+export const OFFICIAL_TEMPLATE_ROUTES = ['/api/cases', '/api/cases/[caseId]', '/api/cases/[caseId]/documents/official'] as const;
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /**
@@ -71,9 +94,19 @@ const nextConfig: NextConfig = {
   // one route — no other route launches Chromium — and to only the bin/
   // directory specifically (not the whole package, which the JS tracing
   // above already covers correctly on its own).
-  outputFileTracingIncludes: {
-    '/api/cases/[caseId]/billing/statement': ['./node_modules/@sparticuz/chromium/bin/**/*'],
-  },
+  //
+  // 2026-10: EVERY route that can render a PDF needs the binary, not just
+  // the Statement route — the Receipt, template documents, the price list,
+  // template preview and the all-case-data export render through the same
+  // renderer, and automatic Statement/Receipt generation now renders from
+  // the order, manual-payment and Clover routes. The Envelope and
+  // Certificate of Cremation are filled from the official template files
+  // in assets/documents, read from disk at runtime, so those files are
+  // traced into the routes that generate them.
+  outputFileTracingIncludes: Object.fromEntries([
+    ...CHROMIUM_PDF_ROUTES.map((route) => [route, [CHROMIUM_BIN]]),
+    ...OFFICIAL_TEMPLATE_ROUTES.map((route) => [route, [DOCUMENT_TEMPLATE_ASSETS]]),
+  ]),
 };
 
 export default nextConfig;

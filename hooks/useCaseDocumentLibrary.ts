@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchCaseDocuments,
   generateCaseDocument,
+  generateOfficialCaseDocument,
   uploadCaseDocument,
   archiveCaseDocument,
   setCaseDocumentFamilyVisibility,
@@ -37,6 +38,14 @@ export function useGenerateCaseDocument(organizationId: string, caseId: string) 
   return useMutation({
     mutationFn: (params: { templateId: string; templateVersion?: number; existingDocumentId?: string }) =>
       generateCaseDocument({ organizationId, caseId, ...params }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+  });
+}
+
+export function useGenerateOfficialCaseDocument(organizationId: string, caseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (kind: 'envelope' | 'certificate_of_cremation') => generateOfficialCaseDocument({ organizationId, caseId, kind }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
   });
 }

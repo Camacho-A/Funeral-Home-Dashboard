@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
 import { getDataAdapterMode } from '@/lib/env';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixCaseItem, validateAndPickCaseUpdate, buildCaseFieldPatch, caseRevision, storedCaseRevision, type WixCaseItem } from '@/lib/wixCaseMapper';
@@ -703,6 +705,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     } catch (error) {
       console.error('Failed to record case-update activity event(s):', error instanceof Error ? error.message : error);
     }
+
+    // Automatic Envelope / Certificate of Cremation (2026-10): only what this
+    // save actually affected, after the response, never able to fail it.
+    const beforeSave = existing;
+    runAfterResponse(`official documents for case ${caseId}`, () =>
+      regenerateOfficialDocumentsAfterCaseChange(
+        beforeSave,
+        result,
+        { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
+        'wix',
+      ),
+    );
 
     return NextResponse.json({ case: hasFullEdit ? result : toPickupOnlyView(result) });
   } catch (error) {

@@ -12,7 +12,9 @@ import {
   useArchiveCaseDocument,
   useBulkDownloadCaseDocuments,
   useBulkPrintCaseDocuments,
+  useGenerateOfficialCaseDocument,
 } from '@/hooks/useCaseDocumentLibrary';
+import { officialDocumentsFor, type OfficialDocumentKind } from '@/domain/documents/officialDocumentTriggers';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RowMenu, type RowMenuItem } from '@/components/ui/RowMenu';
 import { formatTimestamp } from '@/utils/format';
@@ -70,6 +72,12 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const archive = useArchiveCaseDocument(organizationId, caseId);
   const bulkDownload = useBulkDownloadCaseDocuments(organizationId, caseId);
   const bulkPrint = useBulkPrintCaseDocuments(organizationId, caseId, caseName, caseNumber);
+  /** Envelope / Certificate of Cremation (2026-10): generated automatically,
+      and on demand here for older cases or after a failure. */
+  const generateOfficial = useGenerateOfficialCaseDocument(organizationId, caseId);
+  const officialKinds = officialDocumentsFor(organizationId);
+  const [officialError, setOfficialError] = useState<string | null>(null);
+  const [officialPending, setOfficialPending] = useState<OfficialDocumentKind | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [subTab, setSubTab] = useState<'documents' | 'forms' | 'history'>('documents');
 
@@ -344,6 +352,25 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
                 Generate Document
               </button>
             )}
+            {canGenerate &&
+              officialKinds.map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className="sx-btn sx-btn-secondary"
+                  disabled={generateOfficial.isPending}
+                  onClick={() => {
+                    setOfficialError(null);
+                    setOfficialPending(kind);
+                    generateOfficial.mutate(kind, {
+                      onError: (error) => setOfficialError(error instanceof Error ? error.message : 'The document could not be generated.'),
+                      onSettled: () => setOfficialPending(null),
+                    });
+                  }}
+                >
+                  {officialPending === kind ? 'Generating…' : kind === 'envelope' ? 'Generate Envelope' : 'Generate Certificate'}
+                </button>
+              ))}
             {canUpload && (
               <>
                 <button type="button" className="sx-btn sx-btn-primary" onClick={() => fileInputRef.current?.click()} disabled={upload.isPending}>
@@ -379,6 +406,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             </button>
           </div>
 
+          {officialError && (
+            <div className="sx-form-banner sx-form-banner-error sx-docs-bulk-note" role="alert">
+              {officialError}
+            </div>
+          )}
           {bulkError && (
             <div className="sx-form-banner sx-form-banner-error sx-docs-bulk-note" role="alert">
               {bulkError}

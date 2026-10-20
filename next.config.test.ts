@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import nextConfig from './next.config';
+import fs from 'fs';
+import path from 'path';
+import nextConfig, { CHROMIUM_PDF_ROUTES, OFFICIAL_TEMPLATE_ROUTES } from './next.config';
 
 /**
  * Item #1 (2026-09). `@sparticuz/chromium`/`puppeteer-core` must never be
@@ -33,5 +35,28 @@ describe('next.config.ts — Vercel Chromium configuration (item #1)', () => {
     const statementRouteGlobs = includes?.['/api/cases/[caseId]/billing/statement'];
     expect(statementRouteGlobs).toBeDefined();
     expect(statementRouteGlobs).toContain('./node_modules/@sparticuz/chromium/bin/**/*');
+  });
+});
+
+describe('next.config.ts — every PDF route ships what it needs (2026-10)', () => {
+  const includes = nextConfig.outputFileTracingIncludes ?? {};
+  const routeFile = (route: string) => path.join(process.cwd(), 'app', ...route.split('/').filter(Boolean), 'route.ts');
+
+  it('gives every Chromium-rendering route the Chromium binary', () => {
+    for (const route of CHROMIUM_PDF_ROUTES) expect(includes[route], route).toContain('./node_modules/@sparticuz/chromium/bin/**/*');
+  });
+
+  it('gives every route that fills the official Envelope its template files', () => {
+    for (const route of OFFICIAL_TEMPLATE_ROUTES) expect(includes[route], route).toContain('./assets/documents/**/*');
+  });
+
+  it('names only routes that exist, so a typo cannot silently drop a binary', () => {
+    for (const route of [...CHROMIUM_PDF_ROUTES, ...OFFICIAL_TEMPLATE_ROUTES]) expect(fs.existsSync(routeFile(route)), route).toBe(true);
+  });
+
+  it('includes the Receipt and the automatic Statement/Receipt routes, which were missing the binary', () => {
+    for (const route of ['/api/cases/[caseId]/billing/receipt', '/api/cases/[caseId]/order', '/api/cases/[caseId]/payments/manual', '/api/webhooks/clover']) {
+      expect(CHROMIUM_PDF_ROUTES as readonly string[]).toContain(route);
+    }
   });
 });
