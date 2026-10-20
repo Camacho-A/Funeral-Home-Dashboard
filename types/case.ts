@@ -242,6 +242,12 @@ export type Case = {
       key format existed; readChecklistValue is the only code allowed
       to interpret one, and only for the case's own current stage. */
   checklistState: Record<string, boolean>;
+  /** Automatic checklist completion (2026-10). For the checklist items
+      SOLIS can complete from a verified event, who decided each one last,
+      keyed like `checklistState`. Written only by the server (never
+      accepted from a client patch); absent on every case that predates it.
+      See domain/workflow/checklistAutomation.ts. */
+  checklistAutomation?: Record<string, ChecklistAutomationEntry>;
   fieldValues: Record<number, string>;
   /** Manors launch-prep. Structured pickup/release tracking — the answer
       "are the remains still here or have they gone home?" without relying
@@ -406,3 +412,13 @@ export type CaseUpdate = Partial<
     | 'revision'
   >
 >;
+
+/** What verified event completed a checklist item automatically. */
+export type ChecklistAutomationSource = 'payment_received_in_full' | 'arrangement_form_received';
+
+/** `automatic`: SOLIS completed the item from `source`. `staff`: a staff
+    member changed the item afterwards (or first), which automation then
+    never overrides. */
+export type ChecklistAutomationEntry =
+  | { by: 'automatic'; source: ChecklistAutomationSource; at: string }
+  | { by: 'staff'; at: string };

@@ -44,6 +44,10 @@ export type ChecklistItemViewModel = {
       ChecklistCard renders it read-only, never toggleable, so it can never
       become a second, contradicting completion signal. */
   isDerived: boolean;
+  /** Automatic checklist completion (2026-10): done because SOLIS
+      verified the event that completes it (domain/workflow/checklistAutomation.ts),
+      not because staff ticked it. */
+  completedAutomatically?: boolean;
   /** Structured Certifier data (2026-09, ADR-041). Mirrors
       ChecklistItemTemplate.valueKind — a field-backed item whose canonical
       value is 24-hour HH:mm but should render/edit as 12-hour AM/PM (e.g.

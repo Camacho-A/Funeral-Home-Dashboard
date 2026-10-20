@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { completeArrangementFormChecklistItem } from './automaticChecklistCompletion';
 import type { Case } from '../types/case';
 import type { ExternalFormConfig } from '../types/externalFormConfig';
 import type { ExternalFormSubmission } from '../types/externalFormSubmission';
@@ -350,6 +351,14 @@ export async function createCaseFromIntakeSubmission(
     // Same reconciliation call every other submission path makes, so a
     // webhook-created case can never end up in a different workflow state
     // than one created any other way.
+    // Automatic checklist completion (2026-10, Manors): the received
+    // Arrangement Form completes "Jotform application completed" before
+    // reconciliation reads the checklist. Best-effort.
+    try {
+      await completeArrangementFormChecklistItem(config.organizationId, created.id, dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to complete the Arrangement Form checklist item automatically:', error instanceof Error ? error.message : error);
+    }
     try {
       await reconcileCaseWorkflow(config.organizationId, created.id, dataAdapterMode);
     } catch (error) {

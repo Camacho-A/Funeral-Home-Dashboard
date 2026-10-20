@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isChecklistAutomationEnabled, staffChecklistAutomationUpdate } from '@/domain/workflow/checklistAutomation';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
 import { getDataAdapterMode } from '@/lib/env';
@@ -406,7 +407,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       const refusal = refuseAgainst(current.case_);
       if (refusal) return refusal;
 
-      const fields = buildCaseFieldPatch(current.data, patch);
+      // Automatic checklist completion (2026-10): a staff change to an item
+      // SOLIS can complete is recorded in the same write, so automation
+      // never overrides it. Server-computed — never taken from the client.
+      const staffAutomation =
+        patch.checklistState && isChecklistAutomationEnabled(organizationId)
+          ? staffChecklistAutomationUpdate(current.case_, patch.checklistState, new Date().toISOString())
+          : null;
+      const fields = buildCaseFieldPatch(current.data, staffAutomation ? { ...patch, checklistAutomation: staffAutomation } : patch);
       if (Object.keys(fields).length === 0) {
         // Already exactly as requested — nothing to write, no revision bump.
         existing = current.case_;

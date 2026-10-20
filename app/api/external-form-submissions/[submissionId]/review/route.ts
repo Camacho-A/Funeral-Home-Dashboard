@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canReadCases, canEditCase } from '@/services/authorizationPolicyService';
@@ -220,6 +221,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   // current rawStage even after staff applied the very data that would
   // satisfy its next prerequisite. Same shared, single-source-of-truth
   // call every other Arrangement-Form-affecting entry point already uses.
+  // Automatic checklist completion (2026-10, Manors): the received
+  // Arrangement Form completes "Jotform application completed" before
+  // reconciliation reads the checklist. Best-effort.
+  try {
+    await completeArrangementFormChecklistItem(organizationId, b.caseId, dataAdapterMode);
+  } catch (error) {
+    console.error('Failed to complete the Arrangement Form checklist item automatically:', error instanceof Error ? error.message : error);
+  }
   await reconcileCaseWorkflow(organizationId, b.caseId, dataAdapterMode);
 
   return NextResponse.json({ submission: reviewed });

@@ -58,7 +58,7 @@ function isFormLinkReceived(status: string): boolean {
     `ChecklistItemTemplate.externalFormIntegrationId` references but which
     is documented as dormant, never wired to any real submission
     pipeline. */
-async function isArrangementFormLinked(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+export async function isArrangementFormLinked(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   const links = await listCaseFormLinks(organizationId, caseId, dataAdapterMode);
   for (const link of links) {
     if (!isFormLinkReceived(link.status) || !link.submissionId) continue;

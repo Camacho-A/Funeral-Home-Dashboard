@@ -1569,6 +1569,30 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     expect(body.case.rawStage).toBe(3);
   });
 
+  // Automatic checklist completion (2026-10): the real (Wix) write path.
+  it('a staff untick of an automatically completed item is recorded as a staff decision, in the same write', async () => {
+    mockAdminQueries({
+      ...stage3CaseData({}),
+      checklistAutomation: { '0:8': { by: 'automatic', source: 'payment_received_in_full', at: '2026-10-20T12:00:00.000Z' } },
+    });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } } });
+    expect(response.status).toBe(200);
+    const written = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, Record<string, Record<string, unknown>>>;
+    expect(written.checklistState['0:8']).toBe(false);
+    expect(written.checklistAutomation['0:8']).toMatchObject({ by: 'staff' });
+  });
+
+  it('never accepts checklistAutomation from the browser', async () => {
+    mockAdminQueries(stage3CaseData({}));
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      patch: { checklistState: { '2:0': true }, checklistAutomation: { '2:0': { by: 'automatic', source: 'payment_received_in_full', at: 'x' } } },
+    });
+    for (const call of mockUpdateWixDataItem.mock.calls) {
+      expect((call[2] as Record<string, unknown>).checklistAutomation).toBeUndefined();
+    }
+  });
+
   it('B. Stage 3 with every Stage 3 requirement, including Hardsave, explicitly satisfied advances to Stage 4 — and the SAME response already reflects it', async () => {
     mockAdminQueries(stage3CaseData({ 0: true, 1: true, 2: true }));
     const response = await patchRequest('1042', {

@@ -528,6 +528,36 @@ export function recordCaseArchiveChanged(
   );
 }
 
+/**
+ * Automatic checklist completion (2026-10). One event per item SOLIS
+ * completed, attributed to SOLIS itself (the caller passes a
+ * system-generated context) and naming the evidence. Never recorded for a
+ * retry that changed nothing — the caller only records an applied change.
+ */
+export function recordChecklistItemCompletedAutomatically(
+  ctx: ActivityContext,
+  caseId: string,
+  item: { key: string; label: string; source: string; sourceLabel: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_CHECKLIST_COMPLETED_AUTOMATICALLY,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ [item.key]: false }),
+      newValue: JSON.stringify({ [item.key]: true }),
+      description: `Checklist: "${item.label}" completed automatically (${item.sourceLabel}).`,
+      metadata: JSON.stringify({ checklistItemKey: item.key, source: item.source }),
+      severity: 'info',
+      isSystemGenerated: true,
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordContactRestrictionChanged(
   ctx: ActivityContext,
   caseId: string,

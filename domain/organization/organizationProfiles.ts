@@ -191,6 +191,10 @@ export type OrganizationFeaturePreferences = {
   /** Legacy Certifier relabel for frozen pre-v5 snapshots
       (domain/cases/legacyCertifierPresentation.ts). */
   legacyCertifierPresentation: boolean;
+  /** Automatic checklist completion (2026-10): verified events complete
+      their checklist items and the completion is recorded and shown as
+      automatic (domain/workflow/checklistAutomation.ts). */
+  automaticChecklistCompletion: boolean;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -269,6 +273,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   uppercaseCombinedIntakeLabels: false,
   additionalItemsTerminology: false,
   legacyCertifierPresentation: false,
+  automaticChecklistCompletion: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -327,6 +332,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     uppercaseCombinedIntakeLabels: true,
     additionalItemsTerminology: true,
     legacyCertifierPresentation: true,
+    automaticChecklistCompletion: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {

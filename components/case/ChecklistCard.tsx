@@ -534,6 +534,7 @@ export function ChecklistCard({
                   aria-label={item.label}
                 />
                 <span className={`${styles.itemLabel} ${labelClass}`}>{item.label}</span>
+                {item.completedAutomatically && <span className={styles.autoCompleted}>Completed automatically</span>}
               </div>
               {item.hasField && item.valueKind === 'time' && (
                 <ChecklistTimeInput

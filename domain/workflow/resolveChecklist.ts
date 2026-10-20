@@ -1,4 +1,5 @@
 import type { Case } from '../../types/case';
+import { isCompletedAutomatically } from './checklistAutomation';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
@@ -314,6 +315,7 @@ export function resolveChecklist(
         : '',
       fieldIsPassword: Boolean(item.isPasswordField),
       isDerived: Boolean(item.requiredCaseFields),
+      completedAutomatically: done && isCompletedAutomatically(case_, displayStage, index),
       valueKind: item.valueKind,
       requiredCaseFields: item.requiredCaseFields,
       requiredCaseFieldValues: item.requiredCaseFields

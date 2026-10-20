@@ -1065,3 +1065,21 @@ describe('ChecklistCard — Certifier Information on a v7 case (fax)', () => {
     expect(screen.queryByText('Certifier fax')).not.toBeInTheDocument();
   });
 });
+
+describe('ChecklistCard — automatic checklist completion (2026-10)', () => {
+  it('notes "Completed automatically" beside an item SOLIS completed, and nowhere else', () => {
+    renderChecklist([
+      item({ index: 8, label: 'Payment collected', done: true, completedAutomatically: true }),
+      item({ index: 7, label: 'Family contact', done: true }),
+    ]);
+    expect(screen.getAllByText('Completed automatically')).toHaveLength(1);
+    expect(screen.getByText('Completed automatically').previousElementSibling).toHaveTextContent('Payment collected');
+  });
+
+  it('an automatically completed item stays an ordinary checkbox staff can still correct', () => {
+    const onToggleItem = vi.fn();
+    renderChecklist([item({ index: 8, label: 'Payment collected', done: true, completedAutomatically: true })], { onToggleItem });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Payment collected' }));
+    expect(onToggleItem).toHaveBeenCalledWith(8, false);
+  });
+});

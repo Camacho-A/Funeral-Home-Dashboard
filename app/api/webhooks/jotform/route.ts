@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { loadCaseOnServer } from '@/services/serverCaseLoader';
 import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
@@ -528,6 +529,14 @@ export async function POST(request: Request) {
     // submission is exactly the same "Arrangement Form now linked" fact
     // the historical-import path produces — reuses the identical
     // reconciliation call so both paths can never diverge in meaning.
+    // Automatic checklist completion (2026-10, Manors): the received
+    // Arrangement Form completes "Jotform application completed" before
+    // reconciliation reads the checklist. Best-effort.
+    try {
+      await completeArrangementFormChecklistItem(config.organizationId, caseId, dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to complete the Arrangement Form checklist item automatically:', error instanceof Error ? error.message : error);
+    }
     await reconcileCaseWorkflow(config.organizationId, caseId, dataAdapterMode);
   }
 }

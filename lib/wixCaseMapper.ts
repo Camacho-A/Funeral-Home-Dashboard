@@ -1,4 +1,4 @@
-import type { Case, CaseUpdate, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
+import type { Case, CaseUpdate, ChecklistAutomationEntry, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail, isValidCalendarDate } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
@@ -82,6 +82,7 @@ export type WixCaseItem = {
   caseHandlerId?: unknown;
   currentStage?: unknown;
   checklistState?: unknown;
+  checklistAutomation?: unknown;
   fieldValues?: unknown;
   decedentName?: unknown;
   decedentMiddleName?: unknown;
@@ -306,6 +307,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     // Record<number, boolean> — Wix itself only validates "is a plain
     // object" (isPlainObject above), never this field's internal shape.
     checklistState: item.checklistState as Record<string, boolean>,
+    ...readChecklistAutomation(item.checklistAutomation),
     fieldValues: item.fieldValues as Record<number, string>,
     daysWaitingInStage: typeof item.daysWaitingInStage === 'number' ? item.daysWaitingInStage : 0,
     isStalled: typeof item.isStalled === 'boolean' ? item.isStalled : false,
@@ -772,6 +774,7 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.vaPublishChoice !== undefined) next.vaPublishChoice = patch.vaPublishChoice;
   if (patch.vaNotificationResponsibility !== undefined) next.vaNotificationResponsibility = patch.vaNotificationResponsibility;
   if (patch.checklistState !== undefined) next.checklistState = patch.checklistState;
+  if (patch.checklistAutomation !== undefined) next.checklistAutomation = patch.checklistAutomation;
   if (patch.fieldValues !== undefined) {
     // SOLIS-wide ALL-CAPS data standard (2026-09): fieldValues' per-key
     // uppercase-ness is data-driven (workflowSnapshot.intake[].uppercase),
@@ -869,7 +872,26 @@ export function buildCaseFieldPatch(existing: WixCaseItem, patch: CaseUpdate): R
   const next = applyCaseUpdateToWixData(existing, patch);
   const asObject = (value: unknown): Record<string, unknown> => (isPlainObject(value) ? value : {});
   if (patch.checklistState !== undefined) next.checklistState = { ...asObject(existing.checklistState), ...asObject(next.checklistState) };
+  if (patch.checklistAutomation !== undefined) next.checklistAutomation = { ...asObject(existing.checklistAutomation), ...asObject(next.checklistAutomation) };
   if (patch.fieldValues !== undefined) next.fieldValues = { ...asObject(existing.fieldValues), ...asObject(next.fieldValues) };
   if (patch.vaStepsState !== undefined) next.vaStepsState = { ...asObject(existing.vaStepsState), ...asObject(next.vaStepsState) };
   return changedCaseFields(existing, next);
+}
+
+/**
+ * Automatic checklist completion (2026-10). Only well-formed entries are
+ * read; anything else is dropped rather than trusted, and a case without
+ * the field (every case before it existed) simply has none.
+ */
+function readChecklistAutomation(value: unknown): Pick<Case, 'checklistAutomation'> {
+  if (!isPlainObject(value)) return {};
+  const entries: Record<string, ChecklistAutomationEntry> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (!isPlainObject(raw) || typeof raw.at !== 'string') continue;
+    if (raw.by === 'staff') entries[key] = { by: 'staff', at: raw.at };
+    else if (raw.by === 'automatic' && (raw.source === 'payment_received_in_full' || raw.source === 'arrangement_form_received')) {
+      entries[key] = { by: 'automatic', source: raw.source, at: raw.at };
+    }
+  }
+  return Object.keys(entries).length > 0 ? { checklistAutomation: entries } : {};
 }

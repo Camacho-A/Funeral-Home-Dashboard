@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCaseFieldPatch,
   mapWixCaseItem,
   buildWixCaseData,
   validateAndPickCaseUpdate,
@@ -1220,5 +1221,29 @@ describe('cremation dates (2026-10): date of cremation and date received are sep
     expect(legacy).not.toBeNull();
     expect(legacy!.dateOfCremation).toBeNull();
     expect(legacy!.cremainsReceivedAt).toBeNull();
+  });
+});
+
+describe('checklistAutomation (automatic checklist completion, 2026-10)', () => {
+  const entry = { by: 'automatic', source: 'payment_received_in_full', at: '2026-10-20T12:00:00.000Z' };
+
+  it('reads well-formed entries and drops anything else; a case without the field has none', () => {
+    const mapped = mapWixCaseItem({
+      ...validItem,
+      checklistAutomation: { '0:8': entry, '1:0': { by: 'staff', at: '2026-10-20T13:00:00.000Z' }, '2:0': { by: 'automatic', source: 'made-up', at: 'x' }, '3:0': 'nope' },
+    });
+    expect(mapped?.checklistAutomation).toEqual({ '0:8': entry, '1:0': { by: 'staff', at: '2026-10-20T13:00:00.000Z' } });
+    expect(mapWixCaseItem(validItem)?.checklistAutomation).toBeUndefined();
+  });
+
+  it('merges per key on write, like checklistState', () => {
+    const existing = { ...validItem, checklistAutomation: { '1:0': { by: 'staff', at: 'earlier' } } } as unknown as Parameters<typeof buildCaseFieldPatch>[0];
+    const fields = buildCaseFieldPatch(existing, { checklistAutomation: { '0:8': entry as never } });
+    expect(fields.checklistAutomation).toEqual({ '1:0': { by: 'staff', at: 'earlier' }, '0:8': entry });
+  });
+
+  it('is never accepted from a client patch', () => {
+    const { patch } = validateAndPickCaseUpdate({ checklistAutomation: { '0:8': entry } });
+    expect(patch).not.toHaveProperty('checklistAutomation');
   });
 });

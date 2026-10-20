@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -228,6 +229,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   // Manors workflow reconciliation (2026-09): same reasoning as the
   // historical-import route — this case's Arrangement Form is now a
   // completed prerequisite.
+  // Automatic checklist completion (2026-10, Manors): the received
+  // Arrangement Form completes "Jotform application completed" before
+  // reconciliation reads the checklist. Best-effort.
+  try {
+    await completeArrangementFormChecklistItem(organizationId, caseId, dataAdapterMode);
+  } catch (error) {
+    console.error('Failed to complete the Arrangement Form checklist item automatically:', error instanceof Error ? error.message : error);
+  }
   await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
 
   return NextResponse.json({ link, submission: updatedSubmission, pdf: pdfResult, alreadyImported: false });

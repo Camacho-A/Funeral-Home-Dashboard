@@ -1,4 +1,5 @@
 import type { OrganizationContext } from '../types/organization';
+import { isChecklistAutomationEnabled, staffChecklistAutomationUpdate } from '../domain/workflow/checklistAutomation';
 import { caseRevision } from '../lib/wixCaseMapper';
 import {
   CASE_REVISION_CONFLICT_REASON,
@@ -651,10 +652,17 @@ export async function update(
   // Map fields merge per key and every write bumps the revision — the same
   // semantics as lib/wixCaseMapper.ts#buildCaseFieldPatch.
   const existingCase = caseFixtures[index];
+  // Automatic checklist completion (2026-10): a staff change to an item
+  // SOLIS can complete is recorded, so automation never overrides it.
+  const staffAutomation =
+    normalizedPatch.checklistState && isChecklistAutomationEnabled(existingCase.organizationId)
+      ? staffChecklistAutomationUpdate(existingCase, normalizedPatch.checklistState, new Date().toISOString())
+      : null;
   const updated: Case = {
     ...existingCase,
     ...normalizedPatch,
     ...(normalizedPatch.checklistState ? { checklistState: { ...existingCase.checklistState, ...normalizedPatch.checklistState } } : {}),
+    ...(staffAutomation ? { checklistAutomation: { ...existingCase.checklistAutomation, ...staffAutomation } } : {}),
     ...(normalizedPatch.fieldValues ? { fieldValues: { ...existingCase.fieldValues, ...normalizedPatch.fieldValues } } : {}),
     ...(normalizedPatch.vaStepsState ? { vaStepsState: { ...existingCase.vaStepsState, ...normalizedPatch.vaStepsState } } : {}),
     revision: caseRevision(existingCase) + 1,

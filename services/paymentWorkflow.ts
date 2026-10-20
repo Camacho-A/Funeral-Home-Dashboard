@@ -9,6 +9,8 @@ import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
 import { postPaymentTransaction } from './financialTransactionService';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
 import type { ActivityContext } from './activityService';
+import { automaticChecklistCompletion, isChecklistAutomationEnabled } from '../domain/workflow/checklistAutomation';
+import { recordAutomaticCompletion } from './automaticChecklistCompletion';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). The one place a
@@ -104,15 +106,34 @@ export async function markCasePaidIfVerified(
   // own read, so a staff edit landing in between was undone, and a stale
   // staff checklist save could later erase the payment tick. An archived
   // case is still left alone, exactly as before.
+  // Automatic checklist completion (2026-10, Manors): the tick goes through
+  // the shared decision (never over a staff correction, never twice) and
+  // carries its provenance; an applied tick is recorded once in activity.
+  // Every other organization keeps the behaviour below exactly.
+  const automationEnabled = isChecklistAutomationEnabled(organizationId);
+  const now = new Date().toISOString();
+  let autoCompleted: { case_: Case; location: { displayStage: number; index: number } } | null = null;
+
   const paidPatch = (case_: Case): CaseUpdate | null => {
+    autoCompleted = null;
     if (case_.isDeleted) return null;
     const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
+    if (automationEnabled) {
+      const completion = paymentChecklistItem ? automaticChecklistCompletion(case_, paymentChecklistItem, 'payment_received_in_full', now) : null;
+      if (completion && paymentChecklistItem) autoCompleted = { case_, location: paymentChecklistItem };
+      return { paymentStatus: 'paid_in_full', ...(completion ?? {}) };
+    }
     return {
       paymentStatus: 'paid_in_full',
       ...(paymentChecklistItem === null
         ? {}
         : { checklistState: { [checklistItemKey(paymentChecklistItem.displayStage, paymentChecklistItem.index)]: true } }),
     };
+  };
+
+  const recordIfCompleted = async () => {
+    const done = autoCompleted as { case_: Case; location: { displayStage: number; index: number } } | null;
+    if (done) await recordAutomaticCompletion(done.case_, done.location, 'payment_received_in_full', dataAdapterMode, financialPosting?.ctx.correlationId);
   };
 
   if (dataAdapterMode === 'mock') {
@@ -123,7 +144,9 @@ export async function markCasePaidIfVerified(
       ...current,
       ...patch,
       checklistState: { ...current.checklistState, ...(patch.checklistState ?? {}) },
+      ...(patch.checklistAutomation ? { checklistAutomation: { ...current.checklistAutomation, ...patch.checklistAutomation } } : {}),
     }));
+    await recordIfCompleted();
     await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
     return;
   }
@@ -139,5 +162,7 @@ export async function markCasePaidIfVerified(
     throw new Error(`Marking case ${caseId} paid lost to concurrent writes on every attempt.`);
   }
   if (outcome.result === 'failed') throw new Error(`Marking case ${caseId} paid failed: ${outcome.reason}`);
+  // Only a write that actually landed completed anything.
+  if (outcome.result === 'applied') await recordIfCompleted();
   await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
 }
