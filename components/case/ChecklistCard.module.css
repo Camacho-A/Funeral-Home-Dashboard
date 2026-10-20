@@ -320,3 +320,31 @@
 .releaseSuggestion:hover {
   background: oklch(0.955 0.005 255);
 }
+
+/* Medical Examiner Case (2026-10): in the header row, opposite the title. */
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  margin-bottom: var(--space-2);
+}
+
+.headerRow .title {
+  margin-bottom: 0;
+}
+
+.meControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.meRowLocked { cursor: default; }
+.meRowUnlocked { cursor: pointer; }
+
+.meLabel {
+  font-size: 13px;
+  font-weight: 500;
+}

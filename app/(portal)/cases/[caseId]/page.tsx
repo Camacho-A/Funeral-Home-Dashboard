@@ -39,6 +39,10 @@ import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
 
+/** Intake is the first step of every workflow — named here rather than
+    written as a bare 0 at the use site. */
+const INTAKE_PRESENTED_STAGE_INDEX = 0;
+
 type CaseDetailTab = 'overview' | 'caseInfo' | 'workflow' | 'billing' | 'documents' | 'activity' | 'schedule' | 'portal';
 
 /**
@@ -139,6 +143,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   }
   if (!case_ || !viewModel) return null;
 
+  /**
+   * Which presented step the checklist below is currently showing — the
+   * stage being inspected when one is, otherwise the case's own current
+   * stage. Presented indices, not canonical display stages, because this
+   * is about which step staff are looking at.
+   */
+  const shownPresentedStageIndex =
+    viewingDisplayStage != null
+      ? viewModel.canonicalDisplayStagesByPresentedIndex.findIndex((group) => group.includes(viewingDisplayStage))
+      : viewModel.presentedDisplayStage;
+
   // Manors intake-stage combination (2026-10): `stageLabels` is the
   // USER-FACING list and may be shorter than the canonical display-stage
   // count, so every comparison here uses `presentedDisplayStage`. Clicking
@@ -208,13 +223,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
             isArchived={case_.isDeleted}
             isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
-            /* Medical Examiner Case (2026-10) lives with the case's details,
-               editable at every stage — staff often learn the ME holds a case
-               only at the EDRS step, and the checklist control was offered on
-               intake alone. Archived cases are read-only. */
-            onToggleMedicalExaminerCase={
-              case_.isDeleted !== true ? (next) => mutations.updateCaseInfo({ isMedicalExaminerCase: next }) : undefined
-            }
             caseNumber={viewModel.caseNumber}
             // The RAW stored name, not the composed one: this card edits it,
             // and composes for display itself. Passing the composed name
@@ -440,6 +448,18 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   { role: 'Next of kin', name: case_.nextOfKinName },
                   { role: 'Arrangement contact', name: case_.arrangementContactName },
                 ]}
+                isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
+                /* Classification belongs to intake, so the control lives on
+                   the intake step alone rather than repeating on every
+                   stage's checklist. The EDRS stage still SHOWS the three
+                   ME verification items — that is the classification's
+                   effect, not the control itself — and the header flag
+                   keeps the classification visible from any step. */
+                onToggleMedicalExaminerCase={
+                  shownPresentedStageIndex === INTAKE_PRESENTED_STAGE_INDEX && case_.isDeleted !== true
+                    ? (next) => mutations.updateCaseInfo({ isMedicalExaminerCase: next })
+                    : undefined
+                }
               />
             </section>
 

@@ -407,6 +407,8 @@ export function ChecklistCard({
   onSaveCertifierPhone,
   onUpdateCaseInfo,
   contactRestriction,
+  isMedicalExaminerCase,
+  onToggleMedicalExaminerCase,
   isArchived,
   releaseSuggestions,
 }: {
@@ -432,6 +434,13 @@ export function ChecklistCard({
       the restriction, it only refuses to present a contact as preferred
       when one is active. */
   contactRestriction?: { active: boolean; arrangementContactName: string | null };
+  /** Medical Examiner case (2026-10). The Medical Examiner handles EDRS
+      entry and certifies cause of death; staff verify rather than repeat
+      it, so this stage's doctor-specific items are replaced with
+      verification items. Omit `onToggleMedicalExaminerCase` to hide the
+      control entirely. */
+  isMedicalExaminerCase?: boolean;
+  onToggleMedicalExaminerCase?: (next: boolean) => void;
   /** Archived cases are read-only (2026-10). Independent of the
       past-stage read-only above — either one alone locks the card. */
   isArchived?: boolean;
@@ -440,10 +449,52 @@ export function ChecklistCard({
 }) {
   const readOnly = viewingStageLabel !== null || isArchived === true;
 
+  /**
+   * The Medical Examiner classification is NOT gated by the past-stage
+   * read-only above (2026-10).
+   *
+   * It is a property of the CASE, not a checklist item of the stage it is
+   * displayed on. Staff learn the Medical Examiner holds a case exactly
+   * when they go to do the EDRS work — which is after intake — so locking
+   * it the moment intake is done means a real ME case can never be
+   * classified at the point anyone finds out, and the case sits on the
+   * doctor items forever waiting for work that is never coming.
+   *
+   * Which STEP the control appears on is the caller's decision (the case
+   * page offers it on intake only); whether it can be used is this one,
+   * and an archived case is the only thing that locks it.
+   */
+  const medicalExaminerLocked = isArchived === true;
 
   return (
     <div className={styles.card}>
-      <div className={styles.title}>Checklist</div>
+      {/* Medical Examiner Case (2026-10) sits in the header, opposite the
+          title: it changes what the stage below asks for, so it is visible
+          without hunting for it, and it reads as case-level state rather
+          than another item to tick. Rendered only when the caller supplies
+          a handler (the intake step), locked on an archived case. */}
+      <div className={styles.headerRow}>
+        <div className={styles.title}>Checklist</div>
+        {onToggleMedicalExaminerCase && (
+          <div
+            className={`${styles.meControl} ${medicalExaminerLocked ? styles.meRowLocked : styles.meRowUnlocked}`}
+            onClick={
+              medicalExaminerLocked ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)
+            }
+          >
+            <Checkbox
+              checked={isMedicalExaminerCase === true}
+              disabled={medicalExaminerLocked}
+              onChange={
+                medicalExaminerLocked ? undefined : () => onToggleMedicalExaminerCase(!isMedicalExaminerCase)
+              }
+              tone="brand"
+              aria-label="Medical Examiner Case"
+            />
+            <span className={styles.meLabel}>Medical Examiner Case</span>
+          </div>
+        )}
+      </div>
       <div className={styles.subtitle}>Required steps for this stage</div>
 
       {viewingStageLabel && (

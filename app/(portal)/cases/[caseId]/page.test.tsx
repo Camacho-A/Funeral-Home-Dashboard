@@ -515,10 +515,19 @@ describe('Case Detail page — archived cases and ME control placement (2026-10)
     expect(SOURCE).toMatch(/onArchiveChange=\{\(archived\) => archiveCase\.mutate\(\{ caseId, archived \}\)\}/);
   });
 
-  it('offers the Medical Examiner control on Case Information, at every stage, not on the checklist', () => {
-    expect(SOURCE).toMatch(/onToggleMedicalExaminerCase=\{\s*case_\.isDeleted !== true \? \(next\) => mutations\.updateCaseInfo\(\{ isMedicalExaminerCase: next \}\)/);
-    expect(SOURCE).not.toMatch(/<ChecklistCard[^>]*onToggleMedicalExaminerCase/);
-    expect(SOURCE).not.toMatch(/INTAKE_PRESENTED_STAGE_INDEX/);
+  it('offers the Medical Examiner control on the intake step only', () => {
+    expect(SOURCE).toMatch(/shownPresentedStageIndex === INTAKE_PRESENTED_STAGE_INDEX/);
+    expect(SOURCE).toMatch(/const INTAKE_PRESENTED_STAGE_INDEX = 0;/);
+  });
+
+  it('withholds the Medical Examiner control on an archived case', () => {
+    expect(SOURCE).toMatch(/INTAKE_PRESENTED_STAGE_INDEX && case_\.isDeleted !== true/);
+  });
+
+  it('derives the shown step from the stage being inspected, not only the current one', () => {
+    // Viewing the intake step from a later stage must still resolve to
+    // intake, or the control would appear on the wrong step.
+    expect(SOURCE).toMatch(/const shownPresentedStageIndex =[\s\S]*?viewingDisplayStage != null/);
   });
 });
 
