@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runAfterResponse } from './afterResponse';
 
+vi.unmock('@/lib/afterResponse');
+
 const { after } = vi.hoisted(() => ({ after: vi.fn() }));
 vi.mock('next/server', () => ({ after }));
 

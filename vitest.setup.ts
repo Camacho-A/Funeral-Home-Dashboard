@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
 // globals:false (vitest.config.ts) means @testing-library/react can't find
@@ -25,3 +25,12 @@ afterEach(() => {
 if (typeof window !== 'undefined') {
   window.scrollTo = () => {};
 }
+
+// Work scheduled to run after a response (lib/afterResponse.ts — automatic
+// Statement/Receipt, Envelope and Certificate generation) is captured, not
+// run, in every test by default (2026-10). Otherwise a route test would
+// render documents in the background after the test that triggered them,
+// mutating shared fixtures under the next test. A test that wants to see
+// what was scheduled mocks '@/lib/afterResponse' itself, or imports this
+// mock and inspects its calls; lib/afterResponse.test.ts unmocks it.
+vi.mock('@/lib/afterResponse', () => ({ runAfterResponse: vi.fn() }));
