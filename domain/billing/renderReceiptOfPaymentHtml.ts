@@ -93,10 +93,19 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
            <td style="${CELL}">${escapeHtml(model.deceasedName)}</td>
          </tr>`;
 
+  /**
+   * 2026-10: the amount after "PARTIAL PAYMENT" is what was actually paid;
+   * what is still owed is its own line, "Balance Due". The remaining
+   * balance used to be printed after "PARTIAL PAYMENT", which read as if
+   * that were the amount paid.
+   */
+  const balanceDueLine = `Balance Due:&nbsp; ${formatReceiptMoney(model.balanceDueCents)}`;
   const statusLine =
     model.status === 'paid_in_full'
       ? `${RECEIPT_STATUS_LABEL.paid_in_full}:${model.paidInFullDateDisplay ? `&nbsp; ${escapeHtml(model.paidInFullDateDisplay)}` : ''}`
-      : `${RECEIPT_STATUS_LABEL[model.status]}:&nbsp; ${formatReceiptMoney(model.balanceDueCents)}`;
+      : model.status === 'partial_payment'
+        ? `${RECEIPT_STATUS_LABEL.partial_payment}:&nbsp; ${formatReceiptMoney(model.paymentCents)}<br />${balanceDueLine}`
+        : balanceDueLine;
 
   return `
   <div style="font-family: Arial, Helvetica, sans-serif; color:#111;">

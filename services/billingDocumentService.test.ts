@@ -181,3 +181,50 @@ describe('billingDocumentService.buildReceiptOfPaymentModel — Item # (2026-10)
     expect(byDescription.get(serviceLine.description)).toBeNull();
   });
 });
+
+describe('billingDocumentService.buildReceiptOfPaymentModel — payment totals across partial and final payments (2026-10)', () => {
+  it('deposit, then a second partial payment, then the final payment', async () => {
+    const { buildReceiptOfPaymentModel } = await import('./billingDocumentService');
+    const { refreshBalanceForCase } = await import('./pricingService');
+    const { paymentRecordFixtures } = await import('./__mocks__/paymentFixtures');
+    const { renderReceiptOfPaymentHtml } = await import('../domain/billing/renderReceiptOfPaymentHtml');
+    const before = paymentRecordFixtures.length;
+    try {
+      await seedOrder(); // $890.00
+      const order = caseOrderFixtures.find((o) => o.caseId === CASE && o.status === 'active')!;
+      const pay = async (id: string, cents: number, at: string, status = 'succeeded') => {
+        paymentRecordFixtures.push({
+          id, organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE, caseOrderId: order.id, provider: 'manual', providerCheckoutId: `manual:${id}`,
+          status, amount: cents, currency: 'usd', paidAt: status === 'succeeded' ? at : null, createdAt: at, updatedAt: at,
+          receiptReference: 'Cash', cardBrand: null, cardLast4: null,
+        } as never);
+        await refreshBalanceForCase(DEFAULT_ORGANIZATION_ID, CASE, 'mock');
+        return buildReceiptOfPaymentModel({ caseId: CASE, now: at }, DEFAULT_ORGANIZATION_ID, 'mock');
+      };
+
+      const afterDeposit = await pay('p1', 50_000, '2026-10-10T15:00:00.000Z');
+      expect(afterDeposit).toMatchObject({ status: 'partial_payment', totalChargeCents: 89_000, paymentCents: 50_000, balanceDueCents: 39_000, paidInFullDateDisplay: null });
+      const depositHtml = renderReceiptOfPaymentHtml(afterDeposit);
+      expect(depositHtml).toContain('PARTIAL PAYMENT:&nbsp; $500.00');
+      expect(depositHtml).toContain('Balance Due:&nbsp; $390.00');
+
+      // A failed or pending attempt is not money received.
+      await pay('p-failed', 39_000, '2026-10-11T15:00:00.000Z', 'failed');
+      const afterFailed = await pay('p-pending', 39_000, '2026-10-11T16:00:00.000Z', 'pending');
+      expect(afterFailed).toMatchObject({ paymentCents: 50_000, balanceDueCents: 39_000, status: 'partial_payment' });
+
+      const afterSecond = await pay('p2', 20_000, '2026-10-12T15:00:00.000Z');
+      expect(afterSecond).toMatchObject({ status: 'partial_payment', paymentCents: 70_000, balanceDueCents: 19_000 });
+      expect(afterSecond.payments).toHaveLength(2);
+
+      const afterFinal = await pay('p3', 19_000, '2026-10-14T15:00:00.000Z');
+      expect(afterFinal).toMatchObject({ status: 'paid_in_full', paymentCents: 89_000, balanceDueCents: 0, paidInFullDateDisplay: 'October 14, 2026' });
+      expect(afterFinal.payments.map((p) => p.amountCents)).toEqual([50_000, 20_000, 19_000]);
+      const finalHtml = renderReceiptOfPaymentHtml(afterFinal);
+      expect(finalHtml).toContain('PAID IN FULL:&nbsp; October 14, 2026');
+      expect(finalHtml).not.toContain('Balance Due:');
+    } finally {
+      paymentRecordFixtures.length = before;
+    }
+  });
+});

@@ -84,21 +84,31 @@ describe('renderReceiptOfPaymentHtml — payment status', () => {
     expect(html).toContain('May 21, 2025');
   });
 
-  it('states PARTIAL PAYMENT and the remaining balance', () => {
+  it('a partial payment shows the amount actually paid, and the remainder as Balance Due (2026-10)', () => {
     const html = renderReceiptOfPaymentHtml(
-      model({ status: 'partial_payment', paidInFullDateDisplay: null, paymentCents: 40_000, balanceDueCents: 49_000 }),
+      model({ status: 'partial_payment', paidInFullDateDisplay: null, totalChargeCents: 94_000, paymentCents: 50_000, balanceDueCents: 44_000 }),
     );
-    expect(html).toContain('PARTIAL PAYMENT');
-    expect(html).toContain('$490.00');
+    expect(html).toContain('PARTIAL PAYMENT:&nbsp; $500.00');
+    expect(html).toContain('Balance Due:&nbsp; $440.00');
+    // The remaining balance is never labelled as a partial payment.
+    expect(html).not.toContain('PARTIAL PAYMENT:&nbsp; $440.00');
     expect(html).not.toContain('PAID IN FULL');
   });
 
-  it('states BALANCE DUE on an unpaid case', () => {
+  it('an unpaid case shows Balance Due for the full amount, and no partial payment', () => {
     const html = renderReceiptOfPaymentHtml(
       model({ status: 'balance_due', paidInFullDateDisplay: null, payments: [], paymentCents: 0, balanceDueCents: 89_000 }),
     );
-    expect(html).toContain('BALANCE DUE');
+    expect(html).toContain('Balance Due:&nbsp; $890.00');
+    expect(html).not.toContain('PARTIAL PAYMENT');
     expect(html).not.toContain('PAID IN FULL');
+  });
+
+  it('a final payment shows PAID IN FULL with its date and no Balance Due line', () => {
+    const html = renderReceiptOfPaymentHtml(model());
+    expect(html).toContain('PAID IN FULL:&nbsp; May 21, 2025');
+    expect(html).not.toContain('Balance Due:');
+    expect(html).not.toContain('PARTIAL PAYMENT');
   });
 
   it('lists every payment when there are several, with their own methods', () => {
