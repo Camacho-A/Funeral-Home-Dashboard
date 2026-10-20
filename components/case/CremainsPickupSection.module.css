@@ -1,0 +1,197 @@
+/* Schedule tab redesign (2026-10): the Cremains Pickup card. Built on the
+   SOLIS tokens in styles/solis-system.css. The grid responds to the card's
+   own width (a container query), not the viewport, so it lays out the same
+   whether or not the sidebar is open: 3 columns on desktop, 2 on tablet,
+   1 on a phone. */
+
+.card {
+  container: cremains-pickup / inline-size;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--sx-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.headingIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+/* The pickup status as a small pill beside the heading. Colors follow the
+   existing sx-status variants, so "Received" is green, "Overdue" red. */
+.badge {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--sx-subtle);
+  font-size: 12px;
+}
+
+.badge:global(.sx-status-ok) {
+  background: var(--sx-green-bg);
+}
+
+.badge:global(.sx-status-bad) {
+  background: var(--sx-red-bg);
+}
+
+.badge:global(.sx-status-info) {
+  background: var(--sx-navy-tint);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+@container cremains-pickup (min-width: 460px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container cremains-pickup (min-width: 720px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.field {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sx-border-soft);
+  border-radius: 10px;
+  background: var(--sx-subtle);
+}
+
+.fieldHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.fieldIcon {
+  color: var(--sx-muted);
+  flex-shrink: 0;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--sx-muted);
+}
+
+/* The field's own Add/Edit, on the label row so a long date never has to
+   share its line with a button. */
+.fieldAction {
+  height: 24px;
+  margin: -2px -6px -2px 0;
+  padding: 0 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.value {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--sx-text);
+  overflow-wrap: anywhere;
+}
+
+/* "Not recorded", "Not yet received", "Received (date not recorded)". */
+.valueMuted {
+  font-weight: 400;
+  color: var(--sx-text-2);
+}
+
+.secondary {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--sx-muted);
+  cursor: help;
+}
+
+.inlineAdd {
+  margin-top: 8px;
+}
+
+.notice {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.error {
+  margin: 12px 0 0;
+}
+
+@media (max-width: 560px) {
+  .card {
+    padding: 14px;
+  }
+
+  /* Actions drop under the heading and share the row evenly. */
+  .actions {
+    width: 100%;
+  }
+
+  .actions > :global(.sx-btn) {
+    flex: 1 1 auto;
+  }
+}

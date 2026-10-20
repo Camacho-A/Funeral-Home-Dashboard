@@ -449,7 +449,7 @@ describe('Calendar — Date received is only the recorded date', () => {
           </OrganizationProvider>
         </QueryClientProvider>,
       );
-      const fromCasePage = screen.getByText('Date received').nextElementSibling?.textContent?.trim();
+      const fromCasePage = screen.getByText('Date Received', { selector: 'dt' }).closest('div')!.parentElement!.querySelector('dd')?.textContent?.trim();
       cleanup();
       expect(fromCasePage, caseData.caseNumber).toBe(fromCalendar);
     }

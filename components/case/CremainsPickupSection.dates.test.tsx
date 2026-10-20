@@ -70,22 +70,23 @@ function renderSection(appointments: Appointment[], caseOverrides: Partial<Case>
   );
 }
 
-const fieldValue = (label: string) => screen.getByText(label).nextElementSibling;
+/** A grid field's value: the <dd> in the same field as the <dt> label. */
+const fieldValue = (label: string) => screen.getByText(label, { selector: 'dt' }).closest('div')!.parentElement!.querySelector('dd');
 
 afterEach(() => vi.clearAllMocks());
 
 describe('CremainsPickupSection — date of cremation, date received, expected pickup are separate', () => {
   it('shows all three, each from its own source', () => {
     renderSection([pickup()], { dateOfCremation: '10/10/2026', cremainsReceivedAt: null });
-    expect(fieldValue('Date of cremation')).toHaveTextContent('Oct');
-    expect(fieldValue('Date of cremation')).toHaveTextContent('10');
-    expect(fieldValue('Date received')).toHaveTextContent('Not yet received');
-    expect(fieldValue('Expected pickup')).toHaveTextContent('16');
+    expect(fieldValue('Date of Cremation')).toHaveTextContent('Oct');
+    expect(fieldValue('Date of Cremation')).toHaveTextContent('10');
+    expect(fieldValue('Date Received')).toHaveTextContent('Not yet received');
+    expect(fieldValue('Expected Pickup')).toHaveTextContent('16');
   });
 
   it('records the date of cremation on the case, even before any pickup exists', () => {
     renderSection([], { dateOfCremation: null });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add date of cremation' }));
     fireEvent.change(screen.getByLabelText('Date of cremation'), { target: { value: '2026-10-09' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
     expect(updateCaseInfo).toHaveBeenCalledWith({ dateOfCremation: '10/09/2026' });
@@ -106,8 +107,8 @@ describe('CremainsPickupSection — date of cremation, date received, expected p
 
   it('a received case with no recorded date says so — it never shows the pickup date', () => {
     renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: null });
-    expect(fieldValue('Date received')).toHaveTextContent('Received (date not recorded)');
-    expect(fieldValue('Date received')).not.toHaveTextContent('16');
+    expect(fieldValue('Date Received')).toHaveTextContent('Received (date not recorded)');
+    expect(fieldValue('Date Received')).not.toHaveTextContent('16');
   });
 
   it('the old checklist workflow (completed pickup, FUTURE expected date, nothing stored) shows no date — B2026-036/038', () => {
@@ -118,14 +119,14 @@ describe('CremainsPickupSection — date of cremation, date received, expected p
       cremainsReceivedAt: null,
       dateOfCremation: '10/10/2026',
     });
-    expect(fieldValue('Date received')).toHaveTextContent('Received (date not recorded)');
-    expect(fieldValue('Date received')).not.toHaveTextContent('2099');
-    expect(fieldValue('Date received')).not.toHaveTextContent('October 10');
+    expect(fieldValue('Date Received')).toHaveTextContent('Received (date not recorded)');
+    expect(fieldValue('Date Received')).not.toHaveTextContent('2099');
+    expect(fieldValue('Date Received')).not.toHaveTextContent('October 10');
   });
 
   it('staff can add the real date to such a case, starting from an empty date — never the expected one', () => {
     renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: null });
-    fireEvent.click(screen.getByRole('button', { name: 'Add date' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add date received' }));
     expect(screen.getByLabelText('Date received')).toHaveValue('');
     fireEvent.change(screen.getByLabelText('Date received'), { target: { value: '2026-10-12' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
@@ -135,14 +136,14 @@ describe('CremainsPickupSection — date of cremation, date received, expected p
 
   it('an unreceived case reads "Not yet received" and offers no date to edit', () => {
     renderSection([pickup()], { cremainsReceivedAt: null });
-    expect(fieldValue('Date received')).toHaveTextContent('Not yet received');
-    expect(screen.queryByRole('button', { name: 'Add date' })).not.toBeInTheDocument();
+    expect(fieldValue('Date Received')).toHaveTextContent('Not yet received');
+    expect(screen.queryByRole('button', { name: 'Add date received' })).not.toBeInTheDocument();
   });
 
   it('a stored date received wins over the pickup date, and can be corrected', () => {
     renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: '10/15/2026' });
-    expect(fieldValue('Date received')).toHaveTextContent('15');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(fieldValue('Date Received')).toHaveTextContent('15');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit date received' }));
     fireEvent.change(screen.getByLabelText('Date received'), { target: { value: '2026-10-13' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
     expect(updateCaseInfo).toHaveBeenCalledWith({ cremainsReceivedAt: '10/13/2026' });
@@ -150,7 +151,7 @@ describe('CremainsPickupSection — date of cremation, date received, expected p
 
   it('refuses a future date', () => {
     renderSection([], { dateOfCremation: null });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add date of cremation' }));
     fireEvent.change(screen.getByLabelText('Date of cremation'), { target: { value: '2099-01-01' } });
     expect(screen.getByRole('button', { name: 'Save Date' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('cannot be in the future');
@@ -158,7 +159,75 @@ describe('CremainsPickupSection — date of cremation, date received, expected p
 
   it('offers no date editing on an archived case', () => {
     renderSection([pickup({ status: 'completed' })], { isDeleted: true, dateOfCremation: null });
-    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /date of cremation|date received/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^(Add|Edit)/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Schedule tab redesign (2026-10): one card, a status badge in the header,
+ * five fields in a grid, each field's own Add/Edit on its label row, and
+ * the date source as secondary text rather than a field of its own.
+ */
+describe('CremainsPickupSection — redesigned layout', () => {
+  const labels = () => Array.from(document.querySelectorAll('dt')).map((dt) => dt.textContent);
+
+  it('shows the five fields in order, and no standalone "Date source" field', () => {
+    renderSection([pickup()], { dateOfCremation: '10/10/2026' });
+    expect(labels()).toEqual(['Date of Cremation', 'Expected Pickup', 'Date Received', 'Paperwork Sent', 'Status']);
+    expect(screen.queryByText('Date source')).not.toBeInTheDocument();
+  });
+
+  it('the header badge follows the real pickup status', () => {
+    const { unmount } = renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: '10/15/2026' });
+    const heading = screen.getByRole('heading', { name: 'Cremains Pickup' });
+    expect(heading.nextElementSibling).toHaveTextContent('Received');
+    expect(heading.nextElementSibling).toHaveClass('sx-status-ok');
+    unmount();
+
+    renderSection([pickup({ ...allDayWindowFor('2020-01-03', TZ) })]);
+    const overdue = screen.getByRole('heading', { name: 'Cremains Pickup' }).nextElementSibling;
+    expect(overdue).toHaveTextContent('Overdue');
+    expect(overdue).toHaveClass('sx-status-bad');
+  });
+
+  it('shows no badge, and "Not scheduled", when there is no pickup', () => {
+    renderSection([], {});
+    expect(screen.getByRole('heading', { name: 'Cremains Pickup' }).nextElementSibling).toBeNull();
+    expect(fieldValue('Expected Pickup')).toHaveTextContent('Not scheduled');
+    expect(fieldValue('Status')).toHaveTextContent('Not scheduled');
+  });
+
+  it('shows the date source as secondary text under Expected Pickup, with an explanation', () => {
+    renderSection([pickup()]);
+    const source = within(fieldValue('Expected Pickup') as HTMLElement).getByText('Automatically calculated');
+    expect(source).toHaveAttribute('title', expect.stringMatching(/calculated automatically/));
+  });
+
+  it('keeps the pickup actions in the header for a pending pickup, and drops them once received', () => {
+    const { unmount } = renderSection([pickup()]);
+    expect(screen.getByRole('button', { name: 'Confirm Pickup' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark Received' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit expected pickup date' })).toBeInTheDocument();
+    unmount();
+
+    renderSection([pickup({ status: 'completed' })], { cremainsReceivedAt: '10/15/2026' });
+    expect(screen.queryByRole('button', { name: 'Mark Received' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit expected pickup date' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit date received' })).toBeInTheDocument();
+  });
+
+  it('a case without a date of cremation reads "Not recorded" and offers Add', () => {
+    renderSection([pickup()], { dateOfCremation: null });
+    expect(fieldValue('Date of Cremation')).toHaveTextContent('Not recorded');
+    expect(screen.getByRole('button', { name: 'Add date of cremation' })).toHaveTextContent('Add');
+  });
+
+  it('an archived case still shows every field, read-only for its case dates', () => {
+    renderSection([pickup({ status: 'completed' })], { isDeleted: true, dateOfCremation: '10/10/2026', cremainsReceivedAt: null });
+    expect(labels()).toHaveLength(5);
+    expect(fieldValue('Date of Cremation')).toHaveTextContent('October 10, 2026');
+    expect(fieldValue('Date Received')).toHaveTextContent('Received (date not recorded)');
+    expect(screen.queryByRole('button', { name: /date of cremation|date received/i })).not.toBeInTheDocument();
   });
 });

@@ -76,11 +76,12 @@ afterEach(() => {
 });
 
 describe('CaseScheduleTab', () => {
-  it('shows empty states for Upcoming and Completed when the case has no appointments', async () => {
+  it('says "No upcoming appointments" and shows no empty Completed or Cancelled groups', async () => {
     vi.mocked(appointmentsClient.fetchCaseAppointments).mockResolvedValue([]);
     renderTab();
-    expect(await screen.findByText('No upcoming appointments for this case.')).toBeInTheDocument();
-    expect(screen.getByText('No completed appointments yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No upcoming appointments')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Schedule' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Completed/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Cancelled')).not.toBeInTheDocument();
   });
 
@@ -96,8 +97,8 @@ describe('CaseScheduleTab', () => {
     vi.mocked(appointmentsClient.fetchCaseAppointments).mockResolvedValue([makeAppointment({ status: 'completed' })]);
     renderTab();
     await screen.findByText('Family Meeting');
-    expect(screen.getByText('No upcoming appointments for this case.')).toBeInTheDocument();
-    expect(screen.queryByText('No completed appointments yet.')).not.toBeInTheDocument();
+    expect(screen.getByText('No upcoming appointments')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Completed/ })).toBeInTheDocument();
   });
 
   it('shows a Cancelled section only when a cancelled appointment exists', async () => {
@@ -148,7 +149,7 @@ describe('CaseScheduleTab', () => {
     mockPermissions(['schedule.read']);
     vi.mocked(appointmentsClient.fetchCaseAppointments).mockResolvedValue([]);
     renderTab();
-    await screen.findByText('No upcoming appointments for this case.');
+    await screen.findByText('No upcoming appointments');
     expect(screen.queryByRole('button', { name: 'Schedule Appointment' })).not.toBeInTheDocument();
   });
 

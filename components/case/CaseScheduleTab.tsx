@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseAppointments, useConfirmAppointment, useCancelAppointment, useCompleteAppointment } from '@/hooks/useAppointments';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { Icon } from '@/components/ui/Icon';
 import { RowMenu, type RowMenuItem } from '@/components/ui/RowMenu';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
 import { APPOINTMENT_STATUS_LABEL, appointmentStatusVariant } from '@/domain/scheduling/appointmentDisplay';
@@ -123,7 +123,7 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
         </div>
         <span className={`sx-status ${statusClass(appointment.status)}`}>{APPOINTMENT_STATUS_LABEL[appointment.status]}</span>
         {!isTerminal && (
-          <div className="sx-row-actions" style={{ minWidth: 150 }}>
+          <div className={`sx-row-actions ${styles.rowActions}`}>
             {canConfirm && (
               <button
                 type="button"
@@ -157,41 +157,49 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
         organizationTimezone={organizationRecord.data?.timezone}
       />
 
-      <div className="sx-sched-toolbar">
-        <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>Schedule</h2>
-        {canCreate && (
-          <button type="button" className="sx-btn sx-btn-primary" onClick={() => setScheduleOpen(true)}>
-            Schedule Appointment
-          </button>
-        )}
-      </div>
+      {/* Schedule (redesign, 2026-10): its own card under the pickup.
+          Upcoming is always shown; Completed and Cancelled only when they
+          have something in them. */}
+      <section className={styles.scheduleCard} aria-labelledby="case-schedule-heading">
+        <div className={styles.scheduleHeader}>
+          <h2 id="case-schedule-heading" className={styles.scheduleTitle}>
+            <span className={styles.scheduleIcon} aria-hidden="true">
+              <Icon name="calendar" size={15} />
+            </span>
+            Schedule
+          </h2>
+          {canCreate && (
+            <button type="button" className={`sx-btn sx-btn-primary sx-btn-sm ${styles.scheduleButton}`} onClick={() => setScheduleOpen(true)}>
+              Schedule Appointment
+            </button>
+          )}
+        </div>
 
-      <section className="sx-sched-section">
-        <h3 className="sx-section-title">
-          Upcoming<span className="sx-section-meta">{upcoming.length} appointment(s)</span>
-        </h3>
-        {upcoming.length === 0 ? (
-          <EmptyState message="No upcoming appointments for this case." helperText={canCreate ? 'Use “Schedule appointment” to add one.' : undefined} />
-        ) : (
-          upcoming.map(renderRow)
-        )}
-      </section>
-
-      <section className="sx-sched-section">
-        <h3 className="sx-section-title">
-          Completed<span className="sx-section-meta">{completed.length} appointment(s)</span>
-        </h3>
-        {completed.length === 0 ? <EmptyState message="No completed appointments yet." /> : completed.map(renderRow)}
-      </section>
-
-      {cancelled.length > 0 && (
-        <section className="sx-sched-section">
-          <h3 className="sx-section-title">
-            Cancelled<span className="sx-section-meta">{cancelled.length} appointment(s)</span>
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>
+            Upcoming<span className={styles.groupMeta}>{upcoming.length}</span>
           </h3>
-          {cancelled.map(renderRow)}
-        </section>
-      )}
+          {upcoming.length === 0 ? <p className={styles.empty}>No upcoming appointments</p> : upcoming.map(renderRow)}
+        </div>
+
+        {completed.length > 0 && (
+          <div className={styles.group}>
+            <h3 className={styles.groupTitle}>
+              Completed<span className={styles.groupMeta}>{completed.length}</span>
+            </h3>
+            {completed.map(renderRow)}
+          </div>
+        )}
+
+        {cancelled.length > 0 && (
+          <div className={styles.group}>
+            <h3 className={styles.groupTitle}>
+              Cancelled<span className={styles.groupMeta}>{cancelled.length}</span>
+            </h3>
+            {cancelled.map(renderRow)}
+          </div>
+        )}
+      </section>
 
       <AppointmentDialog open={scheduleOpen} onClose={() => setScheduleOpen(false)} organizationId={organizationId} caseId={caseId} />
 

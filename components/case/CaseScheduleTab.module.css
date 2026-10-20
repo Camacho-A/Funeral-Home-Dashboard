@@ -1,8 +1,110 @@
 /* SOLIS Final Phase §8.4 — restyled onto the shared `.sx-sched` system
    (styles/solis-system.css). Only the inline Confirm button's own
    mobile-hide rule has no sx- equivalent. */
+/* Room for the inline Confirm and the menu side by side. */
+.rowActions {
+  min-width: 150px;
+}
+
 @media (max-width: 560px) {
   .confirmInline {
     display: none;
+  }
+
+  /* Only the menu remains, so the title and time get the width. */
+  .rowActions {
+    min-width: 0;
+  }
+}
+
+/* Schedule tab redesign (2026-10): the Schedule card under Cremains Pickup,
+   matching that card's border, radius and spacing. */
+.scheduleCard {
+  padding: 16px;
+  border: 1px solid var(--sx-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.scheduleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.scheduleTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.scheduleIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+}
+
+.group {
+  margin-top: 14px;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--sx-border-soft);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.groupMeta {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--sx-subtle);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  letter-spacing: 0;
+  color: var(--sx-text-2);
+}
+
+.empty {
+  margin: 0;
+  padding: 14px 0 4px;
+  font-size: 13px;
+  color: var(--sx-muted);
+}
+
+.group :global(.sx-sched-row:last-child) {
+  border-bottom: none;
+}
+
+@media (max-width: 560px) {
+  .scheduleCard {
+    padding: 14px;
+  }
+
+  .scheduleButton {
+    width: 100%;
   }
 }

@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import styles from './CremainsPickupDialog.module.css';
+import sectionStyles from './CremainsPickupSection.module.css';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import type { Appointment } from '@/types/appointment';
 import type { Case } from '@/types/case';
 import { organizationLocalDate, weekdayOf, WEEKDAY_LABEL } from '@/domain/scheduling/cremainsPickupSchedule';
@@ -58,12 +60,47 @@ function statusClass(status: CremainsPickupStatus): string {
   return 'sx-status-plain';
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * One fact in the pickup grid: icon and label, the field's own Add/Edit on
+ * the same row, then the value. `muted` styles a placeholder ("Not
+ * recorded") so it never reads like a real date.
+ */
+function Field({
+  icon,
+  label,
+  action,
+  muted,
+  children,
+}: {
+  icon: IconName;
+  label: string;
+  action?: React.ReactNode;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
-      <dt className="sx-field-label">{label}</dt>
-      <dd style={{ margin: 0 }}>{children}</dd>
+    <div className={sectionStyles.field}>
+      <div className={sectionStyles.fieldHead}>
+        <Icon name={icon} size={14} className={sectionStyles.fieldIcon} />
+        <dt className={sectionStyles.label}>{label}</dt>
+        {action}
+      </div>
+      <dd className={`${sectionStyles.value} ${muted ? sectionStyles.valueMuted : ''}`}>{children}</dd>
     </div>
+  );
+}
+
+function FieldAction({ label, accessibleName, onClick, disabled }: { label: string; accessibleName: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={`sx-btn sx-btn-ghost sx-btn-sm ${sectionStyles.fieldAction}`}
+      aria-label={accessibleName}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -550,120 +587,136 @@ export function CremainsPickupSection({
 
   const busy = createPickup.isPending || updateDate.isPending || confirmAppointment.isPending;
 
+  const canEditCaseDates = canSchedule && Boolean(case_) && case_?.isDeleted !== true;
+  const canActOnPickup = canSchedule && Boolean(pickup) && !received;
+
   return (
-    <section className="sx-card" aria-label="Cremains pickup" style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 10 }}>
-        <h3 className="sx-card-title" style={{ margin: 0 }}>
-          Cremains Pickup
-        </h3>
-        {status && <span className={`sx-status ${statusClass(status)}`}>{PICKUP_STATUS_LABEL[status]}</span>}
+    <section className={sectionStyles.card} aria-label="Cremains pickup">
+      <div className={sectionStyles.header}>
+        <div className={sectionStyles.heading}>
+          <span className={sectionStyles.headingIcon} aria-hidden="true">
+            <Icon name="flame" size={15} />
+          </span>
+          <h3 className={sectionStyles.title}>Cremains Pickup</h3>
+          {status && <span className={`sx-status ${statusClass(status)} ${sectionStyles.badge}`}>{PICKUP_STATUS_LABEL[status]}</span>}
+        </div>
+
+        {canActOnPickup && pickup && (
+          <div className={sectionStyles.actions}>
+            {status !== 'confirmed' && (
+              <button
+                type="button"
+                className="sx-btn sx-btn-sm"
+                disabled={busy}
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    await confirmAppointment.mutateAsync(pickup.id);
+                  } catch (e) {
+                    reportError(e);
+                  }
+                }}
+              >
+                Confirm Pickup
+              </button>
+            )}
+            <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" onClick={() => setDialog('receive')} disabled={busy}>
+              Mark Received
+            </button>
+          </div>
+        )}
       </div>
 
-      <dl
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-          gap: '12px 18px',
-          margin: '12px 0 0',
-        }}
-      >
-        <Field label="Date of cremation">
-          {cremationDate ? <strong>{formatPickupDate(cremationDate)}</strong> : 'Not recorded'}
-          {canSchedule && case_ && case_.isDeleted !== true && (
-            <>
-              {' '}
-              <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setDialog('cremationDate')} disabled={busy}>
-                {cremationDate ? 'Edit' : 'Add'}
-              </button>
-            </>
-          )}
+      <dl className={sectionStyles.grid}>
+        <Field
+          icon="flame"
+          label="Date of Cremation"
+          muted={!cremationDate}
+          action={
+            canEditCaseDates && (
+              <FieldAction
+                label={cremationDate ? 'Edit' : 'Add'}
+                accessibleName={cremationDate ? 'Edit date of cremation' : 'Add date of cremation'}
+                onClick={() => setDialog('cremationDate')}
+                disabled={busy}
+              />
+            )
+          }
+        >
+          {cremationDate ? formatPickupDate(cremationDate) : 'Not recorded'}
         </Field>
-        <Field label="Date received">
-          {receivedDate ? <strong>{formatPickupDate(receivedDate)}</strong> : dateReceivedLabel(dateReceived, formatPickupDate)}
-          {canSchedule && dateReceived.kind !== 'not_received' && case_ && case_.isDeleted !== true && (
-            <>
-              {' '}
-              <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setDialog('receivedDate')} disabled={busy}>
-                {receivedDate ? 'Edit' : 'Add date'}
-              </button>
-            </>
-          )}
-        </Field>
-      </dl>
 
-      {!pickup && (
-        <>
-          <p className="sx-hint" style={{ margin: '8px 0 0' }}>
-            No expected pickup scheduled.
-          </p>
-          {canSchedule && (
-            <div style={{ marginTop: 12 }}>
-              <button type="button" className="sx-btn sx-btn-primary" onClick={() => setDialog('add')}>
+        <Field
+          icon="calendar"
+          label="Expected Pickup"
+          muted={!expected}
+          action={
+            canActOnPickup && expected && (
+              <FieldAction label="Edit" accessibleName="Edit expected pickup date" onClick={() => setDialog('edit')} disabled={busy} />
+            )
+          }
+        >
+          {expected ? formatPickupDate(expected) : 'Not scheduled'}
+          {pickup && expected && (
+            // Date source: secondary information, not a field of its own.
+            <span
+              className={sectionStyles.secondary}
+              title={
+                isManuallyDecided(pickup)
+                  ? 'This date was entered or changed by staff.'
+                  : "This date was calculated automatically from the paperwork date and the organization's pickup days."
+              }
+            >
+              <Icon name="info" size={12} />
+              {isManuallyDecided(pickup) ? 'Set by staff' : 'Automatically calculated'}
+            </span>
+          )}
+          {!pickup && canSchedule && (
+            <div className={sectionStyles.inlineAdd}>
+              <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" onClick={() => setDialog('add')}>
                 Add Expected Pickup
               </button>
             </div>
           )}
-        </>
-      )}
+        </Field>
 
-      {pickup && expected && (
-        <>
-          <dl
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-              gap: '12px 18px',
-              margin: '12px 0 0',
-            }}
-          >
-            <Field label="Expected pickup">
-              <strong>{formatPickupDate(expected)}</strong>
-            </Field>
-            <Field label="Status">{PICKUP_STATUS_LABEL[status!]}</Field>
-            <Field label="Paperwork sent">
-              {paperworkDate ? formatPickupDate(paperworkDate) : 'Not recorded'}
-            </Field>
-            <Field label="Date source">{isManuallyDecided(pickup) ? 'Set by staff' : 'Automatically calculated'}</Field>
-          </dl>
+        <Field
+          icon="checkCircle"
+          label="Date Received"
+          muted={!receivedDate}
+          action={
+            canEditCaseDates &&
+            dateReceived.kind !== 'not_received' && (
+              <FieldAction
+                label={receivedDate ? 'Edit' : 'Add date'}
+                accessibleName={receivedDate ? 'Edit date received' : 'Add date received'}
+                onClick={() => setDialog('receivedDate')}
+                disabled={busy}
+              />
+            )
+          }
+        >
+          {/* Only the recorded date; never the expected pickup (dateReceivedOf). */}
+          {dateReceivedLabel(dateReceived, formatPickupDate)}
+        </Field>
 
-          {status === 'overdue' && (
-            <p className="sx-hint" role="status" style={{ marginTop: 10 }}>
-              The expected date has passed and the cremains have not been marked received.
-            </p>
-          )}
+        <Field icon="document" label="Paperwork Sent" muted={!paperworkDate}>
+          {paperworkDate ? formatPickupDate(paperworkDate) : 'Not recorded'}
+        </Field>
 
-          {canSchedule && !received && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
-              <button type="button" className="sx-btn" onClick={() => setDialog('edit')} disabled={busy}>
-                Edit Date
-              </button>
-              {status !== 'confirmed' && (
-                <button
-                  type="button"
-                  className="sx-btn"
-                  disabled={busy}
-                  onClick={async () => {
-                    setError(null);
-                    try {
-                      await confirmAppointment.mutateAsync(pickup.id);
-                    } catch (e) {
-                      reportError(e);
-                    }
-                  }}
-                >
-                  Confirm Pickup
-                </button>
-              )}
-              <button type="button" className="sx-btn sx-btn-primary" onClick={() => setDialog('receive')} disabled={busy}>
-                Mark Received
-              </button>
-            </div>
-          )}
-        </>
+        <Field icon="tasks" label="Status" muted={!status}>
+          {status ? PICKUP_STATUS_LABEL[status] : 'Not scheduled'}
+        </Field>
+      </dl>
+
+      {status === 'overdue' && (
+        <p className={sectionStyles.notice} role="status">
+          The expected date has passed and the cremains have not been marked received.
+        </p>
       )}
 
       {error && !dialog && (
-        <p className="sx-error-state" role="alert" style={{ marginTop: 10 }}>
+        <p className={`sx-error-state ${sectionStyles.error}`} role="alert">
           {error}
         </p>
       )}

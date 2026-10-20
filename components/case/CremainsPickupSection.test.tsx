@@ -62,17 +62,21 @@ function renderSection(
   );
 }
 
+/** A grid field's value: the <dd> in the same field as the <dt> label. */
+const fieldValue = (label: string) => screen.getByText(label, { selector: 'dt' }).closest('div')!.parentElement!.querySelector('dd');
+
 describe('CremainsPickupSection — empty state', () => {
   it('always shows the section, with a clear empty state and an add action', () => {
     renderSection([otherAppointment]);
     expect(screen.getByText('Cremains Pickup')).toBeInTheDocument();
-    expect(screen.getByText('No expected pickup scheduled.')).toBeInTheDocument();
+    expect(fieldValue('Expected Pickup')).toHaveTextContent('Not scheduled');
+    expect(fieldValue('Status')).toHaveTextContent('Not scheduled');
     expect(screen.getByRole('button', { name: 'Add Expected Pickup' })).toBeInTheDocument();
   });
 
   it('hides the add action from a caller without scheduling permission', () => {
     renderSection([], { canSchedule: false });
-    expect(screen.getByText('No expected pickup scheduled.')).toBeInTheDocument();
+    expect(fieldValue('Expected Pickup')).toHaveTextContent('Not scheduled');
     expect(screen.queryByRole('button', { name: 'Add Expected Pickup' })).not.toBeInTheDocument();
   });
 });
@@ -92,16 +96,16 @@ describe('CremainsPickupSection — an existing pickup', () => {
     expect(container.textContent).not.toMatch(/\d{1,2}:\d{2}/);
   });
 
-  it('offers Edit Date, Confirm Pickup and Mark Received', () => {
+  it('offers Edit (expected pickup date), Confirm Pickup and Mark Received', () => {
     renderSection([pickup()]);
-    expect(screen.getByRole('button', { name: 'Edit Date' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit expected pickup date' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm Pickup' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark Received' })).toBeInTheDocument();
   });
 
   it('offers no actions to a caller without scheduling permission', () => {
     renderSection([pickup()], { canSchedule: false });
-    expect(screen.queryByRole('button', { name: 'Edit Date' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit expected pickup date' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Mark Received' })).not.toBeInTheDocument();
   });
 
@@ -119,7 +123,7 @@ describe('CremainsPickupSection — an existing pickup', () => {
 
   it('shows a staff-entered pickup as having no recorded paperwork date — never a guess', () => {
     renderSection([pickup({ notes: 'Expected pickup entered by staff for 2099-10-16.', lastModifiedBy: 'identity-dana' })]);
-    expect(screen.getByText('Paperwork sent').nextElementSibling).toHaveTextContent('Not recorded');
+    expect(fieldValue('Paperwork Sent')).toHaveTextContent('Not recorded');
     expect(screen.getByText('Set by staff')).toBeInTheDocument();
   });
 
@@ -232,7 +236,7 @@ describe('CremainsPickupSection — Add Expected Pickup dialog', () => {
 describe('CremainsPickupSection — Edit Expected Date dialog', () => {
   function openEdit() {
     renderSection([pickup()]);
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Date' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit expected pickup date' }));
   }
 
   /** The section behind the modal also renders an "Expected pickup" label,

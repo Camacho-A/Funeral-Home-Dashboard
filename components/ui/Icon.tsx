@@ -12,7 +12,19 @@
  */
 import type { ReactNode } from 'react';
 
-export type IconName = 'dashboard' | 'tasks' | 'calendar' | 'reports' | 'accounting' | 'settings' | 'search' | 'notifications';
+export type IconName =
+  | 'dashboard'
+  | 'tasks'
+  | 'calendar'
+  | 'reports'
+  | 'accounting'
+  | 'settings'
+  | 'search'
+  | 'notifications'
+  | 'flame'
+  | 'checkCircle'
+  | 'document'
+  | 'info';
 
 const PATHS: Record<IconName, ReactNode> = {
   dashboard: (
@@ -61,6 +73,27 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="7" cy="7" r="4.5" />
       <path d="M10.5 10.5L14 14" />
+    </>
+  ),
+  /* Schedule tab redesign (2026-10): the Cremains Pickup fields. Same
+     stroke-only 16px grid as the glyphs above. */
+  flame: <path d="M8 14c2.5 0 4-1.6 4-3.9C12 7 9.5 5.6 8.6 2c-1.9 1.4-2.6 3.3-2.4 5-.8-.4-1.3-1.1-1.4-1.9C3.9 6.2 4 7.6 4 10.1 4 12.4 5.5 14 8 14Z" />,
+  checkCircle: (
+    <>
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M5.6 8.2l1.7 1.7 3.1-3.6" />
+    </>
+  ),
+  document: (
+    <>
+      <path d="M4 2.5h5l3 3v8H4z" />
+      <path d="M9 2.5v3h3M6 8.5h4M6 11h4" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M8 7.3v3.6M8 5.1v.1" />
     </>
   ),
 };
