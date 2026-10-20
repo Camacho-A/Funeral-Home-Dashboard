@@ -5,14 +5,16 @@ redraws them.
 
 ## When they are generated
 
-- **Envelope:** when a case is created (staff or a JotForm form, but not a
-  historical import), and again whenever the decedent's name changes.
+- **Envelope:** when a valid Tag Number is saved or changed (including a
+  case created with one), and again when the decedent's name changes on a
+  case that has a Tag Number. Never merely because a case was created, and
+  never for a historical import.
 - **Certificate of Cremation:** as soon as the case has a date of cremation,
   and again whenever that date, the name, the tag number or the date of death
   changes.
-- **On demand:** Documents tab → **Generate Envelope** / **Generate
-  Certificate**. Use this for cases that existed before the feature, or to
-  retry after a failure.
+- **On demand:** Documents tab → **Generate Envelope** (needs a Tag Number)
+  / **Generate Certificate** (needs a date of cremation). Use this for cases
+  that existed before the feature, or to retry after a failure.
 - **Never:** for archived cases, or for organizations without these templates
   (`domain/documents/officialDocumentTriggers.ts`).
 

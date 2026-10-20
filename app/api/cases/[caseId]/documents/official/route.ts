@@ -67,7 +67,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
           error:
             kind === 'certificate_of_cremation'
               ? 'Record the decedent\'s name and the date of cremation first.'
-              : 'Record the decedent\'s name first.',
+              : 'Save the decedent\'s name and a Tag Number first.',
         },
         { status: 422 },
       );

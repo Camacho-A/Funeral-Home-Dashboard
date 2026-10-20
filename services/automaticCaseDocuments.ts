@@ -4,7 +4,7 @@ import type { DataAdapterMode } from '../lib/env';
 import type { Case } from '../types/case';
 import type { ActivityContext } from './activityService';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
-import { officialDocumentsFor, officialDocumentsToRegenerate, type OfficialDocumentKind } from '../domain/documents/officialDocumentTriggers';
+import { hasValidTagNumber, officialDocumentsFor, officialDocumentsToRegenerate, type OfficialDocumentKind } from '../domain/documents/officialDocumentTriggers';
 import { composeDecedentName } from '../domain/cases/decedentName';
 import { formatReceiptDate } from '../domain/billing/receiptOfPayment';
 import { toDisplayName } from '../utils/displayName';
@@ -51,7 +51,7 @@ export async function generateOfficialDocument(
 
   try {
     if (kind === 'envelope') {
-      if (!case_.decedentName?.trim()) return 'not_applicable';
+      if (!case_.decedentName?.trim() || !hasValidTagNumber(case_)) return 'not_applicable';
       await generateBillingDocument(
         {
           caseId: case_.id,

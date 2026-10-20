@@ -66,6 +66,12 @@ describe('generateOfficialDocument', () => {
     expect(generateBillingDocument).not.toHaveBeenCalled();
   });
 
+  it('does not produce an envelope for a case without a valid Tag Number', async () => {
+    expect(await generateOfficialDocument('envelope', manorsCase({ tagNumber: null }), ctx, 'mock')).toBe('not_applicable');
+    expect(await generateOfficialDocument('envelope', manorsCase({ tagNumber: '  ' }), ctx, 'mock')).toBe('not_applicable');
+    expect(generateBillingDocument).not.toHaveBeenCalled();
+  });
+
   it('does nothing for a case of another organization, or without a date of cremation', async () => {
     expect(await generateOfficialDocument('envelope', manorsCase({ organizationId: 'other' }), ctx, 'mock')).toBe('not_applicable');
     process.env.CERTIFICATE_OF_CREMATION_TEMPLATE_PATH = '/nonexistent';

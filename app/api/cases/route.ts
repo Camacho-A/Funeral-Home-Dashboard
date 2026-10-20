@@ -876,8 +876,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Automatic Envelope (2026-10), after the response. Not for a historical
-    // import: that would generate envelopes for every old case at once.
+    // Automatic Envelope (2026-10), after the response — only if the new
+    // case was saved WITH a Tag Number (officialDocumentTriggers.ts); never
+    // for a historical import.
     if (creationSource !== 'external_form_import') {
       runAfterResponse(`official documents for case ${created.id}`, () =>
         regenerateOfficialDocumentsAfterCaseChange(
