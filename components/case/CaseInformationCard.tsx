@@ -31,7 +31,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PENDING_MEDICAL_EXAMINER_LABEL } from '@/domain/organization/medicalExaminerWorkflow';
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { toDisplayName } from '@/utils/displayName';
-import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
+import { RecordPickupDialog, type ReleaseSuggestion } from './RecordPickupDialog';
 import styles from './CaseInformationCard.module.css';
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -754,22 +754,17 @@ export function CaseInformationCard({
   onSetVaPublishChoice: (choice: VaPublishChoice) => void;
   onSetVaNotificationResponsibility: (responsibility: VaNotificationResponsibility) => void;
 }) {
-  // Staff-facing terminology (2026-09): selecting "Family Picked Up" must
-  // not immediately persist pickupStatus === 'released' unless Released
-  // to/Released date are already valid (see domain/cases/pickupRelease.ts).
-  // `pendingPickupRelease` reveals the detail fields for entry the moment
-  // "Family Picked Up" is chosen, without yet writing pickupStatus — the
-  // effect below commits it automatically once both fields become valid.
-  // Selecting back to "Awaiting Family Pickup" is never gated and always
-  // clears this immediately (see the onChange handler below).
-  const [pendingPickupRelease, setPendingPickupRelease] = useState(false);
-
-  useEffect(() => {
-    if (pendingPickupRelease && pickupStatus !== 'released' && isValidPickupReleaseDetail(pickupReleasedTo, pickupReleasedAt)) {
-      setPendingPickupRelease(false);
-      onUpdateCaseInfo({ pickupStatus: 'released' });
-    }
-  }, [pendingPickupRelease, pickupStatus, pickupReleasedTo, pickupReleasedAt, onUpdateCaseInfo]);
+  // Simplified release (2026-10). Choosing "Family Picked Up" opens ONE
+  // dialog that records who collected the remains, the date (today by
+  // default) and an optional note, and saves them with the status in a
+  // single patch — the same dialog the workflow's final step uses. It
+  // replaces a flow that revealed three separately-saved fields and only
+  // committed the status once both required ones happened to be valid.
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
+  const releaseSuggestions: ReleaseSuggestion[] = [
+    { role: 'Next of kin', name: normalizeNextOfKinName(nextOfKinName, nextOfKinPhone) },
+    { role: 'Arrangement contact', name: arrangementContactName },
+  ];
 
   // Task #17 layout follow-up (2026-09): Return method's own control and
   // Cremated Remains' own control are each defined exactly once here and
@@ -799,25 +794,16 @@ export function CaseInformationCard({
       <div className={styles.fieldLabel}>Cremated Remains</div>
       <SelectField
         className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
-        value={pickupStatus === 'released' || pendingPickupRelease ? 'released' : 'awaiting_pickup'}
+        value={pickupStatus}
         onChange={(e) => {
           const next = e.target.value as PickupStatus;
           if (next === 'awaiting_pickup') {
-            setPendingPickupRelease(false);
             onUpdateCaseInfo({ pickupStatus: 'awaiting_pickup' });
             return;
           }
-          // Selecting "Family Picked Up": only persist immediately if
-          // Released to/Released date are already valid (e.g.
-          // already filled in earlier, or supplied by Jotform
-          // reconciliation) — otherwise reveal the detail fields
-          // below and wait for both to become valid; see this
-          // component's own top-of-function effect.
-          if (isValidPickupReleaseDetail(pickupReleasedTo, pickupReleasedAt)) {
-            onUpdateCaseInfo({ pickupStatus: 'released' });
-          } else {
-            setPendingPickupRelease(true);
-          }
+          // "Family Picked Up" is recorded through the release dialog;
+          // nothing is saved until it is.
+          setReleaseDialogOpen(true);
         }}
       >
         <option value="awaiting_pickup">{PICKUP_STATUS_LABEL.awaiting_pickup}</option>
@@ -1075,37 +1061,37 @@ export function CaseInformationCard({
         </div>
       )}
 
+      <RecordPickupDialog
+        open={releaseDialogOpen}
+        onClose={() => setReleaseDialogOpen(false)}
+        initialReleasedTo={pickupReleasedTo}
+        initialReleasedAt={pickupReleasedAt}
+        initialNote={pickupNote}
+        suggestions={releaseSuggestions}
+        onSave={(patch) => {
+          setReleaseDialogOpen(false);
+          onUpdateCaseInfo(patch);
+        }}
+      />
+
       <div className={`${styles.grid} ${styles.operationalRow}`}>
         {returnMethod === 'pickup' && (
           <>
             {showOwner && crematedRemainsControl}
-            {(pickupStatus === 'released' || pendingPickupRelease) && (
-              <>
-                <EditableField
-                  label="Released to"
-                  value={pickupReleasedTo ?? ''}
-                  uppercase
-                  onSave={(v) => onUpdateCaseInfo({ pickupReleasedTo: v.trim().length > 0 ? v.trim() : null })}
-                />
-                <EditableField
-                  label="Released date"
-                  value={pickupReleasedAt ?? ''}
-                  kind="date"
-                  onSave={(v) => onUpdateCaseInfo({ pickupReleasedAt: v.trim().length > 0 ? v.trim() : null })}
-                  crossFieldValidate={(v) => getFutureDateError(v, 'Released date')}
-                />
-                <EditableField
-                  label="Pickup note (optional)"
-                  value={pickupNote ?? ''}
-                  uppercase
-                  onSave={(v) => onUpdateCaseInfo({ pickupNote: v.trim().length > 0 ? v.trim() : null })}
-                />
-                {pendingPickupRelease && pickupStatus !== 'released' && (
-                  <div className={styles.fieldError} role="alert">
-                    Released to and Released date are required to mark Family Picked Up.
-                  </div>
+            {pickupStatus === 'released' && (
+              <div className={styles.releaseRecord}>
+                <div className={styles.fieldLabel}>Released</div>
+                <div>
+                  Released to <b>{pickupReleasedTo ?? '—'}</b>
+                  {pickupReleasedAt ? ` on ${pickupReleasedAt}` : ''}
+                  {pickupNote ? ` · ${pickupNote}` : ''}
+                </div>
+                {!isReadOnlyCard && (
+                  <button type="button" className={styles.editNameButton} onClick={() => setReleaseDialogOpen(true)}>
+                    Correct release
+                  </button>
                 )}
-              </>
+              </div>
             )}
           </>
         )}

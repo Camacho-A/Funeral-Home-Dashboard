@@ -4,12 +4,10 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { splitMilitaryTimeToTwelveHourParts, combineTwelveHourTimeParts, isValidEmail } from '@/utils/inputMask';
-import { Modal } from '@/components/ui/Modal';
-import { isValidPickupReleaseDetail } from '@/domain/cases/pickupRelease';
-import { formatDateInput, isValidCalendarDate, expandTwoDigitYearInDateInput } from '@/utils/inputMask';
 import type { CaseUpdate } from '@/types/case';
 import type { ChecklistItemViewModel } from '@/types/caseViewModel';
 import styles from './ChecklistCard.module.css';
+import { RecordPickupDialog, type ReleaseSuggestion } from './RecordPickupDialog';
 
 /**
  * The stage-specific checklist. `viewingStageLabel` non-null means these
@@ -410,6 +408,7 @@ export function ChecklistCard({
   onUpdateCaseInfo,
   contactRestriction,
   isArchived,
+  releaseSuggestions,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -436,6 +435,8 @@ export function ChecklistCard({
   /** Archived cases are read-only (2026-10). Independent of the
       past-stage read-only above — either one alone locks the card. */
   isArchived?: boolean;
+  /** Names offered as one-click "Released to" values (2026-10). */
+  releaseSuggestions?: ReleaseSuggestion[];
 }) {
   const readOnly = viewingStageLabel !== null || isArchived === true;
 
@@ -503,6 +504,7 @@ export function ChecklistCard({
                   item={item}
                   readOnly={readOnly}
                   onUpdateCaseInfo={onUpdateCaseInfo}
+                  releaseSuggestions={releaseSuggestions}
                 />
               )}
               {!item.hasField && item.requiredCaseFields && item.requiredCaseFields.length > 0 && (
@@ -559,10 +561,12 @@ function TerminalReturnAction({
   item,
   readOnly,
   onUpdateCaseInfo,
+  releaseSuggestions,
 }: {
   item: ChecklistItemViewModel;
   readOnly: boolean;
   onUpdateCaseInfo?: (patch: CaseUpdate) => void;
+  releaseSuggestions?: ReleaseSuggestion[];
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const record = item.returnRequirement;
@@ -633,6 +637,7 @@ function TerminalReturnAction({
         initialReleasedTo={record.pickupReleasedTo}
         initialReleasedAt={record.pickupReleasedAt}
         initialNote={record.pickupNote}
+        suggestions={releaseSuggestions}
         onSave={(patch) => {
           setDialogOpen(false);
           onUpdateCaseInfo?.(patch);
@@ -642,119 +647,3 @@ function TerminalReturnAction({
   );
 }
 
-/**
- * Collects the release documentation and sends it with `pickupStatus` in a
- * single patch. Save stays disabled until both required fields are valid
- * per `isValidPickupReleaseDetail` — the same predicate the server-side
- * invariant uses — so the UI cannot produce a request the server would
- * reject, and no partial release is ever persisted.
- */
-function RecordPickupDialog({
-  open,
-  onClose,
-  initialReleasedTo,
-  initialReleasedAt,
-  initialNote,
-  onSave,
-}: {
-  open: boolean;
-  onClose: () => void;
-  initialReleasedTo: string | null;
-  initialReleasedAt: string | null;
-  initialNote: string | null;
-  onSave: (patch: CaseUpdate) => void;
-}) {
-  const [releasedTo, setReleasedTo] = useState(initialReleasedTo ?? '');
-  const [releasedAt, setReleasedAt] = useState(initialReleasedAt ?? '');
-  const [note, setNote] = useState(initialNote ?? '');
-
-  // Re-seed each time the dialog opens so "Correct this record" always
-  // starts from what is currently stored rather than a stale draft.
-  useEffect(() => {
-    if (!open) return;
-    setReleasedTo(initialReleasedTo ?? '');
-    setReleasedAt(initialReleasedAt ?? '');
-    setNote(initialNote ?? '');
-  }, [open, initialReleasedTo, initialReleasedAt, initialNote]);
-
-  const expandedDate = expandTwoDigitYearInDateInput(releasedAt);
-  const dateIsFuture = isValidCalendarDate(expandedDate) && expandedDate !== '' && isFutureDate(expandedDate);
-  const canSave = isValidPickupReleaseDetail(releasedTo.trim(), expandedDate) && !dateIsFuture;
-
-  return (
-    <Modal open={open} onClose={onClose} title="Record family pickup">
-      <p className={styles.dialogIntro}>
-        This records the release of the cremated remains to the family and completes the final
-        workflow step.
-      </p>
-      <label className={styles.dialogLabel} htmlFor="terminal-released-to">
-        Released to
-      </label>
-      <input
-        id="terminal-released-to"
-        className={styles.dialogInput}
-        value={releasedTo}
-        placeholder="Name of the person who collected the remains"
-        onChange={(e) => setReleasedTo(e.target.value.toUpperCase())}
-      />
-      <label className={styles.dialogLabel} htmlFor="terminal-released-at">
-        Released date
-      </label>
-      <input
-        id="terminal-released-at"
-        className={styles.dialogInput}
-        value={releasedAt}
-        placeholder="MM/DD/YYYY"
-        inputMode="numeric"
-        onChange={(e) => setReleasedAt(formatDateInput(e.target.value))}
-      />
-      {dateIsFuture && (
-        <p className={styles.dialogError} role="alert">
-          Released date cannot be in the future.
-        </p>
-      )}
-      <label className={styles.dialogLabel} htmlFor="terminal-note">
-        Note (optional)
-      </label>
-      <input
-        id="terminal-note"
-        className={styles.dialogInput}
-        value={note}
-        onChange={(e) => setNote(e.target.value.toUpperCase())}
-      />
-      <div className={styles.dialogFooter}>
-        <button type="button" className={styles.dialogCancel} onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className={styles.dialogConfirm}
-          disabled={!canSave}
-          onClick={() =>
-            onSave({
-              // One patch: the status and the documentation that justifies
-              // it can never be persisted apart.
-              pickupStatus: 'released',
-              pickupReleasedTo: releasedTo.trim(),
-              pickupReleasedAt: expandedDate,
-              pickupNote: note.trim() === '' ? null : note.trim(),
-            })
-          }
-        >
-          Record pickup
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-/** Local to this action: a release cannot be dated in the future. Mirrors
-    the Released date guard the Case Information card already applies. */
-function isFutureDate(mmddyyyy: string): boolean {
-  const [month, day, year] = mmddyyyy.split('/').map(Number);
-  if (!month || !day || !year) return false;
-  const entered = new Date(year, month - 1, day);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return entered.getTime() > today.getTime();
-}

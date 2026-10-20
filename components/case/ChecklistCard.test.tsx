@@ -698,11 +698,11 @@ describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)',
     const dialog = openDialog();
     const save = dialog.getByRole('button', { name: 'Record pickup' });
 
+    // The date defaults to today (2026-10), so it is the name that is missing.
     expect(save).toBeDisabled();
 
-    // Name alone is not enough.
     fireEvent.change(dialog.getByLabelText('Released to'), { target: { value: 'KAREN ELLISON' } });
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
 
     // Nor is an invalid date.
     fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: '13/45/2026' } });

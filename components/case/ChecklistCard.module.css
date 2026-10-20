@@ -298,3 +298,25 @@
   line-height: 1.45;
 }
 
+
+/* Released To quick-fill (2026-10): the people already on the case. */
+.releaseSuggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+
+.releaseSuggestion {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: oklch(0.975 0.003 255);
+  cursor: pointer;
+}
+
+.releaseSuggestion:hover {
+  background: oklch(0.955 0.005 255);
+}

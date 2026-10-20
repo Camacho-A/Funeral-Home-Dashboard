@@ -369,3 +369,10 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* Simplified release (2026-10): the recorded release, read-only here and
+   corrected through the same dialog that recorded it. */
+.releaseRecord {
+  grid-column: 1 / -1;
+  font-size: 13px;
+}

@@ -436,6 +436,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   arrangementContactName: case_.arrangementContactName ?? null,
                 }}
                 isArchived={case_.isDeleted === true}
+                releaseSuggestions={[
+                  { role: 'Next of kin', name: case_.nextOfKinName },
+                  { role: 'Arrangement contact', name: case_.arrangementContactName },
+                ]}
               />
             </section>
 

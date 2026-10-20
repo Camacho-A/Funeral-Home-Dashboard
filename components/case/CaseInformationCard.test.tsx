@@ -391,21 +391,6 @@ describe('CaseInformationCard — Task #15 (2026-09, future-historical-date vali
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfBirth: `${mm}/${dd}/${yyyy}` });
   });
 
-  it('blocks Enter on a future Released date', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Jane Smith" pickupReleasedAt="07/01/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    const releasedDateField = screen.getByText('Released date').parentElement!;
-    fireEvent.click(within(releasedDateField).getByRole('button'));
-    const input = within(releasedDateField).getByDisplayValue('07/01/2026');
-    const farFutureYear = new Date().getFullYear() + 5;
-    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(screen.getByText('Released date cannot be in the future.')).toBeInTheDocument();
-    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
-  });
-
   it('blocks Enter on a future Date shipped', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
@@ -728,95 +713,78 @@ describe('CaseInformationCard — NOK relationship (Manors launch-prep)', () => 
   });
 });
 
-describe('CaseInformationCard — Pickup tracking (Manors launch-prep)', () => {
-  it('shows "Awaiting Family Pickup" by default and no released-detail fields, once Return method is Pickup', () => {
+describe('CaseInformationCard — recording the release (simplified, 2026-10)', () => {
+  it('shows "Awaiting Family Pickup" by default, with no release record', () => {
     render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Awaiting Family Pickup')).toBeInTheDocument();
-    expect(screen.queryByText('Released to')).not.toBeInTheDocument();
-    expect(screen.queryByText('Released date')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Released to/)).not.toBeInTheDocument();
   });
 
-  it('reveals Released to / Released date / note fields once the case is already released', () => {
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Karen Ellison" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={vi.fn()} />);
+  it('choosing "Family Picked Up" opens the release dialog and saves nothing yet', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+    expect(screen.getByRole('dialog', { name: 'Record family pickup' })).toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('records the release in one patch, with the date defaulting to today and the next of kin one click away', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" nextOfKinName="Karen Ellison" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+    const dialog = within(screen.getByRole('dialog'));
+
+    const now = new Date();
+    const today = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${now.getFullYear()}`;
+    expect(dialog.getByLabelText('Released date')).toHaveValue(today);
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Next of kin: KAREN ELLISON' }));
+    expect(dialog.getByLabelText('Released to')).toHaveValue('KAREN ELLISON');
+    fireEvent.click(dialog.getByRole('button', { name: 'Record pickup' }));
+
+    expect(onUpdateCaseInfo).toHaveBeenCalledTimes(1);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released', pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: today, pickupNote: null });
+  });
+
+  it('cancelling the dialog leaves the case awaiting pickup', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('Awaiting Family Pickup')).toBeInTheDocument();
+  });
+
+  it('shows a recorded release, and corrects it through the same dialog, prefilled', () => {
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="KAREN ELLISON" pickupReleasedAt="07/10/2026" pickupNote="ID CHECKED" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByDisplayValue('Family Picked Up')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'KAREN ELLISON' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '07/10/2026' })).toBeInTheDocument();
+    expect(screen.getByText(/Released to/)).toHaveTextContent('Released to KAREN ELLISON on 07/10/2026 · ID CHECKED');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Correct release' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Released to')).toHaveValue('KAREN ELLISON');
+    expect(dialog.getByLabelText('Released date')).toHaveValue('07/10/2026');
   });
 
-  it('saving a released-to name trims and uppercases it, matching other name fields', () => {
+  it('switching back to "Awaiting Family Pickup" is never gated', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    const releasedToField = screen.getByText('Released to').parentElement!;
-    fireEvent.click(within(releasedToField).getByRole('button'));
-    const input = within(releasedToField).getByDisplayValue('');
-    fireEvent.change(input, { target: { value: ' karen ellison ' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupReleasedTo: 'KAREN ELLISON' });
-  });
-
-  it('selecting "Family Picked Up" without an already-valid Released to/Released date does NOT persist pickupStatus — it reveals the detail fields and shows a required-fields message instead', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
-
-    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
-    expect(screen.getByText('Released to')).toBeInTheDocument();
-    expect(screen.getByText('Released date')).toBeInTheDocument();
-    expect(screen.getByText('Released to and Released date are required to mark Family Picked Up.')).toBeInTheDocument();
-  });
-
-  it('selecting "Family Picked Up" when Released to/Released date are already valid persists pickupStatus immediately (e.g. supplied earlier or via Jotform reconciliation)', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(
-      <CaseInformationCard
-        {...baseProps}
-        returnMethod="pickup"
-        pickupReleasedTo="Karen Ellison"
-        pickupReleasedAt="07/10/2026"
-        onUpdateCaseInfo={onUpdateCaseInfo}
-      />,
-    );
-
-    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
-
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
-  });
-
-  it('switching back to "Awaiting Family Pickup" is never gated — it persists immediately and clears the pending-release message', () => {
-    const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
-    expect(screen.getByText('Released to and Released date are required to mark Family Picked Up.')).toBeInTheDocument();
-
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="KAREN ELLISON" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
     fireEvent.change(screen.getByDisplayValue('Family Picked Up'), { target: { value: 'awaiting_pickup' } });
-
-    expect(onUpdateCaseInfo).toHaveBeenLastCalledWith({ pickupStatus: 'awaiting_pickup' });
-    expect(screen.queryByText('Released to and Released date are required to mark Family Picked Up.')).not.toBeInTheDocument();
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'awaiting_pickup' });
   });
 
-  it('once both Released to and Released date are filled in after selecting "Family Picked Up", pickupStatus commits to released automatically', () => {
+  it('an archived case shows the release but offers no correction', () => {
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" isArchived pickupStatus="released" pickupReleasedTo="KAREN ELLISON" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText(/Released to/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Correct release' })).not.toBeInTheDocument();
+  });
+
+  it('works the same for an organization that hides Case Owner', () => {
     const onUpdateCaseInfo = vi.fn();
-    const { rerender } = render(<CaseInformationCard {...baseProps} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={onUpdateCaseInfo} />);
     fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
-    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
-
-    // Simulate the Released to save round-tripping back through props —
-    // still incomplete (no Released date yet), so nothing commits.
-    rerender(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupReleasedTo="Karen Ellison" onUpdateCaseInfo={onUpdateCaseInfo} />);
-    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
-    expect(screen.getByText('Released to and Released date are required to mark Family Picked Up.')).toBeInTheDocument();
-
-    // Now Released date is also valid — the pending release commits.
-    rerender(
-      <CaseInformationCard {...baseProps} returnMethod="pickup" pickupReleasedTo="Karen Ellison" pickupReleasedAt="07/10/2026" onUpdateCaseInfo={onUpdateCaseInfo} />,
-    );
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
+    expect(screen.getByRole('dialog', { name: 'Record family pickup' })).toBeInTheDocument();
   });
 });
 
@@ -952,19 +920,15 @@ describe('CaseInformationCard — Task #16 (2026-09, Owner/Return method layout)
 
   it('Released date future-date validation (Task #15) still works after the layout change', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="Jane Smith" pickupReleasedAt="07/01/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
-
-    const releasedDateField = screen.getByText('Released date').parentElement!;
-    fireEvent.click(within(releasedDateField).getByRole('button'));
-    const input = within(releasedDateField).getByDisplayValue('07/01/2026');
-    const farFutureYear = new Date().getFullYear() + 5;
-    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(screen.getByText('Released date cannot be in the future.')).toBeInTheDocument();
+    render(<CaseInformationCard {...baseProps} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="JANE SMITH" pickupReleasedAt="07/01/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    // 2026-10: the release is corrected in the release dialog, which applies the same rule.
+    fireEvent.click(screen.getByRole('button', { name: 'Correct release' }));
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: `01/01/${new Date().getFullYear() + 5}` } });
+    expect(dialog.getByRole('alert')).toHaveTextContent('Released date cannot be in the future.');
+    expect(dialog.getByRole('button', { name: 'Record pickup' })).toBeDisabled();
     expect(onUpdateCaseInfo).not.toHaveBeenCalled();
   });
-
   it('Date shipped future-date validation (Task #15) still works after the layout change', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
@@ -1046,23 +1010,23 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
     expect(screen.queryByText('Cremated Remains')).not.toBeInTheDocument();
   });
 
-  it('Layout follow-up: pickup release-detail fields (Released to/date/note) remain in a separate row beneath the operational row', () => {
+  it('Layout follow-up: the recorded release sits in a separate row beneath the operational row', () => {
     render(
       <CaseInformationCard
         {...baseProps}
         showOwner={false}
         returnMethod="pickup"
         pickupStatus="released"
-        pickupReleasedTo="Jane Smith"
+        pickupReleasedTo="JANE SMITH"
         pickupReleasedAt="07/01/2026"
         onUpdateCaseInfo={vi.fn()}
       />,
     );
     const operationalRow = screen.getByText('Tag #').parentElement?.parentElement;
-    const releasedToRow = screen.getByText('Released to').parentElement?.parentElement;
-    expect(releasedToRow).not.toBe(operationalRow);
+    const releaseRow = screen.getByText(/Released to/).closest(`div[class*="grid"]`);
+    expect(releaseRow).not.toBeNull();
+    expect(releaseRow).not.toBe(operationalRow);
   });
-
   it('Layout follow-up: shipping detail fields (Carrier/Tracking/Date shipped/Shipping status/Delivered date) remain in a separate row beneath the operational row', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
     const operationalRow = screen.getByText('Tag #').parentElement?.parentElement;
@@ -1077,15 +1041,16 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
         {...baseProps}
         showOwner={false}
         returnMethod="pickup"
-        pickupReleasedTo="Jane Smith"
+        pickupReleasedTo="JANE SMITH"
         pickupReleasedAt="07/01/2026"
         onUpdateCaseInfo={onUpdateCaseInfo}
       />,
     );
     fireEvent.change(screen.getByDisplayValue('Awaiting Family Pickup'), { target: { value: 'released' } });
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released' });
+    // Details already on the case prefill the dialog; one click records it.
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Record pickup' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ pickupStatus: 'released', pickupReleasedTo: 'JANE SMITH', pickupReleasedAt: '07/01/2026', pickupNote: null });
   });
-
   it('Layout follow-up: Payment editing still works in the Manors consolidated row', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} />);
@@ -1134,28 +1099,15 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
 
   it('Task #15 future-date validation (Released date) remains intact when Owner is hidden', () => {
     const onUpdateCaseInfo = vi.fn();
-    render(
-      <CaseInformationCard
-        {...baseProps}
-        showOwner={false}
-        returnMethod="pickup"
-        pickupStatus="released"
-        pickupReleasedTo="Jane Smith"
-        pickupReleasedAt="07/01/2026"
-        onUpdateCaseInfo={onUpdateCaseInfo}
-      />,
-    );
-    const releasedDateField = screen.getByText('Released date').parentElement!;
-    fireEvent.click(within(releasedDateField).getByRole('button'));
-    const input = within(releasedDateField).getByDisplayValue('07/01/2026');
-    const farFutureYear = new Date().getFullYear() + 5;
-    fireEvent.change(input, { target: { value: `0101${farFutureYear}` } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(screen.getByText('Released date cannot be in the future.')).toBeInTheDocument();
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" pickupStatus="released" pickupReleasedTo="JANE SMITH" pickupReleasedAt="07/01/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    // 2026-10: the release is corrected in the release dialog, which applies the same rule.
+    fireEvent.click(screen.getByRole('button', { name: 'Correct release' }));
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText('Released date'), { target: { value: `01/01/${new Date().getFullYear() + 5}` } });
+    expect(dialog.getByRole('alert')).toHaveTextContent('Released date cannot be in the future.');
+    expect(dialog.getByRole('button', { name: 'Record pickup' })).toBeDisabled();
     expect(onUpdateCaseInfo).not.toHaveBeenCalled();
   });
-
   it('Task #16 operational-row spacing class is unaffected by whether Owner is shown', () => {
     const { container: withOwner } = render(<CaseInformationCard {...baseProps} showOwner onUpdateCaseInfo={vi.fn()} />);
     const { container: withoutOwner } = render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
