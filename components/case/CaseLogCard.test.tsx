@@ -138,46 +138,59 @@ describe('CaseLogCard — entries and empty state', () => {
   });
 });
 
-describe('CaseLogCard — logged calls (2026-10): summary required, no "spoke with"', () => {
+describe('CaseLogCard — logged calls and activity (2026-10): summary required, no "spoke with"', () => {
   function openContactTab() {
     fireEvent.click(screen.getByRole('button', { name: 'Contact' }));
   }
 
-  it('no longer asks who you spoke with', () => {
+  it('no longer asks who you spoke with; who was contacted is optional and the summary required', () => {
     renderCard();
     openContactTab();
     expect(screen.queryByPlaceholderText(/Spoke with/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Summary of the call')).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Contacted (optional)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Summary')).toHaveAttribute('aria-required', 'true');
   });
 
-  it('cannot save a call until both who was contacted and a summary are filled in', () => {
-    const { onAddEntry } = renderCard();
+  it('cannot save without a summary, even with a contact named', () => {
+    renderCard();
     openContactTab();
     const save = screen.getByRole('button', { name: 'Add entry' });
+    fireEvent.change(screen.getByLabelText('Contacted (optional)'), { target: { value: 'ME office' } });
     expect(save).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText('Contacted'), { target: { value: 'ME office' } });
+    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: '   ' } });
     expect(save).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Summary of the call'), { target: { value: '   ' } });
-    expect(save).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText('Summary of the call'), { target: { value: 'Released the case' } });
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
-    expect(onAddEntry).toHaveBeenCalledWith(
-      { type: 'contact', contactedWho: 'ME office', contactSummary: 'Released the case' },
-      expect.anything(),
-    );
   });
 
-  it('shows a call logged before the change with the name it recorded, and a new one without', () => {
+  it('logs a voicemail or internal update without naming anyone', () => {
+    const { onAddEntry } = renderCard();
+    openContactTab();
+    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'Left voicemail, no answer' } });
+    const save = screen.getByRole('button', { name: 'Add entry' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(onAddEntry).toHaveBeenCalledWith({ type: 'contact', contactSummary: 'Left voicemail, no answer' }, expect.anything());
+  });
+
+  it('includes who was contacted when given', () => {
+    const { onAddEntry } = renderCard();
+    openContactTab();
+    fireEvent.change(screen.getByLabelText('Contacted (optional)'), { target: { value: 'ME office' } });
+    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'Released the case' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
+    expect(onAddEntry).toHaveBeenCalledWith({ type: 'contact', contactedWho: 'ME office', contactSummary: 'Released the case' }, expect.anything());
+  });
+
+  it('shows historical entries as recorded, and an entry naming no one by its summary alone', () => {
     renderCard({
       entries: [
         { ...ENTRY, id: 'old', type: 'contact', text: null, contactedWho: 'HOSPICE', contactedSpoke: 'Nurse Adams', contactSummary: 'OK' },
         { ...ENTRY, id: 'new', type: 'contact', text: null, contactedWho: 'ME OFFICE', contactedSpoke: null, contactSummary: 'RELEASED' },
+        { ...ENTRY, id: 'vm', type: 'contact', text: null, contactedWho: null, contactedSpoke: null, contactSummary: 'LEFT VOICEMAIL' },
       ],
     });
     expect(screen.getByText('Called HOSPICE — spoke with Nurse Adams')).toBeInTheDocument();
     expect(screen.getByText('Called ME OFFICE')).toBeInTheDocument();
+    expect(screen.getByText('LEFT VOICEMAIL')).toBeInTheDocument();
+    expect(screen.queryByText(/Called null|Called undefined/)).not.toBeInTheDocument();
   });
 });

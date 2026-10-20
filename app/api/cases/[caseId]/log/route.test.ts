@@ -131,7 +131,7 @@ describe('POST /api/cases/[caseId]/log — author attribution', () => {
   });
 });
 
-describe('POST /api/cases/[caseId]/log — a logged call needs a summary, not "spoke with" (2026-10)', () => {
+describe('POST /api/cases/[caseId]/log — an entry needs a summary; no contact name or "spoke with" required (2026-10)', () => {
   it('refuses a contact entry without a summary, writing nothing', async () => {
     const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactedWho: 'Hospice', contactSummary: '  ' });
     expect(response.status).toBe(400);
@@ -139,10 +139,12 @@ describe('POST /api/cases/[caseId]/log — a logged call needs a summary, not "s
     expect(caseLogFixtures).toHaveLength(0);
   });
 
-  it('refuses a contact entry without who was contacted', async () => {
-    const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactSummary: 'Called back' });
-    expect(response.status).toBe(400);
-    expect(caseLogFixtures).toHaveLength(0);
+  it('saves a call or activity that names no one (voicemail, internal update)', async () => {
+    const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactSummary: 'Left voicemail' });
+    expect(response.status).toBe(201);
+    const { entry } = await response.json();
+    expect(entry.contactedWho).toBeNull();
+    expect(entry.contactSummary).toBe('LEFT VOICEMAIL');
   });
 
   it('refuses an empty note', async () => {

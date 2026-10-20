@@ -7,9 +7,10 @@ describe('caseLogEntryProblem', () => {
     expect(caseLogEntryProblem({ type: 'note', text: 'x' })).toBeNull();
   });
 
-  it('requires who was contacted and a summary for a call', () => {
-    expect(caseLogEntryProblem({ type: 'contact', contactSummary: 'x' })).toMatch(/who was contacted/);
-    expect(caseLogEntryProblem({ type: 'contact', contactedWho: 'ME' })).toMatch(/summary/);
+  it('requires a summary for a call or activity, but not a contact name', () => {
+    expect(caseLogEntryProblem({ type: 'contact', contactSummary: 'Left voicemail' })).toBeNull();
+    expect(caseLogEntryProblem({ type: 'contact', contactedWho: 'ME' })).toMatch(/summary/i);
+    expect(caseLogEntryProblem({ type: 'contact', contactedWho: 'ME', contactSummary: ' ' })).toMatch(/summary/i);
     expect(caseLogEntryProblem({ type: 'contact', contactedWho: 'ME', contactSummary: 'Released' })).toBeNull();
   });
 });

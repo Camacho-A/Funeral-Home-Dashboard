@@ -96,12 +96,13 @@ export function CaseLogCard({
 
     const who = contactWho.trim();
     const summary = contactSummary.trim();
-    if (!who || !summary) return;
+    if (!summary) return;
     setIsSaving(true);
     onAddEntry(
       {
         type: 'contact',
-        contactedWho: who,
+        // Optional (2026-10): a voicemail or an internal update names no one.
+        ...(who ? { contactedWho: who } : {}),
         contactSummary: summary,
       },
       {
@@ -120,7 +121,7 @@ export function CaseLogCard({
   }
 
   const canSave =
-    logType === 'note' ? noteText.trim() !== '' : contactWho.trim() !== '' && contactSummary.trim() !== '';
+    logType === 'note' ? noteText.trim() !== '' : contactSummary.trim() !== '';
 
   function handleNoteKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -199,16 +200,16 @@ export function CaseLogCard({
             <TextField
               value={contactWho}
               onChange={(e) => setContactWho(e.target.value)}
-              placeholder="Contacted — e.g. ME's office"
-              aria-label="Contacted"
+              placeholder="Contacted (optional) — e.g. ME's office"
+              aria-label="Contacted (optional)"
             />
           </div>
           <textarea
             className={textAreaFieldStyles.field}
             value={contactSummary}
             onChange={(e) => setContactSummary(e.target.value)}
-            placeholder="Summary of the call (required)"
-            aria-label="Summary of the call"
+            placeholder="Summary (required) — e.g. left voicemail, no answer, internal update"
+            aria-label="Summary"
             aria-required="true"
           />
         </>
