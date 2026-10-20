@@ -162,11 +162,18 @@ export function receiptPaymentMethodLabel(params: {
   provider: string;
   cardBrand: string | null;
   cardLast4: string | null;
+  /** For a manual entry this is the method staff chose ("Cash",
+      "Check — 1234"); see payments/manual/route.ts. */
+  receiptReference?: string | null;
 }): string {
   const brand = (params.cardBrand ?? '').trim();
   const last4 = (params.cardLast4 ?? '').trim();
   if (brand && last4) return `${brand} ••${last4}`;
   if (brand) return brand;
+  // 2026-10: a manual payment printed its provider name, "manual", where
+  // the receipt should say how the family paid.
+  const reference = (params.receiptReference ?? '').trim();
+  if (params.provider.toLowerCase() === 'manual' && reference) return reference;
   // Clover is a card terminal; anything else falls back to its own name
   // rather than being described as something it may not be.
   if (params.provider.toLowerCase() === 'clover') return 'Credit Card';

@@ -167,3 +167,17 @@ describe('billingDocumentService.generateGeneralPriceList', () => {
     expect(model.offerings.offersCaskets).toBe(false);
   });
 });
+
+describe('billingDocumentService.buildReceiptOfPaymentModel — Item # (2026-10)', () => {
+  it('prints a merchandise SKU, and leaves a service line blank rather than printing its internal code', async () => {
+    const { buildReceiptOfPaymentModel } = await import('./billingDocumentService');
+    await seedOrder();
+    const serviceLine = caseOrderLineItemFixtures[caseOrderLineItemFixtures.length - 1];
+    caseOrderLineItemFixtures.push({ ...serviceLine, id: 'line-urn', lineKind: 'merchandise', serviceCode: 'URN-OAK-01', description: 'Oak Urn' });
+
+    const model = await buildReceiptOfPaymentModel({ caseId: CASE }, DEFAULT_ORGANIZATION_ID, 'mock');
+    const byDescription = new Map(model.lineItems.map((l) => [l.description, l.itemNumber]));
+    expect(byDescription.get('Oak Urn')).toBe('URN-OAK-01');
+    expect(byDescription.get(serviceLine.description)).toBeNull();
+  });
+});

@@ -100,3 +100,14 @@ describe('receiptPaymentMethodLabel', () => {
     expect(receiptPaymentMethodLabel({ provider: 'check', cardBrand: null, cardLast4: null })).toBe('check');
   });
 });
+
+describe('receiptPaymentMethodLabel — manual payments (2026-10)', () => {
+  it('prints the method staff recorded, never the word "manual"', () => {
+    expect(receiptPaymentMethodLabel({ provider: 'manual', cardBrand: null, cardLast4: null, receiptReference: 'Cash' })).toBe('Cash');
+    expect(receiptPaymentMethodLabel({ provider: 'manual', cardBrand: null, cardLast4: null, receiptReference: 'Check — 1234' })).toBe('Check — 1234');
+  });
+
+  it('a card brand still wins, and Clover is unchanged', () => {
+    expect(receiptPaymentMethodLabel({ provider: 'clover', cardBrand: null, cardLast4: null, receiptReference: 'ref-9' })).toBe('Credit Card');
+  });
+});

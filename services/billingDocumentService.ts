@@ -286,9 +286,8 @@ export async function buildReceiptOfPaymentModel(
   }
   const order = src.caseOrder;
 
-  const [lineItems, catalog, payments] = await Promise.all([
+  const [lineItems, payments] = await Promise.all([
     listLineItemsForOrder(organizationId, order.id, dataAdapterMode),
-    getServiceCatalog(organizationId, dataAdapterMode),
     listPaymentRecordsForCase(organizationId, params.caseId, dataAdapterMode),
   ]);
 
@@ -299,17 +298,19 @@ export async function buildReceiptOfPaymentModel(
     .slice()
     .sort((a, b) => String(a.paidAt ?? a.createdAt).localeCompare(String(b.paidAt ?? b.createdAt)))
     .map((p) => ({
-      methodLabel: receiptPaymentMethodLabel({ provider: p.provider, cardBrand: p.cardBrand, cardLast4: p.cardLast4 }),
+      methodLabel: receiptPaymentMethodLabel({ provider: p.provider, cardBrand: p.cardBrand, cardLast4: p.cardLast4, receiptReference: p.receiptReference }),
       paidAtDisplay: formatReceiptDate(p.paidAt ?? p.createdAt),
       amountCents: p.amount,
     }));
 
   const paidCents = paymentLines.reduce((sum, p) => sum + p.amountCents, 0);
-  const codeByDisplayName = new Map(catalog.map((c) => [c.displayName, c.serviceCode]));
 
   const receiptLines: ReceiptLineItem[] = lineItems.map((line) => ({
     quantity: line.quantity,
-    itemNumber: line.serviceCode || codeByDisplayName.get(line.description) || null,
+    // A merchandise line's code is its product SKU — a real item number.
+    // A service line's code is an internal key (e.g. EXTRA_DEATH_CERTIFICATE)
+    // that the Manors receipt never printed; it stays blank (2026-10).
+    itemNumber: line.lineKind === 'merchandise' ? line.serviceCode || null : null,
     description: line.description,
     costCents: line.unitPrice,
     // A per-line discount is the gap between what the line would cost at
