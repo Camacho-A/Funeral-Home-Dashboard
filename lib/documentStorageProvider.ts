@@ -39,3 +39,17 @@ export type DocumentStorageProvider = {
 
   deleteFile(storageKey: string): Promise<void>;
 };
+
+/** Thrown by `downloadFile` when nothing is stored under the key — as
+    opposed to a credential, network or service failure — so callers can
+    tell "the file is not where we were told it is" apart from "storage is
+    down". The message is unchanged from before (2026-10). */
+export class DocumentNotFoundError extends Error {
+  readonly storageKey: string;
+
+  constructor(storageKey: string) {
+    super(`Document storage: no blob found for storage key "${storageKey}".`);
+    this.name = 'DocumentNotFoundError';
+    this.storageKey = storageKey;
+  }
+}

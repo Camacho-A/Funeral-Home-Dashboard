@@ -44,34 +44,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'Not authorized to generate documents for this case.' }, { status: 403 });
   }
 
-  const outcome = await generateOfficialDocumentForCase(
+  const { outcome, missing } = await generateOfficialDocumentForCase(
     kind,
     caseId,
     { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },
     dataAdapterMode,
   );
+  const documentName = kind === 'certificate_of_cremation' ? 'Certificate of Cremation' : 'Envelope';
 
   switch (outcome) {
     case 'generated':
       return NextResponse.json({ generated: true }, { status: 201 });
     case 'case_not_found':
       return NextResponse.json({ error: 'Case not found.' }, { status: 404 });
-    case 'template_unavailable':
+    case 'missing_information':
       return NextResponse.json(
-        { error: 'The signed Certificate of Cremation template has not been set up yet. Ask an administrator to configure it.' },
-        { status: 409 },
+        { error: `Before generating the ${documentName}, add the following to this case: ${missing.join(', ')}.`, missing },
+        { status: 422 },
       );
     case 'not_applicable':
+      return NextResponse.json({ error: `The ${documentName} is not available for this organization.` }, { status: 422 });
+    case 'template_unavailable':
       return NextResponse.json(
         {
           error:
-            kind === 'certificate_of_cremation'
-              ? 'Record the decedent\'s name and the date of cremation first.'
-              : 'Save the decedent\'s name and a Tag Number first.',
+            'The signed Certificate of Cremation template could not be found in document storage, so nothing was generated. ' +
+            'The case information is saved. Ask an administrator to check the template setup.',
         },
-        { status: 422 },
+        { status: 409 },
       );
     default:
-      return NextResponse.json({ error: 'The document could not be generated. Please try again.' }, { status: 500 });
+      return NextResponse.json({ error: `The ${documentName} could not be generated. Nothing on the case was changed. Please try again.` }, { status: 500 });
   }
 }

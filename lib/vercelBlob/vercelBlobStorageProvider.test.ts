@@ -4,6 +4,8 @@ const mockPut = vi.fn();
 const mockGet = vi.fn();
 const mockDel = vi.fn();
 
+import { DocumentNotFoundError } from '../documentStorageProvider';
+
 vi.mock('@vercel/blob', () => ({
   put: (...args: unknown[]) => mockPut(...args),
   get: (...args: unknown[]) => mockGet(...args),
@@ -118,5 +120,6 @@ describe('vercelBlobStorageProvider — never calls the real Vercel Blob API in 
   it('downloadFile throws a clear error when the blob does not exist', async () => {
     mockGet.mockResolvedValue(null);
     await expect(vercelBlobStorageProvider.downloadFile('missing-key')).rejects.toThrow(/no blob found/i);
+    await expect(vercelBlobStorageProvider.downloadFile('missing-key')).rejects.toBeInstanceOf(DocumentNotFoundError);
   });
 });

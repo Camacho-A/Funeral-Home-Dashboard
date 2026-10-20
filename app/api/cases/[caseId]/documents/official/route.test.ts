@@ -30,28 +30,41 @@ afterEach(() => {
 
 describe('POST /api/cases/[caseId]/documents/official', () => {
   it('generates the requested document for the caller\'s organization', async () => {
-    generateOfficialDocumentForCase.mockResolvedValue('generated');
+    generateOfficialDocumentForCase.mockResolvedValue({ outcome: 'generated', missing: [] });
     const response = await post({ organizationId: DEFAULT_ORGANIZATION_ID, kind: 'envelope' });
     expect(response.status).toBe(201);
     expect(generateOfficialDocumentForCase).toHaveBeenCalledWith('envelope', 'case-1', expect.objectContaining({ organizationId: DEFAULT_ORGANIZATION_ID }), expect.anything());
   });
 
   it('says plainly when the signed certificate template is not set up', async () => {
-    generateOfficialDocumentForCase.mockResolvedValue('template_unavailable');
+    generateOfficialDocumentForCase.mockResolvedValue({ outcome: 'template_unavailable', missing: [] });
     const response = await post({ organizationId: DEFAULT_ORGANIZATION_ID, kind: 'certificate_of_cremation' });
     expect(response.status).toBe(409);
-    expect((await response.json()).error).toMatch(/has not been set up/);
+    const { error } = await response.json();
+    expect(error).toMatch(/template could not be found/);
+    expect(error).toMatch(/case information is saved/);
+    // Never leaks storage detail to the browser.
+    expect(error).not.toMatch(/blob|managed-cremations|token/i);
   });
 
   it('explains what is missing on the case', async () => {
-    generateOfficialDocumentForCase.mockResolvedValue('not_applicable');
+    generateOfficialDocumentForCase.mockResolvedValue({ outcome: 'missing_information', missing: ['Tag Number', 'Date of Cremation'] });
     const response = await post({ organizationId: DEFAULT_ORGANIZATION_ID, kind: 'certificate_of_cremation' });
     expect(response.status).toBe(422);
-    expect((await response.json()).error).toMatch(/date of cremation/);
+    expect((await response.json()).error).toBe(
+      'Before generating the Certificate of Cremation, add the following to this case: Tag Number, Date of Cremation.',
+    );
+  });
+
+  it('a genuine failure says nothing on the case was changed', async () => {
+    generateOfficialDocumentForCase.mockResolvedValue({ outcome: 'failed', missing: [] });
+    const response = await post({ organizationId: DEFAULT_ORGANIZATION_ID, kind: 'certificate_of_cremation' });
+    expect(response.status).toBe(500);
+    expect((await response.json()).error).toMatch(/Certificate of Cremation could not be generated. Nothing on the case was changed/);
   });
 
   it('404s a case outside the organization', async () => {
-    generateOfficialDocumentForCase.mockResolvedValue('case_not_found');
+    generateOfficialDocumentForCase.mockResolvedValue({ outcome: 'case_not_found', missing: [] });
     expect((await post({ organizationId: DEFAULT_ORGANIZATION_ID, kind: 'envelope' })).status).toBe(404);
   });
 

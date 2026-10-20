@@ -9,12 +9,13 @@ redraws them.
   case created with one), and again when the decedent's name changes on a
   case that has a Tag Number. Never merely because a case was created, and
   never for a historical import.
-- **Certificate of Cremation:** as soon as the case has a date of cremation,
-  and again whenever that date, the name, the tag number or the date of death
-  changes.
-- **On demand:** Documents tab → **Generate Envelope** (needs a Tag Number)
-  / **Generate Certificate** (needs a date of cremation). Use this for cases
-  that existed before the feature, or to retry after a failure.
+- **Certificate of Cremation:** as soon as the case has everything the form
+  prints (the name, a valid Tag Number, the date of death and the date of
+  cremation), and again whenever any of them changes.
+- **On demand:** Documents tab → **Generate Envelope** (needs the name and a
+  Tag Number) / **Generate Certificate** (needs all four). Use this for cases
+  that existed before the feature, or to retry after a failure. If something
+  is missing, staff are told exactly what to add; nothing is stored.
 - **Never:** for archived cases, or for organizations without these templates
   (`domain/documents/officialDocumentTriggers.ts`).
 
@@ -53,7 +54,19 @@ previous version moved to History, audited, and announced.
 2. Set `CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY` to that key in the
    Vercel Production environment, and in Preview if wanted.
 
-Until both are done, certificates are reported as "template not set up".
+The key must be the file's **exact path** in the store. Uploading through
+the Vercel dashboard keeps the file's original name and the folder that is
+open at the time, so either open (or create) `managed-cremations/templates/`
+and upload a copy named `certificate-of-cremation.pdf`, or set the variable
+to the path the dashboard shows. The variable is read on each request, so
+moving the file to the configured path needs no redeploy; changing the
+variable does.
+
+Until both are done, staff see "the signed Certificate of Cremation template
+could not be found in document storage", and the logs name the key that was
+looked up. (2026-10-20: the template had been uploaded to the top of the
+store as `Manors Cremation Certificate of Cremation Broward Signed.pdf`,
+which is why Production reported "no blob found".)
 Nothing is approximated. For local development,
 `CERTIFICATE_OF_CREMATION_TEMPLATE_PATH` may point at a local copy instead.
 

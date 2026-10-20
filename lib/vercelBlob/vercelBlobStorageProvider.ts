@@ -1,5 +1,5 @@
 import { put, get, del } from '@vercel/blob';
-import type { DocumentStorageProvider } from '../documentStorageProvider';
+import { DocumentNotFoundError, type DocumentStorageProvider } from '../documentStorageProvider';
 import { resolveStaticBlobToken } from './vercelBlobConfig';
 
 /**
@@ -36,7 +36,7 @@ export const vercelBlobStorageProvider: DocumentStorageProvider = {
   async downloadFile(storageKey: string): Promise<{ buffer: Buffer; contentType: string }> {
     const result = await get(storageKey, { access: 'private', ...blobAuthOptions() });
     if (!result || result.statusCode !== 200) {
-      throw new Error(`Document storage: no blob found for storage key "${storageKey}".`);
+      throw new DocumentNotFoundError(storageKey);
     }
     const chunks: Uint8Array[] = [];
     const reader = result.stream.getReader();

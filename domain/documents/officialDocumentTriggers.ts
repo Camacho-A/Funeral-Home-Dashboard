@@ -1,6 +1,7 @@
 import type { Case } from '../../types/case';
 import { MANORS_ORGANIZATION_ID } from '../organization/organizationProfiles';
 import { composeDecedentName } from '../cases/decedentName';
+import { caseDateToIso, isoToCaseDate } from '../cases/cremationDates';
 
 /**
  * Which of an organization's own official documents a case change should
@@ -11,9 +12,11 @@ import { composeDecedentName } from '../cases/decedentName';
  *                             (or changed), regenerated when the name changes
  *                             on a case that has one. Never merely because a
  *                             case was created.
- *   Certificate of Cremation  needs the date of cremation. Generated once it
- *                             is recorded, regenerated when it, the name,
- *                             the tag number or the date of death changes.
+ *   Certificate of Cremation  needs the name, a valid Tag Number, the date
+ *                             of death and the date of cremation — every
+ *                             value the official form prints. Generated once
+ *                             all four are recorded, regenerated when any of
+ *                             them changes.
  *
  * An archived case is history and is never regenerated. Only an
  * organization that has these templates gets them (Manors).
@@ -45,6 +48,25 @@ export function hasValidTagNumber(c: Pick<Relevant, 'tagNumber'>): boolean {
   return normalizedTag(c) !== null;
 }
 
+/** A real calendar date, stored MM/DD/YYYY (or YYYY-MM-DD) — 02/30 is not. */
+function isRealDate(value: string | null | undefined): boolean {
+  const trimmed = value?.trim() ?? '';
+  return isoToCaseDate(caseDateToIso(trimmed) || trimmed.slice(0, 10)) !== null;
+}
+
+/** Labels of the case information a document still needs, in the order
+    staff see them on the case; empty when it can be generated. */
+export function missingOfficialDocumentFields(kind: OfficialDocumentKind, c: Omit<Relevant, 'organizationId' | 'isDeleted'>): string[] {
+  const missing: string[] = [];
+  if (!present(c.decedentName)) missing.push("Decedent's name");
+  if (!hasValidTagNumber(c)) missing.push('Tag Number');
+  if (kind === 'certificate_of_cremation') {
+    if (!isRealDate(c.dateOfDeath)) missing.push('Date of Death');
+    if (!isRealDate(c.dateOfCremation)) missing.push('Date of Cremation');
+  }
+  return missing;
+}
+
 const fullName = (c: Relevant) => composeDecedentName(c.decedentName ?? '', c.decedentMiddleName ?? null).trim();
 
 export function officialDocumentsToRegenerate(before: Relevant | null, after: Relevant): OfficialDocumentKind[] {
@@ -54,12 +76,12 @@ export function officialDocumentsToRegenerate(before: Relevant | null, after: Re
   const kinds: OfficialDocumentKind[] = [];
   const nameChanged = before === null || fullName(before) !== fullName(after);
 
-  if (offered.includes('envelope') && present(after.decedentName) && hasValidTagNumber(after)) {
+  if (offered.includes('envelope') && missingOfficialDocumentFields('envelope', after).length === 0) {
     const tagSaved = before === null || normalizedTag(before) !== normalizedTag(after);
     if (tagSaved || nameChanged) kinds.push('envelope');
   }
 
-  if (offered.includes('certificate_of_cremation') && present(after.decedentName) && present(after.dateOfCremation)) {
+  if (offered.includes('certificate_of_cremation') && missingOfficialDocumentFields('certificate_of_cremation', after).length === 0) {
     const changed =
       before === null ||
       nameChanged ||

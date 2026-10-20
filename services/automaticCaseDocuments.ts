@@ -4,7 +4,13 @@ import type { DataAdapterMode } from '../lib/env';
 import type { Case } from '../types/case';
 import type { ActivityContext } from './activityService';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
-import { hasValidTagNumber, officialDocumentsFor, officialDocumentsToRegenerate, type OfficialDocumentKind } from '../domain/documents/officialDocumentTriggers';
+import {
+  missingOfficialDocumentFields,
+  officialDocumentsFor,
+  officialDocumentsToRegenerate,
+  type OfficialDocumentKind,
+} from '../domain/documents/officialDocumentTriggers';
+import { DocumentNotFoundError } from '../lib/documentStorageProvider';
 import { composeDecedentName } from '../domain/cases/decedentName';
 import { formatReceiptDate } from '../domain/billing/receiptOfPayment';
 import { toDisplayName } from '../utils/displayName';
@@ -20,7 +26,15 @@ import { buildCertificateOfCremationPdf, buildEnvelopePdf } from './officialDocu
  * generated-document path as every other system document: versioned, the
  * previous version superseded into History, audited, and announced.
  */
-export type OfficialDocumentOutcome = 'generated' | 'not_applicable' | 'template_unavailable' | 'failed';
+/**
+ *   not_applicable        this organization does not have the document
+ *   missing_information   the case lacks something the document prints
+ *                         (see missingOfficialDocumentFields)
+ *   template_unavailable  the signed certificate is not configured, or is
+ *                         not stored at the configured key
+ *   failed                anything else (rendering, storage, records)
+ */
+export type OfficialDocumentOutcome = 'generated' | 'not_applicable' | 'missing_information' | 'template_unavailable' | 'failed';
 
 /**
  * The signed certificate is NOT in the repository (it carries a real
@@ -28,15 +42,28 @@ export type OfficialDocumentOutcome = 'generated' | 'not_applicable' | 'template
  * organization's private document storage, at the key in
  * CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY. For local development a
  * file path may be given instead (CERTIFICATE_OF_CREMATION_TEMPLATE_PATH).
- * With neither, the certificate is reported as unavailable — never
- * approximated.
+ * With neither, or when nothing is stored at the configured key, the
+ * certificate is reported as unavailable — never approximated. Any other
+ * storage error (credentials, network) is thrown and reported as a failure.
  */
-export async function loadCertificateTemplate(): Promise<Uint8Array | null> {
+export type CertificateTemplate =
+  | { status: 'loaded'; bytes: Uint8Array }
+  | { status: 'not_configured' }
+  | { status: 'not_found'; storageKey: string };
+
+export async function loadCertificateTemplate(): Promise<CertificateTemplate> {
   const storageKey = process.env.CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY?.trim();
-  if (storageKey) return new Uint8Array((await downloadOrgDocumentBytes(storageKey)).buffer);
+  if (storageKey) {
+    try {
+      return { status: 'loaded', bytes: new Uint8Array((await downloadOrgDocumentBytes(storageKey)).buffer) };
+    } catch (error) {
+      if (error instanceof DocumentNotFoundError) return { status: 'not_found', storageKey };
+      throw error;
+    }
+  }
   const localPath = process.env.CERTIFICATE_OF_CREMATION_TEMPLATE_PATH?.trim();
-  if (localPath) return new Uint8Array(await fs.readFile(localPath));
-  return null;
+  if (localPath) return { status: 'loaded', bytes: new Uint8Array(await fs.readFile(localPath)) };
+  return { status: 'not_configured' };
 }
 
 const displayName = (c: Case) => toDisplayName(composeDecedentName(c.decedentName, c.decedentMiddleName));
@@ -49,9 +76,12 @@ export async function generateOfficialDocument(
 ): Promise<OfficialDocumentOutcome> {
   if (case_.organizationId !== ctx.organizationId || !officialDocumentsFor(case_.organizationId).includes(kind)) return 'not_applicable';
 
+  // Checked before anything is loaded or written, so a case missing
+  // information never touches storage or the document records.
+  if (missingOfficialDocumentFields(kind, case_).length > 0) return 'missing_information';
+
   try {
     if (kind === 'envelope') {
-      if (!case_.decedentName?.trim() || !hasValidTagNumber(case_)) return 'not_applicable';
       await generateBillingDocument(
         {
           caseId: case_.id,
@@ -67,11 +97,16 @@ export async function generateOfficialDocument(
       return 'generated';
     }
 
-    const dateOfCremation = formatReceiptDate(case_.dateOfCremation);
-    if (!case_.decedentName?.trim() || !dateOfCremation) return 'not_applicable';
     const template = await loadCertificateTemplate();
-    if (!template) {
+    if (template.status === 'not_configured') {
       console.error(`[official documents] Certificate of Cremation for case ${case_.id} not generated: the signed template is not configured.`);
+      return 'template_unavailable';
+    }
+    if (template.status === 'not_found') {
+      console.error(
+        `[official documents] Certificate of Cremation for case ${case_.id} not generated: no file is stored at ` +
+          `CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY ("${template.storageKey}"). The key must match the template's exact path in document storage.`,
+      );
       return 'template_unavailable';
     }
     await generateBillingDocument(
@@ -81,11 +116,11 @@ export async function generateOfficialDocument(
         category: 'cremation_form',
         fileName: 'Certificate of Cremation.pdf',
         buildPdf: () =>
-          buildCertificateOfCremationPdf(template, {
+          buildCertificateOfCremationPdf(template.bytes, {
             tagNumber: case_.tagNumber,
             decedentDisplayName: displayName(case_),
             dateOfDeath: formatReceiptDate(case_.dateOfDeath),
-            dateOfCremation,
+            dateOfCremation: formatReceiptDate(case_.dateOfCremation)!,
           }),
         idFactory: () => crypto.randomUUID(),
       },
@@ -118,14 +153,16 @@ export async function regenerateOfficialDocumentsAfterCaseChange(
 }
 
 /** Staff-requested regeneration (e.g. after a failure): loads the case
-    scoped to the caller's organization first. */
+    scoped to the caller's organization first. `missing` names what the
+    case still needs when the outcome is "missing_information". */
 export async function generateOfficialDocumentForCase(
   kind: OfficialDocumentKind,
   caseId: string,
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
-): Promise<OfficialDocumentOutcome | 'case_not_found'> {
+): Promise<{ outcome: OfficialDocumentOutcome | 'case_not_found'; missing: string[] }> {
   const case_ = await loadCaseOnServer(ctx.organizationId, caseId, dataAdapterMode);
-  if (!case_) return 'case_not_found';
-  return generateOfficialDocument(kind, case_, ctx, dataAdapterMode);
+  if (!case_) return { outcome: 'case_not_found', missing: [] };
+  const outcome = await generateOfficialDocument(kind, case_, ctx, dataAdapterMode);
+  return { outcome, missing: outcome === 'missing_information' ? missingOfficialDocumentFields(kind, case_) : [] };
 }
