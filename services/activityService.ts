@@ -2593,6 +2593,37 @@ export function recordExternalFormSubmissionLinked(ctx: ActivityContext, caseId:
   );
 }
 
+/** A form with no case link attached itself to the one existing case it
+    matched (domain/externalForms/existingCaseAttachment.ts). Same event
+    type as a manual link, so every "this form is on this case" consumer
+    treats both alike; the description says it was automatic and why. */
+export function recordExternalFormSubmissionAutoAttached(
+  ctx: ActivityContext,
+  caseId: string,
+  submissionId: string,
+  formLabel: string,
+  dateOfBirthDiffers: boolean,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_SUBMISSION_LINKED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: null,
+      description: `${formLabel} submission automatically attached to this case (same decedent name and date of death)${
+        dateOfBirthDiffers ? ' — its date of birth differs from the case; check it in the form review' : ''
+      }`,
+      metadata: null,
+      severity: dateOfBirthDiffers ? 'warning' : 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordExternalFormPdfStored(ctx: ActivityContext, caseId: string, submissionId: string, fileName: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   return record(
     envelope(ctx, {

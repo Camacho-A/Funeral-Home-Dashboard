@@ -574,7 +574,7 @@ describe('Arrangement Forms can open a case on its own (2026-10)', () => {
 });
 
 describe('Duplicate guard — a second form describing a known case is reviewed, never merged', () => {
-  it('SCENARIO C — a First Call arriving after an Arrangement case does not create a duplicate', async () => {
+  it('SCENARIO C — a First Call arriving after an Arrangement case attaches to it rather than creating a duplicate', async () => {
     // Arrangement creates the case...
     await deliverArrangement(SUB.arrDupe);
     expect(casePostBodies).toHaveLength(1);
@@ -599,11 +599,15 @@ describe('Duplicate guard — a second form describing a known case is reviewed,
     });
 
     expect(response.status).toBe(200);
-    // No second case, and no silent merge.
+    // No second case. The First Call fills the case's empty First Call
+    // slot (see 'Attaching to the case it belongs to' below).
     expect(casePostBodies).toHaveLength(1);
     const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.fcAfterArr);
-    expect(stored!.status).toBe('unmatched');
+    expect(stored!.status).toBe('matched');
     expect(stored!.createdCaseId).toBeNull();
+    const link = caseFormLinkFixtures.find((l) => l.id === stored!.caseFormLinkId);
+    expect(link!.caseId).toBe('case-from-arrangement');
+    expect(link!.formConfigId).toBe(FIRST_CALL_SHEET_FORM_CONFIG_ID);
   });
 
   it('records why it was held, naming the candidate case for staff review', async () => {
@@ -657,6 +661,148 @@ describe('Duplicate guard — a second form describing a known case is reviewed,
     });
     await deliverArrangement(SUB.arrCreates);
     expect(casePostBodies).toHaveLength(1);
+  });
+});
+
+/**
+ * Attaching to the case it belongs to (2026-10). The everyday Manors
+ * order: the First Call creates the case, then the Arrangement is filled
+ * in directly on Jotform with no SOLIS link. It must land on that case
+ * without anyone importing it (B2026-039/-040/-041 all needed a manual
+ * import). See domain/externalForms/existingCaseAttachment.ts.
+ */
+describe('Attaching to the case it belongs to — an Arrangement after its First Call', () => {
+  const FIRST_CALL_CASE_ID = 'case-from-first-call';
+
+  function givenFirstCallCase(overrides: Partial<(typeof caseFixtures)[number]> = {}) {
+    caseFixtures.push({
+      ...caseFixtures[0],
+      id: FIRST_CALL_CASE_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseNumber: 'B2026-941',
+      decedentName: 'MARGARET OKONKWO',
+      dateOfBirth: '03/14/1951',
+      dateOfDeath: '10/09/2026',
+      isDeleted: false,
+      ...overrides,
+    });
+  }
+
+  function givenFilledSlot(formConfigId: string) {
+    const now = new Date().toISOString();
+    caseFormLinkFixtures.push({
+      id: `link-${FIRST_CALL_CASE_ID}-${formConfigId}`,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      caseId: FIRST_CALL_CASE_ID,
+      provider: 'jotform',
+      formConfigId,
+      linkTokenHash: 'hash',
+      status: 'received',
+      sentAt: null,
+      submissionId: 'an-earlier-submission',
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const stored = () => externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrDupe)!;
+
+  it('attaches the Arrangement to the First Call case and imports its PDF there — no new case, no manual import', async () => {
+    givenFirstCallCase();
+    givenFilledSlot(FIRST_CALL_SHEET_FORM_CONFIG_ID);
+    const { upload } = await import('@/services/documentService');
+
+    const response = await deliverArrangement(SUB.arrDupe);
+
+    expect(await response.json()).toEqual({ received: true, caseCreated: false, attachedToCaseId: FIRST_CALL_CASE_ID });
+    expect(casePostBodies).toHaveLength(0);
+    expect(stored().status).toBe('matched');
+    expect(stored().caseCreationFailureReason ?? null).toBeNull();
+    const link = caseFormLinkFixtures.find((l) => l.id === stored().caseFormLinkId)!;
+    expect(link).toMatchObject({ caseId: FIRST_CALL_CASE_ID, formConfigId: ARRANGEMENT_FORMS_FORM_CONFIG_ID, status: 'received' });
+    expect(stored().pdfStatus).toBe('stored');
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(upload).mock.calls[0][0]).toMatchObject({ caseId: FIRST_CALL_CASE_ID, fileName: 'Arrangement Forms.pdf' });
+  });
+
+  it('records that it was attached automatically, on the case', async () => {
+    givenFirstCallCase();
+    const before = activityEventFixtures.length;
+    await deliverArrangement(SUB.arrDupe);
+
+    const event = activityEventFixtures.slice(before).find((e) => e.eventType === 'external_form.submission_linked');
+    expect(event).toMatchObject({ caseId: FIRST_CALL_CASE_ID, severity: 'info' });
+    expect(event!.description).toMatch(/automatically attached/);
+  });
+
+  it('still attaches when only the date of birth disagrees, and flags it for staff', async () => {
+    // B2026-041: the two forms differ only in the birth year.
+    givenFirstCallCase({ dateOfBirth: '03/14/2044' });
+    const before = activityEventFixtures.length;
+    await deliverArrangement(SUB.arrDupe);
+
+    expect(stored().status).toBe('matched');
+    const event = activityEventFixtures.slice(before).find((e) => e.eventType === 'external_form.submission_linked');
+    expect(event!.severity).toBe('warning');
+    expect(event!.description).toMatch(/date of birth differs/);
+  });
+
+  it('never copies the form answers onto the case — they still go through review', async () => {
+    givenFirstCallCase({ nextOfKinName: 'SOMEONE ELSE' } as never);
+    await deliverArrangement(SUB.arrDupe);
+    const theCase = caseFixtures.find((c) => c.id === FIRST_CALL_CASE_ID)!;
+    expect((theCase as unknown as { nextOfKinName: string }).nextOfKinName).toBe('SOMEONE ELSE');
+  });
+
+  it('a redelivery attaches nothing twice and uploads no second PDF', async () => {
+    givenFirstCallCase();
+    const { upload } = await import('@/services/documentService');
+    await deliverArrangement(SUB.arrDupe);
+    const linksAfterFirst = caseFormLinkFixtures.length;
+    await deliverArrangement(SUB.arrDupe);
+    expect(caseFormLinkFixtures.length).toBe(linksAfterFirst);
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
+  it('is held for staff when the case already has an Arrangement — it never displaces one', async () => {
+    givenFirstCallCase();
+    givenFilledSlot(ARRANGEMENT_FORMS_FORM_CONFIG_ID);
+    const { upload } = await import('@/services/documentService');
+    await deliverArrangement(SUB.arrDupe);
+
+    expect(stored().status).toBe('unmatched');
+    expect(stored().caseCreationFailureReason).toBe('duplicate_review_required');
+    expect(upload).not.toHaveBeenCalled();
+    const slot = caseFormLinkFixtures.find((l) => l.id === `link-${FIRST_CALL_CASE_ID}-${ARRANGEMENT_FORMS_FORM_CONFIG_ID}`);
+    expect(slot!.submissionId).toBe('an-earlier-submission');
+  });
+
+  it('is held for staff when two cases match', async () => {
+    givenFirstCallCase();
+    caseFixtures.push({ ...caseFixtures[caseFixtures.length - 1], id: 'case-second-match', caseNumber: 'B2026-942' });
+    await deliverArrangement(SUB.arrDupe);
+    expect(stored().status).toBe('unmatched');
+  });
+
+  it('is held for staff when the matching case is archived', async () => {
+    givenFirstCallCase({ isDeleted: true });
+    await deliverArrangement(SUB.arrDupe);
+    expect(stored().status).toBe('unmatched');
+  });
+
+  it('is held for staff when only the name and date of birth agree — the date of death must match', async () => {
+    givenFirstCallCase({ dateOfDeath: '10/01/2026' });
+    await deliverArrangement(SUB.arrDupe);
+    expect(stored().status).toBe('unmatched');
+    expect(casePostBodies).toHaveLength(0);
+  });
+
+  it('never attaches to a matching case in another organization', async () => {
+    givenFirstCallCase({ organizationId: SECOND_MOCK_ORGANIZATION_ID });
+    await deliverArrangement(SUB.arrDupe);
+    // No candidate in this organization, so it opens its own case.
+    expect(casePostBodies).toHaveLength(1);
+    expect(caseFormLinkFixtures.some((l) => l.caseId === FIRST_CALL_CASE_ID)).toBe(false);
   });
 });
 
@@ -777,15 +923,18 @@ describe('Automatic intake failure visibility (2026-10)', () => {
   });
 
   it('records a held-back duplicate as the reason, not a generic failure', async () => {
-    caseFixtures.push({
-      ...caseFixtures[0],
-      id: 'case-reason-dupe',
-      organizationId: DEFAULT_ORGANIZATION_ID,
-      caseNumber: 'B2026-903',
-      decedentName: 'MARGARET OKONKWO',
-      dateOfBirth: '03/14/1951',
-      dateOfDeath: '10/09/2026',
-    });
+    // Two matching cases: too ambiguous to attach, so it is held.
+    for (const id of ['case-reason-dupe', 'case-reason-dupe-2']) {
+      caseFixtures.push({
+        ...caseFixtures[0],
+        id,
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        caseNumber: id === 'case-reason-dupe' ? 'B2026-903' : 'B2026-904',
+        decedentName: 'MARGARET OKONKWO',
+        dateOfBirth: '03/14/1951',
+        dateOfDeath: '10/09/2026',
+      });
+    }
     await deliverArrangement(SUB.arrDupe);
 
     const stored = externalFormSubmissionFixtures.find((s) => s.externalSubmissionId === SUB.arrDupe);

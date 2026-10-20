@@ -13,6 +13,7 @@ import { preservePdfForSubmission } from '@/services/externalFormPdfService';
 import { recordExternalFormSubmissionReceived, recordExternalFormSubmissionUnmatched } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { createCaseFromIntakeSubmission } from '@/services/externalFormIntakeService';
+import { attachToExistingCase, type ExistingCaseAttachmentOutcome } from '@/services/existingCaseAttachmentService';
 import { notifyIntakeSubmissionNeedsAttention } from '@/services/intakeNotifications';
 import {
   notifyCaseCreated,
@@ -330,6 +331,37 @@ export async function POST(request: Request) {
     // row stays `unmatched` and is visible in Unmatched Forms, which is
     // the existing recovery path staff already use.
     //
+    // Attaching to the case it belongs to (2026-10): a submission held
+    // only because ONE existing case already describes this death — the
+    // everyday Manors order, First Call first and the Arrangement filled
+    // in directly on Jotform afterwards — is attached to that case
+    // instead of waiting for a manual import. The conditions live in
+    // domain/externalForms/existingCaseAttachment.ts; anything less
+    // certain still goes to staff below.
+    if (!outcome.created && outcome.reason === 'duplicate_review_required') {
+      let attachment: ExistingCaseAttachmentOutcome;
+      try {
+        attachment = await attachToExistingCase(
+          { config, submission, mappedFields, candidates: outcome.duplicateCandidates ?? [] },
+          activityCtx,
+          dataAdapterMode,
+        );
+      } catch (error) {
+        console.error(
+          `[POST /api/webhooks/jotform] Attaching submission ${submission.id} to its existing case failed — left for staff review:`,
+          error instanceof Error ? error.message : error,
+        );
+        attachment = { attached: false, reason: 'case_not_found' };
+      }
+      if (attachment.attached) {
+        await completeOnExistingCase(attachment.caseId, attachment.submission);
+        return NextResponse.json({ received: true, caseCreated: false, attachedToCaseId: attachment.caseId });
+      }
+      console.error(
+        `[POST /api/webhooks/jotform] Submission ${submission.id} not attached automatically (${attachment.reason}) — left for staff review.`,
+      );
+    }
+    //
     // Automatic intake failure visibility (2026-10): the reason is
     // recorded ON the submission, not only in a server log, so Unmatched
     // Forms can tell staff WHY this one needs them rather than leaving an
@@ -431,19 +463,46 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error('Failed to record external_form.submission_received activity event:', error instanceof Error ? error.message : error);
     }
+    await completeOnExistingCase(resolvedLink.caseId, submission);
+  } else {
+    try {
+      await recordExternalFormSubmissionUnmatched(activityCtx, submission.id, config.label, dataAdapterMode);
+    } catch (error) {
+      console.error('Failed to record external_form.submission_unmatched activity event:', error instanceof Error ? error.message : error);
+    }
+    await notifyIntakeSubmissionNeedsAttention(
+      activityCtx,
+      {
+        submissionId: submission.id,
+        formLabel: config.label,
+        submissionReference: submission.externalSubmissionId,
+        reason: 'Could not be matched to a case',
+        receivedAt: submission.receivedAt,
+      },
+      dataAdapterMode,
+    );
+  }
 
+  return NextResponse.json({ received: true });
+
+  /**
+   * Everything that follows a submission landing on a case that already
+   * existed — through its link token, or attached automatically above.
+   */
+  async function completeOnExistingCase(caseId: string, landed: typeof submission) {
     // PDF preservation is independent of, and never blocks, the
     // submission's own receipt — a failure here is recorded on the
     // submission itself (pdfStatus: 'failed') and retried later, never
     // surfaced as a webhook failure to Jotform.
-    const pdfResult = await preservePdfForSubmission(submission, resolvedLink.caseId, activityCtx, dataAdapterMode, { config });
+    const pdfResult = await preservePdfForSubmission(landed, caseId, activityCtx, dataAdapterMode, { config });
 
     /**
      * A form that landed on a case that already existed. Keyed on the
      * submission id, so a redelivery is a no-op; the case-creation branch
-     * above never reaches here, so no arrival is announced twice.
+     * never announces through here as well, so no arrival is announced
+     * twice.
      */
-    const updated = await notifiableCase(resolvedLink.caseId, config.organizationId, dataAdapterMode);
+    const updated = await notifiableCase(caseId, config.organizationId, dataAdapterMode);
     if (updated) {
       if (formRole === 'arrangement') {
         await notifyArrangementReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
@@ -469,25 +528,6 @@ export async function POST(request: Request) {
     // submission is exactly the same "Arrangement Form now linked" fact
     // the historical-import path produces — reuses the identical
     // reconciliation call so both paths can never diverge in meaning.
-    await reconcileCaseWorkflow(config.organizationId, resolvedLink.caseId, dataAdapterMode);
-  } else {
-    try {
-      await recordExternalFormSubmissionUnmatched(activityCtx, submission.id, config.label, dataAdapterMode);
-    } catch (error) {
-      console.error('Failed to record external_form.submission_unmatched activity event:', error instanceof Error ? error.message : error);
-    }
-    await notifyIntakeSubmissionNeedsAttention(
-      activityCtx,
-      {
-        submissionId: submission.id,
-        formLabel: config.label,
-        submissionReference: submission.externalSubmissionId,
-        reason: 'Could not be matched to a case',
-        receivedAt: submission.receivedAt,
-      },
-      dataAdapterMode,
-    );
+    await reconcileCaseWorkflow(config.organizationId, caseId, dataAdapterMode);
   }
-
-  return NextResponse.json({ received: true });
 }
