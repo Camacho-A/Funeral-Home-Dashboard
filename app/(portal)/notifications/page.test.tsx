@@ -8,6 +8,10 @@ import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { Notification } from '@/types/notification';
 import type { NotificationRecipient } from '@/types/notificationRecipient';
 
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: routerPush }) }));
+
+
 vi.mock('@/lib/notificationsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/notificationsClient')>('@/lib/notificationsClient');
   return { ...actual, fetchNotificationInbox: vi.fn(), markNotificationRead: vi.fn(), archiveNotification: vi.fn(), markAllNotificationsRead: vi.fn() };
@@ -59,31 +63,35 @@ function renderPage() {
 
 afterEach(() => vi.clearAllMocks());
 
-describe('Notifications page — Archived tab (2026-10)', () => {
-  it('asks for archived rows and shows only archived ones, including those read over a week ago', async () => {
+describe('Notifications page — read means archived (2026-10)', () => {
+  it('the Archived tab asks for archived rows and shows exactly the archived ones', async () => {
     vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
       items: [
-        item('n1', 'Archived by hand', { readAt: '2026-10-01T13:00:00.000Z', archivedAt: '2026-10-01T13:00:00.000Z' }),
-        item('n2', 'Read long ago', { readAt: '2020-01-01T00:00:00.000Z' }),
+        item('n1', 'Read and archived', { readAt: '2026-10-01T13:00:00.000Z', archivedAt: '2026-10-01T13:00:00.000Z' }),
         item('n3', 'Still unread', {}),
       ],
       nextCursor: null,
     });
     renderPage();
-
     fireEvent.click(await screen.findByRole('tab', { name: 'Archived' }));
-
     await waitFor(() =>
-      expect(notificationsClient.fetchNotificationInbox).toHaveBeenCalledWith(
-        DEFAULT_ORGANIZATION_ID,
-        expect.objectContaining({ includeArchived: true }),
-        null,
-      ),
+      expect(notificationsClient.fetchNotificationInbox).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, expect.objectContaining({ includeArchived: true }), null),
     );
-    expect(await screen.findByText('Archived by hand')).toBeInTheDocument();
-    expect(screen.getByText('Read long ago')).toBeInTheDocument();
+    expect(await screen.findByText('Read and archived')).toBeInTheDocument();
     expect(screen.queryByText('Still unread')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
-    expect(screen.getByText(/move here by themselves 7 days after you read them/)).toBeInTheDocument();
+    expect(screen.getByText('Notifications move here as soon as you read them.')).toBeInTheDocument();
+  });
+
+  it('"Open" goes to the item first, then reads (and so archives) the notification', async () => {
+    const n = item('n1', 'Case created', {});
+    n.notification.actionUrl = '/cases/case-1';
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({ items: [n], nextCursor: null });
+    vi.mocked(notificationsClient.markNotificationRead).mockResolvedValue({ ...n.recipient, readAt: 'x', archivedAt: 'x' });
+    renderPage();
+    fireEvent.click(await screen.findByRole('link', { name: 'Open' }));
+    expect(routerPush).toHaveBeenCalledWith('/cases/case-1');
+    await waitFor(() => expect(notificationsClient.markNotificationRead).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'n1-r'));
+    expect(routerPush.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(notificationsClient.markNotificationRead).mock.invocationCallOrder[0]);
   });
 });

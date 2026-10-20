@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useOrganization } from '@/hooks/useOrganization';
 import {
   useNotificationInbox,
@@ -10,7 +11,6 @@ import {
   useArchiveNotification,
 } from '@/hooks/useNotifications';
 import { NOTIFICATION_CATEGORY_LABEL } from '@/domain/notifications/notificationTypeRegistry';
-import { AUTO_ARCHIVE_AFTER_READ_DAYS, isArchivedForInbox } from '@/domain/notifications/inboxArchiving';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
 import styles from './page.module.css';
@@ -53,16 +53,17 @@ export default function NotificationsPage() {
   // 'unread' is pushed down to the query so the server does the filtering;
   // the other tabs refine the same page client-side, which keeps one
   // cached query rather than four.
-  // 'archived' asks the server for archived rows too, then keeps only those:
-  // archived by hand, or read long enough ago to archive themselves.
+  // 'archived' asks the server for archived rows too, then keeps only those.
+  // Reading a notification archives it (2026-10), so this is the history.
   const inbox = useNotificationInbox(organizationId, { unreadOnly: tab === 'unread', includeArchived: tab === 'archived' });
   const markRead = useMarkNotificationRead(organizationId);
+  const router = useRouter();
   const markAllRead = useMarkAllNotificationsRead(organizationId);
   const archive = useArchiveNotification(organizationId);
 
   const items = (inbox.data?.pages ?? []).flatMap((page) => page.items);
   const visible = items.filter(({ notification, recipient }) => {
-    if (tab === 'archived') return isArchivedForInbox(recipient);
+    if (tab === 'archived') return recipient.archivedAt !== null;
     if (tab === 'read') return recipient.readAt !== null;
     if (tab === 'attention') return recipient.readAt === null && ATTENTION_CATEGORIES.has(notification.category);
     return true;
@@ -97,11 +98,7 @@ export default function NotificationsPage() {
         ))}
       </div>
 
-      {tab === 'archived' && (
-        <p className={styles.loading}>
-          Read notifications move here by themselves {AUTO_ARCHIVE_AFTER_READ_DAYS} days after you read them.
-        </p>
-      )}
+      {tab === 'archived' && <p className={styles.loading}>Notifications move here as soon as you read them.</p>}
 
       {inbox.isPending ? (
         <p className={styles.loading}>Loading notifications…</p>
@@ -136,8 +133,11 @@ export default function NotificationsPage() {
                     <Link
                       className={styles.openLink}
                       href={notification.actionUrl}
-                      onClick={() => {
-                        if (isUnread) markRead.mutate(recipient.id);
+                      onClick={(event) => {
+                        // Open the item first, then read (= archive) the notification.
+                        event.preventDefault();
+                        router.push(notification.actionUrl!);
+                        if (recipient.archivedAt === null) markRead.mutate(recipient.id);
                       }}
                     >
                       Open

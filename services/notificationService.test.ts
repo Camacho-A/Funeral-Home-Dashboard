@@ -546,28 +546,49 @@ describe('read and automatic archiving (2026-10)', () => {
     expect(archived.readAt).toBe(read.readAt);
   });
 
-  it('a notification read a week ago leaves the inbox by itself, and stays under "Show archived"', async () => {
+  it('marking read archives at once: it leaves the inbox, stays under archived, and keeps its history', async () => {
     const recipient = await oneNotification();
-    const index = notificationRecipientFixtures.findIndex((r) => r.id === recipient.id);
-    notificationRecipientFixtures[index] = { ...recipient, readAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString() };
+    const updated = await markRead(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock', { archive: true });
 
-    const inbox = await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock');
-    expect(inbox.items).toHaveLength(0);
-    const withArchived = await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { includeArchived: true }, null, 10, 'mock');
-    expect(withArchived.items).toHaveLength(1);
-    // Nothing was written to do it.
-    expect(notificationRecipientFixtures[index].archivedAt).toBeNull();
+    expect(updated.readAt).not.toBeNull();
+    expect(updated.archivedAt).toBe(updated.readAt);
+    expect((await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock')).items).toHaveLength(0);
+    expect((await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { includeArchived: true }, null, 10, 'mock')).items).toHaveLength(1);
+    expect(await getUnreadCount(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, 'mock')).toBe(0);
+    expect(activityEventFixtures.filter((e) => e.eventType === 'notification.read')).toHaveLength(1);
   });
 
-  it('a notification read today, and any unread one however old, stays in the inbox', async () => {
+  it('a notification read before this rule (read, not archived) is archived when read again, without a second read event', async () => {
     const recipient = await oneNotification();
     await markRead(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    const index = notificationRecipientFixtures.findIndex((r) => r.id === recipient.id);
+    notificationRecipientFixtures[index] = { ...notificationRecipientFixtures[index], archivedAt: null };
+
+    const again = await markRead(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock', { archive: true });
+    expect(again.archivedAt).not.toBeNull();
+    expect(activityEventFixtures.filter((e) => e.eventType === 'notification.read')).toHaveLength(1);
+  });
+
+  it('"mark all as read" archives them all', async () => {
+    await oneNotification();
+    await oneNotification();
+    await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    expect((await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock')).items).toHaveLength(0);
+    expect((await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { includeArchived: true }, null, 10, 'mock')).items).toHaveLength(2);
+  });
+
+  it('without the staff option (the family portal), reading does not archive', async () => {
+    const recipient = await oneNotification();
+    const updated = await markRead(DEFAULT_ORGANIZATION_ID, recipient.id, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    expect(updated.readAt).not.toBeNull();
+    expect(updated.archivedAt).toBeNull();
+  });
+
+  it('an unread notification stays in the inbox however old it is', async () => {
     const old = await oneNotification();
     const index = notificationRecipientFixtures.findIndex((r) => r.id === old.id);
     notificationRecipientFixtures[index] = { ...old, createdAt: '2025-01-01T00:00:00.000Z' };
-
-    const inbox = await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock');
-    expect(inbox.items).toHaveLength(2);
+    expect((await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock')).items).toHaveLength(1);
   });
 });
 

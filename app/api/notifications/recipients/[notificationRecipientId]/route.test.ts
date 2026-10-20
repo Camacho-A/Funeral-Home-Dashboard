@@ -68,6 +68,16 @@ describe('PATCH /api/notifications/recipients/[notificationRecipientId]', () => 
     expect(notificationDeliveryFixtures.find((d) => d.notificationRecipientId === recipient.id && d.channel === 'in_app')?.status).toBe('read');
   });
 
+  it('marking read from the staff inbox also archives it (2026-10)', async () => {
+    const notification = await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: mockDefaultUser.id, idFactory, tokens: {} }, SEED_CTX, 'mock');
+    const recipient = notificationRecipientFixtures.find((r) => r.notificationId === notification.id)!;
+    const response = await patchRequest(recipient.id, { organizationId: DEFAULT_ORGANIZATION_ID, action: 'read' });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.recipient.readAt).not.toBeNull();
+    expect(body.recipient.archivedAt).not.toBeNull();
+  });
+
   it('archives', async () => {
     const notification = await createNotification({ notificationType: 'task.assigned', recipientScope: 'individual', recipientIdentityId: mockDefaultUser.id, idFactory, tokens: {} }, SEED_CTX, 'mock');
     const recipient = notificationRecipientFixtures.find((r) => r.notificationId === notification.id)!;

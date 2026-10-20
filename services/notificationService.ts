@@ -36,7 +36,6 @@ import { getIdentityById } from './identityService';
 import { getPortalUserById } from './portal/portalUserService';
 import { getForOrganization as getOrganizationForNotification } from './organizationsService';
 import { shouldDeferEmailForDigest } from '../domain/notifications/digestTiming';
-import { isArchivedForInbox } from '../domain/notifications/inboxArchiving';
 import {
   recordNotificationCreated,
   recordNotificationSent,
@@ -686,14 +685,35 @@ export async function cancelNotification(organizationId: string, notificationId:
   return updated;
 }
 
-export async function markRead(organizationId: string, notificationRecipientId: string, identityId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<NotificationRecipient> {
+export async function markRead(
+  organizationId: string,
+  notificationRecipientId: string,
+  identityId: string,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+  /** Staff inbox (2026-10): reading a notification archives it. The family
+      portal does not ask for this, so its behavior is unchanged. */
+  options: { archive?: boolean } = {},
+): Promise<NotificationRecipient> {
   const recipient = await getRecipient(organizationId, notificationRecipientId, dataAdapterMode);
   if (!recipient) throw new NotificationServiceError('Notification recipient not found.');
   if (recipient.identityId !== identityId) throw new NotificationServiceError('This notification does not belong to the requesting identity.');
-  if (recipient.readAt !== null) return recipient;
+  // Read = archived (staff inbox, 2026-10): a notification someone has read
+  // leaves the inbox at once and stays reachable under Archived. A row read
+  // before this rule (read, not archived) is archived when read again.
+  const archive = options.archive === true;
+  if (recipient.readAt !== null) {
+    if (!archive || recipient.archivedAt !== null) return recipient;
+    return patchRecipient(organizationId, notificationRecipientId, { archivedAt: nowIso() }, dataAdapterMode);
+  }
 
   const now = nowIso();
-  const updated = await patchRecipient(organizationId, notificationRecipientId, { readAt: now }, dataAdapterMode);
+  const updated = await patchRecipient(
+    organizationId,
+    notificationRecipientId,
+    archive ? { readAt: now, archivedAt: recipient.archivedAt ?? now } : { readAt: now },
+    dataAdapterMode,
+  );
 
   const inAppDelivery = await findDeliveryByRecipientAndChannel(organizationId, notificationRecipientId, 'in_app', dataAdapterMode);
   if (inAppDelivery && inAppDelivery.status !== 'read') {
@@ -731,7 +751,7 @@ export async function markAllReadForIdentity(
   let markedRead = 0;
   for (const recipient of unread) {
     try {
-      await markRead(organizationId, recipient.id, identityId, ctx, dataAdapterMode);
+      await markRead(organizationId, recipient.id, identityId, ctx, dataAdapterMode, { archive: true });
       markedRead += 1;
     } catch (error) {
       console.error(`Failed to mark notification ${recipient.id} read:`, error instanceof Error ? error.message : error);
@@ -870,10 +890,7 @@ export async function listForRecipient(
   );
 
   let filtered = joined.filter((row): row is { recipient: NotificationRecipient; notification: Notification } => row.notification !== null);
-  // Archived by hand, or read long enough ago to archive itself
-  // (domain/notifications/inboxArchiving.ts).
-  const listedAt = new Date();
-  if (!filters.includeArchived) filtered = filtered.filter((row) => !isArchivedForInbox(row.recipient, listedAt));
+  if (!filters.includeArchived) filtered = filtered.filter((row) => row.recipient.archivedAt === null);
   if (filters.unreadOnly) filtered = filtered.filter((row) => row.recipient.readAt === null);
   if (filters.category) filtered = filtered.filter((row) => row.notification.category === filters.category);
 

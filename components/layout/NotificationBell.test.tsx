@@ -8,6 +8,10 @@ import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { Notification } from '@/types/notification';
 import type { NotificationRecipient } from '@/types/notificationRecipient';
 
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: routerPush }) }));
+
+
 vi.mock('@/lib/notificationsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/notificationsClient')>('@/lib/notificationsClient');
   return {
@@ -113,5 +117,46 @@ describe('NotificationBell', () => {
     expect(await within(dialog).findByText('Task assigned')).toBeInTheDocument();
     expect(within(dialog).getByText('Dana assigned you: "Call the cemetery"')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Mark read' })).toBeInTheDocument();
+  });
+});
+
+describe('NotificationBell — read means archived, and the badge moves at once (2026-10)', () => {
+  it('clicking the bell reads nothing', async () => {
+    vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(1);
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [{ notification: makeNotification(), recipient: makeRecipient() }],
+      nextCursor: null,
+    });
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications (1 unread)' }));
+    await within(await screen.findByRole('dialog')).findByText('Task assigned');
+    expect(notificationsClient.markNotificationRead).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Notifications (1 unread)' })).toBeInTheDocument();
+  });
+
+  it('marking one read drops the badge immediately, before the server answers', async () => {
+    vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(2);
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [{ notification: makeNotification(), recipient: makeRecipient() }],
+      nextCursor: null,
+    });
+    vi.mocked(notificationsClient.markNotificationRead).mockReturnValue(new Promise(() => {}) as never);
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications (2 unread)' }));
+    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Mark read' }));
+    expect(await screen.findByRole('button', { name: 'Notifications (1 unread)' })).toBeInTheDocument();
+  });
+
+  it('restores the badge if the server refuses', async () => {
+    vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(2);
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [{ notification: makeNotification(), recipient: makeRecipient() }],
+      nextCursor: null,
+    });
+    vi.mocked(notificationsClient.markNotificationRead).mockRejectedValue(new Error('nope'));
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications (2 unread)' }));
+    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Mark read' }));
+    expect(await screen.findByRole('button', { name: 'Notifications (2 unread)' })).toBeInTheDocument();
   });
 });

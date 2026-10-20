@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useNotificationInbox, useMarkNotificationRead, useArchiveNotification } from '@/hooks/useNotifications';
@@ -27,6 +28,7 @@ import { formatTimestamp } from '@/utils/format';
 export function NotificationDrawer({ open, onClose, organizationId }: { open: boolean; onClose: () => void; organizationId: string }) {
   const inbox = useNotificationInbox(organizationId, {}, open);
   const markRead = useMarkNotificationRead(organizationId);
+  const router = useRouter();
   const archive = useArchiveNotification(organizationId);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -100,10 +102,13 @@ export function NotificationDrawer({ open, onClose, organizationId }: { open: bo
                         href={notification.actionUrl}
                         className="sx-btn sx-btn-ghost"
                         style={{ color: 'var(--sx-link)' }}
-                        onClick={() => {
-                          // Opening a notification reads it, as on the full Notifications page.
-                          if (isUnread) markRead.mutate(recipient.id);
+                        onClick={(event) => {
+                          // Open the item first, then read (= archive) the
+                          // notification. Clicking the bell reads nothing.
+                          event.preventDefault();
+                          router.push(notification.actionUrl!);
                           onClose();
+                          markRead.mutate(recipient.id);
                         }}
                       >
                         View

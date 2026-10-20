@@ -49,6 +49,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ no
             userId,
             { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },
             dataAdapterMode,
+            // Staff inbox: reading archives (2026-10).
+            { archive: true },
           )
         : await archiveNotificationForRecipient(organizationId, notificationRecipientId, userId, dataAdapterMode);
     return NextResponse.json({ recipient });
