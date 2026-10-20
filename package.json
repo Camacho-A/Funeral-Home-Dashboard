@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:date-drift": "vitest run --config vitest.date-drift.config.ts"
   },
   "dependencies": {
     "@fontsource/work-sans": "^5.3.0",
