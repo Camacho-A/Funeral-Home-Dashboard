@@ -18,6 +18,7 @@ import {
   getDateOfDeathFutureError,
   getDateOfBirthFutureError,
   getFutureDateError,
+  getCremationBeforeDeathError,
   splitMilitaryTimeToTwelveHourParts,
   combineTwelveHourTimeParts,
   formatMilitaryTimeToTwelveHour,
@@ -128,6 +129,7 @@ function EditableField({
   trailingBadge,
   emptyLabel,
   missing,
+  required = false,
 }: {
   label: string;
   value: string;
@@ -160,6 +162,10 @@ function EditableField({
       that is itself the way to start editing (`prompt`), or, read-only,
       the plain statement (`readOnlyText`). Display only. */
   missing?: { prompt: string; readOnlyText: string };
+  /** Date of Cremation (2026-10): clearing the box reverts instead of
+      erasing a recorded value — a date can be corrected here, never
+      blanked by accident. */
+  required?: boolean;
 }) {
   const readOnly = useIsReadOnly();
   const [isEditing, setIsEditing] = useState(false);
@@ -213,7 +219,7 @@ function EditableField({
       // before validating/committing — see
       // utils/inputMask.ts#expandTwoDigitYearInDateInput's own comment.
       const expanded = expandTwoDigitYearInDateInput(draft);
-      if (expanded !== '' && (!isValidCalendarDate(expanded) || crossFieldValidate?.(expanded))) {
+      if ((expanded === '' && required) || (expanded !== '' && (!isValidCalendarDate(expanded) || crossFieldValidate?.(expanded)))) {
         setDraft(displayValue);
         setIsEditing(false);
         return;
@@ -600,6 +606,8 @@ export function CaseInformationCard({
   onSaveCertifierLicenseNumber,
   onSaveCertifierFax,
   tagNumber,
+  dateOfCremation,
+  showDateOfCremation = false,
   paymentStatus,
   pickupStatus,
   pickupReleasedTo,
@@ -689,6 +697,11 @@ export function CaseInformationCard({
   /** Manors launch-prep. Operational chain-of-custody tag — null until
       staff assign one. */
   tagNumber: string | null;
+  /** Date of Cremation (2026-10): the case's stored MM/DD/YYYY value, or
+      null. Shown only when `showDateOfCremation` (an organization that
+      issues the Certificate of Cremation). */
+  dateOfCremation?: string | null;
+  showDateOfCremation?: boolean;
   paymentStatus: PaymentStatus;
   /** Manors launch-prep. Structured pickup/release tracking — see
       types/case.ts's own comment on why this exists separately from the
@@ -884,6 +897,24 @@ export function CaseInformationCard({
           missing={{ prompt: 'Tag Number Missing — Add Tag Number', readOnlyText: 'Tag Number Missing' }}
           onSave={(v) => onUpdateCaseInfo({ tagNumber: v.trim().length > 0 ? v.trim() : null })}
         />
+        {/* Date of Cremation (2026-10). The same case field the Schedule
+            tab edits (one value, one query cache, so both always agree),
+            next to the other key dates; Tag Number keeps its place above.
+            Saved as typed (MM/DD/YYYY) — never through a Date object, so
+            no timezone can move the day. A valid date here satisfies the
+            Certificate's date requirement through the same server-side
+            trigger the Schedule tab's edit uses. */}
+        {showDateOfCremation && (
+          <EditableField
+            label="Date of Cremation"
+            value={dateOfCremation ?? ''}
+            kind="date"
+            required
+            emptyLabel="Not recorded"
+            onSave={(v) => onUpdateCaseInfo({ dateOfCremation: v })}
+            crossFieldValidate={(v) => getFutureDateError(v, 'Date of Cremation') ?? getCremationBeforeDeathError(v, dateOfDeath)}
+          />
+        )}
         <EditableField
           label="Location"
           value={placeOfDeath}

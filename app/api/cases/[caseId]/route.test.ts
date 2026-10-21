@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runAfterResponse } from '@/lib/afterResponse';
 import { fixtureIdentitySession } from '@/lib/auth/testing/fixtureIdentityAuth';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
@@ -79,6 +80,12 @@ vi.mock('@/lib/wixDataApi', async () => {
 // that legitimately need to reach the second organization use
 // mockMultiOrgUser, which has active memberships in both.
 let mockSession: { user: typeof mockDefaultUser } | null = fixtureIdentitySession(mockDefaultUser);
+const { regenerateOfficialDocumentsSpy } = vi.hoisted(() => ({ regenerateOfficialDocumentsSpy: vi.fn(async () => ({})) }));
+vi.mock('@/services/automaticCaseDocuments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/automaticCaseDocuments')>()),
+  regenerateOfficialDocumentsAfterCaseChange: regenerateOfficialDocumentsSpy,
+}));
+
 vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
   createSession: async () => undefined,
@@ -1595,6 +1602,32 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
       // Only the server's own record of the staff tick, never the client's claim.
       expect(completions?.['2:0']?.method ?? 'manual').toBe('manual');
     }
+  });
+
+  it('Date of Cremation saved from Case Information goes to the same field and the same Certificate trigger as the Schedule tab', async () => {
+    const original = { ...stage3CaseData({}), tagNumber: 'T-1042', dateOfCremation: null } as Record<string, unknown>;
+    mockAdminQueries(original);
+    vi.mocked(runAfterResponse).mockClear();
+    regenerateOfficialDocumentsSpy.mockClear();
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { dateOfCremation: '07/15/2026' } });
+    expect(response.status).toBe(200);
+    const written = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
+    expect(written.dateOfCremation).toBe('07/15/2026');
+    const changed = Object.keys(written).filter((k) => k in original && JSON.stringify(written[k]) !== JSON.stringify(original[k]));
+    expect(changed.filter((k) => !['dateOfCremation', 'revision', '_updatedDate', 'updatedAt'].includes(k))).toEqual([]);
+    const scheduled = vi.mocked(runAfterResponse).mock.calls.find(([label]) => String(label).startsWith('official documents'));
+    expect(scheduled).toBeDefined();
+    await (scheduled![1] as () => Promise<unknown>)();
+    const [before, after] = regenerateOfficialDocumentsSpy.mock.calls[0] as unknown as [{ dateOfCremation: string | null }, { dateOfCremation: string | null; tagNumber: string | null }];
+    expect(before.dateOfCremation).toBeNull();
+    expect(after).toMatchObject({ dateOfCremation: '07/15/2026', tagNumber: 'T-1042' });
+  });
+
+  it('a Date of Cremation in the future is refused, as from the Schedule tab', async () => {
+    mockAdminQueries(stage3CaseData({}));
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { dateOfCremation: '12/31/2099' } });
+    expect(response.status).toBe(422);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 
   it('a manual stage change records when the case entered the new stage, in the same write', async () => {

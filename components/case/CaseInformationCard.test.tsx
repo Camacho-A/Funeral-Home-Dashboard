@@ -1881,3 +1881,64 @@ describe('CaseInformationCard — Edit Name', () => {
     expect(screen.queryByRole('button', { name: 'Edit Name' })).not.toBeInTheDocument();
   });
 });
+
+describe('CaseInformationCard — Date of Cremation (2026-10)', () => {
+  const field = () => within(screen.getByText('Date of Cremation').parentElement!);
+
+  it('sits with the key dates, right after Tag Number — Tag Number keeps its place', () => {
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="10/10/2026" onUpdateCaseInfo={vi.fn()} />);
+    const firstGrid = screen.getByText('Name').closest('div[class*="grid"]')!;
+    const labels = Array.from(firstGrid.children).map((child) => child.querySelector('div')?.textContent ?? '');
+    expect(labels.slice(0, 6)).toEqual(['Name', 'Date of birth', 'Date of death', 'Time of death', 'Tag Number', 'Date of Cremation']);
+    expect(field().getByRole('button', { name: '10/10/2026' })).toBeInTheDocument();
+  });
+
+  it('a missing date reads "Not recorded"', () => {
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation={null} onUpdateCaseInfo={vi.fn()} />);
+    expect(field().getByText('Not recorded')).toBeInTheDocument();
+  });
+
+  it('staff enter it with the same date editor as Date of death, saved exactly as typed (no timezone shift)', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation={null} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(field().getByRole('button'));
+    const input = field().getByDisplayValue('');
+    fireEvent.change(input, { target: { value: '07/15/2026' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfCremation: '07/15/2026' });
+  });
+
+  it('corrects an existing date', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(field().getByRole('button', { name: '07/15/2026' }));
+    const input = field().getByDisplayValue('07/15/2026');
+    fireEvent.change(input, { target: { value: '07/16/2026' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfCremation: '07/16/2026' });
+  });
+
+  it('refuses a future date, a date before the death, an impossible date — and never blanks a recorded one', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    for (const bad of ['12/31/2099', '07/01/2026', '02/30/2026', '']) {
+      fireEvent.click(field().getByRole('button', { name: '07/15/2026' }));
+      const input = field().getByDisplayValue('07/15/2026');
+      fireEvent.change(input, { target: { value: bad } });
+      fireEvent.blur(input);
+    }
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(field().getByRole('button', { name: '07/15/2026' })).toBeInTheDocument();
+  });
+
+  it('archived: read-only', () => {
+    render(<CaseInformationCard {...baseProps} isArchived showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={vi.fn()} />);
+    expect(field().getByText('07/15/2026')).toBeInTheDocument();
+    expect(field().queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('is not shown for an organization without the Certificate of Cremation', () => {
+    render(<CaseInformationCard {...baseProps} dateOfCremation="07/15/2026" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByText('Date of Cremation')).not.toBeInTheDocument();
+  });
+});

@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
+import { officialDocumentsFor } from '@/domain/documents/officialDocumentTriggers';
 import { CaseSlaPanel } from '@/components/case/CaseSlaPanel';
 import { useCase } from '@/hooks/useCase';
 import { Button } from '@/components/ui/Button';
@@ -240,6 +241,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             onSaveCertifierLicenseNumber={(value) => mutations.setCertifierLicenseNumber(case_, value)}
             onSaveCertifierFax={(value) => mutations.setCertifierFax(case_, value)}
             tagNumber={case_.tagNumber}
+            dateOfCremation={case_.dateOfCremation ?? null}
+            showDateOfCremation={officialDocumentsFor(case_.organizationId).includes('certificate_of_cremation')}
             paymentStatus={viewModel.paymentStatus}
             pickupStatus={case_.pickupStatus}
             pickupReleasedTo={case_.pickupReleasedTo}

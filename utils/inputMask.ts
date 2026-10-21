@@ -119,6 +119,20 @@ export function getDateOfBirthDeathOrderError(dateOfBirth: string, dateOfDeath: 
 }
 
 /**
+ * Date of Cremation on Case Information (2026-10). A cremation cannot be
+ * dated before the death. Same tolerance as the DOB/DOD order check:
+ * either value incomplete or invalid is left to its own validation.
+ */
+export function getCremationBeforeDeathError(dateOfCremation: string, dateOfDeath: string): string | null {
+  const cremation = expandTwoDigitYearInDateInput(dateOfCremation);
+  const death = expandTwoDigitYearInDateInput(dateOfDeath);
+  if (cremation === '' || death === '' || !isValidCalendarDate(cremation) || !isValidCalendarDate(death)) return null;
+  return parseMonthDayYearToLocalDate(cremation) < parseMonthDayYearToLocalDate(death)
+    ? 'Date of Cremation cannot be before Date of Death.'
+    : null;
+}
+
+/**
  * Task #15 (2026-09, future-historical-date validation). Generic core
  * behind every "this field records an event that must already have
  * happened" check — compared against local calendar "today"
