@@ -169,16 +169,46 @@ describe('billingDocumentService.generateGeneralPriceList', () => {
 });
 
 describe('billingDocumentService.buildReceiptOfPaymentModel — Item # (2026-10)', () => {
-  it('prints a merchandise SKU, and leaves a service line blank rather than printing its internal code', async () => {
+  it('prints a merchandise SKU and a readable code for a service line — never its internal key (Manors, 2026-10)', async () => {
     const { buildReceiptOfPaymentModel } = await import('./billingDocumentService');
     await seedOrder();
     const serviceLine = caseOrderLineItemFixtures[caseOrderLineItemFixtures.length - 1];
-    caseOrderLineItemFixtures.push({ ...serviceLine, id: 'line-urn', lineKind: 'merchandise', serviceCode: 'URN-OAK-01', description: 'Oak Urn' });
+    caseOrderLineItemFixtures.push({ ...serviceLine, id: 'line-urn', lineKind: 'merchandise', serviceCode: 'URN-OAK-01', description: 'Oak Urn', sortOrder: 900 });
 
     const model = await buildReceiptOfPaymentModel({ caseId: CASE }, DEFAULT_ORGANIZATION_ID, 'mock');
     const byDescription = new Map(model.lineItems.map((l) => [l.description, l.itemNumber]));
     expect(byDescription.get('Oak Urn')).toBe('URN-OAK-01');
-    expect(byDescription.get(serviceLine.description)).toBeNull();
+    expect(byDescription.get('Direct Cremation')).toBe('CREM-001');
+    for (const line of model.lineItems) expect(line.itemNumber).not.toMatch(/_|:/);
+  });
+
+  it('custom items get CUST codes, the Statement prints the same codes, and no UUID reaches either document', async () => {
+    const { buildReceiptOfPaymentModel, previewStatementModel } = await import('./billingDocumentService');
+    const { renderReceiptOfPaymentHtml } = await import('../domain/billing/renderReceiptOfPaymentHtml');
+    const { renderStatementHtml } = await import('../domain/billing/renderStatementHtml');
+    await seedOrder();
+    const template = caseOrderLineItemFixtures[caseOrderLineItemFixtures.length - 1];
+    const uuid = '466ae939-90de-4937-97c5-ebdda90741df';
+    caseOrderLineItemFixtures.push(
+      { ...template, id: 'line-custom-1', lineKind: 'custom', serviceCode: `custom:${uuid}`, description: 'Outside of Broward County', unitPrice: 15_000, lineTotal: 15_000, quantity: 1, sortOrder: 1000 },
+      { ...template, id: 'line-custom-2', lineKind: 'custom', serviceCode: 'custom:0d1c2b3a-1111-4222-8333-944455556666', description: 'After-hours removal', unitPrice: 7_500, lineTotal: 7_500, quantity: 1, sortOrder: 1010 },
+    );
+
+    const receipt = await buildReceiptOfPaymentModel({ caseId: CASE }, DEFAULT_ORGANIZATION_ID, 'mock');
+    const receiptCodes = new Map(receipt.lineItems.map((l) => [l.description, l.itemNumber]));
+    expect(receiptCodes.get('Outside of Broward County')).toBe('CUST-001');
+    expect(receiptCodes.get('After-hours removal')).toBe('CUST-002');
+
+    const statement = await previewStatementModel(CASE, { organizationId: DEFAULT_ORGANIZATION_ID, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId: 'c' }, 'mock');
+    expect(statement.showItemCodes).toBe(true);
+    const statementCodes = new Map(statement.lineItems.map((l) => [l.description, l.itemCode]));
+    for (const [description, code] of receiptCodes) expect(statementCodes.get(description)).toBe(code);
+
+    for (const html of [renderReceiptOfPaymentHtml(receipt), renderStatementHtml(statement)]) {
+      expect(html).not.toContain(uuid);
+      expect(html).not.toMatch(/custom:|DIRECT_CREMATION|[0-9a-f]{8}-[0-9a-f]{4}-/i);
+      expect(html).toContain('CUST-001');
+    }
   });
 });
 

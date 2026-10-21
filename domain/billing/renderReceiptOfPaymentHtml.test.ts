@@ -162,7 +162,7 @@ describe('renderReceiptOfPaymentHtml — charges', () => {
     const html = renderReceiptOfPaymentHtml(
       model({ lineItems: [{ quantity: 1, itemNumber: null, description: 'Direct Cremation', costCents: 89_000, discountCents: 0, totalCents: 89_000 }] }),
     );
-    expect(html).toMatch(/text-align:center;">\s*<\/td>/);
+    expect(html).toMatch(/white-space:nowrap;">\s*<\/td>/);
   });
 
   it('escapes user-supplied values', () => {
@@ -184,5 +184,17 @@ describe('renderReceiptOfPaymentHtml — organization isolation', () => {
     expect(html).not.toContain('Cremations America of Broward');
     expect(html).not.toContain('DBA MANORS CREMATION');
     expect(html).not.toContain('954) 884-5770');
+  });
+});
+
+describe('renderReceiptOfPaymentHtml — readable item codes (2026-10)', () => {
+  it('keeps a code on one line and lets a long description wrap', () => {
+    const long = 'Direct Cremation including transportation of the deceased from the place of death within Broward County and all required permits';
+    const html = renderReceiptOfPaymentHtml(
+      model({ lineItems: [{ quantity: 1, itemNumber: 'CREM-001', description: long, costCents: 89_000, discountCents: 0, totalCents: 89_000 }] }),
+    );
+    expect(html).toMatch(/white-space:nowrap;">CREM-001<\/td>/);
+    expect(html).toContain('overflow-wrap:anywhere;">' + long);
+    expect(html).toMatch(/width:13%;">Item #/);
   });
 });

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { itemCodesForLines, usesReadableItemCodes } from '../domain/billing/itemCode';
 import type { DataAdapterMode } from '../lib/env';
 import { resolveMergeSourceData, resolveOrganizationIdentity, generateBillingDocument, renderAndStorePdf } from './documentService';
 import { getServiceCatalog, listLineItemsForOrder, getPaidAmountForCase } from './pricingService';
@@ -122,7 +123,9 @@ export async function generateStatement(
   ]);
 
   const catalogByCode = new Map(catalog.map((c) => [c.serviceCode, c]));
-  const statementLines: StatementLineItem[] = lineItems.map((line) => {
+  const showItemCodes = usesReadableItemCodes(org);
+  const itemCodes = showItemCodes ? itemCodesForLines(lineItems) : null;
+  const statementLines: StatementLineItem[] = lineItems.map((line, index) => {
     let ftcClass;
     if (line.lineKind === 'merchandise') {
       ftcClass = FTC_CLASS.GOODS_AND_SERVICES;
@@ -139,6 +142,7 @@ export async function generateStatement(
       unitPriceCents: line.unitPrice,
       lineTotalCents: line.lineTotal,
       includesBasicServicesFee: ftcClass === FTC_CLASS.BASIC_SERVICES_FEE,
+      ...(itemCodes ? { itemCode: itemCodes[index] } : {}),
     };
   });
 
@@ -147,6 +151,7 @@ export async function generateStatement(
   const hasBundledBasicFee = statementLines.some((l) => l.includesBasicServicesFee);
 
   const model: BillingStatementModel = {
+    ...(showItemCodes ? { showItemCodes } : {}),
     provider: statementProviderIdentity(org, src.organization, src.location),
     decedentName: src.case.decedentName,
     caseNumber: src.case.caseNumber,
@@ -215,19 +220,30 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
     getSupplementalConfig(org, dataAdapterMode),
   ]);
   const catalogByCode = new Map(catalog.map((c) => [c.serviceCode, c]));
-  const statementLines: StatementLineItem[] = lineItems.map((line) => {
+  const showItemCodes = usesReadableItemCodes(org);
+  const itemCodes = showItemCodes ? itemCodesForLines(lineItems) : null;
+  const statementLines: StatementLineItem[] = lineItems.map((line, index) => {
     const ftcClass =
       line.lineKind === 'merchandise'
         ? FTC_CLASS.GOODS_AND_SERVICES
         : line.lineKind === 'service'
           ? (catalogByCode.get(line.serviceCode) ? classifyServiceItem(catalogByCode.get(line.serviceCode)!) : FTC_CLASS.UNCLASSIFIED)
           : FTC_CLASS.GOODS_AND_SERVICES;
-    return { ftcClass, description: line.description, quantity: line.quantity, unitPriceCents: line.unitPrice, lineTotalCents: line.lineTotal, includesBasicServicesFee: ftcClass === FTC_CLASS.BASIC_SERVICES_FEE };
+    return {
+      ftcClass,
+      description: line.description,
+      quantity: line.quantity,
+      unitPriceCents: line.unitPrice,
+      lineTotalCents: line.lineTotal,
+      includesBasicServicesFee: ftcClass === FTC_CLASS.BASIC_SERVICES_FEE,
+      ...(itemCodes ? { itemCode: itemCodes[index] } : {}),
+    };
   });
   const offerings = deriveOfferings(catalog, products);
   const cashAdvanceSubtotal = sumCashAdvances(cashAdvances);
   const hasBundledBasicFee = statementLines.some((l) => l.includesBasicServicesFee);
   const model: BillingStatementModel = {
+    ...(showItemCodes ? { showItemCodes } : {}),
     provider: statementProviderIdentity(org, src.organization, src.location),
     decedentName: src.case.decedentName,
     caseNumber: src.case.caseNumber,
@@ -305,12 +321,14 @@ export async function buildReceiptOfPaymentModel(
 
   const paidCents = paymentLines.reduce((sum, p) => sum + p.amountCents, 0);
 
-  const receiptLines: ReceiptLineItem[] = lineItems.map((line) => ({
+  // Readable item codes (2026-10): an organization that uses them prints a
+  // short code for every line (domain/billing/itemCode.ts) — never an
+  // internal key. Otherwise unchanged: a merchandise line's SKU, and a
+  // service line blank.
+  const readableCodes = usesReadableItemCodes(organizationId) ? itemCodesForLines(lineItems) : null;
+  const receiptLines: ReceiptLineItem[] = lineItems.map((line, index) => ({
     quantity: line.quantity,
-    // A merchandise line's code is its product SKU — a real item number.
-    // A service line's code is an internal key (e.g. EXTRA_DEATH_CERTIFICATE)
-    // that the Manors receipt never printed; it stays blank (2026-10).
-    itemNumber: line.lineKind === 'merchandise' ? line.serviceCode || null : null,
+    itemNumber: readableCodes ? readableCodes[index] : line.lineKind === 'merchandise' ? line.serviceCode || null : null,
     description: line.description,
     costCents: line.unitPrice,
     // A per-line discount is the gap between what the line would cost at

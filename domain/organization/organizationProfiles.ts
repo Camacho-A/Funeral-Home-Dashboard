@@ -170,6 +170,12 @@ export type OrganizationFeaturePreferences = {
   /** Cash Advance Items section on the Statement and BillingCard.
       Platform default: shown. */
   cashAdvanceOnStatement: boolean;
+  /** Readable item codes (2026-10): the Receipt of Payment and the
+      Statement print short codes (CREM-001, CUST-001, …) in an Item #
+      column instead of blank cells or internal identifiers
+      (domain/billing/itemCode.ts). Platform default: off — every other
+      organization's documents are unchanged. */
+  readableItemCodes: boolean;
   /** Core, visible-by-default modules this organization hides. */
   hiddenModules: readonly HideableModuleKey[];
   /** Medical Examiner checklist variant. Empty = no variant. */
@@ -268,6 +274,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   cremainsPickup: null,
   caseOwnerVisible: true,
   cashAdvanceOnStatement: true,
+  readableItemCodes: false,
   hiddenModules: [],
   medicalExaminerStages: [],
   retiredChecklistItems: [],
@@ -331,6 +338,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     documentArchivingEnabled: false,
     caseOwnerVisible: false,
     cashAdvanceOnStatement: false,
+    readableItemCodes: true,
     hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
     combineIntakeStages: true,
     uppercaseCombinedIntakeLabels: true,

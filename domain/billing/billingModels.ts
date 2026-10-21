@@ -20,6 +20,10 @@ export type StatementLineItem = {
   /** True when this line's price already includes the non-declinable basic
       services fee (D10 — Manor's direct-cremation bundled model). */
   includesBasicServicesFee: boolean;
+  /** Readable item code (domain/billing/itemCode.ts), shown in the Item #
+      column when `showItemCodes` is on. Optional: absent on models built
+      before the column existed. Never an internal identifier. */
+  itemCode?: string | null;
 };
 
 export type StatementCashAdvanceItem = {
@@ -60,6 +64,9 @@ export type BillingStatementModel = {
 
   /** Funeral-home goods/services lines (from the authoritative CaseOrder). */
   lineItems: StatementLineItem[];
+  /** Readable item codes (2026-10): print the Item # column. Off → the
+      table is exactly as before. */
+  showItemCodes?: boolean;
   basicServicesFeeMode: BasicServicesFeeMode;
 
   /** === AUTHORITATIVE ACCOUNTING FIGURES (from CaseOrder + payments) === */

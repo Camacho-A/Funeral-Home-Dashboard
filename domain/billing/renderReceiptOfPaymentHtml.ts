@@ -50,6 +50,8 @@ const CELL = 'padding:6px 8px; border:1px solid #333; font-size:11pt; vertical-a
 const HEAD_CELL = `${CELL} background:#efefef; font-weight:700; text-align:center;`;
 const NUM_CELL = `${CELL} text-align:right; white-space:nowrap;`;
 const SUMMARY_LABEL = `${CELL} text-align:right; font-weight:700; background:#efefef;`;
+/** Readable item codes (2026-10): a code stays on one line. */
+const ITEM_CODE_CELL = `${CELL} text-align:center; white-space:nowrap;`;
 
 export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string {
   const logo = model.provider.logoDataUri
@@ -63,8 +65,8 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
             (line) => `
             <tr>
               <td style="${CELL} text-align:center;">${line.quantity}</td>
-              <td style="${CELL} text-align:center;">${orBlank(line.itemNumber)}</td>
-              <td style="${CELL}">${escapeHtml(line.description)}</td>
+              <td style="${ITEM_CODE_CELL}">${orBlank(line.itemNumber)}</td>
+              <td style="${CELL} overflow-wrap:anywhere;">${escapeHtml(line.description)}</td>
               <td style="${NUM_CELL}">${formatReceiptMoney(line.costCents)}</td>
               <td style="${NUM_CELL}">${line.discountCents > 0 ? formatReceiptMoney(line.discountCents) : ''}</td>
               <td style="${NUM_CELL}">${formatReceiptMoney(line.totalCents)}</td>
@@ -153,7 +155,7 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
       <thead>
         <tr>
           <th style="${HEAD_CELL} width:7%;">Qty</th>
-          <th style="${HEAD_CELL} width:12%;">Item #</th>
+          <th style="${HEAD_CELL} width:13%;">Item #</th>
           <th style="${HEAD_CELL}">Description</th>
           <th style="${HEAD_CELL} width:14%;">Cost</th>
           <th style="${HEAD_CELL} width:14%;">Discount</th>

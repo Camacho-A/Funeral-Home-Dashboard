@@ -66,12 +66,24 @@ function renderProviderHeader(provider: BillingStatementModel['provider']): stri
   </header>`;
 }
 
-function lineRow(line: StatementLineItem): string {
+/** Readable item codes (2026-10): a narrow column that never wraps, so a
+    code stays on one line and the description column takes the rest. */
+const ITEM_CODE_CELL = 'width:13%; white-space:nowrap; text-align:left; vertical-align:top;';
+
+function lineRow(line: StatementLineItem, showItemCodes: boolean): string {
   const feeNote = line.includesBasicServicesFee
     ? ` <span style="font-style:italic; font-size:0.85em;">(includes our basic services fee)</span>`
     : '';
-  return `<tr>
+  if (!showItemCodes) {
+    return `<tr>
     <td>${escapeHtml(line.description)}${feeNote}</td>
+    <td style="text-align:center;">${line.quantity}</td>
+    ${moneyCell(line.unitPriceCents)}
+    ${moneyCell(line.lineTotalCents)}
+  </tr>`;
+  }
+  return `<tr style="vertical-align:top;">
+    <td style="${ITEM_CODE_CELL}">${escapeHtml(line.itemCode ?? '')}</td><td style="overflow-wrap:anywhere;">${escapeHtml(line.description)}${feeNote}</td>
     <td style="text-align:center;">${line.quantity}</td>
     ${moneyCell(line.unitPriceCents)}
     ${moneyCell(line.lineTotalCents)}
@@ -106,20 +118,28 @@ export function renderStatementHtml(model: BillingStatementModel): string {
       ? `<p style="font-size:0.9em;">Our basic services fee is included in the price of the direct cremation shown above; it is not charged separately.</p>`
       : `<p style="font-size:0.9em;">Our basic services fee is a non-declinable charge listed above.</p>`;
 
+  // Readable item codes (2026-10): an Item # column first, for an
+  // organization that uses them. Without it the table is unchanged.
+  const showItemCodes = model.showItemCodes === true;
+  const row = (line: StatementLineItem) => lineRow(line, showItemCodes);
+  const columns = showItemCodes ? 5 : 4;
+  const headRow = showItemCodes
+    ? `<th style="${ITEM_CODE_CELL}">Item #</th><th style="text-align:left;">Description</th><th>Qty</th>`
+    : `<th style="text-align:left;">Item</th><th>Qty</th>`;
   const goodsSection = `
     <h2 style="border-bottom:2px solid #333; padding-bottom:4px;">Funeral Goods and Services Selected</h2>
     <table style="width:100%; border-collapse:collapse;" cellpadding="6">
       <thead><tr style="border-bottom:1px solid #999;">
-        <th style="text-align:left;">Item</th><th>Qty</th>
+        ${headRow}
         <th style="text-align:right;">Unit Price</th><th style="text-align:right;">Amount</th>
       </tr></thead>
       <tbody>
-        ${basicServicesLines.map(lineRow).join('')}
-        ${goodsLines.map(lineRow).join('')}
-        ${unclassifiedLines.length ? `<tr><td colspan="4" style="font-style:italic; color:#a00;">Additional items pending FTC classification:</td></tr>${unclassifiedLines.map(lineRow).join('')}` : ''}
+        ${basicServicesLines.map(row).join('')}
+        ${goodsLines.map(row).join('')}
+        ${unclassifiedLines.length ? `<tr><td colspan="${columns}" style="font-style:italic; color:#a00;">Additional items pending FTC classification:</td></tr>${unclassifiedLines.map(row).join('')}` : ''}
       </tbody>
       <tfoot><tr style="border-top:2px solid #333; font-weight:bold;">
-        <td colspan="3">Total funeral goods and services</td>${moneyCell(model.goodsAndServicesTotalCents)}
+        <td colspan="${columns - 1}">Total funeral goods and services</td>${moneyCell(model.goodsAndServicesTotalCents)}
       </tr></tfoot>
     </table>
     ${basicFeeExplanation}`;
