@@ -894,6 +894,59 @@ describe('markAllReadForIdentity', () => {
     const result = await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
     expect(result.markedRead).toBe(0);
   });
+
+  /**
+   * The Mark-all gap (2026-10): rows read before read-meant-archived (read,
+   * never archived) were skipped — "Mark all as read" left them in the inbox
+   * and staff had to Archive them one by one.
+   */
+  it('also archives rows read earlier but still in the inbox — with no second "read" event', async () => {
+    await seedUnread(2, MANORS_ADMIN_IDENTITY_ID);
+    const mine = notificationRecipientFixtures.filter((r) => r.identityId === MANORS_ADMIN_IDENTITY_ID);
+    const earlier = mine[0];
+    const index = notificationRecipientFixtures.findIndex((r) => r.id === earlier.id);
+    notificationRecipientFixtures[index] = { ...earlier, readAt: '2026-10-01T00:00:00.000Z', archivedAt: null };
+    const readEventsBefore = activityEventFixtures.filter((e) => e.eventType === 'notification.read').length;
+
+    const result = await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+
+    expect(result.markedRead).toBe(2);
+    expect((await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, {}, null, 10, 'mock')).items).toHaveLength(0);
+    const archived = (await listForRecipient(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, { includeArchived: true }, null, 10, 'mock')).items;
+    expect(archived).toHaveLength(2);
+    expect(archived.every(({ recipient }) => recipient.readAt !== null && recipient.archivedAt !== null)).toBe(true);
+    // The earlier read keeps its original read time; only one new read event (the unread row).
+    expect(notificationRecipientFixtures[index].readAt).toBe('2026-10-01T00:00:00.000Z');
+    expect(activityEventFixtures.filter((e) => e.eventType === 'notification.read').length - readEventsBefore).toBe(1);
+  });
+
+  it('a retry changes nothing and records nothing more', async () => {
+    await seedUnread(3, MANORS_ADMIN_IDENTITY_ID);
+    await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    const recipientsAfter = JSON.stringify(notificationRecipientFixtures);
+    const eventsAfter = activityEventFixtures.length;
+
+    const retry = await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+
+    expect(retry.markedRead).toBe(0);
+    expect(JSON.stringify(notificationRecipientFixtures)).toBe(recipientsAfter);
+    expect(activityEventFixtures.length).toBe(eventsAfter);
+  });
+
+  it('leaves other people and other organizations exactly as they were', async () => {
+    await seedUnread(2, MANORS_ADMIN_IDENTITY_ID);
+    await seedUnread(2, MANORS_CHRIS_IDENTITY_ID);
+    const others = () => JSON.stringify(notificationRecipientFixtures.filter((r) => r.identityId !== MANORS_ADMIN_IDENTITY_ID));
+    const before = others();
+
+    await markAllReadForIdentity(DEFAULT_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx(), 'mock');
+    // Acting in another organization touches none of this organization's rows.
+    const mineBefore = JSON.stringify(notificationRecipientFixtures.filter((r) => r.identityId === MANORS_ADMIN_IDENTITY_ID));
+    expect((await markAllReadForIdentity(SECOND_MOCK_ORGANIZATION_ID, MANORS_ADMIN_IDENTITY_ID, ctx({ organizationId: SECOND_MOCK_ORGANIZATION_ID }), 'mock')).markedRead).toBe(0);
+
+    expect(others()).toBe(before);
+    expect(JSON.stringify(notificationRecipientFixtures.filter((r) => r.identityId === MANORS_ADMIN_IDENTITY_ID))).toBe(mineBefore);
+  });
 });
 
 describe('unread count is exact beyond the old 250-row window', () => {

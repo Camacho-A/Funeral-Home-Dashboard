@@ -73,8 +73,10 @@ function applyReadAndArchived(
     inboxes: queryClient.getQueriesData<InboxData>({ queryKey: ['notificationInbox', organizationId] }),
   };
   const now = new Date().toISOString();
-  const matches = (recipient: { id: string; readAt: string | null }) =>
-    target === 'all-unread' ? recipient.readAt === null : target.ids.includes(recipient.id);
+  // "Mark all as read" clears everything still in the inbox — unread rows
+  // and rows read before read-meant-archived — matching the server.
+  const matches = (recipient: { id: string; readAt: string | null; archivedAt: string | null }) =>
+    target === 'all-unread' ? recipient.readAt === null || recipient.archivedAt === null : target.ids.includes(recipient.id);
 
   const clearedUnread = new Set<string>();
   for (const [key, data] of snapshot.inboxes) {

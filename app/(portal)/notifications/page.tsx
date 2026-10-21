@@ -8,7 +8,6 @@ import {
   useNotificationInbox,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
-  useArchiveNotification,
 } from '@/hooks/useNotifications';
 import { NOTIFICATION_CATEGORY_LABEL } from '@/domain/notifications/notificationTypeRegistry';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -59,7 +58,6 @@ export default function NotificationsPage() {
   const markRead = useMarkNotificationRead(organizationId);
   const router = useRouter();
   const markAllRead = useMarkAllNotificationsRead(organizationId);
-  const archive = useArchiveNotification(organizationId);
 
   const items = (inbox.data?.pages ?? []).flatMap((page) => page.items);
   const visible = items.filter(({ notification, recipient }) => {
@@ -143,14 +141,10 @@ export default function NotificationsPage() {
                       Open
                     </Link>
                   )}
-                  {isUnread && (
+                  {/* One action: reading archives it — no separate Archive. */}
+                  {recipient.archivedAt === null && (
                     <button type="button" className={styles.rowButton} onClick={() => markRead.mutate(recipient.id)}>
-                      Mark read
-                    </button>
-                  )}
-                  {tab !== 'archived' && (
-                    <button type="button" className={styles.rowButton} onClick={() => archive.mutate(recipient.id)}>
-                      Archive
+                      Mark as read
                     </button>
                   )}
                 </div>

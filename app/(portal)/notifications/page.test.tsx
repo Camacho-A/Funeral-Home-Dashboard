@@ -83,6 +83,48 @@ describe('Notifications page — read means archived (2026-10)', () => {
     expect(screen.getByText('Notifications move here as soon as you read them.')).toBeInTheDocument();
   });
 
+  it('"Mark all as read" removes every active item at once — unread and earlier-read alike — and the Archived tab holds them', async () => {
+    const unread = item('n1', 'Unread one', {});
+    const readEarlier = item('n2', 'Read before the rule', { readAt: '2026-10-01T12:30:00.000Z' });
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({ items: [unread, readEarlier], nextCursor: null });
+    let resolve!: (value: { markedRead: number }) => void;
+    vi.mocked(notificationsClient.markAllNotificationsRead).mockReturnValue(new Promise((r) => (resolve = r)));
+    renderPage();
+    await screen.findByText('Unread one');
+    fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }));
+    await waitFor(() => expect(screen.queryByText('Unread one')).not.toBeInTheDocument());
+    expect(screen.queryByText('Read before the rule')).not.toBeInTheDocument();
+    expect(notificationsClient.markAllNotificationsRead).toHaveBeenCalledTimes(1);
+
+    const archivedAt = '2026-10-01T13:00:00.000Z';
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [
+        { ...unread, recipient: { ...unread.recipient, readAt: archivedAt, archivedAt } },
+        { ...readEarlier, recipient: { ...readEarlier.recipient, archivedAt } },
+      ],
+      nextCursor: null,
+    });
+    resolve({ markedRead: 2 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Archived' }));
+    expect(await screen.findByText('Unread one')).toBeInTheDocument();
+    expect(screen.getByText('Read before the rule')).toBeInTheDocument();
+  });
+
+  it('each active row has one "Mark as read" (no separate Archive); archived rows have neither', async () => {
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [item('n1', 'Active', {}), item('n2', 'Done', { readAt: '2026-10-01T13:00:00.000Z', archivedAt: '2026-10-01T13:00:00.000Z' })],
+      nextCursor: null,
+    });
+    vi.mocked(notificationsClient.markNotificationRead).mockResolvedValue({ ...item('n1', 'Active', {}).recipient, readAt: 'x', archivedAt: 'x' });
+    renderPage();
+    await screen.findByText('Active');
+    expect(screen.getAllByRole('button', { name: 'Mark as read' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as read' }));
+    await waitFor(() => expect(notificationsClient.markNotificationRead).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'n1-r'));
+    expect(notificationsClient.archiveNotification).not.toHaveBeenCalled();
+  });
+
   it('"Open" goes to the item first, then reads (and so archives) the notification', async () => {
     const n = item('n1', 'Case created', {});
     n.notification.actionUrl = '/cases/case-1';

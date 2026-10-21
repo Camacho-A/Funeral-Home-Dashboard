@@ -20,6 +20,7 @@ vi.mock('@/lib/notificationsClient', async () => {
     fetchNotificationInbox: vi.fn(),
     markNotificationRead: vi.fn(),
     archiveNotification: vi.fn(),
+    markAllNotificationsRead: vi.fn(),
   };
 });
 
@@ -116,7 +117,7 @@ describe('NotificationBell', () => {
     const dialog = await screen.findByRole('dialog');
     expect(await within(dialog).findByText('Task assigned')).toBeInTheDocument();
     expect(within(dialog).getByText('Dana assigned you: "Call the cemetery"')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Mark read' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Mark as read' })).toBeInTheDocument();
   });
 });
 
@@ -143,7 +144,7 @@ describe('NotificationBell — read means archived, and the badge moves at once 
     vi.mocked(notificationsClient.markNotificationRead).mockReturnValue(new Promise(() => {}) as never);
     renderBell();
     fireEvent.click(await screen.findByRole('button', { name: 'Notifications (2 unread)' }));
-    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Mark read' }));
+    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Mark as read' }));
     expect(await screen.findByRole('button', { name: 'Notifications (1 unread)' })).toBeInTheDocument();
   });
 
@@ -156,7 +157,46 @@ describe('NotificationBell — read means archived, and the badge moves at once 
     vi.mocked(notificationsClient.markNotificationRead).mockRejectedValue(new Error('nope'));
     renderBell();
     fireEvent.click(await screen.findByRole('button', { name: 'Notifications (2 unread)' }));
-    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Mark read' }));
+    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Mark as read' }));
     expect(await screen.findByRole('button', { name: 'Notifications (2 unread)' })).toBeInTheDocument();
+  });
+});
+
+describe('NotificationBell — Mark all as read (2026-10)', () => {
+  it('zeroes the badge and empties the panel at once, with one request and no per-item reads', async () => {
+    vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(3);
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [
+        { notification: makeNotification(), recipient: makeRecipient() },
+        { notification: makeNotification({ id: 'notif-2', title: 'Second' }), recipient: makeRecipient({ id: 'r-2', notificationId: 'notif-2' }) },
+      ],
+      nextCursor: null,
+    });
+    vi.mocked(notificationsClient.markAllNotificationsRead).mockReturnValue(new Promise(() => {}));
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications (3 unread)' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Second');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark all as read' }));
+    expect(await screen.findByRole('button', { name: 'Notifications' })).toBeInTheDocument();
+    expect(within(dialog).queryByText('Task assigned')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Second')).not.toBeInTheDocument();
+    expect(notificationsClient.markAllNotificationsRead).toHaveBeenCalledTimes(1);
+    expect(notificationsClient.markNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it('restores the badge and the list if the server refuses', async () => {
+    vi.mocked(notificationsClient.fetchUnreadNotificationCount).mockResolvedValue(1);
+    vi.mocked(notificationsClient.fetchNotificationInbox).mockResolvedValue({
+      items: [{ notification: makeNotification(), recipient: makeRecipient() }],
+      nextCursor: null,
+    });
+    vi.mocked(notificationsClient.markAllNotificationsRead).mockRejectedValue(new Error('nope'));
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications (1 unread)' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Mark all as read' }));
+    expect(await screen.findByRole('button', { name: 'Notifications (1 unread)' })).toBeInTheDocument();
+    expect(await within(dialog).findByText('Task assigned')).toBeInTheDocument();
   });
 });

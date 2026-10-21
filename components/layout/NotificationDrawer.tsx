@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { useNotificationInbox, useMarkNotificationRead, useArchiveNotification } from '@/hooks/useNotifications';
+import { useNotificationInbox, useMarkNotificationRead, useMarkAllNotificationsRead } from '@/hooks/useNotifications';
 import { NOTIFICATION_CATEGORY_LABEL } from '@/domain/notifications/notificationTypeRegistry';
 import { formatTimestamp } from '@/utils/format';
 
@@ -28,8 +28,8 @@ import { formatTimestamp } from '@/utils/format';
 export function NotificationDrawer({ open, onClose, organizationId }: { open: boolean; onClose: () => void; organizationId: string }) {
   const inbox = useNotificationInbox(organizationId, {}, open);
   const markRead = useMarkNotificationRead(organizationId);
+  const markAllRead = useMarkAllNotificationsRead(organizationId);
   const router = useRouter();
-  const archive = useArchiveNotification(organizationId);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -55,7 +55,17 @@ export function NotificationDrawer({ open, onClose, organizationId }: { open: bo
           <h2 id="notif-title" className="sx-notif-title">
             Notifications
           </h2>
-          <div style={{ display: 'flex', gap: 2 }}>
+          <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {/* Read = archived (2026-10): one click clears the whole inbox
+                into Archived and zeroes the badge; nothing else to do. */}
+            <button
+              type="button"
+              className="sx-btn sx-btn-ghost sx-btn-sm"
+              onClick={() => markAllRead.mutate()}
+              disabled={markAllRead.isPending || items.length === 0}
+            >
+              {markAllRead.isPending ? 'Marking…' : 'Mark all as read'}
+            </button>
             <a href="/settings/notifications" className="sx-btn sx-btn-ghost sx-btn-sm">
               Preferences
             </a>
@@ -114,13 +124,10 @@ export function NotificationDrawer({ open, onClose, organizationId }: { open: bo
                         View
                       </Link>
                     )}
-                    {isUnread && (
-                      <button type="button" className="sx-btn sx-btn-ghost" onClick={() => markRead.mutate(recipient.id)} disabled={markRead.isPending}>
-                        Mark read
-                      </button>
-                    )}
-                    <button type="button" className="sx-btn sx-btn-ghost" onClick={() => archive.mutate(recipient.id)} disabled={archive.isPending}>
-                      Archive
+                    {/* One action: reading archives it (an item read before
+                        that rule, still in the inbox, is archived the same way). */}
+                    <button type="button" className="sx-btn sx-btn-ghost" onClick={() => markRead.mutate(recipient.id)} disabled={markRead.isPending}>
+                      Mark as read
                     </button>
                   </div>
                 </div>

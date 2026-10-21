@@ -731,15 +731,22 @@ export async function markRead(
 }
 
 /**
- * Mark every unread in-app notification read for one identity (2026-10).
+ * Mark every notification read — and therefore archived — for one identity
+ * (2026-10).
  *
- * Reuses `markRead` per row rather than bulk-patching, so each row goes
- * through the same ownership check and emits the same activity event a
- * single mark-read does — "mark all" is a convenience over the existing
- * operation, never a second way to mutate inbox state.
+ * "Active" is anything still in the inbox or still unread: unread rows, and
+ * rows read before read-means-archived existed (read, never archived). Those
+ * used to survive "Mark all as read" and sit in the inbox until someone
+ * clicked a separate Archive. Reuses `markRead` per row rather than
+ * bulk-patching, so each row goes through the same ownership check, its
+ * in-app delivery is marked read (the badge), and an unread row emits the
+ * same activity event a single mark-read does; a row already read is only
+ * archived, with no second "read" event.
  *
- * Scoped by `(organizationId, identityId)`: it can only ever touch the
- * caller's own unread rows in the organization they are acting in.
+ * Idempotent: a retry finds nothing left and changes nothing. Scoped by
+ * `(organizationId, identityId)`: it can only ever touch the caller's own
+ * rows in the organization they are acting in. Digest-queued deliveries and
+ * other channels are never touched.
  */
 export async function markAllReadForIdentity(
   organizationId: string,
@@ -747,9 +754,9 @@ export async function markAllReadForIdentity(
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ markedRead: number }> {
-  const unread = await listUnreadRecipientsForIdentity(organizationId, identityId, dataAdapterMode);
+  const active = await listActiveRecipientsForIdentity(organizationId, identityId, dataAdapterMode);
   let markedRead = 0;
-  for (const recipient of unread) {
+  for (const recipient of active) {
     try {
       await markRead(organizationId, recipient.id, identityId, ctx, dataAdapterMode, { archive: true });
       markedRead += 1;
@@ -760,22 +767,27 @@ export async function markAllReadForIdentity(
   return { markedRead };
 }
 
-/** Every not-yet-read, not-archived recipient row for one identity.
-    Paginated, so "mark all" genuinely means all. */
-async function listUnreadRecipientsForIdentity(
+/** Unread, or still in the inbox (not archived). */
+function isActiveRecipient(recipient: NotificationRecipient): boolean {
+  return recipient.readAt === null || recipient.archivedAt === null;
+}
+
+/** Every active recipient row for one identity. Paginated, so "mark all"
+    genuinely means all. */
+async function listActiveRecipientsForIdentity(
   organizationId: string,
   identityId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<NotificationRecipient[]> {
   if (dataAdapterMode === 'mock') {
-    return notificationRecipientFixtures.filter(
-      (r) => r.organizationId === organizationId && r.identityId === identityId && r.readAt === null && r.archivedAt === null,
-    );
+    return notificationRecipientFixtures.filter((r) => r.organizationId === organizationId && r.identityId === identityId && isActiveRecipient(r));
   }
   const items = await queryAllWixDataItems<WixNotificationRecipientItem>('notificationRecipients', { organizationId, identityId });
   return items
     .map((item) => mapWixNotificationRecipientItem(item.data))
-    .filter((r): r is NotificationRecipient => r !== null && r.readAt === null && r.archivedAt === null);
+    .filter(
+      (r): r is NotificationRecipient => r !== null && r.organizationId === organizationId && r.identityId === identityId && isActiveRecipient(r),
+    );
 }
 
 export async function archiveNotificationForRecipient(
