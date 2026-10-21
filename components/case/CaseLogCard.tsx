@@ -7,7 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import textAreaFieldStyles from '@/components/ui/TextArea.module.css';
 import type { CaseLogEntry, NewCaseLogEntryClientInput } from '@/types/caseLogEntry';
 import { formatTimestamp } from '@/utils/format';
-import { caseLogEntryDisplay } from '@/domain/cases/caseLogDisplay';
+import { caseLogContactProblems, caseLogEntryDisplay } from '@/domain/cases/caseLogDisplay';
 import styles from './CaseLogCard.module.css';
 
 /** Passed through to `onAddEntry` as react-query's own per-call mutate
@@ -45,6 +45,10 @@ export function CaseLogCard({
   const [noteText, setNoteText] = useState('');
   const [contactWho, setContactWho] = useState('');
   const [contactSummary, setContactSummary] = useState('');
+  // Inline validation (2026-10): shown once staff try to add the entry, or
+  // leave the Contacted field empty.
+  const [attempted, setAttempted] = useState(false);
+  const [whoTouched, setWhoTouched] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
@@ -94,22 +98,22 @@ export function CaseLogCard({
       return;
     }
 
+    // Both required (2026-10): who was contacted and a summary. A missing
+    // one is shown inline rather than silently ignoring the click.
     const who = contactWho.trim();
     const summary = contactSummary.trim();
-    if (!summary) return;
+    setAttempted(true);
+    if (!who || !summary) return;
     setIsSaving(true);
     onAddEntry(
-      {
-        type: 'contact',
-        // Optional (2026-10): a voicemail or an internal update names no one.
-        ...(who ? { contactedWho: who } : {}),
-        contactSummary: summary,
-      },
+      { type: 'contact', contactedWho: who, contactSummary: summary },
       {
         onSuccess: (entry) => {
           setIsSaving(false);
           setContactWho('');
           setContactSummary('');
+          setAttempted(false);
+          setWhoTouched(false);
           setJustAddedId(entry.id);
         },
         onError: () => {
@@ -120,8 +124,13 @@ export function CaseLogCard({
     );
   }
 
-  const canSave =
-    logType === 'note' ? noteText.trim() !== '' : contactSummary.trim() !== '';
+  // A note needs text before it can be added. A contact entry can always be
+  // attempted, so a missing field is explained inline instead of the button
+  // simply staying grey.
+  const canSave = logType === 'note' ? noteText.trim() !== '' : true;
+  const contactProblems = caseLogContactProblems({ contactedWho: contactWho, contactSummary });
+  const whoError = (attempted || whoTouched) && contactProblems.contactedWho ? contactProblems.contactedWho : null;
+  const summaryError = attempted && contactProblems.contactSummary ? contactProblems.contactSummary : null;
 
   function handleNoteKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -196,22 +205,48 @@ export function CaseLogCard({
         />
       ) : (
         <>
-          <div className={styles.contactRow}>
+          {/* Free text, so a specific person's name can be entered; never
+              pre-filled. */}
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="case-log-contacted">
+              Contacted <span className={styles.requiredMark} aria-hidden="true">*</span>
+            </label>
             <TextField
+              id="case-log-contacted"
               value={contactWho}
               onChange={(e) => setContactWho(e.target.value)}
-              placeholder="Contacted (optional) — e.g. ME's office"
-              aria-label="Contacted (optional)"
+              onBlur={() => setWhoTouched(true)}
+              placeholder="e.g. Catherine (next of kin), Dr. Lee, ME's office, crematory"
+              aria-required="true"
+              aria-invalid={whoError ? 'true' : undefined}
+              aria-describedby={whoError ? 'case-log-contacted-error' : undefined}
             />
+            {whoError && (
+              <div id="case-log-contacted-error" className={styles.fieldError}>
+                {whoError}
+              </div>
+            )}
           </div>
-          <textarea
-            className={textAreaFieldStyles.field}
-            value={contactSummary}
-            onChange={(e) => setContactSummary(e.target.value)}
-            placeholder="Summary (required) — e.g. left voicemail, no answer, internal update"
-            aria-label="Summary"
-            aria-required="true"
-          />
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="case-log-summary">
+              Summary <span className={styles.requiredMark} aria-hidden="true">*</span>
+            </label>
+            <textarea
+              id="case-log-summary"
+              className={textAreaFieldStyles.field}
+              value={contactSummary}
+              onChange={(e) => setContactSummary(e.target.value)}
+              placeholder="e.g. left voicemail, no answer, confirmed pickup window"
+              aria-required="true"
+              aria-invalid={summaryError ? 'true' : undefined}
+              aria-describedby={summaryError ? 'case-log-summary-error' : undefined}
+            />
+            {summaryError && (
+              <div id="case-log-summary-error" className={styles.fieldError}>
+                {summaryError}
+              </div>
+            )}
+          </div>
         </>
       )}
 

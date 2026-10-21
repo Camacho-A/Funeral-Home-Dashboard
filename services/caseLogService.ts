@@ -5,6 +5,7 @@ import type { CaseLogEntry, NewCaseLogEntryInput } from '../types/caseLogEntry';
 import { queryWixDataItems, insertWixDataItem } from '../lib/wixDataApi';
 import { mapWixCaseLogEntryItem, buildWixCaseLogEntryData, type WixCaseLogEntryItem } from '../lib/wixCaseLogEntryMapper';
 import { caseLogFixtures } from './__mocks__/fixtures';
+import { caseLogEntryProblem } from '../domain/cases/caseLogDisplay';
 
 const CASE_LOG_COLLECTION = 'caseLogEntries';
 
@@ -49,6 +50,11 @@ export async function create(
   input: NewCaseLogEntryInput,
   dataAdapterMode: DataAdapterMode,
 ): Promise<CaseLogEntry> {
+  // Defense in depth (2026-10): the route validates first, but no caller may
+  // store a contact without who was contacted and a summary.
+  const problem = caseLogEntryProblem(input);
+  if (problem) throw new CaseLogValidationError(problem);
+
   const entry: CaseLogEntry = {
     id: crypto.randomUUID(),
     organizationId: context.organizationId,
@@ -69,6 +75,14 @@ export async function create(
 
   await insertWixDataItem<WixCaseLogEntryItem>(CASE_LOG_COLLECTION, buildWixCaseLogEntryData(entry), entry.id);
   return entry;
+}
+
+/** An entry that does not meet the Case Log rules (domain/cases/caseLogDisplay.ts). */
+export class CaseLogValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CaseLogValidationError';
+  }
 }
 
 export const caseLogService = { list, create };

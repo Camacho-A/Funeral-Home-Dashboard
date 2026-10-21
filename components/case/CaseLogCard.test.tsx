@@ -138,49 +138,88 @@ describe('CaseLogCard — entries and empty state', () => {
   });
 });
 
-describe('CaseLogCard — logged calls and activity (2026-10): summary required, no "spoke with"', () => {
+describe('CaseLogCard — contact entries (2026-10): Contacted and Summary both required, no "spoke with"', () => {
   function openContactTab() {
     fireEvent.click(screen.getByRole('button', { name: 'Contact' }));
   }
 
-  it('no longer asks who you spoke with; who was contacted is optional and the summary required', () => {
+  it('labels both fields as required — "Contacted *" and "Summary *" — and never asks who you spoke with', () => {
     renderCard();
     openContactTab();
     expect(screen.queryByPlaceholderText(/Spoke with/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Contacted (optional)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Summary')).toHaveAttribute('aria-required', 'true');
+    const contacted = screen.getByLabelText('Contacted *');
+    expect(contacted.closest('div')!.querySelector('label')).toHaveTextContent('Contacted *');
+    expect(contacted).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Summary *').closest('div')!.querySelector('label')).toHaveTextContent('Summary *');
+    expect(screen.getByLabelText('Summary *')).toHaveAttribute('aria-required', 'true');
   });
 
-  it('cannot save without a summary, even with a contact named', () => {
+  it('never pre-fills who was contacted', () => {
     renderCard();
     openContactTab();
-    const save = screen.getByRole('button', { name: 'Add entry' });
-    fireEvent.change(screen.getByLabelText('Contacted (optional)'), { target: { value: 'ME office' } });
-    expect(save).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: '   ' } });
-    expect(save).toBeDisabled();
+    expect(screen.getByLabelText('Contacted *')).toHaveValue('');
   });
 
-  it('logs a voicemail or internal update without naming anyone', () => {
+  it('will not save without who was contacted, and says so inline', () => {
     const { onAddEntry } = renderCard();
     openContactTab();
-    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'Left voicemail, no answer' } });
-    const save = screen.getByRole('button', { name: 'Add entry' });
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
-    expect(onAddEntry).toHaveBeenCalledWith({ type: 'contact', contactSummary: 'Left voicemail, no answer' }, expect.anything());
-  });
-
-  it('includes who was contacted when given', () => {
-    const { onAddEntry } = renderCard();
-    openContactTab();
-    fireEvent.change(screen.getByLabelText('Contacted (optional)'), { target: { value: 'ME office' } });
-    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'Released the case' } });
+    fireEvent.change(screen.getByLabelText('Summary *'), { target: { value: 'Left voicemail, no answer' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
-    expect(onAddEntry).toHaveBeenCalledWith({ type: 'contact', contactedWho: 'ME office', contactSummary: 'Released the case' }, expect.anything());
+    expect(onAddEntry).not.toHaveBeenCalled();
+    expect(screen.getByText('Please enter who was contacted.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contacted *')).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('shows historical entries as recorded, and an entry naming no one by its summary alone', () => {
+  it('rejects a whitespace-only contact', () => {
+    const { onAddEntry } = renderCard();
+    openContactTab();
+    fireEvent.change(screen.getByLabelText('Contacted *'), { target: { value: '   ' } });
+    fireEvent.change(screen.getByLabelText('Summary *'), { target: { value: 'Released the case' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
+    expect(onAddEntry).not.toHaveBeenCalled();
+    expect(screen.getByText('Please enter who was contacted.')).toBeInTheDocument();
+  });
+
+  it('shows the message when the Contacted field is left empty', () => {
+    renderCard();
+    openContactTab();
+    expect(screen.queryByText('Please enter who was contacted.')).not.toBeInTheDocument();
+    fireEvent.blur(screen.getByLabelText('Contacted *'));
+    expect(screen.getByText('Please enter who was contacted.')).toBeInTheDocument();
+  });
+
+  it('will not save without a summary, even with a contact named', () => {
+    const { onAddEntry } = renderCard();
+    openContactTab();
+    fireEvent.change(screen.getByLabelText('Contacted *'), { target: { value: 'ME office' } });
+    fireEvent.change(screen.getByLabelText('Summary *'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
+    expect(onAddEntry).not.toHaveBeenCalled();
+    expect(screen.getByText('A summary is required.')).toBeInTheDocument();
+  });
+
+  it('saves a specific person\'s name with the summary, trimmed', () => {
+    const { onAddEntry } = renderCard();
+    openContactTab();
+    fireEvent.change(screen.getByLabelText('Contacted *'), { target: { value: '  Catherine Callard (next of kin) ' } });
+    fireEvent.change(screen.getByLabelText('Summary *'), { target: { value: 'Left voicemail' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
+    expect(onAddEntry).toHaveBeenCalledWith(
+      { type: 'contact', contactedWho: 'Catherine Callard (next of kin)', contactSummary: 'Left voicemail' },
+      expect.anything(),
+    );
+    expect(screen.queryByText('Please enter who was contacted.')).not.toBeInTheDocument();
+  });
+
+  it('a note is unaffected: no Contacted field, saved with its text alone', () => {
+    const { onAddEntry } = renderCard();
+    expect(screen.queryByLabelText('Contacted *')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/family requested a biodegradable urn/i), { target: { value: 'Family wants a blue urn' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }));
+    expect(onAddEntry).toHaveBeenCalledWith({ type: 'note', text: 'Family wants a blue urn' }, expect.anything());
+  });
+
+  it('shows historical entries as recorded — including one saved without a contact — with nothing backfilled', () => {
     renderCard({
       entries: [
         { ...ENTRY, id: 'old', type: 'contact', text: null, contactedWho: 'HOSPICE', contactedSpoke: 'Nurse Adams', contactSummary: 'OK' },

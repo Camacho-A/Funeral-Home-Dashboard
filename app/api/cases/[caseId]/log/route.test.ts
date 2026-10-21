@@ -131,7 +131,7 @@ describe('POST /api/cases/[caseId]/log — author attribution', () => {
   });
 });
 
-describe('POST /api/cases/[caseId]/log — an entry needs a summary; no contact name or "spoke with" required (2026-10)', () => {
+describe('POST /api/cases/[caseId]/log — a contact entry needs who was contacted AND a summary; no "spoke with" (2026-10)', () => {
   it('refuses a contact entry without a summary, writing nothing', async () => {
     const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactedWho: 'Hospice', contactSummary: '  ' });
     expect(response.status).toBe(400);
@@ -139,11 +139,30 @@ describe('POST /api/cases/[caseId]/log — an entry needs a summary; no contact 
     expect(caseLogFixtures).toHaveLength(0);
   });
 
-  it('saves a call or activity that names no one (voicemail, internal update)', async () => {
-    const response = await postEntry('case-1', { organizationId: DEFAULT_ORGANIZATION_ID, type: 'contact', contactSummary: 'Left voicemail' });
+  it('refuses a contact entry that does not say who was contacted — missing, blank, whitespace, null or not a string — writing nothing', async () => {
+    for (const contactedWho of [undefined, '', '   ', null, 42, ['Hospice']]) {
+      const response = await postEntry('case-1', {
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        type: 'contact',
+        ...(contactedWho === undefined ? {} : { contactedWho }),
+        contactSummary: 'Left voicemail',
+      });
+      expect(response.status, String(contactedWho)).toBe(400);
+      expect((await response.json()).error).toBe('Please enter who was contacted.');
+    }
+    expect(caseLogFixtures).toHaveLength(0);
+  });
+
+  it('saves a contact entry naming a specific person', async () => {
+    const response = await postEntry('case-1', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      type: 'contact',
+      contactedWho: 'Catherine Callard',
+      contactSummary: 'Left voicemail',
+    });
     expect(response.status).toBe(201);
     const { entry } = await response.json();
-    expect(entry.contactedWho).toBeNull();
+    expect(entry.contactedWho).toBe('CATHERINE CALLARD');
     expect(entry.contactSummary).toBe('LEFT VOICEMAIL');
   });
 
@@ -215,5 +234,21 @@ describe('GET /api/cases/[caseId]/log', () => {
     const { entries } = await response.json();
     expect(entries).toHaveLength(1);
     expect(entries[0].author).toBe(CALLER_NAME);
+  });
+});
+
+describe('caseLogService.create — the same rule for any caller (2026-10)', () => {
+  it('refuses to store a contact without who was contacted, and stores a valid one', async () => {
+    const { caseLogService, CaseLogValidationError } = await import('@/services/caseLogService');
+    const org = { organizationId: DEFAULT_ORGANIZATION_ID };
+    await expect(caseLogService.create(org, 'case-1', { type: 'contact', contactSummary: 'Left voicemail', author: 'Dana' }, 'mock')).rejects.toBeInstanceOf(
+      CaseLogValidationError,
+    );
+    await expect(
+      caseLogService.create(org, 'case-1', { type: 'contact', contactedWho: '  ', contactSummary: 'Left voicemail', author: 'Dana' }, 'mock'),
+    ).rejects.toThrow('Please enter who was contacted.');
+    expect(caseLogFixtures).toHaveLength(0);
+    const entry = await caseLogService.create(org, 'case-1', { type: 'contact', contactedWho: 'Dr. Lee', contactSummary: 'Attestation signed', author: 'Dana' }, 'mock');
+    expect(entry.contactedWho).toBe('DR. LEE');
   });
 });

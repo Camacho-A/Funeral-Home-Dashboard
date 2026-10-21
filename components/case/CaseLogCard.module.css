@@ -95,14 +95,28 @@
   color: var(--color-text-muted);
 }
 
-.contactRow {
+/* Contact entry fields (2026-10): visible labels with a required mark, and
+   an inline message under a field that is missing. */
+.field {
   display: flex;
-  gap: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
 
-.contactRow > * {
-  flex: 1;
+.fieldLabel {
+  font-size: var(--font-size-12-5);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.requiredMark {
+  color: var(--color-danger-text);
+}
+
+.fieldError {
+  font-size: var(--font-size-12);
+  color: var(--color-danger-text);
 }
 
 .footer {

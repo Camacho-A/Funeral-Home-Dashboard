@@ -96,8 +96,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const callerProfile = await resolveStaffProfileForCaller({ userId, organizationId, role }, dataAdapterMode);
   const author = callerProfile?.displayName?.trim() || 'Office';
 
-  // 2026-10: "Spoke with" is retired — a contact entry is who was
-  // contacted plus a REQUIRED summary. Any `contactedSpoke` sent is ignored.
+  // 2026-10: "Spoke with" is retired — a contact entry is who was contacted
+  // AND a summary, both required (a non-string, blank or whitespace-only
+  // value is missing). Any `contactedSpoke` sent is ignored.
   const input: NewCaseLogEntryInput = {
     type: b.type,
     text: typeof b.text === 'string' ? b.text : undefined,
