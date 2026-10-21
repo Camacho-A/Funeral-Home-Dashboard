@@ -296,13 +296,13 @@ function MilestoneRow({
         {milestone.state === 'completed' && (
           <div>
             <dt>Completed</dt>
-            <dd>{formatEventTime(milestone.completedAt)}</dd>
+            <dd>{milestone.completedAt ? formatEventTime(milestone.completedAt) : 'Completed — date not recorded'}</dd>
           </div>
         )}
         {milestone.state === 'start_date_needed' && (
           <div>
             <dt>Start</dt>
-            <dd>Start date needed — record when it began below.</dd>
+            <dd>{milestone.note ?? 'Start date needed — record when it began below.'}</dd>
           </div>
         )}
         {(milestone.state === 'active' || milestone.state === 'start_date_needed') && (
@@ -311,7 +311,7 @@ function MilestoneRow({
             <dd>{SLA_RESPONSIBLE_LABEL[milestone.responsibleParty]}</dd>
           </div>
         )}
-        {milestone.note && (
+        {milestone.note && milestone.state !== 'start_date_needed' && (
           <div>
             <dt>Note</dt>
             <dd>{milestone.note}</dd>

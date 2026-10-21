@@ -33,7 +33,7 @@ alert sweep all call it, so they can't disagree.
 | Hard Save | attestation received | Hard Save | same day | staff |
 | State approval | Submitted for approval (the Hard Save, unless a separate submission time is recorded) | **a recorded approval only** | 2 | state |
 | Crematory turnaround | crematory receipt | cremains ready | 5 (fixed return days optional) | crematory |
-| Family pickup | cremains ready | authorized release | 5, advisory | family |
+| Family pickup | cremains received by Manors | authorized release | 5, advisory | family |
 
 Each milestone is independent of the six-step workflow stage. One stage can
 contain several milestones.
@@ -52,6 +52,7 @@ Times come only from recorded events. Nothing is invented.
 | Vital Statistics received | Recorded automatically when the form arrives (the first time is kept), or by staff. |
 | EDRS submitted / Hard Saved / Sent to crematory | The completion record of their checklist items (EDRS submitted & sent to doctor; Attestation Received / Hard Saved; Permit and Authorization sent), or recorded by staff. |
 | Attestation / submitted for approval / approval / permit sent / crematory receipt / cremains ready | Recorded by staff. "Permit sent" also comes from its checklist item, and "cremains ready" from Date Received. |
+| Cremains received by Manors | Date Received, or the "Ashes picked up (Tue/Fri)" checklist item (Manors collecting them from the crematory; the expected-pickup appointment completes with it, and the item's completion record gives the time when there is one). It is also implied by the release. |
 | Release | The authorized release record (Released To and Released Date), or confirmed shipping delivery. |
 
 A later event implies the earlier ones happened. For example, a Hard Save
@@ -77,8 +78,23 @@ began. In SLA details, each milestone has one-click "Record start" and
 Recording needs case-edit permission. "Start Date Needed" is counted on the
 dashboard, not listed in Needs Attention, and never triggers an alert.
 
-Date of Cremation is never treated as "cremains ready". Expected Pickup is
-never treated as release.
+Ready at the crematory, received by Manors and released to the family are
+separate events:
+
+- Once the cremains are back with Manors, the crematory turnaround is
+  complete. When no ready time was recorded, it shows "Completed — date not
+  recorded"; no time is invented.
+- The family pickup runs from the date received. Without that date it reads
+  "Start Date Needed", with a pointer to Date Received on the Schedule tab.
+- Date of Cremation is never treated as cremains ready or received, and
+  Expected Pickup is never treated as received or released.
+
+**Current milestone.** The current milestone is the furthest open one. A
+milestone with a real deadline always stays current. An earlier milestone
+that is open only because its start time is missing is not shown as
+current once a later milestone has evidence of progress. It stays visible
+as it is in SLA details, and an unrecorded approval stays "Not recorded",
+never complete.
 
 ## Statuses
 

@@ -1564,3 +1564,21 @@ describe('buildCaseViewModel — SLA tracking (2026-10)', () => {
     expect({ ...withDisabled, sla: undefined }).toEqual({ ...before, sla: undefined });
   });
 });
+
+describe('buildCaseViewModel — cremains already back (B2026-036 shape)', () => {
+  it('the header names family pickup, not state approval, and the case is not pushed into Needs Attention', () => {
+    const case_: Case = {
+      ...slaCaseFixtures.find((c) => c.id === '1045')!,
+      rawStage: 7,
+      isStalled: false,
+      isDeleted: false,
+      checklistState: { '2:0': true, '2:2': true, '3:0': true, '3:1': true, '5:0': true },
+      cremainsReceivedAt: null,
+      pickupStatus: 'awaiting_pickup',
+    };
+    const vm = buildCaseViewModel(case_, { staffList: [], sla: { settings: normalizeSlaSettings({}, true), nowIso: '2026-10-21T15:00:00.000Z' } });
+    expect(vm.sla?.current).toMatchObject({ key: 'family_pickup', status: 'start_date_needed' });
+    expect(vm.needsAttention).toBe(false);
+    expect(vm.isOverdue).toBe(false);
+  });
+});

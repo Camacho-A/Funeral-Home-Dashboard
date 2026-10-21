@@ -249,3 +249,21 @@ describe('SLA alert schedule — 9 AM and 3 PM America/New_York, business days (
     expect(slaAlertFor({ state: 'start_date_needed', status: 'start_date_needed', advisory: false, external: false, delay: null, overdue: false } as never, settings)).toBeNull();
   });
 });
+
+describe('Cremains already back with Manors — no alerts, no writes', () => {
+  it('a B2026-036-shaped case triggers no SLA alert in either window and is left exactly as it was', async () => {
+    const before = useCase('1045', {
+      rawStage: 7,
+      isDeleted: false,
+      checklistState: { '2:0': true, '2:2': true, '3:0': true, '3:1': true, '4:0': true, '4:1': true, '5:0': true, '5:5': true },
+      cremainsReceivedAt: null,
+      pickupStatus: 'awaiting_pickup',
+    });
+    const snapshot = JSON.stringify(before);
+    await runSlaAlertSweep(ny('2026-10-21', '09:05'), 'mock');
+    await runSlaAlertSweep(ny('2026-10-21', '15:05'), 'mock');
+    expect(notificationFixtures.filter((n) => n.entityId === '1045')).toHaveLength(0);
+    expect(JSON.stringify(current('1045'))).toBe(snapshot);
+    expect(activityEventFixtures.filter((e) => e.caseId === '1045')).toHaveLength(0);
+  });
+});

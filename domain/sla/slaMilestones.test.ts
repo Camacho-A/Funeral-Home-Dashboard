@@ -313,3 +313,94 @@ describe('Attestation and Hard Save are separate events (final review, 2026-10)'
     expect(after.milestones.find((m) => m.key === 'hard_save')).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-20', minutes: 14 * 60 } });
   });
 });
+
+/**
+ * Cremains already back with Manors (2026-10). Production showed B2026-036 —
+ * "Ashes picked up" ticked, no Date Received, family not yet collected — as
+ * "Current SLA: State approval · Start Date Needed". "Ashes picked up
+ * (Tue/Fri)" is Manors collecting the cremains from the crematory, so the
+ * crematory's work is done; the open task is the family pickup.
+ */
+describe('Cremains already back with Manors', () => {
+  const NOW = ny('2026-10-21', '11:00');
+  // B2026-036's shape: final display stage (rawStage 7 = Completed), every
+  // earlier item ticked with no completion records, 5:0 "Ashes picked up"
+  // ticked, no Date Received, not released, no SLA events.
+  const b2026036 = (extra: Partial<Case> = {}) =>
+    base({
+      rawStage: 7,
+      checklistState: { '2:0': true, '2:2': true, '3:0': true, '3:1': true, '4:0': true, '4:1': true, '5:0': true, '5:5': true },
+      ...extra,
+    });
+  const states = (case_: Case) => Object.fromEntries(evaluateCaseSla(case_, SETTINGS, NOW).milestones.map((m) => [m.key, m.state]));
+
+  it('B2026-036: crematory complete (date not recorded), approval not recorded, current = family pickup awaiting a start date', () => {
+    const evaluation = evaluateCaseSla(b2026036(), SETTINGS, NOW);
+    expect(states(b2026036())).toEqual({
+      edrs_entry: 'completed',
+      doctor_attestation: 'completed',
+      hard_save: 'completed',
+      approval: 'not_recorded',
+      crematory_turnaround: 'completed',
+      family_pickup: 'start_date_needed',
+    });
+    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')!.completedAt).toBeNull();
+    expect(evaluation.milestones.find((m) => m.key === 'approval')!.status).toBeNull();
+    expect(evaluation.current).toMatchObject({ key: 'family_pickup', state: 'start_date_needed', deadline: null, responsibleParty: 'family' });
+    expect(evaluation.current!.note).toMatch(/Date Received on the Schedule tab/);
+    expect(evaluation.events.find((e) => e.key === 'cremains_received')).toMatchObject({ occurred: true, time: null, source: 'checklist' });
+  });
+
+  it('same case at the "Ready for Pickup" stage (B2026-038 shape) reads the same', () => {
+    expect(evaluateCaseSla(b2026036({ rawStage: 6 }), SETTINGS, NOW).current).toMatchObject({ key: 'family_pickup', state: 'start_date_needed' });
+  });
+
+  it('cremains received with a recorded date: family pickup runs from that date; crematory completes without inventing a ready time', () => {
+    const evaluation = evaluateCaseSla(b2026036({ cremainsReceivedAt: '10/16/2026' }), SETTINGS, NOW);
+    expect(evaluation.current).toMatchObject({ key: 'family_pickup', state: 'active', deadline: '2026-10-23', startedAt: { date: '2026-10-16', minutes: null } });
+    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')).toMatchObject({ state: 'completed', completedAt: null });
+  });
+
+  it('the "Ashes picked up" completion record supplies the received time when there is one', () => {
+    const recordedTick = b2026036({ checklistCompletions: { '5:0': done(ny('2026-10-16', '10:30')) } });
+    expect(evaluateCaseSla(recordedTick, SETTINGS, NOW).current).toMatchObject({ key: 'family_pickup', state: 'active', startedAt: { date: '2026-10-16', minutes: 10 * 60 + 30 } });
+  });
+
+  it('cremains ready at the crematory but not yet collected: crematory complete, family pickup not started', () => {
+    const ready = base({
+      rawStage: 6,
+      checklistState: { '3:0': true, '3:1': true },
+      slaEvents: events({ crematory_received: ny('2026-10-14'), cremains_ready: ny('2026-10-20', '09:00') }),
+    });
+    const evaluation = evaluateCaseSla(ready, SETTINGS, NOW);
+    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-20' } });
+    expect(evaluation.milestones.find((m) => m.key === 'family_pickup')!.state).toBe('not_started');
+    expect(evaluation.events.find((e) => e.key === 'cremains_received')!.occurred).toBe(false);
+  });
+
+  it('released to the family: no active family pickup, and the release record is the completion', () => {
+    const released = b2026036({ pickupStatus: 'released', pickupReleasedAt: '10/19/2026' });
+    const evaluation = evaluateCaseSla(released, SETTINGS, NOW);
+    expect(evaluation.current).toBeNull();
+    expect(evaluation.milestones.find((m) => m.key === 'family_pickup')).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-19' } });
+    expect(evaluation.events.find((e) => e.key === 'released')).toMatchObject({ occurred: true, source: 'case' });
+  });
+
+  it('a Date of Cremation or an Expected Pickup is never treated as received', () => {
+    const notBack = base({ rawStage: 5, checklistState: { '3:0': true, '3:1': true }, dateOfCremation: '10/16/2026' });
+    expect(evaluateCaseSla(notBack, SETTINGS, NOW).events.find((e) => e.key === 'cremains_received')!.occurred).toBe(false);
+  });
+
+  it('an earlier open milestone with a real deadline stays current; only a missing start time yields to later progress', () => {
+    const approvalPending = base({
+      rawStage: 5,
+      checklistState: { '2:2': true, '3:0': true, '3:1': true },
+      checklistCompletions: { '2:2': done(ny('2026-10-19', '15:00')) },
+    });
+    expect(evaluateCaseSla(approvalPending, SETTINGS, NOW).current).toMatchObject({ key: 'approval', state: 'active' });
+  });
+
+  it('archived cases have no SLA at all', () => {
+    expect(evaluateCaseSla(b2026036({ isDeleted: true }), SETTINGS, NOW)).toMatchObject({ enabled: false, current: null, milestones: [] });
+  });
+});

@@ -67,7 +67,16 @@ const OCCURRED_TIME_UNKNOWN: EventInfo = { occurred: true, time: null, source: '
 
 /** Checklist items that ARE an SLA event, by stable key, guarded by the
     label stored in the case's own snapshot (Manors' template). */
-const CHECKLIST_EVENTS: Partial<Record<SlaEventKey, ReadonlyArray<{ displayStage: number; index: number; expectedLabel: string }>>> = {
+/** Events SOLIS derives from the case itself rather than recording:
+    - `cremains_received`: the cremains are back with Manors — Date Received,
+      or the "Ashes picked up (Tue/Fri)" checklist item (Manors collecting
+      them from the crematory; the expected-pickup appointment completes
+      with it), or implied by the release;
+    - `released`: the authorized release to the family (or delivery);
+    - `me_verified`: a Medical Examiner case's staff verification. */
+export type SlaDerivedEventKey = 'cremains_received' | 'released' | 'me_verified';
+
+const CHECKLIST_EVENTS: Partial<Record<SlaEventKey | SlaDerivedEventKey, ReadonlyArray<{ displayStage: number; index: number; expectedLabel: string }>>> = {
   edrs_submitted: [{ displayStage: 2, index: 0, expectedLabel: 'EDRS submitted & sent to doctor' }],
   hard_saved: [{ displayStage: 2, index: 2, expectedLabel: 'Hardsave for state approval if not an online doctor' }],
   permit_sent: [{ displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' }],
@@ -75,6 +84,7 @@ const CHECKLIST_EVENTS: Partial<Record<SlaEventKey, ReadonlyArray<{ displayStage
     { displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' },
     { displayStage: 3, index: 1, expectedLabel: 'Authorization of release sent to crematory' },
   ],
+  cremains_received: [{ displayStage: 5, index: 0, expectedLabel: 'Ashes picked up (Tue/Fri)' }],
 };
 
 /** Medical Examiner cases: staff verify the ME's work instead of EDRS,
@@ -82,7 +92,7 @@ const CHECKLIST_EVENTS: Partial<Record<SlaEventKey, ReadonlyArray<{ displayStage
 const ME_VERIFIED_ITEM = { displayStage: 2, index: 5 };
 
 /** The checklist item(s) backing an event, when the case's snapshot has them. */
-export function checklistItemsForEvent(case_: Pick<Case, 'workflowSnapshot'>, event: SlaEventKey): Array<{ displayStage: number; index: number }> {
+export function checklistItemsForEvent(case_: Pick<Case, 'workflowSnapshot'>, event: SlaEventKey | SlaDerivedEventKey): Array<{ displayStage: number; index: number }> {
   const mapping = CHECKLIST_EVENTS[event];
   if (!mapping || !case_.workflowSnapshot) return [];
   const found = mapping.filter((entry) => {
@@ -114,7 +124,9 @@ export const SLA_MILESTONE_EVENTS: Record<SlaMilestoneKey, { start: SlaEventKey 
   hard_save: { start: 'attestation_received', stop: 'hard_saved' },
   approval: { start: 'submitted_for_approval', stop: 'approval_received' },
   crematory_turnaround: { start: 'crematory_received', stop: 'cremains_ready' },
-  family_pickup: { start: 'cremains_ready', stop: null },
+  // Both ends of family pickup come from the case: Date Received (Schedule
+  // tab) and the release (Record pickup).
+  family_pickup: { start: null, stop: null },
 };
 
 export const SLA_EVENT_SOURCE_LABEL: Record<SlaEventSource, string> = {
@@ -179,8 +191,8 @@ export const SLA_DELAY_REASON_PARTY: Record<SlaDelayReason, { party: SlaResponsi
 type MilestoneDefinition = {
   key: SlaMilestoneKey;
   responsible: SlaResponsibleParty;
-  start: SlaEventKey | 'me_verified';
-  stop: SlaEventKey | 'released';
+  start: SlaEventKey | SlaDerivedEventKey;
+  stop: SlaEventKey | SlaDerivedEventKey;
   target: (settings: SlaSettings) => number;
   advisory?: boolean;
   /** Not tracked for a Medical Examiner case (the ME does this work). */
@@ -193,7 +205,7 @@ const MILESTONES: readonly MilestoneDefinition[] = [
   { key: 'hard_save', responsible: 'staff', start: 'attestation_received', stop: 'hard_saved', target: (s) => s.targets.hardSave, standardCaseOnly: true },
   { key: 'approval', responsible: 'state', start: 'submitted_for_approval', stop: 'approval_received', target: (s) => s.targets.approval },
   { key: 'crematory_turnaround', responsible: 'crematory', start: 'crematory_received', stop: 'cremains_ready', target: (s) => s.targets.crematoryTurnaround },
-  { key: 'family_pickup', responsible: 'family', start: 'cremains_ready', stop: 'released', target: (s) => s.targets.familyPickup, advisory: true },
+  { key: 'family_pickup', responsible: 'family', start: 'cremains_received', stop: 'released', target: (s) => s.targets.familyPickup, advisory: true },
 ];
 
 /** `not_recorded`: the case has moved on (the crematory has the decedent)
@@ -236,7 +248,7 @@ export type CaseSlaEvaluation = {
   events: SlaEventTimelineEntry[];
 };
 
-export type SlaEventTimelineEntry = { key: SlaEventKey; label: string; occurred: boolean; time: EventTime | null; source: SlaEventSource | null };
+export type SlaEventTimelineEntry = { key: SlaEventKey | SlaDerivedEventKey; label: string; occurred: boolean; time: EventTime | null; source: SlaEventSource | null };
 
 const EMPTY: CaseSlaEvaluation = { enabled: false, milestones: [], current: null, businessDaysInStage: null, events: [] };
 
@@ -272,7 +284,7 @@ type SlaCase = Pick<
 >;
 
 /** Resolves every event once, applying the implications described above. */
-function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEventKey | 'me_verified' | 'released', EventInfo> {
+function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEventKey | SlaDerivedEventKey, EventInfo> {
   const currentDisplayStage = case_.workflowSnapshot
     ? (findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage)
     : case_.rawStage;
@@ -286,7 +298,7 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
   /** A checklist-backed event: done when every backing item is done (or
       the case has moved past their stage); its time is the latest
       completion record, when every item has one. */
-  const fromChecklist = (key: SlaEventKey): EventInfo => {
+  const fromChecklist = (key: SlaEventKey | SlaDerivedEventKey): EventInfo => {
     const items = checklistItemsForEvent(case_, key);
     if (items.length === 0) return NOT_OCCURRED;
     const allDone = items.every(
@@ -312,8 +324,19 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
         ? { occurred: true, time: dateOnly(case_.shippingDeliveredAt), source: 'case' }
         : NOT_OCCURRED;
 
+  // Back with Manors: Date Received first (it has the date), then the
+  // "Ashes picked up" tick (its completion record's time, when it has one),
+  // or implied by the release. Never the Date of Cremation or the Expected
+  // Pickup date.
   const receivedBack = dateOnly(case_.cremainsReceivedAt);
-  const cremainsReady = either(recorded('cremains_ready'), receivedBack ? { occurred: true, time: receivedBack, source: 'case' } : NOT_OCCURRED, released.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
+  const cremainsReceived = either(
+    receivedBack ? { occurred: true, time: receivedBack, source: 'case' } : NOT_OCCURRED,
+    fromChecklist('cremains_received'),
+    released.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED,
+  );
+  // Ready at the crematory: recorded by staff, or necessarily true once the
+  // cremains are back with Manors — but WHEN they were ready stays unknown.
+  const cremainsReady = either(recorded('cremains_ready'), cremainsReceived.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const crematoryReceived = either(recorded('crematory_received'), cremainsReady.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const sentToCrematory = either(recorded('sent_to_crematory'), fromChecklist('sent_to_crematory'), crematoryReceived.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const permitSent = either(recorded('permit_sent'), fromChecklist('permit_sent'), sentToCrematory.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
@@ -354,6 +377,7 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
     sent_to_crematory: sentToCrematory,
     crematory_received: crematoryReceived,
     cremains_ready: cremainsReady,
+    cremains_received: cremainsReceived,
     me_verified: meVerified,
     released,
   };
@@ -431,7 +455,13 @@ export function evaluateCaseSla(case_: SlaCase, settings: SlaSettings, nowIso: s
     // receipt date recorded — the turnaround cannot be measured yet.
     const startPending = definition.key === 'crematory_turnaround' && !start.occurred && events.sent_to_crematory.occurred;
     if (!start.occurred && !startPending) return { ...base, state: 'not_started', status: null };
-    if (!start.time) return { ...base, state: 'start_date_needed', status: 'start_date_needed', delay };
+    if (!start.time) {
+      const note =
+        definition.key === 'family_pickup'
+          ? 'Cremains are back with Manors, but the date received was not recorded. Add it as Date Received on the Schedule tab.'
+          : null;
+      return { ...base, state: 'start_date_needed', status: 'start_date_needed', delay, note };
+    }
 
     const deadline = deadlineFor(definition, start.time, settings, calendar);
     let status: SlaStatus;
@@ -485,11 +515,25 @@ export function evaluateCaseSla(case_: SlaCase, settings: SlaSettings, nowIso: s
     };
   });
 
-  const current = milestones.find((milestone) => milestone.state === 'active' || milestone.state === 'start_date_needed') ?? null;
+  // The current milestone is the furthest one that is open. An earlier
+  // milestone left open only because its time was never recorded is not the
+  // current task once a LATER milestone has evidence of progress — it stays
+  // visible, as it is, in the SLA details.
+  const progressed = (milestone: SlaMilestoneEvaluation) => milestone.state !== 'not_started' && milestone.state !== 'not_applicable';
+  // A milestone with a real deadline is genuinely open and stays current.
+  const current =
+    milestones.find(
+      (milestone, index) =>
+        milestone.state === 'active' || (milestone.state === 'start_date_needed' && !milestones.slice(index + 1).some(progressed)),
+    ) ?? null;
   const entered = eventTimeFromIso(case_.stageEnteredAt ?? null, calendar);
   const businessDaysInStage = entered ? Math.max(0, businessDaysBetween(entered.date, now.date, calendar)) : null;
 
-  const timeline = SLA_EVENT_KEYS.map((key) => ({ key, label: SLA_EVENT_LABEL[key], ...events[key] }));
+  const timeline: SlaEventTimelineEntry[] = [
+    ...SLA_EVENT_KEYS.map((key) => ({ key, label: SLA_EVENT_LABEL[key], ...events[key] })),
+    { key: 'cremains_received' as const, label: 'Cremains received by Manors', ...events.cremains_received },
+    { key: 'released' as const, label: 'Released to family', ...events.released },
+  ];
   return { enabled: true, milestones, current, businessDaysInStage, events: timeline };
 }
 
