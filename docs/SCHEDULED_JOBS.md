@@ -192,20 +192,43 @@ the env var is set) with claim-before-send.
 
 ### 5. SLA alerts: `/api/cron/sla-alerts` → `services/slaAlertService.ts#runSlaAlertSweep`
 
-Added 2026-10. POST-only like the others, and **not** in `vercel.json`.
-Enabling a schedule (a daily morning run is enough; a second run near
-midday catches "due today") is a separate, reviewed rollout.
+Added 2026-10. **Prepared, not enabled.** It is POST-only like the others,
+and **not** in `vercel.json`.
 
+- **When it acts:** only on business days (weekends and configured holidays
+  excluded), within the hour starting at each of the organization's
+  `alertTimes`. The defaults are 09:00 and 15:00 America/New_York. Any other
+  run evaluates nothing and reports the organizations it skipped.
+- **Prepared schedule:** Vercel Cron runs in UTC, so this fires at both
+  possible New York offsets. The time-of-day check picks exactly one run per
+  window, in daylight time (13:00 and 19:00 UTC) and in standard time
+  (14:00 and 20:00 UTC):
+
+  ```json
+  { "path": "/api/cron/sla-alerts", "schedule": "0 13,14,19,20 * * 1-5" }
+  ```
+
+- **To enable (separate, reviewed change):**
+  1. Add the entry above to `vercel.json`.
+  2. Export `GET` from the route with the same `cronHandler` (Vercel Cron
+     sends GET).
+  3. Confirm `CRON_SECRET` and `DEPLOYMENT_ORGANIZATION_IDS` are set.
+  4. Update `app/api/cron/cronRoutes.test.ts`, which asserts the current
+     schedule list.
 - **Reads:**
   - `cases` (active, this deployment's organizations)
   - `organizations` (`slaSettingsJson`)
 - **Writes:** `notifications` and `notificationRecipients`, to staff with
-  `case.read` only. One alert per case, milestone, deadline and kind,
-  using deterministic IDs, so re-running never repeats an alert.
+  `case.read` only. IDs are deterministic per case, milestone, deadline and
+  reminder. One deadline produces at most one "due soon", one "due today"
+  and one "overdue" (or "waiting past target") alert, however many times
+  the job runs.
 - **Never:**
   - contacts families, doctors or crematories;
-  - alerts on archived cases or the advisory family-pickup reminder;
-  - alerts on a milestone that has a recorded delay.
+  - alerts on archived cases, a "Start Date Needed" milestone, the advisory
+    family-pickup reminder, or a milestone with a recorded delay.
+- **Separate from this job:** the immediate "Hard Save due" alert is sent
+  when an attestation is recorded, and needs no schedule.
 
 ### Collection/field dependencies (production)
 

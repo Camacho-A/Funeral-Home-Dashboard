@@ -197,6 +197,27 @@ export function SlaSettingsPanel() {
       <section className="sx-settings-section">
         <h3 className="sx-settings-section-title">Alerts</h3>
         <p className="sx-help">Alerts go to staff only. SOLIS never contacts families, doctors or crematories.</p>
+        <div className="sx-form-grid" style={{ marginTop: 10, maxWidth: 420 }}>
+          {[0, 1].map((slot) => (
+            <div className="sx-field" key={slot}>
+              <label className="sx-label" htmlFor={`sla-alert-time-${slot}`}>
+                {slot === 0 ? 'Morning check' : 'Afternoon check'}
+              </label>
+              <input
+                id={`sla-alert-time-${slot}`}
+                className="sx-input"
+                type="time"
+                value={draft.alertTimes[slot] ?? ''}
+                onChange={(event) => {
+                  const times = [...draft.alertTimes];
+                  times[slot] = event.target.value;
+                  update({ alertTimes: times.filter(Boolean) });
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        <span className="sx-help">Deadline alerts are checked at these times on business days.</span>
         {(
           [
             ['approaching', 'Staff deadlines due soon or due today'],

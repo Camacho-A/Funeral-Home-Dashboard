@@ -1,5 +1,5 @@
 import { getRegisteredOrganizationProfile } from '../organization/organizationProfiles';
-import { parseClockTime, toLocalDate, type BusinessCalendar } from './businessCalendar';
+import { isBusinessDay, localDateTime, parseClockTime, toLocalDate, type BusinessCalendar } from './businessCalendar';
 
 /**
  * SLA settings (2026-10). Organization-scoped: an organization's profile
@@ -38,6 +38,9 @@ export type SlaSettings = {
   crematoryReturnWeekdays: number[];
   /** A deadline this many business days away (or fewer) is "Due soon". */
   dueSoonBusinessDays: number;
+  /** HH:MM local times the scheduled SLA alert check runs on business days
+      (it acts only within the hour starting at each). */
+  alertTimes: string[];
   notifications: {
     /** Staff deadlines approaching (due soon / due today). */
     approaching: boolean;
@@ -57,6 +60,7 @@ export const DEFAULT_SLA_SETTINGS: Readonly<SlaSettings> = Object.freeze({
   targets: { edrsEntry: 2, doctorAttestation: 4, hardSave: 0, approval: 2, crematoryTurnaround: 5, familyPickup: 5 },
   crematoryReturnWeekdays: [],
   dueSoonBusinessDays: 1,
+  alertTimes: ['09:00', '15:00'],
   notifications: { approaching: true, overdue: true, external: true },
 });
 
@@ -108,6 +112,12 @@ export function normalizeSlaSettings(raw: unknown, enabled: boolean): SlaSetting
     },
     crematoryReturnWeekdays: weekdays,
     dueSoonBusinessDays: wholeNumber(r.dueSoonBusinessDays, 0, 10, d.dueSoonBusinessDays),
+    alertTimes: Array.isArray(r.alertTimes)
+      ? (() => {
+          const times = [...new Set(r.alertTimes.filter((t): t is string => typeof t === 'string' && parseClockTime(t) !== null).map((t) => t.trim()))].sort();
+          return times.length > 0 ? times : [...d.alertTimes];
+        })()
+      : [...d.alertTimes],
     notifications: {
       approaching: flag(n.approaching, d.notifications.approaching),
       overdue: flag(n.overdue, d.notifications.overdue),
@@ -129,4 +139,21 @@ export function businessCalendarFor(settings: SlaSettings): BusinessCalendar {
     cutoffMinutes: parseClockTime(settings.afterHoursCutoff) ?? 17 * 60,
     holidays: new Set(settings.holidays),
   };
+}
+
+/**
+ * Whether the scheduled SLA alert check should act now for this
+ * organization: a business day (weekends and holidays excluded) and within
+ * the hour starting at one of `alertTimes`, in the organization's own
+ * timezone. The cron fires at both possible UTC offsets; this keeps exactly
+ * one run per window, through daylight saving changes.
+ */
+export function isSlaAlertRunTime(nowIso: string, settings: SlaSettings): boolean {
+  const calendar = businessCalendarFor(settings);
+  const now = localDateTime(nowIso, calendar.timezone);
+  if (!now || !isBusinessDay(now.date, calendar)) return false;
+  return settings.alertTimes.some((time) => {
+    const start = parseClockTime(time);
+    return start !== null && now.minutes >= start && now.minutes < start + 60;
+  });
 }

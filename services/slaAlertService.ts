@@ -8,7 +8,7 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { getOrganization } from './organizationProvisioningService';
 import { notifySlaAlert, type SlaAlertKind } from './caseNotifications';
 import type { Case } from '../types/case';
-import { isSlaTrackingEnabled, resolveSlaSettings, type SlaSettings } from '../domain/sla/slaSettings';
+import { isSlaAlertRunTime, isSlaTrackingEnabled, resolveSlaSettings, type SlaSettings } from '../domain/sla/slaSettings';
 import {
   SLA_RESPONSIBLE_LABEL,
   describeDeadline,
@@ -33,7 +33,9 @@ import { composeDecedentName } from '../domain/cases/decedentName';
  * crematories are never contacted.
  *
  * Triggered by POST /api/cron/sla-alerts (CRON_SECRET), like the other
- * scheduled jobs; see docs/SCHEDULED_JOBS.md for enabling a schedule.
+ * scheduled jobs. It acts only on business days within each organization's
+ * `alertTimes` (09:00 and 15:00 America/New_York by default); see
+ * docs/SCHEDULED_JOBS.md §5 for the prepared — not yet enabled — schedule.
  */
 
 /** The alert a milestone warrants right now, if any. Pure. */
@@ -56,9 +58,21 @@ async function listActiveCases(dataAdapterMode: DataAdapterMode): Promise<Case[]
   return retainDeploymentRecords('sla-alerts', cases, (c) => c.organizationId);
 }
 
-export async function runSlaAlertSweep(nowIso: string, dataAdapterMode: DataAdapterMode): Promise<{ evaluated: number; notified: number }> {
+export type SlaAlertSweepResult = { evaluated: number; notified: number; skippedOrganizations: string[] };
+
+/**
+ * `options.ignoreSchedule` is for tests and deliberate manual runs only; the
+ * scheduled route always respects each organization's run times.
+ */
+export async function runSlaAlertSweep(
+  nowIso: string,
+  dataAdapterMode: DataAdapterMode,
+  options: { ignoreSchedule?: boolean } = {},
+): Promise<SlaAlertSweepResult> {
   const cases = (await listActiveCases(dataAdapterMode)).filter((c) => isSlaTrackingEnabled(c.organizationId));
   const settingsByOrg = new Map<string, SlaSettings>();
+  const skipped = new Set<string>();
+  let evaluated = 0;
   let notified = 0;
 
   for (const case_ of cases) {
@@ -69,6 +83,12 @@ export async function runSlaAlertSweep(nowIso: string, dataAdapterMode: DataAdap
       settings = resolveSlaSettings(organization ?? { id: case_.organizationId });
       settingsByOrg.set(case_.organizationId, settings);
     }
+    // Business days at the configured times only (9 AM and 3 PM by default).
+    if (!options.ignoreSchedule && !isSlaAlertRunTime(nowIso, settings)) {
+      skipped.add(case_.organizationId);
+      continue;
+    }
+    evaluated += 1;
     const current = evaluateCaseSla(case_, settings, nowIso).current;
     const kind = current ? slaAlertFor(current, settings) : null;
     if (!current || !kind || !current.deadline) continue;
@@ -78,7 +98,9 @@ export async function runSlaAlertSweep(nowIso: string, dataAdapterMode: DataAdap
       {
         case: { id: case_.id, caseNumber: case_.caseNumber, decedentName: composeDecedentName(case_.decedentName, case_.decedentMiddleName) },
         kind,
-        milestoneKey: `${current.key}-${kind}`,
+        // "Due soon" and "due today" are separate reminders for one deadline;
+        // each, and "overdue", is sent at most once.
+        milestoneKey: `${current.key}-${kind === 'due' ? current.status : kind}`,
         milestone: current.label,
         deadline: current.deadline,
         dueLabel: describeDeadline(current),
@@ -88,5 +110,5 @@ export async function runSlaAlertSweep(nowIso: string, dataAdapterMode: DataAdap
     );
     notified += result.notified;
   }
-  return { evaluated: cases.length, notified };
+  return { evaluated, notified, skippedOrganizations: [...skipped] };
 }

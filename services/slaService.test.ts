@@ -7,7 +7,7 @@ import { runSlaAlertSweep, slaAlertFor } from './slaAlertService';
 import { ACTIVITY_EVENT_TYPES } from '../types/activityEvent';
 import { NOTIFICATION_TYPES } from '../domain/notifications/notificationTypeRegistry';
 import { evaluateCaseSla } from '../domain/sla/slaMilestones';
-import { normalizeSlaSettings } from '../domain/sla/slaSettings';
+import { isSlaAlertRunTime, normalizeSlaSettings } from '../domain/sla/slaSettings';
 import type { Case } from '../types/case';
 
 /**
@@ -89,6 +89,24 @@ describe('recordSlaEvent', () => {
     expect(current('1042').checklistState['2:2']).toBe(false);
   });
 
+  it('recording the attestation starts the Hard Save SLA and leaves "Attestation Received / Hard Saved" open', async () => {
+    useCase('1042', { rawStage: 3 });
+    await recordSlaEvent(ctx, '1042', 'attestation_received', ny('2026-10-20', '10:00'), 'mock', ny('2026-10-20', '10:05'));
+    expect(current('1042').checklistState['2:2']).toBeUndefined();
+    expect(current('1042').checklistCompletions?.['2:2']).toBeUndefined();
+    expect(events(ACTIVITY_EVENT_TYPES.CASE_CHECKLIST_COMPLETED_AUTOMATICALLY)).toHaveLength(0);
+    const sla = evaluateCaseSla(current('1042'), normalizeSlaSettings({}, true), ny('2026-10-20', '11:00'));
+    expect(sla.current).toMatchObject({ key: 'hard_save', state: 'active' });
+  });
+
+  it('recording a permit sent completes only "Permit sent to crematory", never the approval', async () => {
+    useCase('1042', { rawStage: 4 });
+    await recordSlaEvent(ctx, '1042', 'permit_sent', ny('2026-10-20', '10:00'), 'mock', ny('2026-10-20', '10:05'));
+    expect(current('1042').checklistState['3:0']).toBe(true);
+    expect(current('1042').checklistState['3:1']).toBeUndefined();
+    expect(current('1042').slaEvents?.approval_received).toBeUndefined();
+  });
+
   it('an attestation announces the same-day Hard Save once — re-recording it does not notify again', async () => {
     useCase('1042', { rawStage: 3 });
     await recordSlaEvent(ctx, '1042', 'attestation_received', ny('2026-10-20', '11:00'), 'mock', ny('2026-10-20', '11:05'));
@@ -162,10 +180,11 @@ describe('SLA alerts', () => {
         vital_statistics_received: { at: ny('2026-10-12'), recordedAt: ny('2026-10-12'), recordedBy: null, source: 'automatic' },
       },
     });
-    await runSlaAlertSweep(ny('2026-10-20'), 'mock');
+    await runSlaAlertSweep(ny('2026-10-20', '09:05'), 'mock');
     const overdue = notifications(NOTIFICATION_TYPES.CASE_SLA_OVERDUE.key).filter((n) => n.entityId === '1044');
     expect(overdue.length).toBeGreaterThan(0);
     expect(overdue[0].body).toMatch(/EDRS entry/);
+    await runSlaAlertSweep(ny('2026-10-20', '09:20'), 'mock');
     await runSlaAlertSweep(ny('2026-10-20', '15:00'), 'mock');
     expect(notifications(NOTIFICATION_TYPES.CASE_SLA_OVERDUE.key).filter((n) => n.entityId === '1044')).toHaveLength(overdue.length);
     expect(notificationFixtures.some((n) => n.organizationId === 'gus-camacho-jr')).toBe(false);
@@ -176,7 +195,57 @@ describe('SLA alerts', () => {
       isDeleted: true,
       slaEvents: { case_received: { at: ny('2026-10-12'), recordedAt: ny('2026-10-12'), recordedBy: null, source: 'automatic' } },
     });
-    await runSlaAlertSweep(ny('2026-10-20'), 'mock');
+    await runSlaAlertSweep(ny('2026-10-20', '09:05'), 'mock');
     expect(notificationFixtures.filter((n) => n.entityId === '1044')).toHaveLength(0);
+  });
+});
+
+describe('SLA alert schedule — 9 AM and 3 PM America/New_York, business days (final review)', () => {
+  const settings = normalizeSlaSettings({}, true);
+  const utc = (iso: string) => new Date(iso).toISOString();
+
+  it('acts only within the 9 AM and 3 PM hours on business days', () => {
+    expect(isSlaAlertRunTime(ny('2026-10-20', '09:00'), settings)).toBe(true);
+    expect(isSlaAlertRunTime(ny('2026-10-20', '09:59'), settings)).toBe(true);
+    expect(isSlaAlertRunTime(ny('2026-10-20', '10:00'), settings)).toBe(false);
+    expect(isSlaAlertRunTime(ny('2026-10-20', '15:10'), settings)).toBe(true);
+    expect(isSlaAlertRunTime(ny('2026-10-24', '09:00'), settings)).toBe(false); // Saturday
+    expect(isSlaAlertRunTime(ny('2026-10-20', '09:00'), normalizeSlaSettings({ holidays: ['2026-10-20'] }, true))).toBe(false);
+  });
+
+  it('of the four UTC cron slots, exactly one acts per window — in daylight time and in standard time', () => {
+    const acting = (date: string) => ['13', '14', '19', '20'].filter((hour) => isSlaAlertRunTime(utc(`${date}T${hour}:00:00Z`), settings));
+    expect(acting('2026-10-20')).toEqual(['13', '19']); // EDT, UTC-4
+    expect(acting('2026-11-10')).toEqual(['14', '20']); // EST, UTC-5
+  });
+
+  it('outside the window the sweep evaluates nothing and records which organizations it skipped', async () => {
+    useCase('1044', { slaEvents: { case_received: { at: ny('2026-10-12'), recordedAt: ny('2026-10-12'), recordedBy: null, source: 'automatic' } } });
+    const result = await runSlaAlertSweep(ny('2026-10-20', '11:00'), 'mock');
+    expect(result).toMatchObject({ evaluated: 0, notified: 0, skippedOrganizations: [MANORS] });
+    expect(notificationFixtures).toHaveLength(0);
+  });
+
+  it('"due soon" and "due today" are separate reminders, each sent once; Start Date Needed never alerts', async () => {
+    useCase('1044', {
+      rawStage: 0,
+      slaEvents: {
+        case_received: { at: ny('2026-10-19', '10:00'), recordedAt: 'x', recordedBy: null, source: 'automatic' },
+        vital_statistics_received: { at: ny('2026-10-19', '10:00'), recordedAt: 'x', recordedBy: null, source: 'automatic' },
+      },
+    });
+    useCase('1047', { rawStage: 0, slaEvents: undefined });
+    await runSlaAlertSweep(ny('2026-10-20', '09:05'), 'mock'); // due Wed → due soon
+    await runSlaAlertSweep(ny('2026-10-20', '15:05'), 'mock');
+    await runSlaAlertSweep(ny('2026-10-21', '09:05'), 'mock'); // due today
+    await runSlaAlertSweep(ny('2026-10-21', '15:05'), 'mock');
+    const due = notifications(NOTIFICATION_TYPES.CASE_SLA_DUE.key).filter((n) => n.entityId === '1044');
+    // One "due soon" and one "due today" per recipient — the 3 PM runs add nothing.
+    const bodies = due.map((n) => n.body);
+    expect(bodies.filter((b) => /Due in 1 business day/.test(b)).length).toBeGreaterThan(0);
+    expect(bodies.filter((b) => /Due today/.test(b)).length).toBe(bodies.filter((b) => /Due in 1 business day/.test(b)).length);
+    expect(bodies.length).toBe(2 * bodies.filter((b) => /Due today/.test(b)).length);
+    expect(notificationFixtures.filter((n) => n.entityId === '1047')).toHaveLength(0);
+    expect(slaAlertFor({ state: 'start_date_needed', status: 'start_date_needed', advisory: false, external: false, delay: null, overdue: false } as never, settings)).toBeNull();
   });
 });

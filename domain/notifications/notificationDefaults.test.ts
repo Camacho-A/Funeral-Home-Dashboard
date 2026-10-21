@@ -3,6 +3,7 @@ import {
   DEFAULT_TYPE_ENABLED,
   IMPLEMENTED_NOTIFICATION_TYPES,
   NOTIFICATION_PREFERENCE_GROUPS,
+  notificationPreferenceGroupsFor,
   isTypeEnabled,
 } from './notificationDefaults';
 import { NOTIFICATION_TYPES, isValidNotificationTypeKey } from './notificationTypeRegistry';
@@ -85,5 +86,14 @@ describe('isTypeEnabled', () => {
     for (const key of IMPLEMENTED_NOTIFICATION_TYPES) {
       expect(isTypeEnabled({}, key)).toBe(DEFAULT_TYPE_ENABLED[key]);
     }
+  });
+});
+
+describe('SLA preferences are Manors-only (final review, 2026-10)', () => {
+  it('Manors is offered the Deadlines (SLA) group; Gus and others are not, and keep every other group', () => {
+    const labels = (org: string) => notificationPreferenceGroupsFor(org).map((group) => group.label);
+    expect(labels('managed-cremations')).toContain('Deadlines (SLA)');
+    expect(labels('gus-camacho-jr')).not.toContain('Deadlines (SLA)');
+    expect(labels('gus-camacho-jr')).toEqual(NOTIFICATION_PREFERENCE_GROUPS.filter((g) => g.label !== 'Deadlines (SLA)').map((g) => g.label));
   });
 });

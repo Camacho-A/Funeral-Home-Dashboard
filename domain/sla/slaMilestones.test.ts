@@ -232,7 +232,9 @@ describe('Whole-case behaviour', () => {
     const complete = base({ rawStage: 7, cremainsReceivedAt: '10/12/2026', pickupStatus: 'released', pickupReleasedAt: '10/16/2026' });
     const evaluation = evaluateCaseSla(complete, SETTINGS, ny('2026-10-20'));
     expect(evaluation.current).toBeNull();
-    expect(evaluation.milestones.every((m) => m.state === 'completed')).toBe(true);
+    // Approval was never recorded: shown as such, never counted as met.
+    expect(evaluation.milestones.map((m) => m.state)).toEqual(['completed', 'completed', 'completed', 'not_recorded', 'completed', 'completed']);
+    expect(evaluation.milestones.find((m) => m.key === 'approval')!.status).toBeNull();
   });
 
   it('business days in stage come from the recorded stage entry, or are unknown', () => {
@@ -254,5 +256,60 @@ describe('Whole-case behaviour', () => {
     const unknown = evaluateCaseSla(base(), SETTINGS, ny('2026-10-20')).current;
     expect(slaSummaryBucket(unknown)).toBe('start_date_needed');
     expect(slaNeedsAttention(unknown)).toBe(false);
+  });
+});
+
+describe('State approval is satisfied only by a recorded approval (final review, 2026-10)', () => {
+  const saved = (extra: Partial<Case> = {}) =>
+    base({
+      rawStage: 4,
+      checklistState: { '2:2': true },
+      checklistCompletions: { '2:2': done(ny('2026-10-19', '15:00')) },
+      ...extra,
+    });
+
+  it('a permit sent does not complete approval — it stays the current, measurable milestone', () => {
+    const permit = saved({
+      checklistState: { '2:2': true, '3:0': true },
+      checklistCompletions: { '2:2': done(ny('2026-10-19', '15:00')), '3:0': done(ny('2026-10-20', '09:00')) },
+    });
+    const evaluation = evaluateCaseSla(permit, SETTINGS, ny('2026-10-22', '18:00'));
+    expect(evaluation.current).toMatchObject({ key: 'approval', state: 'active', status: 'overdue', deadline: '2026-10-21' });
+  });
+
+  it('a recorded approval completes it, and submission, approval and permit-sent keep their own times', () => {
+    const approved = saved({
+      rawStage: 5,
+      checklistState: { '2:2': true, '3:0': true, '3:1': true },
+      checklistCompletions: { '2:2': done(ny('2026-10-19', '15:00')), '3:0': done(ny('2026-10-21', '09:00')), '3:1': done(ny('2026-10-21', '09:30')) },
+      slaEvents: events({ submitted_for_approval: ny('2026-10-19', '16:00'), approval_received: ny('2026-10-20', '13:00') }),
+    });
+    const evaluation = evaluateCaseSla(approved, SETTINGS, ny('2026-10-21', '12:00'));
+    expect(evaluation.milestones.find((m) => m.key === 'approval')).toMatchObject({ state: 'completed', startedAt: { date: '2026-10-19', minutes: 16 * 60 }, completedAt: { date: '2026-10-20', minutes: 13 * 60 } });
+    const time = (key: string) => evaluation.events.find((e) => e.key === key);
+    expect(time('hard_saved')).toMatchObject({ time: { date: '2026-10-19', minutes: 15 * 60 }, source: 'checklist' });
+    expect(time('submitted_for_approval')).toMatchObject({ time: { date: '2026-10-19', minutes: 16 * 60 }, source: 'recorded' });
+    expect(time('approval_received')).toMatchObject({ time: { date: '2026-10-20', minutes: 13 * 60 }, source: 'recorded' });
+    expect(time('permit_sent')).toMatchObject({ time: { date: '2026-10-21', minutes: 9 * 60 }, source: 'checklist' });
+    expect(time('sent_to_crematory')).toMatchObject({ time: { date: '2026-10-21', minutes: 9 * 60 + 30 }, source: 'checklist' });
+  });
+
+  it('without a separate submission time, the Hard Save is the submission', () => {
+    expect(evaluateCaseSla(saved(), SETTINGS, ny('2026-10-20')).current).toMatchObject({ key: 'approval', startedAt: { date: '2026-10-19', minutes: 15 * 60 } });
+  });
+});
+
+describe('Attestation and Hard Save are separate events (final review, 2026-10)', () => {
+  it('an attestation alone starts the Hard Save SLA and completes nothing; only the Hard Save completes it', () => {
+    const attested = base({ rawStage: 3, slaEvents: events({ attestation_received: ny('2026-10-20', '10:00') }) });
+    const now = ny('2026-10-20', '11:00');
+    const before = evaluateCaseSla(attested, SETTINGS, now);
+    expect(before.milestones.find((m) => m.key === 'doctor_attestation')!.state).toBe('completed');
+    expect(before.current).toMatchObject({ key: 'hard_save', state: 'active', status: 'due_today' });
+    expect(before.events.find((e) => e.key === 'hard_saved')!.occurred).toBe(false);
+
+    const saved = { ...attested, checklistState: { '2:2': true }, checklistCompletions: { '2:2': done(ny('2026-10-20', '14:00')) } };
+    const after = evaluateCaseSla(saved, SETTINGS, now);
+    expect(after.milestones.find((m) => m.key === 'hard_save')).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-20', minutes: 14 * 60 } });
   });
 });

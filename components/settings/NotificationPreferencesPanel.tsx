@@ -1,7 +1,7 @@
 'use client';
 
 import { useOrganization } from '@/hooks/useOrganization';
-import { NOTIFICATION_PREFERENCE_GROUPS, isTypeEnabled } from '@/domain/notifications/notificationDefaults';
+import { isTypeEnabled, notificationPreferenceGroupsFor } from '@/domain/notifications/notificationDefaults';
 import { useNotificationPreferences, useUpdateNotificationPreferences } from '@/hooks/useNotifications';
 import { useMyIdentityProfile } from '@/hooks/useIdentityProfile';
 import { SelectField } from '@/components/ui/SelectField';
@@ -277,7 +277,7 @@ export function NotificationPreferencesPanel() {
           whole category off still silences everything in it.
         </p>
 
-        {NOTIFICATION_PREFERENCE_GROUPS.map((group) => (
+        {notificationPreferenceGroupsFor(organizationId).map((group) => (
           <div key={group.label} style={{ marginTop: 18 }}>
             <span className="sx-label">{group.label}</span>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>

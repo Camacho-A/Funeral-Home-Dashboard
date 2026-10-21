@@ -1,4 +1,5 @@
 import { NOTIFICATION_TYPES, type NotificationTypeKey } from './notificationTypeRegistry';
+import { isSlaTrackingEnabled } from '../sla/slaSettings';
 
 /**
  * Per-notification-type defaults, and how an individual choice combines
@@ -52,6 +53,8 @@ export const DEFAULT_TYPE_ENABLED: Readonly<Record<string, boolean>> = {
     Everything here has a wired trigger. */
 export const NOTIFICATION_PREFERENCE_GROUPS: readonly {
   label: string;
+  /** Offered only to an organization with this capability (SLA tracking is Manors-only). */
+  requires?: 'slaTracking';
   types: readonly { key: NotificationTypeKey; label: string; description: string }[];
 }[] = [
   {
@@ -82,6 +85,7 @@ export const NOTIFICATION_PREFERENCE_GROUPS: readonly {
   },
   {
     label: 'Deadlines (SLA)',
+    requires: 'slaTracking',
     types: [
       { key: NOTIFICATION_TYPES.CASE_SLA_HARD_SAVE_DUE.key, label: 'Hard Save Due', description: "Receive an alert when a doctor's attestation arrives and the Hard Save becomes due." },
       { key: NOTIFICATION_TYPES.CASE_SLA_DUE.key, label: 'Deadline Approaching', description: 'Receive an alert when a staff deadline is due soon or due today.' },
@@ -152,4 +156,11 @@ export function isTypeEnabled(typeOverrides: Readonly<Record<string, boolean>>, 
   // scheduling, system). Those have always been governed by the category
   // and global switches alone, and must keep working that way.
   return DEFAULT_TYPE_ENABLED[notificationType] ?? true;
+}
+
+/** The preference groups this organization is offered: a group whose
+    capability the organization lacks is never shown (its alerts never fire
+    there). SLA tracking (2026-10) is the only such group today. */
+export function notificationPreferenceGroupsFor(organizationId: string | null | undefined) {
+  return NOTIFICATION_PREFERENCE_GROUPS.filter((group) => group.requires !== 'slaTracking' || isSlaTrackingEnabled(organizationId));
 }

@@ -31,7 +31,7 @@ alert sweep all call it, so they can't disagree.
 | EDRS entry | case received | EDRS submitted to doctor | 2 | staff |
 | Doctor attestation | EDRS submitted | attestation received | 4 | doctor |
 | Hard Save | attestation received | Hard Save | same day | staff |
-| State approval | Hard Save | approval received | 2 | state |
+| State approval | Submitted for approval (the Hard Save, unless a separate submission time is recorded) | **a recorded approval only** | 2 | state |
 | Crematory turnaround | crematory receipt | cremains ready | 5 (fixed return days optional) | crematory |
 | Family pickup | cremains ready | authorized release | 5, advisory | family |
 
@@ -51,17 +51,31 @@ Times come only from recorded events. Nothing is invented.
 | Case received | Recorded automatically when a case is created by staff or an intake form. A historical import gets none. |
 | Vital Statistics received | Recorded automatically when the form arrives (the first time is kept), or by staff. |
 | EDRS submitted / Hard Saved / Sent to crematory | The completion record of their checklist items (EDRS submitted & sent to doctor; Attestation Received / Hard Saved; Permit and Authorization sent), or recorded by staff. |
-| Attestation / approval / crematory receipt / cremains ready | Recorded by staff. "Cremains ready" also comes from Date Received. |
+| Attestation / submitted for approval / approval / permit sent / crematory receipt / cremains ready | Recorded by staff. "Permit sent" also comes from its checklist item, and "cremains ready" from Date Received. |
 | Release | The authorized release record (Released To and Released Date), or confirmed shipping delivery. |
 
 A later event implies the earlier ones happened. For example, a Hard Save
-implies the attestation arrived, and a permit sent implies approval. A stage
+implies the attestation arrived. **There is one exception: nothing implies
+state approval.** A permit sent, or anything later, never satisfies it.
+If the crematory already has the decedent and no approval was recorded,
+approval shows as "Not recorded": it is not counted as met and does not
+hold the case. Submission, approval and permit-sent each keep their own
+time, and the SLA details list every event with where its time came from.
+
+The attestation and the Hard Save are separate events. Recording the
+attestation starts the same-day Hard Save SLA and completes nothing. Only a
+recorded Hard Save, or a staff tick of "Attestation Received / Hard Saved",
+completes it. A stage
 the case has moved past implies its own events. The time of an implied event
 is unknown, though, and a milestone whose start time is unknown shows
 **Start Date Needed** instead of a deadline.
 
-Existing cases have no recorded times, so their current milestone will
-usually show Start Date Needed until staff record when it began.
+Existing cases have no recorded times, and nothing is backfilled. Their
+current milestone shows "Start Date Needed" until staff record when it
+began. In SLA details, each milestone has one-click "Record start" and
+"Record completion" buttons, which pick the right event and focus the time.
+Recording needs case-edit permission. "Start Date Needed" is counted on the
+dashboard, not listed in Needs Attention, and never triggers an alert.
 
 Date of Cremation is never treated as "cremains ready". Expected Pickup is
 never treated as release.

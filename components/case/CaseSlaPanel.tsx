@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case } from '@/types/case';
 import { SLA_DELAY_REASONS, SLA_EVENT_KEYS, type SlaDelayReason, type SlaEventKey, type SlaMilestoneKey } from '@/types/sla';
 import {
   SLA_DELAY_REASON_LABEL,
   SLA_EVENT_LABEL,
+  SLA_EVENT_SOURCE_LABEL,
+  SLA_MILESTONE_EVENTS,
   SLA_RESPONSIBLE_LABEL,
   SLA_STATUS_LABEL,
   delayHistory,
@@ -76,6 +78,16 @@ export function CaseSlaPanel({
   const [delayReason, setDelayReason] = useState<SlaDelayReason>('waiting_on_family');
   const [delayNotes, setDelayNotes] = useState('');
   const [delayExpected, setDelayExpected] = useState('');
+  const whenRef = useRef<HTMLInputElement>(null);
+
+  /** One click from a milestone: pick its event and go to the time field. */
+  function startRecording(key: SlaEventKey) {
+    setEventKey(key);
+    setTimeout(() => {
+      whenRef.current?.scrollIntoView?.({ block: 'center' });
+      whenRef.current?.focus();
+    }, 0);
+  }
 
   const mutation = useMutation({
     mutationFn: (body: SlaAction) => postSlaAction(organizationId, case_.id, body),
@@ -115,9 +127,26 @@ export function CaseSlaPanel({
                   setDelayReason(milestone.external ? (milestone.responsibleParty === 'doctor' ? 'waiting_on_doctor' : milestone.responsibleParty === 'crematory' ? 'crematory_delay' : 'other') : 'waiting_on_family');
                 }}
                 onResolve={(delayId) => mutation.mutate({ action: 'resolve_delay', delayId })}
+                onRecordEvent={startRecording}
               />
             ))}
           </ul>
+
+          <div className={styles.timeline}>
+            <h4 className={styles.formTitle}>Recorded times</h4>
+            <ul>
+              {sla.events
+                .filter((event) => event.occurred)
+                .map((event) => (
+                  <li key={event.key}>
+                    <span>{event.label}</span>
+                    <span>{event.time ? formatEventTime(event.time) : 'Time not recorded'}</span>
+                    <span className={styles.muted}>{event.source ? SLA_EVENT_SOURCE_LABEL[event.source] : ''}</span>
+                  </li>
+                ))}
+              {!sla.events.some((event) => event.occurred) && <li className={styles.muted}>Nothing recorded yet.</li>}
+            </ul>
+          </div>
 
           {editable && delayFor && (
             <form
@@ -192,7 +221,7 @@ export function CaseSlaPanel({
                 </label>
                 <label className="sx-field">
                   <span className="sx-label">When</span>
-                  <input className="sx-input" type="datetime-local" value={eventAt} onChange={(event) => setEventAt(event.target.value)} required />
+                  <input ref={whenRef} className="sx-input" type="datetime-local" value={eventAt} onChange={(event) => setEventAt(event.target.value)} required />
                 </label>
               </div>
               <div className={styles.formActions}>
@@ -221,6 +250,7 @@ function MilestoneRow({
   busy,
   onRecordDelay,
   onResolve,
+  onRecordEvent,
 }: {
   milestone: SlaMilestoneEvaluation;
   history: ReturnType<typeof delayHistory>;
@@ -228,7 +258,9 @@ function MilestoneRow({
   busy: boolean;
   onRecordDelay: () => void;
   onResolve: (delayId: string) => void;
+  onRecordEvent: (key: SlaEventKey) => void;
 }) {
+  const recordable = SLA_MILESTONE_EVENTS[milestone.key];
   const tone = slaTone(milestone.status);
   const deadline = describeDeadline(milestone);
   return (
@@ -241,7 +273,7 @@ function MilestoneRow({
         {milestone.status ? (
           <span className={`${styles.pill} ${styles[`pill_${tone}`]}`}>{SLA_STATUS_LABEL[milestone.status]}</span>
         ) : (
-          <span className={styles.muted}>{milestone.state === 'not_started' ? 'Not started' : ''}</span>
+          <span className={styles.muted}>{milestone.state === 'not_started' ? 'Not started' : milestone.state === 'not_recorded' ? 'Not recorded' : ''}</span>
         )}
         {milestone.overdue && milestone.status !== 'overdue' && <span className={`${styles.pill} ${styles.pill_bad}`}>Overdue</span>}
       </div>
@@ -307,10 +339,24 @@ function MilestoneRow({
           ))}
         </ul>
       )}
-      {editable && (milestone.state === 'active' || milestone.state === 'start_date_needed') && (
-        <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.inlineButton}`} onClick={onRecordDelay} disabled={busy}>
-          Record delay
-        </button>
+      {editable && (milestone.state === 'active' || milestone.state === 'start_date_needed' || milestone.state === 'not_recorded') && (
+        <div className={styles.rowActions}>
+          {milestone.state === 'start_date_needed' && recordable.start && (
+            <button type="button" className={`sx-btn sx-btn-sm ${styles.inlineButton}`} onClick={() => onRecordEvent(recordable.start!)} disabled={busy}>
+              Record start
+            </button>
+          )}
+          {recordable.stop && (
+            <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.inlineButton}`} onClick={() => onRecordEvent(recordable.stop!)} disabled={busy}>
+              Record completion
+            </button>
+          )}
+          {milestone.state !== 'not_recorded' && (
+            <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.inlineButton}`} onClick={onRecordDelay} disabled={busy}>
+              Record delay
+            </button>
+          )}
+        </div>
       )}
     </li>
   );

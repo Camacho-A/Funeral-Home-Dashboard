@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CaseSlaPanel } from './CaseSlaPanel';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
@@ -74,5 +74,33 @@ describe('CaseSlaPanel', () => {
     renderPanel({ ...base, isDeleted: true }, true);
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
     expect(screen.queryByRole('button', { name: 'Record' })).not.toBeInTheDocument();
+  });
+});
+
+describe('CaseSlaPanel — recording dates for existing cases (final review)', () => {
+  it('"Record start" on a Start Date Needed milestone picks its start event in one click', async () => {
+    const existing: Case = { ...caseFixtures.find((c) => c.id === '1042')!, rawStage: 3, checklistState: {}, slaEvents: undefined, slaDelays: undefined };
+    renderPanel(existing);
+    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Record start' }));
+    expect(screen.getByLabelText('Event')).toHaveValue('case_received');
+    await waitFor(() => expect(screen.getByLabelText('When')).toHaveFocus());
+  });
+
+  it('"Record completion" picks the milestone\'s stop event — the Hard Save, never the attestation', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+    const hardSave = screen.getByText('Hard Save').closest('li')!;
+    fireEvent.click(within(hardSave).getByRole('button', { name: 'Record completion' }));
+    expect(screen.getByLabelText('Event')).toHaveValue('hard_saved');
+  });
+
+  it('lists every recorded time with where it came from', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+    const timeline = screen.getByText('Recorded times').parentElement!;
+    expect(timeline).toHaveTextContent('Doctor attestation received');
+    expect(timeline).toHaveTextContent('recorded');
+    expect(timeline).toHaveTextContent('implied — time not recorded');
   });
 });

@@ -1,4 +1,5 @@
 import type { Case } from '../../types/case';
+import { SLA_EVENT_KEYS } from '../../types/sla';
 import type {
   SlaDelayReason,
   SlaDelayRecord,
@@ -54,16 +55,22 @@ import { businessCalendarFor, type SlaSettings } from './slaSettings';
 
 export type EventTime = { date: LocalDate; minutes: number | null };
 
-type EventInfo = { occurred: boolean; time: EventTime | null };
+/** Where an event's evidence came from: recorded on the case's SLA events,
+    a checklist completion record, case data (Date Received, the release
+    record), or implied by a later event or a stage the case has passed. */
+export type SlaEventSource = 'recorded' | 'checklist' | 'case' | 'implied';
 
-const NOT_OCCURRED: EventInfo = { occurred: false, time: null };
-const OCCURRED_TIME_UNKNOWN: EventInfo = { occurred: true, time: null };
+type EventInfo = { occurred: boolean; time: EventTime | null; source: SlaEventSource | null };
+
+const NOT_OCCURRED: EventInfo = { occurred: false, time: null, source: null };
+const OCCURRED_TIME_UNKNOWN: EventInfo = { occurred: true, time: null, source: 'implied' };
 
 /** Checklist items that ARE an SLA event, by stable key, guarded by the
     label stored in the case's own snapshot (Manors' template). */
 const CHECKLIST_EVENTS: Partial<Record<SlaEventKey, ReadonlyArray<{ displayStage: number; index: number; expectedLabel: string }>>> = {
   edrs_submitted: [{ displayStage: 2, index: 0, expectedLabel: 'EDRS submitted & sent to doctor' }],
   hard_saved: [{ displayStage: 2, index: 2, expectedLabel: 'Hardsave for state approval if not an online doctor' }],
+  permit_sent: [{ displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' }],
   sent_to_crematory: [
     { displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' },
     { displayStage: 3, index: 1, expectedLabel: 'Authorization of release sent to crematory' },
@@ -91,10 +98,30 @@ export const SLA_EVENT_LABEL: Record<SlaEventKey, string> = {
   edrs_submitted: 'EDRS submitted to doctor',
   attestation_received: 'Doctor attestation received',
   hard_saved: 'Hard Saved',
+  submitted_for_approval: 'Submitted for state approval',
   approval_received: 'State approval received',
+  permit_sent: 'Permit sent to crematory',
   sent_to_crematory: 'Sent to crematory',
   crematory_received: 'Received by crematory',
   cremains_ready: 'Cremains ready',
+};
+
+/** The events staff record to start or complete each milestone (the
+    family-pickup release is recorded through Record pickup, not here). */
+export const SLA_MILESTONE_EVENTS: Record<SlaMilestoneKey, { start: SlaEventKey | null; stop: SlaEventKey | null }> = {
+  edrs_entry: { start: 'case_received', stop: 'edrs_submitted' },
+  doctor_attestation: { start: 'edrs_submitted', stop: 'attestation_received' },
+  hard_save: { start: 'attestation_received', stop: 'hard_saved' },
+  approval: { start: 'submitted_for_approval', stop: 'approval_received' },
+  crematory_turnaround: { start: 'crematory_received', stop: 'cremains_ready' },
+  family_pickup: { start: 'cremains_ready', stop: null },
+};
+
+export const SLA_EVENT_SOURCE_LABEL: Record<SlaEventSource, string> = {
+  recorded: 'recorded',
+  checklist: 'from the checklist',
+  case: 'from the case',
+  implied: 'implied — time not recorded',
 };
 
 export const SLA_MILESTONE_LABEL: Record<SlaMilestoneKey, string> = {
@@ -164,12 +191,15 @@ const MILESTONES: readonly MilestoneDefinition[] = [
   { key: 'edrs_entry', responsible: 'staff', start: 'case_received', stop: 'edrs_submitted', target: (s) => s.targets.edrsEntry, standardCaseOnly: true },
   { key: 'doctor_attestation', responsible: 'doctor', start: 'edrs_submitted', stop: 'attestation_received', target: (s) => s.targets.doctorAttestation, standardCaseOnly: true },
   { key: 'hard_save', responsible: 'staff', start: 'attestation_received', stop: 'hard_saved', target: (s) => s.targets.hardSave, standardCaseOnly: true },
-  { key: 'approval', responsible: 'state', start: 'hard_saved', stop: 'approval_received', target: (s) => s.targets.approval },
+  { key: 'approval', responsible: 'state', start: 'submitted_for_approval', stop: 'approval_received', target: (s) => s.targets.approval },
   { key: 'crematory_turnaround', responsible: 'crematory', start: 'crematory_received', stop: 'cremains_ready', target: (s) => s.targets.crematoryTurnaround },
   { key: 'family_pickup', responsible: 'family', start: 'cremains_ready', stop: 'released', target: (s) => s.targets.familyPickup, advisory: true },
 ];
 
-export type SlaMilestoneState = 'not_applicable' | 'not_started' | 'start_date_needed' | 'active' | 'completed';
+/** `not_recorded`: the case has moved on (the crematory has the decedent)
+    but the milestone's completion was never recorded. Shown as such; never
+    counted as met, and never the current milestone. */
+export type SlaMilestoneState = 'not_applicable' | 'not_started' | 'start_date_needed' | 'active' | 'completed' | 'not_recorded';
 
 export type SlaMilestoneEvaluation = {
   key: SlaMilestoneKey;
@@ -202,9 +232,13 @@ export type CaseSlaEvaluation = {
   current: SlaMilestoneEvaluation | null;
   /** Business days since the case entered its stage; null when unknown. */
   businessDaysInStage: number | null;
+  /** Every SLA event with its time and where the evidence came from. */
+  events: SlaEventTimelineEntry[];
 };
 
-const EMPTY: CaseSlaEvaluation = { enabled: false, milestones: [], current: null, businessDaysInStage: null };
+export type SlaEventTimelineEntry = { key: SlaEventKey; label: string; occurred: boolean; time: EventTime | null; source: SlaEventSource | null };
+
+const EMPTY: CaseSlaEvaluation = { enabled: false, milestones: [], current: null, businessDaysInStage: null, events: [] };
 
 function eventTimeFromIso(iso: string | null | undefined, calendar: BusinessCalendar): EventTime | null {
   if (!iso) return null;
@@ -246,7 +280,7 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
   const recorded = (key: SlaEventKey): EventInfo => {
     const record = case_.slaEvents?.[key];
     const time = eventTimeFromIso(record?.at, calendar);
-    return record && time ? { occurred: true, time } : NOT_OCCURRED;
+    return record && time ? { occurred: true, time, source: 'recorded' } : NOT_OCCURRED;
   };
 
   /** A checklist-backed event: done when every backing item is done (or
@@ -263,9 +297,9 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
       const record = case_.checklistCompletions?.[checklistItemKey(item.displayStage, item.index)];
       return record?.done ? eventTimeFromIso(record.at, calendar) : null;
     });
-    if (times.some((time) => time === null)) return OCCURRED_TIME_UNKNOWN;
+    if (times.some((time) => time === null)) return { occurred: true, time: null, source: 'checklist' };
     const latest = (times as EventTime[]).reduce((a, b) => (a.date > b.date || (a.date === b.date && (a.minutes ?? 0) >= (b.minutes ?? 0)) ? a : b));
-    return { occurred: true, time: latest };
+    return { occurred: true, time: latest, source: 'checklist' };
   };
 
   const either = (...infos: EventInfo[]): EventInfo => infos.find((info) => info.occurred && info.time) ?? infos.find((info) => info.occurred) ?? NOT_OCCURRED;
@@ -273,17 +307,26 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
   const delivered = case_.returnMethod === 'shipping' && case_.shippingDeliveryStatus === 'delivered';
   const released: EventInfo =
     case_.pickupStatus === 'released'
-      ? { occurred: true, time: dateOnly(case_.pickupReleasedAt) }
+      ? { occurred: true, time: dateOnly(case_.pickupReleasedAt), source: 'case' }
       : delivered
-        ? { occurred: true, time: dateOnly(case_.shippingDeliveredAt) }
+        ? { occurred: true, time: dateOnly(case_.shippingDeliveredAt), source: 'case' }
         : NOT_OCCURRED;
 
-  const cremainsReady = either(recorded('cremains_ready'), dateOnly(case_.cremainsReceivedAt) ? { occurred: true, time: dateOnly(case_.cremainsReceivedAt) } : NOT_OCCURRED, released.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
+  const receivedBack = dateOnly(case_.cremainsReceivedAt);
+  const cremainsReady = either(recorded('cremains_ready'), receivedBack ? { occurred: true, time: receivedBack, source: 'case' } : NOT_OCCURRED, released.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const crematoryReceived = either(recorded('crematory_received'), cremainsReady.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const sentToCrematory = either(recorded('sent_to_crematory'), fromChecklist('sent_to_crematory'), crematoryReceived.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
-  // The permit can only be sent once the state has approved.
-  const approval = either(recorded('approval_received'), sentToCrematory.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
-  const hardSaved = either(recorded('hard_saved'), fromChecklist('hard_saved'), approval.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
+  const permitSent = either(recorded('permit_sent'), fromChecklist('permit_sent'), sentToCrematory.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
+  // State approval is satisfied ONLY by a recorded approval. A permit sent,
+  // or anything later, is never treated as the approval itself.
+  const approval = recorded('approval_received');
+  const submittedRecorded = recorded('submitted_for_approval');
+  // A recorded approval or submission implies the Hard Save happened (its
+  // time stays unknown unless it was recorded itself).
+  const hardSaved = either(recorded('hard_saved'), fromChecklist('hard_saved'), approval.occurred || submittedRecorded.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
+  // Hard Save is the submission for state approval, unless a separate
+  // submission time was recorded.
+  const submitted = either(submittedRecorded, hardSaved.occurred ? { ...hardSaved } : NOT_OCCURRED);
   const attestation = either(recorded('attestation_received'), hardSaved.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const edrs = either(recorded('edrs_submitted'), fromChecklist('edrs_submitted'), attestation.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const caseReceived = either(recorded('case_received'), OCCURRED_TIME_UNKNOWN);
@@ -294,7 +337,7 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
       ? NOT_OCCURRED
       : either(
           case_.checklistState[checklistItemKey(ME_VERIFIED_ITEM.displayStage, ME_VERIFIED_ITEM.index)] === true && meRecord?.done
-            ? { occurred: true, time: eventTimeFromIso(meRecord.at, calendar) }
+            ? { occurred: true, time: eventTimeFromIso(meRecord.at, calendar), source: 'checklist' }
             : NOT_OCCURRED,
           currentDisplayStage > ME_VERIFIED_ITEM.displayStage || approval.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED,
         );
@@ -305,7 +348,9 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
     edrs_submitted: edrs,
     attestation_received: attestation,
     hard_saved: hardSaved,
+    submitted_for_approval: submitted,
     approval_received: approval,
+    permit_sent: permitSent,
     sent_to_crematory: sentToCrematory,
     crematory_received: crematoryReceived,
     cremains_ready: cremainsReady,
@@ -369,13 +414,18 @@ export function evaluateCaseSla(case_: SlaCase, settings: SlaSettings, nowIso: s
     };
     if (definition.standardCaseOnly && isMeCase) return { ...base, state: 'not_applicable', status: null };
 
-    const startKey = definition.key === 'approval' && isMeCase ? 'me_verified' : definition.start;
+    const startKey = definition.key === 'approval' && isMeCase && !events.submitted_for_approval.occurred ? 'me_verified' : definition.start;
     const start = events[startKey];
     const stop = events[definition.stop];
     const delay = activeDelay(case_, definition.key);
 
     if (stop.occurred) {
       return { ...base, state: 'completed', status: 'completed', startedAt: start.time, completedAt: stop.time };
+    }
+    // An approval nobody recorded, on a case the crematory already has: say
+    // so, without treating it as met and without holding the case on it.
+    if (definition.key === 'approval' && events.crematory_received.occurred) {
+      return { ...base, state: 'not_recorded', status: null, startedAt: start.time, note: 'State approval was not recorded.' };
     }
     // A milestone with a crematory start: sent to the crematory, but no
     // receipt date recorded — the turnaround cannot be measured yet.
@@ -439,7 +489,8 @@ export function evaluateCaseSla(case_: SlaCase, settings: SlaSettings, nowIso: s
   const entered = eventTimeFromIso(case_.stageEnteredAt ?? null, calendar);
   const businessDaysInStage = entered ? Math.max(0, businessDaysBetween(entered.date, now.date, calendar)) : null;
 
-  return { enabled: true, milestones, current, businessDaysInStage };
+  const timeline = SLA_EVENT_KEYS.map((key) => ({ key, label: SLA_EVENT_LABEL[key], ...events[key] }));
+  return { enabled: true, milestones, current, businessDaysInStage, events: timeline };
 }
 
 /** One line for a deadline: "Due in 2 business days", "Due today", "3 business days overdue". */
