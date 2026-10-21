@@ -5,6 +5,8 @@ import type { Case } from '../types/case';
 import type { ActivityContext } from './activityService';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
 import {
+  envelopeTrigger,
+  hasValidTagNumber,
   missingOfficialDocumentFields,
   officialDocumentsFor,
   officialDocumentsToRegenerate,
@@ -14,7 +16,7 @@ import { DocumentNotFoundError } from '../lib/documentStorageProvider';
 import { composeDecedentName } from '../domain/cases/decedentName';
 import { formatReceiptDate } from '../domain/billing/receiptOfPayment';
 import { toDisplayName } from '../utils/displayName';
-import { generateBillingDocument, downloadOrgDocumentBytes } from './documentService';
+import { generateBillingDocument, downloadOrgDocumentBytes, list as listCaseDocuments } from './documentService';
 import { loadCaseOnServer } from './serverCaseLoader';
 import { buildCertificateOfCremationPdf, buildEnvelopePdf } from './officialDocumentTemplates';
 
@@ -137,6 +139,28 @@ export async function generateOfficialDocument(
   }
 }
 
+/**
+ * Envelope duplicate guard (2026-10). The Envelope carries only the name:
+ *   - a saved or corrected Tag Number creates one only if the case has none
+ *     (correcting a Tag Number never produces an identical second copy);
+ *   - a name change regenerates an existing Envelope, or creates the first
+ *     one on a case that already has a Tag Number (the previous behaviour).
+ * Fails safe: if the documents cannot be read, nothing is generated.
+ */
+async function envelopeIsDue(before: Case | null, after: Case, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const trigger = envelopeTrigger(before, after);
+  if (trigger === null) return false;
+  let hasEnvelope: boolean;
+  try {
+    const documents = await listCaseDocuments(after.organizationId, after.id, dataAdapterMode);
+    hasEnvelope = documents.some((d) => d.documentTypeKey === DOCUMENT_TYPES.LETTER_ENVELOPE.key && d.status === 'active');
+  } catch (error) {
+    console.error(`[official documents] Could not check case ${after.id} for an existing Envelope; skipping automatic generation:`, error instanceof Error ? error.message : error);
+    return false;
+  }
+  return trigger === 'tag_saved' ? !hasEnvelope : hasEnvelope || hasValidTagNumber(after);
+}
+
 /** After a case is created or saved: regenerates whatever the change
     affects. `before` is null for a new case. Never throws. */
 export async function regenerateOfficialDocumentsAfterCaseChange(
@@ -147,6 +171,7 @@ export async function regenerateOfficialDocumentsAfterCaseChange(
 ): Promise<Partial<Record<OfficialDocumentKind, OfficialDocumentOutcome>>> {
   const results: Partial<Record<OfficialDocumentKind, OfficialDocumentOutcome>> = {};
   for (const kind of officialDocumentsToRegenerate(before, after)) {
+    if (kind === 'envelope' && !(await envelopeIsDue(before, after, dataAdapterMode))) continue;
     results[kind] = await generateOfficialDocument(kind, after, ctx, dataAdapterMode);
   }
   return results;

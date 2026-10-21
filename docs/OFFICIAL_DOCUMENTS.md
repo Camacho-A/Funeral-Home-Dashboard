@@ -5,15 +5,20 @@ redraws them.
 
 ## When they are generated
 
-- **Envelope:** when a valid Tag Number is saved or changed (including a
-  case created with one), and again when the decedent's name changes on a
-  case that has a Tag Number. Never merely because a case was created, and
-  never for a historical import.
+- **Envelope:** needs only the decedent's name. It prints "<Name>
+  (Deceased)" and never the Tag Number, so a Tag Number is not required
+  (2026-10).
+  - Created automatically when a valid Tag Number is first saved and the
+    case has no Envelope yet.
+  - Regenerated when the name changes on a case that has an Envelope (or a
+    Tag Number).
+  - Never merely because a case was created, and never a second, identical
+    copy because a Tag Number was added or corrected.
 - **Certificate of Cremation:** as soon as the case has everything the form
   prints (the name, a valid Tag Number, the date of death and the date of
   cremation), and again whenever any of them changes.
-- **On demand:** Documents tab → **Generate Envelope** (needs the name and a
-  Tag Number) / **Generate Certificate** (needs all four). Use this for cases
+- **On demand:** Documents tab → **Generate Envelope** (needs the name
+  only) / **Generate Certificate** (needs all four). Use this for cases
   that existed before the feature, or to retry after a failure. If something
   is missing, staff are told exactly what to add; nothing is stored.
 - **Never:** for archived cases, or for organizations without these templates

@@ -3,7 +3,8 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { MANORS_ORGANIZATION_ID } from '../domain/organization/organizationProfiles';
 import type { Case } from '../types/case';
 
-const { generateBillingDocument, downloadOrgDocumentBytes, buildEnvelopePdf, buildCertificateOfCremationPdf } = vi.hoisted(() => ({
+const { generateBillingDocument, downloadOrgDocumentBytes, buildEnvelopePdf, buildCertificateOfCremationPdf, listDocuments } = vi.hoisted(() => ({
+  listDocuments: vi.fn(async (): Promise<Array<{ documentTypeKey: string; status: string }>> => []),
   generateBillingDocument: vi.fn(async (params: { buildPdf?: () => Promise<Uint8Array> }) => {
     await params.buildPdf?.();
     return { id: 'doc' };
@@ -12,7 +13,7 @@ const { generateBillingDocument, downloadOrgDocumentBytes, buildEnvelopePdf, bui
   buildEnvelopePdf: vi.fn(async () => new Uint8Array([1])),
   buildCertificateOfCremationPdf: vi.fn(async () => new Uint8Array([2])),
 }));
-vi.mock('./documentService', () => ({ generateBillingDocument, downloadOrgDocumentBytes }));
+vi.mock('./documentService', () => ({ generateBillingDocument, downloadOrgDocumentBytes, list: listDocuments }));
 vi.mock('./officialDocumentTemplates', () => ({ buildEnvelopePdf, buildCertificateOfCremationPdf }));
 
 const { generateOfficialDocument, regenerateOfficialDocumentsAfterCaseChange } = await import('./automaticCaseDocuments');
@@ -66,9 +67,14 @@ describe('generateOfficialDocument', () => {
     expect(generateBillingDocument).not.toHaveBeenCalled();
   });
 
-  it('does not produce an envelope for a case without a valid Tag Number', async () => {
-    expect(await generateOfficialDocument('envelope', manorsCase({ tagNumber: null }), ctx, 'mock')).toBe('missing_information');
-    expect(await generateOfficialDocument('envelope', manorsCase({ tagNumber: '  ' }), ctx, 'mock')).toBe('missing_information');
+  it('produces an envelope without a Tag Number — the Envelope does not print one (2026-10)', async () => {
+    expect(await generateOfficialDocument('envelope', manorsCase({ tagNumber: null }), ctx, 'mock')).toBe('generated');
+    expect(await generateOfficialDocument('envelope', manorsCase({ tagNumber: '  ' }), ctx, 'mock')).toBe('generated');
+    expect(buildEnvelopePdf).toHaveBeenCalledWith({ decedentDisplayName: 'Louis Anthony Barber' });
+  });
+
+  it('still refuses an envelope without the decedent\'s name', async () => {
+    expect(await generateOfficialDocument('envelope', manorsCase({ decedentName: ' ' }), ctx, 'mock')).toBe('missing_information');
     expect(generateBillingDocument).not.toHaveBeenCalled();
   });
 
@@ -150,5 +156,57 @@ describe('regenerateOfficialDocumentsAfterCaseChange', () => {
     const results = await regenerateOfficialDocumentsAfterCaseChange(before, manorsCase(), ctx, 'mock');
     expect(results).toEqual({ certificate_of_cremation: 'template_unavailable' });
     expect(buildEnvelopePdf).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Envelope without a Tag Number (2026-10). The Envelope carries only the
+ * name, so a Tag Number neither gates it nor, when added or corrected later,
+ * produces a second identical copy. The Certificate is unchanged.
+ */
+describe('regenerateOfficialDocumentsAfterCaseChange — Envelope and Certificate are independent', () => {
+  const envelopeOnFile = [{ documentTypeKey: 'letter.envelope', status: 'active' }];
+  afterEach(() => listDocuments.mockReset().mockResolvedValue([]));
+
+  it('a Tag Number saved on a case with no Envelope creates it; on a case that has one, nothing is duplicated', async () => {
+    const before = manorsCase({ tagNumber: null, dateOfCremation: null });
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, tagNumber: 'MC-9' }, ctx, 'mock')).toEqual({ envelope: 'generated' });
+    listDocuments.mockResolvedValue(envelopeOnFile);
+    vi.clearAllMocks();
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, tagNumber: 'MC-9' }, ctx, 'mock')).toEqual({});
+    expect(buildEnvelopePdf).not.toHaveBeenCalled();
+  });
+
+  it('a name change regenerates an existing Envelope even without a Tag Number', async () => {
+    listDocuments.mockResolvedValue(envelopeOnFile);
+    const before = manorsCase({ tagNumber: null, dateOfCremation: null });
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, decedentMiddleName: 'ANTONIO' }, ctx, 'mock')).toEqual({ envelope: 'generated' });
+    expect(buildEnvelopePdf).toHaveBeenCalledWith({ decedentDisplayName: 'Louis Antonio Barber' });
+  });
+
+  it('a name change on a case with neither an Envelope nor a Tag Number creates nothing; a case created without a tag gets none', async () => {
+    const before = manorsCase({ tagNumber: null, dateOfCremation: null });
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, decedentMiddleName: 'ANTONIO' }, ctx, 'mock')).toEqual({});
+    expect(await regenerateOfficialDocumentsAfterCaseChange(null, before, ctx, 'mock')).toEqual({});
+    expect(generateBillingDocument).not.toHaveBeenCalled();
+  });
+
+  it('the Certificate still requires the Tag Number and is not blocked by, or blocking, the Envelope', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.env.CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY = 'k';
+    downloadOrgDocumentBytes.mockResolvedValue({ buffer: Buffer.from([9]), contentType: 'application/pdf' });
+    expect(await generateOfficialDocument('certificate_of_cremation', manorsCase({ tagNumber: null }), ctx, 'mock')).toBe('missing_information');
+    const noCert = manorsCase({ dateOfCremation: null, tagNumber: null });
+    const result = await regenerateOfficialDocumentsAfterCaseChange(noCert, { ...noCert, tagNumber: 'MC-1' }, ctx, 'mock');
+    expect(result).toEqual({ envelope: 'generated' });
+    const both = await regenerateOfficialDocumentsAfterCaseChange(manorsCase({ dateOfCremation: null }), manorsCase(), ctx, 'mock');
+    expect(both).toEqual({ certificate_of_cremation: 'generated' });
+  });
+
+  it('if existing documents cannot be read, no Envelope is generated automatically (no risk of a duplicate)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    listDocuments.mockRejectedValue(new Error('storage down'));
+    const before = manorsCase({ tagNumber: null, dateOfCremation: null });
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, tagNumber: 'MC-9' }, ctx, 'mock')).toEqual({});
   });
 });

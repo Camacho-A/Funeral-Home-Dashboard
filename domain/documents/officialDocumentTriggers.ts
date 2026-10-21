@@ -7,11 +7,15 @@ import { caseDateToIso, isoToCaseDate } from '../cases/cremationDates';
  * Which of an organization's own official documents a case change should
  * regenerate (2026-10). Pure — the service decides HOW; this decides WHEN.
  *
- *   Envelope                  needs the decedent's name and a valid Tag
- *                             Number. Generated when a Tag Number is saved
- *                             (or changed), regenerated when the name changes
- *                             on a case that has one. Never merely because a
- *                             case was created.
+ *   Envelope                  needs only the decedent's name — it prints
+ *                             "<Name> (Deceased)" and nothing else, so a
+ *                             Tag Number is NOT required (2026-10). Created
+ *                             automatically when a Tag Number is first
+ *                             saved and the case has no Envelope yet;
+ *                             regenerated when the name changes. Never
+ *                             merely because a case was created, and never
+ *                             a second copy because a Tag Number changed
+ *                             (see envelopeTrigger + the service).
  *   Certificate of Cremation  needs the name, a valid Tag Number, the date
  *                             of death and the date of cremation — every
  *                             value the official form prints. Generated once
@@ -59,7 +63,8 @@ function isRealDate(value: string | null | undefined): boolean {
 export function missingOfficialDocumentFields(kind: OfficialDocumentKind, c: Omit<Relevant, 'organizationId' | 'isDeleted'>): string[] {
   const missing: string[] = [];
   if (!present(c.decedentName)) missing.push("Decedent's name");
-  if (!hasValidTagNumber(c)) missing.push('Tag Number');
+  // The Certificate prints the Tag Number; the Envelope does not.
+  if (kind === 'certificate_of_cremation' && !hasValidTagNumber(c)) missing.push('Tag Number');
   if (kind === 'certificate_of_cremation') {
     if (!isRealDate(c.dateOfDeath)) missing.push('Date of Death');
     if (!isRealDate(c.dateOfCremation)) missing.push('Date of Cremation');
@@ -69,6 +74,28 @@ export function missingOfficialDocumentFields(kind: OfficialDocumentKind, c: Omi
 
 const fullName = (c: Relevant) => composeDecedentName(c.decedentName ?? '', c.decedentMiddleName ?? null).trim();
 
+/**
+ * Why a case change might call for an Envelope, before checking whether the
+ * case already has one (the service does, see automaticCaseDocuments.ts):
+ *
+ *   'name_changed'  the printed name changed on an existing case — keep an
+ *                   existing Envelope current (or, as before, create one
+ *                   once the case has a Tag Number);
+ *   'tag_saved'     a valid Tag Number was newly saved or changed (or the
+ *                   case was created with one) — the moment the business
+ *                   prepares the Envelope; only creates one when the case
+ *                   has none, since the Tag Number is not on it.
+ *
+ * Null when nothing affecting the Envelope happened, the name is missing,
+ * or the case is archived.
+ */
+export function envelopeTrigger(before: Relevant | null, after: Relevant): 'name_changed' | 'tag_saved' | null {
+  if (after.isDeleted || !present(after.decedentName)) return null;
+  if (before !== null && fullName(before) !== fullName(after)) return 'name_changed';
+  const tagSaved = hasValidTagNumber(after) && (before === null || normalizedTag(before) !== normalizedTag(after));
+  return tagSaved ? 'tag_saved' : null;
+}
+
 export function officialDocumentsToRegenerate(before: Relevant | null, after: Relevant): OfficialDocumentKind[] {
   const offered = officialDocumentsFor(after.organizationId);
   if (offered.length === 0 || after.isDeleted) return [];
@@ -76,10 +103,7 @@ export function officialDocumentsToRegenerate(before: Relevant | null, after: Re
   const kinds: OfficialDocumentKind[] = [];
   const nameChanged = before === null || fullName(before) !== fullName(after);
 
-  if (offered.includes('envelope') && missingOfficialDocumentFields('envelope', after).length === 0) {
-    const tagSaved = before === null || normalizedTag(before) !== normalizedTag(after);
-    if (tagSaved || nameChanged) kinds.push('envelope');
-  }
+  if (offered.includes('envelope') && envelopeTrigger(before, after) !== null) kinds.push('envelope');
 
   if (offered.includes('certificate_of_cremation') && missingOfficialDocumentFields('certificate_of_cremation', after).length === 0) {
     const changed =

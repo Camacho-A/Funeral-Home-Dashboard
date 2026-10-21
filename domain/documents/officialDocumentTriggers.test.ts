@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MANORS_ORGANIZATION_ID } from '../organization/organizationProfiles';
-import { missingOfficialDocumentFields, officialDocumentsToRegenerate } from './officialDocumentTriggers';
+import { envelopeTrigger, missingOfficialDocumentFields, officialDocumentsToRegenerate } from './officialDocumentTriggers';
 
 const base = {
   organizationId: MANORS_ORGANIZATION_ID,
@@ -36,10 +36,18 @@ describe('officialDocumentsToRegenerate', () => {
     expect(officialDocumentsToRegenerate(tagged, { ...tagged, tagNumber: ' mc-1042 ' })).toEqual([]);
   });
 
-  it('a name change regenerates the envelope only once a Tag Number exists', () => {
-    expect(officialDocumentsToRegenerate(base, { ...base, decedentMiddleName: 'ANTONIO' })).toEqual([]);
+  it('a name change is an Envelope trigger with or without a Tag Number (the service decides whether one is due)', () => {
+    expect(officialDocumentsToRegenerate(base, { ...base, decedentMiddleName: 'ANTONIO' })).toEqual(['envelope']);
+    expect(envelopeTrigger(base, { ...base, decedentMiddleName: 'ANTONIO' })).toBe('name_changed');
     const tagged = { ...base, tagNumber: 'MC-1042' };
     expect(officialDocumentsToRegenerate(tagged, { ...tagged, decedentMiddleName: 'ANTONIO' })).toEqual(['envelope']);
+  });
+
+  it('a case created without a Tag Number gets no Envelope automatically; an unrelated save is no trigger', () => {
+    expect(envelopeTrigger(null, base)).toBeNull();
+    expect(envelopeTrigger(base, { ...base, dateOfDeath: '10/10/2026' })).toBeNull();
+    expect(envelopeTrigger(null, { ...base, tagNumber: 'MC-1' })).toBe('tag_saved');
+    expect(envelopeTrigger(base, { ...base, decedentName: ' ' })).toBeNull();
   });
 
   it('recording the date of cremation produces the certificate, and not another envelope', () => {
@@ -88,7 +96,9 @@ describe('missingOfficialDocumentFields', () => {
       'Date of Death',
       'Date of Cremation',
     ]);
-    expect(missingOfficialDocumentFields('envelope', base)).toEqual(['Tag Number']);
+    // The Envelope needs only the name; the Certificate still needs the Tag Number.
+    expect(missingOfficialDocumentFields('envelope', base)).toEqual([]);
+    expect(missingOfficialDocumentFields('envelope', { ...base, decedentName: '' })).toEqual(["Decedent's name"]);
     expect(missingOfficialDocumentFields('envelope', { ...base, tagNumber: 'MC-1' })).toEqual([]);
     expect(missingOfficialDocumentFields('certificate_of_cremation', { ...base, tagNumber: 'MC-1', dateOfCremation: '10/14/2026' })).toEqual([]);
   });
