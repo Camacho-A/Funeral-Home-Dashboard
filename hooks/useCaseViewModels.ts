@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { Case } from '@/types/case';
 import { buildCaseViewModel } from '@/domain/cases/viewModel';
 import { useStaff } from './useStaff';
+import { useSlaContext } from './useSlaContext';
 
 /**
  * Plural counterpart to useCaseViewModel (Phase 4) — needed once a screen
@@ -11,6 +12,7 @@ import { useStaff } from './useStaff';
  */
 export function useCaseViewModels(cases: Case[] | undefined) {
   const { data: staffList = [] } = useStaff();
+  const sla = useSlaContext();
 
   return useMemo(() => {
     if (!cases) return [];
@@ -20,6 +22,6 @@ export function useCaseViewModels(cases: Case[] | undefined) {
     // in every normal code path, but this guards against ever handing
     // buildCaseViewModel a nullish entry instead of silently crashing the
     // whole list on one bad item).
-    return cases.filter((case_): case_ is Case => Boolean(case_)).map((case_) => buildCaseViewModel(case_, { staffList }));
-  }, [cases, staffList]);
+    return cases.filter((case_): case_ is Case => Boolean(case_)).map((case_) => buildCaseViewModel(case_, { staffList, sla }));
+  }, [cases, staffList, sla]);
 }

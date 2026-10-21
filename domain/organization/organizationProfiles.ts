@@ -195,6 +195,9 @@ export type OrganizationFeaturePreferences = {
       their checklist items and the completion is recorded and shown as
       automatic (domain/workflow/checklistAutomation.ts). */
   automaticChecklistCompletion: boolean;
+  /** SLA tracking (2026-10): business-day milestones, the header's current
+      SLA, dashboard counts and SLA alerts (domain/sla/). */
+  slaTracking: boolean;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -274,6 +277,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   additionalItemsTerminology: false,
   legacyCertifierPresentation: false,
   automaticChecklistCompletion: false,
+  slaTracking: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -333,6 +337,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     additionalItemsTerminology: true,
     legacyCertifierPresentation: true,
     automaticChecklistCompletion: true,
+    slaTracking: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {

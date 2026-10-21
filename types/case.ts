@@ -23,6 +23,7 @@
  *   business data (once a checklist item is checked, that's a fact, not
  *   transient UI state), not something layered on top separately.
  */
+import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from './sla';
 import type { CaseWorkflowSnapshot } from './workflowTemplate';
 
 /** Manors launch-prep. The NOK's relationship to the deceased — a small,
@@ -242,12 +243,24 @@ export type Case = {
       key format existed; readChecklistValue is the only code allowed
       to interpret one, and only for the case's own current stage. */
   checklistState: Record<string, boolean>;
-  /** Automatic checklist completion (2026-10). For the checklist items
-      SOLIS can complete from a verified event, who decided each one last,
-      keyed like `checklistState`. Written only by the server (never
-      accepted from a client patch); absent on every case that predates it.
+  /** Checklist completion attribution (2026-10). Why each checklist item
+      is in its current state — the latest decision about it, automatic or
+      by staff — keyed like `checklistState`. Written only by the server
+      (never accepted from a client patch); absent for every decision made
+      before it existed, which the checklist shows as "Completion source
+      unavailable" rather than guessing. Full history is in Activity.
       See domain/workflow/checklistAutomation.ts. */
-  checklistAutomation?: Record<string, ChecklistAutomationEntry>;
+  checklistCompletions?: Record<string, ChecklistCompletionRecord>;
+  /** SLA tracking (2026-10): recorded workflow events, keyed by event
+      (types/sla.ts). Server-written only; absent on every case before it. */
+  slaEvents?: Partial<Record<SlaEventKey, SlaEventRecord>>;
+  /** SLA tracking (2026-10): recorded delays, keyed by delay id so
+      concurrent records merge rather than overwrite. Never deleted. */
+  slaDelays?: Record<string, SlaDelayRecord>;
+  /** When the case entered its current workflow stage (ISO-8601). Written
+      on every stage change from 2026-10; absent before that, which the
+      header shows as unknown rather than as "0 days". */
+  stageEnteredAt?: string | null;
   fieldValues: Record<number, string>;
   /** Manors launch-prep. Structured pickup/release tracking — the answer
       "are the remains still here or have they gone home?" without relying
@@ -413,12 +426,32 @@ export type CaseUpdate = Partial<
   >
 >;
 
-/** What verified event completed a checklist item automatically. */
-export type ChecklistAutomationSource = 'payment_received_in_full' | 'arrangement_form_received';
+/** Why a checklist item changed state. */
+export type ChecklistCompletionSource =
+  | 'payment_confirmed'
+  | 'document_generated'
+  | 'verified_document_received'
+  | 'workflow_event'
+  | 'staff_confirmation';
 
-/** `automatic`: SOLIS completed the item from `source`. `staff`: a staff
-    member changed the item afterwards (or first), which automation then
-    never overrides. */
-export type ChecklistAutomationEntry =
-  | { by: 'automatic'; source: ChecklistAutomationSource; at: string }
-  | { by: 'staff'; at: string };
+/** The identifier automatic decisions are attributed to. */
+export const SOLIS_AUTOMATION_ID = 'solis-automation';
+
+/**
+ * The latest decision about one checklist item.
+ *
+ * `done` is the state the decision set (a staff member reopening an item
+ * records `done: false`). `eventType` names what happened ("payment.paid_in_full",
+ * "staff.checklist_toggle", ...) and `eventId` the related record (payment,
+ * submission, document) where there is one. `actorId` is the staff
+ * identity for a manual decision and SOLIS_AUTOMATION_ID for an automatic one.
+ */
+export type ChecklistCompletionRecord = {
+  done: boolean;
+  method: 'automatic' | 'manual';
+  source: ChecklistCompletionSource;
+  eventType: string;
+  eventId: string | null;
+  at: string;
+  actorId: string | null;
+};

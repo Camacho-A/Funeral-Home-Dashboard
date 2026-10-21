@@ -8,6 +8,8 @@ import type { CaseUpdate } from '@/types/case';
 import type { ChecklistItemViewModel } from '@/types/caseViewModel';
 import styles from './ChecklistCard.module.css';
 import { RecordPickupDialog, type ReleaseSuggestion } from './RecordPickupDialog';
+import { describeCompletionEvent } from '@/domain/workflow/checklistAutomation';
+import { SOLIS_AUTOMATION_ID } from '@/types/case';
 
 /**
  * The stage-specific checklist. `viewingStageLabel` non-null means these
@@ -411,6 +413,7 @@ export function ChecklistCard({
   onToggleMedicalExaminerCase,
   isArchived,
   releaseSuggestions,
+  resolveActorName,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -446,7 +449,11 @@ export function ChecklistCard({
   isArchived?: boolean;
   /** Names offered as one-click "Released to" values (2026-10). */
   releaseSuggestions?: ReleaseSuggestion[];
+  /** Checklist completion attribution (2026-10): a staff member's name
+      from their identity id, for "Completed manually" details. */
+  resolveActorName?: (identityId: string) => string | null;
 }) {
+  const [openCompletion, setOpenCompletion] = useState<number | null>(null);
   const readOnly = viewingStageLabel !== null || isArchived === true;
 
   /**
@@ -534,8 +541,13 @@ export function ChecklistCard({
                   aria-label={item.label}
                 />
                 <span className={`${styles.itemLabel} ${labelClass}`}>{item.label}</span>
-                {item.completedAutomatically && <span className={styles.autoCompleted}>Completed automatically</span>}
+                {item.done && item.completion && (
+                  <CompletionNote item={item} expanded={openCompletion === item.index} onToggle={() => setOpenCompletion(openCompletion === item.index ? null : item.index)} />
+                )}
               </div>
+              {item.done && item.completion && openCompletion === item.index && (
+                <CompletionDetails item={item} resolveActorName={resolveActorName} />
+              )}
               {item.hasField && item.valueKind === 'time' && (
                 <ChecklistTimeInput
                   value={item.fieldValue}
@@ -699,3 +711,72 @@ function TerminalReturnAction({
   );
 }
 
+
+/**
+ * Checklist completion attribution (2026-10). One quiet line beside a done
+ * item saying how it was completed, and an information button that opens
+ * the details: why, when, by whom, and the related record. Nothing is
+ * inferred — an item completed before SOLIS recorded this says so.
+ */
+function completionTitle(item: ChecklistItemViewModel): string {
+  if (item.isDerived) return 'Completed automatically';
+  const kind = item.completion?.kind;
+  if (kind === 'automatic' || kind === 'derived') return 'Completed automatically';
+  if (kind === 'manual') return 'Completed manually';
+  return 'Completion source unavailable';
+}
+
+function CompletionNote({ item, expanded, onToggle }: { item: ChecklistItemViewModel; expanded: boolean; onToggle: () => void }) {
+  const title = completionTitle(item);
+  return (
+    <span className={styles.completionNote}>
+      <span className={styles.completionText}>{title}</span>
+      <button
+        type="button"
+        className={styles.completionInfo}
+        aria-expanded={expanded}
+        aria-label={`Why "${item.label}" is complete`}
+        onClick={onToggle}
+      >
+        i
+      </button>
+    </span>
+  );
+}
+
+function formatCompletionTime(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function CompletionDetails({ item, resolveActorName }: { item: ChecklistItemViewModel; resolveActorName?: (identityId: string) => string | null }) {
+  const completion = item.completion!;
+  let rows: Array<[string, string]>;
+  if (item.isDerived || completion.kind === 'derived') {
+    rows = [['Why', item.returnRequirement ? 'Completed from the recorded release of the cremated remains.' : 'Completed from the information recorded on the case.']];
+  } else if (completion.kind === 'automatic' || completion.kind === 'manual') {
+    const record = completion.record;
+    const by =
+      record.method === 'automatic' || record.actorId === SOLIS_AUTOMATION_ID
+        ? 'SOLIS Automation'
+        : (record.actorId && resolveActorName?.(record.actorId)) || 'A staff member';
+    rows = [
+      ['Why', describeCompletionEvent(record)],
+      ['When', formatCompletionTime(record.at)],
+      ['By', by],
+      ...(record.eventId ? ([['Related record', record.eventId]] as Array<[string, string]>) : []),
+    ];
+  } else {
+    rows = [['Why', 'This item was completed before SOLIS recorded how checklist items are completed. No source is assumed.']];
+  }
+  return (
+    <dl className={styles.completionDetails} role="note" aria-label={`Completion details for ${item.label}`}>
+      {rows.map(([label, value]) => (
+        <div key={label} className={styles.completionRow}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}

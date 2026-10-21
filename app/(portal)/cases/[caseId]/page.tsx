@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
+import { CaseSlaPanel } from '@/components/case/CaseSlaPanel';
 import { useCase } from '@/hooks/useCase';
 import { Button } from '@/components/ui/Button';
 import { StalledLoading } from '@/components/ui/StalledLoading';
@@ -289,7 +290,20 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         isOverdue={viewModel.isOverdue}
         stages={stepperStages}
         onStepClick={(index) => viewPresentedStage(index)}
+        sla={viewModel.sla}
       />
+
+      {/* SLA tracking (2026-10): details collapsed under the header. */}
+      {viewModel.sla?.enabled && (
+        <CaseSlaPanel
+          case_={case_}
+          sla={viewModel.sla}
+          organizationId={organizationId}
+          // Same convention as the Schedule tab: unknown permissions show the
+          // controls and the server decides (the SLA route checks case edit).
+          canEdit={!permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('case.update')}
+        />
+      )}
 
       {/* Case concurrency (2026-10): a save refused because the case changed
           since this page loaded it. See hooks/useCaseMutations.ts. */}
@@ -444,6 +458,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   arrangementContactName: case_.arrangementContactName ?? null,
                 }}
                 isArchived={case_.isDeleted === true}
+                resolveActorName={(identityId) => staffList.find((staff) => staff.identityId === identityId)?.displayName ?? null}
                 releaseSuggestions={[
                   { role: 'Next of kin', name: case_.nextOfKinName },
                   { role: 'Arrangement contact', name: case_.arrangementContactName },

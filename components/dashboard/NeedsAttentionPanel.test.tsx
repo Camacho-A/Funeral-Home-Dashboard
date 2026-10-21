@@ -62,3 +62,55 @@ describe('NeedsAttentionPanel — "All caught up" zero-state (SOLIS true redesig
     expect(screen.queryByText('All caught up')).not.toBeInTheDocument();
   });
 });
+
+describe('NeedsAttentionPanel — SLA tracking (2026-10)', () => {
+  const current = {
+    key: 'hard_save',
+    label: 'Hard Save',
+    responsibleParty: 'staff',
+    advisory: false,
+    external: false,
+    state: 'active',
+    status: 'overdue',
+    overdue: true,
+    startedAt: null,
+    completedAt: null,
+    deadline: '2026-10-20',
+    businessDaysRemaining: -1,
+    delay: null,
+    note: null,
+  };
+
+  it('shows the SLA summary counts when tracking is on, and nothing extra when it is off', () => {
+    const { unmount } = render(<NeedsAttentionPanel cases={[]} slaSummary={{ onTrack: 5, dueToday: 1, overdue: 2, waiting: 3 }} />);
+    const summary = screen.getByLabelText('SLA summary');
+    expect(summary).toHaveTextContent('On track5');
+    expect(summary).toHaveTextContent('Due today1');
+    expect(summary).toHaveTextContent('Overdue2');
+    expect(summary).toHaveTextContent('Waiting on others3');
+    unmount();
+    const second = render(<NeedsAttentionPanel cases={[]} slaSummary={{ onTrack: 0, dueToday: 0, overdue: 0, waiting: 0, startDateNeeded: 8 }} />);
+    expect(screen.getByText(/8 cases need an SLA start date/)).toBeInTheDocument();
+    second.unmount();
+    render(<NeedsAttentionPanel cases={[]} />);
+    expect(screen.queryByLabelText('SLA summary')).not.toBeInTheDocument();
+  });
+
+  it('a row shows milestone, deadline, days overdue, who is responsible and the delay', () => {
+    const delayed = { ...current, status: 'waiting_on_others', responsibleParty: 'doctor', label: 'Doctor attestation', delay: { reason: 'waiting_on_doctor' } };
+    render(
+      <NeedsAttentionPanel
+        cases={[
+          { ...item, sla: { enabled: true, milestones: [], current, businessDaysInStage: 0 } as never },
+          { ...item, id: '1043', caseNumber: 'B2026-002', sla: { enabled: true, milestones: [], current: delayed, businessDaysInStage: 0 } as never },
+        ]}
+      />,
+    );
+    const rows = screen.getAllByRole('link');
+    expect(rows[0]).toHaveTextContent('Hard Save · due Oct 20 · 1 business day overdue · Staff');
+    expect(rows[0]).toHaveAttribute('href', '/cases/1042');
+    expect(rows[1]).toHaveTextContent('Waiting on Others');
+    expect(rows[1]).toHaveTextContent('Overdue');
+    expect(rows[1]).toHaveTextContent('Doctor · Waiting on Doctor');
+  });
+});

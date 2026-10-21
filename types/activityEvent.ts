@@ -165,6 +165,9 @@ export const ACTIVITY_EVENT_TYPES = {
   CASE_ARCHIVED: 'case.archived',
   CASE_RESTORED: 'case.restored',
   CASE_CHECKLIST_COMPLETED_AUTOMATICALLY: 'case.checklist.completed_automatically',
+  CASE_SLA_EVENT_RECORDED: 'case.sla.event_recorded',
+  CASE_SLA_DELAY_RECORDED: 'case.sla.delay_recorded',
+  CASE_SLA_DELAY_RESOLVED: 'case.sla.delay_resolved',
   /** Reserved — discovered during implementation, not assumed in
       planning: `services/caseLogService.ts` has no server-side or Wix
       integration at all, in any mode (pure client-side mock fixtures,

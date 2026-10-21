@@ -1224,26 +1224,50 @@ describe('cremation dates (2026-10): date of cremation and date received are sep
   });
 });
 
-describe('checklistAutomation (automatic checklist completion, 2026-10)', () => {
-  const entry = { by: 'automatic', source: 'payment_received_in_full', at: '2026-10-20T12:00:00.000Z' };
+describe('checklistCompletions and SLA fields (2026-10)', () => {
+  const record = { done: true, method: 'automatic', source: 'payment_confirmed', eventType: 'payment.paid_in_full', eventId: 'p1', at: '2026-10-20T12:00:00.000Z', actorId: 'solis-automation' };
 
-  it('reads well-formed entries and drops anything else; a case without the field has none', () => {
+  it('reads well-formed completion records and drops anything else; a case without the field has none', () => {
     const mapped = mapWixCaseItem({
       ...validItem,
-      checklistAutomation: { '0:8': entry, '1:0': { by: 'staff', at: '2026-10-20T13:00:00.000Z' }, '2:0': { by: 'automatic', source: 'made-up', at: 'x' }, '3:0': 'nope' },
+      checklistCompletions: { '0:8': record, '1:0': { ...record, method: 'magic' }, '2:0': { ...record, source: 'made-up' }, '3:0': 'nope' },
     });
-    expect(mapped?.checklistAutomation).toEqual({ '0:8': entry, '1:0': { by: 'staff', at: '2026-10-20T13:00:00.000Z' } });
-    expect(mapWixCaseItem(validItem)?.checklistAutomation).toBeUndefined();
+    expect(mapped?.checklistCompletions).toEqual({ '0:8': record });
+    expect(mapWixCaseItem(validItem)?.checklistCompletions).toBeUndefined();
   });
 
-  it('merges per key on write, like checklistState', () => {
-    const existing = { ...validItem, checklistAutomation: { '1:0': { by: 'staff', at: 'earlier' } } } as unknown as Parameters<typeof buildCaseFieldPatch>[0];
-    const fields = buildCaseFieldPatch(existing, { checklistAutomation: { '0:8': entry as never } });
-    expect(fields.checklistAutomation).toEqual({ '1:0': { by: 'staff', at: 'earlier' }, '0:8': entry });
+  it('merges completion records and SLA maps per key on write', () => {
+    const existing = {
+      ...validItem,
+      checklistCompletions: { '1:0': { ...record, eventId: 'earlier' } },
+      slaEvents: { case_received: { at: 'a', recordedAt: 'a', recordedBy: null, source: 'automatic' } },
+    } as unknown as Parameters<typeof buildCaseFieldPatch>[0];
+    const fields = buildCaseFieldPatch(existing, {
+      checklistCompletions: { '0:8': record as never },
+      slaEvents: { hard_saved: { at: 'b', recordedAt: 'b', recordedBy: 's', source: 'staff' } },
+    });
+    expect(Object.keys(fields.checklistCompletions as object)).toEqual(['1:0', '0:8']);
+    expect(Object.keys(fields.slaEvents as object)).toEqual(['case_received', 'hard_saved']);
   });
 
-  it('is never accepted from a client patch', () => {
-    const { patch } = validateAndPickCaseUpdate({ checklistAutomation: { '0:8': entry } });
-    expect(patch).not.toHaveProperty('checklistAutomation');
+  it('reads SLA events, delays and the stage-entry time, dropping malformed ones', () => {
+    const mapped = mapWixCaseItem({
+      ...validItem,
+      slaEvents: { hard_saved: { at: 'x', recordedAt: 'x', recordedBy: 's', source: 'staff' }, invented_event: { at: 'x', recordedAt: 'x' } },
+      slaDelays: {
+        d1: { milestone: 'approval', reason: 'other', responsibleParty: 'state', recordedAt: 'r', notes: null },
+        d2: { milestone: 'nope', reason: 'other', responsibleParty: 'state', recordedAt: 'r' },
+      },
+      stageEnteredAt: '2026-10-20T12:00:00.000Z',
+    });
+    expect(Object.keys(mapped!.slaEvents!)).toEqual(['hard_saved']);
+    expect(Object.keys(mapped!.slaDelays!)).toEqual(['d1']);
+    expect(mapped!.slaDelays!.d1).toMatchObject({ id: 'd1', resolvedAt: null, resolution: null });
+    expect(mapped!.stageEnteredAt).toBe('2026-10-20T12:00:00.000Z');
+  });
+
+  it('none of these is ever accepted from a client patch', () => {
+    const { patch } = validateAndPickCaseUpdate({ checklistCompletions: { '0:8': record }, slaEvents: {}, slaDelays: {}, stageEnteredAt: 'x' });
+    expect(patch).toEqual({});
   });
 });

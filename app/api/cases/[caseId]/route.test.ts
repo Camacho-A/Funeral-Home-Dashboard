@@ -1573,24 +1573,36 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
   it('a staff untick of an automatically completed item is recorded as a staff decision, in the same write', async () => {
     mockAdminQueries({
       ...stage3CaseData({}),
-      checklistAutomation: { '0:8': { by: 'automatic', source: 'payment_received_in_full', at: '2026-10-20T12:00:00.000Z' } },
+      checklistCompletions: {
+        '0:8': { done: true, method: 'automatic', source: 'payment_confirmed', eventType: 'payment.paid_in_full', eventId: null, at: '2026-10-20T12:00:00.000Z', actorId: 'solis-automation' },
+      },
     });
     const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } } });
     expect(response.status).toBe(200);
     const written = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, Record<string, Record<string, unknown>>>;
     expect(written.checklistState['0:8']).toBe(false);
-    expect(written.checklistAutomation['0:8']).toMatchObject({ by: 'staff' });
+    expect(written.checklistCompletions['0:8']).toMatchObject({ done: false, method: 'manual', source: 'staff_confirmation', actorId: mockDefaultUser.id });
   });
 
-  it('never accepts checklistAutomation from the browser', async () => {
+  it('never accepts completion records from the browser', async () => {
     mockAdminQueries(stage3CaseData({}));
     await patchRequest('1042', {
       organizationId: DEFAULT_ORGANIZATION_ID,
-      patch: { checklistState: { '2:0': true }, checklistAutomation: { '2:0': { by: 'automatic', source: 'payment_received_in_full', at: 'x' } } },
+      patch: { checklistState: { '2:0': true }, checklistCompletions: { '2:0': { done: true, method: 'automatic', source: 'payment_confirmed', eventType: 'x', eventId: null, at: 'x', actorId: 'x' } } },
     });
     for (const call of mockUpdateWixDataItem.mock.calls) {
-      expect((call[2] as Record<string, unknown>).checklistAutomation).toBeUndefined();
+      const completions = (call[2] as Record<string, Record<string, { method: string }>>).checklistCompletions;
+      // Only the server's own record of the staff tick, never the client's claim.
+      expect(completions?.['2:0']?.method ?? 'manual').toBe('manual');
     }
+  });
+
+  it('a manual stage change records when the case entered the new stage, in the same write', async () => {
+    mockAdminQueries(stage3CaseData({}));
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { rawStage: 4 } });
+    const written = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, unknown>;
+    expect(written.currentStage).toBe(4);
+    expect(typeof written.stageEnteredAt).toBe('string');
   });
 
   it('B. Stage 3 with every Stage 3 requirement, including Hardsave, explicitly satisfied advances to Stage 4 — and the SAME response already reflects it', async () => {

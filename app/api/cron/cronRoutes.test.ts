@@ -6,6 +6,7 @@ import * as appointmentReminders from './appointment-reminders/route';
 import * as billReminders from './bill-reminders/route';
 import * as calendarSync from './calendar-sync/route';
 import * as notificationDigest from './notification-digest/route';
+import * as slaAlerts from './sla-alerts/route';
 
 /**
  * Scheduled-job isolation (2026-10) — every cron route answers POST only
@@ -21,6 +22,7 @@ const ROUTES = {
   'bill-reminders': billReminders,
   'calendar-sync': calendarSync,
   'notification-digest': notificationDigest,
+  'sla-alerts': slaAlerts,
 } as const;
 
 const ENV_KEYS = ['CRON_SECRET', 'DATA_ADAPTER', 'DEPLOYMENT_ORGANIZATION_IDS'] as const;

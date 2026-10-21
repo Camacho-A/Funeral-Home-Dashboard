@@ -1,4 +1,6 @@
-import type { Case, CaseUpdate, ChecklistAutomationEntry, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
+import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from '../types/sla';
+import { SLA_DELAY_REASONS, SLA_EVENT_KEYS, SLA_MILESTONE_KEYS } from '../types/sla';
+import type { Case, CaseUpdate, ChecklistCompletionRecord, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail, isValidCalendarDate } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
@@ -82,7 +84,10 @@ export type WixCaseItem = {
   caseHandlerId?: unknown;
   currentStage?: unknown;
   checklistState?: unknown;
-  checklistAutomation?: unknown;
+  checklistCompletions?: unknown;
+  slaEvents?: unknown;
+  slaDelays?: unknown;
+  stageEnteredAt?: unknown;
   fieldValues?: unknown;
   decedentName?: unknown;
   decedentMiddleName?: unknown;
@@ -307,7 +312,8 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     // Record<number, boolean> — Wix itself only validates "is a plain
     // object" (isPlainObject above), never this field's internal shape.
     checklistState: item.checklistState as Record<string, boolean>,
-    ...readChecklistAutomation(item.checklistAutomation),
+    ...readChecklistCompletions(item.checklistCompletions),
+    ...readSlaFields(item),
     fieldValues: item.fieldValues as Record<number, string>,
     daysWaitingInStage: typeof item.daysWaitingInStage === 'number' ? item.daysWaitingInStage : 0,
     isStalled: typeof item.isStalled === 'boolean' ? item.isStalled : false,
@@ -408,6 +414,8 @@ export function buildWixCaseData(params: {
   certifierFax?: string | null;
   fieldValues: Record<number, string>;
   createdAt: string;
+  /** SLA tracking (2026-10): when the case was received; omitted for a historical import. */
+  receivedAt?: string;
   /** Optional at creation — a family may not have decided yet. Omitted
       defaults to 'undecided', never 'pickup'. */
   returnMethod?: ReturnMethod;
@@ -471,6 +479,12 @@ export function buildWixCaseData(params: {
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
+    // SLA tracking (2026-10): the stage-entry time starts with the case;
+    // the receipt time only when the case was genuinely received now.
+    stageEnteredAt: params.createdAt,
+    ...(params.receivedAt
+      ? { slaEvents: { case_received: { at: params.receivedAt, recordedAt: params.receivedAt, recordedBy: null, source: 'automatic' } } }
+      : {}),
     vaNotificationResponsibility: null,
     daysWaitingInStage: 0,
     isStalled: false,
@@ -774,7 +788,10 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.vaPublishChoice !== undefined) next.vaPublishChoice = patch.vaPublishChoice;
   if (patch.vaNotificationResponsibility !== undefined) next.vaNotificationResponsibility = patch.vaNotificationResponsibility;
   if (patch.checklistState !== undefined) next.checklistState = patch.checklistState;
-  if (patch.checklistAutomation !== undefined) next.checklistAutomation = patch.checklistAutomation;
+  if (patch.checklistCompletions !== undefined) next.checklistCompletions = patch.checklistCompletions;
+  if (patch.slaEvents !== undefined) next.slaEvents = patch.slaEvents;
+  if (patch.slaDelays !== undefined) next.slaDelays = patch.slaDelays;
+  if (patch.stageEnteredAt !== undefined) next.stageEnteredAt = patch.stageEnteredAt;
   if (patch.fieldValues !== undefined) {
     // SOLIS-wide ALL-CAPS data standard (2026-09): fieldValues' per-key
     // uppercase-ness is data-driven (workflowSnapshot.intake[].uppercase),
@@ -872,26 +889,94 @@ export function buildCaseFieldPatch(existing: WixCaseItem, patch: CaseUpdate): R
   const next = applyCaseUpdateToWixData(existing, patch);
   const asObject = (value: unknown): Record<string, unknown> => (isPlainObject(value) ? value : {});
   if (patch.checklistState !== undefined) next.checklistState = { ...asObject(existing.checklistState), ...asObject(next.checklistState) };
-  if (patch.checklistAutomation !== undefined) next.checklistAutomation = { ...asObject(existing.checklistAutomation), ...asObject(next.checklistAutomation) };
+  if (patch.checklistCompletions !== undefined) next.checklistCompletions = { ...asObject(existing.checklistCompletions), ...asObject(next.checklistCompletions) };
+  if (patch.slaEvents !== undefined) next.slaEvents = { ...asObject(existing.slaEvents), ...asObject(next.slaEvents) };
+  if (patch.slaDelays !== undefined) next.slaDelays = { ...asObject(existing.slaDelays), ...asObject(next.slaDelays) };
   if (patch.fieldValues !== undefined) next.fieldValues = { ...asObject(existing.fieldValues), ...asObject(next.fieldValues) };
   if (patch.vaStepsState !== undefined) next.vaStepsState = { ...asObject(existing.vaStepsState), ...asObject(next.vaStepsState) };
   return changedCaseFields(existing, next);
 }
 
 /**
- * Automatic checklist completion (2026-10). Only well-formed entries are
+ * Checklist completion attribution (2026-10). Only well-formed records are
  * read; anything else is dropped rather than trusted, and a case without
  * the field (every case before it existed) simply has none.
  */
-function readChecklistAutomation(value: unknown): Pick<Case, 'checklistAutomation'> {
+const COMPLETION_SOURCES = new Set(['payment_confirmed', 'document_generated', 'verified_document_received', 'workflow_event', 'staff_confirmation']);
+function readChecklistCompletions(value: unknown): Pick<Case, 'checklistCompletions'> {
   if (!isPlainObject(value)) return {};
-  const entries: Record<string, ChecklistAutomationEntry> = {};
+  const records: Record<string, ChecklistCompletionRecord> = {};
   for (const [key, raw] of Object.entries(value)) {
-    if (!isPlainObject(raw) || typeof raw.at !== 'string') continue;
-    if (raw.by === 'staff') entries[key] = { by: 'staff', at: raw.at };
-    else if (raw.by === 'automatic' && (raw.source === 'payment_received_in_full' || raw.source === 'arrangement_form_received')) {
-      entries[key] = { by: 'automatic', source: raw.source, at: raw.at };
+    if (
+      !isPlainObject(raw) ||
+      typeof raw.done !== 'boolean' ||
+      (raw.method !== 'automatic' && raw.method !== 'manual') ||
+      typeof raw.source !== 'string' ||
+      !COMPLETION_SOURCES.has(raw.source) ||
+      typeof raw.eventType !== 'string' ||
+      typeof raw.at !== 'string'
+    ) {
+      continue;
     }
+    records[key] = {
+      done: raw.done,
+      method: raw.method,
+      source: raw.source as ChecklistCompletionRecord['source'],
+      eventType: raw.eventType,
+      eventId: typeof raw.eventId === 'string' ? raw.eventId : null,
+      at: raw.at,
+      actorId: typeof raw.actorId === 'string' ? raw.actorId : null,
+    };
   }
-  return Object.keys(entries).length > 0 ? { checklistAutomation: entries } : {};
+  return Object.keys(records).length > 0 ? { checklistCompletions: records } : {};
+}
+
+/**
+ * SLA tracking (2026-10). Recorded events, delays and the stage-entry time.
+ * Only well-formed values are read; a malformed entry is dropped, never
+ * trusted, and a case without these fields simply has none.
+ */
+const RESPONSIBLE_PARTIES = new Set(['staff', 'family', 'doctor', 'medical_examiner', 'state', 'crematory', 'other']);
+const nullableString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+function readSlaFields(item: { slaEvents?: unknown; slaDelays?: unknown; stageEnteredAt?: unknown }): Pick<Case, 'slaEvents' | 'slaDelays' | 'stageEnteredAt'> {
+  const result: Pick<Case, 'slaEvents' | 'slaDelays' | 'stageEnteredAt'> = {};
+  if (isPlainObject(item.slaEvents)) {
+    const events: Partial<Record<SlaEventKey, SlaEventRecord>> = {};
+    for (const key of SLA_EVENT_KEYS) {
+      const raw = item.slaEvents[key];
+      if (!isPlainObject(raw) || typeof raw.at !== 'string' || typeof raw.recordedAt !== 'string') continue;
+      events[key] = { at: raw.at, recordedAt: raw.recordedAt, recordedBy: nullableString(raw.recordedBy), source: raw.source === 'automatic' ? 'automatic' : 'staff' };
+    }
+    if (Object.keys(events).length > 0) result.slaEvents = events;
+  }
+  if (isPlainObject(item.slaDelays)) {
+    const delays: Record<string, SlaDelayRecord> = {};
+    for (const [id, raw] of Object.entries(item.slaDelays)) {
+      if (
+        !isPlainObject(raw) ||
+        !(SLA_MILESTONE_KEYS as readonly unknown[]).includes(raw.milestone) ||
+        !(SLA_DELAY_REASONS as readonly unknown[]).includes(raw.reason) ||
+        !RESPONSIBLE_PARTIES.has(raw.responsibleParty as string) ||
+        typeof raw.recordedAt !== 'string'
+      ) {
+        continue;
+      }
+      delays[id] = {
+        id,
+        milestone: raw.milestone as SlaDelayRecord['milestone'],
+        reason: raw.reason as SlaDelayRecord['reason'],
+        responsibleParty: raw.responsibleParty as SlaDelayRecord['responsibleParty'],
+        notes: nullableString(raw.notes),
+        expectedResolutionDate: nullableString(raw.expectedResolutionDate),
+        recordedAt: raw.recordedAt,
+        recordedBy: nullableString(raw.recordedBy),
+        resolvedAt: nullableString(raw.resolvedAt),
+        resolvedBy: nullableString(raw.resolvedBy),
+        resolution: raw.resolution === 'resolved' || raw.resolution === 'superseded' ? raw.resolution : null,
+      };
+    }
+    if (Object.keys(delays).length > 0) result.slaDelays = delays;
+  }
+  if (typeof item.stageEnteredAt === 'string') result.stageEnteredAt = item.stageEnteredAt;
+  return result;
 }

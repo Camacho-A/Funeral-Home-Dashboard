@@ -177,13 +177,14 @@ export async function reconcileCaseWorkflow(organizationId: string, caseId: stri
     if (!case_) return { rawStage: 0, changed: false };
     const newRawStage = nextStageFor(case_);
     if (newRawStage === null) return { rawStage: case_.rawStage, changed: false };
-    const written = writeMockCase(organizationId, caseId, (current) => ({ ...current, rawStage: newRawStage }));
+    const written = writeMockCase(organizationId, caseId, (current) => ({ ...current, rawStage: newRawStage, stageEnteredAt: new Date().toISOString() }));
     return { rawStage: newRawStage, changed: true, ...(written ? { case_: written } : {}) };
   }
 
   const outcome = await updateCaseWithRetry(organizationId, caseId, (row) => {
     const newRawStage = nextStageFor(row.case_);
-    return newRawStage === null ? null : buildCaseFieldPatch(row.data, { rawStage: newRawStage });
+    // The stage-entry time travels with the stage change (SLA tracking, 2026-10).
+    return newRawStage === null ? null : buildCaseFieldPatch(row.data, { rawStage: newRawStage, stageEnteredAt: new Date().toISOString() });
   });
   if (outcome.result === 'not_found') return { rawStage: 0, changed: false };
   if (outcome.result === 'unchanged') return { rawStage: outcome.case_.rawStage, changed: false };

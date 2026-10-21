@@ -1,0 +1,164 @@
+/* SLA tracking (2026-10): the collapsible SLA details under the case
+   header. SOLIS tokens throughout; status colours match the header pill. */
+.panel {
+  margin: 0 0 14px;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sx-text);
+  cursor: pointer;
+}
+
+.body {
+  padding: 0 12px 12px;
+}
+
+.milestones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.milestone {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sx-border-soft);
+  border-radius: 8px;
+  background: var(--sx-subtle);
+  font-size: 12.5px;
+}
+
+.milestoneHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.milestoneLabel {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.advisory,
+.muted {
+  font-weight: 400;
+  color: var(--sx-muted);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill_ok {
+  background: var(--sx-green-bg);
+  color: var(--sx-green-text);
+}
+
+.pill_warn {
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+}
+
+.pill_bad {
+  background: var(--sx-red-bg);
+  color: var(--sx-red);
+}
+
+.pill_neutral {
+  background: #fff;
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-2);
+}
+
+.facts {
+  margin: 6px 0 0;
+}
+
+.facts div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.facts dt {
+  color: var(--sx-muted);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--sx-text);
+  overflow-wrap: anywhere;
+}
+
+.delays {
+  margin: 6px 0 0;
+  padding: 0 0 0 14px;
+  color: var(--sx-text-2);
+}
+
+.delayResolved {
+  opacity: 0.7;
+}
+
+.inlineButton {
+  height: 24px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.form {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.formTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: var(--sx-muted);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}

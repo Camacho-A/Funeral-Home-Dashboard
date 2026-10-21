@@ -1,3 +1,4 @@
+import { isSlaTrackingEnabled } from '@/domain/sla/slaSettings';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import type { AuthAdapterMode } from '@/lib/env';
@@ -44,6 +45,14 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       description: 'Manage staff accounts and invitations.',
       href: '/settings/team',
       visible: isIdentityMode && permissions.includes('user.invite'),
+    },
+    {
+      // SLA tracking (2026-10): only for an organization that has it.
+      key: 'sla',
+      label: 'SLA Targets',
+      description: 'Business-day targets, cutoff times, holidays and alerts for case deadlines.',
+      href: '/settings/sla',
+      visible: permissions.includes('organization.manage') && isSlaTrackingEnabled(organizationId),
     },
     {
       key: 'case-numbering',

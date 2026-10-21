@@ -472,3 +472,70 @@ export async function notifyDocumentGenerationFailed(
     dataAdapterMode,
   );
 }
+
+/**
+ * SLA tracking (2026-10). The doctor's attestation arrived, so the
+ * same-day Hard Save is now due. Keyed on the case and the attestation
+ * time: re-recording the same attestation never notifies twice.
+ */
+export async function notifySlaHardSaveDue(
+  ctx: ActivityContext,
+  params: { case: NotifiableCase; attestationAt: string; dueLabel: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ notified: number }> {
+  return emit(
+    ctx,
+    {
+      organizationId: ctx.organizationId,
+      notificationType: NOTIFICATION_TYPES.CASE_SLA_HARD_SAVE_DUE.key,
+      permission: CASE_READ,
+      eventKey: `${params.case.id}-${params.attestationAt}`,
+      entityType: 'case',
+      entityId: params.case.id,
+      actionUrl: caseUrl(params.case.id),
+      tokens: { caseNumber: params.case.caseNumber, decedentName: params.case.decedentName, dueLabel: params.dueLabel },
+    },
+    dataAdapterMode,
+  );
+}
+
+export type SlaAlertKind = 'due' | 'overdue' | 'external_overdue';
+
+const SLA_ALERT_TYPE: Record<SlaAlertKind, string> = {
+  due: NOTIFICATION_TYPES.CASE_SLA_DUE.key,
+  overdue: NOTIFICATION_TYPES.CASE_SLA_OVERDUE.key,
+  external_overdue: NOTIFICATION_TYPES.CASE_SLA_EXTERNAL_OVERDUE.key,
+};
+
+/**
+ * SLA tracking (2026-10). A deadline approaching, missed, or an external
+ * party past its target. Keyed on case + milestone + kind + deadline, so
+ * each deadline produces at most one alert of each kind however often the
+ * sweep runs — no daily repeats.
+ */
+export async function notifySlaAlert(
+  ctx: ActivityContext,
+  params: { case: NotifiableCase; kind: SlaAlertKind; milestoneKey: string; milestone: string; deadline: string; dueLabel: string; party: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ notified: number }> {
+  return emit(
+    ctx,
+    {
+      organizationId: ctx.organizationId,
+      notificationType: SLA_ALERT_TYPE[params.kind],
+      permission: CASE_READ,
+      eventKey: `${params.case.id}-${params.milestoneKey}-${params.deadline}`,
+      entityType: 'case',
+      entityId: params.case.id,
+      actionUrl: caseUrl(params.case.id),
+      tokens: {
+        caseNumber: params.case.caseNumber,
+        decedentName: params.case.decedentName,
+        milestone: params.milestone,
+        dueLabel: params.dueLabel,
+        party: params.party,
+      },
+    },
+    dataAdapterMode,
+  );
+}

@@ -1,35 +1,35 @@
-import type { Case, CaseUpdate, ChecklistAutomationEntry, ChecklistAutomationSource } from '../../types/case';
+import type { Case, CaseUpdate, ChecklistCompletionRecord, ChecklistCompletionSource } from '../../types/case';
+import { SOLIS_AUTOMATION_ID } from '../../types/case';
 import type { CaseWorkflowSnapshot } from '../../types/workflowTemplate';
 import { findPaymentConfirmationChecklistIndex } from '../cases/paymentChecklist';
 import { checklistItemKey, readChecklistValue } from './checklistItemKey';
 import { getRegisteredOrganizationProfile } from '../organization/organizationProfiles';
 
 /**
- * Automatic checklist completion (2026-10).
+ * Automatic checklist completion and completion attribution (2026-10).
  *
  * Staff should not have to do something in SOLIS and then tick a box
- * saying they did it. For the few checklist items SOLIS can VERIFY from
- * its own records, the event that proves the work completes the item:
+ * saying they did it. For the checklist items SOLIS can VERIFY from its own
+ * records, the event that proves the work completes the item:
  *
- *   "Payment collected"              the case's balance is paid in full
+ *   "Payment collected"              the balance is paid in full
  *                                    (services/paymentWorkflow.ts)
- *   "Jotform application completed"  the case's Arrangement Form submission
- *                                    is received and linked
- *                                    (services/automaticChecklistCompletion.ts)
+ *   "Jotform application completed"  the Arrangement Form is received and
+ *                                    linked (services/automaticChecklistCompletion.ts)
+ *   SLA-mapped items                 the workflow event recorded by staff on
+ *                                    the SLA panel (domain/sla/slaMilestones.ts)
  *
- * Everything else stays manual: SOLIS has no evidence for it (a fax sent to
- * the crematory, an EDRS entry, a physical label), or it is already derived
- * from its own record ("Family picked up ashes" from the release record,
- * the First Call items from the case's information).
+ * Every decision about an item, automatic or by staff, leaves a
+ * `ChecklistCompletionRecord`, so the checklist can say WHY an item is done.
  *
  * This module only DECIDES. It is pure, so every caller makes the same
  * decision from the case as it is at write time:
  *
  *   - never on an archived case;
- *   - never for an item that is already done (no change, no duplicate
- *     audit event, however often the event is retried);
- *   - never over a staff decision: once staff change an automatable item,
- *     automation leaves it alone.
+ *   - never for an item already done (a retried or duplicate event changes
+ *     nothing and records nothing — the original source is preserved);
+ *   - never over a staff decision: once staff change an item, automation
+ *     leaves it alone.
  */
 
 /** Manors only (organization profile); every other organization keeps its
@@ -39,6 +39,9 @@ export function isChecklistAutomationEnabled(organizationId: string | null | und
 }
 
 export type ChecklistItemLocation = { displayStage: number; index: number };
+
+/** What triggered an automatic completion. */
+export type AutomaticTrigger = { source: ChecklistCompletionSource; eventType: string; eventId: string | null };
 
 /** The "Jotform application completed" item: the one item a template ties
     to an external form (`externalFormIntegrationId`), found in the case's
@@ -52,63 +55,128 @@ export function findArrangementFormChecklistItem(snapshot: CaseWorkflowSnapshot 
   return null;
 }
 
-/** Where each automatable item sits in this case's own snapshot. */
-export function automatableChecklistItems(case_: Pick<Case, 'workflowSnapshot'>): Map<string, ChecklistAutomationSource> {
-  const items = new Map<string, ChecklistAutomationSource>();
+/** Where the payment and arrangement-form items sit in this case's snapshot. */
+export function automatableChecklistItems(case_: Pick<Case, 'workflowSnapshot'>): Map<string, 'payment' | 'arrangement_form'> {
+  const items = new Map<string, 'payment' | 'arrangement_form'>();
   const payment = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
-  if (payment) items.set(checklistItemKey(payment.displayStage, payment.index), 'payment_received_in_full');
+  if (payment) items.set(checklistItemKey(payment.displayStage, payment.index), 'payment');
   const form = findArrangementFormChecklistItem(case_.workflowSnapshot);
-  if (form) items.set(checklistItemKey(form.displayStage, form.index), 'arrangement_form_received');
+  if (form) items.set(checklistItemKey(form.displayStage, form.index), 'arrangement_form');
   return items;
 }
 
 /**
  * The patch that completes `location` automatically, or null when it must
- * not be applied (see the rules above). The checklist tick and its
- * provenance are written together, in one patch.
+ * not be applied (see the rules above). The tick and its record are
+ * written together, in one patch.
  */
 export function automaticChecklistCompletion(
-  case_: Pick<Case, 'isDeleted' | 'checklistState' | 'checklistAutomation'>,
+  case_: Pick<Case, 'isDeleted' | 'checklistState' | 'checklistCompletions'>,
   location: ChecklistItemLocation,
-  source: ChecklistAutomationSource,
+  trigger: AutomaticTrigger,
   now: string,
-): Pick<CaseUpdate, 'checklistState' | 'checklistAutomation'> | null {
+): Pick<CaseUpdate, 'checklistState' | 'checklistCompletions'> | null {
   if (case_.isDeleted) return null;
   if (readChecklistValue(case_.checklistState, location.displayStage, location.index) === true) return null;
   const key = checklistItemKey(location.displayStage, location.index);
-  if (case_.checklistAutomation?.[key]?.by === 'staff') return null;
+  if (case_.checklistCompletions?.[key]?.method === 'manual') return null;
   return {
     checklistState: { [key]: true },
-    checklistAutomation: { [key]: { by: 'automatic', source, at: now } },
+    checklistCompletions: {
+      [key]: {
+        done: true,
+        method: 'automatic',
+        source: trigger.source,
+        eventType: trigger.eventType,
+        eventId: trigger.eventId,
+        at: now,
+        actorId: SOLIS_AUTOMATION_ID,
+      },
+    },
   };
 }
 
 /**
- * A staff checklist edit: records a staff decision for every automatable
- * item the edit actually changes, so automation never overrides it later
- * (an unticked "Payment collected" stays unticked when a later payment
- * succeeds). Returns null when the edit touches no automatable item.
+ * A staff checklist edit: one manual record for every item the edit
+ * actually changes (completed or reopened), attributed to the staff member.
+ * Returns null when nothing changes.
  */
-export function staffChecklistAutomationUpdate(
-  current: Pick<Case, 'workflowSnapshot' | 'checklistState'>,
+export function staffChecklistCompletionUpdate(
+  current: Pick<Case, 'checklistState'>,
   patchChecklistState: Record<string, boolean>,
+  actorId: string | null,
   now: string,
-): Record<string, ChecklistAutomationEntry> | null {
-  const automatable = automatableChecklistItems(current);
-  const entries: Record<string, ChecklistAutomationEntry> = {};
+): Record<string, ChecklistCompletionRecord> | null {
+  const records: Record<string, ChecklistCompletionRecord> = {};
   for (const [key, value] of Object.entries(patchChecklistState)) {
-    if (!automatable.has(key) || current.checklistState[key] === value) continue;
-    entries[key] = { by: 'staff', at: now };
+    if ((current.checklistState[key] === true) === (value === true)) continue;
+    records[key] = {
+      done: value === true,
+      method: 'manual',
+      source: 'staff_confirmation',
+      eventType: 'staff.checklist_toggle',
+      eventId: null,
+      at: now,
+      actorId,
+    };
   }
-  return Object.keys(entries).length > 0 ? entries : null;
+  return Object.keys(records).length > 0 ? records : null;
 }
 
-/** Whether a done item shows "Completed automatically". */
-export function isCompletedAutomatically(case_: Pick<Case, 'checklistAutomation'>, displayStage: number, index: number): boolean {
-  return case_.checklistAutomation?.[checklistItemKey(displayStage, index)]?.by === 'automatic';
+/**
+ * What the checklist says about a done item.
+ *
+ *   automatic    SOLIS completed it from a recorded event.
+ *   manual       a staff member completed it.
+ *   derived      done because the information it asks for exists on the
+ *                case (First Call fields, certifier, the release record) —
+ *                there is no separate act of completing it.
+ *   unavailable  done, but no record says how (decided before records
+ *                existed). Nothing is inferred.
+ */
+export type ChecklistCompletionInfo =
+  | { kind: 'automatic' | 'manual'; record: ChecklistCompletionRecord }
+  | { kind: 'derived' }
+  | { kind: 'unavailable' };
+
+export function checklistCompletionInfo(
+  case_: Pick<Case, 'checklistCompletions'>,
+  displayStage: number,
+  index: number,
+  derived: boolean,
+): ChecklistCompletionInfo {
+  if (derived) return { kind: 'derived' };
+  const record = case_.checklistCompletions?.[checklistItemKey(displayStage, index)];
+  if (record && record.done) return { kind: record.method, record };
+  return { kind: 'unavailable' };
 }
 
-export const CHECKLIST_AUTOMATION_SOURCE_LABEL: Record<ChecklistAutomationSource, string> = {
-  payment_received_in_full: 'payment received in full',
-  arrangement_form_received: 'Arrangement Form received',
+/** When the item was last completed, from its record (null when unknown). */
+export function checklistCompletedAt(case_: Pick<Case, 'checklistCompletions'>, displayStage: number, index: number): string | null {
+  const record = case_.checklistCompletions?.[checklistItemKey(displayStage, index)];
+  return record && record.done ? record.at : null;
+}
+
+export const CHECKLIST_COMPLETION_SOURCE_LABEL: Record<ChecklistCompletionSource, string> = {
+  payment_confirmed: 'Payment confirmed',
+  document_generated: 'Document generated',
+  verified_document_received: 'Verified document received',
+  workflow_event: 'Workflow event completed',
+  staff_confirmation: 'Staff confirmation',
 };
+
+/** Plain-language reason for an automatic or manual record. */
+export function describeCompletionEvent(record: ChecklistCompletionRecord): string {
+  switch (record.eventType) {
+    case 'payment.paid_in_full':
+      return 'A verified payment brought the balance to $0.';
+    case 'external_form.arrangement_received':
+      return 'The Arrangement Form submission was received and linked to this case.';
+    case 'sla.event_recorded':
+      return 'The matching workflow event was recorded in the case’s SLA details.';
+    case 'staff.checklist_toggle':
+      return record.done ? 'A staff member checked this item.' : 'A staff member reopened this item.';
+    default:
+      return CHECKLIST_COMPLETION_SOURCE_LABEL[record.source];
+  }
+}

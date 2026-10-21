@@ -1,6 +1,15 @@
 import Link from 'next/link';
 import { toDisplayTitleCase } from '@/utils/string';
 import styles from './NeedsAttentionPanel.module.css';
+import {
+  SLA_DELAY_REASON_LABEL,
+  SLA_RESPONSIBLE_LABEL,
+  SLA_STATUS_LABEL,
+  describeDeadline,
+  slaNeedsAttention,
+  type CaseSlaEvaluation,
+  type SlaMilestoneEvaluation,
+} from '@/domain/sla/slaMilestones';
 
 export type NeedsAttentionCase = {
   id: string;
@@ -10,7 +19,12 @@ export type NeedsAttentionCase = {
   attentionReason: string;
   daysWaitingInStage: number;
   slaTargetLabel: string;
+  /** SLA tracking (2026-10): the case's current milestone, when the case is
+      here because of it. Absent for organizations without SLA tracking. */
+  sla?: CaseSlaEvaluation | null;
 };
+
+export type SlaSummaryCounts = { onTrack: number; dueToday: number; overdue: number; waiting: number; startDateNeeded?: number };
 
 /**
  * `cases` is already the filtered/derived list (built by the page from
@@ -30,7 +44,7 @@ export type NeedsAttentionCase = {
  * before), just not repeated on this particular row; it remains visible
  * on Case Detail and the stage-filtered case list.
  */
-export function NeedsAttentionPanel({ cases }: { cases: NeedsAttentionCase[] }) {
+export function NeedsAttentionPanel({ cases, slaSummary }: { cases: NeedsAttentionCase[]; slaSummary?: SlaSummaryCounts | null }) {
   const hasAttention = cases.length > 0;
 
   return (
@@ -39,6 +53,33 @@ export function NeedsAttentionPanel({ cases }: { cases: NeedsAttentionCase[] }) 
         <div className={styles.title}>Needs attention</div>
         {hasAttention && <div className={styles.count}>{cases.length} cases</div>}
       </div>
+
+      {/* SLA tracking (2026-10): compact counts across active cases. */}
+      {slaSummary && (
+        <dl className={styles.slaSummary} aria-label="SLA summary">
+          <div className={styles.slaCount} data-tone="ok">
+            <dt>On track</dt>
+            <dd>{slaSummary.onTrack}</dd>
+          </div>
+          <div className={styles.slaCount} data-tone="warn">
+            <dt>Due today</dt>
+            <dd>{slaSummary.dueToday}</dd>
+          </div>
+          <div className={styles.slaCount} data-tone="bad">
+            <dt>Overdue</dt>
+            <dd>{slaSummary.overdue}</dd>
+          </div>
+          <div className={styles.slaCount} data-tone="neutral">
+            <dt>Waiting on others</dt>
+            <dd>{slaSummary.waiting}</dd>
+          </div>
+        </dl>
+      )}
+      {slaSummary && (slaSummary.startDateNeeded ?? 0) > 0 && (
+        <p className={styles.slaHint}>
+          {slaSummary.startDateNeeded} case{slaSummary.startDateNeeded === 1 ? '' : 's'} need an SLA start date — open the case and record it in SLA details.
+        </p>
+      )}
 
       {!hasAttention && (
         <div className={styles.caughtUp}>
@@ -57,11 +98,47 @@ export function NeedsAttentionPanel({ cases }: { cases: NeedsAttentionCase[] }) 
               <span className={styles.dot} aria-hidden="true" />
               <span className={styles.caseNumber}>{c.caseNumber}</span>
               <span className={styles.name}>{toDisplayTitleCase(c.decedentName)}</span>
-              <span className={styles.reason}>{c.attentionReason}</span>
+              {/* The SLA detail only when the SLA is why the case is here; a
+                  stalled case keeps its own reason. */}
+              {c.sla?.current && slaNeedsAttention(c.sla.current) ? (
+                <SlaRowDetail milestone={c.sla.current} />
+              ) : (
+                <span className={styles.reason}>{c.attentionReason}</span>
+              )}
             </Link>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function formatDeadline(date: string): string {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/** SLA tracking (2026-10): milestone, deadline, days left or overdue,
+    who is responsible, and any recorded delay — in one wrapping line. */
+function SlaRowDetail({ milestone }: { milestone: SlaMilestoneEvaluation }) {
+  const tone = milestone.status === 'overdue' ? 'bad' : milestone.status === 'due_today' || milestone.status === 'due_soon' ? 'warn' : 'neutral';
+  const deadline = describeDeadline(milestone);
+  return (
+    <span className={styles.slaDetail}>
+      <span className={styles.slaStatus} data-tone={tone}>
+        {SLA_STATUS_LABEL[milestone.status!]}
+      </span>
+      {milestone.overdue && milestone.status !== 'overdue' && (
+        <span className={styles.slaStatus} data-tone="bad">
+          Overdue
+        </span>
+      )}
+      <span className={styles.reason}>
+        {milestone.label}
+        {milestone.deadline ? ` · due ${formatDeadline(milestone.deadline)}` : ''}
+        {deadline && milestone.state === 'active' ? ` · ${deadline}` : milestone.state === 'start_date_needed' ? ' · start date needed' : ''}
+        {` · ${SLA_RESPONSIBLE_LABEL[milestone.responsibleParty]}`}
+        {milestone.delay ? ` · ${SLA_DELAY_REASON_LABEL[milestone.delay.reason]}` : ''}
+      </span>
+    </span>
   );
 }

@@ -537,7 +537,7 @@ export function recordCaseArchiveChanged(
 export function recordChecklistItemCompletedAutomatically(
   ctx: ActivityContext,
   caseId: string,
-  item: { key: string; label: string; source: string; sourceLabel: string },
+  item: { key: string; label: string; source: string; eventType: string; eventId: string | null; sourceLabel: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityEvent> {
   return record(
@@ -550,9 +550,85 @@ export function recordChecklistItemCompletedAutomatically(
       previousValue: JSON.stringify({ [item.key]: false }),
       newValue: JSON.stringify({ [item.key]: true }),
       description: `Checklist: "${item.label}" completed automatically (${item.sourceLabel}).`,
-      metadata: JSON.stringify({ checklistItemKey: item.key, source: item.source }),
+      metadata: JSON.stringify({ checklistItemKey: item.key, source: item.source, eventType: item.eventType, eventId: item.eventId, completedBy: 'solis-automation' }),
       severity: 'info',
       isSystemGenerated: true,
+    }),
+    dataAdapterMode,
+  );
+}
+
+/**
+ * SLA tracking (2026-10). A workflow event recorded for SLA purposes —
+ * by staff (attributed to them) or by SOLIS. A correction records the
+ * previous value, so nothing is lost.
+ */
+export function recordSlaEventRecorded(
+  ctx: ActivityContext,
+  caseId: string,
+  event: { key: string; label: string; at: string; previousAt: string | null },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SLA_EVENT_RECORDED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: event.previousAt ? JSON.stringify({ [event.key]: event.previousAt }) : null,
+      newValue: JSON.stringify({ [event.key]: event.at }),
+      description: event.previousAt ? `SLA: "${event.label}" time corrected.` : `SLA: "${event.label}" recorded.`,
+      metadata: JSON.stringify({ slaEvent: event.key, at: event.at }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** SLA tracking (2026-10). A delay recorded against a milestone. */
+export function recordSlaDelayRecorded(
+  ctx: ActivityContext,
+  caseId: string,
+  delay: { id: string; milestone: string; milestoneLabel: string; reason: string; reasonLabel: string; responsibleParty: string; notes: string | null; expectedResolutionDate: string | null; supersededId: string | null },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SLA_DELAY_RECORDED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: delay.supersededId ? JSON.stringify({ supersededDelayId: delay.supersededId }) : null,
+      newValue: JSON.stringify({ delayId: delay.id, reason: delay.reason, responsibleParty: delay.responsibleParty }),
+      description: `SLA delay on ${delay.milestoneLabel}: ${delay.reasonLabel}.`,
+      metadata: JSON.stringify({ milestone: delay.milestone, notes: delay.notes, expectedResolutionDate: delay.expectedResolutionDate }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** SLA tracking (2026-10). A recorded delay marked resolved. */
+export function recordSlaDelayResolved(
+  ctx: ActivityContext,
+  caseId: string,
+  delay: { id: string; milestoneLabel: string; reasonLabel: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SLA_DELAY_RESOLVED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ delayId: delay.id, resolved: false }),
+      newValue: JSON.stringify({ delayId: delay.id, resolved: true }),
+      description: `SLA delay on ${delay.milestoneLabel} resolved (${delay.reasonLabel}).`,
+      metadata: null,
+      severity: 'info',
     }),
     dataAdapterMode,
   );

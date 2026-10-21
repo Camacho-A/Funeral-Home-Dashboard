@@ -14,10 +14,15 @@ import styles from './StageProgress.module.css';
 export function StageProgress({
   stages,
   daysWaitingInStage,
+  stageDetail,
   onStepClick,
 }: {
   stages: StepperStage[];
   daysWaitingInStage: number;
+  /** SLA tracking (2026-10): replaces the "Day N" counter — e.g. "2 business
+      days in stage", or null when the stage-entry time is unknown (then
+      nothing is shown rather than a made-up "Day 0"). */
+  stageDetail?: string | null;
   onStepClick: (index: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -59,7 +64,8 @@ export function StageProgress({
           ))}
         </span>
         <span className={styles.text}>
-          Step {currentIndex + 1} of {stages.length} · Day {daysWaitingInStage}
+          Step {currentIndex + 1} of {stages.length}
+          {stageDetail === undefined ? ` · Day ${daysWaitingInStage}` : stageDetail ? ` · ${stageDetail}` : ''}
         </span>
         <span className={styles.chevron} aria-hidden="true">{open ? '▴' : '▾'}</span>
       </button>

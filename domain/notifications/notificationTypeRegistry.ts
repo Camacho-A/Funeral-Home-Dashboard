@@ -81,6 +81,14 @@ export const NOTIFICATION_TYPES = {
     displayName: 'Vital Statistics Received',
   },
   CASE_COMPLETED: { key: 'case.completed', category: 'case' as NotificationCategory, displayName: 'Case Completed' },
+  /** SLA tracking (2026-10, domain/sla/). Staff reminders only — SOLIS
+      never contacts families, doctors or crematories. One notification per
+      case, milestone and deadline (deterministic ids), so a sweep that runs
+      again, or a re-recorded event, never repeats one. */
+  CASE_SLA_HARD_SAVE_DUE: { key: 'case.sla_hard_save_due', category: 'case' as NotificationCategory, displayName: 'Hard Save Due' },
+  CASE_SLA_DUE: { key: 'case.sla_due', category: 'case' as NotificationCategory, displayName: 'SLA Deadline Approaching' },
+  CASE_SLA_OVERDUE: { key: 'case.sla_overdue', category: 'case' as NotificationCategory, displayName: 'SLA Overdue' },
+  CASE_SLA_EXTERNAL_OVERDUE: { key: 'case.sla_external_overdue', category: 'case' as NotificationCategory, displayName: 'Waiting Past Target' },
   /** Import of the PDF a JotForm submission carries. Success is noise for
       most staff and defaults OFF; failure is actionable and defaults ON —
       see domain/notifications/notificationDefaults.ts. */

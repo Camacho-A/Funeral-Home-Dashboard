@@ -57,9 +57,23 @@ export type WixOrganizationItem = {
       but wired here so reading an already-live row that predates it
       simply yields `undefined`, not an error. */
   hiddenModulesJson?: unknown;
+  /** SLA tracking (2026-10): the organization's SLA settings, as JSON. */
+  slaSettingsJson?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
+
+/** SLA settings JSON → the opaque object domain/sla/slaSettings.ts
+    validates. Unparseable JSON reads as unset (the defaults). */
+function parseSlaSettingsJson(value: unknown): { slaSettings?: unknown } {
+  if (typeof value !== 'string' || value.length === 0) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? { slaSettings: parsed } : {};
+  } catch {
+    return {};
+  }
+}
 
 function parseStringArrayJson(value: unknown): string[] | undefined {
   if (typeof value !== 'string' || value.length === 0) return undefined;
@@ -105,6 +119,7 @@ export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): O
     signatureRequestsEnabled: typeof item.signatureRequestsEnabled === 'boolean' ? item.signatureRequestsEnabled : undefined,
     enabledModules: parseStringArrayJson(item.enabledModulesJson),
     hiddenModules: parseStringArrayJson(item.hiddenModulesJson),
+    ...parseSlaSettingsJson(item.slaSettingsJson),
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
   };
@@ -162,6 +177,7 @@ export function applyOrganizationUpdateToWixData(
   if (patch.hiddenModules !== undefined) {
     next.hiddenModulesJson = patch.hiddenModules ? JSON.stringify(patch.hiddenModules) : null;
   }
+  if (patch.slaSettings !== undefined) next.slaSettingsJson = patch.slaSettings === null ? null : JSON.stringify(patch.slaSettings);
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

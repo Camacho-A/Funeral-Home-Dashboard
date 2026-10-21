@@ -1,5 +1,6 @@
 import type { OrganizationContext } from '../types/organization';
-import { isChecklistAutomationEnabled, staffChecklistAutomationUpdate } from '../domain/workflow/checklistAutomation';
+import { isSlaTrackingEnabled } from '../domain/sla/slaSettings';
+import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
 import { caseRevision } from '../lib/wixCaseMapper';
 import {
   CASE_REVISION_CONFLICT_REASON,
@@ -453,6 +454,7 @@ export async function create(
     certifierName: input.certifierName?.trim() || null,
     certifierLicenseNumber: input.certifierLicenseNumber?.trim() || null,
   });
+  const createdAt = new Date().toISOString();
   const newCase: Case = {
     id: String(1000 + caseFixtures.length + 42), // simple mock id scheme; a real backend assigns this
     organizationId: context.organizationId,
@@ -497,7 +499,12 @@ export async function create(
     stalledReason: null,
     createdBy: session.staffId,
     intakeOwnerId: session.staffId,
-    createdAt: new Date().toISOString(),
+    createdAt,
+    // SLA tracking (2026-10): mirrors the Wix-mode create route.
+    stageEnteredAt: createdAt,
+    ...(isSlaTrackingEnabled(context.organizationId)
+      ? { slaEvents: { case_received: { at: createdAt, recordedAt: createdAt, recordedBy: null, source: 'automatic' as const } } }
+      : {}),
     isDeleted: false,
     workflowTemplateId: template.id,
     workflowTemplateVersion: version.version,
@@ -516,7 +523,12 @@ export async function create(
  * throws CaseRevisionConflictError carrying the current case — unless it
  * only changes checklist/fieldValues/VA keys that still hold `baseValues`.
  */
-export type CaseUpdateOptions = { expectedRevision?: number; baseValues?: CaseMapBaseValues };
+export type CaseUpdateOptions = {
+  expectedRevision?: number;
+  baseValues?: CaseMapBaseValues;
+  /** The staff member making the edit, for checklist completion attribution. */
+  actorId?: string | null;
+};
 
 export async function update(
   context: OrganizationContext,
@@ -652,17 +664,18 @@ export async function update(
   // Map fields merge per key and every write bumps the revision — the same
   // semantics as lib/wixCaseMapper.ts#buildCaseFieldPatch.
   const existingCase = caseFixtures[index];
-  // Automatic checklist completion (2026-10): a staff change to an item
-  // SOLIS can complete is recorded, so automation never overrides it.
-  const staffAutomation =
+  // Checklist completion attribution (2026-10): mirrors the Wix-mode
+  // PATCH route — every item this edit changes is recorded as staff's.
+  const staffCompletions =
     normalizedPatch.checklistState && isChecklistAutomationEnabled(existingCase.organizationId)
-      ? staffChecklistAutomationUpdate(existingCase, normalizedPatch.checklistState, new Date().toISOString())
+      ? staffChecklistCompletionUpdate(existingCase, normalizedPatch.checklistState, options.actorId ?? null, new Date().toISOString())
       : null;
   const updated: Case = {
     ...existingCase,
     ...normalizedPatch,
     ...(normalizedPatch.checklistState ? { checklistState: { ...existingCase.checklistState, ...normalizedPatch.checklistState } } : {}),
-    ...(staffAutomation ? { checklistAutomation: { ...existingCase.checklistAutomation, ...staffAutomation } } : {}),
+    ...(staffCompletions ? { checklistCompletions: { ...existingCase.checklistCompletions, ...staffCompletions } } : {}),
+    ...(normalizedPatch.rawStage !== undefined && normalizedPatch.rawStage !== existingCase.rawStage ? { stageEnteredAt: new Date().toISOString() } : {}),
     ...(normalizedPatch.fieldValues ? { fieldValues: { ...existingCase.fieldValues, ...normalizedPatch.fieldValues } } : {}),
     ...(normalizedPatch.vaStepsState ? { vaStepsState: { ...existingCase.vaStepsState, ...normalizedPatch.vaStepsState } } : {}),
     revision: caseRevision(existingCase) + 1,

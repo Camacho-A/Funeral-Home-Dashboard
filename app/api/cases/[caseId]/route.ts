@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isChecklistAutomationEnabled, staffChecklistAutomationUpdate } from '@/domain/workflow/checklistAutomation';
+import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '@/domain/workflow/checklistAutomation';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
 import { getDataAdapterMode } from '@/lib/env';
@@ -407,14 +407,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       const refusal = refuseAgainst(current.case_);
       if (refusal) return refusal;
 
-      // Automatic checklist completion (2026-10): a staff change to an item
-      // SOLIS can complete is recorded in the same write, so automation
-      // never overrides it. Server-computed — never taken from the client.
-      const staffAutomation =
+      // Checklist completion attribution (2026-10): every item this edit
+      // completes or reopens is recorded as the staff member's decision, in
+      // the same write — so automation never overrides it, and the checklist
+      // can say who completed it. Server-computed, never taken from the client.
+      const staffCompletions =
         patch.checklistState && isChecklistAutomationEnabled(organizationId)
-          ? staffChecklistAutomationUpdate(current.case_, patch.checklistState, new Date().toISOString())
+          ? staffChecklistCompletionUpdate(current.case_, patch.checklistState, context.userId, new Date().toISOString())
           : null;
-      const fields = buildCaseFieldPatch(current.data, staffAutomation ? { ...patch, checklistAutomation: staffAutomation } : patch);
+      // SLA tracking (2026-10): a manual stage change records when the case
+      // entered its new stage, in the same write.
+      const stageEntered = patch.rawStage !== undefined && patch.rawStage !== current.case_.rawStage ? { stageEnteredAt: new Date().toISOString() } : {};
+      const fields = buildCaseFieldPatch(current.data, { ...patch, ...stageEntered, ...(staffCompletions ? { checklistCompletions: staffCompletions } : {}) });
       if (Object.keys(fields).length === 0) {
         // Already exactly as requested — nothing to write, no revision bump.
         existing = current.case_;

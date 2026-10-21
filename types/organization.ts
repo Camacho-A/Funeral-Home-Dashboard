@@ -108,6 +108,11 @@ export type Organization = {
    */
   cremainsPickupSettings?: unknown;
 
+  /** SLA tracking (2026-10): this organization's SLA settings, edited by
+      administrators (Settings → SLA). Opaque here; domain/sla/slaSettings.ts
+      owns and validates the shape. Absent = the defaults. */
+  slaSettings?: unknown;
+
   /** Handwritten item #3 (2026-09, Family Portal removal for Manors). An
       organization-level capability — see
       domain/organization/familyPortalCapability.ts, the sole place this

@@ -31,6 +31,12 @@ export const DEFAULT_TYPE_ENABLED: Readonly<Record<string, boolean>> = {
   [NOTIFICATION_TYPES.CASE_COMPLETED.key]: true,
   [NOTIFICATION_TYPES.INTAKE_SUBMISSION_NEEDS_ATTENTION.key]: true,
 
+  // Deadlines (SLA) — the alerts exist to stop work stalling.
+  [NOTIFICATION_TYPES.CASE_SLA_HARD_SAVE_DUE.key]: true,
+  [NOTIFICATION_TYPES.CASE_SLA_DUE.key]: true,
+  [NOTIFICATION_TYPES.CASE_SLA_OVERDUE.key]: true,
+  [NOTIFICATION_TYPES.CASE_SLA_EXTERNAL_OVERDUE.key]: true,
+
   // Documents — successes are routine, failures are not.
   [NOTIFICATION_TYPES.JOTFORM_PDF_IMPORTED.key]: false,
   [NOTIFICATION_TYPES.JOTFORM_PDF_IMPORT_FAILED.key]: true,
@@ -72,6 +78,15 @@ export const NOTIFICATION_PREFERENCE_GROUPS: readonly {
         label: 'Submission Requires Attention',
         description: 'Receive an alert when a form submission needs someone to resolve it by hand.',
       },
+    ],
+  },
+  {
+    label: 'Deadlines (SLA)',
+    types: [
+      { key: NOTIFICATION_TYPES.CASE_SLA_HARD_SAVE_DUE.key, label: 'Hard Save Due', description: "Receive an alert when a doctor's attestation arrives and the Hard Save becomes due." },
+      { key: NOTIFICATION_TYPES.CASE_SLA_DUE.key, label: 'Deadline Approaching', description: 'Receive an alert when a staff deadline is due soon or due today.' },
+      { key: NOTIFICATION_TYPES.CASE_SLA_OVERDUE.key, label: 'Deadline Overdue', description: 'Receive an alert when a staff deadline is missed.' },
+      { key: NOTIFICATION_TYPES.CASE_SLA_EXTERNAL_OVERDUE.key, label: 'Waiting Past Target', description: 'Receive an alert when a doctor, the state or the crematory is past its target.' },
     ],
   },
   {

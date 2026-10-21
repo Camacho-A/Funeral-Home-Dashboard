@@ -1066,19 +1066,55 @@ describe('ChecklistCard — Certifier Information on a v7 case (fax)', () => {
   });
 });
 
-describe('ChecklistCard — automatic checklist completion (2026-10)', () => {
-  it('notes "Completed automatically" beside an item SOLIS completed, and nowhere else', () => {
+describe('ChecklistCard — why an item is complete (2026-10)', () => {
+  const at = '2026-10-20T14:30:00.000Z';
+  const automatic = { kind: 'automatic' as const, record: { done: true, method: 'automatic' as const, source: 'payment_confirmed' as const, eventType: 'payment.paid_in_full', eventId: 'pay-9', at, actorId: 'solis-automation' } };
+  const manual = { kind: 'manual' as const, record: { done: true, method: 'manual' as const, source: 'staff_confirmation' as const, eventType: 'staff.checklist_toggle', eventId: null, at, actorId: 'identity-7' } };
+
+  it('shows a quiet note for each source — and nothing on open items', () => {
     renderChecklist([
-      item({ index: 8, label: 'Payment collected', done: true, completedAutomatically: true }),
-      item({ index: 7, label: 'Family contact', done: true }),
+      item({ index: 8, label: 'Payment collected', done: true, completion: automatic }),
+      item({ index: 0, label: 'EDRS submitted & sent to doctor', done: true, completion: manual }),
+      item({ index: 1, label: 'Cause of death entered', done: true, completion: { kind: 'unavailable' } }),
+      item({ index: 2, label: 'Open item', done: false }),
     ]);
-    expect(screen.getAllByText('Completed automatically')).toHaveLength(1);
-    expect(screen.getByText('Completed automatically').previousElementSibling).toHaveTextContent('Payment collected');
+    expect(screen.getByText('Completed automatically')).toBeInTheDocument();
+    expect(screen.getByText('Completed manually')).toBeInTheDocument();
+    expect(screen.getByText('Completion source unavailable')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /is complete/ })).toHaveLength(3);
+  });
+
+  it('the information button explains an automatic completion: why, when, SOLIS Automation, related record', () => {
+    renderChecklist([item({ index: 8, label: 'Payment collected', done: true, completion: automatic })]);
+    const info = screen.getByRole('button', { name: 'Why "Payment collected" is complete' });
+    expect(info).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(info);
+    const details = screen.getByRole('note', { name: 'Completion details for Payment collected' });
+    expect(details).toHaveTextContent('A verified payment brought the balance to $0.');
+    expect(details).toHaveTextContent('SOLIS Automation');
+    expect(details).toHaveTextContent('pay-9');
+    expect(details).toHaveTextContent('2026');
+    fireEvent.click(info);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('a manual completion names the staff member', () => {
+    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor', done: true, completion: manual })], {
+      resolveActorName: (id: string) => (id === 'identity-7' ? 'Dana Reyes' : null),
+    });
+    fireEvent.click(screen.getByRole('button', { name: /is complete/ }));
+    expect(screen.getByRole('note')).toHaveTextContent('Dana Reyes');
+  });
+
+  it('an item with no recorded source says so instead of guessing', () => {
+    renderChecklist([item({ index: 1, label: 'Cause of death entered', done: true, completion: { kind: 'unavailable' } })]);
+    fireEvent.click(screen.getByRole('button', { name: /is complete/ }));
+    expect(screen.getByRole('note')).toHaveTextContent('No source is assumed.');
   });
 
   it('an automatically completed item stays an ordinary checkbox staff can still correct', () => {
     const onToggleItem = vi.fn();
-    renderChecklist([item({ index: 8, label: 'Payment collected', done: true, completedAutomatically: true })], { onToggleItem });
+    renderChecklist([item({ index: 8, label: 'Payment collected', done: true, completion: automatic })], { onToggleItem });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Payment collected' }));
     expect(onToggleItem).toHaveBeenCalledWith(8, false);
   });

@@ -190,6 +190,23 @@ the env var is set) with claim-before-send.
   - In mock mode, claims are held in memory and the shared fixture shape is
     unchanged.
 
+### 5. SLA alerts: `/api/cron/sla-alerts` → `services/slaAlertService.ts#runSlaAlertSweep`
+
+Added 2026-10. POST-only like the others, and **not** in `vercel.json`.
+Enabling a schedule (a daily morning run is enough; a second run near
+midday catches "due today") is a separate, reviewed rollout.
+
+- **Reads:**
+  - `cases` (active, this deployment's organizations)
+  - `organizations` (`slaSettingsJson`)
+- **Writes:** `notifications` and `notificationRecipients`, to staff with
+  `case.read` only. One alert per case, milestone, deadline and kind,
+  using deterministic IDs, so re-running never repeats an alert.
+- **Never:**
+  - contacts families, doctors or crematories;
+  - alerts on archived cases or the advisory family-pickup reminder;
+  - alerts on a milestone that has a recorded delay.
+
 ### Collection/field dependencies (production)
 
 | Dependency | Needed for | If missing |

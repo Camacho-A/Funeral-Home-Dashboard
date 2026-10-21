@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
+import { slaSummaryBucket, type SlaMilestoneEvaluation } from '@/domain/sla/slaMilestones';
 import { useCases } from '@/hooks/useCases';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
 import { useCaseCounts } from '@/hooks/useCaseCounts';
@@ -63,7 +64,25 @@ export default function DashboardPage() {
   const { data: allCases } = useCases();
   const allViewModels = useCaseViewModels(allCases);
   const kpis = useMemo(() => computeKpis(allViewModels), [allViewModels]);
-  const urgentCases = useMemo(() => allViewModels.filter((c) => c.needsAttention), [allViewModels]);
+  // SLA tracking (2026-10): Needs Attention already includes SLA cases (the
+  // view model decides, from the shared evaluation); the most urgent first.
+  const urgentCases = useMemo(
+    () => allViewModels.filter((c) => c.needsAttention).sort((a, b) => slaUrgency(a.sla?.current ?? null) - slaUrgency(b.sla?.current ?? null)),
+    [allViewModels],
+  );
+  const slaSummary = useMemo(() => {
+    if (!allViewModels.some((c) => c.sla?.enabled)) return null;
+    const counts = { onTrack: 0, dueToday: 0, overdue: 0, waiting: 0, startDateNeeded: 0 };
+    for (const c of allViewModels) {
+      const bucket = slaSummaryBucket(c.sla?.current ?? null);
+      if (bucket === 'on_track') counts.onTrack += 1;
+      else if (bucket === 'due_today') counts.dueToday += 1;
+      else if (bucket === 'overdue') counts.overdue += 1;
+      else if (bucket === 'waiting') counts.waiting += 1;
+      else if (bucket === 'start_date_needed') counts.startDateNeeded += 1;
+    }
+    return counts;
+  }, [allViewModels]);
 
   // Cases by Stage's navigation hub — server-side counts only (Phase 2),
   // never every Case object.
@@ -127,7 +146,7 @@ export default function DashboardPage() {
 
       <div className={styles.mainGrid}>
         <div className={styles.attentionArea}>
-          <NeedsAttentionPanel cases={urgentCases} />
+          <NeedsAttentionPanel cases={urgentCases} slaSummary={slaSummary} />
         </div>
         <div className={styles.stageArea}>
           <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} casesByStage={casesByStage} />
@@ -138,4 +157,15 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+/** Overdue first, then due today, a missing start date, an external wait
+    past its target, and finally due soon; non-SLA attention (stalled) last. */
+function slaUrgency(current: SlaMilestoneEvaluation | null): number {
+  if (!current?.status) return 9;
+  if (current.status === 'overdue') return current.advisory ? 5 : 0;
+  if (current.status === 'due_today') return 1;
+  if (current.status === 'start_date_needed') return 2;
+  if (current.overdue) return 3;
+  return 4;
 }

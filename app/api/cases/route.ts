@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isSlaTrackingEnabled } from '@/domain/sla/slaSettings';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
 import { getDataAdapterMode } from '@/lib/env';
@@ -758,6 +759,10 @@ export async function POST(request: Request) {
       fieldValues: (b.fieldValues as Record<number, string>) ?? {},
       createdAt,
       returnMethod,
+      // SLA tracking (2026-10): a case taken in now — by staff or by an
+      // intake form — was received now. A historical import was not, so
+      // it gets no receipt time rather than an invented one.
+      ...(isSlaTrackingEnabled(organizationId) && !historicalImportFormId ? { receivedAt: createdAt } : {}),
     });
 
     const inserted = await insertWixDataItem<WixCaseItem>('cases', data, beaconCaseId);

@@ -111,6 +111,7 @@ export async function markCasePaidIfVerified(
   // carries its provenance; an applied tick is recorded once in activity.
   // Every other organization keeps the behaviour below exactly.
   const automationEnabled = isChecklistAutomationEnabled(organizationId);
+  const paymentTrigger = { source: 'payment_confirmed' as const, eventType: 'payment.paid_in_full', eventId: financialPosting?.paymentId ?? null };
   const now = new Date().toISOString();
   let autoCompleted: { case_: Case; location: { displayStage: number; index: number } } | null = null;
 
@@ -119,7 +120,7 @@ export async function markCasePaidIfVerified(
     if (case_.isDeleted) return null;
     const paymentChecklistItem = findPaymentConfirmationChecklistIndex(case_.workflowSnapshot);
     if (automationEnabled) {
-      const completion = paymentChecklistItem ? automaticChecklistCompletion(case_, paymentChecklistItem, 'payment_received_in_full', now) : null;
+      const completion = paymentChecklistItem ? automaticChecklistCompletion(case_, paymentChecklistItem, paymentTrigger, now) : null;
       if (completion && paymentChecklistItem) autoCompleted = { case_, location: paymentChecklistItem };
       return { paymentStatus: 'paid_in_full', ...(completion ?? {}) };
     }
@@ -133,7 +134,7 @@ export async function markCasePaidIfVerified(
 
   const recordIfCompleted = async () => {
     const done = autoCompleted as { case_: Case; location: { displayStage: number; index: number } } | null;
-    if (done) await recordAutomaticCompletion(done.case_, done.location, 'payment_received_in_full', dataAdapterMode, financialPosting?.ctx.correlationId);
+    if (done) await recordAutomaticCompletion(done.case_, done.location, paymentTrigger, dataAdapterMode, financialPosting?.ctx.correlationId);
   };
 
   if (dataAdapterMode === 'mock') {
@@ -144,7 +145,7 @@ export async function markCasePaidIfVerified(
       ...current,
       ...patch,
       checklistState: { ...current.checklistState, ...(patch.checklistState ?? {}) },
-      ...(patch.checklistAutomation ? { checklistAutomation: { ...current.checklistAutomation, ...patch.checklistAutomation } } : {}),
+      ...(patch.checklistCompletions ? { checklistCompletions: { ...current.checklistCompletions, ...patch.checklistCompletions } } : {}),
     }));
     await recordIfCompleted();
     await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);

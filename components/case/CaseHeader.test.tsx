@@ -77,3 +77,64 @@ describe('CaseHeader — Archived badge (2026-10)', () => {
     expect(screen.getByText('First Call & Payment')).toBeInTheDocument();
   });
 });
+
+describe('CaseHeader — SLA tracking (2026-10)', () => {
+  const stages = [
+    { label: 'First Call', done: true, current: false, viewable: true },
+    { label: 'Permit', done: false, current: true, viewable: true },
+    { label: 'Pickup', done: false, current: false, viewable: false },
+  ];
+  const milestone = (overrides: Record<string, unknown>) => ({
+    key: 'approval',
+    label: 'State approval',
+    responsibleParty: 'state',
+    advisory: false,
+    external: true,
+    state: 'active',
+    status: 'on_track',
+    overdue: false,
+    startedAt: null,
+    completedAt: null,
+    deadline: '2026-10-22',
+    businessDaysRemaining: 2,
+    delay: null,
+    note: null,
+    ...overrides,
+  });
+  const sla = (current: Record<string, unknown> | null, businessDaysInStage: number | null = 0) =>
+    ({ enabled: true, milestones: current ? [current] : [], current, businessDaysInStage }) as never;
+
+  it('shows business days in stage and the current SLA, replacing the old stage target', () => {
+    render(<CaseHeader {...baseProps} stages={stages} onStepClick={() => {}} sla={sla(milestone({}), 0)} />);
+    expect(screen.getByText(/Step 2 of 3/)).toHaveTextContent('Step 2 of 3 · 0 business days in stage');
+    expect(screen.getByTestId('current-sla')).toHaveTextContent('Current SLA: State approval · Due in 2 business days');
+    expect(screen.getByText('On Track')).toBeInTheDocument();
+    expect(screen.getByTestId('current-sla')).toHaveTextContent('State (Vital Statistics)');
+    expect(screen.queryByText(/target/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Day 2/)).not.toBeInTheDocument();
+  });
+
+  it('an unknown stage-entry time shows no day count rather than "Day 0"', () => {
+    render(<CaseHeader {...baseProps} stages={stages} onStepClick={() => {}} sla={sla(milestone({}), null)} />);
+    expect(screen.getByText(/Step 2 of 3/).textContent?.trim()).toBe('Step 2 of 3');
+  });
+
+  it('a wait on others keeps the overdue fact beside it; a missing start date says so', () => {
+    const { unmount } = render(
+      <CaseHeader {...baseProps} sla={sla(milestone({ status: 'waiting_on_others', overdue: true, businessDaysRemaining: -2, responsibleParty: 'doctor', label: 'Doctor attestation' }))} />,
+    );
+    expect(screen.getByText('Waiting on Others')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    unmount();
+    render(<CaseHeader {...baseProps} sla={sla(milestone({ state: 'start_date_needed', status: 'start_date_needed', deadline: null, businessDaysRemaining: null }))} />);
+    expect(screen.getByText('Start Date Needed')).toBeInTheDocument();
+  });
+
+  it('says so when nothing is due, and keeps the old line for organizations without SLA tracking', () => {
+    const { unmount } = render(<CaseHeader {...baseProps} sla={sla(null)} />);
+    expect(screen.getByText('No SLA due right now')).toBeInTheDocument();
+    unmount();
+    render(<CaseHeader {...baseProps} />);
+    expect(screen.getByText('2d in stage · target 1d')).toBeInTheDocument();
+  });
+});

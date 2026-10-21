@@ -1,4 +1,6 @@
 import type { Case } from '../../types/case';
+import type { SlaSettings } from '../sla/slaSettings';
+import { SLA_STATUS_LABEL, describeDeadline, evaluateCaseSla, slaNeedsAttention } from '../sla/slaMilestones';
 import { composeDecedentName } from './decedentName';
 import type { StaffProfile } from '../../types/staffProfile';
 import type {
@@ -46,6 +48,11 @@ export type CaseViewModelContext = {
       (Phase 6's StageStepper). Only affects the `checklist` field — every
       other field always reflects the case's real, current state. */
   viewingDisplayStage?: number | null;
+  /** SLA tracking (2026-10): the organization's settings and "now". When
+      tracking is on, `sla` is the one evaluation every surface shows, and
+      it replaces the old per-stage target in `isOverdue`/Needs Attention.
+      Omitted (or disabled) → exactly the previous behaviour. */
+  sla?: { settings: SlaSettings; nowIso: string };
 };
 
 function resolveOwner(case_: Case, staffList: StaffProfile[]): { name: string; initials: string } {
@@ -428,12 +435,16 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // veteran-incomplete branch below is preserved for parity with the source
   // (attentionReason still computes it) but is unreachable via
   // `needsAttention`, exactly as in the original.
-  const needsAttention = case_.isStalled;
+  const sla = context.sla?.settings.enabled ? evaluateCaseSla(case_, context.sla.settings, context.sla.nowIso) : null;
+  const slaAttention = sla ? slaNeedsAttention(sla.current) : false;
+  const needsAttention = case_.isStalled || slaAttention;
   const attentionReason = case_.isStalled
     ? (case_.stalledReason ?? '')
-    : needsVeteranAttention(case_)
-      ? 'Veteran — VA process incomplete'
-      : '';
+    : slaAttention && sla?.current
+      ? `${sla.current.label} — ${describeDeadline(sla.current) || SLA_STATUS_LABEL[sla.current.status!]}`
+      : needsVeteranAttention(case_)
+        ? 'Veteran — VA process incomplete'
+        : '';
 
   // Ported from design/support.js's buildCase(): `nextAction` is the first
   // not-yet-done checklist item's label, falling back to "Review case".
@@ -546,7 +557,9 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     daysWaitingInStage: case_.daysWaitingInStage,
     slaTargetDays,
     slaTargetLabel: formatSlaTarget(slaTargetDays),
-    isOverdue: isOverdue(slaTargetDays, case_.daysWaitingInStage, effectiveDisplayStage, snapshot),
+    // SLA tracking replaces the per-stage target where it is on.
+    isOverdue: sla ? sla.current?.overdue === true : isOverdue(slaTargetDays, case_.daysWaitingInStage, effectiveDisplayStage, snapshot),
+    sla,
 
     isStalled: case_.isStalled,
     stalledReason: case_.stalledReason,

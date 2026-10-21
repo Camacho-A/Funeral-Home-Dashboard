@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { normalizeSlaSettings } from '../sla/slaSettings';
+import { caseFixtures as slaCaseFixtures } from '../../services/__mocks__/fixtures';
 import { buildCaseViewModel, FAMILY_CONTACT_ITEM_LABEL } from './viewModel';
 import { resolveChecklist } from '../workflow/resolveChecklist';
 import type { Case } from '../../types/case';
@@ -1531,5 +1533,34 @@ describe('Family Contact completion (2026-10)', () => {
     expect(
       familyContactItem(intakeCase({ nextOfKinName: '', nextOfKinPhone: '', nextOfKinEmail: 'a@b.com' }))!.done,
     ).toBe(false);
+  });
+});
+
+describe('buildCaseViewModel — SLA tracking (2026-10)', () => {
+  const manors = (overrides: Partial<Case> = {}): Case => ({ ...slaCaseFixtures.find((c) => c.id === '1044')!, isStalled: false, checklistState: {}, ...overrides });
+  const received = { case_received: { at: '2026-10-12T14:00:00.000Z', recordedAt: 'x', recordedBy: null, source: 'automatic' as const }, vital_statistics_received: { at: '2026-10-12T14:00:00.000Z', recordedAt: 'x', recordedBy: null, source: 'automatic' as const } };
+  const sla = (nowIso: string) => ({ settings: normalizeSlaSettings({}, true), nowIso });
+
+  it('puts an overdue SLA in Needs Attention and drives isOverdue from it', () => {
+    const vm = buildCaseViewModel(manors({ slaEvents: received }), { staffList: [], sla: sla('2026-10-20T14:00:00.000Z') });
+    expect(vm.sla?.current).toMatchObject({ key: 'edrs_entry', status: 'overdue' });
+    expect(vm.isOverdue).toBe(true);
+    expect(vm.needsAttention).toBe(true);
+    expect(vm.attentionReason).toBe('EDRS entry — 4 business days overdue');
+  });
+
+  it('an on-track SLA neither flags the case nor marks it overdue', () => {
+    const vm = buildCaseViewModel(manors({ slaEvents: received }), { staffList: [], sla: sla('2026-10-12T15:00:00.000Z') });
+    expect(vm.sla?.current?.status).toBe('on_track');
+    expect(vm.isOverdue).toBe(false);
+    expect(vm.needsAttention).toBe(false);
+  });
+
+  it('without SLA context (Gus, or any organization without tracking) the view model is exactly as before', () => {
+    const gus = slaCaseFixtures.find((c) => c.organizationId === 'gus-camacho-jr')!;
+    const before = buildCaseViewModel(gus, { staffList: [] });
+    const withDisabled = buildCaseViewModel(gus, { staffList: [], sla: { settings: normalizeSlaSettings({}, false), nowIso: '2026-10-20T14:00:00.000Z' } });
+    expect(withDisabled.sla).toBeNull();
+    expect({ ...withDisabled, sla: undefined }).toEqual({ ...before, sla: undefined });
   });
 });

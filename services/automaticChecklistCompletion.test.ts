@@ -31,7 +31,7 @@ const saved = new Map<number, Case>();
 function useCase(id: string, overrides: Partial<Case> = {}): Case {
   const index = caseFixtures.findIndex((c) => c.id === id);
   if (!saved.has(index)) saved.set(index, caseFixtures[index]);
-  caseFixtures[index] = { ...caseFixtures[index], checklistState: {}, checklistAutomation: undefined, ...overrides };
+  caseFixtures[index] = { ...caseFixtures[index], checklistState: {}, checklistCompletions: undefined, ...overrides };
   return caseFixtures[index];
 }
 const current = (id: string) => caseFixtures.find((c) => c.id === id)!;
@@ -94,22 +94,23 @@ describe('"Payment collected" — completed by a verified payment in full', () =
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
 
     expect(current('1044').checklistState['0:8']).toBe(true);
-    expect(current('1044').checklistAutomation?.['0:8']).toMatchObject({ by: 'automatic', source: 'payment_received_in_full' });
+    expect(current('1044').checklistCompletions?.['0:8']).toMatchObject({ done: true, method: 'automatic', source: 'payment_confirmed', eventType: 'payment.paid_in_full', actorId: 'solis-automation' });
     const events = autoEvents('1044');
     expect(events).toHaveLength(1);
     expect(events[0].description).toBe('Checklist: "Payment collected" completed automatically (payment received in full).');
     expect(events[0].isSystemGenerated).toBe(true);
+    expect(JSON.parse(events[0].metadata!)).toMatchObject({ checklistItemKey: '0:8', source: 'payment_confirmed', completedBy: 'solis-automation' });
     expect(events[0].actorIdentityId).toBeNull();
   });
 
   it('a duplicate or retried event changes nothing and records nothing more', async () => {
     useCase('1044', { paymentStatus: 'awaiting_payment' });
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
-    const after = current('1044').checklistAutomation;
+    const after = current('1044').checklistCompletions;
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
     expect(autoEvents('1044')).toHaveLength(1);
-    expect(current('1044').checklistAutomation).toEqual(after);
+    expect(current('1044').checklistCompletions).toEqual(after);
   });
 
   it('a deposit leaves it open; the payment that clears the balance completes it', async () => {
@@ -142,8 +143,9 @@ describe('"Payment collected" — completed by a verified payment in full', () =
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
     await casesService.update({ organizationId: MANORS }, '1044', { checklistState: { '0:8': false } }, 'mock', {
       expectedRevision: caseRevision(current('1044')),
+      actorId: 'staff-7',
     });
-    expect(current('1044').checklistAutomation?.['0:8']).toMatchObject({ by: 'staff' });
+    expect(current('1044').checklistCompletions?.['0:8']).toMatchObject({ done: false, method: 'manual', actorId: 'staff-7' });
 
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
     expect(current('1044').checklistState['0:8']).toBe(false);
@@ -153,7 +155,7 @@ describe('"Payment collected" — completed by a verified payment in full', () =
   it('an item staff already ticked is left as theirs — not relabelled automatic, no event', async () => {
     useCase('1044', { paymentStatus: 'awaiting_payment', checklistState: { '0:8': true } });
     await markCasePaidIfVerified(MANORS, '1044', 'mock');
-    expect(current('1044').checklistAutomation).toBeUndefined();
+    expect(current('1044').checklistCompletions).toBeUndefined();
     expect(autoEvents('1044')).toHaveLength(0);
   });
 
@@ -175,7 +177,7 @@ describe('"Payment collected" — completed by a verified payment in full', () =
     useCase('gus-case-001', { paymentStatus: 'awaiting_payment' });
     await markCasePaidIfVerified(GUS, 'gus-case-001', 'mock');
     expect(current('gus-case-001').checklistState['0:8']).toBe(true);
-    expect(current('gus-case-001').checklistAutomation).toBeUndefined();
+    expect(current('gus-case-001').checklistCompletions).toBeUndefined();
     expect(autoEvents('gus-case-001')).toHaveLength(0);
   });
 });
@@ -185,7 +187,7 @@ describe('"Jotform application completed" — completed by the received Arrangem
     useCase('1047');
     expect(await completeArrangementFormChecklistItem(MANORS, '1047', 'mock')).toBe('completed');
     expect(current('1047').checklistState['1:0']).toBe(true);
-    expect(current('1047').checklistAutomation?.['1:0']).toMatchObject({ by: 'automatic', source: 'arrangement_form_received' });
+    expect(current('1047').checklistCompletions?.['1:0']).toMatchObject({ method: 'automatic', source: 'verified_document_received', eventType: 'external_form.arrangement_received' });
     expect(autoEvents('1047')[0].description).toBe('Checklist: "Jotform application completed" completed automatically (Arrangement Form received).');
 
     expect(await completeArrangementFormChecklistItem(MANORS, '1047', 'mock')).toBe('unchanged');

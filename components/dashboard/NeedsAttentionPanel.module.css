@@ -143,3 +143,76 @@
     padding-left: calc(6px + var(--space-6));
   }
 }
+
+/* SLA tracking (2026-10): compact summary counts and per-row SLA detail,
+   in the SOLIS status colours. */
+.slaSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 var(--space-5);
+}
+
+.slaCount {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--sx-border, var(--color-border-cool));
+  border-radius: 8px;
+  background: #fff;
+}
+
+.slaCount dt {
+  font-size: 11.5px;
+  color: var(--color-text-muted-cool);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slaCount dd {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.slaCount[data-tone='ok'] dd { color: var(--sx-green-text); }
+.slaCount[data-tone='warn'] dd { color: var(--sx-amber-text); }
+.slaCount[data-tone='bad'] dd { color: var(--sx-red); }
+.slaCount[data-tone='neutral'] dd { color: var(--sx-text-2); }
+
+.slaDetail {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.slaStatus {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--sx-subtle);
+  color: var(--sx-text-2);
+}
+
+.slaStatus[data-tone='warn'] { background: var(--sx-amber-bg); color: var(--sx-amber-text); }
+.slaStatus[data-tone='bad'] { background: var(--sx-red-bg); color: var(--sx-red); }
+
+@media (max-width: 560px) {
+  .slaSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.slaHint {
+  margin: calc(var(--space-3) * -1) 0 var(--space-5);
+  font-size: 12px;
+  color: var(--color-text-muted-cool);
+}

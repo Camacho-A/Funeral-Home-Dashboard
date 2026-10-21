@@ -57,6 +57,12 @@ export type NotificationTokens = {
   supplierName?: string;
   billNumber?: string;
   dueDateDisplay?: string;
+  /** SLA tracking (2026-10): "Due today", "2 business days overdue", … */
+  dueLabel?: string;
+  /** SLA tracking (2026-10): the milestone's name. */
+  milestone?: string;
+  /** SLA tracking (2026-10): who is responsible (Doctor, Crematory, …). */
+  party?: string;
   /** Intake activation (2026-10). Identifying a stuck JotForm submission
       without describing the person it is about: the form's own label, a
       submission reference staff can quote, a short sanitized reason, and
@@ -87,6 +93,9 @@ const RECOGNIZED_TOKENS: readonly (keyof NotificationTokens)[] = [
   'supplierName',
   'billNumber',
   'dueDateDisplay',
+  'dueLabel',
+  'milestone',
+  'party',
   'formLabel',
   'submissionReference',
   'reason',
@@ -151,6 +160,22 @@ const NOTIFICATION_TEMPLATES: Record<string, TemplateDefinition> = {
   'case.completed': {
     titleTemplate: 'Case Completed',
     bodyTemplate: '{{caseNumber}} — {{decedentName}}. All required case steps are complete.',
+  },
+  'case.sla_hard_save_due': {
+    titleTemplate: 'Hard Save Due',
+    bodyTemplate: "{{caseNumber}} — {{decedentName}}. The doctor's attestation was received. Hard Save is due {{dueLabel}}.",
+  },
+  'case.sla_due': {
+    titleTemplate: 'SLA Deadline Approaching',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. {{milestone}}: {{dueLabel}}.',
+  },
+  'case.sla_overdue': {
+    titleTemplate: 'SLA Overdue',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. {{milestone}}: {{dueLabel}}.',
+  },
+  'case.sla_external_overdue': {
+    titleTemplate: 'Waiting Past Target',
+    bodyTemplate: '{{caseNumber}} — {{decedentName}}. {{milestone}} ({{party}}): {{dueLabel}}.',
   },
   'document.jotform_pdf_imported': {
     titleTemplate: 'Form PDF Imported',

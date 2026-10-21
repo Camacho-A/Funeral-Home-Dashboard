@@ -14,6 +14,7 @@ before.
 |---|---|---|
 | Payment collected | A verified payment brings the case's balance to zero (Clover webhook/poll, or a recorded manual payment). A deposit or partial payment does not; a failed or pending payment never does. | `services/paymentWorkflow.ts` |
 | Jotform application completed | The case's Arrangement Form submission is received and linked (webhook, manual link, review, import-submission, form-created case). A sent link is not enough. | `services/automaticChecklistCompletion.ts` |
+| EDRS submitted & sent to doctor; Attestation Received / Hard Saved; Permit / Authorization sent to crematory | Staff record the event in SLA details (`docs/SLA_TRACKING.md`). That is the explicit, audited confirmation SOLIS needs for external work it cannot verify itself. | `services/slaService.ts` |
 
 Already derived from their own records (unchanged):
 
@@ -40,25 +41,42 @@ Already derived from their own records (unchanged):
 
 - Never on an archived case.
 - Never for an item that is already done: no change and no event, however
-  often the event is retried or delivered.
-- Never over a staff decision. When staff change an automatable item, the
-  case records `{ by: 'staff' }` for it, and automation leaves it alone
-  from then on.
-- The tick and its provenance (`Case.checklistAutomation`, keyed like
-  `checklistState`) are written together, field-scoped and conditioned on
-  the case revision. The field is server-written only.
-- Stage progression is unchanged: the existing `reconcileCaseWorkflow` runs
-  afterwards and advances only when every requirement of a stage is met.
-- Historical cases are not reprocessed: nothing runs on deploy, and neither
-  the historical import nor the "recalculate workflow" repair completes items.
+  often the event is retried. The original completion source is kept.
+- Never over a staff decision. Once staff complete or reopen an item, the
+  automation leaves it alone.
+- The tick and its record are written together, field-scoped and
+  conditioned on the case revision. Records are server-written only.
+- Stage progression is unchanged: the existing `reconcileCaseWorkflow`
+  advances a stage only when all of its requirements are met.
+- Historical cases are not reprocessed.
 
-## Audit trail and display
+## Completion attribution
 
-Each completion records one `case.checklist.completed_automatically` activity
-event. It is attributed to SOLIS (system-generated, no staff actor), names the
-item and its evidence, and carries the item key and source in metadata. The
-checklist shows a quiet "Completed automatically" beside the item. It remains
-an ordinary checkbox that staff can correct.
+Every checklist decision made from 2026-10 onward leaves a
+`ChecklistCompletionRecord` in `Case.checklistCompletions`, keyed like
+`checklistState`. A record holds:
+
+- `done`
+- `method` (automatic or manual)
+- `source`: Payment confirmed / Document generated / Verified document
+  received / Workflow event completed / Staff confirmation
+- `eventType` and `eventId` (the related payment, submission or event)
+- `at`
+- `actorId`: the staff identity for a manual decision, `solis-automation`
+  for an automatic one
+
+The checklist shows a quiet note beside each done item:
+
+- **Completed automatically**: an automatic record, or an item derived from
+  case information or the release record.
+- **Completed manually**: a staff decision.
+- **Completion source unavailable**: done before records existed. Nothing
+  is inferred.
+
+The ⓘ button shows why, when, by whom (a staff name or SOLIS Automation), and
+the related record. Each automatic completion also records one
+`case.checklist.completed_automatically` activity event. Manual changes
+keep their existing `case.updated` audit entry.
 
 ## Would need new integrations
 

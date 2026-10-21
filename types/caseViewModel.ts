@@ -1,3 +1,5 @@
+import type { CaseSlaEvaluation } from '../domain/sla/slaMilestones';
+import type { ChecklistCompletionInfo } from '../domain/workflow/checklistAutomation';
 /**
  * The derived, display-ready shape produced by domain/cases/viewModel.ts —
  * the direct analog of the original design/support.js script's buildCase().
@@ -44,10 +46,10 @@ export type ChecklistItemViewModel = {
       ChecklistCard renders it read-only, never toggleable, so it can never
       become a second, contradicting completion signal. */
   isDerived: boolean;
-  /** Automatic checklist completion (2026-10): done because SOLIS
-      verified the event that completes it (domain/workflow/checklistAutomation.ts),
-      not because staff ticked it. */
-  completedAutomatically?: boolean;
+  /** Checklist completion attribution (2026-10): why a done item is done
+      (domain/workflow/checklistAutomation.ts#checklistCompletionInfo).
+      Absent for an open item and for organizations without attribution. */
+  completion?: ChecklistCompletionInfo;
   /** Structured Certifier data (2026-09, ADR-041). Mirrors
       ChecklistItemTemplate.valueKind — a field-backed item whose canonical
       value is 24-hour HH:mm but should render/edit as 12-hour AM/PM (e.g.
@@ -165,6 +167,9 @@ export type CaseViewModel = {
   slaTargetDays: number | null;
   slaTargetLabel: string;
   isOverdue: boolean;
+  /** SLA tracking (2026-10): null when the organization has no SLA tracking
+      or the case is archived. See domain/sla/slaMilestones.ts. */
+  sla: CaseSlaEvaluation | null;
 
   isStalled: boolean;
   stalledReason: string | null;

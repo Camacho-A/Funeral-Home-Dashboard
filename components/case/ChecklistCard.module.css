@@ -349,12 +349,74 @@
   font-weight: 500;
 }
 
-/* Automatic checklist completion (2026-10): a quiet note beside an item
-   SOLIS completed from a verified event. The event itself is in Activity. */
-.autoCompleted {
+/* Checklist completion attribution (2026-10): a quiet note beside a done
+   item, with an information button that opens the details below the row. */
+.completionNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
   padding-left: var(--space-3, 6px);
+  flex-shrink: 0;
+}
+
+.completionText {
   font-size: 11.5px;
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+.completionInfo {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.completionInfo[aria-expanded='true'],
+.completionInfo:hover {
+  border-color: var(--color-brand, oklch(0.36 0.07 255));
+  color: var(--color-brand, oklch(0.36 0.07 255));
+}
+
+.completionDetails {
+  margin: 6px 0 2px 30px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.completionRow {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.completionRow dt {
+  color: var(--color-text-muted);
+}
+
+.completionRow dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 560px) {
+  .completionText {
+    white-space: normal;
+    text-align: right;
+  }
 }

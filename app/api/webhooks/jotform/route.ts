@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { recordSlaEventAutomatically } from '@/services/slaService';
 import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { loadCaseOnServer } from '@/services/serverCaseLoader';
 import { NextResponse } from 'next/server';
@@ -433,6 +434,16 @@ export async function POST(request: Request) {
        * arrival. Keyed on the case id, so a webhook redelivery announces
        * nothing the second time.
        */
+      // SLA tracking (2026-10): a case created by the Vital Statistics form
+      // has the family's paperwork from the start.
+      if (formRole === 'vital_statistics') {
+        try {
+          await recordSlaEventAutomatically(config.organizationId, outcome.caseId, 'vital_statistics_received', submission.receivedAt, dataAdapterMode);
+        } catch (error) {
+          console.error('Failed to record Vital Statistics receipt for SLA tracking:', error instanceof Error ? error.message : error);
+        }
+      }
+
       const created = await notifiableCase(outcome.caseId, config.organizationId, dataAdapterMode);
       if (created) {
         await notifyCaseCreated(activityCtx, { case: created, source: creationSourceFor(formRole) }, dataAdapterMode);
@@ -509,6 +520,13 @@ export async function POST(request: Request) {
         await notifyArrangementReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
       } else if (formRole === 'vital_statistics') {
         await notifyVitalStatisticsReceived(activityCtx, { case: updated, submissionId: submission.id }, dataAdapterMode);
+        // SLA tracking (2026-10): the family's paperwork is in. The first
+        // receipt time is kept; best-effort, never fails the webhook.
+        try {
+          await recordSlaEventAutomatically(config.organizationId, caseId, 'vital_statistics_received', submission.receivedAt, dataAdapterMode);
+        } catch (error) {
+          console.error('Failed to record Vital Statistics receipt for SLA tracking:', error instanceof Error ? error.message : error);
+        }
       }
       if (pdfResult.outcome === 'stored') {
         await notifyJotformPdfImported(

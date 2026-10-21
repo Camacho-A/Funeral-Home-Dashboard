@@ -1,5 +1,5 @@
 import type { Case } from '../../types/case';
-import { isCompletedAutomatically } from './checklistAutomation';
+import { checklistCompletionInfo, isChecklistAutomationEnabled } from './checklistAutomation';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 import { readChecklistValue } from './checklistItemKey';
@@ -290,6 +290,7 @@ export function resolveChecklist(
     .map((item) => ({ item, index: item.index }))
     .filter(({ index }) => !retired.has(index));
 
+  const attributionEnabled = isChecklistAutomationEnabled(case_.organizationId);
   return visible.map(({ item, index }, position) => {
     const done = isPastStage || isItemDone(item, index);
     // Locking follows the previous VISIBLE item, so retiring one never
@@ -315,7 +316,10 @@ export function resolveChecklist(
         : '',
       fieldIsPassword: Boolean(item.isPasswordField),
       isDerived: Boolean(item.requiredCaseFields),
-      completedAutomatically: done && isCompletedAutomatically(case_, displayStage, index),
+      completion:
+        done && attributionEnabled
+          ? checklistCompletionInfo(case_, displayStage, index, item.hasField || Boolean(item.requiredCaseFields))
+          : undefined,
       valueKind: item.valueKind,
       requiredCaseFields: item.requiredCaseFields,
       requiredCaseFieldValues: item.requiredCaseFields

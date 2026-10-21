@@ -176,3 +176,43 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+
+/* SLA tracking (2026-10): the current SLA's status pill, in the SOLIS
+   status colours — green on track, amber due soon/today, red overdue,
+   neutral for a wait on others, an exception or a missing start date. */
+.slaPill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.slaPill_ok {
+  background: var(--sx-green-bg);
+  color: var(--sx-green-text);
+}
+
+.slaPill_warn {
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+}
+
+.slaPill_bad {
+  background: var(--sx-red-bg);
+  color: var(--sx-red);
+}
+
+.slaPill_neutral {
+  background: var(--sx-subtle);
+  color: var(--sx-text-2);
+}
+
+.slaParty {
+  color: var(--sx-muted);
+}

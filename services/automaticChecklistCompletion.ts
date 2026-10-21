@@ -5,12 +5,12 @@ import { caseFixtures } from './__mocks__/fixtures';
 import { updateCaseWithRetry, writeMockCase } from './caseWriteService';
 import { recordChecklistItemCompletedAutomatically } from './activityService';
 import { isArrangementFormLinked } from './workflowReconciliationService';
-import type { Case, ChecklistAutomationSource } from '../types/case';
+import type { Case } from '../types/case';
 import {
-  CHECKLIST_AUTOMATION_SOURCE_LABEL,
   automaticChecklistCompletion,
   findArrangementFormChecklistItem,
   isChecklistAutomationEnabled,
+  type AutomaticTrigger,
   type ChecklistItemLocation,
 } from '../domain/workflow/checklistAutomation';
 import { checklistItemKey } from '../domain/workflow/checklistItemKey';
@@ -26,6 +26,12 @@ import { presentedChecklistLabel } from '../domain/organization/checklistRelabel
 
 export type AutomaticCompletionOutcome = 'completed' | 'unchanged' | 'not_applicable';
 
+const TRIGGER_DESCRIPTION: Record<string, string> = {
+  'payment.paid_in_full': 'payment received in full',
+  'external_form.arrangement_received': 'Arrangement Form received',
+  'sla.event_recorded': 'workflow event recorded',
+};
+
 function itemLabel(case_: Case, location: ChecklistItemLocation): string {
   const stage = case_.workflowSnapshot?.stages.find((candidate) => candidate.displayStage === location.displayStage);
   const item = stage?.checklist.items.find((candidate) => candidate.index === location.index);
@@ -37,7 +43,7 @@ function itemLabel(case_: Case, location: ChecklistItemLocation): string {
 export async function recordAutomaticCompletion(
   case_: Case,
   location: ChecklistItemLocation,
-  source: ChecklistAutomationSource,
+  trigger: AutomaticTrigger,
   dataAdapterMode: DataAdapterMode,
   correlationId: string = crypto.randomUUID(),
 ): Promise<void> {
@@ -48,8 +54,10 @@ export async function recordAutomaticCompletion(
       {
         key: checklistItemKey(location.displayStage, location.index),
         label: itemLabel(case_, location),
-        source,
-        sourceLabel: CHECKLIST_AUTOMATION_SOURCE_LABEL[source],
+        source: trigger.source,
+        eventType: trigger.eventType,
+        eventId: trigger.eventId,
+        sourceLabel: TRIGGER_DESCRIPTION[trigger.eventType] ?? trigger.eventType,
       },
       dataAdapterMode,
     );
@@ -65,7 +73,7 @@ export async function recordAutomaticCompletion(
 export async function completeChecklistItemAutomatically(
   organizationId: string,
   caseId: string,
-  source: ChecklistAutomationSource,
+  trigger: AutomaticTrigger,
   locate: (case_: Case) => ChecklistItemLocation | null,
   dataAdapterMode: DataAdapterMode,
 ): Promise<AutomaticCompletionOutcome> {
@@ -76,12 +84,12 @@ export async function completeChecklistItemAutomatically(
   if (dataAdapterMode === 'mock') {
     const current = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId);
     const location = current ? locate(current) : null;
-    const patch = current && location ? automaticChecklistCompletion(current, location, source, now) : null;
+    const patch = current && location ? automaticChecklistCompletion(current, location, trigger, now) : null;
     if (current && location && patch) {
       writeMockCase(organizationId, caseId, (latest) => ({
         ...latest,
         checklistState: { ...latest.checklistState, ...patch.checklistState },
-        checklistAutomation: { ...latest.checklistAutomation, ...patch.checklistAutomation },
+        checklistCompletions: { ...latest.checklistCompletions, ...patch.checklistCompletions },
       }));
       applied = { case_: current, location };
     }
@@ -89,7 +97,7 @@ export async function completeChecklistItemAutomatically(
     const outcome = await updateCaseWithRetry(organizationId, caseId, (row) => {
       applied = null;
       const location = locate(row.case_);
-      const patch = location ? automaticChecklistCompletion(row.case_, location, source, now) : null;
+      const patch = location ? automaticChecklistCompletion(row.case_, location, trigger, now) : null;
       if (!location || !patch) return null;
       applied = { case_: row.case_, location };
       return buildCaseFieldPatch(row.data, patch);
@@ -101,7 +109,7 @@ export async function completeChecklistItemAutomatically(
 
   const done = applied as { case_: Case; location: ChecklistItemLocation } | null;
   if (!done) return 'unchanged';
-  await recordAutomaticCompletion(done.case_, done.location, source, dataAdapterMode);
+  await recordAutomaticCompletion(done.case_, done.location, trigger, dataAdapterMode);
   return 'completed';
 }
 
@@ -116,13 +124,14 @@ export async function completeArrangementFormChecklistItem(
   organizationId: string,
   caseId: string,
   dataAdapterMode: DataAdapterMode,
+  submissionId: string | null = null,
 ): Promise<AutomaticCompletionOutcome> {
   if (!isChecklistAutomationEnabled(organizationId)) return 'not_applicable';
   if (!(await isArrangementFormLinked(organizationId, caseId, dataAdapterMode))) return 'not_applicable';
   return completeChecklistItemAutomatically(
     organizationId,
     caseId,
-    'arrangement_form_received',
+    { source: 'verified_document_received', eventType: 'external_form.arrangement_received', eventId: submissionId },
     (case_) => findArrangementFormChecklistItem(case_.workflowSnapshot),
     dataAdapterMode,
   );
