@@ -574,15 +574,14 @@ describe('CaseInformationCard — payment status (Phase 17)', () => {
   });
 });
 
-describe('CaseInformationCard — Tag # (Manors launch-prep)', () => {
-  it('shows a placeholder when no tag is assigned, and saves a trimmed, uppercased value', () => {
+describe('CaseInformationCard — Tag Number (Manors launch-prep; moved to the top, 2026-10)', () => {
+  it('a missing tag reads "Tag Number Missing — Add Tag Number"; that prompt starts editing and saves a trimmed, uppercased value', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} tagNumber={null} onUpdateCaseInfo={onUpdateCaseInfo} />);
 
-    // Scoped: baseProps now also has nextOfKinEmail: null, which renders
-    // its own '—' placeholder (Manors launch-prep).
-    const tagField = within(screen.getByText('Tag #').parentElement!);
-    const button = tagField.getByRole('button', { name: '—' });
+    const tagField = within(screen.getByText('Tag Number').parentElement!);
+    const button = tagField.getByRole('button', { name: 'Tag Number Missing — Add Tag Number' });
+    expect(button.className).toMatch(/missingValue/);
     fireEvent.click(button);
     const input = tagField.getByDisplayValue('');
     fireEvent.change(input, { target: { value: ' t-1042 ' } });
@@ -601,6 +600,53 @@ describe('CaseInformationCard — Tag # (Manors launch-prep)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ tagNumber: null });
+  });
+
+  it('an existing tag shows its saved value prominently, with its label — not the missing prompt', () => {
+    render(<CaseInformationCard {...baseProps} tagNumber="T-1042" onUpdateCaseInfo={vi.fn()} />);
+    const value = screen.getByRole('button', { name: 'T-1042' });
+    expect(value.className).toMatch(/tagNumberValue/);
+    expect(screen.getByText('Tag Number')).toBeInTheDocument();
+    expect(screen.queryByText(/Tag Number Missing/)).not.toBeInTheDocument();
+  });
+
+  it('sits with the identifying details — Name, Date of birth, Date of death, Time of death — in the first grid', () => {
+    render(<CaseInformationCard {...baseProps} tagNumber="T-1042" onUpdateCaseInfo={vi.fn()} />);
+    const firstGrid = screen.getByText('Name').closest('div[class*="grid"]')!;
+    const labels = Array.from(firstGrid.children).map((child) => child.querySelector('div')?.textContent ?? '');
+    expect(labels.slice(0, 5)).toEqual(['Name', 'Date of birth', 'Date of death', 'Time of death', 'Tag Number']);
+  });
+
+  it('there is exactly one Tag Number field in the card, and the old "Tag #" field is gone', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getAllByText('Tag Number')).toHaveLength(1);
+    expect(screen.queryByText('Tag #')).not.toBeInTheDocument();
+  });
+
+  it('archived: read-only — a missing tag is stated, with no way to add one; a saved tag is plain text', () => {
+    const onUpdateCaseInfo = vi.fn();
+    const { unmount } = render(<CaseInformationCard {...baseProps} isArchived tagNumber={null} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    const tagField = within(screen.getByText('Tag Number').parentElement!);
+    expect(tagField.getByText('Tag Number Missing')).toBeInTheDocument();
+    expect(tagField.queryByRole('button')).not.toBeInTheDocument();
+    unmount();
+
+    render(<CaseInformationCard {...baseProps} isArchived tagNumber="T-1042" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    const archived = within(screen.getByText('Tag Number').parentElement!);
+    expect(archived.getByText('T-1042')).toBeInTheDocument();
+    expect(archived.queryByRole('button')).not.toBeInTheDocument();
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('Escape still cancels an edit without saving (existing editing behaviour)', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} tagNumber={null} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Tag Number Missing — Add Tag Number' }));
+    const input = within(screen.getByText('Tag Number').parentElement!).getByDisplayValue('');
+    fireEvent.change(input, { target: { value: 'x9' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Tag Number Missing — Add Tag Number' })).toBeInTheDocument();
   });
 });
 
@@ -978,35 +1024,37 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
     expect(screen.getByText('Return method')).toBeInTheDocument();
   });
 
-  it('Layout follow-up: Tag #, Payment, and Return method share one row when Owner is hidden and returnMethod is undecided — no empty placeholder column', () => {
+  // Tag Number moved to the identifying details (2026-10); the Manors
+  // operational row is now Payment / Return method (/ Cremated Remains).
+  it('Layout follow-up: Payment and Return method share one row when Owner is hidden and returnMethod is undecided — no empty placeholder column', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={vi.fn()} />);
     const returnMethodLabel = screen.getByText('Return method');
     const row = returnMethodLabel.parentElement?.parentElement;
-    const tagRow = screen.getByText('Tag #').parentElement?.parentElement;
+    const paymentRow = screen.getByText('Payment').parentElement?.parentElement;
     expect(row).not.toBeNull();
-    expect(row).toBe(tagRow); // same shared grid row
-    expect(row?.children.length).toBe(3); // Tag #, Payment, Return method
+    expect(row).toBe(paymentRow); // same shared grid row
+    expect(row?.children.length).toBe(2); // Payment, Return method
   });
 
-  it('Layout follow-up: Cremated Remains joins the same row as Tag #/Payment/Return method when returnMethod is pickup', () => {
+  it('Layout follow-up: Cremated Remains joins the same row as Payment/Return method when returnMethod is pickup', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
-    const row = screen.getByText('Tag #').parentElement?.parentElement;
+    const row = screen.getByText('Payment').parentElement?.parentElement;
     const crematedRemainsRow = screen.getByText('Cremated Remains').parentElement?.parentElement;
     expect(crematedRemainsRow).toBe(row);
-    expect(row?.children.length).toBe(4); // Tag #, Payment, Return method, Cremated Remains
+    expect(row?.children.length).toBe(3); // Payment, Return method, Cremated Remains
   });
 
-  it('Layout follow-up: fields appear in Tag # -> Payment -> Return method -> Cremated Remains order', () => {
+  it('Layout follow-up: fields appear in Payment -> Return method -> Cremated Remains order', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
-    const row = screen.getByText('Tag #').parentElement!.parentElement!;
+    const row = screen.getByText('Payment').parentElement!.parentElement!;
     const labels = Array.from(row.children).map((child) => child.querySelector('div')?.textContent ?? child.textContent);
-    expect(labels).toEqual(['Tag #', 'Payment', 'Return method', 'Cremated Remains']);
+    expect(labels).toEqual(['Payment', 'Return method', 'Cremated Remains']);
   });
 
   it('Layout follow-up: Cremated Remains does NOT join the row for Shipping (pickup-only by domain logic) — column stays absent, not invented', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
-    const row = screen.getByText('Tag #').parentElement?.parentElement;
-    expect(row?.children.length).toBe(3); // Tag #, Payment, Return method only
+    const row = screen.getByText('Payment').parentElement?.parentElement;
+    expect(row?.children.length).toBe(2); // Payment, Return method only
     expect(screen.queryByText('Cremated Remains')).not.toBeInTheDocument();
   });
 
@@ -1022,14 +1070,14 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
         onUpdateCaseInfo={vi.fn()}
       />,
     );
-    const operationalRow = screen.getByText('Tag #').parentElement?.parentElement;
+    const operationalRow = screen.getByText('Payment').parentElement?.parentElement;
     const releaseRow = screen.getByText(/Released to/).closest(`div[class*="grid"]`);
     expect(releaseRow).not.toBeNull();
     expect(releaseRow).not.toBe(operationalRow);
   });
   it('Layout follow-up: shipping detail fields (Carrier/Tracking/Date shipped/Shipping status/Delivered date) remain in a separate row beneath the operational row', () => {
     render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
-    const operationalRow = screen.getByText('Tag #').parentElement?.parentElement;
+    const operationalRow = screen.getByText('Payment').parentElement?.parentElement;
     const carrierRow = screen.getByText('Carrier').parentElement?.parentElement;
     expect(carrierRow).not.toBe(operationalRow);
   });
@@ -1058,10 +1106,10 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ paymentStatus: 'paid_in_full' });
   });
 
-  it('Layout follow-up: Tag # editing still works in the Manors consolidated row', () => {
+  it('Tag Number editing still works for Manors (Owner hidden), from its new place at the top', () => {
     const onUpdateCaseInfo = vi.fn();
     render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} />);
-    const tagField = screen.getByText('Tag #').parentElement!;
+    const tagField = screen.getByText('Tag Number').parentElement!;
     fireEvent.click(within(tagField).getByRole('button'));
     const input = within(tagField).getByDisplayValue('');
     fireEvent.change(input, { target: { value: 'a123' } });
@@ -1117,12 +1165,12 @@ describe('CaseInformationCard — Task #17 (2026-09, hide Case Owner for Manors)
     expect(ownerRowWithout?.className).toMatch(/operationalRow/);
   });
 
-  it('saving an unrelated field (Tag #) while Owner is hidden never touches ownerStaffId/onReassignOwner', () => {
+  it('saving an unrelated field (Tag Number) while Owner is hidden never touches ownerStaffId/onReassignOwner', () => {
     const onUpdateCaseInfo = vi.fn();
     const onReassignOwner = vi.fn();
     render(<CaseInformationCard {...baseProps} showOwner={false} onUpdateCaseInfo={onUpdateCaseInfo} onReassignOwner={onReassignOwner} />);
 
-    const tagField = screen.getByText('Tag #').parentElement!;
+    const tagField = screen.getByText('Tag Number').parentElement!;
     fireEvent.click(within(tagField).getByRole('button'));
     const input = within(tagField).getByDisplayValue('');
     fireEvent.change(input, { target: { value: 'a123' } });
@@ -1412,13 +1460,12 @@ describe('CaseInformationCard — Task #18 (2026-09, section heading cleanup)', 
     expect(screen.queryByText('Owner')).not.toBeInTheDocument();
   });
 
-  it('9. the Tag #/Payment/Return method/Cremated Remains consolidated row remains intact for Manors', () => {
+  it('9. the Payment/Return method/Cremated Remains consolidated row remains intact for Manors (Tag Number moved to the top, 2026-10)', () => {
     render(
       <CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />,
     );
-    const row = screen.getByText('Tag #').parentElement!.parentElement!;
+    const row = screen.getByText('Payment').parentElement!.parentElement!;
     expect(Array.from(row.children).map((child) => child.textContent)).toEqual([
-      expect.stringContaining('Tag #'),
       expect.stringContaining('Payment'),
       expect.stringContaining('Return method'),
       expect.stringContaining('Cremated Remains'),
@@ -1515,7 +1562,7 @@ describe('CaseInformationCard — Notify Crematory warning layout correction (20
     expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
     expect(screen.getByText('Certifier information')).toBeInTheDocument();
     expect(screen.queryByText('Owner')).not.toBeInTheDocument();
-    expect(screen.getByText('Tag #')).toBeInTheDocument();
+    expect(screen.getByText('Tag Number')).toBeInTheDocument();
     expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
   });
 });
@@ -1586,7 +1633,7 @@ describe('CaseInformationCard — Notify Crematory badge spacing (2026-09)', () 
     expect(screen.getByText('Next of kin / primary contact')).toBeInTheDocument();
     expect(screen.getByText('Certifier information')).toBeInTheDocument();
     expect(screen.queryByText('Owner')).not.toBeInTheDocument();
-    expect(screen.getByText('Tag #')).toBeInTheDocument();
+    expect(screen.getByText('Tag Number')).toBeInTheDocument();
     expect(screen.getByText('Cremated Remains')).toBeInTheDocument();
   });
 });

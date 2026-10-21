@@ -127,6 +127,7 @@ function EditableField({
   valueClassName,
   trailingBadge,
   emptyLabel,
+  missing,
 }: {
   label: string;
   value: string;
@@ -154,6 +155,11 @@ function EditableField({
       yet", not "nobody filled it in". Display only — the stored value is
       untouched and nothing is back-filled. */
   emptyLabel?: string;
+  /** Tag Number at the top of Case Information (2026-10). How an EMPTY
+      value reads when its absence needs noticing: a subtle amber prompt
+      that is itself the way to start editing (`prompt`), or, read-only,
+      the plain statement (`readOnlyText`). Display only. */
+  missing?: { prompt: string; readOnlyText: string };
 }) {
   const readOnly = useIsReadOnly();
   const [isEditing, setIsEditing] = useState(false);
@@ -311,7 +317,15 @@ function EditableField({
         </>
       ) : (
         <div className={styles.editableValueRow}>
-          {readOnly ? (
+          {missing && !presentedValue ? (
+            readOnly ? (
+              <span className={`${styles.readOnlyValue} ${styles.missingValue}`}>{missing.readOnlyText}</span>
+            ) : (
+              <button type="button" className={`${styles.editableValue} ${styles.missingValue}`} onClick={startEditing}>
+                {missing.prompt}
+              </button>
+            )
+          ) : readOnly ? (
             <span className={`${styles.readOnlyValue} ${valueClassName ?? ''}`}>
               {presentedValue || emptyLabel || '—'}
             </span>
@@ -857,6 +871,19 @@ export function CaseInformationCard({
           value={timeOfDeath}
           onSave={(v) => onSaveTimeOfDeath(v)}
         />
+        {/* Tag Number (2026-10). With the deceased's identifying details,
+            so it is the first thing staff see — and a missing one is
+            noticed — rather than sitting in the operational row further
+            down. The SAME field, validation and patch as before; saving it
+            is still what triggers the Envelope/Certificate server-side. */}
+        <EditableField
+          label="Tag Number"
+          value={tagNumber ?? ''}
+          uppercase
+          valueClassName={styles.tagNumberValue}
+          missing={{ prompt: 'Tag Number Missing — Add Tag Number', readOnlyText: 'Tag Number Missing' }}
+          onSave={(v) => onUpdateCaseInfo({ tagNumber: v.trim().length > 0 ? v.trim() : null })}
+        />
         <EditableField
           label="Location"
           value={placeOfDeath}
@@ -967,22 +994,16 @@ export function CaseInformationCard({
       </div>
 
       {/* Task #17 layout follow-up (2026-09): for Manors (showOwner=false),
-          Tag #/Payment/Return method/Cremated Remains consolidate onto one
-          four-column row (Cremated Remains only joins it when
+          Payment/Return method/Cremated Remains consolidate onto one row
+          (Tag Number moved up to the identifying details, 2026-10) (Cremated Remains only joins it when
           returnMethod === 'pickup' — it has never applied to Shipping, so
           column 4 is simply absent rather than filled with an invented
           control there; see crematedRemainsControl's own comment).
           Generic organizations (showOwner=true) keep their exact prior
-          three-grid structure: Tag#/Payment, then Owner+Return method
+          three-grid structure: Payment, then Owner+Return method
           together (Task #16), then Cremated Remains inside the conditional
           details grid below (unchanged placement/order). */}
       <div className={`${styles.grid} ${styles.operationalRow}`}>
-        <EditableField
-          label="Tag #"
-          value={tagNumber ?? ''}
-          uppercase
-          onSave={(v) => onUpdateCaseInfo({ tagNumber: v.trim().length > 0 ? v.trim() : null })}
-        />
         <div>
           <div className={styles.fieldLabel}>Payment</div>
           <SelectField
