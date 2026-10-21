@@ -420,3 +420,16 @@
     text-align: right;
   }
 }
+
+/* Family pickup (2026-10): the release step, shown without a checkbox. */
+.releaseStepTitle {
+  font-size: var(--font-size-13-5);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary);
+}
+
+.releaseStepTitle + .terminalHint,
+.releaseStepTitle + .terminalActionRow,
+.releaseStepTitle + .terminalRecord {
+  margin-left: 0;
+}

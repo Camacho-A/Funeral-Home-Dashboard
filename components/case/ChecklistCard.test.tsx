@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
-import { ChecklistCard } from './ChecklistCard';
+import { cleanup, render, screen, fireEvent, within } from '@testing-library/react';
+import { ChecklistCard, hasVisibleChecklistItems } from './ChecklistCard';
 import type { ChecklistItemViewModel } from '../../types/caseViewModel';
 
 /**
@@ -659,13 +659,11 @@ describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)',
     return dialog;
   }
 
-  it('the checkbox itself stays read-only — the derived signal is never independently toggleable', () => {
-    // The whole point of the 2026-09 design: the checkbox must not become a
-    // second completion signal that can contradict the release record.
+  it('shows no "Family picked up ashes" checkbox — the release record is the only signal (2026-10)', () => {
     const { onToggleItem } = renderChecklist([terminalItem()]);
-    const checkbox = screen.getByRole('checkbox', { name: 'Family picked up ashes' });
-    expect(checkbox).toBeDisabled();
-    fireEvent.click(checkbox);
+    expect(screen.queryByRole('checkbox', { name: 'Family picked up ashes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByText('Release to family')).toBeInTheDocument();
     expect(onToggleItem).not.toHaveBeenCalled();
   });
 
@@ -731,29 +729,20 @@ describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)',
     expect(onUpdateCaseInfo).toHaveBeenCalledWith(expect.objectContaining({ pickupNote: null }));
   });
 
-  it('shows the recorded release once it exists, instead of the action', () => {
+  it('once the release is recorded there is nothing left to do: the step is not shown (2026-10)', () => {
     renderChecklist([
       terminalItem({ done: true }, { pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '10/09/2026' }),
     ]);
-
-    expect(screen.getByText(/Released to/)).toHaveTextContent('Released to KAREN ELLISON on 10/09/2026.');
+    expect(screen.queryByText('Release to family')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record family pickup' })).not.toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Family picked up ashes' })).toBeChecked();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
-  it('a recorded release can be corrected, pre-filled from what is stored', () => {
-    const { onUpdateCaseInfo } = renderChecklist([
-      terminalItem({ done: true }, { pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '10/09/2026' }),
-    ]);
-    fireEvent.click(screen.getByRole('button', { name: 'Correct this record' }));
-    const dialog = within(screen.getByRole('dialog'));
-
-    expect(dialog.getByLabelText('Released to')).toHaveValue('KAREN ELLISON');
-    expect(dialog.getByLabelText('Released date')).toHaveValue('10/09/2026');
-
-    fireEvent.change(dialog.getByLabelText('Released to'), { target: { value: 'MICHAEL ELLISON' } });
-    fireEvent.click(dialog.getByRole('button', { name: 'Record pickup' }));
-    expect(onUpdateCaseInfo).toHaveBeenCalledWith(expect.objectContaining({ pickupReleasedTo: 'MICHAEL ELLISON' }));
+  it('the page hides an empty Next Step card: nothing visible once the only remaining item is a recorded release', () => {
+    const released = terminalItem({ done: true }, { pickupReleasedTo: 'KAREN ELLISON', pickupReleasedAt: '10/09/2026' });
+    expect(hasVisibleChecklistItems([released])).toBe(false);
+    expect(hasVisibleChecklistItems([terminalItem()])).toBe(true);
+    expect(hasVisibleChecklistItems([released, item({ index: 1, label: 'Other', done: false })])).toBe(true);
   });
 
   it('an undecided return method explains what is needed instead of showing a dead control', () => {
@@ -778,14 +767,23 @@ describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)',
     expect(screen.queryByRole('button', { name: 'Record family pickup' })).not.toBeInTheDocument();
   });
 
-  it('a delivered shipping case shows the confirmed delivery', () => {
+  it('a delivered shipping case has nothing left to do either; one still in transit says what completes it', () => {
     renderChecklist([
       terminalItem(
         { label: 'Cremated remains confirmed delivered', done: true },
         { returnMethod: 'shipping', shippingDeliveryStatus: 'delivered', shippingDeliveredAt: '10/09/2026' },
       ),
     ]);
-    expect(screen.getByText('Delivery confirmed on 10/09/2026.')).toBeInTheDocument();
+    expect(screen.queryByText('Release to family')).not.toBeInTheDocument();
+    cleanup();
+    renderChecklist([terminalItem({ label: 'Cremated remains confirmed delivered' }, { returnMethod: 'shipping', shippingDeliveryStatus: 'shipped' })]);
+    expect(screen.getByText(/completes once/)).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('an archived case shows the step read-only — no way to record a release from it', () => {
+    renderChecklist([terminalItem()], { isArchived: true });
+    expect(screen.getByRole('button', { name: 'Record family pickup' })).toBeDisabled();
   });
 
   it('viewing a past stage read-only offers no way to record a release', () => {

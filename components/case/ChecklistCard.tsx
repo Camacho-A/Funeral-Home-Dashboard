@@ -517,6 +517,21 @@ export function ChecklistCard({
 
       <div className={styles.list}>
         {checklist.map((item) => {
+          // Family pickup (2026-10): the release record is the single source
+          // of truth, so the terminal return-of-remains item is never a
+          // checkbox. While the release is still to be recorded it shows as
+          // a plain step with its action; once recorded there is nothing
+          // left to do here, so it is not shown at all (the record stays on
+          // Case Information and in the stored checklist, untouched).
+          if (item.returnRequirement) {
+            if (item.done) return null;
+            return (
+              <div key={item.index} className={styles.item}>
+                <div className={styles.releaseStepTitle}>Release to family</div>
+                <TerminalReturnAction item={item} readOnly={readOnly} onUpdateCaseInfo={onUpdateCaseInfo} releaseSuggestions={releaseSuggestions} />
+              </div>
+            );
+          }
           // Conditional shipping/tracking (2026-09): the terminal return-of-
           // remains item is computed from returnMethod +
           // pickupStatus/shippingDeliveryStatus (domain/cases/returnMethod.ts)
@@ -561,14 +576,6 @@ export function ChecklistCard({
                   isPassword={item.fieldIsPassword}
                   disabled={readOnly || item.locked}
                   onCommit={(newValue) => onFieldChange(item.index, newValue)}
-                />
-              )}
-              {item.returnRequirement && (
-                <TerminalReturnAction
-                  item={item}
-                  readOnly={readOnly}
-                  onUpdateCaseInfo={onUpdateCaseInfo}
-                  releaseSuggestions={releaseSuggestions}
                 />
               )}
               {!item.hasField && item.requiredCaseFields && item.requiredCaseFields.length > 0 && (
@@ -779,4 +786,13 @@ function CompletionDetails({ item, resolveActorName }: { item: ChecklistItemView
       ))}
     </dl>
   );
+}
+
+/**
+ * Family pickup (2026-10): whether the current stage's checklist has
+ * anything left to show. A recorded release leaves nothing, and the page
+ * then hides the empty Next Step card.
+ */
+export function hasVisibleChecklistItems(checklist: readonly ChecklistItemViewModel[]): boolean {
+  return checklist.some((item) => !(item.returnRequirement && item.done));
 }

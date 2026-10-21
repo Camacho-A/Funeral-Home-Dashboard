@@ -29,7 +29,7 @@ import { CaseWorkflowRepairPanel } from '@/components/case/CaseWorkflowRepairPan
 import { WorkflowStageOverview } from '@/components/case/WorkflowStageOverview';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
 import { BillingCard } from '@/components/case/BillingCard';
-import { ChecklistCard } from '@/components/case/ChecklistCard';
+import { ChecklistCard, hasVisibleChecklistItems } from '@/components/case/ChecklistCard';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useArchiveCase } from '@/hooks/useArchiveCase';
 import { CaseLogCard } from '@/components/case/CaseLogCard';
@@ -434,6 +434,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       {activeTab === 'overview' && (
         <div className={styles.overview}>
           <div className={styles.overviewMain}>
+            {(viewingDisplayStage != null || hasVisibleChecklistItems(viewModel.checklist)) && (
             <section aria-label="Next step">
               <div className={styles.eyebrow}>Next step</div>
               <ChecklistCard
@@ -477,6 +478,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                 }
               />
             </section>
+            )}
 
             <div className={styles.overviewPair}>
               <CaseLogCard
