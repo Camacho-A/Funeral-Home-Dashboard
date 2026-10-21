@@ -231,3 +231,52 @@ describe('CremainsPickupSection — redesigned layout', () => {
     expect(screen.queryByRole('button', { name: /date of cremation|date received/i })).not.toBeInTheDocument();
   });
 });
+
+describe('CremainsPickupSection — clearing the Date of Cremation (2026-10)', () => {
+  const openDialog = () => fireEvent.click(screen.getByRole('button', { name: 'Edit date of cremation' }));
+
+  it('is an explicit, confirmed action that saves null on the case', () => {
+    renderSection([], { dateOfCremation: '10/10/2026' });
+    openDialog();
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.click(dialog.getByRole('button', { name: 'Clear date…' }));
+    expect(updateCaseInfo).not.toHaveBeenCalled();
+    expect(dialog.getByText(/Existing Certificates are kept/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole('button', { name: 'Clear Date' }));
+    expect(updateCaseInfo).toHaveBeenCalledTimes(1);
+    expect(updateCaseInfo).toHaveBeenCalledWith({ dateOfCremation: null });
+  });
+
+  it('"Keep Date" backs out without saving', () => {
+    renderSection([], { dateOfCremation: '10/10/2026' });
+    openDialog();
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.click(dialog.getByRole('button', { name: 'Clear date…' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Keep Date' }));
+    expect(updateCaseInfo).not.toHaveBeenCalled();
+    expect(dialog.getByRole('button', { name: 'Save Date' })).toBeInTheDocument();
+  });
+
+  it('an emptied date box can never be saved', () => {
+    renderSection([], { dateOfCremation: '10/10/2026' });
+    openDialog();
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText('Date of cremation'), { target: { value: '' } });
+    expect(dialog.getByRole('button', { name: 'Save Date' })).toBeDisabled();
+    expect(updateCaseInfo).not.toHaveBeenCalled();
+  });
+
+  it('offers nothing to clear when no date is recorded, and never on Date Received', () => {
+    renderSection([], { dateOfCremation: null, cremainsReceivedAt: '10/12/2026' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add date of cremation' }));
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Clear date…' })).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit date received' }));
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Clear date…' })).not.toBeInTheDocument();
+  });
+
+  it('archived: no edit or clear', () => {
+    renderSection([], { dateOfCremation: '10/10/2026', isDeleted: true });
+    expect(screen.queryByRole('button', { name: 'Edit date of cremation' })).not.toBeInTheDocument();
+  });
+});

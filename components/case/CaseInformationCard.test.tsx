@@ -1931,6 +1931,44 @@ describe('CaseInformationCard — Date of Cremation (2026-10)', () => {
     expect(field().getByRole('button', { name: '07/15/2026' })).toBeInTheDocument();
   });
 
+  it('an emptied box is never a clear — Enter puts the recorded date back, as leaving the box does', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(field().getByRole('button', { name: '07/15/2026' }));
+    const input = field().getByDisplayValue('07/15/2026');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(field().getByRole('button', { name: '07/15/2026' })).toBeInTheDocument();
+  });
+
+  it('clearing a recorded date is an explicit, confirmed action that saves null', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(field().getByRole('button', { name: 'Clear Date of Cremation' }));
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    const confirm = within(screen.getByRole('group', { name: 'Confirm clearing Date of Cremation' }));
+    expect(confirm.getByText(/Existing Certificates are kept/)).toBeInTheDocument();
+    fireEvent.click(confirm.getByRole('button', { name: 'Clear date' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledTimes(1);
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ dateOfCremation: null });
+    expect(field().getByText('Not recorded')).toBeInTheDocument();
+  });
+
+  it('cancelling the confirmation keeps the date', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(field().getByRole('button', { name: 'Clear Date of Cremation' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Confirm clearing Date of Cremation' })).getByRole('button', { name: 'Cancel' }));
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
+    expect(field().getByRole('button', { name: '07/15/2026' })).toBeInTheDocument();
+  });
+
+  it('nothing to clear when no date is recorded', () => {
+    render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation={null} onUpdateCaseInfo={vi.fn()} />);
+    expect(field().queryByRole('button', { name: 'Clear Date of Cremation' })).not.toBeInTheDocument();
+  });
+
   it('archived: read-only', () => {
     render(<CaseInformationCard {...baseProps} isArchived showDateOfCremation dateOfCremation="07/15/2026" onUpdateCaseInfo={vi.fn()} />);
     expect(field().getByText('07/15/2026')).toBeInTheDocument();

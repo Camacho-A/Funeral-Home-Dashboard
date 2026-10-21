@@ -288,6 +288,7 @@ function CaseDateDialog({
   error,
   onCancel,
   onSubmit,
+  onClear,
 }: {
   title: string;
   label: string;
@@ -297,8 +298,13 @@ function CaseDateDialog({
   error: string | null;
   onCancel: () => void;
   onSubmit: (isoDate: string) => void;
+  /** Date of Cremation (2026-10): removing a recorded date is its own,
+      confirmed action — an emptied date box can never be saved. Offered
+      only when a date is recorded. */
+  onClear?: { confirmText: string; run: () => void };
 }) {
   const [date, setDate] = useState(initialDate);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const inFuture = Boolean(date) && Boolean(organizationToday) && date > organizationToday;
 
   return (
@@ -342,14 +348,40 @@ function CaseDateDialog({
             <span>{error}</span>
           </p>
         )}
+        {confirmingClear && onClear && (
+          <p className={`${styles.notice} ${styles.noticeWarning}`} role="alert">
+            <span className={styles.noticeIcon} aria-hidden="true">
+              !
+            </span>
+            <span>{onClear.confirmText}</span>
+          </p>
+        )}
       </div>
       <div className="sx-modal-footer">
-        <button type="button" className="sx-btn sx-btn-secondary" onClick={onCancel} disabled={busy}>
-          Cancel
-        </button>
-        <button type="button" className="sx-btn sx-btn-primary" disabled={busy || !date || inFuture} onClick={() => onSubmit(date)}>
-          {busy ? 'Saving…' : 'Save Date'}
-        </button>
+        {confirmingClear && onClear ? (
+          <>
+            <button type="button" className="sx-btn sx-btn-secondary" onClick={() => setConfirmingClear(false)} disabled={busy}>
+              Keep Date
+            </button>
+            <button type="button" className="sx-btn sx-btn-danger" onClick={onClear.run} disabled={busy}>
+              Clear Date
+            </button>
+          </>
+        ) : (
+          <>
+            {onClear && initialDate && (
+              <button type="button" className="sx-btn sx-btn-ghost" style={{ marginRight: 'auto' }} onClick={() => setConfirmingClear(true)} disabled={busy}>
+                Clear date…
+              </button>
+            )}
+            <button type="button" className="sx-btn sx-btn-secondary" onClick={onCancel} disabled={busy}>
+              Cancel
+            </button>
+            <button type="button" className="sx-btn sx-btn-primary" disabled={busy || !date || inFuture} onClick={() => onSubmit(date)}>
+              {busy ? 'Saving…' : 'Save Date'}
+            </button>
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -745,6 +777,18 @@ export function CremainsPickupSection({
           error={error}
           onCancel={closeDialog}
           onSubmit={(iso) => submitCaseDate(dialog === 'cremationDate' ? 'dateOfCremation' : 'cremainsReceivedAt', iso)}
+          onClear={
+            dialog === 'cremationDate' && cremationDate
+              ? {
+                  confirmText: 'Clear the Date of Cremation? Existing Certificates are kept; no new one is generated.',
+                  run: () => {
+                    setError(null);
+                    caseMutations.updateCaseInfo({ dateOfCremation: null });
+                    closeDialog();
+                  },
+                }
+              : undefined
+          }
         />
       )}
 

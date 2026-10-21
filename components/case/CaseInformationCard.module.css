@@ -417,3 +417,48 @@ button.missingValue:focus-visible {
   grid-column: 1 / -1;
   font-size: 13px;
 }
+
+/* Date of Cremation (2026-10): the explicit, confirmed way to remove a
+   recorded date. */
+.clearValueButton {
+  margin-left: 10px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sx-muted, #6b7280);
+  cursor: pointer;
+}
+
+.clearValueButton:hover {
+  text-decoration: underline;
+}
+
+.clearConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sx-subtle, #f6f7f9);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--sx-text, #1f2937);
+}
+
+.clearConfirmActions {
+  display: flex;
+  gap: 14px;
+}
+
+.clearConfirmButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--solis-danger, var(--color-danger-text, #b42318));
+  cursor: pointer;
+}

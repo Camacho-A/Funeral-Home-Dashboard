@@ -82,4 +82,25 @@ describe('Date of Cremation — Case Information and the Schedule tab stay in sy
     fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
     expect(infoField().getByRole('button', { name: '07/16/2026' })).toBeInTheDocument();
   });
+
+  it('a confirmed clear on Case Information empties the Schedule tab too, and the date can be entered again', () => {
+    render(<Harness initial={{ ...base, dateOfCremation: '07/15/2026' }} />);
+    fireEvent.click(infoField().getByRole('button', { name: 'Clear Date of Cremation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear date' }));
+    expect(scheduleValue()).toHaveTextContent('Not recorded');
+    expect(infoField().getByText('Not recorded')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('schedule')).getByRole('button', { name: 'Add date of cremation' }));
+    fireEvent.change(screen.getByLabelText('Date of cremation'), { target: { value: '2026-07-17' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Date' }));
+    expect(infoField().getByRole('button', { name: '07/17/2026' })).toBeInTheDocument();
+  });
+
+  it('a confirmed clear on the Schedule tab empties Case Information too', () => {
+    render(<Harness initial={{ ...base, dateOfCremation: '07/15/2026' }} />);
+    fireEvent.click(within(screen.getByTestId('schedule')).getByRole('button', { name: 'Edit date of cremation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear date…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Date' }));
+    expect(infoField().getByText('Not recorded')).toBeInTheDocument();
+    expect(scheduleValue()).toHaveTextContent('Not recorded');
+  });
 });

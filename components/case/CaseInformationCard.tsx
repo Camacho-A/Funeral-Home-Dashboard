@@ -130,6 +130,7 @@ function EditableField({
   emptyLabel,
   missing,
   required = false,
+  clear,
 }: {
   label: string;
   value: string;
@@ -166,6 +167,10 @@ function EditableField({
       erasing a recorded value — a date can be corrected here, never
       blanked by accident. */
   required?: boolean;
+  /** Date of Cremation (2026-10): the one way to remove a recorded value —
+      a "Clear" action beside it that asks for confirmation first. Never
+      offered on a read-only (archived) card or while the field is empty. */
+  clear?: { confirmText: string; onConfirm: () => void };
 }) {
   const readOnly = useIsReadOnly();
   const [isEditing, setIsEditing] = useState(false);
@@ -176,6 +181,7 @@ function EditableField({
   // between "save clicked" and "the mutation's response updates the query
   // cache" — cleared once the real value actually catches up to match.
   const [pendingValue, setPendingValue] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
 
   useEffect(() => {
     if (pendingValue !== null && value === pendingValue) setPendingValue(null);
@@ -191,6 +197,7 @@ function EditableField({
   const presentedValue = kind === 'phone' ? formatPhoneNumber(displayValue) : displayValue;
 
   function startEditing() {
+    setConfirmingClear(false);
     setDraft(displayValue);
     setError(null);
     setIsEditing(true);
@@ -262,6 +269,14 @@ function EditableField({
       e.preventDefault();
       if (kind === 'date') {
         const expanded = expandTwoDigitYearInDateInput(draft);
+        // An emptied required box is not a request to erase the value:
+        // put it back, exactly as leaving the box does.
+        if (expanded === '' && required) {
+          setDraft(displayValue);
+          setError(null);
+          setIsEditing(false);
+          return;
+        }
         if (expanded !== '' && !isValidCalendarDate(expanded)) {
           setError('Enter a valid date (MM/DD/YYYY).');
           return;
@@ -345,6 +360,32 @@ function EditableField({
             </button>
           )}
           {trailingBadge}
+          {clear && !readOnly && presentedValue && !confirmingClear && (
+            <button type="button" className={styles.clearValueButton} aria-label={`Clear ${label}`} onClick={() => setConfirmingClear(true)}>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+      {clear && !readOnly && confirmingClear && !isEditing && (
+        <div className={styles.clearConfirm} role="group" aria-label={`Confirm clearing ${label}`}>
+          <span>{clear.confirmText}</span>
+          <span className={styles.clearConfirmActions}>
+            <button
+              type="button"
+              className={styles.clearConfirmButton}
+              onClick={() => {
+                setConfirmingClear(false);
+                setPendingValue('');
+                clear.onConfirm();
+              }}
+            >
+              Clear date
+            </button>
+            <button type="button" className={styles.editNameButton} onClick={() => setConfirmingClear(false)}>
+              Cancel
+            </button>
+          </span>
         </div>
       )}
     </div>
@@ -903,7 +944,8 @@ export function CaseInformationCard({
             Saved as typed (MM/DD/YYYY) — never through a Date object, so
             no timezone can move the day. A valid date here satisfies the
             Certificate's date requirement through the same server-side
-            trigger the Schedule tab's edit uses. */}
+            trigger the Schedule tab's edit uses. Removing a recorded date
+            takes the explicit, confirmed "Clear" — an emptied box reverts. */}
         {showDateOfCremation && (
           <EditableField
             label="Date of Cremation"
@@ -912,6 +954,10 @@ export function CaseInformationCard({
             required
             emptyLabel="Not recorded"
             onSave={(v) => onUpdateCaseInfo({ dateOfCremation: v })}
+            clear={{
+              confirmText: 'Clear the Date of Cremation? Existing Certificates are kept; no new one is generated.',
+              onConfirm: () => onUpdateCaseInfo({ dateOfCremation: null }),
+            }}
             crossFieldValidate={(v) => getFutureDateError(v, 'Date of Cremation') ?? getCremationBeforeDeathError(v, dateOfDeath)}
           />
         )}
