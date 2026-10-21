@@ -22,6 +22,7 @@ import {
 } from '@/domain/cases/paymentDisplay';
 import { additionalItemsLabel } from '@/domain/organization/caseOrderTerminology';
 import styles from './CaseOrderCard.module.css';
+import { MANUAL_PAYMENT_METHODS, MANUAL_PAYMENT_METHOD_LABEL, looksLikeCardNumber, type ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods';
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces
@@ -78,7 +79,7 @@ export function CaseOrderCard({
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [editOpen, setEditOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
-  const [method, setMethod] = useState<'cash' | 'check' | 'other'>('cash');
+  const [method, setMethod] = useState<ManualPaymentMethod>('cash');
   const [amountInput, setAmountInput] = useState('');
   const [reference, setReference] = useState('');
 
@@ -202,13 +203,15 @@ export function CaseOrderCard({
           {recordOpen && (
             <div className={styles.recordPaymentPanel}>
               <strong>Record a payment</strong>
-              <p className={styles.recordPaymentHint}>For cash, check, or any other payment you have collected.</p>
+              <p className={styles.recordPaymentHint}>For cash, check, credit card, or any other payment you have already collected. Nothing is charged here.</p>
               <label className={styles.recordPaymentField}>
                 Method
-                <SelectField value={method} onChange={(e) => setMethod(e.target.value as 'cash' | 'check' | 'other')}>
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="other">Other</option>
+                <SelectField value={method} onChange={(e) => setMethod(e.target.value as ManualPaymentMethod)}>
+                  {MANUAL_PAYMENT_METHODS.map((value) => (
+                    <option key={value} value={value}>
+                      {MANUAL_PAYMENT_METHOD_LABEL[value]}
+                    </option>
+                  ))}
                 </SelectField>
               </label>
               <label className={styles.recordPaymentField}>
@@ -216,11 +219,21 @@ export function CaseOrderCard({
                 <TextField inputMode="decimal" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
               </label>
               <label className={styles.recordPaymentField}>
-                Reference (optional — e.g. check number)
+                {method === 'credit_card' ? 'Reference (optional — e.g. approval code)' : 'Reference (optional — e.g. check number)'}
                 <TextField value={reference} onChange={(e) => setReference(e.target.value)} />
               </label>
+              {method === 'credit_card' && (
+                <p className={styles.recordPaymentHint}>Never enter the card number, expiration date or security code.</p>
+              )}
+              {method === 'credit_card' && looksLikeCardNumber(reference) && (
+                <div className={styles.error} role="alert">
+                  This looks like a card number. Remove it — use an approval code or receipt number instead.
+                </div>
+              )}
               <div className={styles.recordPaymentActions}>
-                <Button onClick={submitManualPayment} disabled={recordManualPayment.isPending || dollarsToCents(amountInput) === null}>
+                <Button onClick={submitManualPayment} disabled={
+                    recordManualPayment.isPending || dollarsToCents(amountInput) === null || (method === 'credit_card' && looksLikeCardNumber(reference))
+                  }>
                   {recordManualPayment.isPending ? 'Recording…' : 'Save Payment'}
                 </Button>
                 <Button variant="secondary" onClick={() => setRecordOpen(false)}>

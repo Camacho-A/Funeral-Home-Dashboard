@@ -260,6 +260,72 @@ describe('CaseOrderCard — Record Payment (manual)', () => {
     await waitFor(() => expect(screen.queryByText('Record a payment')).not.toBeInTheDocument());
   });
 
+  it('offers Credit Card alongside every earlier method', async () => {
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Record Payment' }));
+    const options = Array.from(screen.getByRole('combobox').querySelectorAll('option')).map((o) => [o.value, o.textContent]);
+    expect(options).toEqual([
+      ['cash', 'Cash'],
+      ['check', 'Check'],
+      ['credit_card', 'Credit Card'],
+      ['other', 'Other'],
+    ]);
+  });
+
+  it('records a Credit Card payment through the same request — no card fields, nothing charged', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      onManualPaymentRequest: (body) => {
+        requestBody = body as Record<string, unknown>;
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Record Payment' }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'credit_card' } });
+    expect(screen.getByText('Reference (optional — e.g. approval code)')).toBeInTheDocument();
+    expect(screen.getByText('Never enter the card number, expiration date or security code.')).toBeInTheDocument();
+    fireEvent.change(screen.getByDisplayValue('1180.00'), { target: { value: '300' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Payment' }));
+    await waitFor(() => expect(requestBody).not.toBeNull());
+    expect(requestBody).toMatchObject({ method: 'credit_card', amountCents: 30_000 });
+    expect(Object.keys(requestBody!).sort()).toEqual(['amountCents', 'idempotencyKey', 'method', 'organizationId']);
+  });
+
+  it('will not save a Credit Card payment whose reference is a card number', async () => {
+    let requested = false;
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      onManualPaymentRequest: () => {
+        requested = true;
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Record Payment' }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'credit_card' } });
+    const reference = screen.getByText('Reference (optional — e.g. approval code)').querySelector('input')!;
+    fireEvent.change(reference, { target: { value: '4111 1111 1111 1111' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('This looks like a card number');
+    expect(screen.getByRole('button', { name: 'Save Payment' })).toBeDisabled();
+    fireEvent.change(reference, { target: { value: 'APPR 0042' } });
+    expect(screen.getByRole('button', { name: 'Save Payment' })).toBeEnabled();
+    expect(requested).toBe(false);
+  });
+
+  it('payment history shows a recorded Credit Card payment as "Credit Card"', async () => {
+    renderCard({
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [
+        {
+          id: 'p3', organizationId: 'managed-cremations', caseId: 'case-1', caseOrderId: 'order-1', provider: 'manual',
+          providerCheckoutId: 'manual:p3', providerPaymentId: null, idempotencyKey: 'k3', checkoutUrl: null,
+          status: 'succeeded', amount: 30_000, currency: 'usd', purpose: 'Case order balance due', cardBrand: null, cardLast4: null,
+          receiptReference: 'Credit Card', failureCode: null, failureMessage: null,
+          createdAt: '2026-01-01T00:00:00.000Z', paidAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(await screen.findByText('Credit Card')).toBeInTheDocument();
+  });
+
   it('disables Record Payment when there is no remaining balance', async () => {
     renderCard({ order: { order: { ...ACTIVE_ORDER, balanceDue: 0 }, lineItems: LINE_ITEMS, auditEntries: [] } });
     expect(await screen.findByRole('button', { name: 'Record Payment' })).toBeDisabled();

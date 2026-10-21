@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { paymentsClient } from '@/services/paymentsClient';
 import { useOrganization } from './useOrganization';
+import type { ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Same
@@ -40,7 +41,7 @@ export function useRecordManualPayment(caseId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { method: 'cash' | 'check' | 'other'; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string }) =>
+    mutationFn: (input: { method: ManualPaymentMethod; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string }) =>
       paymentsClient.recordManualPayment(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });

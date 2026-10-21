@@ -225,6 +225,87 @@ describe('POST .../payments/manual — success', () => {
   });
 });
 
+describe('POST .../payments/manual — Credit Card (2026-10, recorded only, never processed)', () => {
+  it('every earlier method is still accepted, with its own label', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const labels: string[] = [];
+    for (const [i, method] of ['cash', 'check', 'other', 'credit_card'].entries()) {
+      const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method, amountCents: 1_000, idempotencyKey: `method-${i}` });
+      expect(response.status).toBe(201);
+      labels.push((await response.json()).payment.receiptReference);
+    }
+    expect(labels).toEqual(['Cash', 'Check', 'Other', 'Credit Card']);
+  });
+
+  it('records a Credit Card payment through the same workflow as cash: succeeded, attributed, audited, no card data', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const cash = await (await postRequest(KNOWN_CASE().id, { ...VALID_BODY, amountCents: 1_000, idempotencyKey: 'cash-1' })).json();
+    const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'credit_card', reference: 'APPR 0042', amountCents: 2_000, idempotencyKey: 'card-1' });
+    expect(response.status).toBe(201);
+    const { payment } = await response.json();
+    expect(payment).toMatchObject({ provider: 'manual', status: 'succeeded', amount: 2_000, receiptReference: 'Credit Card — APPR 0042', cardBrand: null, cardLast4: null });
+    expect(payment.paidAt).toBeTruthy();
+    expect(payment.initiatedByStaffProfileId).toBe(cash.payment.initiatedByStaffProfileId);
+    expect(activityEventFixtures.filter((e) => e.eventType === 'payment.recorded')).toHaveLength(2);
+  });
+
+  it('partial, then multiple Credit Card payments reduce the balance exactly, and the receipt prints "Credit Card"', async () => {
+    const order = seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const steps: Array<[string, number]> = [
+      ['card-a', 50_000],
+      ['card-b', 30_000],
+      ['card-c', 40_000],
+    ];
+    const balances: number[] = [];
+    for (const [key, amountCents] of steps) {
+      const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'credit_card', amountCents, idempotencyKey: key });
+      expect(response.status).toBe(201);
+      balances.push(caseOrderFixtures.find((o) => o.id === order.id)!.balanceDue);
+    }
+    expect(balances).toEqual([70_000, 40_000, 0]);
+    // Nothing more can be recorded once paid in full.
+    expect((await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'credit_card', amountCents: 1, idempotencyKey: 'card-d' })).status).toBe(400);
+
+    const { buildReceiptOfPaymentModel } = await import('@/services/billingDocumentService');
+    const { renderReceiptOfPaymentHtml } = await import('@/domain/billing/renderReceiptOfPaymentHtml');
+    const receipt = await buildReceiptOfPaymentModel({ caseId: KNOWN_CASE().id }, DEFAULT_ORGANIZATION_ID, 'mock');
+    // (Recorded within the same instant here, so compared without order.)
+    expect(receipt.payments.map((p) => p.methodLabel)).toEqual(['Credit Card', 'Credit Card', 'Credit Card']);
+    expect(receipt.payments.map((p) => p.amountCents).sort((a, b) => a - b)).toEqual([30_000, 40_000, 50_000]);
+    expect(receipt).toMatchObject({ status: 'paid_in_full', paymentCents: BALANCE_DUE, balanceDueCents: 0 });
+    const html = renderReceiptOfPaymentHtml(receipt);
+    expect(html).toContain('Credit Card');
+    expect(html).not.toMatch(/manual|credit_card/);
+  });
+
+  it('refuses a card number typed into the reference, and records nothing', async () => {
+    const order = seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    for (const [i, reference] of ['4111 1111 1111 1111', '4111-1111-1111-1111', 'card 4242424242424242'].entries()) {
+      const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'credit_card', reference, idempotencyKey: `pan-${i}` });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toMatch(/Do not enter a card number/);
+    }
+    expect(paymentRecordFixtures).toHaveLength(0);
+    expect(caseOrderFixtures.find((o) => o.id === order.id)!.balanceDue).toBe(BALANCE_DUE);
+  });
+
+  it('still refuses raw card fields for a Credit Card payment', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    const response = await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'credit_card', cardNumber: '4111111111111111', cvv: '123' });
+    expect(response.status).toBe(400);
+    expect(paymentRecordFixtures).toHaveLength(0);
+  });
+
+  it('existing payment records keep their methods', async () => {
+    seedActiveOrder(KNOWN_CASE().id, BALANCE_DUE);
+    await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'check', reference: '1234', amountCents: 1_000, idempotencyKey: 'old-check' });
+    const before = JSON.stringify(paymentRecordFixtures);
+    await postRequest(KNOWN_CASE().id, { ...VALID_BODY, method: 'credit_card', amountCents: 1_000, idempotencyKey: 'new-card' });
+    expect(JSON.stringify(paymentRecordFixtures.slice(0, 1))).toBe(JSON.stringify(JSON.parse(before)));
+    expect(paymentRecordFixtures.map((p) => p.receiptReference)).toEqual(['Check — 1234', 'Credit Card']);
+  });
+});
+
 describe('POST .../payments/manual — automatic Statement and Receipt (2026-10)', () => {
   it('schedules both documents after a new payment', async () => {
     runAfterResponse.mockClear();

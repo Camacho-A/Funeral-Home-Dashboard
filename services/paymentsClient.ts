@@ -1,5 +1,6 @@
 import type { OrganizationContext } from '../types/organization';
 import type { PaymentRecord } from '../types/payment';
+import type { ManualPaymentMethod } from '../domain/billing/manualPaymentMethods';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Client-side calls to
@@ -36,14 +37,14 @@ export async function getPayment(
   return body.payment;
 }
 
-/** Manors launch-prep (manual payment recording) — cash/check/other,
+/** Manors launch-prep (manual payment recording) — cash/check/credit card/other,
     collected outside a card processor. Since the Clover removal (2026-10)
     this is the only way staff register a payment; the server still
     validates the amount against the case's own balance due. */
 export async function recordManualPayment(
   context: OrganizationContext,
   caseId: string,
-  input: { method: 'cash' | 'check' | 'other'; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string },
+  input: { method: ManualPaymentMethod; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string },
 ): Promise<{ payment: PaymentRecord }> {
   const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/payments/manual`, {
     method: 'POST',

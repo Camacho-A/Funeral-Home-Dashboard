@@ -19,11 +19,13 @@ import { getActiveCaseOrder } from '@/services/pricingService';
 import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { recordPaymentRecorded } from '@/services/activityService';
+import { MANUAL_PAYMENT_METHODS, MANUAL_PAYMENT_METHOD_LABEL, isManualPaymentMethod, looksLikeCardNumber } from '@/domain/billing/manualPaymentMethods';
 
 /**
  * Manors launch-prep (manual payment recording). Records a payment collected
  * OUTSIDE a card processor — cash, check, or other — against a case's active
- * CaseOrder. Deliberately mirrors the Clover checkout route's own discipline:
+ * CaseOrder (credit card added 2026-10 — still only a record of a card
+ * payment taken outside SOLIS; nothing is charged). Deliberately mirrors the Clover checkout route's own discipline:
  * the request may never carry raw card data (checked anyway, cheap and
  * uniform), the case must belong to the caller's authorized organization, and
  * the amount is validated against the case's own server-resolved balance due
@@ -39,13 +41,6 @@ const MAX_PURPOSE_LENGTH = 200;
 const MAX_REFERENCE_LENGTH = 100;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 const DEFAULT_PURPOSE = 'Case order balance due';
-const MANUAL_PAYMENT_METHODS = ['cash', 'check', 'other'] as const;
-type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
-
-function isManualPaymentMethod(value: unknown): value is ManualPaymentMethod {
-  return typeof value === 'string' && (MANUAL_PAYMENT_METHODS as readonly string[]).includes(value);
-}
-const METHOD_LABEL: Record<ManualPaymentMethod, string> = { cash: 'Cash', check: 'Check', other: 'Other' };
 
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
   const csrfResponse = requireSameOrigin(request);
@@ -91,6 +86,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const method = b.method;
   const reference =
     typeof b.reference === 'string' && b.reference.trim().length > 0 && b.reference.length <= MAX_REFERENCE_LENGTH ? b.reference.trim() : null;
+  // A card payment is recorded, never processed: a full card number must
+  // never be stored (or printed on a receipt) as its reference.
+  if (method === 'credit_card' && reference && looksLikeCardNumber(reference)) {
+    return NextResponse.json(
+      { error: 'Do not enter a card number. Use an approval code or receipt number, or leave the reference blank.' },
+      { status: 400 },
+    );
+  }
   const purpose =
     typeof b.purpose === 'string' && b.purpose.trim().length > 0 && b.purpose.length <= MAX_PURPOSE_LENGTH ? b.purpose.trim() : DEFAULT_PURPOSE;
   const currency = 'usd';
@@ -136,7 +139,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   const paymentId = crypto.randomUUID();
   const nowIso = new Date().toISOString();
-  const receiptReference = [METHOD_LABEL[method], reference].filter(Boolean).join(' — ');
+  const receiptReference = [MANUAL_PAYMENT_METHOD_LABEL[method], reference].filter(Boolean).join(' — ');
 
   const { record, isNew } = await createManualSucceededPayment(
     {
