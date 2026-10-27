@@ -37,6 +37,9 @@ import { CaseFormsSection } from './CaseFormsSection';
 import { Modal } from '@/components/ui/Modal';
 import { DocumentPreview } from '@/components/documents/DocumentPreview';
 import { printStoredDocument } from '@/utils/print';
+import { PrintLabelDialog } from './PrintLabelDialog';
+import { isCremationLabelDocument } from '@/domain/labels/cremationLabel';
+import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 
 /**
  * Phase 25 (Document Generation & Template Management). The Case Detail
@@ -105,6 +108,10 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkExcluded, setBulkExcluded] = useState<{ action: 'Print All' | 'Download All'; items: BulkDocumentExclusion[] } | null>(null);
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
+  /** Cremation Label (2026-10): the label dialog — for the case (null id)
+      or for one saved version from a row. */
+  const [labelDialog, setLabelDialog] = useState<{ documentId?: string } | null>(null);
+  const labelsEnabled = getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel;
 
   async function handleDownloadAll() {
     setBulkError(null);
@@ -197,9 +204,15 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   function renderDocumentRow(doc: CaseDocumentWithActorName) {
     const typeLabel = doc.documentTypeKey ? (getDocumentTypeDefinition(doc.documentTypeKey)?.displayName ?? doc.documentTypeKey) : 'Uploaded file';
     const canDownload = isCaseDocumentDownloadable(doc.status);
-    const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active';
+    // A saved Cremation Label is viewed and printed through DYMO Connect,
+    // never re-made from a template: a new version is saved from the label
+    // dialog, and a label is never sent for signature.
+    const isLabel = isCremationLabelDocument(doc);
+    const canRegenerate = canGenerate && doc.origin === 'generated' && doc.status === 'active' && !isLabel;
     const canArchiveThis = canArchive && doc.status === 'active';
-    const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed';
+    const canRequestSignatureForThis = canRequestSignature && doc.status === 'active' && doc.signatureStatus !== 'signed' && !isLabel;
+    const openView = () =>
+      isLabel ? setLabelDialog({ documentId: doc.id }) : setViewingDoc({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType, url: viewUrl });
     const viewUrl = buildCaseDocumentViewUrl(organizationId, caseId, doc.id);
     const downloadUrl = buildCaseDocumentDownloadUrl(organizationId, caseId, doc.id);
 
@@ -214,9 +227,10 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
 
     const items: RowMenuItem[] = [];
     if (canDownload) {
-      items.push({ label: 'View', onSelect: () => setViewingDoc({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType, url: viewUrl }) });
+      items.push({ label: 'View', onSelect: openView });
       items.push({ label: 'Download', href: downloadUrl, onSelect: () => {} });
-      items.push({ label: printingDocId === doc.id ? 'Preparing…' : 'Print', onSelect: () => handlePrint(doc), disabled: printingDocId === doc.id });
+      if (isLabel) items.push({ label: 'Print', onSelect: openView });
+      else items.push({ label: printingDocId === doc.id ? 'Preparing…' : 'Print', onSelect: () => handlePrint(doc), disabled: printingDocId === doc.id });
     }
     if (canRegenerate) {
       items.push({
@@ -263,7 +277,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               <button
                 type="button"
                 className="sx-btn sx-btn-ghost sx-btn-sm sx-doc-view"
-                onClick={() => setViewingDoc({ id: doc.id, fileName: doc.fileName, mimeType: doc.mimeType, url: viewUrl })}
+                onClick={openView}
               >
                 View
               </button>
@@ -323,6 +337,10 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
         </div>
       </div>
 
+      {labelDialog && (
+        <PrintLabelDialog open onClose={() => setLabelDialog(null)} caseId={caseId} organizationId={organizationId} documentId={labelDialog.documentId} />
+      )}
+
       {subTab === 'forms' && <CaseFormsSection caseId={caseId} />}
 
       {subTab === 'history' &&
@@ -371,6 +389,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
                   {officialPending === kind ? 'Generating…' : kind === 'envelope' ? 'Generate Envelope' : 'Generate Certificate'}
                 </button>
               ))}
+            {canGenerate && labelsEnabled && (
+              <button type="button" className="sx-btn sx-btn-secondary" onClick={() => setLabelDialog({})}>
+                Cremation Label
+              </button>
+            )}
             {canUpload && (
               <>
                 <button type="button" className="sx-btn sx-btn-primary" onClick={() => fileInputRef.current?.click()} disabled={upload.isPending}>

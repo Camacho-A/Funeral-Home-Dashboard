@@ -1,0 +1,59 @@
+.previewFrame {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--sx-border-soft);
+  border-radius: 8px;
+  background: #fff;
+}
+
+/* DYMO's own rendering, shown at its natural proportions. */
+.preview {
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  height: auto;
+}
+
+.values {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0 0 14px;
+}
+
+.values dt {
+  color: var(--sx-text-2);
+}
+
+.values dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  margin: 0 0 12px;
+  color: var(--sx-text-2);
+}
+
+.savedLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+}
+
+.savedLine .muted {
+  margin: 0;
+}
+
+/* The case changed after the label was saved. */
+.changed {
+  display: block;
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  border: 1px solid oklch(0.85 0.08 70);
+}

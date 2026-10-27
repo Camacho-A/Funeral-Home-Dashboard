@@ -37,6 +37,10 @@ export const DOCUMENT_TYPES = {
       certificate (services/officialDocumentTemplates.ts), never authored
       through the template-merge path. */
   CREMATION_FORM_CERTIFICATE_OF_CREMATION: { key: 'cremation_form.certificate_of_cremation', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Certificate of Cremation' },
+  /** 2026-10. The filled DYMO label for the cremated remains, saved from
+      Print Label (domain/labels/) as a .dymo file — never generated from a
+      DocumentTemplate. */
+  CREMATION_FORM_CREMATION_LABEL: { key: 'cremation_form.cremation_label', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Cremation Label' },
 
   BURIAL_FORM_PERMIT_APPLICATION: { key: 'burial_form.permit_application', category: 'burial_form' as DocumentTemplateCategory, displayName: 'Burial Permit Application' },
   BURIAL_FORM_INTERMENT_ORDER: { key: 'burial_form.interment_order', category: 'burial_form' as DocumentTemplateCategory, displayName: 'Interment Order' },

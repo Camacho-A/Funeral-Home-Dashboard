@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { loadCaseOnServer } from './serverCaseLoader';
+import { CREMATION_LABEL_MIME_TYPE } from '@/domain/labels/cremationLabel';
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import type { DataAdapterMode } from '../lib/env';
@@ -584,12 +585,15 @@ export async function generateBillingDocument(
     idFactory: () => string;
     now?: string;
   } & (
-    | { bodyHtml: string; buildPdf?: never }
+    | { bodyHtml: string; buildPdf?: never; buildFile?: never }
     /** 2026-10: a document filled from an official PDF template (Envelope,
         Certificate of Cremation) brings its own bytes instead of HTML to
         render. Everything else — versioning, superseding, audit, the
         generated/failed notification — is the same path. */
-    | { buildPdf: () => Promise<Uint8Array>; bodyHtml?: never }
+    | { buildPdf: () => Promise<Uint8Array>; bodyHtml?: never; buildFile?: never }
+    /** 2026-10: a finished non-PDF file (the Cremation Label, a .dymo
+        file) stored exactly as built, with its own type and extension. */
+    | { buildFile: () => Promise<Uint8Array>; mimeType: string; fileExtension: string; bodyHtml?: never; buildPdf?: never }
   ),
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
@@ -617,7 +621,7 @@ export async function generateBillingDocument(
     documentTypeKey: params.documentTypeKey,
     category: params.category,
     fileName: params.fileName,
-    mimeType: 'application/pdf',
+    mimeType: params.buildFile ? params.mimeType : 'application/pdf',
     fileSizeBytes: 0,
     checksumSha256: '',
     storageKey: '',
@@ -637,12 +641,14 @@ export async function generateBillingDocument(
 
   let finalDocument: CaseDocument;
   try {
-    const pdfBuffer = params.buildPdf
-      ? Buffer.from(await params.buildPdf())
-      : await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
+    const pdfBuffer = params.buildFile
+      ? Buffer.from(await params.buildFile())
+      : params.buildPdf
+        ? Buffer.from(await params.buildPdf())
+        : await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
     const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-    const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.pdf`;
-    const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, 'application/pdf');
+    const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.${params.buildFile ? params.fileExtension : 'pdf'}`;
+    const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, pendingDocument.mimeType);
     finalDocument = await completeDocumentGeneration(
       ctx.organizationId,
       documentId,
@@ -651,10 +657,10 @@ export async function generateBillingDocument(
     );
   } catch (error) {
     await completeDocumentGeneration(ctx.organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode);
-    await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: params.fileName.replace(/\.pdf$/i, ''), succeeded: false }, dataAdapterMode);
+    await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: generatedDocumentTitle(params.fileName), succeeded: false }, dataAdapterMode);
     throw new DocumentServiceError(`Billing document generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: params.fileName.replace(/\.pdf$/i, ''), succeeded: true }, dataAdapterMode);
+  await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: generatedDocumentTitle(params.fileName), succeeded: true }, dataAdapterMode);
 
   // Phase 39 audit trail: a system-rendered compliance document is still a
   // CaseDocument — reuse the existing document.generated/.regenerated events
@@ -719,12 +725,18 @@ export async function generateBillingDocument(
     }
   } else {
     try {
-      await recordDocumentGenerated(ctx, params.caseId, documentId, `(system:${params.documentTypeKey})`, docVersion, params.fileName.replace(/\.pdf$/, ''), dataAdapterMode);
+      await recordDocumentGenerated(ctx, params.caseId, documentId, `(system:${params.documentTypeKey})`, docVersion, params.fileName.replace(/\.pdf$/, '').replace(/\.dymo$/i, ''), dataAdapterMode);
     } catch (error) {
       console.error('Failed to record document.generated activity event:', error instanceof Error ? error.message : error);
     }
   }
   return finalDocument;
+}
+
+/** The document's name without its file extension (".pdf", or ".dymo" for
+    the Cremation Label), for notifications. */
+function generatedDocumentTitle(fileName: string): string {
+  return fileName.replace(/\.pdf$/i, '').replace(/\.dymo$/i, '');
 }
 
 /**
@@ -867,6 +879,26 @@ export async function downloadFile(
   return { buffer, contentType, fileName: target.fileName };
 }
 
+/** The exact stored bytes of one case document, for SOLIS's own use (the
+    Cremation Label's preview and print) — not a staff download, so no
+    `document.downloaded` event. Same lookup and availability rule as
+    `downloadFile`: another case's or organization's document is never
+    found. */
+export async function readStoredCaseDocument(
+  organizationId: string,
+  caseId: string,
+  documentId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ document: CaseDocument; buffer: Buffer }> {
+  const documents = await list(organizationId, caseId, dataAdapterMode);
+  const target = documents.find((d) => d.id === documentId);
+  if (!target || !isCaseDocumentDownloadable(target.status)) {
+    throw new DocumentServiceError('Document not found or not available.');
+  }
+  const { buffer } = await documentStorageProvider.downloadFile(target.storageKey);
+  return { document: target, buffer };
+}
+
 // ---------------------------------------------------------------------------
 // Bulk case document actions (Task #3, 2026-09) — Print All / Download All.
 // Reuse the exact same authorized retrieval path individual Download/Print
@@ -979,7 +1011,13 @@ export async function buildBulkPrintPdf(
   const excluded: BulkDocumentExclusion[] = [];
   const printable = eligible.filter((doc) => {
     if (isPrintableMimeType(doc.mimeType)) return true;
-    excluded.push({ fileName: doc.fileName, reason: 'This file type cannot be included in the combined print — download it separately to print it.' });
+    excluded.push({
+      fileName: doc.fileName,
+      reason:
+        doc.mimeType === CREMATION_LABEL_MIME_TYPE
+          ? 'A DYMO label prints on the label printer — open it and use Print there.'
+          : 'This file type cannot be included in the combined print — download it separately to print it.',
+    });
     return false;
   });
 

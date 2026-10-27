@@ -198,6 +198,10 @@ export const ACTIVITY_EVENT_TYPES = {
   DOCUMENT_UPLOADED: 'document.uploaded',
   DOCUMENT_GENERATED: 'document.generated',
   DOCUMENT_DOWNLOADED: 'document.downloaded',
+  /** Cremation Label (2026-10): a saved label sent to a DYMO printer. The
+      print happens on the staff member's computer; this records who sent
+      which saved version to which printer. */
+  DOCUMENT_LABEL_PRINTED: 'document.label_printed',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */

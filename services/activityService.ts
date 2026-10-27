@@ -1093,6 +1093,32 @@ export function recordDocumentDownloaded(ctx: ActivityContext, caseId: string, d
   );
 }
 
+/** Cremation Label (2026-10): a saved label version sent to a printer. */
+export function recordCremationLabelPrinted(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  version: number | null,
+  printerName: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_LABEL_PRINTED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: null,
+      description: `Cremation Label${version !== null ? ` v${version}` : ''} sent to ${printerName}`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 /** A regeneration's own event, distinct from `recordDocumentGenerated` —
     `supersedesId` names the document row this new one replaces (that
     row's own status flips to 'superseded', never edited otherwise — see

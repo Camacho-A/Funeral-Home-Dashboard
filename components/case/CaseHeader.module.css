@@ -216,3 +216,11 @@
 .slaParty {
   color: var(--sx-muted);
 }
+
+/* Case-level actions (Print Label, 2026-10): a quiet row under the facts. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

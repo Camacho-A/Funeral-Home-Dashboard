@@ -38,6 +38,7 @@ export function CaseHeader({
   stages,
   onStepClick,
   sla,
+  actions,
 }: {
   caseNumber: string;
   decedentName: string;
@@ -62,6 +63,9 @@ export function CaseHeader({
   /** SLA tracking (2026-10): when present, the header shows business days
       in stage and the current SLA in place of the old per-stage target. */
   sla?: CaseSlaEvaluation | null;
+  /** Case-level actions shown under the case's identity (Print Label,
+      2026-10). Omitted → nothing renders. */
+  actions?: React.ReactNode;
 }) {
   const hasWeight = weight !== undefined && weight !== null && String(weight).trim() !== '';
   const weightText = hasWeight ? (/lb/i.test(String(weight)) ? String(weight) : `${weight} lb`) : '';
@@ -97,6 +101,7 @@ export function CaseHeader({
               {isMedicalExaminerCase && <span className={styles.meFlag}>Medical Examiner Case</span>}
             </div>
           )}
+          {actions && <div className={styles.actions}>{actions}</div>}
         </div>
         <div className={styles.stageColumn}>
           {/* The badge is a SIBLING of the stage chip, not a child of it:

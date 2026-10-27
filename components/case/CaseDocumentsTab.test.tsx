@@ -1159,3 +1159,68 @@ describe('CaseDocumentsTab — Envelope and Certificate of Cremation on demand (
     expect(screen.queryByRole('button', { name: 'Generate Envelope' })).not.toBeInTheDocument();
   });
 });
+
+// Cremation Label (2026-10). Hoisted like every vi.mock; only reached when
+// a label dialog is opened.
+vi.mock('@/lib/caseLabelClient', () => ({
+  fetchCremationLabelState: vi.fn(),
+  fetchSavedCremationLabel: vi.fn().mockResolvedValue({
+    label: { documentId: 'label-1', version: 1, status: 'active', createdAt: '2026-10-27T15:00:00.000Z', actorDisplayName: 'Dana' },
+    labelXml: '<DesktopLabel/>',
+    values: { name: 'Juniper Fairweather', tag: 'Tag #90210', date: 'November 3, 2026' },
+    isLatest: true,
+  }),
+  saveCremationLabel: vi.fn(),
+  recordCremationLabelPrinted: vi.fn(),
+}));
+vi.mock('@/lib/dymoConnect', () => ({
+  findDymoService: vi.fn().mockRejectedValue(new Error('DYMO Connect is not running on this computer.')),
+  listDymoPrinters: vi.fn(),
+  renderDymoPreview: vi.fn(),
+  printDymoLabel: vi.fn(),
+}));
+
+describe('CaseDocumentsTab — Cremation Label (2026-10)', () => {
+  const label = () =>
+    makeDocument({
+      id: 'label-1',
+      documentTypeKey: 'cremation_form.cremation_label',
+      category: 'cremation_form',
+      fileName: 'Cremation Label.dymo',
+      mimeType: 'application/vnd.dymo.label+xml',
+      templateId: null,
+      templateVersion: null,
+    });
+
+  it('lists the saved label as "Cremation Label" and opens it in the label window, never the PDF viewer', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([label(), makeDocument()]);
+    renderTab();
+    expect(await screen.findByText('Cremation Label.dymo')).toBeInTheDocument();
+    expect(screen.getByText(/Cremation Label · v1/)).toBeInTheDocument();
+
+    openRowMenu('Cremation Label.dymo');
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
+    expect(items).toEqual(expect.arrayContaining(['View', 'Download', 'Print']));
+    expect(items).not.toContain('Regenerate');
+    expect(items).not.toContain('Request Signature');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Print' }));
+    expect(await screen.findByText('Saved label v1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download .dymo' })).toHaveAttribute('href', expect.stringContaining('/documents/label-1/download'));
+    expect(mockPrintStoredDocument).not.toHaveBeenCalled();
+  });
+
+  it('offers the Cremation Label to Manors staff who can generate documents only', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    renderTab();
+    expect(await screen.findByRole('button', { name: 'Cremation Label' })).toBeInTheDocument();
+  });
+
+  it('is not offered to an organization without an approved label', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
+    renderTab(SECOND_MOCK_ORGANIZATION_ID);
+    await screen.findAllByText(/documents/i);
+    expect(screen.queryByRole('button', { name: 'Cremation Label' })).not.toBeInTheDocument();
+  });
+});

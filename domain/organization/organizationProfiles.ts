@@ -204,6 +204,10 @@ export type OrganizationFeaturePreferences = {
   /** SLA tracking (2026-10): business-day milestones, the header's current
       SLA, dashboard counts and SLA alerts (domain/sla/). */
   slaTracking: boolean;
+  /** Print Label (2026-10): the case page's DYMO label, filled from the
+      organization's own approved template (domain/labels/). Platform
+      default: off — only an organization with a template has one. */
+  dymoCaseLabel: boolean;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -285,6 +289,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   legacyCertifierPresentation: false,
   automaticChecklistCompletion: false,
   slaTracking: false,
+  dymoCaseLabel: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -346,6 +351,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     legacyCertifierPresentation: true,
     automaticChecklistCompletion: true,
     slaTracking: true,
+    dymoCaseLabel: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {
