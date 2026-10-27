@@ -23,7 +23,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   },
 }));
 
-const { getCremationLabelState, saveCremationLabel, readSavedCremationLabel, recordSavedCremationLabelPrinted, CremationLabelError } = await import('./cremationLabelService');
+const { getCremationLabelState, saveCremationLabel, readSavedCremationLabel, recordSavedCremationLabelPrinted, generateCremationLabelAfterCaseChange, CremationLabelError } = await import('./cremationLabelService');
 const { caseFixtures } = await import('./__mocks__/fixtures');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { activityEventFixtures } = await import('./__mocks__/activityEventFixtures');
@@ -186,5 +186,55 @@ describe('printing a saved label', () => {
   it('refuses a document that is not one of this case\'s labels', async () => {
     await expect(recordSavedCremationLabelPrinted(ctx(), CASE_ID, 'existing-envelope', 'P', 'mock')).rejects.toBeInstanceOf(CremationLabelError);
     await expect(readSavedCremationLabel(DEFAULT_ORGANIZATION_ID, CASE_ID, 'existing-envelope', 'mock')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('automatic label after a case save (2026-10)', () => {
+  const labels = () => caseDocumentFixtures.filter((d) => d.documentTypeKey === 'cremation_form.cremation_label');
+  const current = () => caseFixtures[index];
+
+  it('saves v1 once the Tag # and Date of Cremation are entered, attributed to the staff member who saved the case', async () => {
+    const before = { ...current(), tagNumber: null, dateOfCremation: null };
+    expect(await generateCremationLabelAfterCaseChange(before, current(), ctx('staff-lee'), 'mock')).toBe('generated');
+    expect(labels()).toEqual([expect.objectContaining({ version: 1, status: 'active', generatedBy: 'staff-lee' })]);
+    expect(labelEvents().map((e) => [e.eventType, e.actorIdentityId])).toContainEqual(['document.generated', 'staff-lee']);
+  });
+
+  it('a later change to the tag saves v2 and keeps v1 in History; other edits create nothing', async () => {
+    await generateCremationLabelAfterCaseChange(null, current(), ctx(), 'mock');
+    expect(await generateCremationLabelAfterCaseChange(current(), { ...current(), weight: '180 lb' }, ctx(), 'mock')).toBe('not_applicable');
+    expect(labels()).toHaveLength(1);
+
+    const before = current();
+    caseFixtures[index] = { ...before, tagNumber: '90211' };
+    expect(await generateCremationLabelAfterCaseChange(before, current(), ctx(), 'mock')).toBe('generated');
+    expect(labels().map((l) => [l.version, l.status])).toEqual([
+      [1, 'superseded'],
+      [2, 'active'],
+    ]);
+  });
+
+  it('a label already saved by hand with these exact values is not duplicated', async () => {
+    await saveCremationLabel(ctx(), CASE_ID, null, 'mock');
+    expect(await generateCremationLabelAfterCaseChange({ ...current(), tagNumber: null }, current(), ctx(), 'mock')).toBe('unchanged');
+    expect(labels()).toHaveLength(1);
+  });
+
+  it('never for an archived case, another organization, or one without an approved label', async () => {
+    expect(await generateCremationLabelAfterCaseChange(null, { ...current(), isDeleted: true }, ctx(), 'mock')).toBe('not_applicable');
+    expect(await generateCremationLabelAfterCaseChange(null, { ...current(), organizationId: SECOND_MOCK_ORGANIZATION_ID }, ctx(), 'mock')).toBe('not_applicable');
+    expect(
+      await generateCremationLabelAfterCaseChange(null, { ...current(), organizationId: SECOND_MOCK_ORGANIZATION_ID }, { ...ctx(), organizationId: SECOND_MOCK_ORGANIZATION_ID }, 'mock'),
+    ).toBe('not_applicable');
+    expect(labels()).toHaveLength(0);
+  });
+
+  it('a storage failure is reported, never thrown, and leaves no saved label', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { vercelBlobStorageProvider } = await import('../lib/vercelBlob/vercelBlobStorageProvider');
+    const upload = vi.spyOn(vercelBlobStorageProvider, 'uploadFile').mockRejectedValueOnce(new Error('storage down'));
+    expect(await generateCremationLabelAfterCaseChange(null, current(), ctx(), 'mock')).toBe('failed');
+    expect(labels().filter((l) => l.status === 'active')).toHaveLength(0);
+    upload.mockRestore();
   });
 });

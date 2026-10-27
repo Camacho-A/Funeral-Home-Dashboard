@@ -5,7 +5,9 @@ import { recordCremationLabelPrinted } from './activityService';
 import { attachDocumentActorDisplayNames, generateBillingDocument, list, readStoredCaseDocument } from './documentService';
 import { loadCaseOnServer } from './serverCaseLoader';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
+import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import {
+  cremationLabelIsDue,
   fillManorsLabel,
   manorsLabelFileBytes,
   manorsLabelValuesFor,
@@ -16,6 +18,7 @@ import {
 } from '@/domain/labels/manorsLabel';
 import { CREMATION_LABEL_DOCUMENT_TYPE_KEY, CREMATION_LABEL_FILE_NAME, CREMATION_LABEL_MIME_TYPE } from '@/domain/labels/cremationLabel';
 import type { CaseDocument } from '@/types/caseDocument';
+import type { Case } from '@/types/case';
 
 /**
  * Cremation Label (2026-10). The filled DYMO label is saved to the case as
@@ -125,7 +128,20 @@ export async function saveCremationLabel(
     throw new CremationLabelError('A label was saved for this case since you opened it. Close this window and open Print Label again to see the latest version.', 409);
   }
 
-  const bytes = manorsLabelFileBytes(fillManorsLabel(result.values));
+  return storeLabelVersion(ctx, caseId, result.values, active, dataAdapterMode);
+}
+
+/** Saves `values` as the next label version unless the active label already
+    holds exactly these bytes. The earlier version is superseded into
+    History by generateBillingDocument — kept, never rewritten. */
+async function storeLabelVersion(
+  ctx: ActivityContext,
+  caseId: string,
+  values: ManorsLabelValues,
+  active: CaseDocument | null,
+  dataAdapterMode: DataAdapterMode,
+): Promise<SaveCremationLabelOutcome> {
+  const bytes = manorsLabelFileBytes(fillManorsLabel(values));
   if (active && active.checksumSha256 === sha256(bytes)) return { outcome: 'unchanged', document: active };
 
   const document = await generateBillingDocument(
@@ -144,6 +160,38 @@ export async function saveCremationLabel(
     dataAdapterMode,
   );
   return { outcome: 'saved', document };
+}
+
+export type AutomaticCremationLabelOutcome = 'generated' | 'unchanged' | 'not_applicable' | 'failed';
+
+/**
+ * Automatic Cremation Label (2026-10). Called after a case is created or
+ * saved (services/automaticCaseDocuments.ts), alongside the Envelope and
+ * Certificate: once the case has the name, Tag # and Date of Cremation —
+ * or when any of those three changes — the label is saved as the next
+ * version, attributed to the staff member whose save caused it. Same
+ * version history as a manual save. Never throws.
+ */
+export async function generateCremationLabelAfterCaseChange(
+  before: Case | null,
+  after: Case,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<AutomaticCremationLabelOutcome> {
+  if (after.organizationId !== ctx.organizationId || after.isDeleted) return 'not_applicable';
+  if (!getRegisteredOrganizationProfile(after.organizationId).features.dymoCaseLabel) return 'not_applicable';
+  if (!cremationLabelIsDue(before, after)) return 'not_applicable';
+  const result = manorsLabelValuesFor(after);
+  if (!result.ok) return 'not_applicable';
+
+  try {
+    const active = (await savedLabels(ctx.organizationId, after.id, dataAdapterMode)).find((d) => d.status === 'active') ?? null;
+    const { outcome } = await storeLabelVersion(ctx, after.id, result.values, active, dataAdapterMode);
+    return outcome === 'saved' ? 'generated' : 'unchanged';
+  } catch (error) {
+    console.error(`[cremation label] Automatic label for case ${after.id} was not saved:`, error instanceof Error ? error.message : error);
+    return 'failed';
+  }
 }
 
 /** One saved label version, exactly as stored — what Print sends. Any

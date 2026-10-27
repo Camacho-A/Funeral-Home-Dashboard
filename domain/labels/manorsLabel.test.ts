@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import path from 'path';
 import { MANORS_LABEL_TEMPLATE_XML } from './manorsLabelTemplate.generated';
-import { MANORS_LABEL_SAMPLE_TEXT, fillManorsLabel, formatLabelDate, manorsLabelFileBytes, manorsLabelValuesFor, manorsLabelXmlFromFile, readManorsLabelValues } from './manorsLabel';
+import { MANORS_LABEL_SAMPLE_TEXT, cremationLabelIsDue, fillManorsLabel, formatLabelDate, manorsLabelFileBytes, manorsLabelValuesFor, manorsLabelXmlFromFile, readManorsLabelValues } from './manorsLabel';
 
 /**
  * Print Label (2026-10). The filled label must be the approved template
@@ -146,5 +146,28 @@ describe('the saved .dymo file', () => {
 
   it('reads nothing from a file that is not a filled copy of this template', () => {
     expect(readManorsLabelValues('<DesktopLabel><Text>only one</Text></DesktopLabel>')).toBeNull();
+  });
+});
+
+describe('cremationLabelIsDue (automatic label)', () => {
+  const ready = { decedentName: 'JUNIPER FAIRWEATHER', decedentMiddleName: null, tagNumber: '90210', dateOfCremation: '11/03/2026' };
+
+  it('is due once the case has all three values — on creation or when the last one arrives', () => {
+    expect(cremationLabelIsDue(null, ready)).toBe(true);
+    expect(cremationLabelIsDue({ ...ready, tagNumber: null }, ready)).toBe(true);
+    expect(cremationLabelIsDue({ ...ready, dateOfCremation: null }, ready)).toBe(true);
+  });
+
+  it('is due when the name (middle name included), tag or date the label prints changes', () => {
+    expect(cremationLabelIsDue(ready, { ...ready, tagNumber: '90211' })).toBe(true);
+    expect(cremationLabelIsDue(ready, { ...ready, dateOfCremation: '11/04/2026' })).toBe(true);
+    expect(cremationLabelIsDue(ready, { ...ready, decedentMiddleName: 'QUINN' })).toBe(true);
+  });
+
+  it('is not due for a change the label does not print, or while a value is missing', () => {
+    expect(cremationLabelIsDue(ready, { ...ready })).toBe(false);
+    expect(cremationLabelIsDue(ready, { ...ready, tagNumber: ' 90210 ' })).toBe(false);
+    expect(cremationLabelIsDue(ready, { ...ready, dateOfCremation: null })).toBe(false);
+    expect(cremationLabelIsDue(null, { ...ready, tagNumber: '' })).toBe(false);
   });
 });

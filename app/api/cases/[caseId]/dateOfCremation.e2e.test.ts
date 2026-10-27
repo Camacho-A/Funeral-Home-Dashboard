@@ -224,6 +224,10 @@ const certificates = () =>
     .filter((d) => d.documentTypeKey === DOCUMENT_TYPES.CREMATION_FORM_CERTIFICATE_OF_CREMATION.key)
     .sort((a, b) => Number(a.version) - Number(b.version));
 const envelopes = () => [...collection('caseDocuments').values()].filter((d) => d.documentTypeKey === DOCUMENT_TYPES.LETTER_ENVELOPE.key);
+const labels = () =>
+  [...collection('caseDocuments').values()]
+    .filter((d) => d.documentTypeKey === DOCUMENT_TYPES.CREMATION_FORM_CREMATION_LABEL.key)
+    .sort((a, b) => Number(a.version) - Number(b.version));
 
 /** A save as either screen sends it, then whatever the route queued to
     run after the response (the official documents), awaited. */
@@ -306,7 +310,8 @@ describe('Date of Cremation → save route → Certificate of Cremation (isolate
     const entered = await save({ dateOfCremation: '07/15/2026' });
     expect(entered.status).toBe(200);
     expect(storedCase().dateOfCremation).toBe('07/15/2026');
-    expect(entered.documentOutcomes).toEqual([{ certificate_of_cremation: 'generated' }]);
+    // The Cremation Label (2026-10) is saved alongside: it prints the date too.
+    expect(entered.documentOutcomes).toEqual([{ certificate_of_cremation: 'generated', cremation_label: 'generated' }]);
     expect(certificates()).toHaveLength(1);
     expect(certificates()[0]).toMatchObject({ version: 1, status: 'active' });
     expect(certificateInputs.at(-1)).toMatchObject({ tagNumber: 'T-9001', dateOfCremation: 'July 15, 2026', dateOfDeath: 'July 9, 2026' });
@@ -322,8 +327,12 @@ describe('Date of Cremation → save route → Certificate of Cremation (isolate
       [2, 'active'],
     ]);
     expect(certificateInputs.at(-1)).toMatchObject({ dateOfCremation: 'July 16, 2026' });
+    expect(labels().map((l) => [l.version, l.status])).toEqual([
+      [1, 'superseded'],
+      [2, 'active'],
+    ]);
     const filesBeforeClear = new Map(blobs);
-    expect(filesBeforeClear.size).toBe(2);
+    expect(filesBeforeClear.size).toBe(4); // two Certificates, two labels
     const certificatesBeforeClear = JSON.stringify(certificates());
 
     // 3. Explicitly clearing it: the field is empty, no document is
@@ -347,7 +356,7 @@ describe('Date of Cremation → save route → Certificate of Cremation (isolate
     // Entering a date again after a clear follows the normal rule: a new
     // Certificate version, the earlier ones kept in history.
     const again = await save({ dateOfCremation: '07/17/2026' });
-    expect(again.documentOutcomes).toEqual([{ certificate_of_cremation: 'generated' }]);
+    expect(again.documentOutcomes).toEqual([{ certificate_of_cremation: 'generated', cremation_label: 'generated' }]);
     expect(certificates().map((c) => c.status)).toEqual(['superseded', 'superseded', 'active']);
   });
 
@@ -361,12 +370,13 @@ describe('Date of Cremation → save route → Certificate of Cremation (isolate
     expect(blobs.size).toBe(0);
   });
 
-  it('refuses a Certificate without a Date of Death', async () => {
+  it('refuses a Certificate without a Date of Death — the label, which does not print it, is still saved', async () => {
     seedCase({ dateOfDeath: '' });
     const saved = await save({ dateOfCremation: '07/15/2026' });
     expect(saved.status).toBe(200);
-    expect(saved.documentOutcomes).toEqual([{}]);
+    expect(saved.documentOutcomes).toEqual([{ cremation_label: 'generated' }]);
     expect(certificates()).toHaveLength(0);
+    expect(labels()).toHaveLength(1);
   });
 
   it('the Certificate is generated once the last missing piece (the Tag Number) arrives, with the saved date', async () => {

@@ -66,6 +66,22 @@ export function manorsLabelValuesFor(
   return { ok: true, values: { name, tag: `Tag #${tagNumber}`, date: date! } };
 }
 
+type LabelSource = Pick<Case, 'decedentName' | 'decedentMiddleName' | 'tagNumber' | 'dateOfCremation'>;
+
+/**
+ * Automatic Cremation Label (2026-10): whether a case change calls for a
+ * new saved label — the case now has all three values, and at least one of
+ * what the label prints (name, tag, date) is new or different. Any other
+ * edit to the case never touches the label. `before` is null for a new case.
+ */
+export function cremationLabelIsDue(before: LabelSource | null, after: LabelSource): boolean {
+  const next = manorsLabelValuesFor(after);
+  if (!next.ok) return false;
+  if (before === null) return true;
+  const previous = manorsLabelValuesFor(before);
+  return !previous.ok || previous.values.name !== next.values.name || previous.values.tag !== next.values.tag || previous.values.date !== next.values.date;
+}
+
 /** A filled copy of the template (without the file's byte-order mark,
     which the DYMO web service refuses). Throws if the template no longer
     holds each sample value exactly once — never fills a guessed spot. */

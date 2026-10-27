@@ -182,7 +182,7 @@ export function PrintLabelDialog({
 
             {caseMode && current && !current.ok && (
               <div className={`sx-form-banner ${latest ? 'sx-form-banner-info' : 'sx-form-banner-error'}`} role={latest ? 'status' : 'alert'}>
-                {latest ? `A new version can't be saved yet: ${current.message}` : current.message}
+                {latest ? `A new version can't be saved yet: ${current.message}` : `${current.message} The label is then saved automatically.`}
               </div>
             )}
 

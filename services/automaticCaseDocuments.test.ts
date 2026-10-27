@@ -154,7 +154,8 @@ describe('regenerateOfficialDocumentsAfterCaseChange', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const before = manorsCase({ dateOfCremation: null });
     const results = await regenerateOfficialDocumentsAfterCaseChange(before, manorsCase(), ctx, 'mock');
-    expect(results).toEqual({ certificate_of_cremation: 'template_unavailable' });
+    // The Cremation Label (2026-10) does not depend on the certificate template.
+    expect(results).toEqual({ certificate_of_cremation: 'template_unavailable', cremation_label: 'generated' });
     expect(buildEnvelopePdf).not.toHaveBeenCalled();
   });
 });
@@ -200,7 +201,7 @@ describe('regenerateOfficialDocumentsAfterCaseChange — Envelope and Certificat
     const result = await regenerateOfficialDocumentsAfterCaseChange(noCert, { ...noCert, tagNumber: 'MC-1' }, ctx, 'mock');
     expect(result).toEqual({ envelope: 'generated' });
     const both = await regenerateOfficialDocumentsAfterCaseChange(manorsCase({ dateOfCremation: null }), manorsCase(), ctx, 'mock');
-    expect(both).toEqual({ certificate_of_cremation: 'generated' });
+    expect(both).toEqual({ certificate_of_cremation: 'generated', cremation_label: 'generated' });
   });
 
   it('if existing documents cannot be read, no Envelope is generated automatically (no risk of a duplicate)', async () => {
