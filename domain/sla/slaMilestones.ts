@@ -446,9 +446,14 @@ export function evaluateCaseSla(case_: SlaCase, settings: SlaSettings, nowIso: s
     if (stop.occurred) {
       return { ...base, state: 'completed', status: 'completed', startedAt: start.time, completedAt: stop.time };
     }
-    // An approval nobody recorded, on a case the crematory already has: say
-    // so, without treating it as met and without holding the case on it.
-    if (definition.key === 'approval' && events.crematory_received.occurred) {
+    // An approval nobody recorded, on a case already sent to (or received
+    // by) the crematory: say so, without treating it as met and without
+    // holding the case on it. A case cannot go to the crematory without its
+    // permit, so once it has, the approval wait is over even though its
+    // time was never recorded — it must not keep counting as overdue
+    // (2026-10: B2026-039/040 showed "State approval · 2 business days
+    // overdue" while sitting at their last step).
+    if (definition.key === 'approval' && (events.sent_to_crematory.occurred || events.crematory_received.occurred)) {
       return { ...base, state: 'not_recorded', status: null, startedAt: start.time, note: 'State approval was not recorded.' };
     }
     // A milestone with a crematory start: sent to the crematory, but no

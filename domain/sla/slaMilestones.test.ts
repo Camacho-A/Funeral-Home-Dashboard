@@ -391,13 +391,27 @@ describe('Cremains already back with Manors', () => {
     expect(evaluateCaseSla(notBack, SETTINGS, NOW).events.find((e) => e.key === 'cremains_received')!.occurred).toBe(false);
   });
 
-  it('an earlier open milestone with a real deadline stays current; only a missing start time yields to later progress', () => {
-    const approvalPending = base({
+  it('sent to the crematory without a recorded approval: approval is "not recorded", never overdue, and not the current milestone', () => {
+    // B2026-039/040 (2026-10): Hard Saved, permit and authorization sent,
+    // case at its last step — previously "State approval · overdue".
+    const sent = base({
       rawStage: 5,
       checklistState: { '2:2': true, '3:0': true, '3:1': true },
       checklistCompletions: { '2:2': done(ny('2026-10-19', '15:00')) },
     });
-    expect(evaluateCaseSla(approvalPending, SETTINGS, NOW).current).toMatchObject({ key: 'approval', state: 'active' });
+    const evaluation = evaluateCaseSla(sent, SETTINGS, NOW);
+    expect(evaluation.milestones.find((m) => m.key === 'approval')).toMatchObject({ state: 'not_recorded', status: null, overdue: false });
+    expect(evaluation.current?.key).not.toBe('approval');
+    expect(slaNeedsAttention(evaluation.current)).toBe(false);
+  });
+
+  it('only the permit ticked (not yet sent to the crematory): the approval deadline is still tracked', () => {
+    const permitOnly = base({
+      rawStage: 4,
+      checklistState: { '2:2': true, '3:0': true },
+      checklistCompletions: { '2:2': done(ny('2026-10-19', '15:00')) },
+    });
+    expect(evaluateCaseSla(permitOnly, SETTINGS, NOW).current).toMatchObject({ key: 'approval', state: 'active' });
   });
 
   it('archived cases have no SLA at all', () => {
