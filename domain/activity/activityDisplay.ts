@@ -166,9 +166,37 @@ function resolveCaseUpdatedDisplay(description: string): string | null {
   return 'Case updated';
 }
 
-export function resolveActivityDisplayDescription(event: Pick<ActivityEvent, 'eventType' | 'description'>): string {
+/**
+ * Appointment wording (2026-10). Appointment events persist the raw ISO
+ * instant ("Appointment rescheduled to 2026-11-03T05:00:00.000Z"), which is
+ * meaningless to staff. Shown instead as a date in the organization's
+ * timezone — with the time only when it isn't midnight (a date-only
+ * expected pickup is stored as local midnight). Without a timezone the
+ * date is left off rather than risk showing the wrong day. Presentation
+ * only; the stored event is untouched.
+ */
+const APPOINTMENT_INSTANT_PATTERN = /^Appointment (rescheduled to|created for) (\d{4}-\d{2}-\d{2}T[\d:.]+Z)$/;
+
+function resolveAppointmentDisplay(description: string, timezone: string | undefined): string | null {
+  const match = APPOINTMENT_INSTANT_PATTERN.exec(description);
+  if (!match) return null;
+  const verb = match[1] === 'rescheduled to' ? 'Appointment rescheduled' : 'Appointment scheduled';
+  const instant = new Date(match[2]);
+  if (!timezone || Number.isNaN(instant.getTime())) return verb;
+  try {
+    const date = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: timezone }).format(instant);
+    const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: timezone }).format(instant);
+    return `${verb} for ${date}${time === '12:00 AM' ? '' : ` at ${time}`}`;
+  } catch {
+    return verb;
+  }
+}
+
+export function resolveActivityDisplayDescription(event: Pick<ActivityEvent, 'eventType' | 'description'>, timezone?: string): string {
   const caseUpdatedDisplay = resolveCaseUpdatedDisplay(event.description);
   if (caseUpdatedDisplay !== null) return caseUpdatedDisplay;
+  const appointmentDisplay = resolveAppointmentDisplay(event.description, timezone);
+  if (appointmentDisplay !== null) return appointmentDisplay;
   // ActivityEvent.eventType is persisted/read back as a plain `string`
   // (see its own field comment — never assumed to still match the
   // current ActivityEventType union). The cast is read-only/safe here: an

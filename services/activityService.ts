@@ -102,6 +102,9 @@ export function decodeCursor(raw: string): ActivityCursor | null {
 export type ActivityListFilters = {
   caseId?: string;
   category?: ActivityEventCategory;
+  /** Dashboard Recent Activity (2026-10): categories to leave out, applied
+      in application code like the other non-indexed filters. */
+  excludeCategory?: ActivityEventCategory;
   resourceType?: string;
   eventType?: string;
   actorIdentityId?: string;
@@ -119,6 +122,7 @@ export type ActivityListResult = { events: ActivityEvent[]; nextCursor: string |
 function matchesFilters(event: ActivityEvent, filters: ActivityListFilters): boolean {
   if (filters.caseId !== undefined && event.caseId !== filters.caseId) return false;
   if (filters.category !== undefined && event.category !== filters.category) return false;
+  if (filters.excludeCategory !== undefined && event.category === filters.excludeCategory) return false;
   if (filters.resourceType !== undefined && event.resourceType !== filters.resourceType) return false;
   if (filters.eventType !== undefined && event.eventType !== filters.eventType) return false;
   if (filters.actorIdentityId !== undefined && event.actorIdentityId !== filters.actorIdentityId) return false;

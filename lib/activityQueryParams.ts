@@ -20,6 +20,12 @@ export function parseActivityFilters(searchParams: URLSearchParams): { filters: 
     filters.category = category;
   }
 
+  const excludeCategory = searchParams.get('excludeCategory');
+  if (excludeCategory) {
+    if (!isValidActivityCategory(excludeCategory)) return { filters, error: `Invalid excludeCategory: ${excludeCategory}` };
+    filters.excludeCategory = excludeCategory;
+  }
+
   const severity = searchParams.get('severity');
   if (severity) {
     if (!isValidActivitySeverity(severity)) return { filters, error: `Invalid severity: ${severity}` };

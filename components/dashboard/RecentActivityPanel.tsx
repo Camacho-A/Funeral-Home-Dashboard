@@ -4,6 +4,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useOrganizationActivity } from '@/hooks/useActivity';
 import { useCases } from '@/hooks/useCases';
+import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import {
   resolveActivityDisplayDescription,
   activityActorLabel,
@@ -11,6 +12,16 @@ import {
   staffNameForCreation,
 } from '@/domain/activity/activityDisplay';
 import styles from './RecentActivityPanel.module.css';
+
+/**
+ * Recent Activity clean-up (2026-10). Notification bookkeeping ("Notification
+ * created (case.intake_submission_needs_attention)", "Notification sent",
+ * "Delivered via in_app") is an internal delivery trail, not something staff
+ * did to a case, and it was crowding out real activity. The Dashboard asks
+ * the server to leave that category out; the Audit Center still shows it.
+ * A module constant so the query key stays stable between renders.
+ */
+const DASHBOARD_ACTIVITY_FILTERS = { excludeCategory: 'notifications' } as const;
 
 function timeAgo(createdAt: string): string {
   const diffMs = Date.now() - new Date(createdAt).getTime();
@@ -95,8 +106,9 @@ export function RecentActivityPanel() {
   const { organizationId } = useOrganization();
   const permissionsQuery = useMyPermissions(organizationId);
   const canReadAudit = (permissionsQuery.data?.permissions ?? []).includes('audit.read');
-  const activityQuery = useOrganizationActivity(organizationId, {}, canReadAudit);
+  const activityQuery = useOrganizationActivity(organizationId, DASHBOARD_ACTIVITY_FILTERS, canReadAudit);
   const casesQuery = useCases();
+  const timezone = useOrganizationRecord().data?.timezone;
 
   const entries = useMemo(() => (activityQuery.data?.pages ?? []).flatMap((page) => page.events).slice(0, 8), [activityQuery.data]);
 
@@ -126,7 +138,7 @@ export function RecentActivityPanel() {
             entry,
             staffNameForCreation(entry),
           );
-          const description = createdDisplay?.primary ?? resolveActivityDisplayDescription(entry);
+          const description = createdDisplay?.primary ?? resolveActivityDisplayDescription(entry, timezone);
           const kind = glyphKindFor(description);
           const rowContent = (
             <>

@@ -116,6 +116,21 @@ describe('GET /api/activity', () => {
     expect(body.events[0].category).toBe('payments');
   });
 
+  it('excludeCategory leaves that category out (Dashboard Recent Activity hides notification bookkeeping)', async () => {
+    await seedCaller('administrator');
+    await seedEvent({ category: 'notifications', eventType: 'notification.sent', description: 'Notification sent' });
+    await seedEvent({ category: 'cases', eventType: 'case.updated' });
+
+    const body = await (await getRequest(DEFAULT_ORGANIZATION_ID, { excludeCategory: 'notifications' })).json();
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0].category).toBe('cases');
+  });
+
+  it('rejects an invalid excludeCategory value with 400', async () => {
+    await seedCaller('administrator');
+    expect((await getRequest(DEFAULT_ORGANIZATION_ID, { excludeCategory: 'nope' })).status).toBe(400);
+  });
+
   it('rejects an invalid category value with 400', async () => {
     await seedCaller('administrator');
     const response = await getRequest(DEFAULT_ORGANIZATION_ID, { category: 'not-a-real-category' });

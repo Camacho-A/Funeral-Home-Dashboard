@@ -84,6 +84,14 @@ describe('RecentActivityPanel', () => {
     expect(screen.getByText('Recent activity')).toBeInTheDocument();
   });
 
+  it('asks the server to leave out notification bookkeeping (2026-10)', async () => {
+    mockPermissions(['audit.read']);
+    vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({ events: [makeEvent()], nextCursor: null });
+    renderPanel();
+    await screen.findByText('Created a new case for Robert Ellison');
+    expect(activityClient.fetchOrganizationActivity).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, { excludeCategory: 'notifications' }, null);
+  });
+
   it('shows an empty message when there is no activity yet', async () => {
     mockPermissions(['audit.read']);
     vi.mocked(activityClient.fetchOrganizationActivity).mockResolvedValue({ events: [], nextCursor: null });

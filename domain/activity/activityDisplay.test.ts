@@ -326,3 +326,25 @@ describe('staffNameForCreation', () => {
     ).toBe('Dana Whitfield');
   });
 });
+
+describe('resolveActivityDisplayDescription — appointment wording (2026-10)', () => {
+  const event = (description: string) => ({ eventType: 'scheduling.appointment.rescheduled', description });
+
+  it('a date-only appointment (local midnight) shows just the date in the organization timezone', () => {
+    expect(resolveActivityDisplayDescription(event('Appointment rescheduled to 2026-11-03T05:00:00.000Z'), 'America/New_York')).toBe('Appointment rescheduled for Nov 3, 2026');
+  });
+
+  it('a timed appointment shows the date and time', () => {
+    expect(resolveActivityDisplayDescription({ eventType: 'scheduling.appointment.created', description: 'Appointment created for 2026-11-03T15:30:00.000Z' }, 'America/New_York')).toBe(
+      'Appointment scheduled for Nov 3, 2026 at 10:30 AM',
+    );
+  });
+
+  it('never shows the raw timestamp — without a timezone the date is left off', () => {
+    expect(resolveActivityDisplayDescription(event('Appointment rescheduled to 2026-11-03T05:00:00.000Z'))).toBe('Appointment rescheduled');
+  });
+
+  it('other descriptions are unchanged', () => {
+    expect(resolveActivityDisplayDescription(event('Appointment cancelled'), 'America/New_York')).toBe('Appointment cancelled');
+  });
+});

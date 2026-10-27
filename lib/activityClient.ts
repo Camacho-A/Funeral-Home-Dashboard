@@ -13,6 +13,7 @@ import type { ActivityEventWithActor } from '@/services/activityService';
 
 export type ActivityFilters = {
   category?: ActivityEventCategory;
+  excludeCategory?: ActivityEventCategory;
   severity?: ActivitySeverity;
   from?: string;
   to?: string;
@@ -33,6 +34,7 @@ async function parseJsonOrThrow(response: Response): Promise<Record<string, unkn
 function filtersToParams(organizationId: string, filters: ActivityFilters): URLSearchParams {
   const params = new URLSearchParams({ organizationId });
   if (filters.category) params.set('category', filters.category);
+  if (filters.excludeCategory) params.set('excludeCategory', filters.excludeCategory);
   if (filters.severity) params.set('severity', filters.severity);
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
