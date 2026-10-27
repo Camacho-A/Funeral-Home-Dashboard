@@ -5,6 +5,7 @@ import {
   generateFormLink,
   fetchUnmatchedSubmissions,
   linkSubmissionToCase,
+  dismissSubmission,
   fetchReconciliation,
   applyReconciliation,
   previewHistoricalImport,
@@ -73,6 +74,15 @@ export function useCreateCaseFromSubmission(organizationId: string) {
       queryClient.invalidateQueries({ queryKey: unmatchedSubmissionsKey(organizationId) });
       queryClient.invalidateQueries({ queryKey: ['cases', organizationId] });
     },
+  });
+}
+
+/** Unmatched Forms → No action needed (2026-10). Only the queue changes. */
+export function useDismissSubmission(organizationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (submissionId: string) => dismissSubmission(organizationId, submissionId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: unmatchedSubmissionsKey(organizationId) }),
   });
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { UnmatchedFormsPanel } from './UnmatchedFormsPanel';
 
@@ -24,7 +24,9 @@ vi.mock('@/hooks/useExternalForms', () => ({
   useUnmatchedSubmissions: () => submissionsQuery(),
   useExternalFormConfigs: () => configsQuery(),
   useLinkSubmissionToCase: () => ({ mutate: vi.fn(), isPending: false }),
+  useDismissSubmission: () => ({ mutateAsync: dismissMutateAsync, isPending: false }),
 }));
+const dismissMutateAsync = vi.fn();
 
 /** Roselyn's real production submission, field for field. */
 const ROSELYN = {
@@ -197,5 +199,33 @@ describe('UnmatchedFormsPanel — a failure is never shown as an empty queue', (
     renderPanel();
     expect(screen.getByText('No unmatched form submissions.')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('UnmatchedFormsPanel — No action needed (2026-10)', () => {
+  beforeEach(() => dismissMutateAsync.mockReset().mockResolvedValue(undefined));
+
+  it('asks for confirmation before clearing, and clears only that submission', async () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'No action needed' }));
+    expect(dismissMutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText(/nothing is deleted, no case is created or changed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear — no action needed' }));
+    await waitFor(() => expect(dismissMutateAsync).toHaveBeenCalledWith(ROSELYN.id));
+  });
+
+  it('Cancel leaves the submission alone', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'No action needed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(dismissMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('shows the error and keeps the dialog open when clearing fails', async () => {
+    dismissMutateAsync.mockRejectedValueOnce(new Error('This submission is no longer in Unmatched Forms.'));
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'No action needed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear — no action needed' }));
+    expect(await screen.findByText('This submission is no longer in Unmatched Forms.')).toBeInTheDocument();
   });
 });

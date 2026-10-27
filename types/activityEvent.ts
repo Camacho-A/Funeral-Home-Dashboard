@@ -436,6 +436,7 @@ export const ACTIVITY_EVENT_TYPES = {
   EXTERNAL_FORM_PDF_STORED: 'external_form.pdf_stored',
   EXTERNAL_FORM_PDF_FAILED: 'external_form.pdf_failed',
   EXTERNAL_FORM_SUBMISSION_REVIEWED: 'external_form.submission_reviewed',
+  EXTERNAL_FORM_SUBMISSION_DISMISSED: 'external_form.submission_dismissed',
   EXTERNAL_FORM_FIELDS_APPLIED: 'external_form.fields_applied',
 } as const;
 

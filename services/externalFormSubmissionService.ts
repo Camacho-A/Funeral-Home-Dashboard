@@ -167,6 +167,12 @@ export async function markReviewed(id: string, reviewedBy: string, dataAdapterMo
   return persistUpdate(id, { status: 'reviewed', reviewedAt: nowIso(), reviewedBy }, dataAdapterMode);
 }
 
+/** Unmatched Forms → No action needed (2026-10). Only leaves the queue;
+    the submission, its mapped fields and any stored PDF are kept. */
+export async function markDismissed(id: string, dismissedBy: string, dataAdapterMode: DataAdapterMode): Promise<ExternalFormSubmission | null> {
+  return persistUpdate(id, { status: 'dismissed', reviewedAt: nowIso(), reviewedBy: dismissedBy }, dataAdapterMode);
+}
+
 export async function updatePdfStored(id: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<ExternalFormSubmission | null> {
   return persistUpdate(id, { pdfStatus: 'stored', documentId, pdfFailureReason: null }, dataAdapterMode);
 }

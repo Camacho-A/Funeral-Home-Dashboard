@@ -185,7 +185,7 @@ export type WixExternalFormSubmissionItem = {
   updatedAt?: unknown;
 };
 
-const VALID_SUBMISSION_STATUSES: ExternalFormSubmissionStatus[] = ['unmatched', 'matched', 'reviewed'];
+const VALID_SUBMISSION_STATUSES: ExternalFormSubmissionStatus[] = ['unmatched', 'matched', 'reviewed', 'dismissed'];
 const VALID_PDF_STATUSES: ExternalFormPdfStatus[] = ['not_applicable', 'pending', 'stored', 'failed'];
 
 export function mapWixExternalFormSubmissionItem(id: string, item: WixExternalFormSubmissionItem | undefined): ExternalFormSubmission | null {

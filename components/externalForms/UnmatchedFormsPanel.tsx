@@ -5,6 +5,7 @@ import { useOrganization } from '@/hooks/useOrganization';
 import {
   useUnmatchedSubmissions,
   useLinkSubmissionToCase,
+  useDismissSubmission,
   useExternalFormConfigs,
 } from '@/hooks/useExternalForms';
 import { useCases } from '@/hooks/useCases';
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatTimestamp } from '@/utils/format';
+import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
 import { CreateCaseFromSubmissionDialog } from './CreateCaseFromSubmissionDialog';
 import styles from './UnmatchedFormsPanel.module.css';
 
@@ -85,6 +87,10 @@ export function UnmatchedFormsPanel() {
   const linkMutation = useLinkSubmissionToCase(organizationId);
   const [searchingSubmissionId, setSearchingSubmissionId] = useState<string | null>(null);
   const [creatingSubmissionId, setCreatingSubmissionId] = useState<string | null>(null);
+  // No action needed (2026-10): the submission being cleared, with the
+  // name shown in the confirmation.
+  const [dismissing, setDismissing] = useState<{ id: string; name: string } | null>(null);
+  const dismissMutation = useDismissSubmission(organizationId);
   const [searchQuery, setSearchQuery] = useState('');
   const casesQuery = useCases({ searchQuery });
 
@@ -185,11 +191,28 @@ export function UnmatchedFormsPanel() {
                 {/* Eligibility is decided server-side; the dialog explains
                     it if this submission's form is not permitted to create. */}
                 <Button onClick={() => setCreatingSubmissionId(submission.id)}>Create Case</Button>
+                {/* For a submission staff have checked and that needs
+                    nothing (e.g. the case already has it). Confirmed first. */}
+                <Button variant="ghost" onClick={() => setDismissing({ id: submission.id, name: decedentName || 'this submission' })}>
+                  No action needed
+                </Button>
               </div>
             )}
           </div>
         );
       })}
+
+      <ConfirmActionDialog
+        open={dismissing !== null}
+        onClose={() => setDismissing(null)}
+        title="Clear from Unmatched Forms?"
+        message={`Use this when ${dismissing?.name ?? 'this submission'} needs no action — for example, the existing case already has this form. It is removed from this list only: nothing is deleted, no case is created or changed, and the submission stays on record in the activity log.`}
+        confirmLabel="Clear — no action needed"
+        onConfirm={async () => {
+          await dismissMutation.mutateAsync(dismissing!.id);
+          setDismissing(null);
+        }}
+      />
 
       <CreateCaseFromSubmissionDialog
         organizationId={organizationId}

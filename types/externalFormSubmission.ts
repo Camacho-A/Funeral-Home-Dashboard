@@ -27,7 +27,10 @@
  * Jotform API fetch keyed by `externalFormId` + `externalSubmissionId`
  * — never a permanently duplicated payload store.
  */
-export type ExternalFormSubmissionStatus = 'unmatched' | 'matched' | 'reviewed';
+/** `dismissed` (2026-10): staff confirmed from Unmatched Forms that the
+    submission needs no action (for example, the case already has it). The
+    row is kept for the record — it only leaves the queue. */
+export type ExternalFormSubmissionStatus = 'unmatched' | 'matched' | 'reviewed' | 'dismissed';
 export type ExternalFormPdfStatus = 'not_applicable' | 'pending' | 'stored' | 'failed';
 
 export type ExternalFormSubmission = {

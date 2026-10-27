@@ -74,6 +74,16 @@ export async function linkSubmissionToCase(organizationId: string, submissionId:
   await parseJsonOrThrow(response);
 }
 
+/** Unmatched Forms → No action needed (2026-10). */
+export async function dismissSubmission(organizationId: string, submissionId: string): Promise<void> {
+  const response = await fetch(`/api/external-form-submissions/${encodeURIComponent(submissionId)}/dismiss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId }),
+  });
+  await parseJsonOrThrow(response);
+}
+
 /** Unmatched Forms → Create Case (2026-10). Everything the confirmation
     dialog shows, assembled server-side so the client never derives it. */
 export type CreateCasePreview = {

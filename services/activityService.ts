@@ -2791,6 +2791,26 @@ export function recordExternalFormSubmissionReviewed(ctx: ActivityContext, caseI
   );
 }
 
+/** Unmatched Forms → No action needed (2026-10). Not tied to a case: a
+    dismissed submission was, by definition, never linked to one. */
+export function recordExternalFormSubmissionDismissed(ctx: ActivityContext, submissionId: string, formLabel: string, decedentName: string | null, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_SUBMISSION_DISMISSED,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: JSON.stringify({ status: 'unmatched' }),
+      newValue: JSON.stringify({ status: 'dismissed' }),
+      description: `${formLabel} submission${decedentName ? ` for ${decedentName}` : ''} cleared from Unmatched Forms — no action needed`,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordExternalFormFieldsApplied(ctx: ActivityContext, caseId: string, submissionId: string, appliedFieldNames: string[], dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   return record(
     envelope(ctx, {
