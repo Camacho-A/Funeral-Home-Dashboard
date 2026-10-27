@@ -100,11 +100,13 @@ export function NeedsAttentionPanel({ cases, slaSummary }: { cases: NeedsAttenti
               <span className={styles.name}>{toDisplayTitleCase(c.decedentName)}</span>
               {/* The SLA detail only when the SLA is why the case is here; a
                   stalled case keeps its own reason. */}
-              {c.sla?.current && slaNeedsAttention(c.sla.current) ? (
-                <SlaRowDetail milestone={c.sla.current} />
-              ) : (
-                <span className={styles.reason}>{c.attentionReason}</span>
-              )}
+              <span className={styles.rowDetail}>
+                {c.sla?.current && slaNeedsAttention(c.sla.current) ? (
+                  <SlaRowDetail milestone={c.sla.current} />
+                ) : (
+                  <span className={styles.reason}>{c.attentionReason}</span>
+                )}
+              </span>
             </Link>
           ))}
         </div>

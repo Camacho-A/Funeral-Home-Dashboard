@@ -68,13 +68,22 @@
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--color-border-cool);
+  container-type: inline-size;
 }
 
+/* Attention-row layout fix (2026-10). The row was a wrapping flex line
+   whose detail text refused to wrap, so on a normal-width column the
+   decedent's name was squeezed to almost nothing and overflowed under the
+   "Overdue" pill. Now a grid: the case number and name share the first
+   line, and the reason / SLA detail gets its own line underneath (aligned
+   under the name). When the list is wide enough, the detail moves into its
+   own column beside the name instead. Nothing overlaps at any width. */
 .row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 6px 80px minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-6);
+  column-gap: var(--space-6);
+  row-gap: 4px;
   min-height: 44px;
   padding: var(--space-5) var(--space-3);
   margin: 0 calc(var(--space-3) * -1);
@@ -99,7 +108,6 @@
   height: 6px;
   border-radius: 50%;
   background: var(--color-danger-dot-cool);
-  flex-shrink: 0;
 }
 
 .caseNumber {
@@ -107,40 +115,50 @@
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted-cool);
   font-variant-numeric: tabular-nums;
-  width: 80px;
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .name {
   font-size: var(--font-size-13-5);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary-cool);
-  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The second line: the stalled reason, or the SLA pill + detail. */
+.rowDetail {
+  grid-column: 3;
   min-width: 0;
 }
 
 .reason {
   font-size: var(--font-size-12-5);
+  line-height: 1.45;
   color: var(--color-danger-text-cool);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@container (min-width: 720px) {
+  .row {
+    grid-template-columns: 6px 80px minmax(140px, 200px) minmax(0, 1fr);
+  }
+
+  .rowDetail {
+    grid-column: 4;
+  }
 }
 
 @media (max-width: 560px) {
   .row {
-    gap: var(--space-3);
+    grid-template-columns: 6px auto minmax(0, 1fr);
+    column-gap: var(--space-4);
   }
 
-  .caseNumber {
-    width: auto;
-  }
-
-  .reason {
-    white-space: normal;
-    flex-basis: 100%;
-    padding-left: calc(6px + var(--space-6));
+  /* On a phone the detail uses the full width under the case number. */
+  .rowDetail {
+    grid-column: 2 / -1;
   }
 }
 
@@ -182,17 +200,18 @@
 .slaCount[data-tone='neutral'] dd { color: var(--sx-text-2); }
 
 .slaDetail {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   min-width: 0;
 }
 
 .slaStatus {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   height: 18px;
+  margin-top: 1px;
   padding: 0 7px;
   border-radius: 999px;
   font-size: 11px;
