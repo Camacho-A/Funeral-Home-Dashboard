@@ -457,3 +457,16 @@ map. That is all.
 
 Failed and unmatched submissions are never silently dropped — they are
 visible at `/unmatched-forms` and can be attached to a case by hand.
+
+
+## Next of Kin relationship (2026-10)
+
+When an Arrangement Form lands on a case, the Next of Kin relationship is
+filled in automatically if the case's is still blank, the submitted option
+matches a SOLIS relationship exactly, and the form's Next of Kin is the same
+person as the case's. An existing relationship is never overwritten; an
+unknown value or a different person is flagged for review
+(`external_form.nok_relationship_review`) and the submitted text is kept on
+the submission (`nextOfKinRelationshipSource`). See
+`services/externalForms/nokRelationshipAutofillService.ts` and
+`docs/GUS_PARITY_HANDOFF.md`.

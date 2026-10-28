@@ -45,7 +45,7 @@ export type ArrangementNokDerivationInput = {
 };
 
 export type ArrangementNokDerivationResult = Partial<
-  Record<'nextOfKinName' | 'nextOfKinPhone' | 'nextOfKinRelationship' | 'informantIsNextOfKin', string>
+  Record<'nextOfKinName' | 'nextOfKinPhone' | 'nextOfKinRelationship' | 'nextOfKinRelationshipSource' | 'informantIsNextOfKin', string>
 >;
 
 function readDedicatedNokName(answers: JotformAnswerMap): string | null {
@@ -75,6 +75,9 @@ export function deriveArrangementNextOfKin(
     if (informant.informantName) result.nextOfKinName = informant.informantName;
     if (informant.informantPhone) result.nextOfKinPhone = informant.informantPhone;
     if (informant.informantRelationship) {
+      // The submitted text is always kept; only an exact option match
+      // becomes the SOLIS relationship.
+      result.nextOfKinRelationshipSource = informant.informantRelationship;
       const relationship = ARRANGEMENT_NOK_RELATIONSHIP_VALUE_MAP[informant.informantRelationship] ?? null;
       if (relationship) result.nextOfKinRelationship = relationship;
     }
@@ -88,6 +91,7 @@ export function deriveArrangementNextOfKin(
     const relationship = relationshipRaw ? (ARRANGEMENT_NOK_RELATIONSHIP_VALUE_MAP[relationshipRaw] ?? null) : null;
     if (name) result.nextOfKinName = name;
     if (phone) result.nextOfKinPhone = phone;
+    if (relationshipRaw) result.nextOfKinRelationshipSource = relationshipRaw;
     if (relationship) result.nextOfKinRelationship = relationship;
     return result;
   }
@@ -123,10 +127,12 @@ export function extractArrangementFormsMappedFields(
   delete result.nextOfKinPhone;
   delete result.nextOfKinRelationship;
   delete result.informantIsNextOfKin;
+  delete result.nextOfKinRelationshipSource;
   if (derived.nextOfKinName) result.nextOfKinName = derived.nextOfKinName;
   if (derived.nextOfKinPhone) result.nextOfKinPhone = derived.nextOfKinPhone;
   if (derived.nextOfKinRelationship) result.nextOfKinRelationship = derived.nextOfKinRelationship;
   if (derived.informantIsNextOfKin) result.informantIsNextOfKin = derived.informantIsNextOfKin;
+  if (derived.nextOfKinRelationshipSource) result.nextOfKinRelationshipSource = derived.nextOfKinRelationshipSource;
   return result;
 }
 
