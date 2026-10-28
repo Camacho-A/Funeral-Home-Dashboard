@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { isSignatureRequestsEnabled } from '@/domain/organization/signatureRequestCapability';
-import { isDocumentArchivingEnabled } from '@/domain/organization/documentArchiveCapability';
+import { isDocumentArchivingAdministratorsOnly, isDocumentArchivingEnabled } from '@/domain/organization/documentArchiveCapability';
 import { useMyPermissions } from '@/hooks/useRbac';
 import {
   useCaseDocumentLibrary,
@@ -33,6 +33,7 @@ import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
 import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
 import { buildCaseDocumentDownloadUrl, buildCaseDocumentViewUrl } from '@/lib/caseDocumentsClient';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
+import { RemoveDocumentDialog } from './RemoveDocumentDialog';
 import type { CaseDocument, CaseDocumentWithActorName } from '@/types/caseDocument';
 import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
@@ -209,7 +210,13 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const permissions = myPermissionsQuery.isSuccess ? myPermissionsQuery.data.permissions : null;
   const canGenerate = permissions === null || permissions.includes('document.generate');
   const canUpload = permissions === null || permissions.includes('document.upload');
-  const canArchive = (permissions === null || permissions.includes('document.archive')) && isDocumentArchivingEnabled(organizationId);
+  // 2026-10: where archiving is the administrators-only "Remove", it is
+  // offered only once the permissions have loaded and show an administrator.
+  const removeIsAdministratorsOnly = isDocumentArchivingAdministratorsOnly(organizationId);
+  const canArchive =
+    (permissions === null || permissions.includes('document.archive')) &&
+    isDocumentArchivingEnabled(organizationId) &&
+    (!removeIsAdministratorsOnly || (permissions?.includes('organization.manage') ?? false));
   const canRequestSignature = (permissions === null || permissions.includes('signature.request')) && signatureRequestsEnabled;
 
   const documents = documentsQuery.data ?? [];
@@ -317,7 +324,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       items.push({ label: 'Request Signature', onSelect: () => setRequestingSignatureFor(doc) });
     }
     if (canArchiveThis) {
-      items.push({ label: 'Archive', danger: true, dividerBefore: items.length > 0, onSelect: () => setArchivingDoc(doc) });
+      items.push({ label: removeIsAdministratorsOnly ? 'Remove' : 'Archive', danger: true, dividerBefore: items.length > 0, onSelect: () => setArchivingDoc(doc) });
     }
 
     return (
@@ -554,14 +561,22 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             />
           )}
 
-          {archivingDoc && (
+          {archivingDoc && removeIsAdministratorsOnly && (
+            <RemoveDocumentDialog
+              fileName={archivingDoc.fileName}
+              onClose={() => setArchivingDoc(null)}
+              onConfirm={(removal) => archive.mutateAsync({ documentId: archivingDoc.id, removal })}
+            />
+          )}
+
+          {archivingDoc && !removeIsAdministratorsOnly && (
             <ConfirmActionDialog
               open
               onClose={() => setArchivingDoc(null)}
               title="Archive Document"
               message={`"${archivingDoc.fileName}" will be archived and hidden from the active document list. This does not delete it.`}
               confirmLabel="Archive"
-              onConfirm={() => archive.mutateAsync(archivingDoc.id)}
+              onConfirm={() => archive.mutateAsync({ documentId: archivingDoc.id })}
             />
           )}
         </>

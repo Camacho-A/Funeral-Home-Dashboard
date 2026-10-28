@@ -1,0 +1,29 @@
+.reasons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.legend {
+  font-size: var(--font-size-12-5);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-13-5);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.note {
+  width: 100%;
+  box-sizing: border-box;
+}

@@ -43,7 +43,12 @@ import {
   recordDocumentArchived,
   type ActivityContext,
 } from './activityService';
-import { isDocumentArchivingEnabled } from '../domain/organization/documentArchiveCapability';
+import {
+  documentRemovalDescription,
+  isDocumentArchivingAdministratorsOnly,
+  isDocumentArchivingEnabled,
+  type DocumentRemoval,
+} from '../domain/organization/documentArchiveCapability';
 import { isCaseDocumentDownloadable, isCaseDocumentEligibleForBulkAction } from '../domain/documents/caseDocumentDisplay';
 import { getIdentityById } from './identityService';
 import { presentedExternalFormDocument } from '../domain/externalForms/formRegistry';
@@ -825,7 +830,15 @@ export async function upload(
   return finalDocument;
 }
 
-export async function archive(organizationId: string, caseId: string, documentId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<void> {
+export async function archive(
+  organizationId: string,
+  caseId: string,
+  documentId: string,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+  /** Required where archiving is the administrators-only "Remove". */
+  removal?: DocumentRemoval | null,
+): Promise<void> {
   // Handwritten item #12 (2026-09, Archive removal for Manors). Enforced
   // here, not just in the staff route, so every current and future caller
   // is covered by one centralized check — mirrors
@@ -837,14 +850,32 @@ export async function archive(organizationId: string, caseId: string, documentId
     throw new DocumentServiceError('Document archiving is not enabled for this organization.');
   }
 
+  if (isDocumentArchivingAdministratorsOnly(organizationId) && !removal) {
+    throw new DocumentServiceError('Choose why the document is being removed.');
+  }
+
   const documents = await list(organizationId, caseId, dataAdapterMode);
   const target = documents.find((d) => d.id === documentId);
   if (!target) {
     throw new DocumentServiceError('Document not found.');
   }
+  if (target.status !== 'active') {
+    throw new DocumentServiceError('Only a current document can be removed.');
+  }
   await updateDocumentStatus(organizationId, documentId, 'archived', dataAdapterMode);
   try {
-    await recordDocumentArchived(ctx, caseId, documentId, dataAdapterMode);
+    await recordDocumentArchived(
+      ctx,
+      caseId,
+      documentId,
+      dataAdapterMode,
+      removal
+        ? {
+            description: documentRemovalDescription(removal),
+            metadata: JSON.stringify({ fileName: target.fileName, reason: removal.reason, note: removal.note }),
+          }
+        : null,
+    );
   } catch (error) {
     console.error('Failed to record document.archived activity event:', error instanceof Error ? error.message : error);
   }

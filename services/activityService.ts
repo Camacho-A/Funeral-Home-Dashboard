@@ -1213,7 +1213,14 @@ export function recordDocumentRegenerated(
   );
 }
 
-export function recordDocumentArchived(ctx: ActivityContext, caseId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+export function recordDocumentArchived(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  dataAdapterMode: DataAdapterMode,
+  /** 2026-10: an administrator's "Remove", with its reason. */
+  removal?: { description: string; metadata: string } | null,
+): Promise<ActivityEvent> {
   return record(
     envelope(ctx, {
       caseId,
@@ -1223,8 +1230,8 @@ export function recordDocumentArchived(ctx: ActivityContext, caseId: string, doc
       resourceId: documentId,
       previousValue: JSON.stringify({ status: 'active' }),
       newValue: JSON.stringify({ status: 'archived' }),
-      description: 'Document archived',
-      metadata: null,
+      description: removal?.description ?? 'Document archived',
+      metadata: removal?.metadata ?? null,
       severity: 'info',
     }),
     dataAdapterMode,

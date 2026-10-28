@@ -87,7 +87,8 @@ export function useUploadCaseDocument(organizationId: string, caseId: string) {
 export function useArchiveCaseDocument(organizationId: string, caseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (documentId: string) => archiveCaseDocument({ organizationId, caseId, documentId }),
+    mutationFn: (params: { documentId: string; removal?: { reason: string; note: string | null } | null }) =>
+      archiveCaseDocument({ organizationId, caseId, ...params }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
   });
 }

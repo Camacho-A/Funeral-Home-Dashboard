@@ -162,6 +162,9 @@ export type OrganizationFeaturePreferences = {
   signatureRequestsEnabled: boolean;
   /** Document Archive action. Platform default: enabled. */
   documentArchivingEnabled: boolean;
+  /** 2026-10: the action reads "Remove", needs a reason (duplicate, wrong
+      document…), and is for administrators only. Platform default: off. */
+  documentArchivingAdministratorsOnly: boolean;
   /** Expected Cremains Pickup scheduling. `null` = opt-in not configured
       (nothing is scheduled). */
   cremainsPickup: CremainsPickupSettings | null;
@@ -286,6 +289,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   familyPortalEnabled: true,
   signatureRequestsEnabled: true,
   documentArchivingEnabled: true,
+  documentArchivingAdministratorsOnly: false,
   cremainsPickup: null,
   caseOwnerVisible: true,
   cashAdvanceOnStatement: true,
@@ -353,7 +357,11 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
   features: {
     familyPortalEnabled: false,
     signatureRequestsEnabled: false,
-    documentArchivingEnabled: false,
+    // 2026-10: back on, for administrators only, so a duplicate or wrong
+    // upload can be removed from a case (moved to its history, never
+    // deleted).
+    documentArchivingEnabled: true,
+    documentArchivingAdministratorsOnly: true,
     caseOwnerVisible: false,
     cashAdvanceOnStatement: false,
     readableItemCodes: true,

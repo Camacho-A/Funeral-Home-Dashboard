@@ -109,11 +109,17 @@ export async function uploadCaseDocument(params: {
   return body.document as CaseDocument;
 }
 
-export async function archiveCaseDocument(params: { organizationId: string; caseId: string; documentId: string }): Promise<void> {
+export async function archiveCaseDocument(params: {
+  organizationId: string;
+  caseId: string;
+  documentId: string;
+  /** Required where removal is administrators-only (see documentArchiveCapability). */
+  removal?: { reason: string; note: string | null } | null;
+}): Promise<void> {
   const response = await fetch(`/api/cases/${encodeURIComponent(params.caseId)}/documents/${encodeURIComponent(params.documentId)}/archive`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId: params.organizationId }),
+    body: JSON.stringify({ organizationId: params.organizationId, ...(params.removal ?? {}) }),
   });
   await parseJsonOrThrow(response);
 }

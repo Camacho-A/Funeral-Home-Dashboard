@@ -126,9 +126,9 @@ describe('capabilities per organization (managed-cremations unchanged, Gus/unkno
   });
 
   it('Document Archive', () => {
-    expect(isDocumentArchivingEnabled(MANORS_ORGANIZATION_ID)).toBe(false);
+    expect(isDocumentArchivingEnabled(MANORS_ORGANIZATION_ID)).toBe(true);
     for (const id of ids) expect(isDocumentArchivingEnabled(id)).toBe(true);
-    expect(ARCHIVE_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false });
+    expect(ARCHIVE_OVERRIDES).toEqual({});
   });
 
   it('Case Owner visibility', () => {

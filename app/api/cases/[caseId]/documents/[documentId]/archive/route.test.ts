@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockDefaultUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockManagerUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { caseDocumentFixtures } from '@/services/__mocks__/documentFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 
@@ -69,15 +69,25 @@ describe('POST /api/cases/[caseId]/documents/[documentId]/archive', () => {
     }
   });
 
-  it('5: rejects a direct/server-side archive attempt for Manors (managed-cremations) — permission alone is not sufficient, the organization capability overrides it', async () => {
+  it('Manors (2026-10): an administrator removes a document, with a reason', async () => {
     const document = await seedUploadedDocument(DEFAULT_ORGANIZATION_ID);
-    const response = await archiveRequest(document.id, { organizationId: DEFAULT_ORGANIZATION_ID });
-    expect(response.status).toBe(422);
-    const body = await response.json();
-    expect(body.error).not.toMatch(/managed-cremations|internal|stack/i); // safe, non-leaky message
-    // Never archived — the document's status is untouched by the rejected attempt.
+    const missing = await archiveRequest(document.id, { organizationId: DEFAULT_ORGANIZATION_ID });
+    expect(missing.status).toBe(400);
     expect(caseDocumentFixtures.find((d) => d.id === document.id)?.status).toBe('active');
-    expect(activityEventFixtures.some((e) => e.eventType === 'document.archived')).toBe(false);
+
+    const response = await archiveRequest(document.id, { organizationId: DEFAULT_ORGANIZATION_ID, reason: 'wrong_document', note: 'belongs to another case' });
+    expect(response.status).toBe(200);
+    expect(caseDocumentFixtures.find((d) => d.id === document.id)?.status).toBe('archived');
+    expect(activityEventFixtures.at(-1)?.description).toBe('Document removed — Wrong document: belongs to another case');
+  });
+
+  it('Manors (2026-10): a Manager — who has document.archive — still cannot remove; administrators only', async () => {
+    const document = await seedUploadedDocument(DEFAULT_ORGANIZATION_ID);
+    mockSession = { user: mockManagerUser };
+    const response = await archiveRequest(document.id, { organizationId: DEFAULT_ORGANIZATION_ID, reason: 'duplicate' });
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Only an administrator can remove a document.');
+    expect(caseDocumentFixtures.find((d) => d.id === document.id)?.status).toBe('active');
   });
 
   it('a role without document.archive (officeStaff) is refused — before the organization capability is even considered', async () => {

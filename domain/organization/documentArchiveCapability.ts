@@ -46,3 +46,38 @@ export function isDocumentArchivingEnabled(organizationId: string | null | undef
   if (!organizationId) return true;
   return getRegisteredOrganizationProfile(organizationId).features.documentArchivingEnabled;
 }
+
+/** Whether this organization's Archive is the administrators-only
+    "Remove" (see `features.documentArchivingAdministratorsOnly`). */
+export function isDocumentArchivingAdministratorsOnly(organizationId: string | null | undefined): boolean {
+  if (!organizationId) return false;
+  const features = getRegisteredOrganizationProfile(organizationId).features;
+  return features.documentArchivingEnabled && features.documentArchivingAdministratorsOnly;
+}
+
+/** Why a document was removed — required where removal is
+    administrators-only, recorded on the case's activity. */
+export const DOCUMENT_REMOVAL_REASONS = {
+  duplicate: 'Duplicate',
+  wrong_document: 'Wrong document',
+  other: 'Other',
+} as const;
+export type DocumentRemovalReason = keyof typeof DOCUMENT_REMOVAL_REASONS;
+export type DocumentRemoval = { reason: DocumentRemovalReason; note: string | null };
+
+/** A removal reason from a request body, or an error. "Other" needs a note. */
+export function parseDocumentRemoval(input: { reason?: unknown; note?: unknown }): DocumentRemoval | { error: string } {
+  const reason = input.reason;
+  if (typeof reason !== 'string' || !(reason in DOCUMENT_REMOVAL_REASONS)) {
+    return { error: 'Choose why the document is being removed.' };
+  }
+  const note = typeof input.note === 'string' ? input.note.trim().slice(0, 500) : '';
+  if (reason === 'other' && !note) return { error: 'Describe why the document is being removed.' };
+  return { reason: reason as DocumentRemovalReason, note: note || null };
+}
+
+/** "Document removed — Duplicate: uploaded twice" for the case activity. */
+export function documentRemovalDescription(removal: DocumentRemoval): string {
+  const label = DOCUMENT_REMOVAL_REASONS[removal.reason];
+  return `Document removed — ${label}${removal.note ? `: ${removal.note}` : ''}`;
+}

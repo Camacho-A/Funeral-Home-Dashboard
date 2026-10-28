@@ -372,18 +372,30 @@ describe('archive', () => {
    * any future caller) can never archive a Manors CaseDocument regardless
    * of the caller's own `document.archive` permission.
    */
-  describe('Manors (managed-cremations) — document archiving disabled (item #12, 2026-09)', () => {
-    it('5: rejects an archive attempt even for an otherwise-valid, existing document — permission alone is not sufficient', async () => {
+  describe('Manors (managed-cremations) — Remove, with a reason (2026-10)', () => {
+    it('refuses a removal without a reason — the document is untouched', async () => {
       const template = await createSampleTemplate();
       const doc = await generate({ caseId: TEST_CASE_ID, templateId: template.id, idFactory }, ctx(), 'mock');
 
-      await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock')).rejects.toThrow(DocumentServiceError);
-      await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock')).rejects.toThrow('not enabled for this organization');
-
-      // The document's status is untouched by the rejected attempt.
+      await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock')).rejects.toThrow('Choose why the document is being removed.');
       const documents = await list(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
       expect(documents.find((d) => d.id === doc.id)?.status).toBe('active');
       expect(activityEventFixtures.some((e) => e.eventType === 'document.archived')).toBe(false);
+    });
+
+    it('removes a duplicate upload: moved to history (not deleted), reason recorded', async () => {
+      const doc = await upload({ caseId: TEST_CASE_ID, fileName: 'REYNOLDS PERMIT.pdf', mimeType: 'application/pdf', idFactory }, Buffer.from('a'), ctx(), 'mock');
+      await archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock', { reason: 'duplicate', note: null });
+
+      const documents = await list(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, 'mock');
+      expect(documents.find((d) => d.id === doc.id)?.status).toBe('archived');
+      const event = activityEventFixtures.at(-1)!;
+      expect(event.eventType).toBe('document.archived');
+      expect(event.description).toBe('Document removed — Duplicate');
+      expect(JSON.parse(event.metadata!)).toEqual({ fileName: 'REYNOLDS PERMIT.pdf', reason: 'duplicate', note: null });
+
+      // Already removed — a second attempt is refused, not repeated.
+      await expect(archive(DEFAULT_ORGANIZATION_ID, TEST_CASE_ID, doc.id, ctx(), 'mock', { reason: 'duplicate', note: null })).rejects.toThrow('Only a current document can be removed.');
     });
   });
 });
