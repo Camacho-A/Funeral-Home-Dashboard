@@ -8,7 +8,22 @@ export type RowMenuItem = { label: string; onSelect: () => void; danger?: boolea
  * SOLIS Final Phase, §0.7 — shared row "⋯" menu. Same open/close pattern as
  * AccountMenu.tsx: outside mousedown and Escape both close it.
  */
-export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+export function RowMenu({
+  label,
+  items,
+  triggerLabel,
+  triggerClassName,
+  align = 'right',
+}: {
+  label: string;
+  items: RowMenuItem[];
+  /** 2026-10: a labeled button (e.g. "Create document ▾") instead of the
+      "⋯" icon. Omitted → the icon, exactly as before. */
+  triggerLabel?: string;
+  triggerClassName?: string;
+  /** Which edge the menu lines up with. Default 'right', as before. */
+  align?: 'left' | 'right';
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -29,11 +44,17 @@ export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] 
   if (items.length === 0) return null;
   return (
     <div className="sx-menu-root" ref={rootRef}>
-      <button type="button" className="sx-icon-btn" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <span aria-hidden="true">⋯</span>
-      </button>
+      {triggerLabel ? (
+        <button type="button" className={triggerClassName ?? 'sx-btn sx-btn-secondary'} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {triggerLabel} <span aria-hidden="true">▾</span>
+        </button>
+      ) : (
+        <button type="button" className="sx-icon-btn" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <span aria-hidden="true">⋯</span>
+        </button>
+      )}
       {open && (
-        <div className="sx-menu" role="menu">
+        <div className="sx-menu" role="menu" style={align === 'left' ? { left: 0, right: 'auto' } : undefined}>
           {items.map((item) => (
             <div key={item.label} style={{ display: 'contents' }}>
               {item.dividerBefore && <div className="sx-menu-divider" role="separator" />}

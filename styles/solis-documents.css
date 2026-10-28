@@ -29,8 +29,13 @@
 @keyframes sx-indet { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 .sx-docs-bulk-note { margin: 0 0 16px; }
 @media (max-width: 860px) {
-  .sx-docs-toolbar > .sx-btn-primary { flex: 1 1 100%; height: 44px; }
+  .sx-docs-toolbar > .sx-btn-primary { flex: 1 1 calc(50% - 4px); height: 44px; }
   .sx-docs-toolbar > .sx-btn-secondary { flex: 1 1 calc(50% - 4px); height: 44px; }
+  /* Toolbar (2026-10): the "Create document" menu and Upload File share the
+     first row; Print All and Download All share the second. */
+  .sx-docs-toolbar > .sx-menu-root { flex: 1 1 calc(50% - 4px); }
+  .sx-docs-toolbar > .sx-menu-root > .sx-btn { width: 100%; height: 44px; }
+  .sx-docs-toolbar > .sx-btn-ghost { flex: 1 1 calc(50% - 4px); height: 44px; }
   .sx-docs-toolbar-spacer { display: none; }
   .sx-doc-row { grid-template-columns: 32px minmax(0, 1fr) 44px; row-gap: 4px; align-items: start; padding: 12px 0; margin: 0; border-radius: 0; }
   .sx-doc-name { white-space: normal; overflow-wrap: anywhere; }

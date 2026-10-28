@@ -128,6 +128,36 @@ function openRowMenu(fileName: string) {
   if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
 }
 
+
+/**
+ * Toolbar (2026-10): every "create a document" action lives in the
+ * "Create document" menu. Opens it (if closed) and returns the named item.
+ */
+function openCreateMenu(): boolean {
+  const trigger = screen.queryByRole('button', { name: /Create document|Generating…|Extracting…/ });
+  if (!trigger) return false;
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  return true;
+}
+function createMenuItem(name: string) {
+  openCreateMenu();
+  return screen.getByRole('menuitem', { name });
+}
+function createMenuItemNames(): string[] {
+  if (!openCreateMenu()) return [];
+  const names = screen.queryAllByRole('menuitem').map((item) => item.textContent ?? '');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  return names;
+}
+async function findCreateMenuItem(name: string) {
+  await screen.findByRole('button', { name: /Create document/ });
+  await waitFor(() => {
+    openCreateMenu();
+    expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
+  });
+  return screen.getByRole('menuitem', { name });
+}
+
 beforeEach(() => {
   mockPermissions(['document.view', 'document.generate', 'document.upload', 'document.archive', 'signature.request', 'signature.read', 'signature.cancel']);
   mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
@@ -165,7 +195,7 @@ describe('CaseDocumentsTab — permission graceful degradation (AUTH_ADAPTER=moc
     renderTab();
 
     expect(await screen.findByText('Cremation Authorization.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(createMenuItem('Generate Document…')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
   });
 
@@ -175,7 +205,7 @@ describe('CaseDocumentsTab — permission graceful degradation (AUTH_ADAPTER=moc
     renderTab();
 
     expect(await screen.findByText('Cremation Authorization.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(createMenuItem('Generate Document…')).toBeInTheDocument();
   });
 });
 
@@ -285,7 +315,7 @@ describe('CaseDocumentsTab — document list', () => {
     renderTab();
 
     await screen.findByText('Cremation Authorization.pdf');
-    expect(screen.queryByRole('button', { name: 'Generate Document' })).not.toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Generate Document…');
     expect(screen.queryByRole('button', { name: 'Upload File' })).not.toBeInTheDocument();
     // document.view only: the row still has a downloadable doc (View/
     // Download/Print), so its "More actions" menu exists — Archive is
@@ -322,7 +352,7 @@ describe('CaseDocumentsTab — archive flow', () => {
     renderTab();
 
     await screen.findByText('No documents for this case yet.');
-    fireEvent.click(screen.getByRole('button', { name: 'Generate Document' }));
+    fireEvent.click(createMenuItem('Generate Document…'));
 
     expect(await screen.findByRole('dialog', { name: 'Generate Document' })).toBeInTheDocument();
   });
@@ -605,7 +635,7 @@ describe('CaseDocumentsTab — Signature Requests organization capability (handw
 
     await screen.findByText('Statement of Funeral Goods and Services Selected.pdf');
     expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(createMenuItem('Generate Document…')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
     await waitFor(() => {
       openRowMenu('Statement of Funeral Goods and Services Selected.pdf');
@@ -769,7 +799,7 @@ describe('CaseDocumentsTab — Documents/Forms sub-tab switcher (Task #12, 2026-
     renderTab();
 
     expect(await screen.findByText('Cremation Authorization.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(createMenuItem('Generate Document…')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
   });
 
@@ -786,7 +816,7 @@ describe('CaseDocumentsTab — Documents/Forms sub-tab switcher (Task #12, 2026-
     expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'false');
     // Documents content is hidden while Forms is active, not merely styled away.
     expect(screen.queryByText('Cremation Authorization.pdf')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Generate Document' })).not.toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Generate Document…');
   });
 
   it('clicking back to Documents shows Documents content again and hides Forms', async () => {
@@ -920,11 +950,11 @@ describe('CaseDocumentsTab — Documents/History separation (Task #12 follow-up,
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-superseded', fileName: 'old.pdf', status: 'superseded' })]);
     renderTab();
 
-    expect(await screen.findByRole('button', { name: 'Generate Document' })).toBeInTheDocument();
+    expect(await findCreateMenuItem('Generate Document…')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'History' }));
     await screen.findByText('old.pdf');
-    expect(screen.queryByRole('button', { name: 'Generate Document' })).not.toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Generate Document…');
   });
 
   it('12: an existing active uploaded document (not generated) remains in Documents', async () => {
@@ -1132,15 +1162,15 @@ describe('CaseDocumentsTab — Envelope and Certificate of Cremation on demand (
   it('offers both to staff who can generate documents, for an organization that has them', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
     renderTab();
-    expect(await screen.findByRole('button', { name: 'Generate Envelope' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate Certificate' })).toBeInTheDocument();
+    expect(await findCreateMenuItem('Generate Envelope')).toBeInTheDocument();
+    expect(createMenuItem('Generate Certificate')).toBeInTheDocument();
   });
 
   it('asks the server for the chosen document', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
     vi.mocked(caseDocumentsClient.generateOfficialCaseDocument).mockResolvedValue();
     renderTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'Generate Envelope' }));
+    fireEvent.click(await findCreateMenuItem('Generate Envelope'));
     await waitFor(() =>
       expect(caseDocumentsClient.generateOfficialCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ kind: 'envelope' })),
     );
@@ -1150,7 +1180,7 @@ describe('CaseDocumentsTab — Envelope and Certificate of Cremation on demand (
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
     vi.mocked(caseDocumentsClient.generateOfficialCaseDocument).mockRejectedValue(new Error('Record the decedent\'s name and the date of cremation first.'));
     renderTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'Generate Certificate' }));
+    fireEvent.click(await findCreateMenuItem('Generate Certificate'));
     expect(await screen.findByText(/date of cremation first/)).toBeInTheDocument();
   });
 
@@ -1159,14 +1189,14 @@ describe('CaseDocumentsTab — Envelope and Certificate of Cremation on demand (
     mockPermissions(['document.view']);
     const { unmount } = renderTab();
     await screen.findByText(/No documents|documents/i);
-    expect(screen.queryByRole('button', { name: 'Generate Envelope' })).not.toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Generate Envelope');
     unmount();
 
     mockPermissions(['document.view', 'document.generate']);
     mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
     renderTab(SECOND_MOCK_ORGANIZATION_ID);
     await screen.findAllByText(/documents/i);
-    expect(screen.queryByRole('button', { name: 'Generate Envelope' })).not.toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Generate Envelope');
   });
 });
 
@@ -1223,7 +1253,7 @@ describe('CaseDocumentsTab — Cremation Label (2026-10)', () => {
   it('offers the Cremation Label to Manors staff who can generate documents only', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
     renderTab();
-    expect(await screen.findByRole('button', { name: 'Cremation Label' })).toBeInTheDocument();
+    expect(await findCreateMenuItem('Cremation Label…')).toBeInTheDocument();
   });
 
   it('is not offered to an organization without an approved label', async () => {
@@ -1231,11 +1261,11 @@ describe('CaseDocumentsTab — Cremation Label (2026-10)', () => {
     mockOrganization({ id: SECOND_MOCK_ORGANIZATION_ID });
     renderTab(SECOND_MOCK_ORGANIZATION_ID);
     await screen.findAllByText(/documents/i);
-    expect(screen.queryByRole('button', { name: 'Cremation Label' })).not.toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Cremation Label…');
   });
 });
 
-describe('CaseDocumentsTab — ME Form and Crematory Form (2026-10)', () => {
+describe('CaseDocumentsTab — Release Form and Crematory Form (2026-10)', () => {
   const state = (over: Partial<caseDocumentsClient.ArrangementExtractsState> = {}): caseDocumentsClient.ArrangementExtractsState => ({
     source: { documentId: 'arr-1', fileName: 'Arrangement Forms.pdf', createdAt: '2026-10-27T15:00:00.000Z' },
     isMedicalExaminerCase: true,
@@ -1245,27 +1275,27 @@ describe('CaseDocumentsTab — ME Form and Crematory Form (2026-10)', () => {
   });
   beforeEach(() => vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]));
 
-  it('offers "Extract ME Form (Page 2)" only on a Medical Examiner case, and saves it', async () => {
+  it('offers "Extract Release Form" only on a Medical Examiner case, and saves it', async () => {
     vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
     vi.mocked(caseDocumentsClient.extractArrangementPage).mockResolvedValue({ outcome: 'saved', documentId: 'me-1', version: 1 });
     renderTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'Extract ME Form (Page 2)' }));
-    expect(await screen.findByText("ME Form v1 saved to this case's Documents.")).toBeInTheDocument();
+    fireEvent.click(await findCreateMenuItem('Extract Release Form'));
+    expect(await screen.findByText("Release Form v1 saved to this case's Documents.")).toBeInTheDocument();
     expect(caseDocumentsClient.extractArrangementPage).toHaveBeenCalledWith({ organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', kind: 'me_form', permitVerifiedByStaff: false });
   });
 
-  it('hides the ME Form on a case that is not a Medical Examiner case', async () => {
+  it('hides the Release Form on a case that is not a Medical Examiner case', async () => {
     vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state({ isMedicalExaminerCase: false }));
     renderTab();
-    expect(await screen.findByRole('button', { name: 'Extract Crematory Form (Page 3)' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Extract ME Form (Page 2)' })).not.toBeInTheDocument();
+    expect(await findCreateMenuItem('Extract Crematory Form')).toBeInTheDocument();
+    expect(createMenuItemNames()).not.toContain('Extract Release Form');
   });
 
   it('without a recorded permit, asks staff to confirm before extracting the Crematory Form', async () => {
     vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
     vi.mocked(caseDocumentsClient.extractArrangementPage).mockResolvedValue({ outcome: 'saved', documentId: 'cf-1', version: 1 });
     renderTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'Extract Crematory Form (Page 3)' }));
+    fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
     expect(screen.getByText(/The permit isn.t recorded on this case yet/)).toBeInTheDocument();
     expect(caseDocumentsClient.extractArrangementPage).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Permit verified — Extract' }));
@@ -1279,10 +1309,9 @@ describe('CaseDocumentsTab — ME Form and Crematory Form (2026-10)', () => {
       .mockResolvedValueOnce({ outcome: 'unchanged', documentId: 'cf-1', version: 1 })
       .mockRejectedValueOnce(new Error('This case has no Arrangement Form PDF yet, so nothing was extracted.'));
     renderTab();
-    const button = await screen.findByRole('button', { name: 'Extract Crematory Form (Page 3)' });
-    fireEvent.click(button);
+    fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
     expect(await screen.findByText(/The Crematory Form is already up to date/)).toBeInTheDocument();
-    fireEvent.click(button);
+    fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
     expect(await screen.findByText('This case has no Arrangement Form PDF yet, so nothing was extracted.')).toBeInTheDocument();
   });
 
