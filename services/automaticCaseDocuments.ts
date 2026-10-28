@@ -20,6 +20,7 @@ import { generateBillingDocument, downloadOrgDocumentBytes, list as listCaseDocu
 import { loadCaseOnServer } from './serverCaseLoader';
 import { buildCertificateOfCremationPdf, buildEnvelopePdf } from './officialDocumentTemplates';
 import { generateCremationLabelAfterCaseChange, type AutomaticCremationLabelOutcome } from './cremationLabelService';
+import { extractCrematoryFormAfterCaseChange, type AutomaticCrematoryFormOutcome } from './arrangementPageExtractService';
 
 /**
  * Automatic Envelope and Certificate of Cremation (2026-10). See
@@ -164,22 +165,30 @@ async function envelopeIsDue(before: Case | null, after: Case, dataAdapterMode: 
 
 /** After a case is created or saved: regenerates whatever the change
     affects — the Envelope, the Certificate of Cremation and (2026-10) the
-    Cremation Label. `before` is null for a new case. Never throws. */
+    Cremation Label and the Crematory Form. `before` is null for a new
+    case. Never throws. */
 export async function regenerateOfficialDocumentsAfterCaseChange(
   before: Case | null,
   after: Case,
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
-): Promise<Partial<Record<OfficialDocumentKind, OfficialDocumentOutcome>> & { cremation_label?: AutomaticCremationLabelOutcome }> {
-  const results: Partial<Record<OfficialDocumentKind, OfficialDocumentOutcome>> & { cremation_label?: AutomaticCremationLabelOutcome } = {};
+): Promise<AutomaticDocumentResults> {
+  const results: AutomaticDocumentResults = {};
   for (const kind of officialDocumentsToRegenerate(before, after)) {
     if (kind === 'envelope' && !(await envelopeIsDue(before, after, dataAdapterMode))) continue;
     results[kind] = await generateOfficialDocument(kind, after, ctx, dataAdapterMode);
   }
   const label = await generateCremationLabelAfterCaseChange(before, after, ctx, dataAdapterMode);
   if (label !== 'not_applicable') results.cremation_label = label;
+  const crematoryForm = await extractCrematoryFormAfterCaseChange(before, after, ctx, dataAdapterMode);
+  if (crematoryForm !== 'not_applicable') results.crematory_form = crematoryForm;
   return results;
 }
+
+export type AutomaticDocumentResults = Partial<Record<OfficialDocumentKind, OfficialDocumentOutcome>> & {
+  cremation_label?: AutomaticCremationLabelOutcome;
+  crematory_form?: AutomaticCrematoryFormOutcome;
+};
 
 /** Staff-requested regeneration (e.g. after a failure): loads the case
     scoped to the caller's organization first. `missing` names what the

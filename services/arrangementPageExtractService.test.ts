@@ -20,7 +20,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   },
 }));
 
-const { extractArrangementPage, getArrangementExtractsState, extractPdfPage } = await import('./arrangementPageExtractService');
+const { extractArrangementPage, getArrangementExtractsState, extractPdfPage, extractCrematoryFormAfterCaseChange } = await import('./arrangementPageExtractService');
 const { upload } = await import('./documentService');
 const { caseFixtures } = await import('./__mocks__/fixtures');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
@@ -220,5 +220,75 @@ describe('getArrangementExtractsState', () => {
       source: { documentId: 'arr-1', fileName: 'Arrangement Forms.pdf' },
       latest: { me_form: { documentId: document.id, version: 1 }, crematory_form: null },
     });
+  });
+});
+
+describe('automatic Crematory Form (2026-10)', () => {
+  /** Case 1042 with a Manors-shaped workflow 2 and 3 and the given ticks. */
+  function withWorkflow(checklistState: Record<string, boolean>): Case {
+    const base = caseFixtures[index];
+    const stage = base.workflowSnapshot!.stages[0];
+    const item = (i: number, label: string) => ({ ...stage.checklist.items[0], index: i, label, hasField: false, requiredCaseFields: undefined });
+    return {
+      ...base,
+      isMedicalExaminerCase: false,
+      checklistState,
+      workflowSnapshot: {
+        ...base.workflowSnapshot!,
+        stages: [
+          ...base.workflowSnapshot!.stages.filter((s) => s.displayStage !== 2 && s.displayStage !== 3),
+          { ...stage, displayStage: 2, checklist: { ...stage.checklist, items: [item(0, 'EDRS submitted & sent to doctor'), item(1, 'Cause of death entered'), item(2, 'Hardsave for state approval if not an online doctor')] } },
+          { ...stage, displayStage: 3, checklist: { ...stage.checklist, items: [item(0, 'Permit sent to crematory'), item(1, 'Authorization of release sent to crematory')] } },
+        ],
+      },
+    };
+  }
+
+  it('checking the last step of workflow 2 (permit still pending) saves the Crematory Form, attributed and audited', async () => {
+    const sourceBytes = await arrangementPdf(6);
+    await storeArrangement(sourceBytes, 'arr-1');
+    const before = withWorkflow({ '2:0': true, '2:1': true });
+    const after = withWorkflow({ '2:0': true, '2:1': true, '2:2': true });
+    caseFixtures[index] = after;
+
+    expect(await extractCrematoryFormAfterCaseChange(before, after, ctx('staff-lee'), 'mock')).toBe('generated');
+    const [form] = saved('external_form.crematory_form');
+    expect(form).toMatchObject({ fileName: 'Crematory Form.pdf', version: 1, generatedBy: 'staff-lee' });
+    expect(await sourcePageOf(blobs.get(form.storageKey)!.buffer, sourceBytes)).toBe(3);
+    expect(events().find((e) => e.eventType === 'document.page_extracted')!.description).toBe(
+      'Crematory Form v1 extracted from page 3 of the Arrangement Forms (permit: "Attestation Received / Hard Saved" checked)',
+    );
+  });
+
+  it('other saves create nothing — before that moment, while it holds, or once the permit step is checked', async () => {
+    await storeArrangement(await arrangementPdf(6), 'arr-1');
+    const ready = withWorkflow({ '2:2': true });
+    caseFixtures[index] = ready;
+    expect(await extractCrematoryFormAfterCaseChange(withWorkflow({}), withWorkflow({ '2:0': true }), ctx(), 'mock')).toBe('not_applicable');
+    expect(await extractCrematoryFormAfterCaseChange(ready, withWorkflow({ '2:2': true, '0:1': true }), ctx(), 'mock')).toBe('not_applicable');
+    expect(await extractCrematoryFormAfterCaseChange(ready, withWorkflow({ '2:2': true, '3:0': true }), ctx(), 'mock')).toBe('not_applicable');
+    expect(saved('external_form.crematory_form')).toHaveLength(0);
+  });
+
+  it('with no Arrangement Form yet, reports it and creates nothing — never throws', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const after = withWorkflow({ '2:2': true });
+    caseFixtures[index] = after;
+    expect(await extractCrematoryFormAfterCaseChange(withWorkflow({}), after, ctx(), 'mock')).toBe('missing_source');
+    expect(saved('external_form.crematory_form')).toHaveLength(0);
+  });
+
+  it('a Crematory Form already extracted from the same Arrangement Form is not duplicated', async () => {
+    await storeArrangement(await arrangementPdf(6), 'arr-1');
+    const after = withWorkflow({ '2:2': true });
+    caseFixtures[index] = after;
+    await extractArrangementPage('crematory_form', CASE_ID, { permitVerifiedByStaff: true }, ctx(), 'mock');
+    expect(await extractCrematoryFormAfterCaseChange(withWorkflow({}), after, ctx(), 'mock')).toBe('unchanged');
+    expect(saved('external_form.crematory_form')).toHaveLength(1);
+  });
+
+  it('never for another organization', async () => {
+    const after = { ...withWorkflow({ '2:2': true }), organizationId: SECOND_MOCK_ORGANIZATION_ID };
+    expect(await extractCrematoryFormAfterCaseChange(null, after, ctx('staff-x', SECOND_MOCK_ORGANIZATION_ID), 'mock')).toBe('not_applicable');
   });
 });

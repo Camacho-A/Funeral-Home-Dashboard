@@ -9,12 +9,14 @@ import { getRegisteredOrganizationProfile } from '@/domain/organization/organiza
 import {
   ARRANGEMENT_EXTRACTS,
   ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY,
+  crematoryFormIsDue,
   crematoryPermitStatus,
   type ArrangementExtractKind,
   type CrematoryPermitStatus,
 } from '@/domain/documents/arrangementPageExtracts';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import type { CaseDocument } from '@/types/caseDocument';
+import type { Case } from '@/types/case';
 
 /**
  * ME Form / Crematory Form (2026-10). Copies one page, unchanged, out of the
@@ -192,4 +194,38 @@ export async function extractArrangementPage(
     console.error('Failed to record document.page_extracted activity event:', error instanceof Error ? error.message : error);
   }
   return { outcome: 'saved', document };
+}
+
+export type AutomaticCrematoryFormOutcome = 'generated' | 'unchanged' | 'not_applicable' | 'missing_source' | 'failed';
+
+/**
+ * Automatic Crematory Form (2026-10). Called after a case is created or
+ * saved (services/automaticCaseDocuments.ts): when the save checks the last
+ * step of workflow 2 while "Permit sent to crematory" (the first step of
+ * workflow 3) is still pending, page 3 of the Arrangement Forms is saved as
+ * the Crematory Form, attributed to the staff member whose save caused it.
+ * Same extraction, versioning and audit as the button; nothing is sent.
+ * Never throws: a case with no Arrangement Form yet is reported, not failed,
+ * and the button stays available.
+ */
+export async function extractCrematoryFormAfterCaseChange(
+  before: Case | null,
+  after: Case,
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+): Promise<AutomaticCrematoryFormOutcome> {
+  if (after.organizationId !== ctx.organizationId) return 'not_applicable';
+  if (!getRegisteredOrganizationProfile(after.organizationId).features.arrangementPageExtracts) return 'not_applicable';
+  if (!crematoryFormIsDue(before, after)) return 'not_applicable';
+  try {
+    const { outcome } = await extractArrangementPage('crematory_form', after.id, {}, ctx, dataAdapterMode);
+    return outcome === 'saved' ? 'generated' : 'unchanged';
+  } catch (error) {
+    if (error instanceof ArrangementExtractError && error.status === 422) {
+      console.warn(`[crematory form] Case ${after.id} reached the permit step but its Crematory Form was not extracted: ${error.message}`);
+      return 'missing_source';
+    }
+    console.error(`[crematory form] Automatic Crematory Form for case ${after.id} failed:`, error instanceof Error ? error.message : error);
+    return 'failed';
+  }
 }
