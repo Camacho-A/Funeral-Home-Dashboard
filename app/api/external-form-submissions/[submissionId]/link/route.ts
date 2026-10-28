@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { applyArrangementNokRelationship } from '@/services/externalForms/nokRelationshipAutofillService';
+import { resolveFormRole } from '@/domain/externalForms/formRegistry';
 import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -96,6 +98,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   }
 
   const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, b.caseId, activityCtx, dataAdapterMode, { config });
+  // Next of Kin relationship (2026-10) — see nokRelationshipAutofillService.ts.
+  if (resolveFormRole(config) === 'arrangement') await applyArrangementNokRelationship(activityCtx, b.caseId, updatedSubmission ?? submission, dataAdapterMode);
 
   // Manors workflow reconciliation (2026-09): same reasoning as the other
   // form-link call sites.

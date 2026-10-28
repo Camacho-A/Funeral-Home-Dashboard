@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { applyArrangementNokRelationship } from '@/services/externalForms/nokRelationshipAutofillService';
+import { resolveFormRole } from '@/domain/externalForms/formRegistry';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canCreateCase } from '@/services/authorizationPolicyService';
@@ -278,6 +280,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   try {
     const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
     await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode, { config });
+    // Next of Kin relationship (2026-10) — see nokRelationshipAutofillService.ts.
+    if (resolveFormRole(config) === 'arrangement') await applyArrangementNokRelationship(activityCtx, outcome.caseId, refreshed ?? submission, dataAdapterMode);
   } catch (error) {
     console.error('[create-case] Case created but its form PDF could not be imported:', error instanceof Error ? error.message : error);
   }

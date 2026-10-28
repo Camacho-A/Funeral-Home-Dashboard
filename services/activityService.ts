@@ -2865,6 +2865,31 @@ export function recordExternalFormSubmissionDismissed(ctx: ActivityContext, subm
   );
 }
 
+/** 2026-10: see ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_NOK_RELATIONSHIP_REVIEW. */
+export function recordNokRelationshipNeedsReview(
+  ctx: ActivityContext,
+  caseId: string,
+  submissionId: string,
+  details: { submittedValue: string; reason: string; formNextOfKinName: string | null },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'external_form',
+      eventType: ACTIVITY_EVENT_TYPES.EXTERNAL_FORM_NOK_RELATIONSHIP_REVIEW,
+      resourceType: 'externalFormSubmission',
+      resourceId: submissionId,
+      previousValue: null,
+      newValue: JSON.stringify(details),
+      description: `Arrangement Form Next of Kin relationship "${details.submittedValue}" was not filled in: ${details.reason}. Review and choose the relationship on the case.`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordExternalFormFieldsApplied(ctx: ActivityContext, caseId: string, submissionId: string, appliedFieldNames: string[], dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   return record(
     envelope(ctx, {

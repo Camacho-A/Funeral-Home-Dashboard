@@ -76,7 +76,13 @@ export type MappedSolisField =
   // nextOfKinName/nextOfKinPhone/nextOfKinRelationship from the Informant
   // fields — see arrangementNokDerivation.ts, the only code path allowed
   // to make that derivation.
-  | 'informantIsNextOfKin';
+  | 'informantIsNextOfKin'
+  // NOK relationship as submitted (2026-10): the raw option text of
+  // whichever relationship answer identified the Next of Kin (qid 225 on
+  // the "Yes" path, qid 279 on "No"). Review-only. Kept so a value with
+  // no matching SOLIS option is preserved and flagged rather than
+  // silently dropped (arrangementNokDerivation.ts).
+  | 'nextOfKinRelationshipSource';
 
 export type FieldMapEntry = {
   qid: string;
@@ -143,6 +149,9 @@ export const ARRANGEMENT_NOK_RELATIONSHIP_VALUE_MAP: Record<string, NextOfKinRel
   Brother: 'brother',
   Grandson: 'grandchild',
   Granddaughter: 'grandchild',
+  // 2026-10: qid 225's live option list gained "Legal Representative"
+  // (qid 279's has not). Before this entry it was silently dropped.
+  'Legal Representative': 'legal_representative',
   Other: 'other',
 };
 

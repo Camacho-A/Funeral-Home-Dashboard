@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { applyArrangementNokRelationship } from '@/services/externalForms/nokRelationshipAutofillService';
+import { resolveFormRole } from '@/domain/externalForms/formRegistry';
 import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -225,6 +227,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   }
 
   const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode, { config });
+  // Next of Kin relationship (2026-10) — see nokRelationshipAutofillService.ts.
+  if (resolveFormRole(config) === 'arrangement') await applyArrangementNokRelationship(activityCtx, caseId, updatedSubmission ?? submission, dataAdapterMode);
 
   // Manors workflow reconciliation (2026-09): same reasoning as the
   // historical-import route — this case's Arrangement Form is now a

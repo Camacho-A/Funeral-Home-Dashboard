@@ -446,6 +446,10 @@ export const ACTIVITY_EVENT_TYPES = {
   EXTERNAL_FORM_SUBMISSION_REVIEWED: 'external_form.submission_reviewed',
   EXTERNAL_FORM_SUBMISSION_DISMISSED: 'external_form.submission_dismissed',
   EXTERNAL_FORM_FIELDS_APPLIED: 'external_form.fields_applied',
+  /** 2026-10: an Arrangement Form named a Next of Kin relationship that
+      could not be filled in safely (no matching option, or a different
+      person) — kept for staff to review, never guessed. */
+  EXTERNAL_FORM_NOK_RELATIONSHIP_REVIEW: 'external_form.nok_relationship_review',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

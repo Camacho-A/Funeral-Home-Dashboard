@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { applyArrangementNokRelationship } from '@/services/externalForms/nokRelationshipAutofillService';
 import { recordSlaEventAutomatically } from '@/services/slaService';
 import { completeArrangementFormChecklistItem } from '@/services/automaticChecklistCompletion';
 import { loadCaseOnServer } from '@/services/serverCaseLoader';
@@ -426,6 +427,7 @@ export async function POST(request: Request) {
     if (outcome.created) {
       const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
       const pdfResult = await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode, { config });
+      if (formRole === 'arrangement') await applyArrangementNokRelationship(activityCtx, outcome.caseId, refreshed ?? submission, dataAdapterMode);
 
       /**
        * Everyday notifications (2026-10). ONE notification for a case this
@@ -507,6 +509,11 @@ export async function POST(request: Request) {
     // submission itself (pdfStatus: 'failed') and retried later, never
     // surfaced as a webhook failure to Jotform.
     const pdfResult = await preservePdfForSubmission(landed, caseId, activityCtx, dataAdapterMode, { config });
+
+    // Next of Kin relationship (2026-10): filled in from the Arrangement
+    // Form when the case's is still blank and it is safe to; flagged for
+    // review otherwise. Best-effort; never fails the webhook.
+    if (formRole === 'arrangement') await applyArrangementNokRelationship(activityCtx, caseId, landed, dataAdapterMode);
 
     /**
      * A form that landed on a case that already existed. Keyed on the
