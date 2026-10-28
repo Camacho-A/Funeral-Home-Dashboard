@@ -215,6 +215,10 @@ export const ACTIVITY_EVENT_TYPES = {
   CREMATORY_PACKAGE_BUILT: 'crematory.package_built',
   CREMATORY_PACKAGE_SUBMITTED: 'crematory.package_submitted',
   CREMATORY_PACKAGE_SEND_FAILED: 'crematory.package_send_failed',
+  /** Case SSN (2026-10). Captured from an intake form, or corrected by an
+      administrator with a reason. Never carries any digit of the number. */
+  CASE_SSN_CAPTURED: 'case.ssn_captured',
+  CASE_SSN_CORRECTED: 'case.ssn_corrected',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */

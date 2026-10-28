@@ -1,5 +1,6 @@
 import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from '../types/sla';
 import { SLA_DELAY_REASONS, SLA_EVENT_KEYS, SLA_MILESTONE_KEYS } from '../types/sla';
+import { caseSsnSummary } from '../domain/cases/caseSsn';
 import type { Case, CaseUpdate, ChecklistCompletionRecord, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail, isValidCalendarDate } from '../utils/inputMask';
@@ -88,6 +89,8 @@ export type WixCaseItem = {
   slaEvents?: unknown;
   slaDelays?: unknown;
   crematory?: unknown;
+  /** Case SSN (2026-10): encrypted; only its summary is mapped. */
+  ssnProtected?: unknown;
   stageEnteredAt?: unknown;
   fieldValues?: unknown;
   decedentName?: unknown;
@@ -316,6 +319,9 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     ...readChecklistCompletions(item.checklistCompletions),
     ...readSlaFields(item),
     ...(isPlainObject(item.crematory) ? { crematory: item.crematory as Case['crematory'] } : {}),
+    // Case SSN (2026-10): the last four digits and their source only — the
+    // encrypted number never leaves the server (domain/cases/caseSsn.ts).
+    ...(caseSsnSummary(item.ssnProtected) ? { ssnOnFile: caseSsnSummary(item.ssnProtected) } : {}),
     fieldValues: item.fieldValues as Record<number, string>,
     daysWaitingInStage: typeof item.daysWaitingInStage === 'number' ? item.daysWaitingInStage : 0,
     isStalled: typeof item.isStalled === 'boolean' ? item.isStalled : false,

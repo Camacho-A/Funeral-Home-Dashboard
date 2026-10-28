@@ -25,6 +25,7 @@
  */
 import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from './sla';
 import type { CaseWorkflowSnapshot } from './workflowTemplate';
+import type { CaseSsnSummary } from '../domain/cases/caseSsn';
 
 /** Manors launch-prep. The NOK's relationship to the deceased — a small,
     closed dropdown (never free text) distinct from
@@ -258,6 +259,9 @@ export type Case = {
       and sent. Written only by services/crematory/ — never by the generic
       case update — and merged key by key. See CaseCrematoryRecord. */
   crematory?: CaseCrematoryRecord;
+  /** Case SSN (2026-10): the last four digits and their source, never the
+      number (domain/cases/caseSsn.ts). Set only by the server. */
+  ssnOnFile?: CaseSsnSummary | null;
   /** SLA tracking (2026-10): recorded delays, keyed by delay id so
       concurrent records merge rather than overwrite. Never deleted. */
   slaDelays?: Record<string, SlaDelayRecord>;

@@ -34,6 +34,7 @@ import {
 
 export type { ManateeApplicationInput, ManateeDraft } from '@/domain/documents/manateeDeathCertificateApplication';
 import { buildManateeApplicationPdf, loadManateeApplicationTemplate, ManateeTemplateError } from './manateeApplicationTemplate';
+import { captureCaseSsnFromForms, readCaseSsn } from './caseSsnService';
 
 /**
  * Manatee County — Death Certificate Application (2026-10): the draft
@@ -144,10 +145,23 @@ async function loadCaseFor(organizationId: string, caseId: string, mode: DataAda
   return case_;
 }
 
-async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Omit<ManateeDraft, 'template' | 'latest'>; ssn: string | null }> {
+/**
+ * The SSN this application uses. The case's locked SSN (2026-10,
+ * services/caseSsnService.ts) always wins and cannot be replaced here;
+ * only when none is locked (e.g. SSN storage not set up yet) is it read
+ * from the forms for this document alone.
+ */
+async function ssnFor(case_: Case, forms: Array<{ source: FormSource; facts: FormFacts }>, mode: DataAdapterMode) {
+  const locked = await readCaseSsn(case_.organizationId, case_.id, mode);
+  if (locked) return { value: locked.ssn, source: 'case' as const, locked: true };
+  const fromForm = firstFrom(forms, (f) => f.ssn);
+  return fromForm ? { value: fromForm.value, source: fromForm.source, locked: false } : null;
+}
+
+async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Omit<ManateeDraft, 'template' | 'latest'>; ssn: string | null; ssnLocked: boolean }> {
   const forms = await formFactsFor(case_.organizationId, case_.id, mode);
   const name = firstFrom(forms, (f) => (f.name?.first && f.name.last ? f.name : null));
-  const ssn = firstFrom(forms, (f) => f.ssn);
+  const ssn = await ssnFor(case_, forms, mode);
   const city = firstFrom(forms, (f) => f.city);
   const spouse = firstFrom(forms, (f) => (f.spouse?.first || f.spouse?.last ? f.spouse : null));
   const relationship = relationshipForForm(case_.nextOfKinRelationship, case_.nextOfKinRelationshipOther);
@@ -189,17 +203,21 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
   return {
     draft: {
       values,
-      ssn: { onFile: Boolean(ssn), masked: maskSsn(ssn?.value), source: ssn?.source ?? null },
+      ssn: { onFile: Boolean(ssn), masked: maskSsn(ssn?.value), source: ssn?.source ?? null, locked: ssn?.locked ?? false },
       sources,
       issues,
       pricing: { perCertificateCents: PRICE_PER_CERTIFICATE_CENTS, fedexCents: FEDEX_FEE_CENTS, maxPerLine: MAX_CERTIFICATES_PER_LINE },
     },
     ssn: ssn?.value ?? null,
+    ssnLocked: ssn?.locked ?? false,
   };
 }
 
-export async function getManateeApplicationDraft(organizationId: string, caseId: string, mode: DataAdapterMode): Promise<ManateeDraft> {
+export async function getManateeApplicationDraft(organizationId: string, caseId: string, ctx: ActivityContext, mode: DataAdapterMode): Promise<ManateeDraft> {
   const case_ = await loadCaseFor(organizationId, caseId, mode);
+  // A case whose Arrangement Form arrived before SSNs were kept: its SSN is
+  // read from the form now, the first time it is needed, and locked.
+  if (!case_.ssnOnFile) await captureCaseSsnFromForms(ctx, caseId, mode);
   const [{ draft }, template, latest] = await Promise.all([draftFor(case_, mode), loadManateeApplicationTemplate(), latestApplication(organizationId, caseId, mode)]);
   return { ...draft, template: template.status === 'loaded' ? 'available' : template.status, latest };
 }
@@ -213,11 +231,18 @@ async function latestApplication(organizationId: string, caseId: string, mode: D
 }
 
 
-/** The reviewed values with the SSN resolved on the server: staff's, else the form's. */
+/**
+ * The reviewed values with the SSN resolved on the server: the case's
+ * locked SSN whenever there is one (a typed number or "not known" is then
+ * ignored); otherwise staff's typed number — used for this document only,
+ * never saved to the case — else the form's.
+ */
 async function resolveValues(case_: Case, input: ManateeApplicationInput, mode: DataAdapterMode): Promise<ManateeApplicationValues> {
+  const resolved = await draftFor(case_, mode);
   const typed = typeof input.ssn === 'string' && input.ssn.trim() ? input.ssn : null;
-  const ssn = input.ssnNotKnown ? null : (typed ?? (await draftFor(case_, mode)).ssn);
-  const values: ManateeApplicationValues = { ...input, ssn };
+  const values: ManateeApplicationValues = resolved.ssnLocked
+    ? { ...input, ssn: resolved.ssn, ssnNotKnown: false }
+    : { ...input, ssn: input.ssnNotKnown ? null : (typed ?? resolved.ssn) };
   const issues = manateeIssues(values);
   if (issues.length > 0) throw new ManateeApplicationError(issues[0].message, 422);
   return values;

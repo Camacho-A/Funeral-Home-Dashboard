@@ -44,6 +44,7 @@ import { CaseDocumentsTab } from '@/components/case/CaseDocumentsTab';
 import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
+import { CaseSsnField } from '@/components/case/CaseSsnField';
 
 /** Intake is the first step of every workflow — named here rather than
     written as a bare 0 at the use site. */
@@ -230,6 +231,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             arrangementAuthorizationConfirmed={case_.arrangementAuthorizationConfirmed}
             arrangementAuthorizationSource={case_.arrangementAuthorizationSource}
             isArchived={case_.isDeleted}
+            ssnField={
+              getRegisteredOrganizationProfile(organizationId).features.caseSsn ? (
+                <CaseSsnField organizationId={organizationId} caseId={case_.id} ssnOnFile={case_.ssnOnFile} readOnly={case_.isDeleted === true} />
+              ) : undefined
+            }
             isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
             caseNumber={viewModel.caseNumber}
             // The RAW stored name, not the composed one: this card edits it,

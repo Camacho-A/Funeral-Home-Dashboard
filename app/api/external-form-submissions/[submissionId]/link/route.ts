@@ -14,6 +14,7 @@ import { recordExternalFormSubmissionLinked } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import type { DataAdapterMode } from '@/lib/env';
+import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
 
 /**
  * Multi-tenant hardening (2026-10). The client-supplied `caseId` must name
@@ -100,6 +101,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
   const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, b.caseId, activityCtx, dataAdapterMode, { config });
   // Next of Kin relationship (2026-10) — see nokRelationshipAutofillService.ts.
   if (resolveFormRole(config) === 'arrangement') await applyArrangementNokRelationship(activityCtx, b.caseId, updatedSubmission ?? submission, dataAdapterMode);
+  // Case SSN (2026-10): the Arrangement / Vital Statistics form's SSN, locked on the case.
+  await captureCaseSsnFromSubmission(activityCtx, b.caseId, updatedSubmission ?? submission, dataAdapterMode);
 
   // Manors workflow reconciliation (2026-09): same reasoning as the other
   // form-link call sites.

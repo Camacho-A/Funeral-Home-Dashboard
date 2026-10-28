@@ -224,6 +224,9 @@ export type OrganizationFeaturePreferences = {
   /** Manatee County — Death Certificate Application (2026-10): fills the
       organization's own prefilled copy of form DH 1961 from a case. */
   manateeDeathCertificateApplication: boolean;
+  /** Case SSN (2026-10): captured from the Arrangement Form, encrypted and
+      locked on the case (domain/cases/caseSsn.ts). */
+  caseSsn: boolean;
   sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number } | null;
 };
 
@@ -311,6 +314,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   arrangementPageExtracts: false,
   sendToCrematory: null,
   manateeDeathCertificateApplication: false,
+  caseSsn: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -380,6 +384,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     arrangementPageExtracts: true,
     sendToCrematory: { emailOrganizationName: 'Manors Cremation', authorizationWorkflowStage: 2 },
     manateeDeathCertificateApplication: true,
+    caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {

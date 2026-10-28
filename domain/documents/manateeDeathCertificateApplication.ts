@@ -277,7 +277,7 @@ export type ManateeDraftValues = Omit<ManateeApplicationValues, 'ssn'>;
 export type ManateeDraft = {
   values: ManateeDraftValues;
   /** Never the number itself — whether one is on file and its last four. */
-  ssn: { onFile: boolean; masked: string | null; source: ManateeValueSource };
+  ssn: { onFile: boolean; masked: string | null; source: ManateeValueSource; /** The case's locked SSN (2026-10) — used as is, not replaceable here. */ locked: boolean };
   sources: Partial<Record<keyof ManateeDraftValues, ManateeValueSource>>;
   issues: ManateeIssue[];
   template: 'available' | 'not_configured' | 'not_found';

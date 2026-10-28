@@ -58,13 +58,20 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
   }, [previewUrl]);
 
   const ssnOnFile = draft.data?.ssn.onFile ?? false;
-  const input: ManateeApplicationInput | null = values ? { ...values, ssn: typedSsn.trim() ? typedSsn : null } : null;
+  /** The case's locked SSN (2026-10): used as is; nothing to type here. */
+  const ssnLocked = draft.data?.ssn.locked ?? false;
+  const input: ManateeApplicationInput | null = values
+    ? { ...values, ssnNotKnown: ssnLocked ? false : values.ssnNotKnown, ssn: !ssnLocked && typedSsn.trim() ? typedSsn : null }
+    : null;
   // The number on file is checked on the server; here it only counts as present.
   const issues = useMemo(
-    () => (values ? manateeIssues({ ...values, ssn: typedSsn.trim() ? typedSsn : ssnOnFile ? '000000000' : null }) : []),
-    [values, typedSsn, ssnOnFile],
+    () =>
+      values
+        ? manateeIssues({ ...values, ssnNotKnown: ssnLocked ? false : values.ssnNotKnown, ssn: !ssnLocked && typedSsn.trim() ? typedSsn : ssnOnFile ? '000000000' : null })
+        : [],
+    [values, typedSsn, ssnOnFile, ssnLocked],
   );
-  const typedSsnInvalid = typedSsn.trim() !== '' && !normalizeSsn(typedSsn);
+  const typedSsnInvalid = !ssnLocked && typedSsn.trim() !== '' && !normalizeSsn(typedSsn);
   const fees = values ? manateeFees(values.withCause, values.withoutCause, values.fedexFee) : null;
   const templateReady = draft.data?.template === 'available';
   const canContinue = Boolean(values) && issues.length === 0 && !typedSsnInvalid && templateReady && busy === null;
@@ -209,6 +216,18 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
                 {text('placeOfDeathCity', 'City or town of death', { required: true })}
                 {text('placeOfDeathCounty', 'County of death', { required: true })}
               </div>
+              {ssnLocked ? (
+                <div className="sx-field">
+                  <span className="sx-label">Social Security number</span>
+                  <span className={styles.locked}>
+                    {draft.data?.ssn.masked} <span className="sx-status">Locked on the case</span>
+                  </span>
+                  <span className="sx-help">
+                    Saved from the case&rsquo;s intake form and used as is. Only an administrator can correct it, from the case&rsquo;s
+                    information.
+                  </span>
+                </div>
+              ) : (
               <div className="sx-field">
                 <label className="sx-label sx-label-required" htmlFor="manatee-ssn">
                   Social Security number
@@ -237,7 +256,9 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
                   <input type="checkbox" checked={values.ssnNotKnown} onChange={(e) => set('ssnNotKnown', e.target.checked)} />
                   Not known — leave the box blank
                 </label>
+                <span className="sx-help">A number typed here is used for this document only — it is not saved to the case.</span>
               </div>
+              )}
               <h4 className={styles.subTitle}>Surviving spouse (if applicable and known)</h4>
               <div className={styles.grid3}>
                 {text('spouseFirst', 'First name')}

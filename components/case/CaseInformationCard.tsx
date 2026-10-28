@@ -633,6 +633,7 @@ export function CaseInformationCard({
   arrangementAuthorizationConfirmed,
   arrangementAuthorizationSource,
   isArchived,
+  ssnField,
   onArchiveChange,
   archivePending,
   isMedicalExaminerCase,
@@ -708,6 +709,9 @@ export function CaseInformationCard({
   /** Archived Cases (2026-10). Omitted on any caller that does not offer
       archiving (the control simply does not render). */
   isArchived?: boolean;
+  /** Case SSN (2026-10): the locked, last-four-only line, when the
+      organization keeps SSNs (components/case/CaseSsnField.tsx). */
+  ssnField?: React.ReactNode;
   onArchiveChange?: (archived: boolean) => void;
   archivePending?: boolean;
   /** Medical Examiner case (2026-10). Time of death, weight and certifier
@@ -925,6 +929,7 @@ export function CaseInformationCard({
           value={timeOfDeath}
           onSave={(v) => onSaveTimeOfDeath(v)}
         />
+        {ssnField}
         {/* Tag Number (2026-10). With the deceased's identifying details,
             so it is the first thing staff see — and a missing one is
             noticed — rather than sitting in the operational row further

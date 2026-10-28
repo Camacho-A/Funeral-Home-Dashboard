@@ -1148,6 +1148,32 @@ export function recordArrangementPageExtracted(
 }
 
 /** Send to Crematory (2026-10): one audit entry per case, per step. */
+/** Case SSN (2026-10). The record carries the source and, for a
+    correction, the reason — never any digit of the number. */
+export function recordCaseSsnEvent(
+  ctx: ActivityContext,
+  caseId: string,
+  eventType: typeof ACTIVITY_EVENT_TYPES.CASE_SSN_CAPTURED | typeof ACTIVITY_EVENT_TYPES.CASE_SSN_CORRECTED,
+  details: { description: string; record: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: eventType === ACTIVITY_EVENT_TYPES.CASE_SSN_CORRECTED ? 'warning' : 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

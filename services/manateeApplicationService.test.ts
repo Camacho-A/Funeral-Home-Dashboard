@@ -46,6 +46,7 @@ const { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } = await import('.
 const { buildManateeTemplateFixture, drawnTexts } = await import('./__mocks__/manateeTemplateFixture');
 const { ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, VITAL_STATISTICS_EXTERNAL_FORM_ID } = await import('@/domain/externalForms/fieldMapping');
 const { DOCUMENT_TYPES } = await import('@/domain/documents/documentTypeRegistry');
+const { resetMockCaseSsn, getCaseSsnSummary } = await import('./caseSsnService');
 
 const CASE_ID = '1042';
 const index = caseFixtures.findIndex((c) => c.id === CASE_ID && c.organizationId === DEFAULT_ORGANIZATION_ID);
@@ -90,6 +91,7 @@ afterEach(() => {
   caseFixtures[index] = original;
   caseDocumentFixtures.length = 0;
   activityEventFixtures.length = 0;
+  resetMockCaseSsn();
   vi.unstubAllEnvs();
 });
 
@@ -118,8 +120,8 @@ const reviewed = (overrides: Record<string, unknown> = {}) => ({
 const textsOf = (bytes: Uint8Array) => drawnTexts(bytes);
 
 describe('the draft staff review', () => {
-  it('fills everything it can from the Arrangement Form and the case, and never sends the SSN to the browser', async () => {
-    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock');
+  it('fills everything it can from the Arrangement Form and the case, locks the SSN on the case, and never sends it to the browser', async () => {
+    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
     expect(draft.values).toMatchObject({
       decedentFirst: 'Mary Ann',
       decedentMiddle: 'Louise',
@@ -137,7 +139,9 @@ describe('the draft staff review', () => {
       fedexFee: false,
     });
     expect(draft.sources).toMatchObject({ decedentFirst: 'arrangement_form', placeOfDeathCounty: null, dateOfDeath: 'case', representedRelationship: 'case' });
-    expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-3456', source: 'arrangement_form' });
+    // Captured from the Arrangement Form the first time it is needed, and locked.
+    expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-3456', source: 'case', locked: true });
+    expect(await getCaseSsnSummary(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toMatchObject({ last4: '3456', source: 'arrangement_form' });
     expect(JSON.stringify(draft)).not.toMatch(/000-?12-?3456|000123456/);
     expect(draft.template).toBe('available');
     // Only the county and the quantities are left for staff.
@@ -146,7 +150,7 @@ describe('the draft staff review', () => {
 
   it('never splits a full name: with no form, first and last are left for staff', async () => {
     submissions.length = 0;
-    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock');
+    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
     expect(draft.values.decedentFirst).toBe('');
     expect(draft.values.decedentLast).toBe('');
     expect(draft.ssn.onFile).toBe(false);
@@ -157,41 +161,42 @@ describe('the draft staff review', () => {
     answersBySubmission.set('sub-arr', { ...arrangementAnswers, '11': { answer: '' }, '105': { answer: { first: '', last: '' } } });
     submissions.push(submission('sub-vs', VITAL_STATISTICS_EXTERNAL_FORM_ID, '2026-10-06T10:00:00.000Z'));
     answersBySubmission.set('sub-vs', { '3': { answer: { first: 'Other', last: 'Name' } }, '7': { answer: '000987654' }, '14': { answer: { first: 'Jon', last: 'Rueda' } } });
-    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock');
+    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
     expect(draft.values.decedentFirst).toBe('Mary Ann');
-    expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-7654', source: 'vital_statistics' });
+    expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-7654', source: 'case', locked: true });
+    expect(await getCaseSsnSummary(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toMatchObject({ source: 'vital_statistics' });
     expect([draft.values.spouseFirst, draft.values.spouseLast]).toEqual(['Jon', 'Rueda']);
   });
 
   it('keeps SOLIS relationships the form has no list entry for — Legal Representative, Domestic Partner, Friend', async () => {
     for (const [relationship, expected] of [['legal_representative', 'Legal Representative'], ['domestic_partner', 'Domestic Partner'], ['friend', 'Friend']] as const) {
       caseFixtures[index] = { ...caseFixtures[index], nextOfKinRelationship: relationship };
-      expect((await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).values.representedRelationship).toBe(expected);
+      expect((await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock')).values.representedRelationship).toBe(expected);
     }
   });
 
   it('a relationship the form cannot state without a guess is left for staff', async () => {
     caseFixtures[index] = { ...caseFixtures[index], nextOfKinRelationship: 'parent' };
-    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock');
+    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
     expect(draft.values.representedRelationship).toBe('');
     expect(draft.issues.map((i) => i.field)).toContain('representedRelationship');
   });
 
   it('a Jotform failure only leaves values for staff — and its message is never passed on', async () => {
     answersBySubmission.clear();
-    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock');
+    const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
     expect(draft.ssn.onFile).toBe(false);
     expect(JSON.stringify(draft)).not.toContain('3456');
   });
 
   it('reports the form as not set up when no template is configured', async () => {
     vi.stubEnv('MANATEE_DC_APPLICATION_TEMPLATE_PATH', '');
-    expect((await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).template).toBe('not_configured');
+    expect((await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock')).template).toBe('not_configured');
   });
 
   it('is Manors only, and never another organization\'s case', async () => {
-    await expect(getManateeApplicationDraft(SECOND_MOCK_ORGANIZATION_ID, CASE_ID, 'mock')).rejects.toMatchObject({ status: 404 });
-    await expect(getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, 'no-such-case', 'mock')).rejects.toMatchObject({ status: 404 });
+    await expect(getManateeApplicationDraft(SECOND_MOCK_ORGANIZATION_ID, CASE_ID, ctx, 'mock')).rejects.toMatchObject({ status: 404 });
+    await expect(getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, 'no-such-case', ctx, 'mock')).rejects.toMatchObject({ status: 404 });
   });
 });
 
@@ -203,12 +208,21 @@ describe('preview and save', () => {
     expect(caseDocumentFixtures).toHaveLength(0);
   });
 
-  it('a number staff typed is used instead; "not known" leaves the box blank', async () => {
+  it('a locked SSN is always used — a typed number or "not known" cannot replace it', async () => {
+    await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock'); // captures and locks 000-12-3456
+    answersBySubmission.clear(); // the form is no longer even reachable
+    const texts = await textsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssn: '000-55-1111', ssnNotKnown: true }), 'mock'));
+    expect(texts).toContain('000-12-3456');
+    expect(texts).not.toContain('000-55-1111');
+  });
+
+  it('with nothing locked: a typed number is used for this document only (not saved); "not known" leaves the box blank', async () => {
     const typed = await textsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssn: '000-55-1111' }), 'mock'));
     expect(typed).toContain('000-55-1111');
     expect(typed).not.toContain('000-12-3456');
     const notKnown = await textsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssnNotKnown: true }), 'mock'));
     expect(notKnown.some((t) => /\d{3}-\d{2}-\d{4}/.test(t))).toBe(false);
+    expect(await getCaseSsnSummary(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toBeNull();
   });
 
   it('refuses incomplete values (422) — never a form with fabricated information', async () => {

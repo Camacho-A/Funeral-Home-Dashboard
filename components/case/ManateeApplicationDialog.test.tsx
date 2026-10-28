@@ -16,7 +16,7 @@ const draft = (overrides: Partial<ManateeDraft> = {}): ManateeDraft => ({
     representedName: 'TERESA SALAS RUEDA', representedRelationship: 'Daughter', withCause: 0, withoutCause: 0, fedexFee: false,
     requestNumber: '', requestOf: '',
   },
-  ssn: { onFile: true, masked: '•••-••-3456', source: 'arrangement_form' },
+  ssn: { onFile: true, masked: '•••-••-3456', source: 'arrangement_form', locked: false },
   sources: { decedentFirst: 'arrangement_form', placeOfDeathCounty: null },
   issues: [],
   template: 'available',
@@ -76,7 +76,7 @@ describe('ManateeApplicationDialog', () => {
   });
 
   it('missing values must be entered here; a typed SSN must have 9 digits', async () => {
-    client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, decedentLast: '', withCause: 1 }, ssn: { onFile: false, masked: null, source: null } }));
+    client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, decedentLast: '', withCause: 1 }, ssn: { onFile: false, masked: null, source: null, locked: false } }));
     renderDialog();
     await screen.findByDisplayValue('Mary Ann');
     expect(screen.getByText("Enter the decedent's last name.")).toBeTruthy();
@@ -98,6 +98,18 @@ describe('ManateeApplicationDialog', () => {
     expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('of'), { target: { value: '2' } });
     await waitFor(() => expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('a locked SSN is shown as its last four, locked — with nothing to type and no "not known"', async () => {
+    client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, withCause: 1 }, ssn: { onFile: true, masked: '•••-••-3456', source: 'case', locked: true } }));
+    client.previewManateeApplication.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    renderDialog();
+    expect(await screen.findByText('Locked on the case')).toBeTruthy();
+    expect(screen.queryByLabelText('Social Security number')).toBeNull();
+    expect(screen.queryByText('Not known — leave the box blank')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    await waitFor(() => expect(client.previewManateeApplication).toHaveBeenCalled());
+    expect(client.previewManateeApplication.mock.calls[0][2]).toMatchObject({ ssn: null, ssnNotKnown: false });
   });
 
   it('says plainly when the form is not set up', async () => {

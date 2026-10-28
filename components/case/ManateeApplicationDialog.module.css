@@ -40,6 +40,15 @@
   color: var(--sx-red);
 }
 
+.locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sx-text);
+}
+
 .check {
   display: inline-flex;
   align-items: center;

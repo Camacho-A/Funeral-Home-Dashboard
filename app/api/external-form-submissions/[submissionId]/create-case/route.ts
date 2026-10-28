@@ -18,6 +18,7 @@ import { authenticateJotformSubmission } from '@/lib/jotform/jotformSubmissionAu
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import { findDuplicateCandidates, type DuplicateCandidate } from '@/domain/externalForms/duplicateCandidates';
 import { isCaseCreationClaimToken } from '@/types/externalFormSubmission';
+import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
 
 /**
  * Unmatched Forms → "Create Case" (2026-10).
@@ -282,6 +283,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode, { config });
     // Next of Kin relationship (2026-10) — see nokRelationshipAutofillService.ts.
     if (resolveFormRole(config) === 'arrangement') await applyArrangementNokRelationship(activityCtx, outcome.caseId, refreshed ?? submission, dataAdapterMode);
+    // Case SSN (2026-10): the Arrangement / Vital Statistics form's SSN, locked on the case.
+    await captureCaseSsnFromSubmission(activityCtx, outcome.caseId, refreshed ?? submission, dataAdapterMode);
   } catch (error) {
     console.error('[create-case] Case created but its form PDF could not be imported:', error instanceof Error ? error.message : error);
   }

@@ -29,6 +29,7 @@ import {
 } from '@/services/caseNotifications';
 import { resolveFormRole, type ExternalFormRole } from '@/domain/externalForms/formRegistry';
 import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
+import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -428,6 +429,8 @@ export async function POST(request: Request) {
       const refreshed = await externalFormSubmissionService.getById(submission.id, dataAdapterMode);
       const pdfResult = await preservePdfForSubmission(refreshed ?? submission, outcome.caseId, activityCtx, dataAdapterMode, { config });
       if (formRole === 'arrangement') await applyArrangementNokRelationship(activityCtx, outcome.caseId, refreshed ?? submission, dataAdapterMode);
+      // Case SSN (2026-10): the Arrangement / Vital Statistics form's SSN, locked on the case.
+      await captureCaseSsnFromSubmission(activityCtx, outcome.caseId, refreshed ?? submission, dataAdapterMode);
 
       /**
        * Everyday notifications (2026-10). ONE notification for a case this
@@ -514,6 +517,8 @@ export async function POST(request: Request) {
     // Form when the case's is still blank and it is safe to; flagged for
     // review otherwise. Best-effort; never fails the webhook.
     if (formRole === 'arrangement') await applyArrangementNokRelationship(activityCtx, caseId, landed, dataAdapterMode);
+    // Case SSN (2026-10): the Arrangement / Vital Statistics form's SSN, locked on the case.
+    await captureCaseSsnFromSubmission(activityCtx, caseId, landed, dataAdapterMode);
 
     /**
      * A form that landed on a case that already existed. Keyed on the

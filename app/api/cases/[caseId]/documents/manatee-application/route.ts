@@ -38,7 +38,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   if (!canRead || !canGenerate) return NextResponse.json({ error: 'Not authorized to create documents for this case.' }, { status: 403 });
 
   try {
-    const draft = await getManateeApplicationDraft(organizationId, caseId, mode);
+    const draft = await getManateeApplicationDraft(
+      organizationId,
+      caseId,
+      { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },
+      mode,
+    );
     return NextResponse.json(draft, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error, 'Could not load the Manatee County application. Please try again.');

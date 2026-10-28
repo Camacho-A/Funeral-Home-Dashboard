@@ -19,6 +19,7 @@ import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNo
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import type { Case } from '@/types/case';
+import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
 
 /**
  * Manors Jotform integration — historical-submission ingestion (2026-09).
@@ -229,6 +230,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const pdfResult = await preservePdfForSubmission(updatedSubmission ?? submission, caseId, activityCtx, dataAdapterMode, { config });
   // Next of Kin relationship (2026-10) — see nokRelationshipAutofillService.ts.
   if (resolveFormRole(config) === 'arrangement') await applyArrangementNokRelationship(activityCtx, caseId, updatedSubmission ?? submission, dataAdapterMode);
+  // Case SSN (2026-10): the Arrangement / Vital Statistics form's SSN, locked on the case.
+  await captureCaseSsnFromSubmission(activityCtx, caseId, updatedSubmission ?? submission, dataAdapterMode);
 
   // Manors workflow reconciliation (2026-09): same reasoning as the
   // historical-import route — this case's Arrangement Form is now a
