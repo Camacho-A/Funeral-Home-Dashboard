@@ -23,7 +23,7 @@ import {
   resolveCremainsPickupSettings,
   type CremainsPickupSettings,
 } from '../domain/organization/cremainsPickupCapability';
-import { readChecklistValue } from '../domain/workflow/checklistItemKey';
+import { checklistItemKey, readChecklistValue } from '../domain/workflow/checklistItemKey';
 import { createAppointment, completeAppointment } from './schedulingService';
 import { getAppointment } from './scheduling/appointmentReads';
 
@@ -112,6 +112,30 @@ export function isPaperworkComplete(case_: Case, settings: CremainsPickupSetting
     if (!templateItem || templateItem.label !== configured.expectedLabel) return false;
     return readChecklistValue(case_.checklistState, displayStage, configured.index) === true;
   });
+}
+
+/**
+ * When the paperwork was actually completed: the later of the moments
+ * each configured paperwork item was checked, from the case's own
+ * completion records. Null when any of those records is missing (cases
+ * from before completion records existed) — the caller then falls back to
+ * the moment of the save that found the paperwork complete.
+ *
+ * 2026-10: without this, every later save on a case (checking a DC
+ * Application item a week on) recalculated from THAT day and pushed the
+ * expected date out — B2026-041's paperwork was done 10/21 (pickup Friday
+ * 10/30), but a save on 10/27 moved it to Tuesday 11/03.
+ */
+export function paperworkCompletedAtFromRecords(case_: Case, settings: CremainsPickupSettings): string | null {
+  const { displayStage, items } = settings.paperworkStage;
+  if (items.length === 0) return null;
+  let latest: string | null = null;
+  for (const { index } of items) {
+    const record = case_.checklistCompletions?.[checklistItemKey(displayStage, index)];
+    if (!record || record.done !== true || Number.isNaN(Date.parse(record.at))) return null;
+    if (latest === null || Date.parse(record.at) > Date.parse(latest)) latest = record.at;
+  }
+  return latest;
 }
 
 /** Whether the organization's own "cremains are here" checklist item is
@@ -204,18 +228,20 @@ async function syncExpectedPickupForCaseUncoalesced(
   params: {
     case_: Case;
     organization: { id: string; timezone?: string; cremainsPickupSettings?: unknown } | null;
-    /** The instant the paperwork completed — normally "now", because this
-        runs in the same request that persisted the checkbox. */
+    /** Fallback for when the case has no completion record for every
+        paperwork item: the moment of this save. The records win — see
+        paperworkCompletedAtFromRecords. */
     paperworkCompletedAt: string;
     now?: string;
   },
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
 ): Promise<SyncOutcome> {
-  const { case_, organization, paperworkCompletedAt } = params;
+  const { case_, organization } = params;
   const now = params.now ?? new Date().toISOString();
 
   const settings = resolveCremainsPickupSettings(organization);
+  const paperworkCompletedAt = paperworkCompletedAtFromRecords(case_, settings) ?? params.paperworkCompletedAt;
   if (!settings.automaticSchedulingEnabled) {
     return { action: 'unchanged', appointment: null, reason: 'organization_not_configured' };
   }

@@ -17,7 +17,6 @@ import {
   lastDisplayStage,
   isOverdue,
 } from '../workflow/resolveStages';
-import { resolveEffectiveDisplayStage } from './transitions';
 import { isTerminalReturnRequirementComplete, terminalReturnRequirementLabel, returnMethodStageHeading } from './returnMethod';
 import { formatSlaTarget } from './sla';
 import {
@@ -382,13 +381,9 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
       : currentChecklist;
   // Case list scalability, Phase 3 (progress indicator, 2026-09). Keyed
   // off `rawDisplayStage` — the case's TRUE current display stage from
-  // its own `rawStage` — never `effectiveDisplayStage` below, which can
-  // roll back one position purely as a stepper/label presentation choice
-  // for the terminal stage (see resolveEffectiveDisplayStage's own
-  // comment). Progress must track the real stage the checklist UI is
-  // actually resolved against (effectiveCurrentChecklist, computed from
-  // `case_.rawStage` directly above), not that presentational rollback —
-  // otherwise this would double-resolve the wrong stage's checklist.
+  // its own `rawStage` — the stage the checklist UI is actually resolved
+  // against (effectiveCurrentChecklist, computed from `case_.rawStage`
+  // directly above).
   const caseProgress = computeCaseProgress(
     snapshot,
     rawDisplayStage,
@@ -396,7 +391,15 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     case_.organizationId,
     case_.isMedicalExaminerCase === true,
   );
-  const effectiveDisplayStage = resolveEffectiveDisplayStage(rawDisplayStage, lastStage, remainsReturnComplete);
+  // 2026-10: the case's real stage, always. A case in the final stage
+  // used to be shown one stage back ("Ready for Pickup / Contact Family")
+  // until the family pickup was recorded, while the stage counts and the
+  // stage list filter on the real stage — so the Dashboard showed
+  // Ready for Pickup 0 with five cases under it, and Completed 5 with
+  // none. A case sits in Completed awaiting the family pickup; recording
+  // the pickup marks it complete and archives it. The final stage's one
+  // item (the derived return requirement above) says what is still owed.
+  const effectiveDisplayStage = rawDisplayStage;
   const effectiveStage = findStageByDisplayStage(snapshot, effectiveDisplayStage);
   // Manors intake-stage combination (2026-10). The ordered canonical
   // labels from this case's own frozen snapshot, and the user-facing list
@@ -462,13 +465,12 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
    * everything fell through to the `nextActionLabel` fallback and sat
    * there reading "Review case" forever, with nothing left to review.
    *
-   * Completion is the SAME signal that makes the stage badge read
-   * "Completed": `effectiveDisplayStage` reaching the template's own last
-   * stage. `resolveEffectiveDisplayStage` only allows that once
-   * `isTerminalReturnRequirementComplete` is true, so the label flips the
-   * moment the family release (or confirmed shipping delivery) is
-   * recorded — and never because the crematory released the ashes to the
-   * funeral home, which is a different event entirely (see
+   * Completion is the case sitting in the template's own last stage
+   * WITH `isTerminalReturnRequirementComplete` true, so the label flips
+   * the moment the family release (or confirmed shipping delivery) is
+   * recorded. Until then a final-stage case shows its next action — the
+   * pickup still to be recorded. Never because the crematory released
+   * the ashes to the funeral home, which is a different event entirely (see
    * domain/cases/returnMethod.ts). Never a hardcoded stage number and
    * never a status string: a template with a different stage count
    * resolves correctly through `lastStage`.
@@ -483,7 +485,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
    *   Stalled    — the existing red blocker text, unchanged.
    *   Next action — the existing neutral behaviour, unchanged.
    */
-  const isWorkflowComplete = effectiveDisplayStage === lastStage;
+  const isWorkflowComplete = effectiveDisplayStage === lastStage && remainsReturnComplete;
   const rowSummaryText = case_.isDeleted
     ? 'Archived'
     : isWorkflowComplete

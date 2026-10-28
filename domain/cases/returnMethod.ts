@@ -4,10 +4,8 @@ import type { Case, ReturnMethod } from '../../types/case';
  * Conditional shipping/tracking (2026-09). The single source of truth for
  * whether a case's terminal "return of cremated remains to the family"
  * requirement is satisfied — replaces the old, independent, manually-
- * toggled "Family picked up ashes" checklist checkbox (see
- * `domain/cases/transitions.ts#resolveEffectiveDisplayStage`'s own comment
- * for why that mechanism was retired rather than kept as a second,
- * competing signal).
+ * toggled "Family picked up ashes" checklist checkbox, retired rather
+ * than kept as a second, competing signal.
  *
  * Deliberately per-`ReturnMethod`, not a single boolean field on Case:
  * - `'pickup'` is done only once `pickupStatus === 'released'` — the exact

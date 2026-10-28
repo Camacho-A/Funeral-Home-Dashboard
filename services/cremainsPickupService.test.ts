@@ -276,6 +276,65 @@ describe('syncExpectedPickupForCase — idempotency', () => {
   });
 });
 
+describe('syncExpectedPickupForCase — the date comes from when the paperwork was done (2026-10)', () => {
+  const completion = (at: string, done = true) => ({ done, method: 'manual' as const, source: 'staff_confirmation' as const, eventType: 'staff.checklist_toggle', eventId: null, at, actorId: 'identity-dana' });
+
+  it('a later save does not push the date out — B2026-041: paperwork 10/21, saved again 10/27', async () => {
+    // Paperwork done Wednesday 10/21 -> 10/28 -> Friday 10/30. Live, a DC
+    // Application save on Tuesday 10/27 recalculated from 10/27 and moved
+    // it to Tuesday 11/03.
+    const case_ = buildCase({
+      checklistState: paperworkComplete(),
+      checklistCompletions: {
+        [checklistItemKey(PAPERWORK_STAGE, 0)]: completion('2026-10-21T17:31:49.386Z'),
+        [checklistItemKey(PAPERWORK_STAGE, 1)]: completion('2026-10-21T17:31:50.561Z'),
+      },
+    });
+    const created = await syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: '2026-10-21T17:31:51.000Z' }, ctx(), 'mock');
+    expect(expectedDateOf(created.appointment!)).toBe('2026-10-30');
+
+    const later = await syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: '2026-10-27T16:04:04.518Z' }, ctx(), 'mock');
+    expect(later.action).toBe('unchanged');
+    expect(expectedDateOf(later.appointment!)).toBe('2026-10-30');
+  });
+
+  it('uses the LATER of the two paperwork items — the day both were done', async () => {
+    const case_ = buildCase({
+      checklistState: paperworkComplete(),
+      checklistCompletions: {
+        [checklistItemKey(PAPERWORK_STAGE, 0)]: completion('2026-10-05T18:00:00.000Z'),
+        [checklistItemKey(PAPERWORK_STAGE, 1)]: completion(PAPERWORK_AT),
+      },
+    });
+    const outcome = await syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: '2026-10-20T18:00:00.000Z' }, ctx(), 'mock');
+    expect(expectedDateOf(outcome.appointment!)).toBe(EXPECTED);
+  });
+
+  it('without a completion record for both items, the moment of the save is used, as before', async () => {
+    const case_ = buildCase({
+      checklistState: paperworkComplete(),
+      checklistCompletions: { [checklistItemKey(PAPERWORK_STAGE, 0)]: completion('2026-10-05T18:00:00.000Z') },
+    });
+    const outcome = await syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT }, ctx(), 'mock');
+    expect(expectedDateOf(outcome.appointment!)).toBe(EXPECTED);
+  });
+
+  it('unchecking and re-checking the paperwork later dates from the re-check', async () => {
+    const case_ = buildCase({
+      checklistState: paperworkComplete(),
+      checklistCompletions: {
+        [checklistItemKey(PAPERWORK_STAGE, 0)]: completion('2026-10-05T18:00:00.000Z'),
+        [checklistItemKey(PAPERWORK_STAGE, 1)]: completion('2026-10-05T18:00:00.000Z'),
+      },
+    });
+    await syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT }, ctx(), 'mock');
+    const rechecked = { ...case_, checklistCompletions: { ...case_.checklistCompletions, [checklistItemKey(PAPERWORK_STAGE, 1)]: completion(PAPERWORK_AT) } };
+    const updated = await syncExpectedPickupForCase({ case_: rechecked, organization: ORGANIZATION, paperworkCompletedAt: '2026-10-20T18:00:00.000Z' }, ctx(), 'mock');
+    expect(updated.action).toBe('updated');
+    expect(expectedDateOf(updated.appointment!)).toBe(EXPECTED);
+  });
+});
+
 describe('syncExpectedPickupForCase — manual overrides win', () => {
   async function sync(case_: Case, at = PAPERWORK_AT) {
     return syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: at }, ctx(), 'mock');

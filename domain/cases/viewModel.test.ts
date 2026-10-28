@@ -122,7 +122,7 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
     it('an undecided case at the last stage never shows "Completed" — no manual bypass exists', () => {
       const case_ = baseCase({ rawStage: 7, returnMethod: 'undecided' });
       const vm = buildCaseViewModel(case_, { staffList: [] });
-      expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(vm.rowSummaryText).not.toBe('Completed');
       expect(vm.checklist[0].done).toBe(false);
       expect(vm.checklist[0].isDerived).toBe(true);
     });
@@ -131,7 +131,7 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
       const notReleased = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'awaiting_pickup' });
       const released = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
 
-      expect(buildCaseViewModel(notReleased, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(notReleased, { staffList: [] }).rowSummaryText).not.toBe('Completed');
       expect(buildCaseViewModel(released, { staffList: [] }).stageLabel).toBe('Completed');
     });
 
@@ -152,8 +152,8 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
         shippingDeliveryStatus: 'delivered',
       });
 
-      expect(buildCaseViewModel(noTracking, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
-      expect(buildCaseViewModel(shippedNotDelivered, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(noTracking, { staffList: [] }).rowSummaryText).not.toBe('Completed');
+      expect(buildCaseViewModel(shippedNotDelivered, { staffList: [] }).rowSummaryText).not.toBe('Completed');
       expect(buildCaseViewModel(delivered, { staffList: [] }).stageLabel).toBe('Completed');
     });
 
@@ -171,7 +171,7 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
         checklistState: { 0: false },
       });
 
-      expect(buildCaseViewModel(checkedButNotReleased, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+      expect(buildCaseViewModel(checkedButNotReleased, { staffList: [] }).rowSummaryText).not.toBe('Completed');
       expect(buildCaseViewModel(uncheckedButReleased, { staffList: [] }).stageLabel).toBe('Completed');
     });
 
@@ -212,11 +212,12 @@ describe('buildCaseViewModel — Managed Cremations fidelity', () => {
         expect(buildCaseViewModel(shipping, { staffList: [] }).caseDetailStageHeading).toBe('Ready for Shipping');
       });
 
-      it('also adapts when the case rolled back from the terminal stage (rawStage 7, not yet complete)', () => {
+      it('a case in the terminal stage reads Completed, even before the return is recorded (2026-10)', () => {
         const case_ = baseCase({ rawStage: 7, returnMethod: 'shipping' });
         const vm = buildCaseViewModel(case_, { staffList: [] });
-        expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family'); // structural label unchanged
-        expect(vm.caseDetailStageHeading).toBe('Ready for Shipping'); // presentational override
+        expect(vm.stageLabel).toBe('Completed');
+        expect(vm.caseDetailStageHeading).toBe('Completed');
+        expect(vm.rowSummaryText).not.toBe('Completed');
       });
 
       it('never affects stageLabel — reports/dashboard filtering keys off the exact structural text', () => {
@@ -296,7 +297,7 @@ describe('buildCaseViewModel — overall progress indicator (Case list scalabili
   it('a case at the terminal raw stage that never satisfied the return requirement is below 100% and never shows "Completed" — the inconsistency is surfaced, not hidden', () => {
     const case_ = baseCase({ rawStage: 7, returnMethod: 'undecided' });
     const vm = buildCaseViewModel(case_, { staffList: [] });
-    expect(vm.stageLabel).not.toBe('Completed');
+    expect(vm.rowSummaryText).not.toBe('Completed');
     expect(vm.progressPercent).toBeLessThan(100);
     expect(vm.progressPercent).toBeGreaterThan(90); // every prior stage still counts fully — only the one terminal item is outstanding
   });
@@ -1301,7 +1302,7 @@ describe('terminal "Family picked up ashes" — completion semantics (2026-10)',
     });
 
     expect(buildCaseViewModel(before, { staffList: [] }).checklist[0].done).toBe(false);
-    expect(buildCaseViewModel(before, { staffList: [] }).stageLabel).toBe('Ready for Pickup / Contact Family');
+    expect(buildCaseViewModel(before, { staffList: [] }).rowSummaryText).not.toBe('Completed');
 
     const vm = buildCaseViewModel(after, { staffList: [] });
     expect(vm.checklist[0].done).toBe(true);
@@ -1327,7 +1328,7 @@ describe('terminal "Family picked up ashes" — completion semantics (2026-10)',
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
     expect(vm.checklist[0].done).toBe(false);
-    expect(vm.stageLabel).not.toBe('Completed');
+    expect(vm.rowSummaryText).not.toBe('Completed');
   });
 
   it('a stale checklistState entry for the terminal item cannot complete it', () => {
@@ -1345,14 +1346,29 @@ describe('terminal "Family picked up ashes" — completion semantics (2026-10)',
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
     expect(vm.checklist[0].done).toBe(false);
-    expect(vm.stageLabel).toBe('Ready for Pickup / Contact Family');
+    expect(vm.rowSummaryText).not.toBe('Completed');
+  });
+
+  it('a case whose family was contacted sits in Completed — the same stage the counts and stage list use (2026-10)', () => {
+    // Live report: Ready for Pickup showed 0 with five cases under it, and
+    // Completed showed 5 with none. The label and the counts now agree.
+    const contacted: Record<string, boolean> = {};
+    for (let index = 0; index < 6; index += 1) contacted[`5:${index}`] = true;
+    const vm = buildCaseViewModel(
+      baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'awaiting_pickup', checklistState: contacted }),
+      { staffList: [] },
+    );
+    expect(vm.stageLabel).toBe('Completed');
+    expect(vm.displayStage).toBe(6);
+    expect(vm.checklist[0].done).toBe(false);
+    expect(vm.rowSummaryText).toBe(vm.checklist[0].label);
   });
 
   it('an undecided case exposes no release record to act on and never completes', () => {
     const vm = buildCaseViewModel(baseCase({ rawStage: 7, returnMethod: 'undecided' }), { staffList: [] });
     expect(vm.checklist[0].returnRequirement?.returnMethod).toBe('undecided');
     expect(vm.checklist[0].done).toBe(false);
-    expect(vm.stageLabel).not.toBe('Completed');
+    expect(vm.rowSummaryText).not.toBe('Completed');
   });
 
   it('a shipping case completes on confirmed delivery, not on dispatch', () => {
