@@ -8,6 +8,7 @@ import { toCaseDate } from './crematoryPackage';
  */
 export type CrematoryRequirementKey =
   | 'cremation'
+  | 'not_sent'
   | 'permit_uploaded'
   | 'permit_verified'
   | 'crematory_form'
@@ -22,6 +23,8 @@ export type CrematoryRequirement = { key: CrematoryRequirementKey; label: string
 export type CrematoryReadinessInput = {
   caseType: string;
   isArchived: boolean;
+  /** When the case was already sent successfully — each case is sent once. */
+  sentAt: string | null;
   /** Every step of workflow 2 checked; null when the workflow has no stage 2. */
   workflow2Complete: boolean | null;
   /** The latest uploaded state permit (a PDF), if any. */
@@ -91,6 +94,8 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
       : `The Expected Pickup changed since ${toCaseDate(confirmed.date)} was confirmed. Review the expected ready date.`);
 
   const readyToBuild = r.every((requirement) => requirement.ok);
+
+  add('not_sent', 'Not sent yet', input.sentAt === null, 'Already sent to the crematory. Each case is sent only once.');
 
   add('package', 'Crematory Package up to date', input.package !== null && input.package.current,
     input.package === null ? 'Build the Crematory Package.' : 'The permit, page 3 or the expected date changed. Review and rebuild the Crematory Package.');

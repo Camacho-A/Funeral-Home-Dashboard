@@ -64,7 +64,10 @@ export function SendToCrematoryDialog({
   const [reviewed, setReviewed] = useState(false);
   const [sendAgain, setSendAgain] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<{ message: string; alreadySent: boolean } | null>(null);
+  /** `unclear`: the last send may have gone out — staff must check Sent
+      Items and confirm it did not before trying again. A case sent
+      successfully can never be sent again (the server refuses). */
+  const [sendError, setSendError] = useState<{ message: string; unclear: boolean } | null>(null);
   const [result, setResult] = useState<CrematorySendResult | null>(null);
   const submissionId = useRef<string>('');
 
@@ -130,9 +133,9 @@ export function SendToCrematoryDialog({
       setStep('done');
       await refresh();
     } catch (error) {
-      const alreadySent = error instanceof CrematoryRequestError && error.status === 409 && /already sent/i.test(error.message);
-      setSendError({ message: error instanceof Error ? error.message : 'The email could not be sent.', alreadySent });
-      if (!alreadySent) submissionId.current = crypto.randomUUID();
+      const unclear = error instanceof CrematoryRequestError && error.status === 409 && /may have been sent/i.test(error.message);
+      setSendError({ message: error instanceof Error ? error.message : 'The email could not be sent.', unclear });
+      submissionId.current = crypto.randomUUID();
       await refresh();
     } finally {
       setSending(false);
@@ -247,9 +250,9 @@ export function SendToCrematoryDialog({
                 {sendError.message}
               </div>
             )}
-            {sendError?.alreadySent && (
+            {sendError?.unclear && (
               <label className={styles.confirm}>
-                <input type="checkbox" checked={sendAgain} onChange={(e) => setSendAgain(e.target.checked)} /> Send again anyway
+                <input type="checkbox" checked={sendAgain} onChange={(e) => setSendAgain(e.target.checked)} /> I checked Sent Items — it was not sent
               </label>
             )}
           </div>
@@ -292,7 +295,7 @@ export function SendToCrematoryDialog({
             type="button"
             className="sx-btn sx-btn-primary"
             onClick={send}
-            disabled={sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || (sendError?.alreadySent === true && !sendAgain)}
+            disabled={sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || (sendError?.unclear === true && !sendAgain)}
           >
             {sending ? 'Sending…' : `Send to Crematory (${chosen.length})`}
           </button>
@@ -343,6 +346,23 @@ function toIsoInput(caseDate: string | null): string {
   return d ? `${d.slice(6, 10)}-${d.slice(0, 2)}-${d.slice(3, 5)}` : '';
 }
 
+type StepKey = 'permit_uploaded' | 'permit_verified' | 'crematory_form' | 'workflow_2' | 'package_name' | 'ready_date' | 'package';
+const STEPS: Array<{ key: StepKey; label: string }> = [
+  { key: 'permit_uploaded', label: 'State permit' },
+  { key: 'permit_verified', label: 'Permit confirmed' },
+  { key: 'crematory_form', label: 'Arrangement page 3' },
+  { key: 'workflow_2', label: 'Workflow 2' },
+  { key: 'package_name', label: 'Name for the file' },
+  { key: 'ready_date', label: 'Expected ready date' },
+  { key: 'package', label: 'Crematory Package' },
+];
+
+/**
+ * One case as a compact checklist (2026-10): a fixed list of steps, each
+ * with ✓ (done), ● (needs you now) or ○ (waiting on an earlier step), a
+ * short label, and on the same line either what was recorded or the one
+ * action that completes it. A case already sent collapses to one line.
+ */
 function CaseRow({
   summary,
   checked,
@@ -381,12 +401,133 @@ function CaseRow({
   canPrepare: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
-  const failing = summary.readiness.requirements.filter((r) => !r.ok);
+  const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
+  const ok = (key: StepKey) => req(key)?.ok === true;
   const ready = summary.readiness.readyToSend;
-  const permitConfirmed = summary.readiness.requirements.find((x) => x.key === 'permit_verified')?.ok === true;
   const last = summary.lastSubmission;
+  const sent = last?.status === 'submitted';
+  const notCremation = req('cremation')?.ok === false;
+  const done = STEPS.filter((step) => ok(step.key)).length;
+
+  // A step waits (○) while an earlier step it depends on is unfinished.
+  const waiting: Record<StepKey, boolean> = {
+    permit_uploaded: false,
+    permit_verified: !ok('permit_uploaded'),
+    crematory_form: !ok('permit_verified'),
+    workflow_2: false,
+    package_name: false,
+    ready_date: false,
+    package: !summary.readiness.readyToBuild,
+  };
+
+  const status = sent ? (
+    <span className="sx-status sx-status-ok">Sent</span>
+  ) : ready ? (
+    <span className="sx-status sx-status-ok">Ready</span>
+  ) : (
+    <span className="sx-status sx-status-warn">{done} of {STEPS.length} done</span>
+  );
+
+  function content(key: StepKey) {
+    const r = req(key);
+    if (ok(key)) {
+      switch (key) {
+        case 'permit_uploaded':
+          return <span className={styles.value}>{summary.permit?.fileName}</span>;
+        case 'package_name':
+          return summary.packageName.confirmed && <span className={styles.value}>{summary.packageName.confirmed.last}, {summary.packageName.confirmed.first}</span>;
+        case 'ready_date':
+          return <span className={styles.value}>{summary.readyDate.confirmed}</span>;
+        case 'package':
+          return (
+            summary.package && (
+              <span className={styles.value}>
+                <a href={buildCaseDocumentDownloadUrl(organizationId, summary.caseId, summary.package.documentId)}>{summary.package.fileName}</a> · v{summary.package.version ?? 1}
+              </span>
+            )
+          );
+        default:
+          return null;
+      }
+    }
+    // The Arrangement Form not having arrived is the real blocker — say so.
+    if (key === 'crematory_form' && /not been received/i.test(r?.detail ?? '')) return <span className={styles.hint}>Waiting for the Arrangement Form</span>;
+    if (waiting[key]) return <span className={styles.hint}>{key === 'package' ? 'After the steps above' : 'After the step above'}</span>;
+    if (!canPrepare) return <span className={styles.hint}>{r?.detail}</span>;
+    switch (key) {
+      case 'permit_uploaded':
+        return (
+          <>
+            <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={() => fileInput.current?.click()}>
+              Upload PDF
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="application/pdf"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUploadPermit(file);
+                e.target.value = '';
+              }}
+            />
+          </>
+        );
+      case 'permit_verified':
+        return (
+          <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={onConfirmPermit}>
+            Confirm permit
+          </button>
+        );
+      case 'crematory_form':
+        return /not been received/i.test(r?.detail ?? '') ? (
+          <span className={styles.hint}>Waiting for the Arrangement Form</span>
+        ) : (
+          <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={onExtract}>
+            Extract page 3
+          </button>
+        );
+      case 'workflow_2':
+        return (
+          <span className={styles.hint}>
+            Finish it on the <Link href={`/cases/${summary.caseId}`}>case</Link>
+          </span>
+        );
+      case 'package_name':
+        return (
+          <span className={styles.inputs}>
+            <input className="sx-input" aria-label={`Last name for ${summary.decedentDisplayName}`} placeholder="Last name(s)" value={nameValue.last} onChange={(e) => onNameChange({ ...nameValue, last: e.target.value })} />
+            <input className="sx-input" aria-label={`First name(s) for ${summary.decedentDisplayName}`} placeholder="First name(s)" value={nameValue.first} onChange={(e) => onNameChange({ ...nameValue, first: e.target.value })} />
+            <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy || !nameValue.first.trim() || !nameValue.last.trim()} onClick={() => onConfirmName(nameValue)}>
+              Confirm name
+            </button>
+            {nameValue.first.trim() && nameValue.last.trim() && (
+              <span className={styles.hint}>File: {crematoryPackageFileName(nameValue, summary.readyDate.confirmed ?? summary.readyDate.suggested) ?? `${nameValue.last.trim()}_${nameValue.first.trim()}_MM-DD-YYYY.pdf`}</span>
+            )}
+          </span>
+        );
+      case 'ready_date':
+        return (
+          <span className={styles.inputs}>
+            <input type="date" className="sx-input" aria-label={`Expected ready date for ${summary.decedentDisplayName}`} value={dateValue} onChange={(e) => onDateChange(e.target.value)} />
+            <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy || !dateValue} onClick={() => onConfirmDate(dateValue)}>
+              Confirm date
+            </button>
+            {/Expected Pickup changed/.test(r?.detail ?? '') && <span className={styles.hint}>The Expected Pickup moved — review</span>}
+          </span>
+        );
+      case 'package':
+        return (
+          <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" disabled={busy} onClick={onBuild}>
+            {summary.package ? 'Rebuild package' : 'Build package'}
+          </button>
+        );
+    }
+  }
+
   return (
-    <li className={styles.case}>
+    <li className={`${styles.case} ${sent ? styles.caseSent : ''}`}>
       <div className={styles.caseHead}>
         <label className={styles.caseTitle}>
           <input type="checkbox" checked={checked && ready} disabled={!ready || busy} onChange={(e) => onToggle(e.target.checked)} aria-label={`Select ${summary.decedentDisplayName}`} />
@@ -394,111 +535,46 @@ function CaseRow({
             <strong>{summary.decedentDisplayName}</strong> · <Link href={`/cases/${summary.caseId}`}>{summary.caseNumber}</Link>
           </span>
         </label>
-        <span className={`sx-status ${ready ? 'sx-status-ok' : 'sx-status-warn'}`}>{ready ? 'Ready' : 'Needs attention'}</span>
+        {status}
       </div>
-      {summary.package && (
-        <p className={styles.muted}>
-          {summary.package.fileName} · v{summary.package.version ?? 1}
-          {summary.readyDate.confirmed ? ` · expected ${summary.readyDate.confirmed}` : ''}
+
+      {sent && last ? (
+        <p className={styles.hint}>
+          Sent {formatTimestamp(last.at)} to {last.to.join(', ')} · {last.attachmentName}
         </p>
-      )}
-      {last && (
-        <p className={last.status === 'submitted' ? styles.muted : styles.warn}>
-          {last.status === 'submitted'
-            ? `Submitted ${formatTimestamp(last.at)} to ${last.to.join(', ')} (v${last.packageVersion ?? 1})`
-            : last.status === 'uncertain'
-              ? `Last send may not have completed (${formatTimestamp(last.at)}) — check Sent Items in ${last.mailbox ?? 'the mailbox'}.`
-              : `Last send failed (${formatTimestamp(last.at)}): ${last.error ?? 'unknown error'}`}
+      ) : ready && summary.package ? (
+        // Everything is done: one line, not seven checkmarks.
+        <p className={styles.hint}>
+          <a href={buildCaseDocumentDownloadUrl(organizationId, summary.caseId, summary.package.documentId)}>{summary.package.fileName}</a> · v{summary.package.version ?? 1} · expected{' '}
+          {summary.readyDate.confirmed}
         </p>
-      )}
-      {summary.packageName.confirmed && (
-        <p className={styles.muted}>
-          Name for the package: {summary.packageName.confirmed.last}, {summary.packageName.confirmed.first}
-        </p>
-      )}
-      {failing.length > 0 && (
-        <ul className={styles.needs}>
-          {failing.map((r) => (
-            <li key={r.key}>
-              <span>{r.detail}</span>
-              {r.key === 'package_name' && canPrepare && (
-                <span className={styles.nameRow}>
-                  <input
-                    className="sx-input"
-                    aria-label={`Last name for ${summary.decedentDisplayName}`}
-                    placeholder="Last name(s)"
-                    value={nameValue.last}
-                    onChange={(e) => onNameChange({ ...nameValue, last: e.target.value })}
-                  />
-                  <input
-                    className="sx-input"
-                    aria-label={`First name(s) for ${summary.decedentDisplayName}`}
-                    placeholder="First name(s)"
-                    value={nameValue.first}
-                    onChange={(e) => onNameChange({ ...nameValue, first: e.target.value })}
-                  />
-                  <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy || !nameValue.first.trim() || !nameValue.last.trim()} onClick={() => onConfirmName(nameValue)}>
-                    Confirm name
-                  </button>
-                  {summary.packageName.suggested && !summary.packageName.confirmed && <span className={styles.muted}>Suggested from the intake form&rsquo;s name boxes.</span>}
-                  {nameValue.first.trim() && nameValue.last.trim() && (
-                    <span className={styles.muted}>File: {crematoryPackageFileName(nameValue, summary.readyDate.confirmed ?? summary.readyDate.suggested) ?? `${nameValue.last.trim()}_${nameValue.first.trim()}_MM-DD-YYYY.pdf`}</span>
-                  )}
+      ) : notCremation ? (
+        <p className={styles.hint}>{req('cremation')?.detail}</p>
+      ) : (
+        <ol className={styles.steps}>
+          {STEPS.map((step) => {
+            const state = ok(step.key) ? 'done' : waiting[step.key] ? 'waiting' : 'todo';
+            return (
+              <li key={step.key} className={styles.step} data-state={state}>
+                <span className={styles.mark} aria-label={state === 'done' ? 'Done' : state === 'waiting' ? 'Waiting' : 'To do'}>
+                  {state === 'done' ? '✓' : state === 'waiting' ? '○' : '●'}
                 </span>
-              )}
-              {canPrepare && r.key === 'permit_uploaded' && (
-                <>
-                  <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={() => fileInput.current?.click()}>
-                    Upload permit (PDF)
-                  </button>
-                  <input
-                    ref={fileInput}
-                    type="file"
-                    accept="application/pdf"
-                    hidden
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) onUploadPermit(file);
-                      e.target.value = '';
-                    }}
-                  />
-                </>
-              )}
-              {canPrepare && r.key === 'permit_verified' && summary.permit && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onConfirmPermit}>
-                  Confirm permit
-                </button>
-              )}
-              {/* Page 3 is extracted once the permit is confirmed. */}
-              {canPrepare && r.key === 'crematory_form' && permitConfirmed && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onExtract}>
-                  Extract page 3
-                </button>
-              )}
-              {canPrepare && r.key === 'ready_date' && (
-                <span className={styles.dateRow}>
-                  <input type="date" className="sx-input" aria-label={`Expected ready date for ${summary.decedentDisplayName}`} value={dateValue} onChange={(e) => onDateChange(e.target.value)} />
-                  <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy || !dateValue} onClick={() => onConfirmDate(dateValue)}>
-                    Confirm date
-                  </button>
-                </span>
-              )}
-              {canPrepare && r.key === 'package' && summary.readiness.readyToBuild && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onBuild}>
-                  {summary.package ? 'Rebuild package' : 'Build package'}
-                </button>
-              )}
-              {r.key === 'workflow_2' && <Link href={`/cases/${summary.caseId}`}>Open case</Link>}
-            </li>
-          ))}
-        </ul>
+                <span className={styles.stepLabel}>{step.label}</span>
+                <span className={styles.stepContent}>{content(step.key)}</span>
+              </li>
+            );
+          })}
+        </ol>
       )}
-      {ready && summary.package && (
-        <p className={styles.muted}>
-          <a href={buildCaseDocumentDownloadUrl(organizationId, summary.caseId, summary.package.documentId)}>Download package</a>
+
+      {last && !sent && (
+        <p className={styles.warn}>
+          {last.status === 'uncertain'
+            ? `The last send may not have completed (${formatTimestamp(last.at)}) — check Sent Items in ${last.mailbox ?? 'the mailbox'}.`
+            : `The last send failed (${formatTimestamp(last.at)}): ${last.error ?? 'unknown error'}`}
         </p>
       )}
-      {busy && <p className={styles.muted}>Working…</p>}
+      {busy && <p className={styles.hint}>Working…</p>}
       {error && (
         <div className="sx-form-banner sx-form-banner-error" role="alert">
           {error}

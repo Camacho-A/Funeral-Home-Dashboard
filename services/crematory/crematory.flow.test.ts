@@ -331,17 +331,21 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     }
   });
 
-  it('the same request twice sends once; sending the same package again needs explicit confirmation', async () => {
+  it('each case is sent ONCE: the same request reports the first send, and nothing — not even an override — sends it again', async () => {
     await twoReadyCases();
     const calls = fakeGraph();
     await sendCrematoryPackages(ctx(), request(), 'mock');
     const again = await sendCrematoryPackages(ctx(), request(), 'mock');
     expect(again.duplicate).toBe(true);
-    expect(calls.filter(([url]) => url.endsWith('/send'))).toHaveLength(1);
 
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0002' }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('already sent') });
-    await sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0003', confirmResend: true }), 'mock');
-    expect(calls.filter(([url]) => url.endsWith('/send'))).toHaveLength(2);
+    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0002' }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Each case is sent only once') });
+    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0003', confirmResend: true }), 'mock')).rejects.toMatchObject({ status: 409 });
+    // Even with a rebuilt package (a new date), a sent case stays sent.
+    await pkg.confirmReadyDate(ctx(), '1042', '11/09/2026', 'mock');
+    await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
+    await expect(sendCrematoryPackages(ctx(), request({ caseIds: ['1042'], submissionId: 'sub-0000-0007', confirmResend: true }), 'mock')).rejects.toMatchObject({ status: 409 });
+    expect(calls.filter(([url]) => url.endsWith('/send'))).toHaveLength(1);
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.readyToSend).toBe(false);
   });
 
   it('a case that is not ready blocks the whole email — nothing is sent', async () => {
@@ -370,16 +374,14 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'failed' });
     expect(eventsOf('1042', 'crematory.package_send_failed')).toHaveLength(1);
 
-    // Retry works (a failed send does not count as "already sent").
-    fakeGraph();
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0004' }), 'mock')).resolves.toMatchObject({ status: 'submitted' });
-
+    // A failing send call is recorded as uncertain ("may have been sent").
     fakeGraph({ failSend: 503 });
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0005', confirmResend: true }), 'mock')).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
+    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0005' }), 'mock')).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
     expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'uncertain' });
-    // "Uncertain" also needs explicit confirmation before sending again.
+    // It is retried only after staff confirm, from Sent Items, that it did not go out.
     fakeGraph();
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0006' }), 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0006' }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Check Sent Items') });
+    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0004', confirmResend: true }), 'mock')).resolves.toMatchObject({ status: 'submitted' });
   });
 
   it('two decedents with the same name and date never share an attachment name', async () => {

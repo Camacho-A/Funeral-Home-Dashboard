@@ -23,8 +23,9 @@ import { applyCrematoryRecord, assertSendToCrematoryEnabled, CrematoryError, loa
  *     current) — otherwise nothing is sent and each problem is named;
  *   - each package's stored bytes must still match its recorded checksum;
  *   - the same request (submissionId) is never sent twice;
- *   - a package that was already submitted, or may have been, needs an
- *     explicit "send again";
+ *   - a case is sent ONCE: after a successful send it can never be sent
+ *     again; a send Outlook left unclear ("may have been sent") is retried
+ *     only after staff check Sent Items and confirm it did not go out;
  *   - a case already being sent refuses a second, simultaneous send.
  *
  * Outcomes are recorded on every case: "submitted" means Outlook accepted
@@ -98,6 +99,16 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
     };
   }
 
+  // Each case is sent to the crematory ONCE. After a successful send it can
+  // never be sent again — no override.
+  const sent = loaded.filter((l) => l.case_.crematory?.lastSubmission?.status === 'submitted');
+  if (sent.length > 0) {
+    throw new CrematoryError(
+      `Nothing was sent. ${sent.map((l) => `${l.summary.decedentDisplayName} (${l.case_.caseNumber})`).join(', ')} ${sent.length === 1 ? 'was' : 'were'} already sent to the crematory. Each case is sent only once.`,
+      409,
+    );
+  }
+
   const notReady = loaded.filter((l) => !l.readiness.readyToSend);
   if (notReady.length > 0) {
     const problems = notReady.map((l) => `${l.summary.decedentDisplayName} (${l.case_.caseNumber}): ${l.readiness.requirements.filter((r) => !r.ok).map((r) => r.label).join(', ')}`);
@@ -111,14 +122,13 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
   });
   if (busy.length > 0) throw new CrematoryError(`Nothing was sent. ${busy.map((l) => l.case_.caseNumber).join(', ')} ${busy.length === 1 ? 'is' : 'are'} being sent right now.`, 409);
 
+  // A send whose outcome Outlook left unclear may be retried only once a
+  // staff member has checked Sent Items and confirmed it did NOT go out.
   if (!request.confirmResend) {
-    const already = loaded.filter((l) => {
-      const last = l.case_.crematory?.lastSubmission;
-      return last && last.packageDocumentId === l.facts.package!.id && (last.status === 'submitted' || last.status === 'uncertain');
-    });
-    if (already.length > 0) {
+    const unclear = loaded.filter((l) => l.case_.crematory?.lastSubmission?.status === 'uncertain');
+    if (unclear.length > 0) {
       throw new CrematoryError(
-        `Nothing was sent. This package was already sent (or may have been) for ${already.map((l) => `${l.summary.decedentDisplayName} (${l.case_.caseNumber})`).join(', ')}. Confirm "Send again" to send it anyway.`,
+        `Nothing was sent. The last send for ${unclear.map((l) => `${l.summary.decedentDisplayName} (${l.case_.caseNumber})`).join(', ')} may have been sent. Check Sent Items in the mailbox, then confirm it was not sent to try again.`,
         409,
       );
     }

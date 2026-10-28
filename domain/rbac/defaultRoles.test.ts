@@ -386,7 +386,8 @@ describe('defaultRoles', () => {
 
     it("funeralDirector's every other permission is unchanged from before this checkpoint (unrelated RBAC preserved)", () => {
       const funeralDirector = defaultRoleDefinition('funeralDirector');
-      const withoutNewGrant = funeralDirector.permissions.filter((p) => p !== 'caseNumber.manage');
+      // crematory.send was added later (Send to Crematory, 2026-10) and is pinned in its own test below.
+      const withoutNewGrant = funeralDirector.permissions.filter((p) => p !== 'caseNumber.manage' && p !== 'crematory.send');
       expect(withoutNewGrant).toEqual([
         'case.read',
         'case.create',
@@ -428,5 +429,12 @@ describe('defaultRoles', () => {
         'ap.read',
       ]);
     });
+  });
+});
+
+describe('crematory.send (Send to Crematory, 2026-10)', () => {
+  it('Administrator, Manager, Funeral Director and Office Staff can send; no other default role can', () => {
+    const holders = DEFAULT_ROLE_DEFINITIONS.filter((role) => role.permissions.includes('crematory.send')).map((role) => role.key).sort();
+    expect(holders).toEqual(['administrator', 'funeralDirector', 'manager', 'officeStaff']);
   });
 });

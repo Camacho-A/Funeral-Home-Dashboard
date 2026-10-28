@@ -4,6 +4,7 @@ import { evaluateCrematoryReadiness, type CrematoryReadinessInput } from './crem
 const ready: CrematoryReadinessInput = {
   caseType: 'cremation',
   isArchived: false,
+  sentAt: null,
   workflow2Complete: true,
   permit: { documentId: 'permit-1', checksumSha256: 'a'.repeat(64), mimeType: 'application/pdf' },
   permitVerification: { documentId: 'permit-1', checksumSha256: 'a'.repeat(64) },
@@ -45,6 +46,11 @@ describe('evaluateCrematoryReadiness', () => {
     expect(failing({ ...ready, packageNameConfirmed: false })).toEqual([
       ['package_name', "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name."],
     ]);
+  });
+
+  it('a case already sent can never be sent again', () => {
+    expect(evaluateCrematoryReadiness({ ...ready, sentAt: '2026-10-28T15:00:00.000Z' })).toMatchObject({ readyToBuild: true, readyToSend: false });
+    expect(failing({ ...ready, sentAt: '2026-10-28T15:00:00.000Z' })).toEqual([['not_sent', 'Already sent to the crematory. Each case is sent only once.']]);
   });
 
   it('workflow 2 must be complete', () => {

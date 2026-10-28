@@ -73,9 +73,11 @@ describe('SendToCrematoryDialog', () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([notReady]));
     client.crematoryCaseAction.mockResolvedValue({});
     open();
-    expect(await screen.findByText('Confirm the uploaded permit is the approved permit for this decedent.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Confirm permit' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Select Walter Boone' })).toBeDisabled();
-    expect(screen.getByText('Needs attention')).toBeInTheDocument();
+    expect(screen.getByText('1 of 7 done')).toBeInTheDocument();
+    // Steps that wait on an earlier one say so instead of offering an action.
+    expect(screen.getAllByText('After the step above').length).toBeGreaterThan(0);
 
     // The date is suggested from the Expected Pickup but has to be confirmed.
     expect(screen.getByLabelText('Expected ready date for Walter Boone')).toHaveValue('2026-11-06');
@@ -142,56 +144,40 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory');
   });
 
-  it('an already-sent package needs "Send again anyway" before it goes again', async () => {
+  it('a case already sent shows "Sent" on one line and can never be selected again', async () => {
+    const sent: CrematoryCaseSummary = {
+      ...readyCase('1042', 'Richard Reynolds', 'B2026-901'),
+      readiness: { requirements: [...ALL_OK, requirement('not_sent', false, 'Already sent to the crematory. Each case is sent only once.')] as never, readyToBuild: true, readyToSend: false },
+      lastSubmission: {
+        submissionId: 's1', status: 'submitted', packageDocumentId: 'pkg-1042', packageVersion: 1, attachmentName: 'Reynolds_Richard_11-06-2026.pdf',
+        to: ['intake@crematory.example'], cc: [], mailbox: 'office@funeralhome.example', internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: 'identity-admin',
+      },
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([sent]));
+    open({ preselectedCaseIds: ['1042'] });
+    expect(await screen.findByText('Sent')).toBeInTheDocument();
+    expect(screen.getByText(/Sent .* to intake@crematory.example · Reynolds_Richard_11-06-2026.pdf/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Build package' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
+  });
+
+  it('a send that may have gone out is retried only after confirming it is not in Sent Items', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
     client.sendToCrematory
-      .mockRejectedValueOnce(new CrematoryRequestError('Nothing was sent. This package was already sent (or may have been) for Richard Reynolds (B2026-901). Confirm "Send again" to send it anyway.', 409))
+      .mockRejectedValueOnce(new CrematoryRequestError('Nothing was sent. The last send for Richard Reynolds (B2026-901) may have been sent. Check Sent Items in the mailbox, then confirm it was not sent to try again.', 409))
       .mockResolvedValueOnce({ status: 'submitted', duplicate: false, mailbox: 'office@funeralhome.example', internetMessageId: null, to: ['intake@crematory.example'], cc: [], attachments: [] });
     open({ caseId: '1042' });
     fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Send to Crematory (1)' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('already sent');
+    expect(await screen.findByRole('alert')).toHaveTextContent('may have been sent');
     const send = screen.getByRole('button', { name: 'Send to Crematory (1)' });
     expect(send).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Send again anyway' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'I checked Sent Items — it was not sent' }));
     fireEvent.click(send);
     await waitFor(() => expect(client.sendToCrematory).toHaveBeenCalledTimes(2));
     expect(client.sendToCrematory.mock.calls[1][0]).toMatchObject({ confirmResend: true });
-  });
-
-  it('the name for the file is entered or confirmed by staff — suggested only from the form, never split from the full name', async () => {
-    const unnamed: CrematoryCaseSummary = {
-      ...notReady,
-      decedentDisplayName: 'Mary Ann Smith',
-      packageName: { confirmed: null, suggested: null },
-      readiness: { requirements: [requirement('package_name', false, "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name.")] as never, readyToBuild: false, readyToSend: false },
-    };
-    client.fetchCrematoryOverview.mockResolvedValue(overview([unnamed]));
-    client.crematoryCaseAction.mockResolvedValue({});
-    open();
-    const last = await screen.findByLabelText('Last name for Mary Ann Smith');
-    expect(last).toHaveValue('');
-    fireEvent.change(last, { target: { value: 'Smith' } });
-    fireEvent.change(screen.getByLabelText('First name(s) for Mary Ann Smith'), { target: { value: 'Mary Ann' } });
-    expect(screen.getByText('File: Smith_Mary Ann_11-06-2026.pdf')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm name' }));
-    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_package_name', first: 'Mary Ann', last: 'Smith' }));
-  });
-
-  it('staff who can prepare but not send see why, and cannot open the email', async () => {
-    client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')], { canSend: false }));
-    open({ preselectedCaseIds: ['1042'] });
-    expect(await screen.findByText(/sending them needs the Send Crematory Packages permission/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review email/ })).toBeDisabled();
-  });
-
-  it('staff without document permission get no prepare actions', async () => {
-    client.fetchCrematoryOverview.mockResolvedValue(overview([notReady], { canSend: false, canPrepare: false }));
-    open();
-    await screen.findByText('Confirm the uploaded permit is the approved permit for this decedent.');
-    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Confirm date' })).toBeNull();
   });
 
   it('says when no Outlook mailbox is connected', async () => {

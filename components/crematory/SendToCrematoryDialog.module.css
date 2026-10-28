@@ -55,34 +55,6 @@
   overflow-wrap: anywhere;
 }
 
-.needs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0 0 0 4px;
-  list-style: none;
-  font-size: 13px;
-}
-
-.needs li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.dateRow {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.dateRow input {
-  width: 160px;
-}
-
 .review {
   display: flex;
   flex-direction: column;
@@ -118,13 +90,106 @@
   font-size: 13.5px;
 }
 
-.nameRow {
+/* Compact checklist rows (2026-10). */
+.caseSent {
+  background: var(--sx-subtle);
+}
+
+.hint {
+  margin: 0;
+  color: var(--sx-text-2);
+  font-size: 12.5px;
+}
+
+.value {
+  color: var(--sx-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 18px 150px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  min-height: 34px;
+  font-size: 13px;
+}
+
+.mark {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.step[data-state='done'] .mark {
+  color: var(--sx-green, oklch(0.55 0.13 150));
+}
+
+.step[data-state='todo'] .mark {
+  color: var(--sx-amber-text);
+}
+
+.step[data-state='waiting'] {
+  color: var(--sx-text-2);
+}
+
+.step[data-state='waiting'] .mark {
+  color: var(--sx-text-2);
+}
+
+.stepLabel {
+  font-weight: 500;
+}
+
+.step[data-state='done'] .stepLabel {
+  font-weight: 400;
+  color: var(--sx-text-2);
+}
+
+.stepContent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.inputs {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 
-.nameRow input {
-  width: 180px;
+.inputs .sx-input,
+.inputs input {
+  width: 150px;
+  height: 30px;
+  font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .step {
+    grid-template-columns: 18px minmax(0, 1fr);
+    row-gap: 4px;
+    padding: 4px 0;
+  }
+
+  .stepContent {
+    grid-column: 2;
+  }
+
+  .inputs input {
+    width: 100%;
+  }
 }

@@ -184,6 +184,7 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
   return evaluateCrematoryReadiness({
     caseType: facts.case_.caseType,
     isArchived: facts.case_.isDeleted === true,
+    sentAt: facts.case_.crematory?.lastSubmission?.status === 'submitted' ? facts.case_.crematory.lastSubmission.at : null,
     workflow2Complete: config ? workflowStageComplete(facts.case_, config.authorizationWorkflowStage) : null,
     permit: facts.permit ? { documentId: facts.permit.id, checksumSha256: facts.permit.checksumSha256, mimeType: facts.permit.mimeType } : null,
     permitVerification: record.permitVerification ? { documentId: record.permitVerification.documentId, checksumSha256: record.permitVerification.checksumSha256 } : null,
@@ -252,7 +253,9 @@ export async function listCrematoryCandidates(organizationId: string, canSend: b
   const cases = (await listForOrganization(organizationId, mode)).filter((c) => c.caseType === 'cremation' && !c.isDeleted && c.pickupStatus !== 'released');
   const summaries: CrematoryCaseSummary[] = [];
   for (const case_ of cases) summaries.push(await summarize(await loadFacts(organizationId, case_, mode), canSend, mode));
-  return summaries.sort((a, b) => Number(b.readiness.readyToSend) - Number(a.readiness.readyToSend) || a.caseNumber.localeCompare(b.caseNumber));
+  // Ready to send first, then those needing attention, then those already sent.
+  const rank = (s: CrematoryCaseSummary) => (s.readiness.readyToSend ? 0 : s.lastSubmission?.status === 'submitted' ? 2 : 1);
+  return summaries.sort((a, b) => rank(a) - rank(b) || a.caseNumber.localeCompare(b.caseNumber));
 }
 
 export async function getOrganizationCrematorySettings(organizationId: string, mode: DataAdapterMode): Promise<CrematorySettings> {
