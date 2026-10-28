@@ -120,7 +120,6 @@ export type ExtractOutcome = { outcome: 'saved' | 'unchanged'; document: Extract
  * Extracts `kind`'s page from the case's latest Arrangement Forms PDF and
  * saves it as the next version — or reports `unchanged` when the latest
  * saved copy is already exactly this page. Refuses, creating nothing:
- *   - the ME Form on a case not marked as a Medical Examiner case;
  *   - the Crematory Form when the permit is not confirmed by the case's own
  *     data and the staff member has not confirmed verifying it;
  *   - a case with no Arrangement Forms PDF, or one too short.
@@ -138,9 +137,8 @@ export async function extractArrangementPage(
   if (!case_) throw new ArrangementExtractError('Case not found.', 404);
   if (case_.isDeleted) throw new ArrangementExtractError('This case is archived. Restore it before adding documents.', 409);
 
-  if (kind === 'me_form' && case_.isMedicalExaminerCase !== true) {
-    throw new ArrangementExtractError('The Release Form is for Medical Examiner cases. Mark this case as a Medical Examiner case first.', 422);
-  }
+  // The Release Form (2026-10) is for every case, not only Medical Examiner
+  // ones — a hospital death, or anyone else who asks for it, needs it too.
   let permitBasis: string | null = null;
   if (kind === 'crematory_form') {
     const permit = crematoryPermitStatus(case_);

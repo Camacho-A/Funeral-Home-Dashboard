@@ -142,11 +142,11 @@ describe('Release Form (page 2)', () => {
     expect(events().find((e) => e.eventType === 'document.page_extracted')!.description).toBe('Release Form v1 extracted from page 2 of the Arrangement Forms');
   });
 
-  it('is only for Medical Examiner cases', async () => {
+  it('is available for every case — a hospital death too, not only Medical Examiner cases (2026-10)', async () => {
     await storeArrangement(await arrangementPdf(6), 'arr-1');
     caseFixtures[index] = { ...caseFixtures[index], isMedicalExaminerCase: false };
-    await expect(extractArrangementPage('me_form', CASE_ID, {}, ctx(), 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('Medical Examiner') });
-    expect(saved('external_form.me_form')).toHaveLength(0);
+    await expect(extractArrangementPage('me_form', CASE_ID, {}, ctx(), 'mock')).resolves.toMatchObject({ outcome: 'saved' });
+    expect(saved('external_form.me_form')).toHaveLength(1);
   });
 });
 

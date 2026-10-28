@@ -1284,11 +1284,11 @@ describe('CaseDocumentsTab — Release Form and Crematory Form (2026-10)', () =>
     expect(caseDocumentsClient.extractArrangementPage).toHaveBeenCalledWith({ organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', kind: 'me_form', permitVerifiedByStaff: false });
   });
 
-  it('hides the Release Form on a case that is not a Medical Examiner case', async () => {
+  it('offers the Release Form on every case, not only Medical Examiner cases (2026-10)', async () => {
     vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state({ isMedicalExaminerCase: false }));
     renderTab();
     expect(await findCreateMenuItem('Extract Crematory Form')).toBeInTheDocument();
-    expect(createMenuItemNames()).not.toContain('Extract Release Form');
+    expect(createMenuItemNames()).toContain('Extract Release Form');
   });
 
   it('without a recorded permit, asks staff to confirm before extracting the Crematory Form', async () => {

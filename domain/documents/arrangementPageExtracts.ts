@@ -13,7 +13,8 @@ import { presentedChecklistLabel } from '@/domain/organization/checklistRelabel'
  *
  *   page 2  Release Authorization for Removal of Decedent → "Release Form"
  *           (named "ME Form" until 2026-10; the document type key is unchanged),
- *           for cases involving the Medical Examiner;
+ *           available for every case (2026-10: hospital deaths and
+ *           anyone else who requires it, not only Medical Examiner cases);
  *   page 3  Authorization for Cremation and Disposition   → "Crematory Form",
  *           sent to the crematory once the permit is available.
  *

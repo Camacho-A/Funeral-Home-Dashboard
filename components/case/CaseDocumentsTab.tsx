@@ -263,13 +263,14 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
     }
     if (labelsEnabled) createItems.push({ label: 'Cremation Label…', onSelect: () => setLabelDialog({}) });
     if (manateeEnabled) createItems.push({ label: 'Manatee County — Death Certificate Application…', onSelect: () => setManateeOpen(true) });
-    if (extractsEnabled && extracts.data?.isMedicalExaminerCase) {
+    // Every case (2026-10) — a hospital death or anyone who requires it,
+    // not only Medical Examiner cases.
+    if (extractsEnabled && extracts.data) {
       createItems.push({ label: 'Extract Release Form', dividerBefore: true, disabled: extractPending !== null, onSelect: () => runExtract('me_form') });
     }
     if (extractsEnabled && extracts.data) {
       createItems.push({
         label: 'Extract Crematory Form',
-        dividerBefore: !extracts.data.isMedicalExaminerCase,
         disabled: extractPending !== null,
         onSelect: () => (extracts.data!.permit.confirmed ? runExtract('crematory_form') : setConfirmingPermit(true)),
       });
