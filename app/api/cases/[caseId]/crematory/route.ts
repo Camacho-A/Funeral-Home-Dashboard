@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { activityContext, authorizeCrematory, crematoryErrorResponse } from '@/lib/crematory/routeAuth';
-import { buildCrematoryPackage, confirmPermit, confirmReadyDate, getCrematoryCaseSummary } from '@/services/crematory/crematoryPackageService';
+import { buildCrematoryPackage, confirmPackageName, confirmPermit, confirmReadyDate, getCrematoryCaseSummary } from '@/services/crematory/crematoryPackageService';
 
 export const maxDuration = 60;
 
@@ -11,6 +11,7 @@ export const maxDuration = 60;
  *   GET  → the case's readiness, permit, confirmed date and package
  *   POST { organizationId, action: 'confirm_permit', documentId }
  *        { organizationId, action: 'confirm_ready_date', date }
+ *        { organizationId, action: 'confirm_package_name', first, last }
  *        { organizationId, action: 'build_package' }
  * Nothing here sends anything.
  */
@@ -35,19 +36,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
-  const auth = await authorizeCrematory(body.organizationId, 'send');
+  const auth = await authorizeCrematory(body.organizationId, 'prepare');
   if (!auth.context) return auth.response;
   const ctx = activityContext(auth.context, crypto.randomUUID());
   try {
     switch (body.action) {
       case 'confirm_permit':
         if (typeof body.documentId !== 'string') return NextResponse.json({ error: 'documentId is required.' }, { status: 400 });
-        return NextResponse.json(await confirmPermit(ctx, caseId, body.documentId, auth.mode));
+        return NextResponse.json(await confirmPermit(ctx, caseId, body.documentId, auth.mode, auth.canSend));
       case 'confirm_ready_date':
         if (typeof body.date !== 'string') return NextResponse.json({ error: 'date is required.' }, { status: 400 });
-        return NextResponse.json(await confirmReadyDate(ctx, caseId, body.date, auth.mode));
+        return NextResponse.json(await confirmReadyDate(ctx, caseId, body.date, auth.mode, auth.canSend));
+      case 'confirm_package_name':
+        return NextResponse.json(await confirmPackageName(ctx, caseId, { first: body.first, last: body.last }, auth.mode, auth.canSend));
       case 'build_package': {
-        const { outcome, summary } = await buildCrematoryPackage(ctx, caseId, auth.mode);
+        const { outcome, summary } = await buildCrematoryPackage(ctx, caseId, auth.mode, auth.canSend);
         return NextResponse.json({ outcome, summary }, { status: outcome === 'saved' ? 201 : 200 });
       }
       default:

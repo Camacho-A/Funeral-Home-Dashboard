@@ -77,7 +77,7 @@ describe('permissionService', () => {
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       expect(permissions.has('organization.manage')).toBe(true);
       expect(permissions.has('case.delete')).toBe(true);
-      expect(permissions.size).toBe(69); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage
+      expect(permissions.size).toBe(70); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage; Send to Crematory (2026-10): + crematory.send
     });
 
     it('resolves readOnly to only read/view permissions', async () => {
@@ -223,15 +223,15 @@ describe('permissionService', () => {
       return fetchMock;
     }
 
-    it("resolves Administrator's full real 69-permission set across two pages (50 + 19) — the exact shape of the live incident, including organization.manage, which was silently dropped by the unpaginated read", async () => {
+    it("resolves Administrator's full real permission set across two pages (50 + the rest) — the exact shape of the live incident, including organization.manage, which was silently dropped by the unpaginated read", async () => {
       const page1 = PERMISSION_KEYS.slice(0, 50);
       const page2 = PERMISSION_KEYS.slice(50);
-      expect(page2.length).toBe(19);
+      expect(page2.length).toBe(20); // 70 permissions since crematory.send (2026-10)
       stubWixRbacFetch({ roleKey: 'administrator', grantPages: [page1, page2] });
 
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'wix');
 
-      expect(permissions.size).toBe(69);
+      expect(permissions.size).toBe(70);
       expect(permissions.has('organization.manage')).toBe(true);
       for (const key of PERMISSION_KEYS) expect(permissions.has(key)).toBe(true);
     });

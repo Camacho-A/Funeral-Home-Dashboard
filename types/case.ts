@@ -465,6 +465,11 @@ export type CaseCrematoryRecord = {
   /** Staff confirmed THIS uploaded file is the approved state permit for
       this decedent. A different file later needs its own confirmation. */
   permitVerification?: { documentId: string; checksumSha256: string; verifiedBy: string | null; verifiedAt: string } | null;
+  /** The decedent's last and first name(s) exactly as they appear in the
+      package file name (LastName_FirstName_…), entered or confirmed by
+      staff — never split from the full name, and never a change to the
+      case's own name. */
+  packageName?: { first: string; last: string; confirmedBy: string | null; confirmedAt: string } | null;
   /** The expected cremation ready date staff entered or confirmed (MM/DD/YYYY),
       and the Expected Pickup it was suggested from at the time. */
   readyDate?: { date: string; suggestedAtConfirmation: string | null; confirmedBy: string | null; confirmedAt: string } | null;

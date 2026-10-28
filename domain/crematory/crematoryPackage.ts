@@ -37,35 +37,58 @@ function sanitizeFileNamePart(value: string): string {
     .replace(/^\.+|\.+$/g, '');
 }
 
+/** The last name(s) and first name(s) a package file is named with. */
+export type PackageName = { first: string; last: string };
+
 /**
- * The decedent's last and first name for the file name. `decedentName` is
- * the full name as recorded ("FIRST LAST"); the first word is the first
- * name and EVERYTHING after it is the surname, so multi-word surnames
- * ("Salas Rueda", "de la Cruz") are kept whole. The middle name lives in
- * its own field and is not part of the file name. All-caps names are shown
- * in normal capitalisation; anything else is kept as written.
+ * The confirmed package name, cleaned for a file name — or why it can't be
+ * used. Names are taken exactly as entered (only characters no file system
+ * accepts are removed); both parts are required. Never derived by
+ * splitting a full name: "MARY ANN SMITH" cannot say which words are the
+ * surname, so staff enter or confirm it.
  */
-export function packageNameParts(decedentName: string): { first: string; last: string } | null {
-  const words = (decedentName ?? '').trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return null;
-  const first = sanitizeFileNamePart(toDisplayCasingIfAllCaps(words[0]));
-  const last = sanitizeFileNamePart(toDisplayCasingIfAllCaps(words.slice(1).join(' ')));
-  if (!first) return null;
+export function normalizePackageName(input: { first?: unknown; last?: unknown }): PackageName | { error: string } {
+  const clean = (value: unknown) => (typeof value === 'string' ? sanitizeFileNamePart(value).slice(0, 80) : '');
+  const first = clean(input.first);
+  const last = clean(input.last);
+  if (!last) return { error: 'Enter the last name (surname) for the package.' };
+  if (!first) return { error: 'Enter the first name(s) for the package.' };
   return { first, last };
 }
 
 /**
- * LastName_FirstName_MM-DD-YYYY.pdf — e.g. Reynolds_Richard_11-06-2026.pdf.
- * The date is the expected cremation ready date the staff member confirmed
- * (never the send date, never the Date of Cremation). Null when the name or
- * date is missing — a package is never named with a guess.
+ * A suggestion for staff to confirm, from the name exactly as the intake
+ * form structured it (first / middle / last boxes). The middle name joins
+ * the first ("Mary" + "Ann" → "Mary Ann"). Null when the form did not
+ * provide both a first and a last name — never a guess.
  */
-export function crematoryPackageFileName(decedentName: string, expectedReadyDate: string | null | undefined): string | null {
-  const name = packageNameParts(decedentName);
+export function suggestPackageName(structured: { first?: string | null; middle?: string | null; last?: string | null }): PackageName | null {
+  const tidy = (value: string | null | undefined) => toDisplayCasingIfAllCaps((value ?? '').trim().replace(/\s+/g, ' '));
+  const first = [tidy(structured.first), tidy(structured.middle)].filter(Boolean).join(' ');
+  const last = tidy(structured.last);
+  if (!first || !last) return null;
+  const normalized = normalizePackageName({ first, last });
+  return 'error' in normalized ? null : normalized;
+}
+
+/** "First Last" for the email subject. */
+export function packageDisplayName(name: PackageName): string {
+  return `${name.first} ${name.last}`;
+}
+
+/**
+ * LastName_FirstName_MM-DD-YYYY.pdf — e.g. Smith_Mary Ann_11-06-2026.pdf,
+ * Salas Rueda_Estela_11-06-2026.pdf. The name is the one staff confirmed;
+ * the date is the expected cremation ready date staff confirmed (never the
+ * send date, never the Date of Cremation). Null when either is missing — a
+ * package is never named with a guess.
+ */
+export function crematoryPackageFileName(name: PackageName | null | undefined, expectedReadyDate: string | null | undefined): string | null {
+  if (!name) return null;
+  const normalized = normalizePackageName(name);
   const date = parseCaseDate(expectedReadyDate);
-  if (!name || !date) return null;
-  const who = name.last ? `${name.last}_${name.first}` : name.first;
-  return `${who}_${pad(date.month)}-${pad(date.day)}-${date.year}.pdf`;
+  if ('error' in normalized || !date) return null;
+  return `${normalized.last}_${normalized.first}_${pad(date.month)}-${pad(date.day)}-${date.year}.pdf`;
 }
 
 /** The expected ready date encoded in a package file name, as MM/DD/YYYY. */

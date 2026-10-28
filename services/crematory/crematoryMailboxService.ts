@@ -70,7 +70,9 @@ export function isCrematoryMailboxConfigured(): boolean {
 // Storage — the organization's own Wix row (raw field), or memory in mock mode.
 // ---------------------------------------------------------------------------
 
-const mockMailboxes = new Map<string, StoredMailbox | null>();
+// Mock mode keeps connections on globalThis so every route of the dev
+// server sees the same mailbox (like services/__mocks__/mockStore.ts).
+const mockMailboxes: Map<string, StoredMailbox | null> = ((globalThis as unknown as { __crematoryMockMailboxes?: Map<string, StoredMailbox | null> }).__crematoryMockMailboxes ??= new Map());
 
 async function readStored(organizationId: string, mode: DataAdapterMode): Promise<StoredMailbox | null> {
   if (mode === 'mock') return mockMailboxes.get(organizationId) ?? null;

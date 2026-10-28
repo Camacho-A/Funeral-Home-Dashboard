@@ -13,7 +13,7 @@ import {
   type CrematorySendResult,
 } from '@/lib/crematoryClient';
 import { buildCaseDocumentDownloadUrl, extractArrangementPage, uploadCaseDocument } from '@/lib/caseDocumentsClient';
-import { assignAttachmentFileNames, crematoryEmailSubject, defaultCrematoryMessage, toCaseDate } from '@/domain/crematory/crematoryPackage';
+import { assignAttachmentFileNames, crematoryEmailSubject, crematoryPackageFileName, defaultCrematoryMessage, toCaseDate } from '@/domain/crematory/crematoryPackage';
 import { parseRecipientList } from '@/domain/crematory/crematorySettings';
 import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
@@ -54,6 +54,7 @@ export function SendToCrematoryDialog({
   const [busyCase, setBusyCase] = useState<string | null>(null);
   const [caseError, setCaseError] = useState<{ caseId: string; message: string } | null>(null);
   const [dates, setDates] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, { first: string; last: string }>>({});
   const [permitPrompt, setPermitPrompt] = useState<CrematoryCaseSummary | null>(null);
 
   const [to, setTo] = useState('');
@@ -73,7 +74,7 @@ export function SendToCrematoryDialog({
     () =>
       assignAttachmentFileNames(chosen.map((c) => ({ fileName: c.package!.fileName, caseNumber: c.caseNumber, summary: c }))).map((a) => ({
         attachmentName: a.attachmentName,
-        decedentDisplayName: a.summary.decedentDisplayName,
+        decedentDisplayName: a.summary.subjectName,
         expectedReadyDate: a.summary.readyDate.confirmed!,
         version: a.summary.package!.version,
         caseNumber: a.caseNumber,
@@ -102,7 +103,7 @@ export function SendToCrematoryDialog({
     const name = overview.data!.organizationName;
     setTo(overview.data!.settings.to.join(', '));
     setCc(overview.data!.settings.cc.join(', '));
-    setSubject(crematoryEmailSubject(name, chosen.map((c) => ({ decedentDisplayName: c.decedentDisplayName, expectedReadyDate: c.readyDate.confirmed! }))));
+    setSubject(crematoryEmailSubject(name, chosen.map((c) => ({ decedentDisplayName: c.subjectName, expectedReadyDate: c.readyDate.confirmed! }))));
     setMessage(defaultCrematoryMessage(name, attachments));
     setReviewed(false);
     setSendAgain(false);
@@ -174,6 +175,13 @@ export function SendToCrematoryDialog({
 
         {overview.data && step === 'prepare' && (
           <>
+            {!overview.data.canSend && (
+              <div className="sx-form-banner sx-form-banner-info" role="status">
+                {overview.data.canPrepare
+                  ? 'You can prepare Crematory Packages, but sending them needs the Send Crematory Packages permission. Ask an administrator.'
+                  : 'You can see what each case needs, but preparing and sending are limited to staff with those permissions.'}
+              </div>
+            )}
             {candidates.length === 0 && <p className={styles.muted}>No open cremation cases.</p>}
             <ul className={styles.cases}>
               {candidates.map((c) => (
@@ -186,6 +194,10 @@ export function SendToCrematoryDialog({
                   error={caseError?.caseId === c.caseId ? caseError.message : null}
                   dateValue={dates[c.caseId] ?? toIsoInput(c.readyDate.confirmed ?? c.readyDate.suggested)}
                   onDateChange={(value) => setDates((d) => ({ ...d, [c.caseId]: value }))}
+                  nameValue={names[c.caseId] ?? c.packageName.confirmed ?? c.packageName.suggested ?? { first: '', last: '' }}
+                  onNameChange={(value) => setNames((n) => ({ ...n, [c.caseId]: value }))}
+                  onConfirmName={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_package_name', ...value }))}
+                  canPrepare={overview.data!.canPrepare}
                   organizationId={organizationId}
                   onUploadPermit={(file) => act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE }))}
                   onConfirmPermit={() => setPermitPrompt(c)}
@@ -345,6 +357,10 @@ function CaseRow({
   onExtract,
   onConfirmDate,
   onBuild,
+  nameValue,
+  onNameChange,
+  onConfirmName,
+  canPrepare,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -359,6 +375,10 @@ function CaseRow({
   onExtract: () => void;
   onConfirmDate: (value: string) => void;
   onBuild: () => void;
+  nameValue: { first: string; last: string };
+  onNameChange: (value: { first: string; last: string }) => void;
+  onConfirmName: (value: { first: string; last: string }) => void;
+  canPrepare: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const failing = summary.readiness.requirements.filter((r) => !r.ok);
@@ -391,12 +411,42 @@ function CaseRow({
               : `Last send failed (${formatTimestamp(last.at)}): ${last.error ?? 'unknown error'}`}
         </p>
       )}
+      {summary.packageName.confirmed && (
+        <p className={styles.muted}>
+          Name for the package: {summary.packageName.confirmed.last}, {summary.packageName.confirmed.first}
+        </p>
+      )}
       {failing.length > 0 && (
         <ul className={styles.needs}>
           {failing.map((r) => (
             <li key={r.key}>
               <span>{r.detail}</span>
-              {r.key === 'permit_uploaded' && (
+              {r.key === 'package_name' && canPrepare && (
+                <span className={styles.nameRow}>
+                  <input
+                    className="sx-input"
+                    aria-label={`Last name for ${summary.decedentDisplayName}`}
+                    placeholder="Last name(s)"
+                    value={nameValue.last}
+                    onChange={(e) => onNameChange({ ...nameValue, last: e.target.value })}
+                  />
+                  <input
+                    className="sx-input"
+                    aria-label={`First name(s) for ${summary.decedentDisplayName}`}
+                    placeholder="First name(s)"
+                    value={nameValue.first}
+                    onChange={(e) => onNameChange({ ...nameValue, first: e.target.value })}
+                  />
+                  <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy || !nameValue.first.trim() || !nameValue.last.trim()} onClick={() => onConfirmName(nameValue)}>
+                    Confirm name
+                  </button>
+                  {summary.packageName.suggested && !summary.packageName.confirmed && <span className={styles.muted}>Suggested from the intake form&rsquo;s name boxes.</span>}
+                  {nameValue.first.trim() && nameValue.last.trim() && (
+                    <span className={styles.muted}>File: {crematoryPackageFileName(nameValue, summary.readyDate.confirmed ?? summary.readyDate.suggested) ?? `${nameValue.last.trim()}_${nameValue.first.trim()}_MM-DD-YYYY.pdf`}</span>
+                  )}
+                </span>
+              )}
+              {canPrepare && r.key === 'permit_uploaded' && (
                 <>
                   <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={() => fileInput.current?.click()}>
                     Upload permit (PDF)
@@ -414,18 +464,18 @@ function CaseRow({
                   />
                 </>
               )}
-              {r.key === 'permit_verified' && summary.permit && (
+              {canPrepare && r.key === 'permit_verified' && summary.permit && (
                 <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onConfirmPermit}>
                   Confirm permit
                 </button>
               )}
               {/* Page 3 is extracted once the permit is confirmed. */}
-              {r.key === 'crematory_form' && permitConfirmed && (
+              {canPrepare && r.key === 'crematory_form' && permitConfirmed && (
                 <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onExtract}>
                   Extract page 3
                 </button>
               )}
-              {r.key === 'ready_date' && (
+              {canPrepare && r.key === 'ready_date' && (
                 <span className={styles.dateRow}>
                   <input type="date" className="sx-input" aria-label={`Expected ready date for ${summary.decedentDisplayName}`} value={dateValue} onChange={(e) => onDateChange(e.target.value)} />
                   <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy || !dateValue} onClick={() => onConfirmDate(dateValue)}>
@@ -433,7 +483,7 @@ function CaseRow({
                   </button>
                 </span>
               )}
-              {r.key === 'package' && summary.readiness.readyToBuild && (
+              {canPrepare && r.key === 'package' && summary.readiness.readyToBuild && (
                 <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onBuild}>
                   {summary.package ? 'Rebuild package' : 'Build package'}
                 </button>

@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       getCrematoryMailboxStatus(organizationId, auth.mode),
     ]);
     return NextResponse.json(
-      { candidates, settings, mailbox, organizationName: sendToCrematoryConfig(organizationId)!.emailOrganizationName, canSend: auth.canSend },
+      { candidates, settings, mailbox, organizationName: sendToCrematoryConfig(organizationId)!.emailOrganizationName, canSend: auth.canSend, canPrepare: auth.canPrepare },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

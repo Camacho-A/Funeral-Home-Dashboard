@@ -57,9 +57,10 @@ async function contentOf(page: PDFPage) {
 void PDFName;
 
 /** Two fictional Manors cases, each with a Manors-shaped workflow 2/3. */
+/** packageName: [first name(s), ...last name words] as staff confirm them. */
 const CASES = [
-  { id: '1042', name: 'RICHARD REYNOLDS', number: 'B2026-901' },
-  { id: '1044', name: 'ESTELA SALAS RUEDA', number: 'B2026-902' },
+  { id: '1042', name: 'RICHARD REYNOLDS', number: 'B2026-901', packageName: ['Richard', 'Reynolds'] },
+  { id: '1044', name: 'ESTELA SALAS RUEDA', number: 'B2026-902', packageName: ['Estela', 'Salas', 'Rueda'] },
 ];
 const originals = new Map<string, Case>();
 const index = (id: string) => caseFixtures.findIndex((c) => c.id === id && c.organizationId === ORG);
@@ -119,6 +120,8 @@ async function readyCase(caseId: string, readyDate = '11/06/2026', iso = '2026-1
   await pkg.confirmPermit(ctx(), caseId, permitDoc.id, 'mock');
   await extractArrangementPage('crematory_form', caseId, {}, ctx(), 'mock');
   await pkg.confirmReadyDate(ctx(), caseId, readyDate, 'mock');
+  const [first, ...rest] = CASES.find((c) => c.id === caseId)!.packageName;
+  await pkg.confirmPackageName(ctx(), caseId, { first, last: rest.join(' ') }, 'mock');
   return { arrangement, permit };
 }
 
@@ -144,7 +147,9 @@ describe('readiness — what needs attention', () => {
   it('a bare case lists every missing piece; nothing is sent or built on its own', async () => {
     const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.readyToBuild).toBe(false);
-    expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_uploaded', 'permit_verified', 'crematory_form', 'ready_date', 'package']);
+    expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_uploaded', 'permit_verified', 'crematory_form', 'package_name', 'ready_date', 'package']);
+    // No name is ever split out of "RICHARD REYNOLDS".
+    expect(summary.packageName).toEqual({ confirmed: null, suggested: null });
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(0);
   });
 
@@ -172,9 +177,11 @@ describe('readiness — what needs attention', () => {
 describe('the Crematory Package — one PDF per decedent', () => {
   it('puts every permit page first, then Arrangement Form page 3 — unchanged — under LastName_FirstName_MM-DD-YYYY.pdf', async () => {
     const { permit, arrangement } = await readyCase('1042');
-    const { outcome, summary } = await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
+    const { outcome, summary } = await pkg.buildCrematoryPackage(ctx(), '1042', 'mock', true);
     expect(outcome).toBe('saved');
     expect(summary.readiness.readyToSend).toBe(true);
+    // Without the send permission the package is built but not sendable.
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', false, 'mock')).readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
     const [saved] = docsOf('1042', 'cremation_form.crematory_package');
     expect(saved).toMatchObject({ fileName: 'Reynolds_Richard_11-06-2026.pdf', mimeType: 'application/pdf', version: 1, status: 'active', generatedBy: 'staff-dana' });
 
@@ -187,6 +194,35 @@ describe('the Crematory Package — one PDF per decedent', () => {
     expect(await contentOf(merged.getPage(2))).toBe(await contentOf(arrangementPdf.getPage(2)));
     expect(merged.getPage(0).getSize()).toEqual({ width: 612, height: 1008 });
     expect(eventsOf('1042', 'crematory.package_built')[0].description).toBe('Crematory Package v1 built: Reynolds_Richard_11-06-2026.pdf');
+  });
+
+  it('MARY ANN SMITH is named from the confirmed parts — Smith_Mary Ann — and the case name is never changed', async () => {
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], decedentName: 'MARY ANN SMITH' };
+    await readyCase('1042');
+    await pkg.confirmPackageName(ctx(), '1042', { first: 'Mary Ann', last: 'Smith' }, 'mock');
+    await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
+    expect(docsOf('1042', 'cremation_form.crematory_package')[0].fileName).toBe('Smith_Mary Ann_11-06-2026.pdf');
+    expect(caseFixtures[index('1042')].decedentName).toBe('MARY ANN SMITH');
+    expect(eventsOf('1042', 'crematory.package_name_confirmed').at(-1)!.description).toBe('Name for the Crematory Package confirmed: Smith, Mary Ann (was Reynolds, Richard)');
+  });
+
+  it('suggests the name only from the intake form\'s own first / middle / last boxes', async () => {
+    const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
+    const before = externalFormSubmissionFixtures.length;
+    externalFormSubmissionFixtures.push({
+      id: 'sub-name', organizationId: ORG, provider: 'jotform', externalFormId: '262664842044055', externalSubmissionId: '1', caseFormLinkId: null,
+      createdCaseId: '1042', status: 'matched', receivedAt: '2026-10-20T10:00:00.000Z',
+      mappedFields: JSON.stringify({ decedentName: 'MARY ANN SMITH', decedentFirstName: 'MARY', decedentMiddleName: 'ANN', decedentLastName: 'SMITH' }),
+    } as never);
+    try {
+      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' } });
+    } finally {
+      externalFormSubmissionFixtures.length = before;
+    }
+  });
+
+  it('refuses an incomplete name', async () => {
+    await expect(pkg.confirmPackageName(ctx(), '1042', { first: 'Mary Ann', last: ' ' }, 'mock')).rejects.toMatchObject({ status: 422 });
   });
 
   it('keeps multi-word surnames whole in the file name', async () => {
@@ -235,6 +271,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
 
   it('a permit confirmation is for one file: confirming a stale id is refused', async () => {
     await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-old');
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await uploadAs('1042', 'State Permit 2.pdf', 'cremation_form.state_permit', await pdf('PERMIT-B', 1), 'permit-new');
     await expect(pkg.confirmPermit(ctx(), '1042', 'permit-old', 'mock')).rejects.toMatchObject({ status: 409 });
   });
@@ -348,6 +385,8 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
   it('two decedents with the same name and date never share an attachment name', async () => {
     caseFixtures[index('1044')] = { ...caseFixtures[index('1044')], decedentName: 'RICHARD REYNOLDS' };
     await twoReadyCases();
+    await pkg.confirmPackageName(ctx(), '1044', { first: 'Richard', last: 'Reynolds' }, 'mock');
+    await pkg.buildCrematoryPackage(ctx(), '1044', 'mock');
     const calls = fakeGraph();
     await sendCrematoryPackages(ctx(), request(), 'mock');
     const names = calls.filter(([url]) => url.endsWith('/attachments')).map(([, init]) => JSON.parse(String(init!.body)).name);

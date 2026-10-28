@@ -22,6 +22,8 @@ import styles from './ReconciliationModal.module.css';
 const FIELD_LABELS: Partial<Record<ReconciliationRow['field'], string>> = {
   decedentName: 'Decedent name',
   decedentMiddleName: 'Middle name',
+  decedentFirstName: 'First name (as submitted)',
+  decedentLastName: 'Last name (as submitted)',
   dateOfBirth: 'Date of birth',
   dateOfDeath: 'Date of death',
   placeOfDeath: 'Place of death',

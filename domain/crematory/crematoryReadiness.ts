@@ -12,6 +12,7 @@ export type CrematoryRequirementKey =
   | 'permit_verified'
   | 'crematory_form'
   | 'workflow_2'
+  | 'package_name'
   | 'ready_date'
   | 'package'
   | 'permission';
@@ -29,6 +30,8 @@ export type CrematoryReadinessInput = {
   permitVerification: { documentId: string; checksumSha256: string } | null;
   arrangementForm: { createdAt: string } | null;
   crematoryForm: { createdAt: string } | null;
+  /** Whether staff confirmed the last/first name(s) for the file name. */
+  packageNameConfirmed: boolean;
   readyDate: {
     /** From the Expected Pickup, for staff to confirm or change. */
     suggested: string | null;
@@ -76,6 +79,9 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
 
   add('workflow_2', 'Workflow 2 complete', input.workflow2Complete === true,
     input.workflow2Complete === null ? "This case's workflow has no stage 2." : 'Check every step of workflow 2 (EDRS & Doctor / Cause of Death).');
+
+  add('package_name', 'Name for the package confirmed', input.packageNameConfirmed,
+    "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name.");
 
   const confirmed = input.readyDate.confirmed;
   const pickupMoved = confirmed !== null && toCaseDate(confirmed.suggestedAtConfirmation) !== toCaseDate(input.readyDate.suggested);

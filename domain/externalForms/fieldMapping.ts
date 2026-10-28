@@ -39,6 +39,12 @@ export type MappedSolisField =
   // changes nothing about those two maps.
   | 'timeOfDeath'
   | 'weight'
+  // The decedent's name exactly as the form structures it (2026-10).
+  // Review-only — a Case stores one full-name string and is never split —
+  // kept so a Crematory Package's LastName_FirstName file name can be
+  // suggested from what the family actually entered, for staff to confirm.
+  | 'decedentFirstName'
+  | 'decedentLastName'
   // Arrangement Forms certifier block (2026-10). Real, writable Case
   // fields that the Arrangement Forms "To BE COMPLETED BY FUNERAL
   // DIRECTOR" section captures (qids 137-140, confirmed against the live
@@ -170,6 +176,8 @@ export const FIELD_MAP_VITAL_STATISTICS: FieldMapEntry[] = [
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'first' },
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'last' },
   { qid: '3', jotformName: 'nameof', solisField: 'decedentMiddleName', subfield: 'middle' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentFirstName', subfield: 'first' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentLastName', subfield: 'last' },
   { qid: '10', jotformName: 'dateof10', solisField: 'dateOfBirth' },
   { qid: '6', jotformName: 'dateof', solisField: 'dateOfDeath' },
   { qid: '30', jotformName: 'placeOf', solisField: 'placeOfDeath' },
@@ -191,6 +199,8 @@ export const FIELD_MAP_ARRANGEMENT_FORMS: FieldMapEntry[] = [
   { qid: '87', jotformName: 'name87', solisField: 'decedentName', subfield: 'first' },
   { qid: '87', jotformName: 'name87', solisField: 'decedentName', subfield: 'last' },
   { qid: '87', jotformName: 'name87', solisField: 'decedentMiddleName', subfield: 'middle' },
+  { qid: '87', jotformName: 'name87', solisField: 'decedentFirstName', subfield: 'first' },
+  { qid: '87', jotformName: 'name87', solisField: 'decedentLastName', subfield: 'last' },
   { qid: '8', jotformName: 'dateOf', solisField: 'dateOfBirth' },
   { qid: '10', jotformName: 'dateOf10', solisField: 'dateOfDeath' },
   { qid: '97', jotformName: 'address97', solisField: 'placeOfDeath' },
@@ -300,6 +310,8 @@ export const FIELD_MAP_FIRST_CALL_SHEET: FieldMapEntry[] = [
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'first' },
   { qid: '3', jotformName: 'nameof', solisField: 'decedentName', subfield: 'last' },
   { qid: '3', jotformName: 'nameof', solisField: 'decedentMiddleName', subfield: 'middle' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentFirstName', subfield: 'first' },
+  { qid: '3', jotformName: 'nameof', solisField: 'decedentLastName', subfield: 'last' },
   { qid: '6', jotformName: 'dateOf6', solisField: 'dateOfBirth' },
   { qid: '7', jotformName: 'weight', solisField: 'weight' },
   { qid: '8', jotformName: 'dateof', solisField: 'dateOfDeath' },

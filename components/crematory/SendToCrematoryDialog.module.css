@@ -117,3 +117,14 @@
   gap: 8px;
   font-size: 13.5px;
 }
+
+.nameRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.nameRow input {
+  width: 180px;
+}

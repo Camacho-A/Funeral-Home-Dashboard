@@ -6,6 +6,8 @@ export type CrematoryCaseSummary = {
   caseId: string;
   caseNumber: string;
   decedentDisplayName: string;
+  packageName: { confirmed: { first: string; last: string } | null; suggested: { first: string; last: string } | null };
+  subjectName: string;
   readiness: CrematoryReadiness;
   permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;
   readyDate: { suggested: string | null; confirmed: string | null };
@@ -14,7 +16,16 @@ export type CrematoryCaseSummary = {
   lastSubmission: CaseCrematoryRecord['lastSubmission'] | null;
 };
 export type CrematoryMailbox = { connected: false; configured: boolean } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
-export type CrematoryOverview = { candidates: CrematoryCaseSummary[]; settings: { to: string[]; cc: string[] }; mailbox: CrematoryMailbox; organizationName: string; canSend: boolean };
+export type CrematoryOverview = {
+  candidates: CrematoryCaseSummary[];
+  settings: { to: string[]; cc: string[] };
+  mailbox: CrematoryMailbox;
+  organizationName: string;
+  /** Send Crematory Packages permission (sending and resending). */
+  canSend: boolean;
+  /** Document permission: confirm, build and prepare. */
+  canPrepare: boolean;
+};
 export type CrematorySendResult = {
   status: 'submitted';
   duplicate: boolean;
@@ -50,7 +61,11 @@ export async function fetchCrematoryOverview(organizationId: string, caseId?: st
 export async function crematoryCaseAction(
   organizationId: string,
   caseId: string,
-  action: { action: 'confirm_permit'; documentId: string } | { action: 'confirm_ready_date'; date: string } | { action: 'build_package' },
+  action:
+    | { action: 'confirm_permit'; documentId: string }
+    | { action: 'confirm_ready_date'; date: string }
+    | { action: 'confirm_package_name'; first: string; last: string }
+    | { action: 'build_package' },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

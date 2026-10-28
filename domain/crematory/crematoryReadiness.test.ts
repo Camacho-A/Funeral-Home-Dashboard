@@ -9,6 +9,7 @@ const ready: CrematoryReadinessInput = {
   permitVerification: { documentId: 'permit-1', checksumSha256: 'a'.repeat(64) },
   arrangementForm: { createdAt: '2026-10-20T10:00:00.000Z' },
   crematoryForm: { createdAt: '2026-10-21T10:00:00.000Z' },
+  packageNameConfirmed: true,
   readyDate: { suggested: '11/06/2026', confirmed: { date: '11/06/2026', suggestedAtConfirmation: '11/06/2026' } },
   package: { fileName: 'Reynolds_Richard_11-06-2026.pdf', current: true },
   canSend: true,
@@ -38,6 +39,12 @@ describe('evaluateCrematoryReadiness', () => {
     expect(failing({ ...ready, crematoryForm: null })).toEqual([['crematory_form', 'Extract the Crematory Form (page 3) from the Arrangement Form.']]);
     expect(failing({ ...ready, crematoryForm: null, arrangementForm: null })).toEqual([['crematory_form', 'The completed Arrangement Form has not been received yet.']]);
     expect(failing({ ...ready, arrangementForm: { createdAt: '2026-10-22T10:00:00.000Z' } })).toEqual([['crematory_form', 'A newer Arrangement Form arrived. Extract the Crematory Form again.']]);
+  });
+
+  it('the name for the file must be confirmed by staff — never taken from the full name', () => {
+    expect(failing({ ...ready, packageNameConfirmed: false })).toEqual([
+      ['package_name', "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name."],
+    ]);
   });
 
   it('workflow 2 must be complete', () => {

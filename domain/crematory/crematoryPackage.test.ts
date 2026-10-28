@@ -4,33 +4,30 @@ import {
   crematoryEmailSubject,
   crematoryPackageFileName,
   defaultCrematoryMessage,
-  packageNameParts,
+  normalizePackageName,
+  packageDisplayName,
+  suggestPackageName,
   readyDateFromPackageFileName,
   toCaseDate,
 } from './crematoryPackage';
 
 describe('crematoryPackageFileName — LastName_FirstName_MM-DD-YYYY.pdf', () => {
-  it('names the package after the decedent and the expected ready date', () => {
-    expect(crematoryPackageFileName('RICHARD REYNOLDS', '11/06/2026')).toBe('Reynolds_Richard_11-06-2026.pdf');
-    expect(crematoryPackageFileName('Richard Reynolds', '2026-11-06')).toBe('Reynolds_Richard_11-06-2026.pdf');
-  });
-
-  it('keeps multi-word surnames whole and mixed-case names as written', () => {
-    expect(crematoryPackageFileName('ESTELA SALAS RUEDA', '01/05/2027')).toBe('Salas Rueda_Estela_01-05-2027.pdf');
-    expect(crematoryPackageFileName('Juniper de la Cruz-Villanueva', '11/06/2026')).toBe('de la Cruz-Villanueva_Juniper_11-06-2026.pdf');
-    expect(crematoryPackageFileName("ROSA O'NEIL", '11/06/2026')).toBe("O'neil_Rosa_11-06-2026.pdf");
+  it('uses the confirmed last and first name(s) exactly — middle names and multi-word surnames kept', () => {
+    expect(crematoryPackageFileName({ first: 'Mary Ann', last: 'Smith' }, '11/06/2026')).toBe('Smith_Mary Ann_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Estela', last: 'Salas Rueda' }, '2026-11-06')).toBe('Salas Rueda_Estela_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Richard', last: 'Reynolds' }, '11/06/2026')).toBe('Reynolds_Richard_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Rosa', last: "O'Neil" }, '11/06/2026')).toBe("O'Neil_Rosa_11-06-2026.pdf");
   });
 
   it('strips characters no file system accepts', () => {
-    expect(crematoryPackageFileName('JUNIPER FAIR/WEATHER:"?', '11/06/2026')).toBe('Fairweather_Juniper_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Juniper', last: 'Fair/weather:"?' }, '11/06/2026')).toBe('Fairweather_Juniper_11-06-2026.pdf');
   });
 
-  it('never names a package without a real date or a name', () => {
-    expect(crematoryPackageFileName('RICHARD REYNOLDS', null)).toBeNull();
-    expect(crematoryPackageFileName('RICHARD REYNOLDS', '02/30/2026')).toBeNull();
-    expect(crematoryPackageFileName('  ', '11/06/2026')).toBeNull();
-    expect(packageNameParts('CHER')).toEqual({ first: 'Cher', last: '' });
-    expect(crematoryPackageFileName('CHER', '11/06/2026')).toBe('Cher_11-06-2026.pdf');
+  it('never names a package without a confirmed name or a real date', () => {
+    expect(crematoryPackageFileName(null, '11/06/2026')).toBeNull();
+    expect(crematoryPackageFileName({ first: 'Richard', last: '' }, '11/06/2026')).toBeNull();
+    expect(crematoryPackageFileName({ first: 'Richard', last: 'Reynolds' }, null)).toBeNull();
+    expect(crematoryPackageFileName({ first: 'Richard', last: 'Reynolds' }, '02/30/2026')).toBeNull();
   });
 
   it('reads the confirmed date back out of a package name', () => {
@@ -38,6 +35,28 @@ describe('crematoryPackageFileName — LastName_FirstName_MM-DD-YYYY.pdf', () =>
     expect(readyDateFromPackageFileName('Reynolds_Richard_11-06-2026_B2026-043.pdf')).toBe('11/06/2026');
     expect(readyDateFromPackageFileName('Envelope.pdf')).toBeNull();
     expect(toCaseDate('2026-11-06')).toBe('11/06/2026');
+  });
+});
+
+describe('package name — confirmed by staff, suggested only from the structured form name', () => {
+  it('requires both parts and cleans them without changing what was typed', () => {
+    expect(normalizePackageName({ first: '  Mary Ann ', last: 'Smith' })).toEqual({ first: 'Mary Ann', last: 'Smith' });
+    expect(normalizePackageName({ first: 'Mary Ann', last: '' })).toEqual({ error: 'Enter the last name (surname) for the package.' });
+    expect(normalizePackageName({ first: '', last: 'Smith' })).toEqual({ error: 'Enter the first name(s) for the package.' });
+  });
+
+  it('suggests from the form\'s first / middle / last boxes — the middle name joins the first', () => {
+    expect(suggestPackageName({ first: 'MARY', middle: 'ANN', last: 'SMITH' })).toEqual({ first: 'Mary Ann', last: 'Smith' });
+    expect(suggestPackageName({ first: 'ESTELA', middle: null, last: 'SALAS RUEDA' })).toEqual({ first: 'Estela', last: 'Salas Rueda' });
+  });
+
+  it('suggests nothing when the form did not give both a first and a last name', () => {
+    expect(suggestPackageName({ first: 'MARY ANN SMITH', last: null })).toBeNull();
+    expect(suggestPackageName({})).toBeNull();
+  });
+
+  it('the subject name is "First Last"', () => {
+    expect(packageDisplayName({ first: 'Mary Ann', last: 'Smith' })).toBe('Mary Ann Smith');
   });
 });
 

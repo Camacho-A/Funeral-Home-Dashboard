@@ -16,7 +16,18 @@ import { expectedDateOf } from '@/domain/scheduling/cremainsPickupPresentation';
 import { getOrganization } from '../organizationProvisioningService';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { ARRANGEMENT_EXTRACTS, ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY, workflowStageComplete } from '@/domain/documents/arrangementPageExtracts';
-import { crematoryPackageFileName, parseCaseDate, toCaseDate } from '@/domain/crematory/crematoryPackage';
+import {
+  crematoryPackageFileName,
+  normalizePackageName,
+  packageDisplayName,
+  parseCaseDate,
+  suggestPackageName,
+  toCaseDate,
+  type PackageName,
+} from '@/domain/crematory/crematoryPackage';
+import { listForCase as listCaseFormLinks } from '../caseFormLinkService';
+import { getById as getSubmissionById } from '../externalFormSubmissionService';
+import { queryWixDataItems } from '@/lib/wixDataApi';
 import { evaluateCrematoryReadiness, type CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
 import { resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
 import { mergePdfs, UnreadablePdfError } from '@/lib/pdf/mergePdfs';
@@ -77,6 +88,57 @@ type Facts = {
   suggestedReadyDate: string | null;
 };
 
+/**
+ * A package-name suggestion from the decedent's name as an intake form
+ * structured it (first / middle / last boxes) — the latest of this case's
+ * submissions that carries one. Never derived from the case's full-name
+ * string. Null when no submission has it (e.g. every submission received
+ * before structured names were kept).
+ */
+async function suggestedPackageNameFor(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<PackageName | null> {
+  try {
+    const linked = (await listCaseFormLinks(organizationId, case_.id, mode)).map((link) => link.submissionId).filter((id): id is string => Boolean(id));
+    const submissions = (await Promise.all(linked.map((id) => getSubmissionById(id, mode)))).filter((s) => s !== null && s.organizationId === organizationId);
+    if (mode === 'mock') {
+      const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
+      submissions.push(...externalFormSubmissionFixtures.filter((s) => s.organizationId === organizationId && s.createdCaseId === case_.id));
+    } else {
+      const created = await queryWixDataItems<{ mappedFields?: unknown; receivedAt?: unknown }>('externalFormSubmissions', {
+        filter: { organizationId, createdCaseId: case_.id },
+        paging: { limit: 20 },
+      });
+      for (const item of created.dataItems) {
+        submissions.push({ mappedFields: String(item.data.mappedFields ?? '{}'), receivedAt: String(item.data.receivedAt ?? '') } as never);
+      }
+    }
+    const candidates = submissions
+      .map((s) => {
+        try {
+          return { at: s!.receivedAt ?? '', mapped: JSON.parse(s!.mappedFields) as Record<string, string | undefined> };
+        } catch {
+          return null;
+        }
+      })
+      .filter((c): c is { at: string; mapped: Record<string, string | undefined> } => c !== null && Boolean(c.mapped.decedentFirstName && c.mapped.decedentLastName))
+      .sort((a, b) => (a.at < b.at ? 1 : -1));
+    const latest = candidates[0];
+    return latest
+      ? suggestPackageName({ first: latest.mapped.decedentFirstName, middle: latest.mapped.decedentMiddleName ?? case_.decedentMiddleName ?? null, last: latest.mapped.decedentLastName })
+      : null;
+  } catch (error) {
+    console.error('Could not look up a structured name for the package:', error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/** The confirmed package name on the case, if valid. */
+function confirmedPackageName(case_: Case): PackageName | null {
+  const stored = case_.crematory?.packageName;
+  if (!stored) return null;
+  const normalized = normalizePackageName(stored);
+  return 'error' in normalized ? null : normalized;
+}
+
 async function suggestedReadyDate(organizationId: string, caseId: string, mode: DataAdapterMode): Promise<string | null> {
   const appointment = await getAppointment(organizationId, expectedPickupAppointmentId(caseId), mode);
   if (!appointment || appointment.status === 'cancelled') return null;
@@ -97,7 +159,7 @@ async function loadFacts(organizationId: string, case_: Case, mode: DataAdapterM
 
 /** The package file name the current case and confirmed date call for. */
 function expectedFileName(facts: Facts): string | null {
-  return crematoryPackageFileName(facts.case_.decedentName, facts.case_.crematory?.readyDate?.date ?? null);
+  return crematoryPackageFileName(confirmedPackageName(facts.case_), facts.case_.crematory?.readyDate?.date ?? null);
 }
 
 /** Whether the saved package is exactly what the current permit, page 3
@@ -127,6 +189,7 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
     permitVerification: record.permitVerification ? { documentId: record.permitVerification.documentId, checksumSha256: record.permitVerification.checksumSha256 } : null,
     arrangementForm: facts.arrangementForm ? { createdAt: facts.arrangementForm.createdAt } : null,
     crematoryForm: facts.crematoryForm ? { createdAt: facts.crematoryForm.createdAt } : null,
+    packageNameConfirmed: confirmedPackageName(facts.case_) !== null,
     readyDate: {
       suggested: facts.suggestedReadyDate,
       confirmed: record.readyDate ? { date: record.readyDate.date, suggestedAtConfirmation: record.readyDate.suggestedAtConfirmation } : null,
@@ -140,6 +203,11 @@ export type CrematoryCaseSummary = {
   caseId: string;
   caseNumber: string;
   decedentDisplayName: string;
+  /** The confirmed name for the file and subject, and a suggestion from
+      the intake form's structured name (never from the full name). */
+  packageName: { confirmed: PackageName | null; suggested: PackageName | null };
+  /** "First Last" from the confirmed package name, for the subject. */
+  subjectName: string;
   readiness: CrematoryReadiness;
   permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;
   readyDate: { suggested: string | null; confirmed: string | null };
@@ -150,10 +218,13 @@ export type CrematoryCaseSummary = {
 
 async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode): Promise<CrematoryCaseSummary> {
   const [permitWithName] = facts.permit ? await attachDocumentActorDisplayNames([facts.permit], mode) : [null];
+  const confirmedName = confirmedPackageName(facts.case_);
   return {
     caseId: facts.case_.id,
     caseNumber: facts.case_.caseNumber,
     decedentDisplayName: decedentDisplayName(facts.case_),
+    packageName: { confirmed: confirmedName, suggested: confirmedName ? null : await suggestedPackageNameFor(facts.case_.organizationId, facts.case_, mode) },
+    subjectName: confirmedName ? packageDisplayName(confirmedName) : decedentDisplayName(facts.case_),
     readiness: readinessOf(facts, canSend),
     permit: permitWithName ? { documentId: permitWithName.id, fileName: permitWithName.fileName, createdAt: permitWithName.createdAt, uploadedBy: permitWithName.actorDisplayName } : null,
     readyDate: { suggested: facts.suggestedReadyDate, confirmed: facts.case_.crematory?.readyDate?.date ?? null },
@@ -230,7 +301,7 @@ async function audit(ctx: ActivityContext, caseId: string, eventType: Parameters
 
 /** Staff confirm the uploaded permit (that exact file) is the approved
     state permit for this decedent. */
-export async function confirmPermit(ctx: ActivityContext, caseId: string, documentId: string, mode: DataAdapterMode): Promise<CrematoryCaseSummary> {
+export async function confirmPermit(ctx: ActivityContext, caseId: string, documentId: string, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
@@ -249,11 +320,11 @@ export async function confirmPermit(ctx: ActivityContext, caseId: string, docume
     description: `State permit "${facts.permit.fileName}" confirmed as the approved permit for ${decedentDisplayName(case_)}`,
     record: { documentId, checksumSha256: facts.permit.checksumSha256 },
   }, mode);
-  return getCrematoryCaseSummary(ctx.organizationId, caseId, true, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
 /** Staff enter or confirm the expected cremation ready date. */
-export async function confirmReadyDate(ctx: ActivityContext, caseId: string, date: string, mode: DataAdapterMode): Promise<CrematoryCaseSummary> {
+export async function confirmReadyDate(ctx: ActivityContext, caseId: string, date: string, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   const confirmed = toCaseDate(date);
   if (!confirmed || !parseCaseDate(confirmed)) throw new CrematoryError('Enter a valid expected ready date.', 422);
@@ -272,7 +343,39 @@ export async function confirmReadyDate(ctx: ActivityContext, caseId: string, dat
     description: `Expected cremation ready date confirmed: ${confirmed}${previous && previous !== confirmed ? ` (was ${previous})` : ''}`,
     record: { date: confirmed, previous, suggestedFromExpectedPickup: suggested },
   }, mode);
-  return getCrematoryCaseSummary(ctx.organizationId, caseId, true, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
+}
+
+/**
+ * Staff enter or confirm the last name and first name(s) the package file
+ * is named with. Stored with the crematory record only — the case's own
+ * name is never changed.
+ */
+export async function confirmPackageName(
+  ctx: ActivityContext,
+  caseId: string,
+  input: { first?: unknown; last?: unknown },
+  mode: DataAdapterMode,
+  canSend = false,
+): Promise<CrematoryCaseSummary> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  const name = normalizePackageName(input);
+  if ('error' in name) throw new CrematoryError(name.error, 422);
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  const previous = confirmedPackageName(case_);
+  await applyCrematoryRecord(
+    ctx.organizationId,
+    caseId,
+    (current) => (refuseArchived(current), { packageName: { ...name, confirmedBy: ctx.actorIdentityId, confirmedAt: new Date().toISOString() } }),
+    mode,
+  );
+  await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_NAME_CONFIRMED, {
+    resourceId: null,
+    description: `Name for the Crematory Package confirmed: ${name.last}, ${name.first}${previous && (previous.first !== name.first || previous.last !== name.last) ? ` (was ${previous.last}, ${previous.first})` : ''}`,
+    record: { first: name.first, last: name.last, previous },
+  }, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
 export type BuildOutcome = { outcome: 'saved' | 'unchanged'; summary: CrematoryCaseSummary };
@@ -283,7 +386,7 @@ export type BuildOutcome = { outcome: 'saved' | 'unchanged'; summary: CrematoryC
  * requirement for building is met. A package identical to the saved one
  * (same permit, same page 3, same date) is not saved again.
  */
-export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string, mode: DataAdapterMode): Promise<BuildOutcome> {
+export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string, mode: DataAdapterMode, canSend = false): Promise<BuildOutcome> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   const facts = await loadFacts(ctx.organizationId, case_, mode);
@@ -292,7 +395,7 @@ export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string
     const missing = readiness.requirements.filter((r) => !r.ok && r.key !== 'package' && r.key !== 'permission').map((r) => r.detail);
     throw new CrematoryError(`The Crematory Package can't be built yet: ${missing.join(' ')}`, 422);
   }
-  if (packageIsCurrent(facts)) return { outcome: 'unchanged', summary: await summarize(facts, true, mode) };
+  if (packageIsCurrent(facts)) return { outcome: 'unchanged', summary: await summarize(facts, canSend, mode) };
 
   const fileName = expectedFileName(facts)!;
   const [permitBytes, formBytes] = await Promise.all([
@@ -352,7 +455,7 @@ export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string
     description: `Crematory Package v${document.version ?? 1} built: ${fileName}`,
     record: { version: document.version, fileName, permitDocumentId: facts.permit!.id, crematoryFormDocumentId: facts.crematoryForm!.id, checksumSha256: document.checksumSha256 },
   }, mode);
-  return { outcome: 'saved', summary: await getCrematoryCaseSummary(ctx.organizationId, caseId, true, mode) };
+  return { outcome: 'saved', summary: await getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode) };
 }
 
 /** For the send service: the case, its readiness and its package. */

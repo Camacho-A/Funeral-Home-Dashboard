@@ -15,13 +15,14 @@ vi.mock('@/lib/auth/requireAuthorizedOrganization', () => ({
       : { authorized: true, context: { organizationId: requested, userId: session.userId, role: session.role } },
   ),
 }));
-const permissions = vi.hoisted(() => ({ read: true, send: true, manage: true }));
+const permissions = vi.hoisted(() => ({ read: true, prepare: true, send: true, manage: true }));
 vi.mock('@/services/authorizationPolicyService', async () => {
   const actual = await vi.importActual<typeof import('@/services/authorizationPolicyService')>('@/services/authorizationPolicyService');
   return {
     ...actual,
     canReadCases: vi.fn(async () => permissions.read),
-    canGenerateDocument: vi.fn(async () => permissions.send),
+    canGenerateDocument: vi.fn(async () => permissions.prepare),
+    canSendToCrematory: vi.fn(async () => permissions.send),
     canManageOrganization: vi.fn(async () => permissions.manage),
   };
 });
@@ -40,7 +41,7 @@ const originalOrg = mockOrganizationFixtures[orgIndex];
 
 beforeEach(() => {
   resetMockCrematoryMailboxes();
-  Object.assign(permissions, { read: true, send: true, manage: true });
+  Object.assign(permissions, { read: true, prepare: true, send: true, manage: true });
 });
 afterEach(() => {
   session = { organizationId: DEFAULT_ORGANIZATION_ID, userId: 'identity-admin', role: 'administrator' };
@@ -99,7 +100,19 @@ describe('Send to Crematory routes', () => {
     expect(response.headers.get('set-cookie')).toContain('beacon_crematory_mailbox_oauth_state=');
   });
 
-  it('preparing and sending need document permission; viewing needs case read', async () => {
+  it('sending needs its own permission — document permission alone never sends; preparing still works without it', async () => {
+    permissions.send = false;
+    const prepare = await caseRoute.POST(
+      new Request('http://localhost/api/cases/1042/crematory', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: org(), action: 'confirm_ready_date', date: '11/06/2026' }) }),
+      { params: Promise.resolve({ caseId: '1042' }) },
+    );
+    expect(prepare.status).not.toBe(403);
+    expect((await postSend({ caseIds: ['1042'], to: ['intake@crematory.example'], cc: [], subject: 's', message: '', submissionId: 'sub-0000-0001', confirmResend: true })).status).toBe(403);
+    expect(await (await getOverview()).json()).toMatchObject({ canSend: false, canPrepare: true });
+  });
+
+  it('preparing needs document permission; viewing needs case read', async () => {
+    permissions.prepare = false;
     permissions.send = false;
     const confirm = await caseRoute.POST(
       new Request('http://localhost/api/cases/1042/crematory', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: org(), action: 'build_package' }) }),

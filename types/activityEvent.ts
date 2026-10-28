@@ -211,6 +211,7 @@ export const ACTIVITY_EVENT_TYPES = {
       that the crematory received it. */
   CREMATORY_PERMIT_CONFIRMED: 'crematory.permit_confirmed',
   CREMATORY_READY_DATE_CONFIRMED: 'crematory.ready_date_confirmed',
+  CREMATORY_PACKAGE_NAME_CONFIRMED: 'crematory.package_name_confirmed',
   CREMATORY_PACKAGE_BUILT: 'crematory.package_built',
   CREMATORY_PACKAGE_SUBMITTED: 'crematory.package_submitted',
   CREMATORY_PACKAGE_SEND_FAILED: 'crematory.package_send_failed',
