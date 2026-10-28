@@ -25,12 +25,9 @@ import {
   toCaseDate,
   type PackageName,
 } from '@/domain/crematory/crematoryPackage';
-import { listForCase as listCaseFormLinks } from '../caseFormLinkService';
-import { getById as getSubmissionById } from '../externalFormSubmissionService';
-import { queryWixDataItems } from '@/lib/wixDataApi';
+import { listCaseSubmissionsNewestFirst } from '../externalForms/caseSubmissions';
 import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
-import { mapWixExternalFormSubmissionItem, type WixExternalFormSubmissionItem } from '@/lib/wixExternalFormMapper';
 import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
 import { evaluateCrematoryReadiness, type CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
 import { resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
@@ -123,24 +120,7 @@ async function structuredNameFromJotform(submission: ExternalFormSubmission): Pr
  */
 async function suggestedPackageNameFor(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<PackageNameSuggestion | null> {
   try {
-    const linked = (await listCaseFormLinks(organizationId, case_.id, mode)).map((link) => link.submissionId).filter((id): id is string => Boolean(id));
-    const submissions = (await Promise.all(linked.map((id) => getSubmissionById(id, mode)))).filter(
-      (s): s is ExternalFormSubmission => s !== null && s.organizationId === organizationId,
-    );
-    if (mode === 'mock') {
-      const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
-      submissions.push(...externalFormSubmissionFixtures.filter((s) => s.organizationId === organizationId && s.createdCaseId === case_.id));
-    } else {
-      const created = await queryWixDataItems<WixExternalFormSubmissionItem>('externalFormSubmissions', {
-        filter: { organizationId, createdCaseId: case_.id },
-        paging: { limit: 20 },
-      });
-      for (const item of created.dataItems) {
-        const mapped = mapWixExternalFormSubmissionItem(item.id, item.data);
-        if (mapped) submissions.push(mapped);
-      }
-    }
-    const newestFirst = [...new Map(submissions.map((s) => [s.id, s])).values()].sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1));
+    const newestFirst = await listCaseSubmissionsNewestFirst(organizationId, case_.id, mode);
     const fromName = (fields: Partial<Record<string, string>> | null) =>
       fields?.decedentFirstName && fields.decedentLastName
         ? suggestPackageName({ first: fields.decedentFirstName, middle: fields.decedentMiddleName ?? case_.decedentMiddleName ?? null, last: fields.decedentLastName })

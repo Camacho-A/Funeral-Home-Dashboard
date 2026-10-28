@@ -42,6 +42,7 @@ import { Modal } from '@/components/ui/Modal';
 import { DocumentPreview } from '@/components/documents/DocumentPreview';
 import { printStoredDocument } from '@/utils/print';
 import { PrintLabelDialog } from './PrintLabelDialog';
+import { ManateeApplicationDialog } from './ManateeApplicationDialog';
 import { isCremationLabelDocument } from '@/domain/labels/cremationLabel';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 
@@ -116,6 +117,9 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       or for one saved version from a row. */
   const [labelDialog, setLabelDialog] = useState<{ documentId?: string } | null>(null);
   const labelsEnabled = getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel;
+  /** Manatee County — Death Certificate Application (2026-10). */
+  const manateeEnabled = getRegisteredOrganizationProfile(organizationId).features.manateeDeathCertificateApplication;
+  const [manateeOpen, setManateeOpen] = useState(false);
   /** ME Form / Crematory Form (2026-10): pages 2 and 3 of the case's
       Arrangement Forms PDF, each saved as its own document. */
   const extractsEnabled = getRegisteredOrganizationProfile(organizationId).features.arrangementPageExtracts;
@@ -258,6 +262,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       });
     }
     if (labelsEnabled) createItems.push({ label: 'Cremation Label…', onSelect: () => setLabelDialog({}) });
+    if (manateeEnabled) createItems.push({ label: 'Manatee County — Death Certificate Application…', onSelect: () => setManateeOpen(true) });
     if (extractsEnabled && extracts.data?.isMedicalExaminerCase) {
       createItems.push({ label: 'Extract Release Form', dividerBefore: true, disabled: extractPending !== null, onSelect: () => runExtract('me_form') });
     }
@@ -415,6 +420,8 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
           </button>
         </div>
       </div>
+
+      {manateeOpen && <ManateeApplicationDialog organizationId={organizationId} caseId={caseId} onClose={() => setManateeOpen(false)} />}
 
       {labelDialog && (
         <PrintLabelDialog open onClose={() => setLabelDialog(null)} caseId={caseId} organizationId={organizationId} documentId={labelDialog.documentId} />

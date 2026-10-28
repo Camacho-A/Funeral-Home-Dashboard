@@ -97,6 +97,15 @@ export const DOCUMENT_TYPES = {
       state permit, then page 3 of the Arrangement Forms. Named
       LastName_FirstName_MM-DD-YYYY.pdf (domain/crematory/crematoryPackage.ts). */
   CREMATION_FORM_CREMATORY_PACKAGE: { key: 'cremation_form.crematory_package', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Crematory Package' },
+  /** 2026-10. Form DH 1961, "Application for a Florida Death Record"
+      (Florida Department of Health in Manatee County), filled from the
+      case into Manors' own prefilled copy
+      (domain/documents/manateeDeathCertificateApplication.ts). Never sent. */
+  VITAL_RECORDS_MANATEE_DEATH_CERTIFICATE_APPLICATION: {
+    key: 'vital_records.manatee_death_certificate_application',
+    category: 'internal_form' as DocumentTemplateCategory,
+    displayName: 'Manatee County Death Certificate Application',
+  },
 } as const;
 
 export type DocumentTypeDefinition = (typeof DOCUMENT_TYPES)[keyof typeof DOCUMENT_TYPES];

@@ -1,0 +1,107 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--sx-border);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.subTitle {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--sx-text-2);
+}
+
+.grid3,
+.grid2 {
+  display: grid;
+  gap: 12px;
+}
+
+.grid3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.issue {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sx-red);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--sx-text);
+  cursor: pointer;
+}
+
+.feeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 64px 84px;
+  align-items: center;
+  gap: 10px;
+}
+
+.feeLabel {
+  font-size: 13px;
+  color: var(--sx-text);
+}
+
+.qty {
+  text-align: right;
+}
+
+.feeMath {
+  font-size: 12.5px;
+  color: var(--sx-muted);
+  text-align: right;
+}
+
+.feeTotal {
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--sx-text);
+}
+
+.grandTotal {
+  padding-top: 8px;
+  border-top: 1px solid var(--sx-border);
+  font-weight: 600;
+}
+
+.grandTotal .feeLabel,
+.grandTotal .feeTotal {
+  font-weight: 600;
+}
+
+.preview {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+@media (max-width: 640px) {
+  .grid3,
+  .grid2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .feeRow {
+    grid-template-columns: minmax(0, 1fr) 64px 56px 72px;
+    gap: 6px;
+  }
+}

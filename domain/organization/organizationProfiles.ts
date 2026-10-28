@@ -221,6 +221,9 @@ export type OrganizationFeaturePreferences = {
       email subject and sign-off; `authorizationWorkflowStage` is the
       workflow stage whose every step must be checked before sending.
       Null = not offered. */
+  /** Manatee County — Death Certificate Application (2026-10): fills the
+      organization's own prefilled copy of form DH 1961 from a case. */
+  manateeDeathCertificateApplication: boolean;
   sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number } | null;
 };
 
@@ -307,6 +310,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   dymoCaseLabel: false,
   arrangementPageExtracts: false,
   sendToCrematory: null,
+  manateeDeathCertificateApplication: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -375,6 +379,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     dymoCaseLabel: true,
     arrangementPageExtracts: true,
     sendToCrematory: { emailOrganizationName: 'Manors Cremation', authorizationWorkflowStage: 2 },
+    manateeDeathCertificateApplication: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {
