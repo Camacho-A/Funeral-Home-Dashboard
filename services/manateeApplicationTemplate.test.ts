@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument, PDFDropdown, PDFTextField, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
 import { buildManateeApplicationPdf, ManateeTemplateError } from './manateeApplicationTemplate';
-import { buildManateeTemplateFixture } from './__mocks__/manateeTemplateFixture';
-import { MANATEE_FILLED_FIELD_NAMES, type ManateeApplicationValues } from '@/domain/documents/manateeDeathCertificateApplication';
+import { buildManateeTemplateFixture, drawnTexts } from './__mocks__/manateeTemplateFixture';
+import { MANATEE_FILLED_FIELD_NAMES, manateeFieldValues, type ManateeApplicationValues } from '@/domain/documents/manateeDeathCertificateApplication';
 
 /** Fictional. The real form (with its signature) is verified outside the
     repository; this stand-in has the same fields, lists and prefills. */
@@ -23,7 +23,10 @@ const values: ManateeApplicationValues = {
   withCause: 2,
   withoutCause: 3,
   fedexFee: true,
+  requestNumber: '',
+  requestOf: '',
 };
+const fillable = (template: Uint8Array, v = values) => buildManateeApplicationPdf(template, v, { flatten: false });
 
 const read = async (bytes: Uint8Array) => {
   const doc = await PDFDocument.load(bytes);
@@ -45,8 +48,8 @@ const read = async (bytes: Uint8Array) => {
 
 describe('buildManateeApplicationPdf', () => {
   it('fills exactly the intended fields with the reviewed values', async () => {
-    const filled = await read(await buildManateeApplicationPdf(await buildManateeTemplateFixture(), values));
-    expect(Object.fromEntries(MANATEE_FILLED_FIELD_NAMES.map((n) => [n, filled.fields.get(n)]))).toEqual({
+    const filled = await read(await fillable(await buildManateeTemplateFixture()));
+    expect(Object.fromEntries(MANATEE_FILLED_FIELD_NAMES.filter((n) => n !== '1 OF' && n !== 'of').map((n) => [n, filled.fields.get(n)]))).toEqual({
       'First Name': 'MARY ANN',
       Middle: 'LOUISE',
       Last: 'SALAS RUEDA',
@@ -73,11 +76,14 @@ describe('buildManateeApplicationPdf', () => {
 
   it('changes nothing else: the page, and every other field\'s value and appearance, are identical to the template', async () => {
     const templateBytes = await buildManateeTemplateFixture();
-    const [original, filled] = await Promise.all([read(templateBytes), read(await buildManateeApplicationPdf(templateBytes, values))]);
+    const [original, filled] = await Promise.all([read(templateBytes), read(await fillable(templateBytes, { ...values, fedexFee: false }))]);
     expect(filled.content()).toBe(original.content());
     expect([...filled.fields.keys()].sort()).toEqual([...original.fields.keys()].sort());
-    const untouched = [...original.fields.keys()].filter((n) => !MANATEE_FILLED_FIELD_NAMES.includes(n));
+    const filledNames = Object.keys(manateeFieldValues({ ...values, fedexFee: false }));
+    const untouched = [...original.fields.keys()].filter((n) => !filledNames.includes(n));
+    // Including the Request boxes, which nobody typed.
     expect(untouched).toHaveLength(19);
+    expect(untouched).toEqual(expect.arrayContaining(['1 OF', 'of']));
     for (const name of untouched) {
       expect(filled.fields.get(name), name).toBe(original.fields.get(name));
       expect(filled.appearance(name), name).toBe(original.appearance(name));
@@ -86,9 +92,38 @@ describe('buildManateeApplicationPdf', () => {
     expect(filled.fields.get('price1')).toBe('$8.00');
   });
 
-  it('the form stays fillable, as the original is', async () => {
-    const filled = await read(await buildManateeApplicationPdf(await buildManateeTemplateFixture(), values));
-    expect(filled.doc.getForm().getFields().length).toBe(38);
+  it('the saved form is flattened — nothing left to edit — with every value drawn', async () => {
+    const bytes = await buildManateeApplicationPdf(await buildManateeTemplateFixture(), values);
+    expect((await PDFDocument.load(bytes)).getForm().getFields()).toHaveLength(0);
+    const texts = await drawnTexts(bytes);
+    for (const expected of ['MARY ANN', 'SALAS RUEDA', '000-12-3456', '2026', 'PEMBROKE PINES      ', 'Daughter', '16.00', '24.00', '55.00', 'GUS CAMACHO JR.', '$8.00']) {
+      expect(texts, expected).toContain(expected);
+    }
+  });
+
+  it('FedEx confirmed: "1" and "15.00" in the FedEx row\'s blank spaces, styled like the rows above; otherwise nothing there', async () => {
+    const template = await buildManateeTemplateFixture();
+    const withFee = await read(await fillable(template));
+    const quantity = withFee.doc.getForm().getTextField('solis.fedex.quantity');
+    const total = withFee.doc.getForm().getTextField('solis.fedex.total');
+    expect([quantity.getText(), total.getText()]).toEqual(['1', '15.00']);
+    const box = (f: typeof quantity) => {
+      const r = f.acroField.getWidgets()[0].getRectangle();
+      return [r.x, r.y, r.width, r.height];
+    };
+    expect(box(quantity)).toEqual([313, 78.5, 36, 14]);
+    expect(box(total)).toEqual([500, 78.5, 83, 14]);
+    expect(withFee.fields.get('Text8')).toBe('55.00');
+
+    const without = await read(await fillable(template, { ...values, fedexFee: false }));
+    expect(without.fields.has('solis.fedex.quantity')).toBe(false);
+    expect(without.fields.get('Text8')).toBe('40.00');
+    expect(await drawnTexts(await buildManateeApplicationPdf(template, { ...values, fedexFee: false }))).not.toContain('15.00');
+  });
+
+  it('Request ___ of ___ only when staff typed both', async () => {
+    const filled = await read(await fillable(await buildManateeTemplateFixture(), { ...values, requestNumber: '1', requestOf: '2' }));
+    expect([filled.fields.get('1 OF'), filled.fields.get('of')]).toEqual(['1', '2']);
   });
 
   it('does not touch the template it was given', async () => {

@@ -7,15 +7,18 @@ import type { CaseDocument } from '@/types/caseDocument';
  * Death Record" (Florida Department of Health in Manatee County), from a
  * case. Pure: no I/O, no case writes.
  *
- * The form is filled ONLY through its own fillable fields. Everything
+ * The form is filled through its own fillable fields, plus — only when
+ * staff confirm the FedEx fee — the two blank spaces on its FedEx row
+ * (quantity and line total; the $15.00 is already printed). Everything
  * printed on it — the county's details, Manors' prefilled applicant
- * (name, Funeral Director, license, address, signature), the $8.00 prices
- * and the $15.00 FedEx line — is left exactly as it is.
+ * (name, Funeral Director, license, address, signature), the $8.00 and
+ * $15.00 prices — is left exactly as it is. The saved copy is flattened so
+ * it cannot be edited; a correction is a new version made through SOLIS.
  *
  * Nothing is guessed. A name is only ever taken from structured first /
  * middle / last boxes (an intake form's, or staff's), never split from a
- * full name; a county is only suggested for a city the form itself lists
- * under that county; a relationship the form cannot state unambiguously
+ * full name; a county only from a record of it (staff otherwise — never
+ * from a city name); a relationship the form cannot state unambiguously
  * ("Parent" — Mother or Father?) is left for staff. Anything required and
  * missing blocks the document until staff enter it in the generation
  * window — which never writes it back to the case.
@@ -42,11 +45,14 @@ export const MANATEE_FIELDS = {
   withCauseTotal: 'Text3',
   withoutCauseTotal: 'Text4',
   grandTotal: 'Text8',
+  /** "Request ___ of ___" — only ever what staff typed. */
+  requestNumber: '1 OF',
+  requestOf: 'of',
 } as const;
 
-/** Fields this document fills. Every other field on the form — the
-    prefilled applicant, prices, "ON FILE", "N/A", funeral home — is never
-    touched. */
+/** Fields this document may fill (the Request boxes only when staff typed
+    them). Every other field on the form — the prefilled applicant, prices,
+    "ON FILE", "N/A", funeral home — is never touched. */
 export const MANATEE_FILLED_FIELD_NAMES: readonly string[] = Object.values(MANATEE_FIELDS);
 
 /** As printed on the form. Changing either needs explicit approval. */
@@ -59,38 +65,24 @@ export const PRINTED_PRICE_TEXT = '$8.00';
     (800 for 8) is caught rather than printed. */
 export const MAX_CERTIFICATES_PER_LINE = 99;
 
-/** Cities the form's own Place of Death list offers, with the county the
-    form's County list pairs them with. Only these are ever suggested. */
-const CITY_COUNTY: Record<string, 'BROWARD' | 'MIAMI-DADE'> = {
-  'COCONUT CREEK': 'BROWARD',
-  'CORAL SPRINGS': 'BROWARD',
-  DAVIE: 'BROWARD',
-  'DEERFIELD BEACH': 'BROWARD',
-  'FORT LAUDERDALE': 'BROWARD',
-  HOLLYWOOD: 'BROWARD',
-  LAUDERHILL: 'BROWARD',
-  MARGATE: 'BROWARD',
-  MIRAMAR: 'BROWARD',
-  'PEMBROKE PINES': 'BROWARD',
-  PLANTATION: 'BROWARD',
-  'POMPANO BEACH': 'BROWARD',
-  SUNRISE: 'BROWARD',
-  TAMARAC: 'BROWARD',
-  WESTON: 'BROWARD',
-  HIALEAH: 'MIAMI-DADE',
-  HOMESTEAD: 'MIAMI-DADE',
-  MIAMI: 'MIAMI-DADE',
-  'MIAMI BEACH': 'MIAMI-DADE',
-  'MIAMI GARDENS': 'MIAMI-DADE',
-  'NORTH MIAMI': 'MIAMI-DADE',
-};
-
 const tidy = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
 const upper = (value: string | null | undefined) => tidy(value).toUpperCase();
 
-/** The county for a city, only when the form itself pairs them. */
-export function suggestedCountyForCity(city: string | null | undefined): string | null {
-  return CITY_COUNTY[upper(city)] ?? null;
+/**
+ * The FedEx row's two blank spaces, measured from the form: the quantity
+ * and line-total underlines sit 23 pt below the certificate rows' and span
+ * the same width, so the values are set exactly as the rows above them
+ * are (same box size, Helvetica 9, centred). The $15.00 between them is
+ * printed on the form and never redrawn.
+ */
+export const FEDEX_ENTRY_BOXES = {
+  quantity: { x: 313, y: 78.5, width: 36, height: 14 },
+  total: { x: 500, y: 78.5, width: 83, height: 14 },
+} as const;
+
+/** The FedEx row's entries, or null — the row stays blank — without the fee. */
+export function fedexEntries(fedexFee: boolean): { quantity: string; total: string } | null {
+  return fedexFee ? { quantity: '1', total: formatMoney(FEDEX_FEE_CENTS) } : null;
 }
 
 /**
@@ -199,6 +191,9 @@ export type ManateeApplicationValues = {
   withCause: number;
   withoutCause: number;
   fedexFee: boolean;
+  /** "Request ___ of ___" — blank unless staff type both. */
+  requestNumber: string;
+  requestOf: string;
 };
 
 export type ManateeIssue = { field: keyof ManateeApplicationValues; message: string };
@@ -226,6 +221,13 @@ export function manateeIssues(values: ManateeApplicationValues): ManateeIssue[] 
   if (!isQuantity(values.withoutCause)) issues.push({ field: 'withoutCause', message: `Without cause: a whole number from 0 to ${MAX_CERTIFICATES_PER_LINE}.` });
   if (isQuantity(values.withCause) && isQuantity(values.withoutCause) && values.withCause + values.withoutCause === 0) {
     issues.push({ field: 'withCause', message: 'Order at least one death certificate.' });
+  }
+  const request = tidy(values.requestNumber);
+  const of = tidy(values.requestOf);
+  if (request || of) {
+    const [n, total] = [Number(request), Number(of)];
+    const valid = /^\d{1,2}$/.test(request) && /^\d{1,2}$/.test(of) && n >= 1 && n <= total;
+    if (!valid) issues.push({ field: 'requestNumber', message: 'Request ___ of ___: enter both numbers (e.g. 1 of 2), or leave both blank.' });
   }
   return issues;
 }
@@ -255,6 +257,10 @@ export function manateeFieldValues(values: ManateeApplicationValues): Record<str
     [MANATEE_FIELDS.withCauseTotal]: formatMoney(fees.withCauseTotalCents),
     [MANATEE_FIELDS.withoutCauseTotal]: formatMoney(fees.withoutCauseTotalCents),
     [MANATEE_FIELDS.grandTotal]: formatMoney(fees.grandTotalCents),
+    // Only when staff typed them; otherwise the boxes are left untouched.
+    ...(tidy(values.requestNumber) && tidy(values.requestOf)
+      ? { [MANATEE_FIELDS.requestNumber]: tidy(values.requestNumber), [MANATEE_FIELDS.requestOf]: tidy(values.requestOf) }
+      : {}),
   };
 }
 
@@ -262,7 +268,7 @@ export const MANATEE_APPLICATION_FILE_NAME = 'Manatee County Death Certificate A
 
 /** Where a suggested value came from, shown to staff beside it. */
 export type ManateeFormSource = 'arrangement_form' | 'vital_statistics' | 'first_call_sheet';
-export type ManateeValueSource = ManateeFormSource | 'case' | 'city' | null;
+export type ManateeValueSource = ManateeFormSource | 'case' | null;
 
 /** Everything but the SSN, which stays on the server. */
 export type ManateeDraftValues = Omit<ManateeApplicationValues, 'ssn'>;

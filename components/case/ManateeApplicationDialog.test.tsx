@@ -14,9 +14,10 @@ const draft = (overrides: Partial<ManateeDraft> = {}): ManateeDraft => ({
     decedentFirst: 'Mary Ann', decedentMiddle: 'Louise', decedentLast: 'Salas Rueda', ssnNotKnown: false, dateOfDeath: '10/04/2026',
     placeOfDeathCity: 'Pembroke Pines', placeOfDeathCounty: 'BROWARD', spouseFirst: '', spouseMiddle: '', spouseLast: '',
     representedName: 'TERESA SALAS RUEDA', representedRelationship: 'Daughter', withCause: 0, withoutCause: 0, fedexFee: false,
+    requestNumber: '', requestOf: '',
   },
   ssn: { onFile: true, masked: '•••-••-3456', source: 'arrangement_form' },
-  sources: { decedentFirst: 'arrangement_form', placeOfDeathCounty: 'city' },
+  sources: { decedentFirst: 'arrangement_form', placeOfDeathCounty: null },
   issues: [],
   template: 'available',
   pricing: { perCertificateCents: 800, fedexCents: 1500, maxPerLine: 99 },
@@ -43,7 +44,7 @@ describe('ManateeApplicationDialog', () => {
     renderDialog();
     expect(await screen.findByDisplayValue('Mary Ann')).toBeTruthy();
     expect(screen.getByText(/On file: •••-••-3456/)).toBeTruthy();
-    expect(screen.getByText('Matched to the city — please confirm')).toBeTruthy();
+    expect(screen.getByText('From the Arrangement Form')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Order at least one death certificate.')).toBeTruthy();
   });
@@ -84,6 +85,18 @@ describe('ManateeApplicationDialog', () => {
     expect(screen.getByText('A Social Security number has 9 digits.')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Social Security number'), { target: { value: '000-12-3456' } });
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('Request ___ of ___ is optional, and needs both numbers once started', async () => {
+    client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, withCause: 1 } }));
+    renderDialog();
+    await screen.findByDisplayValue('Mary Ann');
+    expect(screen.getByText('Left blank on the form unless you enter both numbers.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Request'), { target: { value: '1' } });
+    expect(screen.getByText(/enter both numbers/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('of'), { target: { value: '2' } });
     await waitFor(() => expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false));
   });
 

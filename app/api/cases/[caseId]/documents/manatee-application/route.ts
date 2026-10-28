@@ -119,12 +119,17 @@ function parseInput(raw: unknown): ManateeApplicationInput | null {
   if (withCause === null || withoutCause === null) return null;
   if (typeof r.fedexFee !== 'boolean' || typeof r.ssnNotKnown !== 'boolean') return null;
   if (r.ssn !== undefined && r.ssn !== null && typeof r.ssn !== 'string') return null;
+  const requestNumber = r.requestNumber === undefined ? '' : str(r.requestNumber, 4);
+  const requestOf = r.requestOf === undefined ? '' : str(r.requestOf, 4);
+  if (requestNumber === null || requestOf === null) return null;
   return {
-    ...(out as Omit<ManateeApplicationInput, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown' | 'ssn'>),
+    ...(out as Omit<ManateeApplicationInput, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown' | 'ssn' | 'requestNumber' | 'requestOf'>),
     withCause,
     withoutCause,
     fedexFee: r.fedexFee,
     ssnNotKnown: r.ssnNotKnown,
     ssn: typeof r.ssn === 'string' ? r.ssn.slice(0, 20) : null,
+    requestNumber,
+    requestOf,
   };
 }

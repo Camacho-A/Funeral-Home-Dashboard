@@ -55,3 +55,24 @@ export async function buildManateeTemplateFixture(options: { price?: string } = 
   text('Text8', '0.00');
   return doc.save();
 }
+
+/** Every piece of text a PDF draws (decoded from its content and form
+    XObject streams) — how tests read a flattened application. */
+export async function drawnTexts(bytes: Uint8Array): Promise<string[]> {
+  const { PDFDocument: Doc, PDFRawStream, decodePDFRawStream } = await import('pdf-lib');
+  const doc = await Doc.load(bytes);
+  const texts: string[] = [];
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFRawStream)) continue;
+    let content: string;
+    try {
+      content = Buffer.from(decodePDFRawStream(object).decode()).toString('latin1');
+    } catch {
+      continue;
+    }
+    for (const match of content.matchAll(/<([0-9A-Fa-f]*)>\s*Tj|\(((?:\\.|[^\\)])*)\)\s*Tj/g)) {
+      texts.push(match[1] !== undefined ? Buffer.from(match[1], 'hex').toString('latin1') : match[2]);
+    }
+  }
+  return texts;
+}

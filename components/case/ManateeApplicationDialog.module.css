@@ -56,6 +56,16 @@
   gap: 10px;
 }
 
+.requestRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.requestRow .qty {
+  width: 64px;
+}
+
 .feeLabel {
   font-size: 13px;
   color: var(--sx-text);

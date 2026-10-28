@@ -25,7 +25,6 @@ import {
   maskSsn,
   normalizeSsn,
   relationshipForForm,
-  suggestedCountyForCity,
   type ManateeApplicationInput,
   type ManateeApplicationValues,
   type ManateeDraft,
@@ -48,7 +47,8 @@ import { buildManateeApplicationPdf, loadManateeApplicationTemplate, ManateeTemp
  *     newest submission first. Names only ever from the forms' own
  *     first / middle / last boxes.
  *   - date of death, next of kin and relationship: the case.
- *   - county: only for a city the form itself lists under that county.
+ *   - county: neither the case nor any of the intake forms records it
+ *     today, so staff always enter it — never inferred from a city name.
  *
  * The SSN never leaves the server except inside the filled PDF: the draft
  * carries only whether one is on file and its last four digits. It is
@@ -151,7 +151,6 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
   const city = firstFrom(forms, (f) => f.city);
   const spouse = firstFrom(forms, (f) => (f.spouse?.first || f.spouse?.last ? f.spouse : null));
   const relationship = relationshipForForm(case_.nextOfKinRelationship, case_.nextOfKinRelationshipOther);
-  const county = suggestedCountyForCity(city?.value);
 
   const values: ManateeDraftValues = {
     decedentFirst: name?.value.first ?? '',
@@ -162,7 +161,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     ssnNotKnown: false,
     dateOfDeath: case_.dateOfDeath ?? '',
     placeOfDeathCity: city?.value ?? '',
-    placeOfDeathCounty: county ?? '',
+    placeOfDeathCounty: '',
     spouseFirst: spouse?.value.first ?? '',
     spouseMiddle: spouse?.value.middle ?? '',
     spouseLast: spouse?.value.last ?? '',
@@ -171,6 +170,8 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     withCause: 0,
     withoutCause: 0,
     fedexFee: false,
+    requestNumber: '',
+    requestOf: '',
   };
   const sources: ManateeDraft['sources'] = {
     decedentFirst: name?.source ?? null,
@@ -178,7 +179,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     decedentLast: name?.source ?? null,
     dateOfDeath: case_.dateOfDeath ? 'case' : null,
     placeOfDeathCity: city?.source ?? null,
-    placeOfDeathCounty: county ? 'city' : null,
+    placeOfDeathCounty: null,
     spouseFirst: spouse?.source ?? null,
     spouseLast: spouse?.source ?? null,
     representedName: case_.nextOfKinName ? 'case' : null,

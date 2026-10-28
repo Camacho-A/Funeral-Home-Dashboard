@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MANATEE_FIELDS,
   dateOfDeathParts,
+  fedexEntries,
   formatMoney,
   manateeFees,
   manateeFieldValues,
@@ -9,7 +10,6 @@ import {
   maskSsn,
   normalizeSsn,
   relationshipForForm,
-  suggestedCountyForCity,
   type ManateeApplicationValues,
 } from './manateeDeathCertificateApplication';
 
@@ -31,6 +31,8 @@ const complete = (overrides: Partial<ManateeApplicationValues> = {}): ManateeApp
   withCause: 2,
   withoutCause: 3,
   fedexFee: false,
+  requestNumber: '',
+  requestOf: '',
   ...overrides,
 });
 
@@ -47,6 +49,11 @@ describe('fees — $8.00 per certificate, $15.00 FedEx only when confirmed', () 
     expect(formatMoney(800)).toBe('8.00');
     expect(formatMoney(5500)).toBe('55.00');
     expect(formatMoney(160_805)).toBe('1608.05');
+  });
+
+  it('the FedEx row: "1" and "15.00" only with the fee confirmed, otherwise blank', () => {
+    expect(fedexEntries(true)).toEqual({ quantity: '1', total: '15.00' });
+    expect(fedexEntries(false)).toBeNull();
   });
 
   it('the FedEx fee is never assumed', () => {
@@ -81,6 +88,13 @@ describe('field values', () => {
     });
   });
 
+  it('the Request boxes are left out unless staff typed both numbers — never the certificate quantities', () => {
+    const blank = manateeFieldValues(complete());
+    expect(blank).not.toHaveProperty('1 OF');
+    expect(blank).not.toHaveProperty('of');
+    expect(manateeFieldValues(complete({ requestNumber: '1', requestOf: '2' }))).toMatchObject({ '1 OF': '1', of: '2' });
+  });
+
   it('an SSN marked not known leaves the box blank', () => {
     expect(manateeFieldValues(complete({ ssn: null, ssnNotKnown: true })).SS).toBe('');
   });
@@ -107,13 +121,6 @@ describe('dates, SSNs, county and relationship', () => {
     expect(normalizeSsn('12345')).toBeNull();
     expect(maskSsn('000-12-3456')).toBe('•••-••-3456');
     expect(maskSsn(null)).toBeNull();
-  });
-
-  it('suggests a county only for a city the form itself lists', () => {
-    expect(suggestedCountyForCity('Pembroke Pines')).toBe('BROWARD');
-    expect(suggestedCountyForCity(' miami  beach ')).toBe('MIAMI-DADE');
-    expect(suggestedCountyForCity('Oakland Park')).toBeNull();
-    expect(suggestedCountyForCity('')).toBeNull();
   });
 
   it('words the relationship as the form does, and leaves gendered ones to staff', () => {
@@ -149,6 +156,13 @@ describe('review — nothing is made from missing or guessed information', () =>
     expect(manateeIssues(complete({ withoutCause: 1.5 })).map((i) => i.field)).toEqual(['withoutCause']);
     expect(manateeIssues(complete({ withCause: 100 })).map((i) => i.field)).toEqual(['withCause']);
     expect(manateeIssues(complete({ withCause: 0, withoutCause: 0 })).map((i) => i.message)).toEqual(['Order at least one death certificate.']);
+  });
+
+  it('Request ___ of ___: both numbers, the first no larger than the second — or both blank', () => {
+    expect(manateeIssues(complete({ requestNumber: '1', requestOf: '2' }))).toEqual([]);
+    expect(manateeIssues(complete({ requestNumber: '1' })).map((i) => i.field)).toEqual(['requestNumber']);
+    expect(manateeIssues(complete({ requestNumber: '3', requestOf: '2' })).map((i) => i.field)).toEqual(['requestNumber']);
+    expect(manateeIssues(complete({ requestNumber: '0', requestOf: '2' })).map((i) => i.field)).toEqual(['requestNumber']);
   });
 
   it('issue messages never contain the SSN', () => {

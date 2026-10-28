@@ -35,10 +35,9 @@ const SOURCE_LABEL: Record<Exclude<ManateeValueSource, null>, string> = {
   vital_statistics: 'From the Vital Statistics form',
   first_call_sheet: 'From the First Call Sheet',
   case: 'From the case',
-  city: 'Matched to the city — please confirm',
 };
 
-type TextKey = Exclude<keyof ManateeDraftValues, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown'>;
+type TextKey = Exclude<keyof ManateeDraftValues, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown' | 'requestNumber' | 'requestOf'>;
 
 export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { organizationId: string; caseId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -178,7 +177,8 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
         {step === 'saved' && (
           <div className="sx-form-banner sx-form-banner-info" role="status">
             Saved to this case&rsquo;s documents as &ldquo;Manatee County Death Certificate Application&rdquo;. Download or print it from the
-            Documents list. It has not been sent anywhere.
+            Documents list. It has not been sent anywhere. The saved form is locked — to correct it, create it again here; the earlier
+            version stays in History.
           </div>
         )}
 
@@ -216,7 +216,7 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
                 {ssnOnFile && !values.ssnNotKnown && (
                   <span className="sx-help">
                     On file: {draft.data?.ssn.masked}
-                    {draft.data?.ssn.source && draft.data.ssn.source !== 'case' && draft.data.ssn.source !== 'city' ? ` · ${SOURCE_LABEL[draft.data.ssn.source]}` : ''}
+                    {draft.data?.ssn.source && draft.data.ssn.source !== 'case' ? ` · ${SOURCE_LABEL[draft.data.ssn.source]}` : ''}
                   </span>
                 )}
                 {!values.ssnNotKnown && (
@@ -282,7 +282,43 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
                     <span className={styles.feeTotal}>${formatMoney(fees.grandTotalCents)}</span>
                   </div>
                   {(issueFor('withCause') || issueFor('withoutCause')) && <span className={styles.issue}>{issueFor('withCause') ?? issueFor('withoutCause')}</span>}
+                  <p className="sx-help">With the FedEx fee, the form&rsquo;s FedEx row shows 1 and 15.00; without it, the row stays blank.</p>
                 </>
+              )}
+            </section>
+
+            <section className={styles.section}>
+              <h3 className={styles.sectionTitle}>Request number (optional)</h3>
+              <div className={styles.requestRow}>
+                <label className="sx-label" htmlFor="manatee-requestNumber">
+                  Request
+                </label>
+                <input
+                  id="manatee-requestNumber"
+                  className={`sx-input ${styles.qty}`}
+                  inputMode="numeric"
+                  maxLength={2}
+                  value={values.requestNumber}
+                  aria-invalid={issueFor('requestNumber') ? true : undefined}
+                  onChange={(e) => set('requestNumber', e.target.value.replace(/\D/g, ''))}
+                />
+                <label className="sx-label" htmlFor="manatee-requestOf">
+                  of
+                </label>
+                <input
+                  id="manatee-requestOf"
+                  className={`sx-input ${styles.qty}`}
+                  inputMode="numeric"
+                  maxLength={2}
+                  value={values.requestOf}
+                  aria-invalid={issueFor('requestNumber') ? true : undefined}
+                  onChange={(e) => set('requestOf', e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              {issueFor('requestNumber') ? (
+                <span className={styles.issue}>{issueFor('requestNumber')}</span>
+              ) : (
+                <span className="sx-help">Left blank on the form unless you enter both numbers.</span>
               )}
             </section>
 

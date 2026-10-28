@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { PDFDocument, PDFTextField } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
 import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
 import type { Case } from '@/types/case';
 
@@ -43,7 +43,7 @@ const { caseFixtures } = await import('./__mocks__/fixtures');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 const { activityEventFixtures } = await import('./__mocks__/activityEventFixtures');
 const { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } = await import('./__mocks__/organizationIds');
-const { buildManateeTemplateFixture } = await import('./__mocks__/manateeTemplateFixture');
+const { buildManateeTemplateFixture, drawnTexts } = await import('./__mocks__/manateeTemplateFixture');
 const { ARRANGEMENT_FORMS_EXTERNAL_FORM_ID, VITAL_STATISTICS_EXTERNAL_FORM_ID } = await import('@/domain/externalForms/fieldMapping');
 const { DOCUMENT_TYPES } = await import('@/domain/documents/documentTypeRegistry');
 
@@ -109,16 +109,13 @@ const reviewed = (overrides: Record<string, unknown> = {}) => ({
   withCause: 2,
   withoutCause: 0,
   fedexFee: false,
+  requestNumber: '',
+  requestOf: '',
   ...overrides,
 });
 
-const fieldsOf = async (bytes: Uint8Array) => {
-  const form = (await PDFDocument.load(bytes)).getForm();
-  return (name: string) => {
-    const field = form.getField(name);
-    return field instanceof PDFTextField ? (field.getText() ?? '') : (field as unknown as { getSelected(): string[] }).getSelected()[0];
-  };
-};
+/** The saved form is flattened: read what it draws. */
+const textsOf = (bytes: Uint8Array) => drawnTexts(bytes);
 
 describe('the draft staff review', () => {
   it('fills everything it can from the Arrangement Form and the case, and never sends the SSN to the browser', async () => {
@@ -129,7 +126,8 @@ describe('the draft staff review', () => {
       decedentLast: 'Salas Rueda',
       dateOfDeath: '10/04/2026',
       placeOfDeathCity: 'Pembroke Pines',
-      placeOfDeathCounty: 'BROWARD',
+      // No record of the county anywhere — staff enter it; never inferred from the city.
+      placeOfDeathCounty: '',
       spouseFirst: 'Jonathan',
       spouseLast: 'Salas Rueda',
       representedName: 'TERESA SALAS RUEDA',
@@ -138,12 +136,12 @@ describe('the draft staff review', () => {
       withoutCause: 0,
       fedexFee: false,
     });
-    expect(draft.sources).toMatchObject({ decedentFirst: 'arrangement_form', placeOfDeathCounty: 'city', dateOfDeath: 'case', representedRelationship: 'case' });
+    expect(draft.sources).toMatchObject({ decedentFirst: 'arrangement_form', placeOfDeathCounty: null, dateOfDeath: 'case', representedRelationship: 'case' });
     expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-3456', source: 'arrangement_form' });
     expect(JSON.stringify(draft)).not.toMatch(/000-?12-?3456|000123456/);
     expect(draft.template).toBe('available');
-    // Only the quantities are left for staff.
-    expect(draft.issues.map((i) => i.message)).toEqual(['Order at least one death certificate.']);
+    // Only the county and the quantities are left for staff.
+    expect(draft.issues.map((i) => i.message)).toEqual(['Enter the county of death.', 'Order at least one death certificate.']);
   });
 
   it('never splits a full name: with no form, first and last are left for staff', async () => {
@@ -163,6 +161,13 @@ describe('the draft staff review', () => {
     expect(draft.values.decedentFirst).toBe('Mary Ann');
     expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-7654', source: 'vital_statistics' });
     expect([draft.values.spouseFirst, draft.values.spouseLast]).toEqual(['Jon', 'Rueda']);
+  });
+
+  it('keeps SOLIS relationships the form has no list entry for — Legal Representative, Domestic Partner, Friend', async () => {
+    for (const [relationship, expected] of [['legal_representative', 'Legal Representative'], ['domestic_partner', 'Domestic Partner'], ['friend', 'Friend']] as const) {
+      caseFixtures[index] = { ...caseFixtures[index], nextOfKinRelationship: relationship };
+      expect((await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).values.representedRelationship).toBe(expected);
+    }
   });
 
   it('a relationship the form cannot state without a guess is left for staff', async () => {
@@ -192,16 +197,18 @@ describe('the draft staff review', () => {
 
 describe('preview and save', () => {
   it('the preview is the filled form, using the SSN on file — and stores nothing', async () => {
-    const field = await fieldsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed(), 'mock'));
-    expect(field('SS')).toBe('000-12-3456');
-    expect(field('Last')).toBe('SALAS RUEDA');
-    expect(field('Text8')).toBe('16.00');
+    const texts = await textsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed(), 'mock'));
+    expect(texts).toEqual(expect.arrayContaining(['000-12-3456', 'SALAS RUEDA', 'BROWARD']));
+    expect(texts.filter((t) => t === '16.00')).toHaveLength(2); // the line total and the grand total
     expect(caseDocumentFixtures).toHaveLength(0);
   });
 
   it('a number staff typed is used instead; "not known" leaves the box blank', async () => {
-    expect((await fieldsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssn: '000-55-1111' }), 'mock')))('SS')).toBe('000-55-1111');
-    expect((await fieldsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssnNotKnown: true }), 'mock')))('SS')).toBe('');
+    const typed = await textsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssn: '000-55-1111' }), 'mock'));
+    expect(typed).toContain('000-55-1111');
+    expect(typed).not.toContain('000-12-3456');
+    const notKnown = await textsOf(await previewManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ ssnNotKnown: true }), 'mock'));
+    expect(notKnown.some((t) => /\d{3}-\d{2}-\d{4}/.test(t))).toBe(false);
   });
 
   it('refuses incomplete values (422) — never a form with fabricated information', async () => {
@@ -230,9 +237,14 @@ describe('preview and save', () => {
     expect(JSON.stringify(activityEventFixtures)).not.toMatch(/000-?12-?3456/);
     expect(caseFixtures[index]).toEqual(before);
 
-    const stored = blobs.get(documents.find((d) => d.id === second.id)!.storageKey)!;
-    const field = await fieldsOf(new Uint8Array(stored.buffer));
-    expect([field('Text2'), field('Text4'), field('Text8')]).toEqual(['1', '8.00', '39.00']);
+    // The saved file is locked (flattened) and carries the corrected values:
+    // 2 + 1 certificates, FedEx 1 × 15.00, grand total 39.00.
+    const stored = new Uint8Array(blobs.get(documents.find((d) => d.id === second.id)!.storageKey)!.buffer);
+    expect((await PDFDocument.load(stored)).getForm().getFields()).toHaveLength(0);
+    expect(await textsOf(stored)).toEqual(expect.arrayContaining(['8.00', '15.00', '39.00']));
+    // The earlier version is kept in History, unchanged: no FedEx, 16.00.
+    const earlier = new Uint8Array(blobs.get(documents.find((d) => d.id === first.id)!.storageKey)!.buffer);
+    expect(await textsOf(earlier)).not.toContain('15.00');
   });
 
   it('the template unavailable is a clear 503, not a failure', async () => {

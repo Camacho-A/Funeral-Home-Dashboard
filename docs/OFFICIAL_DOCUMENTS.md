@@ -75,6 +75,54 @@ which is why Production reported "no blob found".)
 Nothing is approximated. For local development,
 `CERTIFICATE_OF_CREMATION_TEMPLATE_PATH` may point at a local copy instead.
 
+## Manatee County — Death Certificate Application
+
+Form DH 1961, "Application for a Florida Death Record" (Florida Department of
+Health in Manatee County), in Manors' own copy — prefilled with the applicant
+(Gus Camacho Jr., Funeral Director, license, address) and his signature.
+Made on demand: Documents → Create document → "Manatee County — Death
+Certificate Application…". Code: `domain/documents/manateeDeathCertificateApplication.ts`,
+`services/manateeApplicationTemplate.ts`, `services/manateeApplicationService.ts`.
+
+- **Staff review every value first.** Names come only from the intake forms'
+  first / middle / last boxes; the SSN from the Arrangement Form or the Vital
+  Statistics form (shown in the window only as its last four digits); city of
+  death from the forms; date of death, next of kin and relationship from the
+  case. No record holds the county, so staff enter it — never inferred from a
+  city. Corrections apply to the document only, never the case.
+- **Only the form's own fields are filled**, plus, when staff confirm the
+  FedEx fee, "1" and "15.00" in the FedEx row's blank quantity and total
+  spaces (the $15.00 is printed). "Request ___ of ___" only when staff type
+  both numbers. Totals: $8.00 per certificate; Grand Total includes FedEx
+  only when confirmed. A template whose printed price is not $8.00 is refused.
+- **The saved PDF is flattened** (cannot be edited). A correction is a new
+  version made through SOLIS; the previous one stays in History.
+- **The template is not in this repository** (it carries a real signature).
+  It is read from private document storage. Verified 2026-10: filling changes
+  no pixel outside the filled fields and the two FedEx spaces; flattening
+  itself only re-renders the prefilled text's edges (at most 64/255).
+
+### Production setup (requires approval)
+
+1. Upload the signed form — `GCFH MANATEE COUNTY - Vital Statistics _Fill-In_[857]new_MANORS.pdf`,
+   SHA-256 `4b102fb06af43a6717434cfd0096332c9bd783bd3f378ba53089508d5f4aa9dc` —
+   to the app's private document storage:
+
+   ```
+   BLOB_READ_WRITE_TOKEN=… node scripts/uploadManateeTemplate.mjs "<path to the PDF>" --dry-run
+   BLOB_READ_WRITE_TOKEN=… node scripts/uploadManateeTemplate.mjs "<path to the PDF>"
+   ```
+
+   It refuses any other file, refuses if anything already exists at
+   `managed-cremations/templates/manatee-death-certificate-application.pdf`
+   (nothing is overwritten), and reads the upload back to verify it.
+2. Set `MANATEE_DC_APPLICATION_TEMPLATE_STORAGE_KEY=managed-cremations/templates/manatee-death-certificate-application.pdf`
+   in the Vercel Production environment (and Preview if wanted), then redeploy.
+
+Until both are done, staff see "The Manatee County form is not set up yet."
+For local development, `MANATEE_DC_APPLICATION_TEMPLATE_PATH` may point at a
+local copy instead.
+
 ## Deployment note
 
 PDF routes must ship what they read at runtime. `next.config.ts` lists:

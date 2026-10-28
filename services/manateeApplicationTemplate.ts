@@ -1,8 +1,9 @@
 import fs from 'fs/promises';
-import { PDFDocument, PDFDropdown, PDFTextField, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFDropdown, PDFTextField, StandardFonts, TextAlignment } from 'pdf-lib';
 import {
-  MANATEE_FILLED_FIELD_NAMES,
+  FEDEX_ENTRY_BOXES,
   PRINTED_PRICE_TEXT,
+  fedexEntries,
   manateeFieldValues,
   manateeIssues,
   type ManateeApplicationValues,
@@ -45,16 +46,25 @@ export class ManateeTemplateError extends Error {}
 
 /**
  * The template with this case's values in its own fields — and nothing
- * else changed. Only the fields in MANATEE_FILLED_FIELD_NAMES are set and
- * redrawn; every other field (the prefilled applicant, prices, "ON FILE")
- * keeps its original value and appearance, and the page itself is never
- * drawn on. The form stays fillable, exactly as the original.
+ * else changed — then flattened, so the saved application cannot be
+ * edited (a correction is a new version made through SOLIS). Only the
+ * fields this case fills are set and redrawn; every other field (the
+ * prefilled applicant, prices, "ON FILE") keeps its original value and
+ * appearance. With the FedEx fee confirmed, "1" and "15.00" are set in the
+ * FedEx row's blank quantity and total spaces, exactly as the certificate
+ * rows above them are; without it the row stays blank. The template bytes
+ * passed in are never modified.
  *
  * Text is drawn in Helvetica (bold where the form declares bold), the
  * standard-PDF equivalent of the Arial the form declares (Arial is not
  * embedded in the template), at the form's own 9 pt.
  */
-export async function buildManateeApplicationPdf(templateBytes: Uint8Array, values: ManateeApplicationValues): Promise<Uint8Array> {
+export async function buildManateeApplicationPdf(
+  templateBytes: Uint8Array,
+  values: ManateeApplicationValues,
+  /** Tests only: keep the form fillable to inspect each field. */
+  options: { flatten?: boolean } = {},
+): Promise<Uint8Array> {
   if (manateeIssues(values).length > 0) throw new ManateeTemplateError('The application still has information to complete.');
 
   const doc = await PDFDocument.load(new Uint8Array(templateBytes));
@@ -78,9 +88,8 @@ export async function buildManateeApplicationPdf(templateBytes: Uint8Array, valu
 
   const [regular, bold] = await Promise.all([doc.embedFont(StandardFonts.Helvetica), doc.embedFont(StandardFonts.HelveticaBold)]);
   const fieldValues = manateeFieldValues(values);
-  for (const name of MANATEE_FILLED_FIELD_NAMES) {
+  for (const [name, value] of Object.entries(fieldValues)) {
     const target = field(name);
-    const value = fieldValues[name] ?? '';
     if (target instanceof PDFTextField) {
       target.setText(value);
     } else if (target instanceof PDFDropdown) {
@@ -98,8 +107,25 @@ export async function buildManateeApplicationPdf(templateBytes: Uint8Array, valu
     target.updateAppearances(declaresBold ? bold : regular);
   }
 
+  const fedex = fedexEntries(values.fedexFee);
+  if (fedex) {
+    const page = doc.getPages()[0];
+    for (const [key, text] of [['quantity', fedex.quantity], ['total', fedex.total]] as const) {
+      // A field of the same size and style as the certificate rows' own
+      // (Text1 / Text3), so the entry matches them; it becomes part of the
+      // page when the form is flattened below.
+      const entry = form.createTextField(`solis.fedex.${key}`);
+      entry.addToPage(page, { ...FEDEX_ENTRY_BOXES[key], font: regular, borderWidth: 0, backgroundColor: undefined, borderColor: undefined });
+      entry.setAlignment(TextAlignment.Center);
+      entry.setFontSize(9);
+      entry.setText(text);
+      entry.updateAppearances(regular);
+    }
+  }
+
   doc.setTitle('Application for a Florida Death Record — Manatee County');
-  // Appearances were drawn above for exactly the filled fields; nothing
-  // else on the form is regenerated.
+  // Appearances were drawn above for exactly the filled fields; every other
+  // field is flattened with its own original appearance.
+  if (options.flatten !== false) form.flatten({ updateFieldAppearances: false });
   return doc.save({ updateFieldAppearances: false });
 }
