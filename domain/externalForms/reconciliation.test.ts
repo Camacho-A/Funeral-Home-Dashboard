@@ -58,3 +58,12 @@ describe('buildReconciliationRows / bulkApplyCandidates', () => {
     expect(candidates).not.toContain('dateOfBirth'); // the conflict is excluded
   });
 });
+
+describe('certifier block (2026-10)', () => {
+  it('name, phone, license number and fax are all appliable — offered when the case has none, a conflict otherwise', () => {
+    for (const field of ['certifierName', 'certifierPhone', 'certifierLicenseNumber', 'certifierFax'] as const) {
+      expect(classifyReconciliationRow(field, null, 'X-1')).toMatchObject({ state: 'solis_empty', eligibleForBulkApply: true });
+      expect(classifyReconciliationRow(field, 'Y-2', 'X-1')).toMatchObject({ state: 'conflict', eligibleForBulkApply: false });
+    }
+  });
+});

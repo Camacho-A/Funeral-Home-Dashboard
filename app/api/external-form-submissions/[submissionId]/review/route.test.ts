@@ -232,11 +232,14 @@ describe('POST /api/external-form-submissions/[submissionId]/review — workflow
 });
 
 /**
- * Certifier fax (2026-10). An Arrangement Form arriving for an EXISTING case
- * can now supply the certifier fax (qid 140) that template v7 requires.
- * The phone is still review-only and is never written by this path.
+ * Certifier block (2026-10). An Arrangement Form arriving for an EXISTING
+ * case supplies the certifier the funeral director filled in (qids 137-140:
+ * name, phone, license number, fax). Each is offered when the case has none
+ * and included in "Apply all new information"; a different value already
+ * on the case is a conflict staff must choose explicitly. (Before, only
+ * the fax could be applied — name, phone and license were review-only.)
  */
-describe('review — certifier fax from an Arrangement submission', () => {
+describe('review — certifier block from an Arrangement submission', () => {
   async function receiveArrangement(externalSubmissionId: string, mapped: Record<string, string>) {
     const { receive } = await import('@/services/externalFormSubmissionService');
     const { submission } = await receive(
@@ -254,34 +257,63 @@ describe('review — certifier fax from an Arrangement submission', () => {
     return submission;
   }
 
-  it('offers the fax when the case has none, and keeps the phone review-only', async () => {
-    seedCase({ certifierFax: null, certifierPhone: '555-0199' });
-    const submission = await receiveArrangement('review-fax-get', { certifierFax: '954-777-2262', certifierPhone: '954-777-0000' });
+  const CERTIFIER = { certifierName: 'DR. ROWAN EASTWICK', certifierPhone: '954-777-0000', certifierLicenseNumber: 'ME-40211', certifierFax: '954-777-2262' };
 
+  async function rows(submissionId: string) {
     const { GET } = await import('./route');
     const response = await GET(reviewRequest('GET', undefined, `organizationId=managed-cremations&caseId=${TEST_CASE_ID}`), {
-      params: Promise.resolve({ submissionId: submission.id }),
+      params: Promise.resolve({ submissionId }),
     });
     const body = await response.json();
-    const byField = Object.fromEntries(body.rows.map((r: { field: string; state: string }) => [r.field, r.state]));
-    expect(byField.certifierFax).toBe('solis_empty');
-    expect(byField.certifierPhone).toBe('review_only');
+    return Object.fromEntries(body.rows.map((r: { field: string; state: string; eligibleForBulkApply: boolean }) => [r.field, [r.state, r.eligibleForBulkApply]]));
+  }
+
+  it('offers every certifier field the case is missing, included in "Apply all new information"', async () => {
+    seedCase({ certifierName: null, certifierPhone: null, certifierLicenseNumber: null, certifierFax: null });
+    const submission = await receiveArrangement('review-cert-empty', CERTIFIER);
+    const byField = await rows(submission.id);
+    for (const field of Object.keys(CERTIFIER)) expect(byField[field]).toEqual(['solis_empty', true]);
   });
 
-  it('applying it sends only certifierFax — the stored phone is never part of the patch', async () => {
-    seedCase({ certifierFax: null, certifierPhone: '555-0199' });
-    const submission = await receiveArrangement('review-fax-apply', { certifierFax: '954-777-2262', certifierPhone: '954-777-0000' });
+  it('a different value already on the case is a conflict, never pre-selected; the same value is a match', async () => {
+    seedCase({ certifierName: 'DR. ROWAN EASTWICK', certifierPhone: '555-0199', certifierLicenseNumber: null, certifierFax: null });
+    const submission = await receiveArrangement('review-cert-conflict', CERTIFIER);
+    const byField = await rows(submission.id);
+    expect(byField.certifierName).toEqual(['match', false]);
+    expect(byField.certifierPhone).toEqual(['conflict', false]);
+    expect(byField.certifierLicenseNumber).toEqual(['solis_empty', true]);
+  });
+
+  it('a submission with the certifier block left blank offers nothing to apply', async () => {
+    seedCase({ certifierName: null, certifierPhone: null, certifierLicenseNumber: null, certifierFax: null });
+    const submission = await receiveArrangement('review-cert-blank', { decedentName: 'JUNIPER FAIRWEATHER' });
+    const byField = await rows(submission.id);
+    for (const field of Object.keys(CERTIFIER)) expect(byField[field]?.[1] ?? false).toBe(false);
+  });
+
+  it('applying sends exactly the selected certifier fields through the case update', async () => {
+    seedCase({ certifierName: null, certifierPhone: '555-0199', certifierLicenseNumber: null, certifierFax: null });
+    const submission = await receiveArrangement('review-cert-apply', CERTIFIER);
     const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case: { id: TEST_CASE_ID } }), { status: 200 }));
     vi.stubGlobal('fetch', fetchSpy);
 
     const { POST } = await import('./route');
     const response = await POST(
-      reviewRequest('POST', { organizationId: 'managed-cremations', caseId: TEST_CASE_ID, fieldsToApply: ['certifierFax'], expectedRevision: 0 }),
+      reviewRequest('POST', {
+        organizationId: 'managed-cremations',
+        caseId: TEST_CASE_ID,
+        fieldsToApply: ['certifierName', 'certifierLicenseNumber', 'certifierFax'],
+        expectedRevision: 0,
+      }),
       { params: Promise.resolve({ submissionId: submission.id }) },
     );
 
     expect(response.status).toBe(200);
-    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).patch).toEqual({ certifierFax: '954-777-2262' });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).patch).toEqual({
+      certifierName: 'DR. ROWAN EASTWICK',
+      certifierLicenseNumber: 'ME-40211',
+      certifierFax: '954-777-2262',
+    });
   });
 });
 

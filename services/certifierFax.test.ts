@@ -288,8 +288,10 @@ describe('JotForm Arrangement fax onto an existing case (review)', () => {
     expect(classifyReconciliationRow('certifierFax', '954-000-0000', '954-777-2262')).toMatchObject({ state: 'conflict', eligibleForBulkApply: false });
   });
 
-  it('phone stays review-only, exactly as before', () => {
-    expect(classifyReconciliationRow('certifierPhone', null, '954-777-0000').state).toBe('review_only');
+  it('the rest of the certifier block is offered the same way (2026-10) — no longer review-only', () => {
+    expect(classifyReconciliationRow('certifierPhone', null, '954-777-0000').state).toBe('solis_empty');
+    expect(classifyReconciliationRow('certifierName', null, 'DR. ROWAN EASTWICK').state).toBe('solis_empty');
+    expect(classifyReconciliationRow('certifierLicenseNumber', null, 'ME-40211').state).toBe('solis_empty');
   });
 });
 

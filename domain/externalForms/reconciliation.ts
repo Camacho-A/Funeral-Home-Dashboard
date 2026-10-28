@@ -35,9 +35,15 @@ const APPLIABLE_FIELDS: ReadonlySet<MappedSolisField> = new Set([
   'nextOfKinEmail',
   'pickupReleasedTo',
   // 2026-10: an Arrangement Form arriving for an EXISTING case can supply
-  // the certifier fax (qid 140), which template v7's Certifier item needs.
-  // Same rules as every field here: offered only when the case has none;
-  // a differing value is a conflict staff must choose explicitly.
+  // the certifier block (qids 137-140: name, phone, license number, fax)
+  // when the funeral director filled it in. Same rules as every field
+  // here: offered only when the case has none (and included in "Apply all
+  // new information"); a differing value is a conflict staff must choose
+  // explicitly. The name, phone and license used to be review-only, so
+  // they never reached the case even when the form had them.
+  'certifierName',
+  'certifierPhone',
+  'certifierLicenseNumber',
   'certifierFax',
 ]);
 

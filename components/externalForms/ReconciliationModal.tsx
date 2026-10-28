@@ -30,6 +30,9 @@ const FIELD_LABELS: Partial<Record<ReconciliationRow['field'], string>> = {
   nextOfKinRelationship: 'Next of kin relationship',
   nextOfKinPhone: 'Next of kin phone',
   nextOfKinEmail: 'Next of kin email',
+  certifierName: 'Certifier name',
+  certifierPhone: 'Certifier phone',
+  certifierLicenseNumber: 'Certifier license #',
   certifierFax: 'Certifier fax',
 };
 

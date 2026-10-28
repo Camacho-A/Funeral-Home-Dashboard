@@ -59,6 +59,9 @@ function currentValuesFromCase(theCase: Case): Partial<Record<MappedSolisField, 
     nextOfKinPhone: theCase.nextOfKinPhone,
     nextOfKinEmail: theCase.nextOfKinEmail,
     pickupReleasedTo: theCase.pickupReleasedTo,
+    certifierName: theCase.certifierName,
+    certifierPhone: theCase.certifierPhone,
+    certifierLicenseNumber: theCase.certifierLicenseNumber,
     certifierFax: theCase.certifierFax,
   };
 }
