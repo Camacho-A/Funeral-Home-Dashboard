@@ -206,6 +206,15 @@ export const ACTIVITY_EVENT_TYPES = {
       Arrangement Forms PDF — which source document, which page, and (for
       the Crematory Form) how the permit was confirmed. */
   DOCUMENT_PAGE_EXTRACTED: 'document.page_extracted',
+  /** Send to Crematory (2026-10). Each records who, when and exactly
+      which file/version; SUBMITTED means Outlook accepted the email, never
+      that the crematory received it. */
+  CREMATORY_PERMIT_CONFIRMED: 'crematory.permit_confirmed',
+  CREMATORY_READY_DATE_CONFIRMED: 'crematory.ready_date_confirmed',
+  CREMATORY_PACKAGE_NAME_CONFIRMED: 'crematory.package_name_confirmed',
+  CREMATORY_PACKAGE_BUILT: 'crematory.package_built',
+  CREMATORY_PACKAGE_SUBMITTED: 'crematory.package_submitted',
+  CREMATORY_PACKAGE_SEND_FAILED: 'crematory.package_send_failed',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */

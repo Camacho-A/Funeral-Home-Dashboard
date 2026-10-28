@@ -24,6 +24,8 @@ import { caseLogEntryDisplay } from '@/domain/cases/caseLogDisplay';
 import { escapeHtml } from '@/domain/billing/renderUtil';
 import { CaseHeader } from '@/components/case/CaseHeader';
 import { PrintLabelDialog } from '@/components/case/PrintLabelDialog';
+import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
+import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import type { StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
@@ -73,6 +75,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
   const [printLabelOpen, setPrintLabelOpen] = useState(false);
+  const [sendToCrematoryOpen, setSendToCrematoryOpen] = useState(false);
 
   /**
    * Case Info tab (2026-10). 560px is the SAME breakpoint
@@ -298,13 +301,25 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         onStepClick={(index) => viewPresentedStage(index)}
         sla={viewModel.sla}
         actions={
-          getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel ? (
-            <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setPrintLabelOpen(true)}>
-              Print Label
-            </button>
+          getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel || (sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation') ? (
+            <>
+              {getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel && (
+                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setPrintLabelOpen(true)}>
+                  Print Label
+                </button>
+              )}
+              {sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation' && (
+                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setSendToCrematoryOpen(true)}>
+                  Send to Crematory
+                </button>
+              )}
+            </>
           ) : undefined
         }
       />
+      {sendToCrematoryOpen && (
+        <SendToCrematoryDialog open onClose={() => setSendToCrematoryOpen(false)} organizationId={organizationId} caseId={case_.id} />
+      )}
       {printLabelOpen && (
         <PrintLabelDialog open onClose={() => setPrintLabelOpen(false)} caseId={case_.id} organizationId={organizationId} />
       )}

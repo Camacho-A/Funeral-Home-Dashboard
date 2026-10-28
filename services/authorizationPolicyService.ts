@@ -179,6 +179,11 @@ export function canReadNotifications(params: ResolvePermissionsParams, dataAdapt
   return hasPermission(params, dataAdapterMode, 'notification.read');
 }
 
+/** Send to Crematory (2026-10): email Crematory Packages to the crematory. */
+export function canSendToCrematory(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'crematory.send');
+}
+
 export function canSendNotification(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'notification.send');
 }

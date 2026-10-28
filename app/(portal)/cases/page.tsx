@@ -20,6 +20,8 @@ import { StageFilteredPanel } from '@/components/dashboard/StageFilteredPanel';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './page.module.css';
+import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
+import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 
 /**
  * Manors intake-stage combination (2026-10). Accepts any USER-FACING stage
@@ -68,6 +70,7 @@ function CasesPageContent() {
 
   const { query, setQuery, debouncedQuery, submitQuery } = useCaseSearch();
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
+  const [sendToCrematoryOpen, setSendToCrematoryOpen] = useState(false);
   const advanceStage = useAdvanceCaseStage();
 
   /**
@@ -156,9 +159,24 @@ function CasesPageContent() {
           {!archived && headerCount !== undefined && headerCount !== null && (
             <span className={styles.count}>{headerCount} active</span>
           )}
+          {/* Send to Crematory (2026-10): prepare and send several cases at once. */}
+          {!archived && sendToCrematoryConfig(organizationId) && (
+            <button type="button" className={`sx-btn sx-btn-secondary sx-btn-sm ${styles.crematoryAction}`} onClick={() => setSendToCrematoryOpen(true)}>
+              Send to Crematory
+            </button>
+          )}
         </div>
         <div className={styles.subheading}>{subheading}</div>
       </header>
+
+      {sendToCrematoryOpen && (
+        <SendToCrematoryDialog
+          open
+          onClose={() => setSendToCrematoryOpen(false)}
+          organizationId={organizationId}
+          preselectedCaseIds={Object.keys(selectedCaseIds).filter((id) => selectedCaseIds[id])}
+        />
+      )}
 
       <div className={styles.toolbar} role="search">
         <label className={styles.search}>

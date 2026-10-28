@@ -1,4 +1,5 @@
 import { isSlaTrackingEnabled } from '@/domain/sla/slaSettings';
+import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import type { AuthAdapterMode } from '@/lib/env';
@@ -53,6 +54,14 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       description: 'Business-day targets, cutoff times, holidays and alerts for case deadlines.',
       href: '/settings/sla',
       visible: permissions.includes('organization.manage') && isSlaTrackingEnabled(organizationId),
+    },
+    {
+      // Send to Crematory (2026-10): recipients and the Outlook mailbox.
+      key: 'crematory',
+      label: 'Crematory',
+      description: 'The crematory’s email recipients and the Outlook mailbox Crematory Packages are sent from.',
+      href: '/settings/crematory',
+      visible: permissions.includes('organization.manage') && sendToCrematoryConfig(organizationId) !== null,
     },
     {
       key: 'case-numbering',

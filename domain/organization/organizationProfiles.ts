@@ -213,6 +213,12 @@ export type OrganizationFeaturePreferences = {
       organization's (domain/documents/arrangementPageExtracts.ts).
       Platform default: off. */
   arrangementPageExtracts: boolean;
+  /** Send to Crematory (2026-10): the Crematory Package and its email.
+      `emailOrganizationName` is how the organization names itself in the
+      email subject and sign-off; `authorizationWorkflowStage` is the
+      workflow stage whose every step must be checked before sending.
+      Null = not offered. */
+  sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number } | null;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -296,6 +302,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   slaTracking: false,
   dymoCaseLabel: false,
   arrangementPageExtracts: false,
+  sendToCrematory: null,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -359,6 +366,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     slaTracking: true,
     dymoCaseLabel: true,
     arrangementPageExtracts: true,
+    sendToCrematory: { emailOrganizationName: 'Manors Cremation', authorizationWorkflowStage: 2 },
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {

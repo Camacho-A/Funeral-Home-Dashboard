@@ -47,6 +47,13 @@ export const PERMISSION_KEYS = [
   'document.upload',
   'document.archive',
 
+  /** Send to Crematory (2026-10). Emailing Crematory Packages OUTSIDE the
+      funeral home — deliberately separate from `document.generate`, which
+      still covers preparing them (confirming the permit and date, building
+      the package). Administrator, Manager, Funeral Director and Office
+      Staff by default; administrators change it in Settings > Roles. */
+  'crematory.send',
+
   /** Phase 25 (Document Generation & Template Management). Gate the
       org-wide Document Template Library — distinct from
       `document.view`/`document.generate` above, which gate a single
@@ -312,6 +319,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'document.view': "View and download a case's documents",
   'document.upload': 'Upload a file to a case',
   'document.archive': 'Archive a case document',
+  'crematory.send': 'Send Crematory Packages to the crematory by email (once per case)',
 
   'document.template.read': 'View the organization-wide document template library',
   'document.template.manage': 'Create, edit, duplicate, and archive document templates',

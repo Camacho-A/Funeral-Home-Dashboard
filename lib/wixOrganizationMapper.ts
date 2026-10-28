@@ -59,6 +59,7 @@ export type WixOrganizationItem = {
   hiddenModulesJson?: unknown;
   /** SLA tracking (2026-10): the organization's SLA settings, as JSON. */
   slaSettingsJson?: unknown;
+  crematorySettingsJson?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -70,6 +71,16 @@ function parseSlaSettingsJson(value: unknown): { slaSettings?: unknown } {
   try {
     const parsed: unknown = JSON.parse(value);
     return typeof parsed === 'object' && parsed !== null ? { slaSettings: parsed } : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseCrematorySettingsJson(value: unknown): { crematorySettings?: unknown } {
+  if (typeof value !== 'string' || value.length === 0) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? { crematorySettings: parsed } : {};
   } catch {
     return {};
   }
@@ -120,6 +131,7 @@ export function mapWixOrganizationItem(item: WixOrganizationItem | undefined): O
     enabledModules: parseStringArrayJson(item.enabledModulesJson),
     hiddenModules: parseStringArrayJson(item.hiddenModulesJson),
     ...parseSlaSettingsJson(item.slaSettingsJson),
+    ...parseCrematorySettingsJson(item.crematorySettingsJson),
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
     updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
   };
@@ -178,6 +190,7 @@ export function applyOrganizationUpdateToWixData(
     next.hiddenModulesJson = patch.hiddenModules ? JSON.stringify(patch.hiddenModules) : null;
   }
   if (patch.slaSettings !== undefined) next.slaSettingsJson = patch.slaSettings === null ? null : JSON.stringify(patch.slaSettings);
+  if (patch.crematorySettings !== undefined) next.crematorySettingsJson = patch.crematorySettings === null ? null : JSON.stringify(patch.crematorySettings);
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
   return next;
 }

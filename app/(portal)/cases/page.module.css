@@ -223,3 +223,9 @@
   font-size: var(--font-size-12-5);
   color: var(--color-danger-text);
 }
+
+/* Send to Crematory (2026-10): page-level action at the end of the title row. */
+.crematoryAction {
+  margin-left: auto;
+  align-self: center;
+}

@@ -254,6 +254,10 @@ export type Case = {
   /** SLA tracking (2026-10): recorded workflow events, keyed by event
       (types/sla.ts). Server-written only; absent on every case before it. */
   slaEvents?: Partial<Record<SlaEventKey, SlaEventRecord>>;
+  /** Send to Crematory (2026-10): what staff confirmed and what was built
+      and sent. Written only by services/crematory/ — never by the generic
+      case update — and merged key by key. See CaseCrematoryRecord. */
+  crematory?: CaseCrematoryRecord;
   /** SLA tracking (2026-10): recorded delays, keyed by delay id so
       concurrent records merge rather than overwrite. Never deleted. */
   slaDelays?: Record<string, SlaDelayRecord>;
@@ -454,4 +458,40 @@ export type ChecklistCompletionRecord = {
   eventId: string | null;
   at: string;
   actorId: string | null;
+};
+
+/** Send to Crematory (2026-10). Every entry records who did it and when. */
+export type CaseCrematoryRecord = {
+  /** Staff confirmed THIS uploaded file is the approved state permit for
+      this decedent. A different file later needs its own confirmation. */
+  permitVerification?: { documentId: string; checksumSha256: string; verifiedBy: string | null; verifiedAt: string } | null;
+  /** The decedent's last and first name(s) exactly as they appear in the
+      package file name (LastName_FirstName_…), entered or confirmed by
+      staff — never split from the full name, and never a change to the
+      case's own name. */
+  packageName?: { first: string; last: string; confirmedBy: string | null; confirmedAt: string } | null;
+  /** The expected cremation ready date staff entered or confirmed (MM/DD/YYYY),
+      and the Expected Pickup it was suggested from at the time. */
+  readyDate?: { date: string; suggestedAtConfirmation: string | null; confirmedBy: string | null; confirmedAt: string } | null;
+  /** What the current Crematory Package was built from. */
+  lastBuild?: { packageDocumentId: string; permitChecksumSha256: string; crematoryFormChecksumSha256: string; fileName: string; builtAt: string; builtBy: string | null } | null;
+  /** A send in progress — refuses a second one at the same time. */
+  pendingSubmission?: { submissionId: string; startedAt: string; startedBy: string | null } | null;
+  /** The most recent send attempt. `submitted` means Outlook accepted it —
+      NOT that the crematory received it. `uncertain`: Outlook failed in a
+      way that may still have sent it (check Sent Items before retrying). */
+  lastSubmission?: {
+    submissionId: string;
+    status: 'submitted' | 'failed' | 'uncertain';
+    packageDocumentId: string;
+    packageVersion: number | null;
+    attachmentName: string;
+    to: string[];
+    cc: string[];
+    mailbox: string | null;
+    internetMessageId: string | null;
+    error: string | null;
+    at: string;
+    by: string | null;
+  } | null;
 };
