@@ -6,7 +6,12 @@ export type CrematoryCaseSummary = {
   caseId: string;
   caseNumber: string;
   decedentDisplayName: string;
-  packageName: { confirmed: { first: string; last: string } | null; suggested: { first: string; last: string } | null };
+  packageName: {
+    confirmed: { first: string; last: string } | null;
+    suggested: { first: string; last: string } | null;
+    /** 'form': the family's own first/middle/last boxes; 'case_name': a two-word case name. */
+    suggestedFrom: 'form' | 'case_name' | null;
+  };
   subjectName: string;
   readiness: CrematoryReadiness;
   permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;

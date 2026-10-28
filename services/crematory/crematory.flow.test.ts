@@ -148,8 +148,8 @@ describe('readiness — what needs attention', () => {
     const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.readyToBuild).toBe(false);
     expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_uploaded', 'permit_verified', 'crematory_form', 'package_name', 'ready_date', 'package']);
-    // No name is ever split out of "RICHARD REYNOLDS".
-    expect(summary.packageName).toEqual({ confirmed: null, suggested: null });
+    // A two-word case name can only be first + last: it is filled in for staff to confirm.
+    expect(summary.packageName).toEqual({ confirmed: null, suggested: { first: 'Richard', last: 'Reynolds' }, suggestedFrom: 'case_name' });
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(0);
   });
 
@@ -215,9 +215,37 @@ describe('the Crematory Package — one PDF per decedent', () => {
       mappedFields: JSON.stringify({ decedentName: 'MARY ANN SMITH', decedentFirstName: 'MARY', decedentMiddleName: 'ANN', decedentLastName: 'SMITH' }),
     } as never);
     try {
-      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' } });
+      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form' });
     } finally {
       externalFormSubmissionFixtures.length = before;
+    }
+  });
+
+  it('for an older submission, reads the name boxes back from Jotform (read-only); a long case name alone is never split', async () => {
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], decedentName: 'MARY ANN SMITH', decedentMiddleName: null };
+    // Without any form, "MARY ANN SMITH" is ambiguous: nothing is filled in.
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: null, suggestedFrom: null });
+
+    const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
+    const before = externalFormSubmissionFixtures.length;
+    externalFormSubmissionFixtures.push({
+      id: 'sub-old', organizationId: ORG, provider: 'jotform', externalFormId: '261945978664175', externalSubmissionId: '6600000000000000001', caseFormLinkId: null,
+      createdCaseId: '1042', status: 'matched', receivedAt: '2026-10-01T10:00:00.000Z',
+      mappedFields: JSON.stringify({ decedentName: 'MARY SMITH', decedentMiddleName: 'ANN' }), // received before name boxes were kept
+    } as never);
+    vi.stubEnv('JOTFORM_API_KEY', 'test-key');
+    const jotform = vi.fn(async (url: string) => {
+      expect(url).toBe('https://api.jotform.com/submission/6600000000000000001');
+      return new Response(JSON.stringify({ responseCode: 200, content: { form_id: '261945978664175', created_at: '2026-10-01 10:00:00', answers: { '87': { answer: { first: 'MARY', middle: 'ANN', last: 'SMITH' } } } } }));
+    });
+    vi.stubGlobal('fetch', jotform);
+    try {
+      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form' });
+      await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+      expect(jotform).toHaveBeenCalledTimes(1); // read once, then remembered
+    } finally {
+      externalFormSubmissionFixtures.length = before;
+      vi.unstubAllEnvs();
     }
   });
 

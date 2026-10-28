@@ -28,6 +28,10 @@ import {
 import { listForCase as listCaseFormLinks } from '../caseFormLinkService';
 import { getById as getSubmissionById } from '../externalFormSubmissionService';
 import { queryWixDataItems } from '@/lib/wixDataApi';
+import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
+import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
+import { mapWixExternalFormSubmissionItem, type WixExternalFormSubmissionItem } from '@/lib/wixExternalFormMapper';
+import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
 import { evaluateCrematoryReadiness, type CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
 import { resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
 import { mergePdfs, UnreadablePdfError } from '@/lib/pdf/mergePdfs';
@@ -88,45 +92,79 @@ type Facts = {
   suggestedReadyDate: string | null;
 };
 
+export type PackageNameSuggestion = { name: PackageName; source: 'form' | 'case_name' };
+
+/** Structured names read from Jotform, once per submission per server. */
+const jotformNameCache = new Map<string, Promise<Partial<Record<string, string>> | null>>();
+
+async function structuredNameFromJotform(submission: ExternalFormSubmission): Promise<Partial<Record<string, string>> | null> {
+  if (submission.provider !== 'jotform' || !submission.externalSubmissionId || !process.env.JOTFORM_API_KEY) return null;
+  let pending = jotformNameCache.get(submission.id);
+  if (!pending) {
+    pending = fetchSubmissionAnswers(submission.externalSubmissionId)
+      .then(({ answers }) => extractMappedFieldsForForm(submission, answers) as Partial<Record<string, string>>)
+      .catch(() => null);
+    jotformNameCache.set(submission.id, pending);
+  }
+  return pending;
+}
+
 /**
- * A package-name suggestion from the decedent's name as an intake form
- * structured it (first / middle / last boxes) — the latest of this case's
- * submissions that carries one. Never derived from the case's full-name
- * string. Null when no submission has it (e.g. every submission received
- * before structured names were kept).
+ * Fills in the package name for staff to confirm (2026-10), from the most
+ * reliable source available:
+ *   1. the decedent's name as an intake form structured it — the first /
+ *      middle / last boxes — kept on the submission, or (for submissions
+ *      received before those were kept) read back from Jotform, read-only;
+ *   2. otherwise a case name of exactly two words ("RICHARD REYNOLDS"),
+ *      which can only mean first and last;
+ *   3. otherwise nothing: a longer name ("MARY ANN SMITH") cannot say which
+ *      words are the surname, so staff type it.
+ * Always a suggestion — staff confirm it before any file is named.
  */
-async function suggestedPackageNameFor(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<PackageName | null> {
+async function suggestedPackageNameFor(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<PackageNameSuggestion | null> {
   try {
     const linked = (await listCaseFormLinks(organizationId, case_.id, mode)).map((link) => link.submissionId).filter((id): id is string => Boolean(id));
-    const submissions = (await Promise.all(linked.map((id) => getSubmissionById(id, mode)))).filter((s) => s !== null && s.organizationId === organizationId);
+    const submissions = (await Promise.all(linked.map((id) => getSubmissionById(id, mode)))).filter(
+      (s): s is ExternalFormSubmission => s !== null && s.organizationId === organizationId,
+    );
     if (mode === 'mock') {
       const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
       submissions.push(...externalFormSubmissionFixtures.filter((s) => s.organizationId === organizationId && s.createdCaseId === case_.id));
     } else {
-      const created = await queryWixDataItems<{ mappedFields?: unknown; receivedAt?: unknown }>('externalFormSubmissions', {
+      const created = await queryWixDataItems<WixExternalFormSubmissionItem>('externalFormSubmissions', {
         filter: { organizationId, createdCaseId: case_.id },
         paging: { limit: 20 },
       });
       for (const item of created.dataItems) {
-        submissions.push({ mappedFields: String(item.data.mappedFields ?? '{}'), receivedAt: String(item.data.receivedAt ?? '') } as never);
+        const mapped = mapWixExternalFormSubmissionItem(item.id, item.data);
+        if (mapped) submissions.push(mapped);
       }
     }
-    const candidates = submissions
-      .map((s) => {
-        try {
-          return { at: s!.receivedAt ?? '', mapped: JSON.parse(s!.mappedFields) as Record<string, string | undefined> };
-        } catch {
-          return null;
-        }
-      })
-      .filter((c): c is { at: string; mapped: Record<string, string | undefined> } => c !== null && Boolean(c.mapped.decedentFirstName && c.mapped.decedentLastName))
-      .sort((a, b) => (a.at < b.at ? 1 : -1));
-    const latest = candidates[0];
-    return latest
-      ? suggestPackageName({ first: latest.mapped.decedentFirstName, middle: latest.mapped.decedentMiddleName ?? case_.decedentMiddleName ?? null, last: latest.mapped.decedentLastName })
-      : null;
+    const newestFirst = [...new Map(submissions.map((s) => [s.id, s])).values()].sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1));
+    const fromName = (fields: Partial<Record<string, string>> | null) =>
+      fields?.decedentFirstName && fields.decedentLastName
+        ? suggestPackageName({ first: fields.decedentFirstName, middle: fields.decedentMiddleName ?? case_.decedentMiddleName ?? null, last: fields.decedentLastName })
+        : null;
+
+    for (const submission of newestFirst) {
+      let stored: Partial<Record<string, string>> | null = null;
+      try {
+        stored = JSON.parse(submission.mappedFields) as Partial<Record<string, string>>;
+      } catch {
+        stored = null;
+      }
+      const name = fromName(stored) ?? fromName(await structuredNameFromJotform(submission));
+      if (name) return { name, source: 'form' };
+    }
+
+    const words = (case_.decedentName ?? '').trim().split(/\s+/).filter(Boolean);
+    if (words.length === 2) {
+      const name = suggestPackageName({ first: words[0], middle: case_.decedentMiddleName ?? null, last: words[1] });
+      if (name) return { name, source: 'case_name' };
+    }
+    return null;
   } catch (error) {
-    console.error('Could not look up a structured name for the package:', error instanceof Error ? error.message : error);
+    console.error('Could not look up a name for the package:', error instanceof Error ? error.message : error);
     return null;
   }
 }
@@ -206,7 +244,7 @@ export type CrematoryCaseSummary = {
   decedentDisplayName: string;
   /** The confirmed name for the file and subject, and a suggestion from
       the intake form's structured name (never from the full name). */
-  packageName: { confirmed: PackageName | null; suggested: PackageName | null };
+  packageName: { confirmed: PackageName | null; suggested: PackageName | null; suggestedFrom: PackageNameSuggestion['source'] | null };
   /** "First Last" from the confirmed package name, for the subject. */
   subjectName: string;
   readiness: CrematoryReadiness;
@@ -224,7 +262,11 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     caseId: facts.case_.id,
     caseNumber: facts.case_.caseNumber,
     decedentDisplayName: decedentDisplayName(facts.case_),
-    packageName: { confirmed: confirmedName, suggested: confirmedName ? null : await suggestedPackageNameFor(facts.case_.organizationId, facts.case_, mode) },
+    packageName: await (async () => {
+      if (confirmedName) return { confirmed: confirmedName, suggested: null, suggestedFrom: null };
+      const suggestion = await suggestedPackageNameFor(facts.case_.organizationId, facts.case_, mode);
+      return { confirmed: null, suggested: suggestion?.name ?? null, suggestedFrom: suggestion?.source ?? null };
+    })(),
     subjectName: confirmedName ? packageDisplayName(confirmedName) : decedentDisplayName(facts.case_),
     readiness: readinessOf(facts, canSend),
     permit: permitWithName ? { documentId: permitWithName.id, fileName: permitWithName.fileName, createdAt: permitWithName.createdAt, uploadedBy: permitWithName.actorDisplayName } : null,

@@ -28,7 +28,7 @@ function readyCase(caseId: string, name: string, number: string, date = '11/06/2
     caseId,
     caseNumber: number,
     decedentDisplayName: name,
-    packageName: { confirmed: { first, last: rest.join(' ') }, suggested: null },
+    packageName: { confirmed: { first, last: rest.join(' ') }, suggested: null, suggestedFrom: null },
     subjectName: name,
     readiness: { requirements: ALL_OK as never, readyToBuild: true, readyToSend: true },
     permit: { documentId: `permit-${caseId}`, fileName: 'State Permit.pdf', createdAt: '2026-10-27T15:00:00.000Z', uploadedBy: 'Dana' },
@@ -178,6 +178,58 @@ describe('SendToCrematoryDialog', () => {
     fireEvent.click(send);
     await waitFor(() => expect(client.sendToCrematory).toHaveBeenCalledTimes(2));
     expect(client.sendToCrematory.mock.calls[1][0]).toMatchObject({ confirmResend: true });
+  });
+
+  it('with nothing to fill it from, staff type the name for the file and confirm it', async () => {
+    const unnamed: CrematoryCaseSummary = {
+      ...notReady,
+      decedentDisplayName: 'Mary Ann Smith',
+      packageName: { confirmed: null, suggested: null, suggestedFrom: null },
+      readiness: { requirements: [requirement('package_name', false, "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name.")] as never, readyToBuild: false, readyToSend: false },
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([unnamed]));
+    client.crematoryCaseAction.mockResolvedValue({});
+    open();
+    const last = await screen.findByLabelText('Last name for Mary Ann Smith');
+    expect(last).toHaveValue('');
+    fireEvent.change(last, { target: { value: 'Smith' } });
+    fireEvent.change(screen.getByLabelText('First name(s) for Mary Ann Smith'), { target: { value: 'Mary Ann' } });
+    expect(screen.getByText('File: Smith_Mary Ann_11-06-2026.pdf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm name' }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_package_name', first: 'Mary Ann', last: 'Smith' }));
+  });
+
+  it('staff who can prepare but not send see why, and cannot open the email', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')], { canSend: false }));
+    open({ preselectedCaseIds: ['1042'] });
+    expect(await screen.findByText(/sending them needs the Send Crematory Packages permission/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Review email/ })).toBeDisabled();
+  });
+
+  it('staff without document permission get no prepare actions', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(overview([notReady], { canSend: false, canPrepare: false }));
+    open();
+    await screen.findByText('Confirm the uploaded permit is the approved permit for this decedent.');
+    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upload PDF' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm date' })).toBeNull();
+  });
+
+  it('the name arrives filled in from the family\'s form — staff check it and confirm', async () => {
+    const filled: CrematoryCaseSummary = {
+      ...notReady,
+      decedentDisplayName: 'Mary Ann Smith',
+      packageName: { confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form' },
+      readiness: { requirements: [requirement('package_name', false, 'x')] as never, readyToBuild: false, readyToSend: false },
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([filled]));
+    client.crematoryCaseAction.mockResolvedValue({});
+    open();
+    expect(await screen.findByLabelText('Last name for Mary Ann Smith')).toHaveValue('Smith');
+    expect(screen.getByLabelText('First name(s) for Mary Ann Smith')).toHaveValue('Mary Ann');
+    expect(screen.getByText("Filled in from the family's form — check, then confirm.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm name' }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_package_name', first: 'Mary Ann', last: 'Smith' }));
   });
 
   it('says when no Outlook mailbox is connected', async () => {

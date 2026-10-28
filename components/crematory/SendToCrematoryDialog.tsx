@@ -502,6 +502,11 @@ function CaseRow({
             <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy || !nameValue.first.trim() || !nameValue.last.trim()} onClick={() => onConfirmName(nameValue)}>
               Confirm name
             </button>
+            {summary.packageName.suggestedFrom && summary.packageName.suggested?.first === nameValue.first && summary.packageName.suggested?.last === nameValue.last && (
+              <span className={styles.hint}>
+                Filled in from {summary.packageName.suggestedFrom === 'form' ? "the family's form" : 'the case name'} — check, then confirm.
+              </span>
+            )}
             {nameValue.first.trim() && nameValue.last.trim() && (
               <span className={styles.hint}>File: {crematoryPackageFileName(nameValue, summary.readyDate.confirmed ?? summary.readyDate.suggested) ?? `${nameValue.last.trim()}_${nameValue.first.trim()}_MM-DD-YYYY.pdf`}</span>
             )}
