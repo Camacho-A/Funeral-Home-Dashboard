@@ -1,5 +1,5 @@
 import type { DataAdapterMode } from '@/lib/env';
-import { queryWixDataItems, updateWixDataItem } from '@/lib/wixDataApi';
+import { queryWixDataItems, updateWixDataItem, WixDataApiError } from '@/lib/wixDataApi';
 import { decryptCalendarToken, encryptCalendarToken } from '@/lib/identity/calendarTokenEncryption';
 import { generateOAuthState, generatePkcePair, signOAuthStateCookie, verifyOAuthStateCookie } from '@/lib/auth/calendarOAuthState';
 
@@ -33,6 +33,64 @@ export class CrematoryMailboxError extends Error {
     super(message);
     this.name = 'CrematoryMailboxError';
   }
+}
+
+/**
+ * Connection diagnostics (2026-10). Connecting the mailbox runs four steps
+ * after Microsoft sends the administrator back; a failure in any of them
+ * used to surface only as "The mailbox could not be connected", with
+ * nothing logged. Each step now fails with its own error and one
+ * structured log line naming the operation, the step, an error category
+ * and an HTTP status — never a token, code, secret, password, email
+ * address or provider message.
+ */
+export type MailboxConnectStage = 'token_exchange' | 'mailbox_lookup' | 'token_encryption' | 'save_settings';
+
+export type MailboxDiagnostic = {
+  operation: 'mailbox_connect' | 'mailbox_callback';
+  stage: MailboxConnectStage | 'microsoft_authorization' | 'sign_in_state' | 'administrator_check' | 'unknown';
+  /** A fixed category, or Microsoft's own OAuth error code / AADSTS number. */
+  category: string;
+  httpStatus: number | null;
+};
+
+/** The only way connection failures are logged. Safe fields only. */
+export function logMailboxDiagnostic(diagnostic: MailboxDiagnostic): void {
+  console.error(`[crematory-mailbox] ${JSON.stringify(diagnostic)}`);
+}
+
+/** Microsoft's OAuth error codes are a fixed vocabulary; anything else is reduced to "other". */
+export function safeOAuthErrorCode(value: unknown): string {
+  return typeof value === 'string' && /^[a-z_]{3,40}$/.test(value) ? value : 'other';
+}
+
+/** "AADSTS50194" from Microsoft's error description — the number only, never the rest of the text. */
+export function aadstsCode(description: string | null | undefined): string | null {
+  const match = /\bAADSTS(\d{4,6})\b/.exec(description ?? '');
+  return match ? `AADSTS${match[1]}` : null;
+}
+
+export class MailboxConnectError extends CrematoryMailboxError {
+  constructor(
+    message: string,
+    status: number,
+    readonly diagnostic: MailboxDiagnostic,
+  ) {
+    super(message, status);
+    this.name = 'MailboxConnectError';
+  }
+}
+
+const connectFailure = (stage: MailboxConnectStage, category: string, httpStatus: number | null, message: string, status = 502) =>
+  new MailboxConnectError(message, status, { operation: 'mailbox_connect', stage, category, httpStatus });
+
+/** What to tell the administrator for a rejected code exchange. */
+function tokenExchangeMessage(code: string): string {
+  if (code === 'invalid_client' || code === 'unauthorized_client') {
+    return `Microsoft rejected SOLIS's app credentials (${code}). Check that MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in Vercel are the new registration's, and that the secret has not expired.`;
+  }
+  if (code === 'invalid_grant') return 'The Microsoft sign-in expired or was already used (invalid_grant). Please try Connect again.';
+  return `Microsoft did not complete the sign-in (${code}).`;
 }
 
 type StoredMailbox = {
@@ -151,34 +209,93 @@ export async function completeMailboxAuthorization(
   const payload = verifyOAuthStateCookie(cookieValue, state);
   if (!payload || payload.organizationId !== expectedOrganizationId) throw new CrematoryMailboxError('The Microsoft sign-in expired or did not match. Please try again.', 400);
   const { clientId, clientSecret, redirectUri } = oauthConfig();
-  const body = await tokenRequest({
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri,
-    grant_type: 'authorization_code',
-    code,
-    code_verifier: payload.codeVerifier,
-    scope: SCOPES.join(' '),
-  });
-  if (!body.access_token || !body.refresh_token) throw new CrematoryMailboxError(`Microsoft did not complete the sign-in${body.error ? ` (${body.error})` : ''}.`, 502);
-  const me = (await (await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${body.access_token}` } })).json().catch(() => ({}))) as {
-    mail?: string;
-    userPrincipalName?: string;
-  };
-  const accountEmail = me.mail ?? me.userPrincipalName ?? 'Unknown account';
-  await writeStored(
-    payload.organizationId,
-    {
-      accountEmail,
-      accessTokenCiphertext: encryptCalendarToken(body.access_token),
-      refreshTokenCiphertext: encryptCalendarToken(body.refresh_token),
-      expiresAt: new Date(Date.now() + Number(body.expires_in ?? 3600) * 1000).toISOString(),
-      status: 'connected',
-      connectedBy: payload.staffProfileId,
-      connectedAt: new Date().toISOString(),
-    },
-    mode,
-  );
+
+  // 1. Code exchange.
+  let response: Response;
+  try {
+    response = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+        code,
+        code_verifier: payload.codeVerifier,
+        scope: SCOPES.join(' '),
+      }).toString(),
+    });
+  } catch {
+    throw connectFailure('token_exchange', 'network_error', null, 'SOLIS could not reach Microsoft to finish the sign-in. Please try again.');
+  }
+  const body = (await response.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string };
+  if (!response.ok || !body.access_token) {
+    const code = body.error ? safeOAuthErrorCode(body.error) : 'no_access_token';
+    throw connectFailure('token_exchange', code, response.status, tokenExchangeMessage(code));
+  }
+  if (!body.refresh_token) {
+    throw connectFailure('token_exchange', 'no_refresh_token', response.status, 'Microsoft did not allow staying signed in (no refresh token). Check that offline_access is granted to the app in Entra.');
+  }
+
+  // 2. Which account signed in. Unchanged: a failed lookup still connects,
+  //    shown as "Unknown account" — now also logged.
+  let accountEmail = 'Unknown account';
+  try {
+    const meResponse = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${body.access_token}` } });
+    const me = (await meResponse.json().catch(() => ({}))) as { mail?: string; userPrincipalName?: string };
+    accountEmail = me.mail ?? me.userPrincipalName ?? 'Unknown account';
+    if (!meResponse.ok) logMailboxDiagnostic({ operation: 'mailbox_connect', stage: 'mailbox_lookup', category: 'graph_rejected', httpStatus: meResponse.status });
+  } catch {
+    logMailboxDiagnostic({ operation: 'mailbox_connect', stage: 'mailbox_lookup', category: 'network_error', httpStatus: null });
+  }
+
+  // 3. Encryption.
+  let accessTokenCiphertext: string;
+  let refreshTokenCiphertext: string;
+  try {
+    accessTokenCiphertext = encryptCalendarToken(body.access_token);
+    refreshTokenCiphertext = encryptCalendarToken(body.refresh_token);
+  } catch {
+    throw connectFailure(
+      'token_encryption',
+      'encryption_failed',
+      null,
+      'Microsoft sign-in worked, but SOLIS could not secure it (token encryption failed — check CALENDAR_TOKEN_ENCRYPTION_KEY). Nothing was connected.',
+      500,
+    );
+  }
+
+  // 4. Saving to the organization's settings.
+  try {
+    await writeStored(
+      payload.organizationId,
+      {
+        accountEmail,
+        accessTokenCiphertext,
+        refreshTokenCiphertext,
+        expiresAt: new Date(Date.now() + Number(body.expires_in ?? 3600) * 1000).toISOString(),
+        status: 'connected',
+        connectedBy: payload.staffProfileId,
+        connectedAt: new Date().toISOString(),
+      },
+      mode,
+    );
+  } catch (error) {
+    if (error instanceof WixDataApiError) {
+      throw connectFailure(
+        'save_settings',
+        'wix_rejected',
+        error.status,
+        `Microsoft sign-in worked, but SOLIS could not save the mailbox to the organization settings (Wix HTTP ${error.status}). Nothing was connected.`,
+        500,
+      );
+    }
+    if (error instanceof CrematoryMailboxError) {
+      throw connectFailure('save_settings', 'organization_not_found', error.status, `${error.message} Nothing was connected.`, error.status);
+    }
+    throw connectFailure('save_settings', 'unexpected', null, 'Microsoft sign-in worked, but SOLIS could not save the mailbox to the organization settings. Nothing was connected.', 500);
+  }
   return { accountEmail };
 }
 
