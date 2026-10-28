@@ -112,3 +112,58 @@ describe('administrator correction', () => {
     await expect(svc.correctCaseSsn(ctx(), CASE_ID, { ssn: '1234', reason: 'Typo on the form' }, 'mock')).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe('one-time fill for existing cases', () => {
+  const others = () => caseFixtures.filter((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted && c.id !== CASE_ID);
+  let saved: Case[];
+  beforeEach(() => {
+    saved = caseFixtures.map((c) => c);
+    submissions.push(submission('arr', ARRANGEMENT_FORMS_EXTERNAL_FORM_ID));
+  });
+  afterEach(() => {
+    saved.forEach((c, i) => (caseFixtures[i] = c));
+  });
+
+  it('a preview reads the forms and changes nothing', async () => {
+    const report = await svc.backfillCaseSsns(ctx(), { dryRun: true }, 'mock');
+    expect(report.dryRun).toBe(true);
+    expect(report.checked).toBe(others().length + 1);
+    expect(report.counts.would_save).toBe(report.checked); // every case here finds the simulated form
+    expect(caseFixtures.some((c) => c.ssnOnFile)).toBe(false);
+    expect(activityEventFixtures).toHaveLength(0);
+    expect(JSON.stringify(report)).not.toMatch(/\d{3}-?\d{2}-?\d{4}/);
+  });
+
+  it('the fill saves and locks each case that has none — never replacing one already on file', async () => {
+    await svc.correctCaseSsn(ctx(), CASE_ID, { ssn: '000-55-1111', reason: 'Entered by hand earlier' }, 'mock');
+    const report = await svc.backfillCaseSsns(ctx(), { dryRun: false }, 'mock');
+    expect(report.counts.already_on_file).toBe(1);
+    expect(report.counts.saved).toBe(report.checked - 1);
+    expect((await svc.readCaseSsn(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock'))?.ssn).toBe('000-55-1111');
+    expect(activityEventFixtures.filter((e) => e.eventType === 'case.ssn_captured')).toHaveLength(report.counts.saved);
+    noDigits();
+    // Running it again finds everything already on file.
+    expect((await svc.backfillCaseSsns(ctx(), { dryRun: false }, 'mock')).counts.saved).toBe(0);
+  });
+
+  it('archived cases are not included', async () => {
+    caseFixtures[index] = { ...caseFixtures[index], isDeleted: true };
+    const report = await svc.backfillCaseSsns(ctx(), { dryRun: false }, 'mock');
+    expect(report.cases.map((c) => c.caseNumber)).not.toContain(original.caseNumber);
+    expect(await svc.readCaseSsn(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toBeNull();
+  });
+
+  it('cases whose forms hold no SSN are reported for staff', async () => {
+    answersBySubmission.clear();
+    const report = await svc.backfillCaseSsns(ctx(), { dryRun: true }, 'mock');
+    expect(report.counts.none_found).toBe(report.checked);
+  });
+
+  it('refuses without its encryption key in production, and for an organization without the feature', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('SSN_ENCRYPTION_KEY', '');
+    await expect(svc.backfillCaseSsns(ctx(), { dryRun: true }, 'mock')).rejects.toMatchObject({ status: 503 });
+    vi.unstubAllEnvs();
+    await expect(svc.backfillCaseSsns({ ...ctx(), organizationId: SECOND_MOCK_ORGANIZATION_ID }, { dryRun: true }, 'mock')).rejects.toMatchObject({ status: 404 });
+  });
+});

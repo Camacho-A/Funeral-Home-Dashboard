@@ -194,21 +194,79 @@ export async function captureCaseSsnFromSubmission(
   }
 }
 
+/** The SSN on the case's own intake forms, best source first — read only. */
+async function findSsnInForms(organizationId: string, caseId: string, mode: DataAdapterMode) {
+  const submissions = (await listCaseSubmissionsNewestFirst(organizationId, caseId, mode)).filter((s) => SSN_QUESTION[s.externalFormId]);
+  const ordered = SOURCE_PRIORITY.flatMap((source) => submissions.filter((s) => SSN_QUESTION[s.externalFormId].source === source));
+  for (const submission of ordered) {
+    const found = await ssnFromSubmission(submission);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** For a case whose forms arrived earlier: the first time the SSN is needed. */
 export async function captureCaseSsnFromForms(ctx: ActivityContext, caseId: string, mode: DataAdapterMode): Promise<CaptureOutcome> {
   try {
     if (!caseSsnEnabled(ctx.organizationId) || !isSsnEncryptionConfigured()) return 'not_applicable';
     if (await readStored(ctx.organizationId, caseId, mode)) return 'already_on_file';
-    const submissions = (await listCaseSubmissionsNewestFirst(ctx.organizationId, caseId, mode)).filter((s) => SSN_QUESTION[s.externalFormId]);
-    const ordered = SOURCE_PRIORITY.flatMap((source) => submissions.filter((s) => SSN_QUESTION[s.externalFormId].source === source));
-    for (const submission of ordered) {
-      const found = await ssnFromSubmission(submission);
-      if (found) return await store(ctx, caseId, found, mode);
-    }
-    return 'none_found';
+    const found = await findSsnInForms(ctx.organizationId, caseId, mode);
+    return found ? await store(ctx, caseId, found, mode) : 'none_found';
   } catch {
     console.error('Capturing the Social Security number from the forms failed.');
     return 'none_found';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One-time fill for existing cases (2026-10)
+// ---------------------------------------------------------------------------
+
+export type BackfillOutcome = 'would_save' | 'saved' | 'already_on_file' | 'none_found';
+export type BackfillReport = {
+  dryRun: boolean;
+  /** Active cases checked. Archived cases are never changed (they accept only a restore). */
+  checked: number;
+  counts: Record<BackfillOutcome, number>;
+  /** Case number and outcome only — never any digit of an SSN. */
+  cases: Array<{ caseNumber: string; outcome: BackfillOutcome }>;
+};
+
+let backfillRunning = false;
+
+/**
+ * Saves and locks the SSN on every active case that has none yet, from its
+ * own linked Arrangement Form (else Vital Statistics form) — the same rule
+ * and the same locked record as a capture on form arrival, one case at a
+ * time. A `dryRun` reads the forms and reports what would be saved,
+ * changing nothing. Never replaces an SSN already on a case, never touches
+ * an archived case, and records each save in that case's activity.
+ */
+export async function backfillCaseSsns(ctx: ActivityContext, options: { dryRun: boolean }, mode: DataAdapterMode): Promise<BackfillReport> {
+  if (!caseSsnEnabled(ctx.organizationId)) throw new CaseSsnError('Not available for this organization.', 404);
+  if (!isSsnEncryptionConfigured()) throw new CaseSsnError('Social Security number storage is not set up yet (SSN_ENCRYPTION_KEY).', 503);
+  if (backfillRunning) throw new CaseSsnError('A fill is already running. Wait for it to finish.', 409);
+  backfillRunning = true;
+  try {
+    const { listForOrganization } = await import('./casesService');
+    const cases = (await listForOrganization(ctx.organizationId, mode)).filter((c) => !c.isDeleted);
+    const report: BackfillReport = { dryRun: options.dryRun, checked: cases.length, counts: { would_save: 0, saved: 0, already_on_file: 0, none_found: 0 }, cases: [] };
+    for (const case_ of cases) {
+      let outcome: BackfillOutcome;
+      if (await readStored(ctx.organizationId, case_.id, mode)) {
+        outcome = 'already_on_file';
+      } else if (options.dryRun) {
+        outcome = (await findSsnInForms(ctx.organizationId, case_.id, mode).catch(() => null)) ? 'would_save' : 'none_found';
+      } else {
+        const captured = await captureCaseSsnFromForms(ctx, case_.id, mode);
+        outcome = captured === 'captured' ? 'saved' : captured === 'already_on_file' ? 'already_on_file' : 'none_found';
+      }
+      report.counts[outcome] += 1;
+      report.cases.push({ caseNumber: case_.caseNumber, outcome });
+    }
+    return report;
+  } finally {
+    backfillRunning = false;
   }
 }
 
