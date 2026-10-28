@@ -1,0 +1,119 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--sx-text-2);
+  font-size: 13px;
+}
+
+.warn {
+  margin: 0;
+  color: var(--sx-amber-text);
+  font-size: 13px;
+}
+
+.mailbox {
+  margin: 0;
+  font-size: 13px;
+}
+
+.cases {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.case {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--sx-border-soft);
+  border-radius: 8px;
+}
+
+.caseHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.caseTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.needs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+  font-size: 13px;
+}
+
+.needs li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dateRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.dateRow input {
+  width: 160px;
+}
+
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message {
+  height: auto;
+  min-height: 140px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.attachments li {
+  display: flex;
+  flex-direction: column;
+}
+
+.confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+}

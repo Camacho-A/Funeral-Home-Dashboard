@@ -112,6 +112,11 @@ export type Organization = {
       administrators (Settings → SLA). Opaque here; domain/sla/slaSettings.ts
       owns and validates the shape. Absent = the defaults. */
   slaSettings?: unknown;
+  /** Send to Crematory (2026-10): the crematory's email recipients, set by
+      administrators (Settings → Crematory). Opaque here;
+      domain/crematory/crematorySettings.ts validates it. The connected
+      mailbox's tokens are NOT part of this record. */
+  crematorySettings?: unknown;
 
   /** Handwritten item #3 (2026-09, Family Portal removal for Manors). An
       organization-level capability — see

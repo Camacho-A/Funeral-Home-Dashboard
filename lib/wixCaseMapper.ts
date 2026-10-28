@@ -87,6 +87,7 @@ export type WixCaseItem = {
   checklistCompletions?: unknown;
   slaEvents?: unknown;
   slaDelays?: unknown;
+  crematory?: unknown;
   stageEnteredAt?: unknown;
   fieldValues?: unknown;
   decedentName?: unknown;
@@ -314,6 +315,7 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     checklistState: item.checklistState as Record<string, boolean>,
     ...readChecklistCompletions(item.checklistCompletions),
     ...readSlaFields(item),
+    ...(isPlainObject(item.crematory) ? { crematory: item.crematory as Case['crematory'] } : {}),
     fieldValues: item.fieldValues as Record<number, string>,
     daysWaitingInStage: typeof item.daysWaitingInStage === 'number' ? item.daysWaitingInStage : 0,
     isStalled: typeof item.isStalled === 'boolean' ? item.isStalled : false,
@@ -791,6 +793,7 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.checklistCompletions !== undefined) next.checklistCompletions = patch.checklistCompletions;
   if (patch.slaEvents !== undefined) next.slaEvents = patch.slaEvents;
   if (patch.slaDelays !== undefined) next.slaDelays = patch.slaDelays;
+  if (patch.crematory !== undefined) next.crematory = patch.crematory;
   if (patch.stageEnteredAt !== undefined) next.stageEnteredAt = patch.stageEnteredAt;
   if (patch.fieldValues !== undefined) {
     // SOLIS-wide ALL-CAPS data standard (2026-09): fieldValues' per-key
@@ -892,6 +895,7 @@ export function buildCaseFieldPatch(existing: WixCaseItem, patch: CaseUpdate): R
   if (patch.checklistCompletions !== undefined) next.checklistCompletions = { ...asObject(existing.checklistCompletions), ...asObject(next.checklistCompletions) };
   if (patch.slaEvents !== undefined) next.slaEvents = { ...asObject(existing.slaEvents), ...asObject(next.slaEvents) };
   if (patch.slaDelays !== undefined) next.slaDelays = { ...asObject(existing.slaDelays), ...asObject(next.slaDelays) };
+  if (patch.crematory !== undefined) next.crematory = { ...asObject(existing.crematory), ...asObject(next.crematory) };
   if (patch.fieldValues !== undefined) next.fieldValues = { ...asObject(existing.fieldValues), ...asObject(next.fieldValues) };
   if (patch.vaStepsState !== undefined) next.vaStepsState = { ...asObject(existing.vaStepsState), ...asObject(next.vaStepsState) };
   return changedCaseFields(existing, next);

@@ -89,6 +89,14 @@ export const DOCUMENT_TYPES = {
       Disposition, for the crematory once the permit is available. */
   EXTERNAL_FORM_ME_FORM: { key: 'external_form.me_form', category: 'authorization' as DocumentTemplateCategory, displayName: 'ME Form' },
   EXTERNAL_FORM_CREMATORY_FORM: { key: 'external_form.crematory_form', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Crematory Form' },
+  /** Send to Crematory (2026-10). The approved state cremation permit,
+      uploaded by staff (never retrieved automatically), then confirmed by
+      staff as the approved permit for this decedent. */
+  CREMATION_FORM_STATE_PERMIT: { key: 'cremation_form.state_permit', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'State Cremation Permit' },
+  /** Send to Crematory (2026-10). One PDF per decedent: the approved
+      state permit, then page 3 of the Arrangement Forms. Named
+      LastName_FirstName_MM-DD-YYYY.pdf (domain/crematory/crematoryPackage.ts). */
+  CREMATION_FORM_CREMATORY_PACKAGE: { key: 'cremation_form.crematory_package', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Crematory Package' },
 } as const;
 
 export type DocumentTypeDefinition = (typeof DOCUMENT_TYPES)[keyof typeof DOCUMENT_TYPES];

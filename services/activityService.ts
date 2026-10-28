@@ -1147,6 +1147,36 @@ export function recordArrangementPageExtracted(
   );
 }
 
+/** Send to Crematory (2026-10): one audit entry per case, per step. */
+export function recordCrematoryEvent(
+  ctx: ActivityContext,
+  caseId: string,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_CONFIRMED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_READY_DATE_CONFIRMED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_BUILT
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SUBMITTED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SEND_FAILED,
+  details: { resourceId: string | null; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType,
+      resourceType: 'caseDocument',
+      resourceId: details.resourceId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: details.severity ?? 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 /** A regeneration's own event, distinct from `recordDocumentGenerated` —
     `supersedesId` names the document row this new one replaces (that
     row's own status flips to 'superseded', never edited otherwise — see

@@ -57,7 +57,7 @@ type WorkflowCase = Pick<Case, 'organizationId' | 'isMedicalExaminerCase' | 'wor
 /** A stage's checklist exactly as the case shows it: the Medical Examiner
     variant applied, retired items left out — the same rules the case
     page's checklist uses (domain/workflow/resolveChecklist.ts). */
-function visibleItems(case_: WorkflowCase, displayStage: number) {
+export function visibleItems(case_: WorkflowCase, displayStage: number) {
   const stage = case_.workflowSnapshot?.stages.find((candidate) => candidate.displayStage === displayStage);
   if (!stage) return [];
   const presented = applyMedicalExaminerVariant(stage.checklist.items, case_.organizationId, displayStage, case_.isMedicalExaminerCase === true);
@@ -86,6 +86,14 @@ export function crematoryFormWorkflowState(case_: WorkflowCase): { ready: boolea
   };
 }
 
+/** Whether every step of a workflow stage, as the case shows it, is
+    checked. Null when the case's workflow has no such stage. */
+export function workflowStageComplete(case_: WorkflowCase, displayStage: number): boolean | null {
+  const items = visibleItems(case_, displayStage);
+  if (items.length === 0) return null;
+  return items.every((item) => case_.checklistState?.[checklistItemKey(displayStage, item.index)] === true);
+}
+
 /** Whether a case save just reached that moment (it was not there before).
     `before` is null for a new case. */
 export function crematoryFormIsDue(before: WorkflowCase | null, after: WorkflowCase & Pick<Case, 'isDeleted'>): boolean {
@@ -94,7 +102,8 @@ export function crematoryFormIsDue(before: WorkflowCase | null, after: WorkflowC
   return before === null || crematoryFormWorkflowState(before)?.ready !== true;
 }
 
-export function crematoryPermitStatus(case_: Pick<Case, 'slaEvents' | 'checklistState' | 'workflowSnapshot'> & Partial<WorkflowCase>): CrematoryPermitStatus {
+export function crematoryPermitStatus(case_: Pick<Case, 'slaEvents' | 'checklistState' | 'workflowSnapshot'> & Partial<WorkflowCase> & Partial<Pick<Case, 'crematory'>>): CrematoryPermitStatus {
+  if (case_.crematory?.permitVerification) return { confirmed: true, basis: 'State permit uploaded and confirmed' };
   if (case_.slaEvents?.approval_received?.at) return { confirmed: true, basis: 'State approval recorded' };
   if (case_.slaEvents?.permit_sent?.at) return { confirmed: true, basis: 'Permit sent to crematory recorded' };
   const items = checklistItemsForEvent(case_, 'permit_sent');
