@@ -607,3 +607,56 @@ describe('useCaseMutations — case revisions', () => {
     expect(options).toMatchObject({ expectedRevision: 4 });
   });
 });
+
+describe('useCaseMutations#toggleChecklistItem — ticks made during a save go together (checklist save latency, 2026-10)', () => {
+  const KEY2 = checklistItemKey(FIXTURE_DISPLAY_STAGE, 2);
+
+  it('three more ticks while the first save is in flight: all shown at once, sent as ONE second save', async () => {
+    const { result, queryClient } = renderWithClient();
+    const case_ = testCase({ checklistState: {} });
+    queryClient.setQueryData(CASE_QUERY_KEY, case_);
+    const first = deferred<Case>();
+    vi.mocked(casesService.update).mockReturnValueOnce(first.promise).mockImplementation((_ctx, _id, patch) =>
+      Promise.resolve(testCase({ checklistState: { [KEY0]: true, ...(patch as Partial<Case>).checklistState } })),
+    );
+
+    act(() => result.current.toggleChecklistItem(case_, 0, true));
+    await waitFor(() => expect(casesService.update).toHaveBeenCalledTimes(1));
+    act(() => result.current.toggleChecklistItem(case_, 1, true));
+    act(() => result.current.toggleChecklistItem(case_, 2, true));
+
+    const shown = queryClient.getQueryData<Case>(CASE_QUERY_KEY)!.checklistState;
+    expect([shown[KEY0], shown[KEY1], shown[KEY2]]).toEqual([true, true, true]);
+    expect(casesService.update).toHaveBeenCalledTimes(1);
+
+    // The first save returns knowing only KEY0 — the queued ticks stay shown.
+    first.resolve(testCase({ checklistState: { [KEY0]: true } }));
+    await waitFor(() => expect(casesService.update).toHaveBeenCalledTimes(2));
+    const [, , secondPatch, , options] = vi.mocked(casesService.update).mock.calls[1];
+    expect(secondPatch).toEqual({ checklistState: { [KEY1]: true, [KEY2]: true } });
+    expect(options).toMatchObject({ baseValues: { checklistState: { [KEY1]: null, [KEY2]: null } } });
+    await waitFor(() => {
+      const settled = queryClient.getQueryData<Case>(CASE_QUERY_KEY)!.checklistState;
+      expect([settled[KEY0], settled[KEY1], settled[KEY2]]).toEqual([true, true, true]);
+    });
+  });
+
+  it('a tick undone before it was sent is dropped — nothing more is saved', async () => {
+    const { result, queryClient } = renderWithClient();
+    const case_ = testCase({ checklistState: {} });
+    queryClient.setQueryData(CASE_QUERY_KEY, case_);
+    const first = deferred<Case>();
+    vi.mocked(casesService.update).mockReturnValueOnce(first.promise);
+
+    act(() => result.current.toggleChecklistItem(case_, 0, true));
+    await waitFor(() => expect(casesService.update).toHaveBeenCalledTimes(1));
+    act(() => result.current.toggleChecklistItem(case_, 1, true));
+    act(() => result.current.toggleChecklistItem(case_, 1, false));
+    expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)!.checklistState[KEY1]).toBe(false);
+
+    first.resolve(testCase({ checklistState: { [KEY0]: true } }));
+    await waitFor(() => expect(queryClient.getQueryData<Case>(CASE_QUERY_KEY)!.checklistState[KEY0]).toBe(true));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(casesService.update).toHaveBeenCalledTimes(1);
+  });
+});

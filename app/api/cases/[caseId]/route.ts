@@ -235,6 +235,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   // already-validated/allowlisted `patch` object (not the raw body), so a
   // caller can never smuggle a non-pickup field in under a pickup key.
   const policyParams = { identityId: context.userId, organizationId, roleKey: context.role };
+  // Checklist save latency (2026-10): the case row is read while the
+  // permissions resolve, rather than after — one Wix round trip off every
+  // save. Nothing is used from it until authorization has passed.
+  const firstRowRead = loadCaseRow(organizationId, caseId);
+  firstRowRead.catch(() => undefined);
   const [hasFullEdit, hasPickupOnlyEdit] = await Promise.all([
     canEditCase(policyParams, 'wix'),
     canUpdatePickup(policyParams, 'wix'),
@@ -286,7 +291,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     // Archived cases are loaded, not filtered out (2026-10) — the restore
     // that un-archives one must be able to reach it. Loaded by
     // {beaconCaseId, organizationId}: another organization's case is 404.
-    const firstRow = await loadCaseRow(organizationId, caseId);
+    const firstRow = await firstRowRead;
     if (!firstRow) {
       return NextResponse.json({ case: null }, { status: 404 });
     }
@@ -573,7 +578,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
 
     if (touchesCompletion) {
       try {
-        const reconcileResult = await reconcileCaseWorkflow(organizationId, caseId, 'wix');
+        const reconcileResult = await reconcileCaseWorkflow(organizationId, caseId, 'wix', { justWritten: result });
         if (reconcileResult.changed) {
           // The reconciled case carries the revision its own write produced,
           // so the client's next save is made against the right one.
@@ -597,11 +602,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       // id), so a repeated save, retry or refresh cannot duplicate.
       // Best-effort, exactly like reconciliation above: a scheduling
       // failure never fails the checklist update that already succeeded.
-      try {
+      // After the response (2026-10): it changes nothing the response
+      // carries, and its Wix reads used to hold up every checklist tick.
+      const reconciled = result;
+      runAfterResponse(`expected cremains pickup for case ${caseId}`, async () => {
         const organization = await getOrganization(organizationId, 'wix');
         await syncExpectedPickupForCase(
           {
-            case_: result,
+            case_: reconciled,
             organization: organization
               ? { id: organization.id, timezone: organization.timezone, cremainsPickupSettings: organization.cremainsPickupSettings }
               : null,
@@ -610,12 +618,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
           { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
           'wix',
         );
-      } catch (error) {
-        console.error(
-          'Failed to sync the expected cremains pickup after checklist update:',
-          error instanceof Error ? error.message : error,
-        );
-      }
+      });
     }
 
     // Phase 24: best-effort — never fails the actual update. A stage
@@ -623,100 +626,108 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     // is grouped into one case.updated event carrying only the fields that
     // actually changed (never a full case snapshot) — both share this
     // request's single correlationId.
-    try {
-      const activityCtx = { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId };
-      const patchRecord = patch as Record<string, unknown>;
-      const existingRecord = existing as unknown as Record<string, unknown>;
+    //
+    // After the response (2026-10): the activity log changes nothing the
+    // response carries, and its Wix inserts used to hold up every
+    // checklist tick. Still recorded for every save.
+    const existingBeforeSave = existing;
+    runAfterResponse(`activity for case ${caseId}`, async () => {
+      const existing = existingBeforeSave;
+      try {
+        const activityCtx = { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId };
+        const patchRecord = patch as Record<string, unknown>;
+        const existingRecord = existing as unknown as Record<string, unknown>;
 
-      if (patchRecord.rawStage !== undefined && patchRecord.rawStage !== existing.rawStage) {
-        await recordStageChanged(activityCtx, caseId, stageLabel(existing.rawStage), stageLabel(patchRecord.rawStage as number), 'wix');
-      }
-
-      // Conditional shipping/tracking (2026-09): returnMethod and the five
-      // shipping fields get their own specific, human-readable events
-      // (mirroring recordStageChanged's convention) instead of falling into
-      // the generic "Case updated (...)" bucket — see
-      // services/activityService.ts's recorder functions for the exact
-      // wording. Excluded from the generic changedFields sweep below so
-      // neither fires twice for the same change.
-      if (patchRecord.returnMethod !== undefined && patchRecord.returnMethod !== existing.returnMethod) {
-        await recordReturnMethodChanged(activityCtx, caseId, existing.returnMethod, patchRecord.returnMethod as ReturnMethod, 'wix');
-      }
-      if (
-        patchRecord.shippingCarrier !== undefined &&
-        patchRecord.shippingCarrier !== existing.shippingCarrier &&
-        typeof patchRecord.shippingCarrier === 'string' &&
-        patchRecord.shippingCarrier.trim() !== ''
-      ) {
-        await recordShipmentRecorded(activityCtx, caseId, patchRecord.shippingCarrier, 'wix');
-      }
-      if (
-        patchRecord.shippingTrackingNumber !== undefined &&
-        patchRecord.shippingTrackingNumber !== existing.shippingTrackingNumber &&
-        typeof patchRecord.shippingTrackingNumber === 'string' &&
-        patchRecord.shippingTrackingNumber.trim() !== ''
-      ) {
-        await recordShipmentTrackingNumberChanged(activityCtx, caseId, existing.shippingTrackingNumber ? 'updated' : 'added', 'wix');
-      }
-      if (
-        patchRecord.shippingDeliveryStatus !== undefined &&
-        patchRecord.shippingDeliveryStatus === 'delivered' &&
-        existing.shippingDeliveryStatus !== 'delivered'
-      ) {
-        await recordShipmentDelivered(activityCtx, caseId, 'wix');
-      }
-
-      // Contact instructions (2026-10). Compared against the existing
-      // value coerced to a boolean, so a legacy case whose column is
-      // absent (undefined) correctly reads as "not restricted" and the
-      // first time staff tick the box registers as a real change rather
-      // than as undefined !== false noise.
-      // Archived Cases (2026-10). Compared against the existing value
-      // coerced to a boolean so a legacy row with the column absent reads
-      // as "active", and the first archive registers as a real change.
-      if (patchRecord.isDeleted !== undefined) {
-        const wasArchived = existing.isDeleted === true;
-        const nowArchived = patchRecord.isDeleted === true;
-        if (wasArchived !== nowArchived) {
-          await recordCaseArchiveChanged(activityCtx, caseId, nowArchived, 'wix');
+        if (patchRecord.rawStage !== undefined && patchRecord.rawStage !== existing.rawStage) {
+          await recordStageChanged(activityCtx, caseId, stageLabel(existing.rawStage), stageLabel(patchRecord.rawStage as number), 'wix');
         }
-      }
 
-      if (patchRecord.doNotContactNextOfKin !== undefined) {
-        const wasRestricted = existing.doNotContactNextOfKin === true;
-        const nowRestricted = patchRecord.doNotContactNextOfKin === true;
-        if (wasRestricted !== nowRestricted) {
-          await recordContactRestrictionChanged(activityCtx, caseId, nowRestricted, 'wix');
+        // Conditional shipping/tracking (2026-09): returnMethod and the five
+        // shipping fields get their own specific, human-readable events
+        // (mirroring recordStageChanged's convention) instead of falling into
+        // the generic "Case updated (...)" bucket — see
+        // services/activityService.ts's recorder functions for the exact
+        // wording. Excluded from the generic changedFields sweep below so
+        // neither fires twice for the same change.
+        if (patchRecord.returnMethod !== undefined && patchRecord.returnMethod !== existing.returnMethod) {
+          await recordReturnMethodChanged(activityCtx, caseId, existing.returnMethod, patchRecord.returnMethod as ReturnMethod, 'wix');
         }
-      }
+        if (
+          patchRecord.shippingCarrier !== undefined &&
+          patchRecord.shippingCarrier !== existing.shippingCarrier &&
+          typeof patchRecord.shippingCarrier === 'string' &&
+          patchRecord.shippingCarrier.trim() !== ''
+        ) {
+          await recordShipmentRecorded(activityCtx, caseId, patchRecord.shippingCarrier, 'wix');
+        }
+        if (
+          patchRecord.shippingTrackingNumber !== undefined &&
+          patchRecord.shippingTrackingNumber !== existing.shippingTrackingNumber &&
+          typeof patchRecord.shippingTrackingNumber === 'string' &&
+          patchRecord.shippingTrackingNumber.trim() !== ''
+        ) {
+          await recordShipmentTrackingNumberChanged(activityCtx, caseId, existing.shippingTrackingNumber ? 'updated' : 'added', 'wix');
+        }
+        if (
+          patchRecord.shippingDeliveryStatus !== undefined &&
+          patchRecord.shippingDeliveryStatus === 'delivered' &&
+          existing.shippingDeliveryStatus !== 'delivered'
+        ) {
+          await recordShipmentDelivered(activityCtx, caseId, 'wix');
+        }
 
-      const SHIPPING_EVENT_FIELDS = new Set([
-        'rawStage',
-        'returnMethod',
-        'shippingCarrier',
-        'shippingTrackingNumber',
-        'shippingDateShipped',
-        'shippingDeliveryStatus',
-        'shippingDeliveredAt',
-        // Has its own event immediately above; listed here so one change
-        // never produces two audit entries.
-        'doNotContactNextOfKin',
-        // Has its own archived/restored event immediately above.
-        'isDeleted',
-      ]);
-      const changedFields: Record<string, FieldChange> = {};
-      for (const key of Object.keys(patchRecord)) {
-        if (SHIPPING_EVENT_FIELDS.has(key)) continue;
-        const previous = existingRecord[key];
-        const next = patchRecord[key];
-        if (previous !== next) changedFields[key] = { previous, next };
+        // Contact instructions (2026-10). Compared against the existing
+        // value coerced to a boolean, so a legacy case whose column is
+        // absent (undefined) correctly reads as "not restricted" and the
+        // first time staff tick the box registers as a real change rather
+        // than as undefined !== false noise.
+        // Archived Cases (2026-10). Compared against the existing value
+        // coerced to a boolean so a legacy row with the column absent reads
+        // as "active", and the first archive registers as a real change.
+        if (patchRecord.isDeleted !== undefined) {
+          const wasArchived = existing.isDeleted === true;
+          const nowArchived = patchRecord.isDeleted === true;
+          if (wasArchived !== nowArchived) {
+            await recordCaseArchiveChanged(activityCtx, caseId, nowArchived, 'wix');
+          }
+        }
+
+        if (patchRecord.doNotContactNextOfKin !== undefined) {
+          const wasRestricted = existing.doNotContactNextOfKin === true;
+          const nowRestricted = patchRecord.doNotContactNextOfKin === true;
+          if (wasRestricted !== nowRestricted) {
+            await recordContactRestrictionChanged(activityCtx, caseId, nowRestricted, 'wix');
+          }
+        }
+
+        const SHIPPING_EVENT_FIELDS = new Set([
+          'rawStage',
+          'returnMethod',
+          'shippingCarrier',
+          'shippingTrackingNumber',
+          'shippingDateShipped',
+          'shippingDeliveryStatus',
+          'shippingDeliveredAt',
+          // Has its own event immediately above; listed here so one change
+          // never produces two audit entries.
+          'doNotContactNextOfKin',
+          // Has its own archived/restored event immediately above.
+          'isDeleted',
+        ]);
+        const changedFields: Record<string, FieldChange> = {};
+        for (const key of Object.keys(patchRecord)) {
+          if (SHIPPING_EVENT_FIELDS.has(key)) continue;
+          const previous = existingRecord[key];
+          const next = patchRecord[key];
+          if (previous !== next) changedFields[key] = { previous, next };
+        }
+        if (Object.keys(changedFields).length > 0) {
+          await recordCaseUpdated(activityCtx, caseId, changedFields, 'wix');
+        }
+      } catch (error) {
+        console.error('Failed to record case-update activity event(s):', error instanceof Error ? error.message : error);
       }
-      if (Object.keys(changedFields).length > 0) {
-        await recordCaseUpdated(activityCtx, caseId, changedFields, 'wix');
-      }
-    } catch (error) {
-      console.error('Failed to record case-update activity event(s):', error instanceof Error ? error.message : error);
-    }
+    });
 
     // Automatic Envelope / Certificate of Cremation (2026-10): only what this
     // save actually affected, after the response, never able to fail it.

@@ -60,14 +60,12 @@ function isFormLinkReceived(status: string): boolean {
     pipeline. */
 export async function isArrangementFormLinked(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   const links = await listCaseFormLinks(organizationId, caseId, dataAdapterMode);
-  for (const link of links) {
-    if (!isFormLinkReceived(link.status) || !link.submissionId) continue;
-    const config = await getExternalFormConfigById(organizationId, link.formConfigId, dataAdapterMode);
-    // Organization-aware (2026-10): any form registered as this org's
-    // arrangement layout — Manors' legacy form id or another home's own form.
-    if (config && resolveFormRole(config) === 'arrangement') return true;
-  }
-  return false;
+  const received = links.filter((link) => isFormLinkReceived(link.status) && link.submissionId);
+  // Looked up together, not one after another (checklist save latency, 2026-10).
+  const configs = await Promise.all(received.map((link) => getExternalFormConfigById(organizationId, link.formConfigId, dataAdapterMode)));
+  // Organization-aware (2026-10): any form registered as this org's
+  // arrangement layout — Manors' legacy form id or another home's own form.
+  return configs.some((config) => config !== null && config !== undefined && resolveFormRole(config) === 'arrangement');
 }
 
 /**
@@ -162,7 +160,18 @@ export class ReconcileConflictError extends Error {
     staff edit that landed in between. The stage still never moves
     backwards: `max(current, computed)` is re-evaluated on every attempt. An
     archived case is still left alone. */
-export async function reconcileCaseWorkflow(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<ReconcileResult> {
+export async function reconcileCaseWorkflow(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+  options: {
+    /** The case exactly as the caller's own write just stored it. When it
+        cannot advance, the fresh read and write below are skipped
+        (checklist save latency, 2026-10) — most ticks don't finish a
+        stage. When it can, the case is still re-read before writing. */
+    justWritten?: Case;
+  } = {},
+): Promise<ReconcileResult> {
   // Read once: whether the Arrangement Form is linked lives in CaseFormLinks,
   // not on the case row, so it does not need re-reading per attempt.
   const arrangementFormLinked = await isArrangementFormLinked(organizationId, caseId, dataAdapterMode);
@@ -171,6 +180,9 @@ export async function reconcileCaseWorkflow(organizationId: string, caseId: stri
     const newRawStage = Math.max(case_.rawStage, computeFirstIncompleteRawStage(case_, arrangementFormLinked));
     return newRawStage === case_.rawStage ? null : newRawStage;
   };
+  if (options.justWritten && options.justWritten.id === caseId && nextStageFor(options.justWritten) === null) {
+    return { rawStage: options.justWritten.rawStage, changed: false };
+  }
 
   if (dataAdapterMode === 'mock') {
     const case_ = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId);

@@ -169,8 +169,9 @@ function patchRequest(caseId: string, body: unknown, headers: Record<string, str
   return rawPatchRequest(caseId, withRevision, headers);
 }
 
-function rawPatchRequest(caseId: string, body: unknown, headers: Record<string, string> = {}) {
-  return PATCH(
+async function rawPatchRequest(caseId: string, body: unknown, headers: Record<string, string> = {}) {
+  vi.mocked(runAfterResponse).mockClear();
+  const response = await PATCH(
     new Request(`http://localhost/api/cases/${caseId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost', ...headers },
@@ -178,6 +179,17 @@ function rawPatchRequest(caseId: string, body: unknown, headers: Record<string, 
     }),
     { params: Promise.resolve({ caseId }) },
   );
+  await runQueuedAfterResponse();
+  return response;
+}
+
+/** Checklist save latency (2026-10): the activity log and the expected
+    pickup now run after the response. Run them, as the platform would,
+    before a test looks at what they wrote. Official documents are left to
+    the tests that inspect them. */
+async function runQueuedAfterResponse() {
+  const queued = vi.mocked(runAfterResponse).mock.calls.filter(([label]) => !String(label).startsWith('official documents'));
+  for (const [, task] of queued) await (task as () => Promise<unknown>)();
 }
 
 // Manors launch-prep (Dispatch role): GET/PATCH now gate on case.read/
@@ -1589,6 +1601,30 @@ describe('PATCH /api/cases/[caseId] — Task #6 (2026-09, checklist completion t
     const written = mockUpdateWixDataItem.mock.calls[0][2] as Record<string, Record<string, Record<string, unknown>>>;
     expect(written.checklistState['0:8']).toBe(false);
     expect(written.checklistCompletions['0:8']).toMatchObject({ done: false, method: 'manual', source: 'staff_confirmation', actorId: mockDefaultUser.id });
+  });
+
+  it('checklist save latency (2026-10): a tick that finishes nothing is answered without waiting for the activity log or the expected pickup', async () => {
+    mockAdminQueries(stage3CaseData({}));
+    vi.mocked(runAfterResponse).mockClear();
+    mockInsertWixDataItem.mockClear();
+    const response = await PATCH(
+      new Request('http://localhost/api/cases/1042', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', origin: 'http://localhost', host: 'localhost' },
+        body: JSON.stringify({ organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } }, expectedRevision: 0 }),
+      }),
+      { params: Promise.resolve({ caseId: '1042' }) },
+    );
+    expect(response.status).toBe(200);
+    // One write — no stage write, since the tick could not finish the stage.
+    expect(mockUpdateWixDataItem).toHaveBeenCalledTimes(1);
+    // Nothing logged yet: it is queued to run after the response.
+    expect(mockInsertWixDataItem).not.toHaveBeenCalled();
+    const labels = vi.mocked(runAfterResponse).mock.calls.map(([label]) => String(label));
+    expect(labels).toEqual(expect.arrayContaining(['expected cremains pickup for case 1042', 'activity for case 1042']));
+
+    await runQueuedAfterResponse();
+    expect(mockInsertWixDataItem).toHaveBeenCalledWith('activityEvents', expect.objectContaining({ eventType: 'case.updated' }), expect.any(String));
   });
 
   it('never accepts completion records from the browser', async () => {

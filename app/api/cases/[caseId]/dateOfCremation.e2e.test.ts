@@ -242,6 +242,10 @@ async function save(patch: Row, organizationId: string = MANORS_ORGANIZATION_ID)
     }),
     { params: Promise.resolve({ caseId: CASE_ID }) },
   );
+  // The activity log and expected pickup run after the response too (2026-10).
+  for (const [label, task] of vi.mocked(runAfterResponse).mock.calls) {
+    if (!String(label).startsWith('official documents')) await (task as () => Promise<unknown>)();
+  }
   const queued = vi.mocked(runAfterResponse).mock.calls.filter(([label]) => String(label).startsWith('official documents'));
   const outcomes = [];
   for (const [, task] of queued) outcomes.push(await (task as () => Promise<unknown>)());

@@ -48,6 +48,12 @@ function buildStructuredIntakeFieldPatch<K extends keyof CaseUpdate & string>(
   return patch;
 }
 
+/** A save of checklist ticks and nothing else. */
+function isChecklistOnlyPatch(patch: CaseUpdate): patch is CaseUpdate & { checklistState: Record<string, boolean> } {
+  const keys = Object.keys(patch);
+  return keys.length === 1 && keys[0] === 'checklistState' && Boolean(patch.checklistState);
+}
+
 export function useCaseMutations(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
@@ -103,6 +109,36 @@ export function useCaseMutations(caseId: string) {
 
   type CaseEdit = { patch: CaseUpdate; baseValues?: CaseMapBaseValues };
 
+  /**
+   * Checklist save latency (2026-10). Edits to a case run one at a time, so
+   * ticking four items quickly used to send four saves back to back, each
+   * waiting for the one before — and the case only moved to the next step
+   * when the last finished. Now, while a checklist save is in flight, more
+   * ticks are shown at once and collected here, then sent together as ONE
+   * save the moment it returns. A tick undone before it is sent is dropped.
+   */
+  const checklistSaveInFlight = useRef(false);
+  const queuedChecklist = useRef<{ values: Record<string, boolean>; base: Record<string, unknown> } | null>(null);
+
+  /** Queued ticks drawn over a case from the server, so they never flicker off. */
+  function withQueuedTicks(case_: Case): Case {
+    const queued = queuedChecklist.current;
+    return queued ? { ...case_, checklistState: { ...case_.checklistState, ...queued.values } } : case_;
+  }
+
+  function flushQueuedChecklist() {
+    const queued = queuedChecklist.current;
+    queuedChecklist.current = null;
+    if (!queued) return;
+    // An item never ticked (no stored value) reads as unticked.
+    const keys = Object.keys(queued.values).filter((key) => queued.values[key] !== (queued.base[key] ?? false));
+    if (keys.length === 0) return;
+    const checklistState = Object.fromEntries(keys.map((key) => [key, queued.values[key]]));
+    const base = Object.fromEntries(keys.map((key) => [key, queued.base[key] ?? null]));
+    checklistSaveInFlight.current = true;
+    updateCase.mutate({ patch: { checklistState }, baseValues: { checklistState: base } });
+  }
+
   const updateCase = useMutation({
     scope: { id: `case-edit:${organization.organizationId}:${caseId}` },
     mutationFn: ({ patch, baseValues }: CaseEdit) => {
@@ -132,7 +168,7 @@ export function useCaseMutations(caseId: string) {
       // onSuccess/onError will settle the cache; rolling back here would
       // incorrectly undo the newer action.
       if (context.mutationId !== latestChecklistMutationId.current) return;
-      queryClient.setQueryData(context.queryKey, context.previousCase);
+      queryClient.setQueryData(context.queryKey, withQueuedTicks(context.previousCase));
     },
     onSuccess: (updated, _variables, context) => {
       knownRevision.current = Math.max(knownRevision.current, caseRevision(updated));
@@ -140,14 +176,32 @@ export function useCaseMutations(caseId: string) {
       // server-confirmed data must not clobber a newer toggle's own
       // optimistic (or already-settled) state.
       if (context && context.mutationId !== latestChecklistMutationId.current) return;
-      queryClient.setQueryData(queryKey, updated);
+      queryClient.setQueryData(queryKey, withQueuedTicks(updated));
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
+    },
+    onSettled: (_data, _error, { patch }) => {
+      if (!isChecklistOnlyPatch(patch)) return;
+      checklistSaveInFlight.current = false;
+      flushQueuedChecklist();
     },
   });
 
   /** Base values are read at click time, before any optimistic update. */
   function save(patch: CaseUpdate) {
-    const baseValues = captureCaseMapBaseValues(queryClient.getQueryData<Case>(queryKey), patch);
+    const cached = queryClient.getQueryData<Case>(queryKey);
+    const baseValues = captureCaseMapBaseValues(cached, patch);
+    if (isChecklistOnlyPatch(patch) && checklistSaveInFlight.current && cached && baseValues?.checklistState) {
+      const queued = queuedChecklist.current ?? { values: {}, base: {} };
+      for (const [key, value] of Object.entries(patch.checklistState)) {
+        // The value the item had before the FIRST queued tick is its base.
+        if (!(key in queued.base)) queued.base[key] = baseValues.checklistState[key] ?? null;
+        queued.values[key] = value;
+      }
+      queuedChecklist.current = queued;
+      queryClient.setQueryData<Case>(queryKey, withQueuedTicks(cached));
+      return;
+    }
+    if (isChecklistOnlyPatch(patch)) checklistSaveInFlight.current = true;
     updateCase.mutate({ patch, ...(baseValues ? { baseValues } : {}) });
   }
 

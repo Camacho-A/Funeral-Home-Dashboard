@@ -350,6 +350,37 @@ describe('reconcileCaseWorkflow — mock mode', () => {
  * Permit (raw 4) → display 3, DC Application Sent (raw 5) → display 4,
  * Ready for Pickup (raw 6) → display 5.
  */
+describe('reconcileCaseWorkflow — the just-written case (checklist save latency, 2026-10)', () => {
+  it('when the case just written cannot advance, answers from it without touching the stored case', async () => {
+    const case_ = buildTestCase();
+    seedCase(case_);
+    const justWritten = { ...case_ };
+    // The stored copy says otherwise; the shortcut must not read it.
+    const stored = caseFixtures.find((c) => c.id === case_.id)!;
+    stored.rawStage = 4;
+    const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock', { justWritten });
+    expect(result).toEqual({ rawStage: 0, changed: false });
+    expect(stored.rawStage).toBe(4);
+  });
+
+  it('when it can advance, the stored case is still re-read and advanced as before', async () => {
+    const case_ = buildTestCase({ ...fullyCompleteFirstCallAndPayment() });
+    seedCase(case_);
+    linkArrangementForm(case_.id);
+    const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock', { justWritten: case_ });
+    expect(result).toMatchObject({ rawStage: 3, changed: true });
+    expect(caseFixtures.find((c) => c.id === case_.id)?.rawStage).toBe(3);
+  });
+
+  it('a different case passed in is ignored', async () => {
+    const case_ = buildTestCase({ ...fullyCompleteFirstCallAndPayment() });
+    seedCase(case_);
+    linkArrangementForm(case_.id);
+    const result = await reconcileCaseWorkflow(DEFAULT_ORGANIZATION_ID, case_.id, 'mock', { justWritten: { ...buildTestCase(), id: 'another-case' } });
+    expect(result).toMatchObject({ rawStage: 3, changed: true });
+  });
+});
+
 describe('B2026-035 regression — stage-scoped checklistState prevents cross-stage index collisions', () => {
   /** Mirrors B2026-035 exactly up through "genuinely ready to leave
       Permit & Authorization": First Call & Payment and EDRS both fully,
