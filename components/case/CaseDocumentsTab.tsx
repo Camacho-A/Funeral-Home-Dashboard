@@ -125,7 +125,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const [confirmingPermit, setConfirmingPermit] = useState(false);
 
   async function runExtract(kind: ArrangementExtractKind, permitVerifiedByStaff = false) {
-    const name = kind === 'me_form' ? 'ME Form' : 'Crematory Form';
+    const name = kind === 'me_form' ? 'Release Form' : 'Crematory Form';
     setExtractNotice(null);
     setExtractPending(kind);
     try {
@@ -225,6 +225,46 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const uploadedDocuments = currentDocuments.filter((doc) => doc.origin !== 'generated');
   const eligibleForBulkActions = documents.filter((doc) => isCaseDocumentEligibleForBulkAction(doc.status));
   const hasBulkEligibleDocuments = eligibleForBulkActions.length > 0;
+
+  /** Everything that creates a document, in one menu (2026-10). */
+  const createItems: RowMenuItem[] = [];
+  if (canGenerate) {
+    createItems.push({
+      label: 'Generate Document…',
+      onSelect: () => {
+        setRegeneratingDoc(null);
+        setGenerateOpen(true);
+      },
+    });
+    for (const kind of officialKinds) {
+      createItems.push({
+        label: kind === 'envelope' ? 'Generate Envelope' : 'Generate Certificate',
+        disabled: generateOfficial.isPending,
+        onSelect: () => {
+          setOfficialError(null);
+          setOfficialPending(kind);
+          generateOfficial.mutate(kind, {
+            onError: (error) => setOfficialError(error instanceof Error ? error.message : 'The document could not be generated.'),
+            onSettled: () => setOfficialPending(null),
+          });
+        },
+      });
+    }
+    if (labelsEnabled) createItems.push({ label: 'Cremation Label…', onSelect: () => setLabelDialog({}) });
+    if (extractsEnabled && extracts.data?.isMedicalExaminerCase) {
+      createItems.push({ label: 'Extract Release Form', dividerBefore: true, disabled: extractPending !== null, onSelect: () => runExtract('me_form') });
+    }
+    if (extractsEnabled && extracts.data) {
+      createItems.push({
+        label: 'Extract Crematory Form',
+        dividerBefore: !extracts.data.isMedicalExaminerCase,
+        disabled: extractPending !== null,
+        onSelect: () => (extracts.data!.permit.confirmed ? runExtract('crematory_form') : setConfirmingPermit(true)),
+      });
+    }
+  }
+  const createPending =
+    officialPending !== null ? 'Generating…' : extractPending !== null ? 'Extracting…' : null;
 
   function statusModifierClass(variant: ReturnType<typeof caseDocumentStatusVariant>): string {
     if (variant === 'success') return 'sx-status-ok';
@@ -390,57 +430,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       {subTab === 'documents' && (
         <>
           <div className="sx-docs-toolbar">
-            {canGenerate && (
-              <button
-                type="button"
-                className="sx-btn sx-btn-secondary"
-                onClick={() => {
-                  setRegeneratingDoc(null);
-                  setGenerateOpen(true);
-                }}
-              >
-                Generate Document
-              </button>
-            )}
-            {canGenerate &&
-              officialKinds.map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  className="sx-btn sx-btn-secondary"
-                  disabled={generateOfficial.isPending}
-                  onClick={() => {
-                    setOfficialError(null);
-                    setOfficialPending(kind);
-                    generateOfficial.mutate(kind, {
-                      onError: (error) => setOfficialError(error instanceof Error ? error.message : 'The document could not be generated.'),
-                      onSettled: () => setOfficialPending(null),
-                    });
-                  }}
-                >
-                  {officialPending === kind ? 'Generating…' : kind === 'envelope' ? 'Generate Envelope' : 'Generate Certificate'}
-                </button>
-              ))}
-            {canGenerate && labelsEnabled && (
-              <button type="button" className="sx-btn sx-btn-secondary" onClick={() => setLabelDialog({})}>
-                Cremation Label
-              </button>
-            )}
-            {canGenerate && extractsEnabled && extracts.data?.isMedicalExaminerCase && (
-              <button type="button" className="sx-btn sx-btn-secondary" disabled={extractPending !== null} onClick={() => runExtract('me_form')}>
-                {extractPending === 'me_form' ? 'Extracting…' : 'Extract ME Form (Page 2)'}
-              </button>
-            )}
-            {canGenerate && extractsEnabled && extracts.data && (
-              <button
-                type="button"
-                className="sx-btn sx-btn-secondary"
-                disabled={extractPending !== null}
-                title={extracts.data.permit.confirmed ? `Permit: ${extracts.data.permit.basis}` : 'Permit not yet recorded on this case'}
-                onClick={() => (extracts.data!.permit.confirmed ? runExtract('crematory_form') : setConfirmingPermit(true))}
-              >
-                {extractPending === 'crematory_form' ? 'Extracting…' : 'Extract Crematory Form (Page 3)'}
-              </button>
+            {/* Toolbar (2026-10): one primary action, every "create a
+                document" action in one menu, and the bulk actions together
+                on the right — instead of a wrapping row of buttons. */}
+            {createItems.length > 0 && (
+              <RowMenu label="Create document" triggerLabel={createPending ?? 'Create document'} triggerClassName="sx-btn sx-btn-secondary" align="left" items={createItems} />
             )}
             {canUpload && (
               <>

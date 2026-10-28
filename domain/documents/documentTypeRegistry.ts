@@ -87,7 +87,7 @@ export const DOCUMENT_TYPES = {
       page 2, the Release Authorization for Removal of Decedent, for the
       Medical Examiner; page 3, the Authorization for Cremation and
       Disposition, for the crematory once the permit is available. */
-  EXTERNAL_FORM_ME_FORM: { key: 'external_form.me_form', category: 'authorization' as DocumentTemplateCategory, displayName: 'ME Form' },
+  EXTERNAL_FORM_ME_FORM: { key: 'external_form.me_form', category: 'authorization' as DocumentTemplateCategory, displayName: 'Release Form' },
   EXTERNAL_FORM_CREMATORY_FORM: { key: 'external_form.crematory_form', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Crematory Form' },
 } as const;
 

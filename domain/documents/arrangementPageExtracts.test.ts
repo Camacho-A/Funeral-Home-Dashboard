@@ -6,8 +6,8 @@ import { caseFixtures } from '@/services/__mocks__/fixtures';
 import type { Case } from '@/types/case';
 
 describe('ARRANGEMENT_EXTRACTS', () => {
-  it('ME Form is page 2, Crematory Form is page 3', () => {
-    expect(ARRANGEMENT_EXTRACTS.me_form).toMatchObject({ page: 2, fileName: 'ME Form.pdf', displayName: 'ME Form' });
+  it('Release Form (formerly ME Form) is page 2, Crematory Form is page 3', () => {
+    expect(ARRANGEMENT_EXTRACTS.me_form).toMatchObject({ page: 2, fileName: 'Release Form.pdf', displayName: 'Release Form' });
     expect(ARRANGEMENT_EXTRACTS.crematory_form).toMatchObject({ page: 3, fileName: 'Crematory Form.pdf', displayName: 'Crematory Form' });
   });
 });

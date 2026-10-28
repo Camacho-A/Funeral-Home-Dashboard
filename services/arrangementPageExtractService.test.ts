@@ -123,15 +123,15 @@ describe('extractPdfPage', () => {
   });
 });
 
-describe('ME Form (page 2)', () => {
-  it('saves page 2 as "ME Form", one page, the Arrangement Form untouched', async () => {
+describe('Release Form (page 2)', () => {
+  it('saves page 2 as "Release Form", one page, the Arrangement Form untouched', async () => {
     const sourceBytes = await arrangementPdf(6);
     const source = await storeArrangement(sourceBytes, 'arr-1');
     const sourceBefore = JSON.stringify(caseDocumentFixtures.find((d) => d.id === 'arr-1'));
 
     const { outcome, document } = await extractArrangementPage('me_form', CASE_ID, {}, ctx(), 'mock');
     expect(outcome).toBe('saved');
-    expect(document).toMatchObject({ fileName: 'ME Form.pdf', mimeType: 'application/pdf', documentTypeKey: 'external_form.me_form', origin: 'generated', status: 'active', version: 1, generatedBy: 'staff-dana' });
+    expect(document).toMatchObject({ fileName: 'Release Form.pdf', mimeType: 'application/pdf', documentTypeKey: 'external_form.me_form', origin: 'generated', status: 'active', version: 1, generatedBy: 'staff-dana' });
     const out = await loadPdf(blobs.get(document.storageKey)!.buffer);
     expect(out.getPageCount()).toBe(1);
     expect(await sourcePageOf(blobs.get(document.storageKey)!.buffer, sourceBytes)).toBe(2);
@@ -139,7 +139,7 @@ describe('ME Form (page 2)', () => {
     expect(JSON.stringify(caseDocumentFixtures.find((d) => d.id === 'arr-1'))).toBe(sourceBefore);
     expect(blobs.get(source.storageKey)!.buffer.equals(sourceBytes)).toBe(true);
     expect(events().map((e) => e.eventType)).toEqual(expect.arrayContaining(['document.generated', 'document.page_extracted']));
-    expect(events().find((e) => e.eventType === 'document.page_extracted')!.description).toBe('ME Form v1 extracted from page 2 of the Arrangement Forms');
+    expect(events().find((e) => e.eventType === 'document.page_extracted')!.description).toBe('Release Form v1 extracted from page 2 of the Arrangement Forms');
   });
 
   it('is only for Medical Examiner cases', async () => {

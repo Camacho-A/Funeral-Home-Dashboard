@@ -70,7 +70,7 @@ function sourceOf(documents: CaseDocument[]): CaseDocument | null {
 
 function assertEnabled(organizationId: string) {
   if (!getRegisteredOrganizationProfile(organizationId).features.arrangementPageExtracts) {
-    throw new ArrangementExtractError('ME Form and Crematory Form are not set up for this organization.', 404);
+    throw new ArrangementExtractError('The Release Form and Crematory Form are not set up for this organization.', 404);
   }
 }
 
@@ -139,7 +139,7 @@ export async function extractArrangementPage(
   if (case_.isDeleted) throw new ArrangementExtractError('This case is archived. Restore it before adding documents.', 409);
 
   if (kind === 'me_form' && case_.isMedicalExaminerCase !== true) {
-    throw new ArrangementExtractError('The ME Form is for Medical Examiner cases. Mark this case as a Medical Examiner case first.', 422);
+    throw new ArrangementExtractError('The Release Form is for Medical Examiner cases. Mark this case as a Medical Examiner case first.', 422);
   }
   let permitBasis: string | null = null;
   if (kind === 'crematory_form') {

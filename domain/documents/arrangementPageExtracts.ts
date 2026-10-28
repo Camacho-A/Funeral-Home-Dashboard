@@ -11,7 +11,8 @@ import { presentedChecklistLabel } from '@/domain/organization/checklistRelabel'
  * out of the case's completed Arrangement Forms PDF. Manors' packet (both
  * the Jotform PDF and the paper packet) has:
  *
- *   page 2  Release Authorization for Removal of Decedent → "ME Form",
+ *   page 2  Release Authorization for Removal of Decedent → "Release Form"
+ *           (named "ME Form" until 2026-10; the document type key is unchanged),
  *           for cases involving the Medical Examiner;
  *   page 3  Authorization for Cremation and Disposition   → "Crematory Form",
  *           sent to the crematory once the permit is available.
@@ -26,7 +27,7 @@ export const ARRANGEMENT_EXTRACTS: Record<ArrangementExtractKind, { page: number
     page: 2,
     documentTypeKey: DOCUMENT_TYPES.EXTERNAL_FORM_ME_FORM.key,
     displayName: DOCUMENT_TYPES.EXTERNAL_FORM_ME_FORM.displayName,
-    fileName: 'ME Form.pdf',
+    fileName: 'Release Form.pdf',
   },
   crematory_form: {
     page: 3,

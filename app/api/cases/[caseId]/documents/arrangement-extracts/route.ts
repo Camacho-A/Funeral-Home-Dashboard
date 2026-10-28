@@ -39,7 +39,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   } catch (error) {
     if (error instanceof ArrangementExtractError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('Arrangement extracts state failed:', error instanceof Error ? error.message : error);
-    return NextResponse.json({ error: 'Could not load the ME Form and Crematory Form. Please try again.' }, { status: 500 });
+    return NextResponse.json({ error: 'Could not load the Release Form and Crematory Form. Please try again.' }, { status: 500 });
   }
 }
 
