@@ -13,7 +13,10 @@ import {
   useBulkDownloadCaseDocuments,
   useBulkPrintCaseDocuments,
   useGenerateOfficialCaseDocument,
+  useArrangementExtracts,
+  useExtractArrangementPage,
 } from '@/hooks/useCaseDocumentLibrary';
+import { PermitConfirmationRequiredError, type ArrangementExtractKind } from '@/lib/caseDocumentsClient';
 import { officialDocumentsFor, type OfficialDocumentKind } from '@/domain/documents/officialDocumentTriggers';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RowMenu, type RowMenuItem } from '@/components/ui/RowMenu';
@@ -112,6 +115,35 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       or for one saved version from a row. */
   const [labelDialog, setLabelDialog] = useState<{ documentId?: string } | null>(null);
   const labelsEnabled = getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel;
+  /** ME Form / Crematory Form (2026-10): pages 2 and 3 of the case's
+      Arrangement Forms PDF, each saved as its own document. */
+  const extractsEnabled = getRegisteredOrganizationProfile(organizationId).features.arrangementPageExtracts;
+  const extracts = useArrangementExtracts(organizationId, caseId, extractsEnabled);
+  const extract = useExtractArrangementPage(organizationId, caseId);
+  const [extractPending, setExtractPending] = useState<ArrangementExtractKind | null>(null);
+  const [extractNotice, setExtractNotice] = useState<{ ok: boolean; message: string } | null>(null);
+  const [confirmingPermit, setConfirmingPermit] = useState(false);
+
+  async function runExtract(kind: ArrangementExtractKind, permitVerifiedByStaff = false) {
+    const name = kind === 'me_form' ? 'ME Form' : 'Crematory Form';
+    setExtractNotice(null);
+    setExtractPending(kind);
+    try {
+      const result = await extract.mutateAsync({ kind, permitVerifiedByStaff });
+      setExtractNotice({
+        ok: true,
+        message:
+          result.outcome === 'saved'
+            ? `${name} v${result.version ?? 1} saved to this case's Documents.`
+            : `The ${name} is already up to date — the Arrangement Form has not changed since it was extracted.`,
+      });
+    } catch (error) {
+      if (error instanceof PermitConfirmationRequiredError) setConfirmingPermit(true);
+      else setExtractNotice({ ok: false, message: error instanceof Error ? error.message : `The ${name} could not be extracted.` });
+    } finally {
+      setExtractPending(null);
+    }
+  }
 
   async function handleDownloadAll() {
     setBulkError(null);
@@ -394,6 +426,22 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
                 Cremation Label
               </button>
             )}
+            {canGenerate && extractsEnabled && extracts.data?.isMedicalExaminerCase && (
+              <button type="button" className="sx-btn sx-btn-secondary" disabled={extractPending !== null} onClick={() => runExtract('me_form')}>
+                {extractPending === 'me_form' ? 'Extracting…' : 'Extract ME Form (Page 2)'}
+              </button>
+            )}
+            {canGenerate && extractsEnabled && extracts.data && (
+              <button
+                type="button"
+                className="sx-btn sx-btn-secondary"
+                disabled={extractPending !== null}
+                title={extracts.data.permit.confirmed ? `Permit: ${extracts.data.permit.basis}` : 'Permit not yet recorded on this case'}
+                onClick={() => (extracts.data!.permit.confirmed ? runExtract('crematory_form') : setConfirmingPermit(true))}
+              >
+                {extractPending === 'crematory_form' ? 'Extracting…' : 'Extract Crematory Form (Page 3)'}
+              </button>
+            )}
             {canUpload && (
               <>
                 <button type="button" className="sx-btn sx-btn-primary" onClick={() => fileInputRef.current?.click()} disabled={upload.isPending}>
@@ -429,6 +477,24 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             </button>
           </div>
 
+          {extractNotice && (
+            <div className={`sx-form-banner ${extractNotice.ok ? 'sx-form-banner-info' : 'sx-form-banner-error'} sx-docs-bulk-note`} role={extractNotice.ok ? 'status' : 'alert'}>
+              {extractNotice.message}
+            </div>
+          )}
+          {confirmingPermit && (
+            <ConfirmActionDialog
+              open
+              onClose={() => setConfirmingPermit(false)}
+              title="Confirm the permit"
+              message="The permit isn't recorded on this case yet (no state approval or “Permit sent to crematory”). Extract the Crematory Form only if you have verified the permit is available. Nothing is sent to the crematory."
+              confirmLabel="Permit verified — Extract"
+              onConfirm={async () => {
+                setConfirmingPermit(false);
+                await runExtract('crematory_form', true);
+              }}
+            />
+          )}
           {officialError && (
             <div className="sx-form-banner sx-form-banner-error sx-docs-bulk-note" role="alert">
               {officialError}

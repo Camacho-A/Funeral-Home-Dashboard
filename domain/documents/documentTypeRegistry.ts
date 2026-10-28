@@ -82,6 +82,13 @@ export const DOCUMENT_TYPES = {
   /** 2026-10. Before this, the First Call Sheet's PDF had no type and was
       filed under its bare form id (`{formId}.pdf`). */
   EXTERNAL_FORM_FIRST_CALL: { key: 'external_form.first_call', category: 'internal_form' as DocumentTemplateCategory, displayName: 'First Call' },
+  /** 2026-10. Single pages copied unchanged out of the case's completed
+      Arrangement Forms PDF (services/arrangementPageExtractService.ts):
+      page 2, the Release Authorization for Removal of Decedent, for the
+      Medical Examiner; page 3, the Authorization for Cremation and
+      Disposition, for the crematory once the permit is available. */
+  EXTERNAL_FORM_ME_FORM: { key: 'external_form.me_form', category: 'authorization' as DocumentTemplateCategory, displayName: 'ME Form' },
+  EXTERNAL_FORM_CREMATORY_FORM: { key: 'external_form.crematory_form', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Crematory Form' },
 } as const;
 
 export type DocumentTypeDefinition = (typeof DOCUMENT_TYPES)[keyof typeof DOCUMENT_TYPES];

@@ -15,7 +15,17 @@ const WORD_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordproces
 
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
-  return { ...actual, fetchCaseDocuments: vi.fn(), archiveCaseDocument: vi.fn(), fetchBulkDownloadZip: vi.fn(), fetchBulkPrintPdf: vi.fn(), generateCaseDocument: vi.fn(), generateOfficialCaseDocument: vi.fn() };
+  return {
+    ...actual,
+    fetchCaseDocuments: vi.fn(),
+    archiveCaseDocument: vi.fn(),
+    fetchBulkDownloadZip: vi.fn(),
+    fetchBulkPrintPdf: vi.fn(),
+    generateCaseDocument: vi.fn(),
+    generateOfficialCaseDocument: vi.fn(),
+    fetchArrangementExtracts: vi.fn().mockResolvedValue({ source: null, isMedicalExaminerCase: false, permit: { confirmed: false, basis: null }, latest: { me_form: null, crematory_form: null } }),
+    extractArrangementPage: vi.fn(),
+  };
 });
 
 vi.mock('@/lib/identityAuthClient', async () => {
@@ -1222,5 +1232,65 @@ describe('CaseDocumentsTab — Cremation Label (2026-10)', () => {
     renderTab(SECOND_MOCK_ORGANIZATION_ID);
     await screen.findAllByText(/documents/i);
     expect(screen.queryByRole('button', { name: 'Cremation Label' })).not.toBeInTheDocument();
+  });
+});
+
+describe('CaseDocumentsTab — ME Form and Crematory Form (2026-10)', () => {
+  const state = (over: Partial<caseDocumentsClient.ArrangementExtractsState> = {}): caseDocumentsClient.ArrangementExtractsState => ({
+    source: { documentId: 'arr-1', fileName: 'Arrangement Forms.pdf', createdAt: '2026-10-27T15:00:00.000Z' },
+    isMedicalExaminerCase: true,
+    permit: { confirmed: false, basis: null },
+    latest: { me_form: null, crematory_form: null },
+    ...over,
+  });
+  beforeEach(() => vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]));
+
+  it('offers "Extract ME Form (Page 2)" only on a Medical Examiner case, and saves it', async () => {
+    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
+    vi.mocked(caseDocumentsClient.extractArrangementPage).mockResolvedValue({ outcome: 'saved', documentId: 'me-1', version: 1 });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Extract ME Form (Page 2)' }));
+    expect(await screen.findByText("ME Form v1 saved to this case's Documents.")).toBeInTheDocument();
+    expect(caseDocumentsClient.extractArrangementPage).toHaveBeenCalledWith({ organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-1', kind: 'me_form', permitVerifiedByStaff: false });
+  });
+
+  it('hides the ME Form on a case that is not a Medical Examiner case', async () => {
+    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state({ isMedicalExaminerCase: false }));
+    renderTab();
+    expect(await screen.findByRole('button', { name: 'Extract Crematory Form (Page 3)' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Extract ME Form (Page 2)' })).not.toBeInTheDocument();
+  });
+
+  it('without a recorded permit, asks staff to confirm before extracting the Crematory Form', async () => {
+    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
+    vi.mocked(caseDocumentsClient.extractArrangementPage).mockResolvedValue({ outcome: 'saved', documentId: 'cf-1', version: 1 });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Extract Crematory Form (Page 3)' }));
+    expect(screen.getByText(/The permit isn.t recorded on this case yet/)).toBeInTheDocument();
+    expect(caseDocumentsClient.extractArrangementPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Permit verified — Extract' }));
+    expect(await screen.findByText("Crematory Form v1 saved to this case's Documents.")).toBeInTheDocument();
+    expect(caseDocumentsClient.extractArrangementPage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'crematory_form', permitVerifiedByStaff: true }));
+  });
+
+  it('with a recorded permit, extracts directly; an unchanged source says so; a missing source shows the error', async () => {
+    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state({ permit: { confirmed: true, basis: 'State approval recorded' } }));
+    vi.mocked(caseDocumentsClient.extractArrangementPage)
+      .mockResolvedValueOnce({ outcome: 'unchanged', documentId: 'cf-1', version: 1 })
+      .mockRejectedValueOnce(new Error('This case has no Arrangement Form PDF yet, so nothing was extracted.'));
+    renderTab();
+    const button = await screen.findByRole('button', { name: 'Extract Crematory Form (Page 3)' });
+    fireEvent.click(button);
+    expect(await screen.findByText(/The Crematory Form is already up to date/)).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText('This case has no Arrangement Form PDF yet, so nothing was extracted.')).toBeInTheDocument();
+  });
+
+  it('not offered without the generate permission, nor to another organization', async () => {
+    mockPermissions(['document.view']);
+    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
+    renderTab();
+    await screen.findAllByText(/documents/i);
+    expect(screen.queryByRole('button', { name: /Extract/ })).not.toBeInTheDocument();
   });
 });

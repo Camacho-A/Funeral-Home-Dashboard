@@ -54,6 +54,43 @@ export async function generateOfficialCaseDocument(params: {
   await parseJsonOrThrow(response);
 }
 
+/** ME Form / Crematory Form (2026-10) — see
+    app/api/cases/[caseId]/documents/arrangement-extracts. */
+export type ArrangementExtractKind = 'me_form' | 'crematory_form';
+export type ArrangementExtractsState = {
+  source: { documentId: string; fileName: string; createdAt: string } | null;
+  isMedicalExaminerCase: boolean;
+  permit: { confirmed: true; basis: string } | { confirmed: false; basis: null };
+  latest: Record<ArrangementExtractKind, { documentId: string; version: number | null; createdAt: string } | null>;
+};
+
+/** Thrown when the Crematory Form needs staff to confirm the permit. */
+export class PermitConfirmationRequiredError extends Error {}
+
+export async function fetchArrangementExtracts(organizationId: string, caseId: string): Promise<ArrangementExtractsState> {
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/documents/arrangement-extracts?${new URLSearchParams({ organizationId })}`, { cache: 'no-store' });
+  return (await parseJsonOrThrow(response)) as unknown as ArrangementExtractsState;
+}
+
+export async function extractArrangementPage(params: {
+  organizationId: string;
+  caseId: string;
+  kind: ArrangementExtractKind;
+  permitVerifiedByStaff?: boolean;
+}): Promise<{ outcome: 'saved' | 'unchanged'; documentId: string; version: number | null }> {
+  const { caseId, ...rest } = params;
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/documents/arrangement-extracts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rest),
+  });
+  if (response.status === 428) {
+    const body = await response.json().catch(() => ({}));
+    throw new PermitConfirmationRequiredError(typeof body.error === 'string' ? body.error : 'The permit needs to be confirmed first.');
+  }
+  return (await parseJsonOrThrow(response)) as unknown as { outcome: 'saved' | 'unchanged'; documentId: string; version: number | null };
+}
+
 export async function uploadCaseDocument(params: {
   organizationId: string;
   caseId: string;

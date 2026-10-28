@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  fetchArrangementExtracts,
+  extractArrangementPage,
+  type ArrangementExtractKind,
   fetchCaseDocuments,
   generateCaseDocument,
   generateOfficialCaseDocument,
@@ -47,6 +50,29 @@ export function useGenerateOfficialCaseDocument(organizationId: string, caseId: 
   return useMutation({
     mutationFn: (kind: 'envelope' | 'certificate_of_cremation') => generateOfficialCaseDocument({ organizationId, caseId, kind }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+  });
+}
+
+/** ME Form / Crematory Form (2026-10). */
+export const arrangementExtractsKey = (organizationId: string, caseId: string) => ['arrangementExtracts', organizationId, caseId];
+
+export function useArrangementExtracts(organizationId: string, caseId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: arrangementExtractsKey(organizationId, caseId),
+    queryFn: () => fetchArrangementExtracts(organizationId, caseId),
+    enabled: enabled && Boolean(organizationId && caseId),
+  });
+}
+
+export function useExtractArrangementPage(organizationId: string, caseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { kind: ArrangementExtractKind; permitVerifiedByStaff?: boolean }) => extractArrangementPage({ organizationId, caseId, ...params }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+        queryClient.invalidateQueries({ queryKey: arrangementExtractsKey(organizationId, caseId) }),
+      ]),
   });
 }
 

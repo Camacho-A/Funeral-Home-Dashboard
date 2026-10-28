@@ -1119,6 +1119,34 @@ export function recordCremationLabelPrinted(
   );
 }
 
+/** ME Form / Crematory Form (2026-10): a page extracted from the case's
+    Arrangement Forms PDF into its own document. */
+export function recordArrangementPageExtracted(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  details: { displayName: string; version: number | null; page: number; sourceDocumentId: string; permitBasis: string | null },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.DOCUMENT_PAGE_EXTRACTED,
+      resourceType: 'caseDocument',
+      resourceId: documentId,
+      previousValue: null,
+      newValue: JSON.stringify({ sourceDocumentId: details.sourceDocumentId, page: details.page, permitBasis: details.permitBasis }),
+      description:
+        `${details.displayName}${details.version !== null ? ` v${details.version}` : ''} extracted from page ${details.page} of the Arrangement Forms` +
+        (details.permitBasis ? ` (permit: ${details.permitBasis})` : ''),
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 /** A regeneration's own event, distinct from `recordDocumentGenerated` —
     `supersedesId` names the document row this new one replaces (that
     row's own status flips to 'superseded', never edited otherwise — see

@@ -208,6 +208,11 @@ export type OrganizationFeaturePreferences = {
       organization's own approved template (domain/labels/). Platform
       default: off — only an organization with a template has one. */
   dymoCaseLabel: boolean;
+  /** ME Form / Crematory Form (2026-10): single pages extracted from the
+      organization's own Arrangement Forms PDF, whose page order is that
+      organization's (domain/documents/arrangementPageExtracts.ts).
+      Platform default: off. */
+  arrangementPageExtracts: boolean;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -290,6 +295,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   automaticChecklistCompletion: false,
   slaTracking: false,
   dymoCaseLabel: false,
+  arrangementPageExtracts: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -352,6 +358,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     automaticChecklistCompletion: true,
     slaTracking: true,
     dymoCaseLabel: true,
+    arrangementPageExtracts: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
     // business. Coordinates read from Manors' own live workflow snapshot.
     cremainsPickup: {

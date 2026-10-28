@@ -202,6 +202,10 @@ export const ACTIVITY_EVENT_TYPES = {
       print happens on the staff member's computer; this records who sent
       which saved version to which printer. */
   DOCUMENT_LABEL_PRINTED: 'document.label_printed',
+  /** ME Form / Crematory Form (2026-10): a page copied out of the case's
+      Arrangement Forms PDF — which source document, which page, and (for
+      the Crematory Form) how the permit was confirmed. */
+  DOCUMENT_PAGE_EXTRACTED: 'document.page_extracted',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */
