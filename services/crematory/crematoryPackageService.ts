@@ -28,7 +28,7 @@ import { ARRANGEMENT_EXTRACTS, ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY, visibleItems
 import { presentedChecklistLabel } from '@/domain/organization/checklistRelabel';
 import { checklistItemsForEvent } from '@/domain/sla/slaMilestones';
 import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
-import { previousSendMethodLabel, validatePreviousSend, type PreviousSendInput } from '@/domain/crematory/previousSend';
+import { previousSendMethodLabel, validateCorrectionReason, validatePreviousSend, type PreviousSendInput } from '@/domain/crematory/previousSend';
 import {
   crematoryPackageFileName,
   legacyCrematoryPackageFileName,
@@ -346,7 +346,7 @@ export type CrematoryCaseSummary = {
   /** "First Last" from the confirmed package name, for the subject. */
   subjectName: string;
   readiness: CrematoryReadiness;
-  permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;
+  permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null; checksumSha256: string; version: number | null } | null;
   /** `confirmed`: the date recorded — by staff, or from the Expected Pickup (2026-10). */
   readyDate: { suggested: string | null; confirmed: string | null; recordedFrom: 'staff' | 'expected_pickup' | null };
   package: { documentId: string; version: number | null; fileName: string; current: boolean } | null;
@@ -374,7 +374,9 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     })(),
     subjectName: confirmedName ? packageDisplayName(confirmedName) : decedentDisplayName(facts.case_),
     readiness: readinessOf(facts, canSend),
-    permit: permitWithName ? { documentId: permitWithName.id, fileName: permitWithName.fileName, createdAt: permitWithName.createdAt, uploadedBy: permitWithName.actorDisplayName } : null,
+    permit: permitWithName
+      ? { documentId: permitWithName.id, fileName: permitWithName.fileName, createdAt: permitWithName.createdAt, uploadedBy: permitWithName.actorDisplayName, checksumSha256: permitWithName.checksumSha256, version: permitWithName.version ?? null }
+      : null,
     readyDate: {
       suggested: facts.suggestedReadyDate,
       confirmed: facts.case_.crematory?.readyDate?.date ?? null,
@@ -383,7 +385,7 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     package: facts.package ? { documentId: facts.package.id, version: facts.package.version, fileName: facts.package.fileName, current: packageIsCurrent(facts) } : null,
     expectedFileName: expectedFileName(facts),
     lastSubmission: facts.case_.crematory?.lastSubmission ?? null,
-    untypedDocuments: facts.untyped.map((d) => ({ documentId: d.id, fileName: d.fileName, createdAt: d.createdAt, suggestedAs: suggestSourceKind(d.fileName) })),
+    untypedDocuments: facts.untyped.map((d) => ({ documentId: d.id, fileName: d.fileName, createdAt: d.createdAt, suggestedAs: suggestSourceKind(d.fileName), checksumSha256: d.checksumSha256 })),
     workflow2: workflow2Of(facts.case_),
     previousSend: {
       indicated: permitSentChecked(facts.case_) && !solisSendOnRecord(facts.case_) && !facts.case_.crematory?.previousSend,
@@ -471,9 +473,18 @@ async function audit(ctx: ActivityContext, caseId: string, eventType: Parameters
   }
 }
 
-/** Staff confirm the uploaded permit (that exact file) is the approved
-    state permit for this decedent. */
-export async function confirmPermit(ctx: ActivityContext, caseId: string, documentId: string, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
+/** What a staff member was shown before confirming or choosing a permit
+    (2026-10): the document, and the checksum of the stored PDF SOLIS
+    displayed to them — so a confirmation is always of the exact file seen. */
+export type DisplayedPermit = { documentId: string; displayedChecksumSha256: string | null | undefined };
+
+const NOT_DISPLAYED = 'Open the permit in SOLIS and check it before confirming. Nothing was confirmed.';
+
+/** Staff confirm the uploaded permit (that exact file — the one shown to
+    them in SOLIS, by checksum) is the approved state permit for this
+    decedent. Recorded with its document, version and checksum. */
+export async function confirmPermit(ctx: ActivityContext, caseId: string, displayed: DisplayedPermit, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
+  const { documentId } = displayed;
   assertSendToCrematoryEnabled(ctx.organizationId);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
@@ -482,17 +493,26 @@ export async function confirmPermit(ctx: ActivityContext, caseId: string, docume
   if (facts.currentPermits.length > 1) throw new CrematoryError('This case has more than one current state permit. Choose the one to use first.', 409);
   if (!facts.permit || facts.permit.id !== documentId) throw new CrematoryError('That is not the latest state permit uploaded to this case. Reopen and try again.', 409);
   if (facts.permit.mimeType !== 'application/pdf') throw new CrematoryError('The state permit must be a PDF to be included in the Crematory Package.', 422);
+  if (!displayed.displayedChecksumSha256) throw new CrematoryError(NOT_DISPLAYED, 400);
+  if (displayed.displayedChecksumSha256 !== facts.permit.checksumSha256) {
+    throw new CrematoryError('The permit shown is not the stored permit on this case. Reopen it and check it again. Nothing was confirmed.', 409);
+  }
   const verifiedAt = new Date().toISOString();
+  const version = facts.permit.version ?? null;
   await applyCrematoryRecord(
     ctx.organizationId,
     caseId,
-    (current) => (refuseArchived(current), refuseSent(current), { permitVerification: { documentId, checksumSha256: facts.permit!.checksumSha256, verifiedBy: ctx.actorIdentityId, verifiedAt } }),
+    (current) => (
+      refuseArchived(current),
+      refuseSent(current),
+      { permitVerification: { documentId, checksumSha256: facts.permit!.checksumSha256, version, displayedInSolis: true, verifiedBy: ctx.actorIdentityId, verifiedAt } }
+    ),
     mode,
   );
   await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_CONFIRMED, {
     resourceId: documentId,
-    description: `State permit "${facts.permit.fileName}" confirmed as the approved permit for ${decedentDisplayName(case_)}`,
-    record: { documentId, checksumSha256: facts.permit.checksumSha256 },
+    description: `State permit "${facts.permit.fileName}"${version ? ` (v${version})` : ''} shown in SOLIS and confirmed as the approved permit for ${decedentDisplayName(case_)}`,
+    record: { documentId, version, checksumSha256: facts.permit.checksumSha256, displayedInSolis: true },
   }, mode);
   await prepareCrematoryDocuments(ctx, caseId, mode);
   return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
@@ -664,9 +684,12 @@ export async function assignSourceDocument(
   as: CrematorySourceKind,
   mode: DataAdapterMode,
   canSend = false,
+  /** A permit is chosen only after SOLIS showed staff that exact PDF (2026-10). */
+  displayedChecksumSha256?: string | null,
 ): Promise<CrematoryCaseSummary> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   const target = SOURCE_TYPES[as];
+  if (as === 'state_permit' && !displayedChecksumSha256) throw new CrematoryError('Open the PDF in SOLIS and check it before choosing it as the permit. Nothing was changed.', 400);
   if (!target) throw new CrematoryError('Choose the permit or the Arrangement Form.', 400);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
@@ -676,6 +699,9 @@ export async function assignSourceDocument(
     const documents = await listCaseDocuments(ctx.organizationId, caseId, mode);
     const existing = latest(documents, (d) => d.documentTypeKey === target.documentTypeKey);
     if (existing) throw new CrematoryError(`This case already has a ${target.displayName}: "${existing.fileName}".`, 409);
+    if (as === 'state_permit' && documents.find((d) => d.id === documentId)?.checksumSha256 !== displayedChecksumSha256) {
+      throw new CrematoryError('The PDF shown is not that document. Reopen it and check it again. Nothing was changed.', 409);
+    }
     try {
       return await assignUntypedDocumentType(ctx.organizationId, caseId, documentId, target.documentTypeKey, mode);
     } catch (error) {
@@ -767,6 +793,79 @@ export async function recordPreviousSend(ctx: ActivityContext, caseId: string, i
         ? `Recorded as already sent to the crematory outside SOLIS (${[method, valid.sentOn ?? 'date unknown'].join(', ')}) — not sent again through the first send. Verified: ${valid.verification}`
         : `Recorded as NOT previously sent to the crematory, after checking the sending records. Checked: ${valid.verification}`,
     record: { decision: valid.decision, method: valid.method, sentOn: valid.sentOn, verification: valid.verification, verifiedBy: ctx.actorIdentityId, verifiedAt: recordedAt },
+  }, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
+}
+
+/**
+ * An administrator corrects a recorded answer about a possible earlier
+ * send (2026-10): a written reason, and the corrected answer with the same
+ * fields and checks as the original. Every earlier answer is kept on the
+ * case, each with its own correction, and the change is recorded in the
+ * case activity (who, when, before, after, why). The latest answer is the
+ * one readiness uses. Refused — nothing changed — while SOLIS is sending
+ * the case or after it sent it (or may have), or when nothing is recorded.
+ * Nothing is ever sent from here; corrected to "not previously sent", the
+ * case is simply back in the first send, with every check still applying.
+ * The caller checks the administrator permission.
+ */
+export async function correctPreviousSend(
+  ctx: ActivityContext,
+  caseId: string,
+  input: PreviousSendInput & { reason?: unknown },
+  mode: DataAdapterMode,
+  canSend = false,
+): Promise<CrematoryCaseSummary> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  const reason = validateCorrectionReason(input.reason);
+  if (typeof reason !== 'string') throw new CrematoryError(reason.error, 422);
+  const now = new Date();
+  const today = `${String(now.getUTCMonth() + 1).padStart(2, '0')}/${String(now.getUTCDate()).padStart(2, '0')}/${now.getUTCFullYear()}`;
+  const valid = validatePreviousSend(input, today);
+  if ('error' in valid) throw new CrematoryError(valid.error, 422);
+  const before = case_.crematory?.previousSend ?? null;
+  const refusal = (c: Case) => {
+    if (solisSendOnRecord(c)) throw new CrematoryError('SOLIS is sending, or has sent, this case — the earlier-send record is no longer corrected here.', 409);
+    const current = c.crematory?.previousSend;
+    if (!current) throw new CrematoryError('There is no earlier-send record on this case to correct.', 409);
+    // Two corrections at once: the second sees the first and is refused.
+    if (current.recordedAt !== before?.recordedAt) throw new CrematoryError('The earlier-send record changed while you were correcting it. Reopen and try again.', 409);
+  };
+  refusal(case_);
+  const correctedAt = now.toISOString();
+  await applyCrematoryRecord(
+    ctx.organizationId,
+    caseId,
+    (current) => {
+      refuseArchived(current);
+      refusal(current);
+      const { earlier = [], ...previous } = current.crematory!.previousSend!;
+      return {
+        previousSend: {
+          ...valid,
+          recordedBy: ctx.actorIdentityId,
+          recordedAt: correctedAt,
+          correction: { reason, correctedBy: ctx.actorIdentityId, correctedAt },
+          earlier: [...earlier, previous],
+        },
+      };
+    },
+    mode,
+  );
+  const describe = (a: { decision: string; method: string | null; sentOn: string | null }) =>
+    a.decision === 'sent_outside_solis' ? `sent outside SOLIS (${[previousSendMethodLabel(a.method), a.sentOn ?? 'date unknown'].filter(Boolean).join(', ')})` : 'not previously sent';
+  await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PREVIOUS_SEND_CORRECTED, {
+    resourceId: null,
+    description: `Earlier-send record corrected by an administrator: was "${describe(before!)}", now "${describe(valid)}". Reason: ${reason}`,
+    record: {
+      previous: { decision: before!.decision, method: before!.method, sentOn: before!.sentOn, verification: before!.verification, recordedBy: before!.recordedBy, recordedAt: before!.recordedAt },
+      corrected: { decision: valid.decision, method: valid.method, sentOn: valid.sentOn, verification: valid.verification },
+      reason,
+      correctedBy: ctx.actorIdentityId,
+      correctedAt,
+    },
   }, mode);
   return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }

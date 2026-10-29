@@ -28,6 +28,7 @@ import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { ReplacePermitButton } from './ReplacePermitButton';
 import { PreviousSendDialog } from './PreviousSendDialog';
+import { PermitPdfPreview } from './PermitPdfPreview';
 import styles from './SendToCrematoryDialog.module.css';
 
 /**
@@ -92,6 +93,9 @@ export function SendToCrematoryDialog({
   const [dates, setDates] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, { first: string; last: string }>>({});
   const [permitPrompt, setPermitPrompt] = useState<CrematoryCaseSummary | null>(null);
+  /** The checksum of the permit PDF shown in the Confirm window, once drawn (2026-10). */
+  const [shownPermitChecksum, setShownPermitChecksum] = useState<string | null>(null);
+  const [correctingPreviousSend, setCorrectingPreviousSend] = useState<CrematoryCaseSummary | null>(null);
 
   const [to, setTo] = useState('');
   const [cc, setCc] = useState('');
@@ -293,10 +297,10 @@ export function SendToCrematoryDialog({
                 kind={chooser.kind}
                 initialDocumentId={chooser.documentId}
                 onClose={() => setChooser(null)}
-                onChoose={(documentId) => {
+                onChoose={(documentId, displayedChecksumSha256) => {
                   const { summary, kind } = chooser;
                   setChooser(null);
-                  void act(summary, () => crematoryCaseAction(organizationId, summary.caseId, { action: 'assign_document', documentId, as: kind }));
+                  void act(summary, () => crematoryCaseAction(organizationId, summary.caseId, { action: 'assign_document', documentId, as: kind, ...(displayedChecksumSha256 ? { displayedChecksumSha256 } : {}) }));
                 }}
               />
             )}
@@ -330,7 +334,10 @@ export function SendToCrematoryDialog({
                   canPrepare={overview.data!.canPrepare}
                   organizationId={organizationId}
                   onUploadPermit={(file) => act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE }))}
-                  onConfirmPermit={() => setPermitPrompt(c)}
+                  onConfirmPermit={() => {
+                    setShownPermitChecksum(null);
+                    setPermitPrompt(c);
+                  }}
                   onExtract={() => void prepareCase(c.caseId)}
                   preparing={preparingIds.includes(c.caseId)}
                   prepareError={prepareErrors[c.caseId] ?? null}
@@ -340,6 +347,8 @@ export function SendToCrematoryDialog({
                   canSend={overview.data!.canSend}
                   onResolveWorkflow={() => resolveWorkflow(c)}
                   onVerifyPreviousSend={() => setPreviousSendFor(c)}
+                  canManage={overview.data!.canManage === true}
+                  onCorrectPreviousSend={() => setCorrectingPreviousSend(c)}
                   onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
                   onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
                 />
@@ -437,6 +446,19 @@ export function SendToCrematoryDialog({
         )}
       </div>
 
+      {correctingPreviousSend && (
+        <PreviousSendDialog
+          organizationId={organizationId}
+          summary={correctingPreviousSend}
+          correcting
+          onClose={() => setCorrectingPreviousSend(null)}
+          onRecorded={() => {
+            setCorrectingPreviousSend(null);
+            void refresh();
+          }}
+        />
+      )}
+
       {previousSendFor && (
         <PreviousSendDialog
           organizationId={organizationId}
@@ -450,7 +472,7 @@ export function SendToCrematoryDialog({
       )}
 
       {permitPrompt && permitPrompt.permit && (
-        <Modal open onClose={() => setPermitPrompt(null)} title="Confirm the state permit">
+        <Modal open onClose={() => setPermitPrompt(null)} title="Confirm the state permit" size="lg">
           <div className="sx-modal-header">
             <h2 className="sx-modal-title">Confirm the state permit</h2>
           </div>
@@ -458,13 +480,15 @@ export function SendToCrematoryDialog({
             <p>
               Is <strong>{permitPrompt.permit.fileName}</strong>
               {permitPrompt.permit.uploadedBy ? ` (uploaded by ${permitPrompt.permit.uploadedBy}, ${formatTimestamp(permitPrompt.permit.createdAt)})` : ''} the <strong>approved</strong> state cremation permit for{' '}
-              <strong>{permitPrompt.decedentDisplayName}</strong> ({permitPrompt.caseNumber})?
+              <strong>{permitPrompt.decedentDisplayName}</strong> ({permitPrompt.caseNumber})? Check the permit below.
             </p>
-            <p>
-              <a href={buildCaseDocumentDownloadUrl(organizationId, permitPrompt.caseId, permitPrompt.permit.documentId)} target="_blank" rel="noreferrer">
-                Open the permit to check it
-              </a>
-            </p>
+            {/* The stored PDF itself (2026-10): confirming is possible only once it is shown. */}
+            <PermitPdfPreview
+              source={{ kind: 'stored', url: buildCaseDocumentViewUrl(organizationId, permitPrompt.caseId, permitPrompt.permit.documentId), expectedChecksumSha256: permitPrompt.permit.checksumSha256 }}
+              fileName={permitPrompt.permit.fileName}
+              onVerified={setShownPermitChecksum}
+              onFailed={() => setShownPermitChecksum(null)}
+            />
           </div>
           <div className="sx-modal-footer">
             <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setPermitPrompt(null)}>
@@ -473,10 +497,12 @@ export function SendToCrematoryDialog({
             <button
               type="button"
               className="sx-btn sx-btn-primary"
+              disabled={!shownPermitChecksum}
               onClick={() => {
                 const target = permitPrompt;
+                const displayedChecksumSha256 = shownPermitChecksum!;
                 setPermitPrompt(null);
-                void act(target, () => crematoryCaseAction(organizationId, target.caseId, { action: 'confirm_permit', documentId: target.permit!.documentId }));
+                void act(target, () => crematoryCaseAction(organizationId, target.caseId, { action: 'confirm_permit', documentId: target.permit!.documentId, displayedChecksumSha256 }));
               }}
             >
               Yes, this is the approved permit
@@ -536,6 +562,8 @@ function CaseRow({
   canSend,
   onResolveWorkflow,
   onVerifyPreviousSend,
+  canManage,
+  onCorrectPreviousSend,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -564,6 +592,8 @@ function CaseRow({
   canSend: boolean;
   onResolveWorkflow: () => void;
   onVerifyPreviousSend: () => void;
+  canManage: boolean;
+  onCorrectPreviousSend: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
@@ -790,7 +820,23 @@ function CaseRow({
             ) : (
               <span className={styles.hint}>Staff with the Send Crematory Packages permission must verify it.</span>
             ))}
+          {summary.previousSend?.recorded && canManage && !last && (
+            <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onCorrectPreviousSend}>
+              Correct record
+            </button>
+          )}
         </div>
+      )}
+      {!sent && summary.previousSend?.recorded?.decision === 'not_previously_sent' && (
+        <p className={styles.hint}>
+          Earlier send checked: not previously sent (recorded {formatTimestamp(summary.previousSend.recorded.recordedAt)}
+          {summary.previousSend.recorded.correction ? ', corrected by an administrator' : ''}).{' '}
+          {canManage && (!last || last.status === 'failed') && (
+            <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={onCorrectPreviousSend}>
+              Correct record
+            </button>
+          )}
+        </p>
       )}
 
       {sent && last ? (
@@ -873,13 +919,19 @@ function ChooseDocumentDialog({
   kind: CrematorySourceKind;
   initialDocumentId?: string;
   onClose: () => void;
-  onChoose: (documentId: string) => void;
+  /** With the checksum of the PDF shown, for a permit (2026-10). */
+  onChoose: (documentId: string, displayedChecksumSha256?: string) => void;
 }) {
   const [picked, setPicked] = useState<string | null>(initialDocumentId ?? null);
+  // A permit is chosen only once SOLIS has shown that exact PDF (2026-10).
+  const [shown, setShown] = useState<{ documentId: string; checksumSha256: string } | null>(null);
+  const needsPreview = kind === 'state_permit';
+  const pickedDocument = summary.untypedDocuments.find((d) => d.documentId === picked) ?? null;
+  const canChoose = Boolean(picked) && (!needsPreview || shown?.documentId === picked);
   const label = SOURCE_LABEL[kind];
   const documents = [...summary.untypedDocuments].sort((a, b) => Number(b.suggestedAs === kind) - Number(a.suggestedAs === kind));
   return (
-    <Modal open onClose={onClose} title={`Choose the ${label.name}`}>
+    <Modal open onClose={onClose} title={`Choose the ${label.name}`} size={needsPreview ? 'lg' : 'md'}>
       <div className="sx-modal-header">
         <h2 className="sx-modal-title">Choose the {label.name}</h2>
         <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onClose}>
@@ -907,13 +959,22 @@ function ChooseDocumentDialog({
             </li>
           ))}
         </ul>
-        {kind === 'state_permit' && <p className={styles.hint}>Next you&rsquo;ll confirm the permit is this decedent&rsquo;s.</p>}
+        {needsPreview && pickedDocument && (
+          <PermitPdfPreview
+            key={pickedDocument.documentId}
+            source={{ kind: 'stored', url: buildCaseDocumentViewUrl(organizationId, summary.caseId, pickedDocument.documentId), expectedChecksumSha256: pickedDocument.checksumSha256 }}
+            fileName={pickedDocument.fileName}
+            onVerified={(checksumSha256) => setShown({ documentId: pickedDocument.documentId, checksumSha256 })}
+            onFailed={() => setShown(null)}
+          />
+        )}
+        {kind === 'state_permit' && <p className={styles.hint}>Check the PDF above. Next you&rsquo;ll confirm the permit is this decedent&rsquo;s.</p>}
       </div>
       <div className="sx-modal-footer">
         <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="sx-btn sx-btn-primary" disabled={!picked} onClick={() => picked && onChoose(picked)}>
+        <button type="button" className="sx-btn sx-btn-primary" disabled={!canChoose} onClick={() => picked && onChoose(picked, needsPreview ? shown!.checksumSha256 : undefined)}>
           Use as the {label.name}
         </button>
       </div>

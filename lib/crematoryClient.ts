@@ -17,7 +17,7 @@ export type CrematoryCaseSummary = {
   };
   subjectName: string;
   readiness: CrematoryReadiness;
-  permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;
+  permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null; checksumSha256: string; version: number | null } | null;
   readyDate: { suggested: string | null; confirmed: string | null; recordedFrom: 'staff' | 'expected_pickup' | null };
   package: { documentId: string; version: number | null; fileName: string; current: boolean } | null;
   expectedFileName: string | null;
@@ -42,6 +42,8 @@ export type CrematoryOverview = {
   canSend: boolean;
   /** Document permission: confirm, build and prepare. */
   canPrepare: boolean;
+  /** Administrators: correct an earlier-send record (2026-10). */
+  canManage?: boolean;
 };
 export type CrematorySendResult = {
   status: 'submitted';
@@ -108,14 +110,15 @@ export async function crematoryCaseAction(
   organizationId: string,
   caseId: string,
   action:
-    | { action: 'confirm_permit'; documentId: string }
+    | { action: 'confirm_permit'; documentId: string; displayedChecksumSha256: string }
     | { action: 'confirm_ready_date'; date: string }
     | { action: 'confirm_package_name'; first: string; last: string }
     | { action: 'build_package' }
     | { action: 'prepare' }
-    | { action: 'assign_document'; documentId: string; as: CrematorySourceKind }
+    | { action: 'assign_document'; documentId: string; as: CrematorySourceKind; displayedChecksumSha256?: string }
     | { action: 'choose_current_permit'; documentId: string }
-    | { action: 'record_previous_send'; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean },
+    | { action: 'record_previous_send'; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean }
+    | { action: 'correct_previous_send'; reason: string; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

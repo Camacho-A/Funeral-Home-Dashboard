@@ -9,6 +9,23 @@ const { fetchCrematoryCaseSummary } = vi.hoisted(() => ({ fetchCrematoryCaseSumm
 vi.mock('@/lib/crematoryClient', async () => ({ ...(await vi.importActual<object>('@/lib/crematoryClient')), fetchCrematoryCaseSummary }));
 const { uploadCaseDocument } = vi.hoisted(() => ({ uploadCaseDocument: vi.fn() }));
 vi.mock('@/lib/caseDocumentsClient', async () => ({ ...(await vi.importActual<object>('@/lib/caseDocumentsClient')), uploadCaseDocument }));
+/** The permit PDF preview (2026-10) — pdf.js cannot draw in jsdom, so it is
+    stood in for: it reports the stored checksum as shown, or fails. Its own
+    behaviour is tested in PermitPdfPreview.test.tsx. */
+const { preview } = vi.hoisted(() => ({ preview: { result: 'shown' as 'shown' | 'failed' | 'pending' } }));
+vi.mock('@/components/crematory/PermitPdfPreview', async () => {
+  const { useEffect } = await import('react');
+  return {
+    PermitPdfPreview: ({ source, fileName, onVerified, onFailed }: { source: { kind: string; expectedChecksumSha256?: string; url?: string }; fileName: string; onVerified: (c: string) => void; onFailed: () => void }) => {
+      useEffect(() => {
+        if (preview.result === 'shown') onVerified(source.kind === 'stored' ? source.expectedChecksumSha256! : 'sha-local-file');
+        if (preview.result === 'failed') onFailed();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <div data-testid="permit-preview" data-url={source.url ?? ''}>{preview.result === 'failed' ? 'The permit could not be shown.' : `Showing ${fileName}`}</div>;
+    },
+  };
+});
 const { CrematoryPackageStatus, preparationDue } = await import('./CrematoryPackageStatus');
 
 const req = (key: string, ok: boolean, detail: string | null = null) => ({ key: key as CrematoryRequirementKey, label: key, ok, detail });
@@ -52,7 +69,7 @@ describe('CrematoryPackageStatus', () => {
   });
 
   describe('Replace permit (2026-10)', () => {
-    const PERMIT = { documentId: 'permit-1042', fileName: 'FICTIONAL PERMIT.pdf', createdAt: '2026-10-20T10:00:00.000Z', uploadedBy: 'Dana' };
+    const PERMIT = { documentId: 'permit-1042', fileName: 'FICTIONAL PERMIT.pdf', createdAt: '2026-10-20T10:00:00.000Z', uploadedBy: 'Dana', checksumSha256: 'sha-permit-1042', version: 1 };
     const choose = (name = 'FICTIONAL PERMIT CORRECTED.pdf') =>
       fireEvent.change(screen.getByLabelText('New State Cremation Permit for Richard Reynolds'), { target: { files: [new File([new Uint8Array([1])], name, { type: 'application/pdf' })] } });
 
@@ -63,6 +80,8 @@ describe('CrematoryPackageStatus', () => {
       expect(await screen.findByText(/FICTIONAL PERMIT\.pdf/)).toBeInTheDocument();
       choose();
       expect(screen.getByText(/The current permit is kept as an earlier version/)).toBeInTheDocument();
+      // The new PDF itself is shown in the window before it can replace the permit (2026-10).
+      expect(screen.getByTestId('permit-preview')).toHaveTextContent('Showing FICTIONAL PERMIT CORRECTED.pdf');
       expect(uploadCaseDocument).not.toHaveBeenCalled();
       // The confirmation's own Replace permit button (the last one).
       fireEvent.click(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)!);
@@ -79,6 +98,16 @@ describe('CrematoryPackageStatus', () => {
       choose('FICTIONAL PERMIT.pdf');
       fireEvent.click(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)!);
       expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was uploaded');
+    });
+
+    it('a new PDF that cannot be shown cannot replace the permit (2026-10)', async () => {
+      preview.result = 'failed';
+      fetchCrematoryCaseSummary.mockResolvedValue(summary({ permit: PERMIT, canPrepare: true }));
+      show();
+      await screen.findByText(/FICTIONAL PERMIT\.pdf/);
+      choose();
+      expect(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)).toBeDisabled();
+      preview.result = 'shown';
     });
 
     it('not offered once the case is sent (or its send is unclear), nor to staff who cannot prepare', async () => {

@@ -66,6 +66,14 @@ export function validatePreviousSend(input: PreviousSendInput, today: string): V
   return { decision, method: input.method as PreviousSendMethod, sentOn, verification };
 }
 
+/** An administrator's reason for correcting a recorded answer (2026-10). */
+export function validateCorrectionReason(reason: unknown): string | { error: string } {
+  const text = typeof reason === 'string' ? reason.trim().replace(/\s+/g, ' ') : '';
+  if (text.length < MIN_VERIFICATION) return { error: 'Explain why the earlier answer is being corrected.' };
+  if (text.length > MAX_VERIFICATION) return { error: `Keep the reason under ${MAX_VERIFICATION} characters.` };
+  return text;
+}
+
 export function previousSendMethodLabel(method: string | null | undefined): string | null {
   return method && method in PREVIOUS_SEND_METHODS ? PREVIOUS_SEND_METHODS[method as PreviousSendMethod] : null;
 }

@@ -241,6 +241,9 @@ export const ACTIVITY_EVENT_TYPES = {
       been sent to the crematory outside SOLIS (2026-10): the decision,
       method, date if known, and how they verified it. */
   CREMATORY_PREVIOUS_SEND_RECORDED: 'crematory.previous_send_recorded',
+  /** An administrator corrected that record (2026-10): the answer before,
+      the answer after, and why. Earlier answers are kept on the case. */
+  CREMATORY_PREVIOUS_SEND_CORRECTED: 'crematory.previous_send_corrected',
   /** Case SSN (2026-10). Captured from an intake form, or corrected by an
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',

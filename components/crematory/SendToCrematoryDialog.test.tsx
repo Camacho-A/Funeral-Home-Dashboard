@@ -18,6 +18,23 @@ vi.mock('@/lib/caseDocumentsClient', async () => {
 
 const { router } = vi.hoisted(() => ({ router: { push: vi.fn(), replace: vi.fn() } }));
 vi.mock('next/navigation', () => ({ useRouter: () => router }));
+/** The permit PDF preview (2026-10) — pdf.js cannot draw in jsdom, so it is
+    stood in for: it reports the stored checksum as shown, or fails. Its own
+    behaviour is tested in PermitPdfPreview.test.tsx. */
+const { preview } = vi.hoisted(() => ({ preview: { result: 'shown' as 'shown' | 'failed' | 'pending' } }));
+vi.mock('@/components/crematory/PermitPdfPreview', async () => {
+  const { useEffect } = await import('react');
+  return {
+    PermitPdfPreview: ({ source, fileName, onVerified, onFailed }: { source: { kind: string; expectedChecksumSha256?: string; url?: string }; fileName: string; onVerified: (c: string) => void; onFailed: () => void }) => {
+      useEffect(() => {
+        if (preview.result === 'shown') onVerified(source.kind === 'stored' ? source.expectedChecksumSha256! : 'sha-local-file');
+        if (preview.result === 'failed') onFailed();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <div data-testid="permit-preview" data-url={source.url ?? ''}>{preview.result === 'failed' ? 'The permit could not be shown.' : `Showing ${fileName}`}</div>;
+    },
+  };
+});
 const { SendToCrematoryDialog } = await import('./SendToCrematoryDialog');
 const { CrematoryRequestError } = await import('@/lib/crematoryClient');
 
@@ -33,7 +50,7 @@ function readyCase(caseId: string, name: string, number: string, date = '11/06/2
     packageName: { confirmed: { first, last: rest.join(' ') }, suggested: null, suggestedFrom: null, recordedFrom: 'staff' },
     subjectName: name,
     readiness: { requirements: ALL_OK as never, readyToBuild: true, readyToSend: true },
-    permit: { documentId: `permit-${caseId}`, fileName: 'State Permit.pdf', createdAt: '2026-10-27T15:00:00.000Z', uploadedBy: 'Dana' },
+    permit: { documentId: `permit-${caseId}`, fileName: 'State Permit.pdf', createdAt: '2026-10-27T15:00:00.000Z', uploadedBy: 'Dana', checksumSha256: `sha-permit-${caseId}`, version: 1 },
     readyDate: { suggested: date, confirmed: date, recordedFrom: 'expected_pickup' },
     package: { documentId: `pkg-${caseId}`, version: 1, fileName: fileName ?? `${rest.join(' ')}_${first}_${date.replace(/\//g, '-')}.pdf`, current: true },
     expectedFileName: null,
@@ -65,7 +82,10 @@ const overview = (candidates: CrematoryCaseSummary[], over: Partial<CrematoryOve
   ...over,
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  preview.result = 'shown';
+});
 // The server's final review (2026-10): only its fingerprint is used by this window.
 beforeEach(() => client.reviewCrematorySend.mockResolvedValue({ fingerprint: 'v1:reviewed', cases: [], to: [], cc: [], subject: '', message: '', mailbox: null }));
 const onClose = vi.fn();
@@ -101,7 +121,7 @@ describe('SendToCrematoryDialog', () => {
     expect(question).toHaveTextContent('Is State Permit.pdf (uploaded by Dana');
     expect(question).toHaveTextContent('the approved state cremation permit for Walter Boone (B2026-903)?');
     fireEvent.click(screen.getByRole('button', { name: 'Yes, this is the approved permit' }));
-    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_permit', documentId: 'permit-1050' }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_permit', documentId: 'permit-1050', displayedChecksumSha256: 'sha-permit-1050' }));
     expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
   });
 
@@ -203,8 +223,8 @@ describe('SendToCrematoryDialog', () => {
       permit: null,
       package: null,
       untypedDocuments: [
-        { documentId: 'doc-pay', fileName: 'BOONE PAYMENT.pdf', createdAt: '2026-10-01T10:00:00.000Z', suggestedAs: null },
-        { documentId: 'doc-permit', fileName: 'BOONE PERMIT.pdf', createdAt: '2026-10-02T10:00:00.000Z', suggestedAs: 'state_permit' },
+        { documentId: 'doc-pay', fileName: 'BOONE PAYMENT.pdf', createdAt: '2026-10-01T10:00:00.000Z', suggestedAs: null, checksumSha256: 'sha-doc-pay' },
+        { documentId: 'doc-permit', fileName: 'BOONE PERMIT.pdf', createdAt: '2026-10-02T10:00:00.000Z', suggestedAs: 'state_permit', checksumSha256: 'sha-doc-permit' },
       ],
     };
     client.fetchCrematoryOverview.mockResolvedValue(overview([needsPermit]));
@@ -220,7 +240,7 @@ describe('SendToCrematoryDialog', () => {
     expect(use).toBeDisabled();
     fireEvent.click(options[0]);
     fireEvent.click(use);
-    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'assign_document', documentId: 'doc-permit', as: 'state_permit' }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'assign_document', documentId: 'doc-permit', as: 'state_permit', displayedChecksumSha256: 'sha-doc-permit' }));
   });
 
   it('while a case is prepared its checklist shows "Preparing…", then refreshes; a failure says so and can be retried', async () => {
@@ -274,7 +294,7 @@ describe('SendToCrematoryDialog', () => {
   it('Replace permit is offered on a case not yet sent (2026-10), and refreshes the case afterwards', async () => {
     const caseDocs = await import('@/lib/caseDocumentsClient');
     vi.mocked(caseDocs.uploadCaseDocument).mockResolvedValue({ id: 'permit-v2' } as never);
-    client.fetchCrematoryOverview.mockResolvedValue(overview([{ ...readyCase('1042', 'Richard Reynolds', 'B2026-901'), permit: { documentId: 'permit-1042', fileName: 'FICTIONAL PERMIT.pdf', createdAt: '2026-10-20T10:00:00.000Z', uploadedBy: null } }]));
+    client.fetchCrematoryOverview.mockResolvedValue(overview([{ ...readyCase('1042', 'Richard Reynolds', 'B2026-901'), permit: { documentId: 'permit-1042', fileName: 'FICTIONAL PERMIT.pdf', createdAt: '2026-10-20T10:00:00.000Z', uploadedBy: null, checksumSha256: 'sha-permit-1042', version: 1 } }]));
     open({ caseId: '1042' });
     await screen.findByRole('button', { name: 'Replace permit' });
     const loads = client.fetchCrematoryOverview.mock.calls.length;
@@ -291,8 +311,8 @@ describe('SendToCrematoryDialog', () => {
       permit: null,
       package: null,
       untypedDocuments: [
-        { documentId: 'doc-payment', fileName: 'GOLLIS PAYMENT.pdf', createdAt: '2026-10-13T19:00:00.000Z', suggestedAs: null },
-        { documentId: 'doc-permit', fileName: 'GOLLIS PERMIT.pdf', createdAt: '2026-10-14T16:36:00.000Z', suggestedAs: 'state_permit' },
+        { documentId: 'doc-payment', fileName: 'GOLLIS PAYMENT.pdf', createdAt: '2026-10-13T19:00:00.000Z', suggestedAs: null, checksumSha256: 'sha-doc-payment' },
+        { documentId: 'doc-permit', fileName: 'GOLLIS PERMIT.pdf', createdAt: '2026-10-14T16:36:00.000Z', suggestedAs: 'state_permit', checksumSha256: 'sha-doc-permit' },
       ],
     };
     client.fetchCrematoryOverview.mockResolvedValue(overview([untypedPermit]));
@@ -307,7 +327,80 @@ describe('SendToCrematoryDialog', () => {
     fireEvent.click(within(line).getByRole('button', { name: 'Use as permit' }));
     expect(screen.getByRole('radio', { name: /GOLLIS PERMIT\.pdf/ })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: /Use as the State Cremation Permit/ }));
-    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'assign_document', documentId: 'doc-permit', as: 'state_permit' }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'assign_document', documentId: 'doc-permit', as: 'state_permit', displayedChecksumSha256: 'sha-doc-permit' }));
+  });
+
+  describe('the permit PDF is shown before it is confirmed or chosen (2026-10)', () => {
+    it('Confirm stays disabled until the stored PDF is shown; a preview that fails never allows confirming', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([notReady]));
+      preview.result = 'pending';
+      const { unmount } = open();
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm permit' }));
+      expect(screen.getByTestId('permit-preview')).toHaveAttribute('data-url', expect.stringContaining('permit-1050'));
+      expect(screen.queryByRole('link', { name: /Open the permit/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Yes, this is the approved permit' })).toBeDisabled();
+      unmount();
+
+      preview.result = 'failed';
+      open();
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm permit' }));
+      expect(screen.getByText('The permit could not be shown.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Yes, this is the approved permit' })).toBeDisabled();
+      expect(client.crematoryCaseAction).not.toHaveBeenCalledWith('managed-cremations', '1050', expect.objectContaining({ action: 'confirm_permit' }));
+    });
+
+    it('choosing an untyped PDF as the permit also needs it shown first', async () => {
+      const untyped: CrematoryCaseSummary = {
+        ...notReady,
+        readiness: { requirements: [requirement('permit_uploaded', false, 'Upload the approved state cremation permit.'), requirement('permit_verified', false)] as never, readyToBuild: false, readyToSend: false },
+        permit: null,
+        untypedDocuments: [{ documentId: 'doc-permit', fileName: 'BOONE PERMIT.pdf', createdAt: '2026-10-02T10:00:00.000Z', suggestedAs: 'state_permit', checksumSha256: 'sha-doc-permit' }],
+      };
+      client.fetchCrematoryOverview.mockResolvedValue(overview([untyped]));
+      preview.result = 'pending';
+      open();
+      fireEvent.click(await screen.findByRole('button', { name: 'Use as permit' }));
+      expect(screen.getByTestId('permit-preview')).toHaveAttribute('data-url', expect.stringContaining('doc-permit'));
+      expect(screen.getByRole('button', { name: /Use as the State Cremation Permit/ })).toBeDisabled();
+    });
+  });
+
+  describe('correcting an earlier-send record (2026-10)', () => {
+    const outside: CrematoryCaseSummary = {
+      ...readyCase('1042', 'Richard Reynolds', 'B2026-901'),
+      readiness: { requirements: [...ALL_OK, requirement('previous_send', false, 'Recorded as already sent to the crematory outside SOLIS (Email, 10/21/2026). It is not sent again through the first send.')] as never, readyToBuild: true, readyToSend: false },
+      previousSend: { indicated: false, recorded: { decision: 'sent_outside_solis', method: 'email', sentOn: '10/21/2026', verification: 'Found in Sent Items', recordedBy: 'staff', recordedAt: '2026-10-29T15:00:00.000Z' } },
+    };
+
+    it('only administrators see Correct record; a written reason and the corrected answer are required', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([outside], { canManage: false }));
+      const { unmount } = open({ preselectedCaseIds: ['1042'] });
+      await screen.findByText('Sent outside SOLIS');
+      expect(screen.queryByRole('button', { name: 'Correct record' })).toBeNull();
+      unmount();
+
+      client.fetchCrematoryOverview.mockResolvedValue(overview([outside], { canManage: true }));
+      client.crematoryCaseAction.mockResolvedValue({});
+      open({ preselectedCaseIds: ['1042'] });
+      fireEvent.click(await screen.findByRole('button', { name: 'Correct record' }));
+      expect(screen.getByText(/Recorded now:/)).toHaveTextContent('already sent outside SOLIS');
+      fireEvent.click(screen.getByLabelText(/They were not previously sent/));
+      fireEvent.change(screen.getByLabelText('Which sending records you checked'), { target: { value: 'Outlook Sent Items and the fax log again' } });
+      fireEvent.click(screen.getByLabelText(/I checked the available sending records/));
+      const record = screen.getByRole('button', { name: 'Record correction' });
+      expect(record).toBeDisabled();
+      fireEvent.change(screen.getByLabelText('Why the record is being corrected'), { target: { value: 'Entered on the wrong case' } });
+      fireEvent.click(record);
+      await waitFor(() =>
+        expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1042', {
+          action: 'correct_previous_send',
+          reason: 'Entered on the wrong case',
+          decision: 'not_previously_sent',
+          verification: 'Outlook Sent Items and the fax log again',
+          confirmedChecked: true,
+        }),
+      );
+    });
   });
 
   describe('Workflow 2 (2026-10)', () => {

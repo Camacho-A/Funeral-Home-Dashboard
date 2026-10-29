@@ -18,11 +18,14 @@ import { PREVIOUS_SEND_METHODS } from '@/domain/crematory/previousSend';
 export function PreviousSendDialog({
   organizationId,
   summary,
+  correcting = false,
   onClose,
   onRecorded,
 }: {
   organizationId: string;
   summary: CrematoryCaseSummary;
+  /** An administrator correcting the recorded answer (2026-10): a reason is required. */
+  correcting?: boolean;
   onClose: () => void;
   onRecorded: () => void;
 }) {
@@ -31,24 +34,24 @@ export function PreviousSendDialog({
   const [sentOn, setSentOn] = useState('');
   const [verification, setVerification] = useState('');
   const [confirmedChecked, setConfirmedChecked] = useState(false);
+  const [reason, setReason] = useState('');
+  const recorded = summary.previousSend?.recorded ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const complete =
-    verification.trim().length >= 10 && (decision === 'sent_outside_solis' ? method !== '' : decision === 'not_previously_sent' ? confirmedChecked : false);
+    verification.trim().length >= 10 &&
+    (!correcting || reason.trim().length >= 10) &&
+    (decision === 'sent_outside_solis' ? method !== '' : decision === 'not_previously_sent' ? confirmedChecked : false);
 
   async function record() {
     if (!decision) return;
     setBusy(true);
     setError(null);
     try {
-      await crematoryCaseAction(
-        organizationId,
-        summary.caseId,
-        decision === 'sent_outside_solis'
-          ? { action: 'record_previous_send', decision, method, sentOn: sentOn || undefined, verification }
-          : { action: 'record_previous_send', decision, verification, confirmedChecked },
-      );
+      const answer =
+        decision === 'sent_outside_solis' ? { decision, method, sentOn: sentOn || undefined, verification } : { decision, verification, confirmedChecked };
+      await crematoryCaseAction(organizationId, summary.caseId, correcting ? { action: 'correct_previous_send', reason, ...answer } : { action: 'record_previous_send', ...answer });
       onRecorded();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'This could not be recorded. Nothing was changed.');
@@ -58,11 +61,17 @@ export function PreviousSendDialog({
   }
 
   return (
-    <Modal open onClose={() => !busy && onClose()} title="Verify the previous send">
+    <Modal open onClose={() => !busy && onClose()} title={correcting ? 'Correct the earlier-send record' : 'Verify the previous send'}>
       <div className="sx-modal-header">
-        <h2 className="sx-modal-title">Verify the previous send</h2>
+        <h2 className="sx-modal-title">{correcting ? 'Correct the earlier-send record' : 'Verify the previous send'}</h2>
       </div>
       <div className="sx-modal-body">
+        {correcting && recorded && (
+          <p>
+            Recorded now: <strong>{recorded.decision === 'sent_outside_solis' ? 'already sent outside SOLIS' : 'not previously sent'}</strong> ({recorded.verification}). The current
+            answer and every earlier one are kept; your correction and its reason are recorded in the case activity.
+          </p>
+        )}
         <p>
           <strong>{summary.decedentDisplayName}</strong> ({summary.caseNumber}): this case indicates that documents may already have been sent to the crematory outside SOLIS. What do the sending records show?
         </p>
@@ -109,6 +118,14 @@ export function PreviousSendDialog({
             <input type="checkbox" checked={confirmedChecked} onChange={(e) => setConfirmedChecked(e.target.checked)} /> I checked the available sending records and determined these documents were not previously sent to the crematory.
           </label>
         )}
+        {correcting && (
+          <>
+            <label className="sx-label" htmlFor="previous-send-reason">
+              Why the record is being corrected
+            </label>
+            <textarea id="previous-send-reason" className="sx-textarea" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </>
+        )}
         {error && (
           <div className="sx-form-banner sx-form-banner-error" role="alert">
             {error}
@@ -120,7 +137,7 @@ export function PreviousSendDialog({
           Cancel
         </button>
         <button type="button" className="sx-btn sx-btn-primary" onClick={() => void record()} disabled={busy || !complete}>
-          {busy ? 'Recording…' : 'Record'}
+          {busy ? 'Recording…' : correcting ? 'Record correction' : 'Record'}
         </button>
       </div>
     </Modal>

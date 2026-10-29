@@ -9,6 +9,7 @@ import {
   confirmPackageName,
   confirmPermit,
   confirmReadyDate,
+  correctPreviousSend,
   getCrematoryCaseSummary,
   prepareCrematoryDocuments,
   recordPreviousSend,
@@ -32,6 +33,10 @@ export const maxDuration = 60;
  *        { organizationId, action: 'record_previous_send', decision, method?, sentOn?, verification, confirmedChecked? }
  *          → a possible earlier send outside SOLIS, resolved by staff who
  *            may send (2026-10)
+ *        { organizationId, action: 'correct_previous_send', reason, decision, … }
+ *          → an administrator corrects that record (2026-10)
+ *        confirm_permit and assign_document (as a permit) carry
+ *        displayedChecksumSha256: the stored PDF SOLIS showed (2026-10)
  * Nothing here sends anything.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
@@ -63,7 +68,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     switch (body.action) {
       case 'confirm_permit':
         if (typeof body.documentId !== 'string') return NextResponse.json({ error: 'documentId is required.' }, { status: 400 });
-        return NextResponse.json(await confirmPermit(ctx, caseId, body.documentId, auth.mode, auth.canSend));
+        return NextResponse.json(
+          await confirmPermit(ctx, caseId, { documentId: body.documentId, displayedChecksumSha256: typeof body.displayedChecksumSha256 === 'string' ? body.displayedChecksumSha256 : null }, auth.mode, auth.canSend),
+        );
       case 'confirm_ready_date':
         if (typeof body.date !== 'string') return NextResponse.json({ error: 'date is required.' }, { status: 400 });
         return NextResponse.json(await confirmReadyDate(ctx, caseId, body.date, auth.mode, auth.canSend));
@@ -81,7 +88,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
         if (typeof body.documentId !== 'string' || (body.as !== 'state_permit' && body.as !== 'arrangement_forms')) {
           return NextResponse.json({ error: "documentId and as ('state_permit' or 'arrangement_forms') are required." }, { status: 400 });
         }
-        return NextResponse.json(await assignSourceDocument(ctx, caseId, body.documentId, body.as, auth.mode, auth.canSend));
+        return NextResponse.json(
+          await assignSourceDocument(ctx, caseId, body.documentId, body.as, auth.mode, auth.canSend, typeof body.displayedChecksumSha256 === 'string' ? body.displayedChecksumSha256 : null),
+        );
       case 'choose_current_permit':
         if (typeof body.documentId !== 'string') return NextResponse.json({ error: 'documentId is required.' }, { status: 400 });
         return NextResponse.json(await chooseCurrentPermit(ctx, caseId, body.documentId, auth.mode, auth.canSend));
@@ -90,6 +99,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
         if (!auth.canSend) return NextResponse.json({ error: 'You are not authorized to send documents to the crematory (ask an administrator for the Send Crematory Packages permission).' }, { status: 403 });
         return NextResponse.json(
           await recordPreviousSend(ctx, caseId, { decision: body.decision, method: body.method, sentOn: body.sentOn, verification: body.verification, confirmedChecked: body.confirmedChecked }, auth.mode, auth.canSend),
+        );
+      case 'correct_previous_send':
+        // Administrators only — a correction changes what staff recorded.
+        if (!auth.canManage) return NextResponse.json({ error: 'Only an administrator can correct an earlier-send record.' }, { status: 403 });
+        return NextResponse.json(
+          await correctPreviousSend(
+            ctx,
+            caseId,
+            { decision: body.decision, method: body.method, sentOn: body.sentOn, verification: body.verification, confirmedChecked: body.confirmedChecked, reason: body.reason },
+            auth.mode,
+            auth.canSend,
+          ),
         );
       default:
         return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });

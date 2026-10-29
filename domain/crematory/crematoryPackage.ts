@@ -143,7 +143,14 @@ function fileNameParts(name: PackageName | null | undefined, expectedReadyDate: 
 export type CrematorySourceKind = 'state_permit' | 'arrangement_forms';
 
 /** An active, untyped PDF already uploaded to the case — a candidate staff may choose. */
-export type UntypedCaseDocument = { documentId: string; fileName: string; createdAt: string; suggestedAs: CrematorySourceKind | null };
+export type UntypedCaseDocument = {
+  documentId: string;
+  fileName: string;
+  createdAt: string;
+  suggestedAs: CrematorySourceKind | null;
+  /** The stored file's checksum — a preview proves it showed this exact file (2026-10). */
+  checksumSha256: string;
+};
 
 /**
  * A suggestion only, from the file name ("BARBER PERMIT.pdf" → permit,

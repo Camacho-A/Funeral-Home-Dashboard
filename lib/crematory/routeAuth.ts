@@ -22,7 +22,10 @@ type Context = Extract<RouteAuthorizationResult, { authorized: true }>['context'
 export async function authorizeCrematory(
   requestedOrganizationId: unknown,
   access: CrematoryAccess,
-): Promise<{ context: Context; canSend: boolean; canPrepare: boolean; mode: ReturnType<typeof getDataAdapterMode>; response?: never } | { response: Response; context?: never }> {
+): Promise<
+  | { context: Context; canSend: boolean; canPrepare: boolean; canManage: boolean; mode: ReturnType<typeof getDataAdapterMode>; response?: never }
+  | { response: Response; context?: never }
+> {
   if (typeof requestedOrganizationId !== 'string' || !requestedOrganizationId) {
     return { response: NextResponse.json({ error: 'organizationId is required.' }, { status: 400 }) };
   }
@@ -34,9 +37,10 @@ export async function authorizeCrematory(
   }
   const mode = getDataAdapterMode();
   const params = { identityId: userId, organizationId, roleKey: role };
-  const [canPrepare, canSend] = await Promise.all([canGenerateDocument(params, mode), canSendToCrematory(params, mode)]);
-  const allowed =
-    access === 'read' ? await canReadCases(params, mode) : access === 'prepare' ? canPrepare : access === 'send' ? canSend : await canManageOrganization(params, mode);
+  // canManage: administrators (organization.manage) — e.g. correcting an
+  // earlier-send record (2026-10).
+  const [canPrepare, canSend, canManage] = await Promise.all([canGenerateDocument(params, mode), canSendToCrematory(params, mode), canManageOrganization(params, mode)]);
+  const allowed = access === 'read' ? await canReadCases(params, mode) : access === 'prepare' ? canPrepare : access === 'send' ? canSend : canManage;
   if (!allowed) {
     const what =
       access === 'manage'
@@ -48,7 +52,7 @@ export async function authorizeCrematory(
             : 'view this';
     return { response: NextResponse.json({ error: `You are not authorized to ${what}.` }, { status: 403 }) };
   }
-  return { context: auth.context, canSend, canPrepare, mode };
+  return { context: auth.context, canSend, canPrepare, canManage, mode };
 }
 
 export function crematoryErrorResponse(error: unknown, fallback: string): Response {

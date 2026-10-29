@@ -117,7 +117,7 @@ async function readyCase(caseId: string, readyDate = '11/06/2026', iso = '2026-1
   const permit = await pdf(`PERMIT-${caseId}`, 2, [612, 1008]);
   const permitDoc = await uploadAs(caseId, 'State Permit.pdf', 'cremation_form.state_permit', permit, `permit-${caseId}`);
   expectedPickup(caseId, iso);
-  await pkg.confirmPermit(ctx(), caseId, permitDoc.id, 'mock');
+  await pkg.confirmPermit(ctx(), caseId, shown(permitDoc.id), 'mock');
   await extractArrangementPage('crematory_form', caseId, {}, ctx(), 'mock');
   await pkg.confirmReadyDate(ctx(), caseId, readyDate, 'mock');
   const [first, ...rest] = CASES.find((c) => c.id === caseId)!.packageName;
@@ -140,6 +140,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** What SOLIS showed staff before they confirmed or chose a permit: that document's stored checksum (2026-10). */
+const shown = (documentId: string) => ({ documentId, displayedChecksumSha256: caseDocumentFixtures.find((d) => d.id === documentId)?.checksumSha256 ?? null });
 const docsOf = (caseId: string, type: string) => caseDocumentFixtures.filter((d) => d.caseId === caseId && d.documentTypeKey === type).sort((a, b) => Number(a.version) - Number(b.version));
 const eventsOf = (caseId: string, type: string) => activityEventFixtures.slice(lengths.activity).filter((e) => e.caseId === caseId && e.eventType === type);
 
@@ -358,7 +360,7 @@ describe('choosing a document already on the case (2026-10)', () => {
     expect(caseDocumentFixtures.find((d) => d.id === permit.id)!.documentTypeKey).toBeNull();
 
     const before = pick(caseDocumentFixtures.find((d) => d.id === permit.id)! as never);
-    summary = await pkg.assignSourceDocument(ctx(), '1042', permit.id, 'state_permit', 'mock', true);
+    summary = await pkg.assignSourceDocument(ctx(), '1042', permit.id, 'state_permit', 'mock', true, shown(permit.id).displayedChecksumSha256);
     const after = caseDocumentFixtures.find((d) => d.id === permit.id)!;
     expect(after.documentTypeKey).toBe('cremation_form.state_permit');
     expect(pick(after as never)).toEqual(before);
@@ -381,19 +383,19 @@ describe('choosing a document already on the case (2026-10)', () => {
 
   it('refuses — writing nothing — another case\'s document, a non-PDF, a typed document, a second permit, a sent case, and another organization', async () => {
     const other = await untyped('1044', 'OTHER CASE PERMIT.pdf', await pdf('P', 1), 'permit-other-case');
-    await expect(pkg.assignSourceDocument(ctx(), '1042', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.assignSourceDocument(ctx(), '1042', other.id, 'state_permit', 'mock', false, shown(other.id).displayedChecksumSha256)).rejects.toMatchObject({ status: 409 });
     const image = await untyped('1042', 'permit.png', Buffer.from('\x89PNG fictional'), 'permit-png', 'image/png');
-    await expect(pkg.assignSourceDocument(ctx(), '1042', image.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.assignSourceDocument(ctx(), '1042', image.id, 'state_permit', 'mock', false, shown(image.id).displayedChecksumSha256)).rejects.toMatchObject({ status: 409 });
     const typed = await uploadAs('1042', 'Typed Permit.pdf', 'cremation_form.state_permit', await pdf('P2', 1), 'permit-typed');
     await expect(pkg.assignSourceDocument(ctx(), '1042', typed.id, 'arrangement_forms', 'mock')).rejects.toMatchObject({ status: 409 });
     const second = await untyped('1042', 'ANOTHER PERMIT.pdf', await pdf('P3', 1), 'permit-second');
-    await expect(pkg.assignSourceDocument(ctx(), '1042', second.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('already has a State Cremation Permit') });
+    await expect(pkg.assignSourceDocument(ctx(), '1042', second.id, 'state_permit', 'mock', false, shown(second.id).displayedChecksumSha256)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('already has a State Cremation Permit') });
     expect(caseDocumentFixtures.find((d) => d.id === second.id)!.documentTypeKey).toBeNull();
     expect(caseDocumentFixtures.find((d) => d.id === other.id)!.documentTypeKey).toBeNull();
 
     const c = caseFixtures[index('1044')];
     caseFixtures[index('1044')] = { ...c, crematory: { lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: 'x', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } } };
-    await expect(pkg.assignSourceDocument(ctx(), '1044', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.assignSourceDocument(ctx(), '1044', other.id, 'state_permit', 'mock', false, shown(other.id).displayedChecksumSha256)).rejects.toMatchObject({ status: 409 });
     await expect(pkg.assignSourceDocument({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1044', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 404 });
     expect(caseDocumentFixtures.find((d) => d.id === other.id)!.documentTypeKey).toBeNull();
     expect(eventsOf('1042', 'crematory.document_type_assigned')).toHaveLength(0);
@@ -499,7 +501,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
     expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_verified', 'package']);
     await expect(pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 422 });
     // Confirming it rebuilds the package automatically.
-    await pkg.confirmPermit(ctx(), '1042', newPermit.id, 'mock');
+    await pkg.confirmPermit(ctx(), '1042', shown(newPermit.id), 'mock');
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(2);
     expect((await pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).outcome).toBe('unchanged');
 
@@ -531,7 +533,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
     await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-old');
     await new Promise((resolve) => setTimeout(resolve, 5));
     await pkg.addPermit(ctx(), '1042', { fileName: 'State Permit 2.pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-B', 1) }, { replacesDocumentId: 'permit-old', mayReplace: true }, 'mock');
-    await expect(pkg.confirmPermit(ctx(), '1042', 'permit-old', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.confirmPermit(ctx(), '1042', shown('permit-old'), 'mock')).rejects.toMatchObject({ status: 409 });
   });
 });
 
@@ -611,7 +613,7 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     await expect(pkg.confirmReadyDate(ctx(), '1042', '11/09/2026', 'mock')).rejects.toMatchObject({ status: 409 });
     await expect(pkg.confirmPackageName(ctx(), '1042', { first: 'Rick', last: 'Reynolds' }, 'mock')).rejects.toMatchObject({ status: 409 });
     await expect(pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 409 });
-    await expect(pkg.confirmPermit(ctx(), '1042', 'permit-1042', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.confirmPermit(ctx(), '1042', shown('permit-1042'), 'mock')).rejects.toMatchObject({ status: 409 });
     expect(docsOf('1042', 'cremation_form.crematory_package').map((d) => [d.version, d.status])).toEqual([[1, 'active']]);
     await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0007', confirmResend: true })).rejects.toMatchObject({ status: 409 });
     expect(calls.filter(([url]) => url.endsWith('/send'))).toHaveLength(1);
@@ -897,7 +899,7 @@ describe('the name and expected ready date, recorded automatically from reliable
   async function documentsReady(caseId: string) {
     await uploadAs(caseId, 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf(`ARRANGEMENT-${caseId}`, 6), `arr-${caseId}`);
     const permit = await uploadAs(caseId, 'State Permit.pdf', 'cremation_form.state_permit', await pdf(`PERMIT-${caseId}`, 2, [612, 1008]), `permit-${caseId}`);
-    await pkg.confirmPermit(ctx(), caseId, permit.id, 'mock');
+    await pkg.confirmPermit(ctx(), caseId, shown(permit.id), 'mock');
   }
   const summaryOf = (caseId: string) => pkg.getCrematoryCaseSummary(ORG, caseId, true, 'mock');
   const requirement = async (caseId: string, key: string) => (await summaryOf(caseId)).readiness.requirements.find((r) => r.key === key)!;
@@ -1062,7 +1064,7 @@ describe('one current State Cremation Permit per case (2026-10)', () => {
     await expect(pkg.addPermit(ctx(), '1042', corrected, { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409 });
     expect(current('1042').map((d) => d.id)).toEqual([document.id]);
 
-    await pkg.confirmPermit(ctx(), '1042', document.id, 'mock');
+    await pkg.confirmPermit(ctx(), '1042', shown(document.id), 'mock');
     summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.readyToSend).toBe(true);
     expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.status])).toEqual([[1, 'superseded'], [2, 'active']]);
@@ -1115,7 +1117,7 @@ describe('one current State Cremation Permit per case (2026-10)', () => {
     });
     await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
     expect(current('1042')).toHaveLength(2);
-    await expect(pkg.confirmPermit(ctx(), '1042', 'permit-b', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.confirmPermit(ctx(), '1042', shown('permit-b'), 'mock')).rejects.toMatchObject({ status: 409 });
     await expect(pkg.addPermit(ctx(), '1042', file('C.pdf', await pdf('PERMIT-C', 1)), { replacesDocumentId: 'permit-b', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Choose the one to use') });
 
     const summary = await pkg.chooseCurrentPermit(ctx(), '1042', 'permit-a', 'mock', true);
@@ -1211,3 +1213,96 @@ describe('a possible earlier send outside SOLIS (2026-10)', () => {
     await expect(pkg.recordPreviousSend({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1042', B, 'mock')).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe('an administrator corrects an earlier-send record (2026-10)', () => {
+  const markPermitSent = (caseId: string) => {
+    const c = caseFixtures[index(caseId)];
+    caseFixtures[index(caseId)] = { ...c, checklistState: { ...(c.checklistState ?? {}), '3:0': true } };
+  };
+  const A = { decision: 'sent_outside_solis', method: 'email', sentOn: '2026-10-21', verification: 'Found the email in Outlook Sent Items' };
+  const B = { decision: 'not_previously_sent', verification: 'Outlook Sent Items and the fax log for October', confirmedChecked: true };
+  const ready = async (caseId: string) => (await pkg.getCrematoryCaseSummary(ORG, caseId, true, 'mock')).readiness;
+
+  it('corrects A → B → A: each needs a reason, every earlier answer is kept, each is in the case activity, and readiness follows the latest', async () => {
+    await readyCase('1042');
+    markPermitSent('1042');
+    await pkg.recordPreviousSend(ctx('staff-lee'), '1042', A, 'mock');
+    expect((await ready('1042')).readyToSend).toBe(false);
+
+    await expect(pkg.correctPreviousSend(ctx('admin-ana'), '1042', { ...B, reason: 'short' }, 'mock')).rejects.toMatchObject({ status: 422 });
+    await expect(pkg.correctPreviousSend(ctx('admin-ana'), '1042', { ...B, confirmedChecked: false, reason: 'Recorded on the wrong case' }, 'mock')).rejects.toMatchObject({ status: 422 });
+
+    await pkg.correctPreviousSend(ctx('admin-ana'), '1042', { ...B, reason: 'Recorded on the wrong case' }, 'mock');
+    let record = caseFixtures[index('1042')].crematory!.previousSend!;
+    expect(record).toMatchObject({ decision: 'not_previously_sent', recordedBy: 'admin-ana', correction: { reason: 'Recorded on the wrong case', correctedBy: 'admin-ana' } });
+    expect(record.earlier).toEqual([expect.objectContaining({ decision: 'sent_outside_solis', recordedBy: 'staff-lee', verification: 'Found the email in Outlook Sent Items' })]);
+    // Back in the first send — every other check still applies.
+    expect((await ready('1042')).readyToSend).toBe(true);
+    const [event] = eventsOf('1042', 'crematory.previous_send_corrected');
+    expect(event.actorIdentityId).toBe('admin-ana');
+    expect(event.description).toBe('Earlier-send record corrected by an administrator: was "sent outside SOLIS (Email, 10/21/2026)", now "not previously sent". Reason: Recorded on the wrong case');
+    expect(JSON.parse(event.newValue!)).toMatchObject({ previous: { decision: 'sent_outside_solis', recordedBy: 'staff-lee' }, corrected: { decision: 'not_previously_sent' }, reason: 'Recorded on the wrong case', correctedBy: 'admin-ana' });
+
+    await pkg.correctPreviousSend(ctx('admin-ana'), '1042', { ...A, reason: 'Found the fax confirmation after all' }, 'mock');
+    record = caseFixtures[index('1042')].crematory!.previousSend!;
+    expect(record.decision).toBe('sent_outside_solis');
+    expect(record.earlier!.map((e) => [e.decision, e.correction?.reason ?? null])).toEqual([
+      ['sent_outside_solis', null],
+      ['not_previously_sent', 'Recorded on the wrong case'],
+    ]);
+    expect((await ready('1042')).readyToSend).toBe(false);
+    expect(eventsOf('1042', 'crematory.previous_send_corrected')).toHaveLength(2);
+  });
+
+  it('refused — nothing changed — with nothing recorded, while SOLIS is sending the case, or once SOLIS sent it; only for organizations with Send to Crematory', async () => {
+    await readyCase('1042');
+    await expect(pkg.correctPreviousSend(ctx(), '1042', { ...B, reason: 'Nothing recorded yet here' }, 'mock')).rejects.toMatchObject({ status: 409 });
+    markPermitSent('1042');
+    await pkg.recordPreviousSend(ctx(), '1042', B, 'mock');
+    const base = caseFixtures[index('1042')];
+    for (const crematory of [
+      { ...base.crematory!, pendingSubmission: { submissionId: 's2', startedAt: new Date().toISOString(), startedBy: 'staff-lee' } },
+      { ...base.crematory!, lastSubmission: { submissionId: 's', status: 'submitted' as const, packageDocumentId: 'x', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } },
+    ]) {
+      caseFixtures[index('1042')] = { ...base, crematory };
+      await expect(pkg.correctPreviousSend(ctx(), '1042', { ...A, reason: 'Trying to correct during a send' }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('SOLIS is sending, or has sent') });
+      expect(caseFixtures[index('1042')].crematory!.previousSend!.decision).toBe('not_previously_sent');
+    }
+    await expect(pkg.correctPreviousSend({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1042', { ...A, reason: 'Another organization' }, 'mock')).rejects.toMatchObject({ status: 404 });
+    expect(eventsOf('1042', 'crematory.previous_send_corrected')).toHaveLength(0);
+  });
+});
+
+describe('a permit is confirmed or chosen only as shown in SOLIS (2026-10)', () => {
+  it('confirming needs the checksum of the PDF shown — exactly the stored permit — and records its document, version and checksum', async () => {
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-1042', 6), 'arr-1042');
+    const { document } = await pkg.addPermit(ctx(), '1042', { fileName: 'State Permit.pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-1042', 2, [612, 1008]) }, { mayReplace: true }, 'mock');
+    await expect(pkg.confirmPermit(ctx(), '1042', { documentId: document.id, displayedChecksumSha256: null }, 'mock')).rejects.toMatchObject({ status: 400, message: expect.stringContaining('Open the permit in SOLIS') });
+    await expect(pkg.confirmPermit(ctx(), '1042', { documentId: document.id, displayedChecksumSha256: 'f'.repeat(64) }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('not the stored permit') });
+    expect(caseFixtures[index('1042')].crematory?.permitVerification ?? null).toBeNull();
+
+    await pkg.confirmPermit(ctx('staff-lee'), '1042', shown(document.id), 'mock');
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toMatchObject({ documentId: document.id, version: 1, checksumSha256: document.checksumSha256, displayedInSolis: true, verifiedBy: 'staff-lee' });
+    expect(JSON.parse(eventsOf('1042', 'crematory.permit_confirmed')[0].newValue!)).toMatchObject({ documentId: document.id, version: 1, checksumSha256: document.checksumSha256, displayedInSolis: true });
+
+    // Replaced: the old confirmation is cleared, and what was shown for the old file never confirms the new one.
+    const { document: replacement } = await pkg.addPermit(ctx(), '1042', { fileName: 'Corrected.pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-1042-B', 1) }, { replacesDocumentId: document.id, mayReplace: true }, 'mock');
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toBeNull();
+    await expect(pkg.confirmPermit(ctx(), '1042', { documentId: replacement.id, displayedChecksumSha256: document.checksumSha256 }, 'mock')).rejects.toMatchObject({ status: 409 });
+    await pkg.confirmPermit(ctx(), '1042', shown(replacement.id), 'mock');
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toMatchObject({ documentId: replacement.id, version: 2, displayedInSolis: true });
+  });
+
+  it('choosing an untyped PDF as the permit needs that exact PDF shown; an Arrangement Form does not', async () => {
+    const permit = await upload({ caseId: '1042', fileName: 'FICTIONAL PERMIT.pdf', mimeType: 'application/pdf', idFactory: () => 'untyped-permit' }, await pdf('PERMIT', 1), ctx(), 'mock');
+    const other = await upload({ caseId: '1042', fileName: 'OTHER.pdf', mimeType: 'application/pdf', idFactory: () => 'untyped-other' }, await pdf('OTHER', 1), ctx(), 'mock');
+    await expect(pkg.assignSourceDocument(ctx(), '1042', permit.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 400 });
+    await expect(pkg.assignSourceDocument(ctx(), '1042', permit.id, 'state_permit', 'mock', false, other.checksumSha256)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('not that document') });
+    expect(caseDocumentFixtures.find((d) => d.id === permit.id)!.documentTypeKey).toBeNull();
+    await pkg.assignSourceDocument(ctx(), '1042', permit.id, 'state_permit', 'mock', false, permit.checksumSha256);
+    expect(caseDocumentFixtures.find((d) => d.id === permit.id)!.documentTypeKey).toBe('cremation_form.state_permit');
+    // Still needs confirming, as before.
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.requirements.find((r) => r.key === 'permit_verified')!.ok).toBe(false);
+  });
+});
+

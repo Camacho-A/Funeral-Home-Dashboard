@@ -121,6 +121,19 @@ describe('Send to Crematory routes', () => {
     expect(response.status).toBe(403);
   });
 
+  it('correcting an earlier-send record is for administrators only (2026-10); confirming a permit needs the PDF shown', async () => {
+    const post = (body: Record<string, unknown>) =>
+      caseRoute.POST(new Request('http://localhost/api/cases/1042/crematory', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: org(), ...body }) }), { params: Promise.resolve({ caseId: '1042' }) });
+    permissions.manage = false;
+    const refused = await post({ action: 'correct_previous_send', reason: 'Recorded on the wrong case', decision: 'not_previously_sent', verification: 'Checked Sent Items', confirmedChecked: true });
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error).toContain('Only an administrator');
+    permissions.manage = true;
+    // An administrator gets past the permission check (nothing is recorded on this case to correct).
+    expect((await post({ action: 'correct_previous_send', reason: 'Recorded on the wrong case', decision: 'not_previously_sent', verification: 'Checked Sent Items', confirmedChecked: true })).status).toBe(409);
+    expect(await (await getOverview()).json()).toMatchObject({ canManage: true });
+  });
+
   it('preparing needs document permission; viewing needs case read', async () => {
     permissions.prepare = false;
     permissions.send = false;

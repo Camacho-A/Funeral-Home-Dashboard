@@ -28,7 +28,29 @@ type LoadState =
   | { kind: 'ready'; doc: PDFDocumentProxy }
   | { kind: 'error'; message: string };
 
-export function PdfViewer({ url, fileName }: { url: string; fileName: string }) {
+export function PdfViewer({
+  url,
+  data,
+  fileName,
+  onLoaded,
+  onFailed,
+}: {
+  url?: string;
+  /** The PDF's bytes, already fetched (2026-10, the permit preview) — used instead of `url`. */
+  data?: ArrayBuffer;
+  fileName: string;
+  /** Called once the PDF has been read and its first page drawn. */
+  onLoaded?: () => void;
+  /** Called when it cannot be shown. */
+  onFailed?: (message: string) => void;
+}) {
+  const onLoadedRef = useRef(onLoaded);
+  const onFailedRef = useRef(onFailed);
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
+    onFailedRef.current = onFailed;
+  });
+  const reportedLoaded = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
 
@@ -46,33 +68,39 @@ export function PdfViewer({ url, fileName }: { url: string; fileName: string }) 
 
     async function load() {
       setState({ kind: 'loading' });
+      reportedLoaded.current = false;
       setPageNumber(1);
       try {
         const pdfjs = await import('pdfjs-dist');
         // Bundled worker — the bundler rewrites this to a local asset.
         pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
-        const response = await fetch(url, { credentials: 'include' });
-        if (!response.ok) {
-          throw new Error(
-            response.status === 403 || response.status === 401
-              ? 'You do not have permission to view this document.'
-              : `This document could not be loaded (error ${response.status}).`,
-          );
+        let bytes: ArrayBuffer;
+        if (data) {
+          // A copy: pdf.js takes ownership of what it is given.
+          bytes = data.slice(0);
+        } else {
+          const response = await fetch(url!, { credentials: 'include' });
+          if (!response.ok) {
+            throw new Error(
+              response.status === 403 || response.status === 401
+                ? 'You do not have permission to view this document.'
+                : `This document could not be loaded (error ${response.status}).`,
+            );
+          }
+          bytes = await response.arrayBuffer();
         }
-        const data = await response.arrayBuffer();
         if (cancelled) return;
 
-        loadingTask = pdfjs.getDocument({ data });
+        loadingTask = pdfjs.getDocument({ data: bytes });
         const doc = await loadingTask.promise;
         if (cancelled) return;
         setState({ kind: 'ready', doc });
       } catch (error) {
         if (cancelled) return;
-        setState({
-          kind: 'error',
-          message: error instanceof Error && error.message ? error.message : 'This document could not be loaded.',
-        });
+        const message = error instanceof Error && error.message ? error.message : 'This document could not be loaded.';
+        setState({ kind: 'error', message });
+        onFailedRef.current?.(message);
       }
     }
 
@@ -83,7 +111,7 @@ export function PdfViewer({ url, fileName }: { url: string; fileName: string }) 
       renderTaskRef.current = null;
       void loadingTask?.destroy();
     };
-  }, [url]);
+  }, [url, data]);
 
   // Re-render the page at the new size when the window changes width.
   useEffect(() => {
@@ -140,6 +168,10 @@ export function PdfViewer({ url, fileName }: { url: string; fileName: string }) 
       renderTaskRef.current = task;
       try {
         await task.promise;
+        if (!cancelled && !reportedLoaded.current) {
+          reportedLoaded.current = true;
+          onLoadedRef.current?.();
+        }
       } catch {
         // A cancelled render is the expected result of paging quickly or
         // resizing mid-draw — not an error worth showing anyone.

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { uploadCaseDocument } from '@/lib/caseDocumentsClient';
+import { PermitPdfPreview } from './PermitPdfPreview';
 
 const PERMIT_TYPE = 'cremation_form.state_permit';
 
@@ -34,10 +35,13 @@ export function ReplacePermitButton({
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The new PDF has been shown here (2026-10) — required before replacing. */
+  const [shown, setShown] = useState(false);
 
   const close = () => {
     setFile(null);
     setError(null);
+    setShown(false);
   };
 
   async function replace() {
@@ -68,12 +72,15 @@ export function ReplacePermitButton({
         aria-label={`New State Cremation Permit for ${decedentDisplayName}`}
         onChange={(e) => {
           const chosen = e.target.files?.[0];
-          if (chosen) setFile(chosen);
+          if (chosen) {
+            setShown(false);
+            setFile(chosen);
+          }
           e.target.value = '';
         }}
       />
       {file && (
-        <Modal open onClose={() => !busy && close()} title="Replace the State Cremation Permit">
+        <Modal open onClose={() => !busy && close()} title="Replace the State Cremation Permit" size="lg">
           <div className="sx-modal-header">
             <h2 className="sx-modal-title">Replace the State Cremation Permit</h2>
           </div>
@@ -81,6 +88,7 @@ export function ReplacePermitButton({
             <p>
               Replace <strong>{permit.fileName}</strong> with <strong>{file.name}</strong> for <strong>{decedentDisplayName}</strong>?
             </p>
+            <PermitPdfPreview source={{ kind: 'file', file }} fileName={file.name} onVerified={() => setShown(true)} onFailed={() => setShown(false)} />
             <ul>
               <li>The current permit is kept as an earlier version, with its history.</li>
               <li>The new permit must be confirmed before the Crematory Package uses it; until then the package is outdated.</li>
@@ -95,7 +103,7 @@ export function ReplacePermitButton({
             <button type="button" className="sx-btn sx-btn-ghost" onClick={close} disabled={busy}>
               Cancel
             </button>
-            <button type="button" className="sx-btn sx-btn-primary" onClick={() => void replace()} disabled={busy}>
+            <button type="button" className="sx-btn sx-btn-primary" onClick={() => void replace()} disabled={busy || !shown}>
               {busy ? 'Replacing…' : 'Replace permit'}
             </button>
           </div>

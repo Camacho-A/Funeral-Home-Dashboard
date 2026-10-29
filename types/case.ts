@@ -465,10 +465,29 @@ export type ChecklistCompletionRecord = {
 };
 
 /** Send to Crematory (2026-10). Every entry records who did it and when. */
+/** One answer about a possible earlier send outside SOLIS (2026-10). */
+export type PreviousSendAnswer = {
+  decision: 'sent_outside_solis' | 'not_previously_sent';
+  method: string | null;
+  sentOn: string | null;
+  verification: string;
+  recordedBy: string | null;
+  recordedAt: string;
+};
+
 export type CaseCrematoryRecord = {
   /** Staff confirmed THIS uploaded file is the approved state permit for
       this decedent. A different file later needs its own confirmation. */
-  permitVerification?: { documentId: string; checksumSha256: string; verifiedBy: string | null; verifiedAt: string } | null;
+  permitVerification?: {
+    documentId: string;
+    checksumSha256: string;
+    verifiedBy: string | null;
+    verifiedAt: string;
+    /** The permit's version, and that the stored PDF was shown in SOLIS
+        when staff confirmed it (2026-10). */
+    version?: number | null;
+    displayedInSolis?: boolean;
+  } | null;
   /** The decedent's last and first name(s) exactly as they appear in the
       package file name (LastName_FirstName_…), entered or confirmed by
       staff — never split from the full name, and never a change to the
@@ -502,14 +521,12 @@ export type CaseCrematoryRecord = {
   /** What staff recorded (2026-10) about a possible earlier send outside
       SOLIS, flagged because Workflow 3 says "Permit sent to crematory"
       while SOLIS has no send of its own. Recorded once, never inferred. */
-  previousSend?: {
-    decision: 'sent_outside_solis' | 'not_previously_sent';
-    method: string | null;
-    sentOn: string | null;
-    verification: string;
-    recordedBy: string | null;
-    recordedAt: string;
-  } | null;
+  previousSend?: (PreviousSendAnswer & {
+    /** Set when an administrator corrected an earlier answer (2026-10). */
+    correction?: { reason: string; correctedBy: string | null; correctedAt: string } | null;
+    /** Every earlier answer, oldest first, each with its own correction — never discarded. */
+    earlier?: Array<PreviousSendAnswer & { correction?: { reason: string; correctedBy: string | null; correctedAt: string } | null }>;
+  }) | null;
   /** A send in progress — refuses a second one at the same time. */
   pendingSubmission?: {
     submissionId: string;
