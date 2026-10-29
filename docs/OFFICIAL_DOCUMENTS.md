@@ -92,8 +92,10 @@ Certificate Application…". Code: `domain/documents/manateeDeathCertificateAppl
   document is made; surviving spouse from the same forms' spouse name (blank
   when the family left it blank, e.g. not married); city of
   death from the forms; date of death, next of kin and relationship from the
-  case. No record holds the county, so staff enter it — never inferred from a
-  city. Corrections apply to the document only, never the case.
+  case. County from the same forms' Place of Death "County" box when it names
+  a Florida county (typed as "FL / Broward", "broward", "FL MIAMI DADE"…);
+  families often type just "FL" there, and then staff enter it — never
+  inferred from a city. Corrections apply to the document only, never the case.
 - **Only the form's own fields are filled**, plus, when staff confirm the
   FedEx fee, "1" and "15.00" in the FedEx row's blank quantity and total
   spaces (the $15.00 is printed). "Request ___ of ___" only when staff type

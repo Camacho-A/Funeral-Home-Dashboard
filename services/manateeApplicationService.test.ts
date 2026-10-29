@@ -131,7 +131,7 @@ describe('the draft staff review', () => {
       decedentSex: 'F',
       dateOfDeath: '10/04/2026',
       placeOfDeathCity: 'Pembroke Pines',
-      // No record of the county anywhere — staff enter it; never inferred from the city.
+      // The County box says only "Florida" — staff enter it; never inferred from the city.
       placeOfDeathCounty: '',
       spouseFirst: 'Jonathan',
       spouseLast: 'Salas Rueda',
@@ -170,6 +170,25 @@ describe('the draft staff review', () => {
     expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-7654', source: 'case', locked: true });
     expect(await getCaseSsnSummary(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toMatchObject({ source: 'vital_statistics' });
     expect([draft.values.spouseFirst, draft.values.spouseLast]).toEqual(['Jon', 'Rueda']);
+  });
+
+  it('county: the Arrangement Form\'s County box when it names a county, else the Vital Statistics form\'s; just "FL" is left for staff', async () => {
+    const place = (state: string) => ({ answer: { addr_line1: '100 Example St', city: 'Pembroke Pines', state, postal: '33000' } });
+    answersBySubmission.set('sub-arr', { ...arrangementAnswers, '97': place('FL / Broward') });
+    let draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
+    expect([draft.values.placeOfDeathCounty, draft.sources.placeOfDeathCounty]).toEqual(['BROWARD', 'arrangement_form']);
+    expect(draft.issues.map((i) => i.field)).not.toContain('placeOfDeathCounty');
+
+    answersBySubmission.set('sub-arr', { ...arrangementAnswers, '97': place('FL') });
+    submissions.push(submission('sub-vs', VITAL_STATISTICS_EXTERNAL_FORM_ID, '2026-10-06T10:00:00.000Z'));
+    answersBySubmission.set('sub-vs', { '30': place('Miami Dade') });
+    draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
+    expect([draft.values.placeOfDeathCounty, draft.sources.placeOfDeathCounty]).toEqual(['MIAMI-DADE', 'vital_statistics']);
+
+    answersBySubmission.set('sub-vs', { '30': place('FL') });
+    draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
+    expect([draft.values.placeOfDeathCounty, draft.sources.placeOfDeathCounty]).toEqual(['', null]);
+    expect(draft.issues.map((i) => i.message)).toContain('Enter the county of death.');
   });
 
   it('sex: the Arrangement Form\'s Male / Female as F / M, else the Vital Statistics form\'s; never guessed', async () => {

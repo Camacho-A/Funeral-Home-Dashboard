@@ -173,6 +173,33 @@ export function formatMoney(cents: number): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
+/** Florida's 67 counties, as the form writes them (its list: "BROWARD", "MIAMI-DADE"). */
+const FLORIDA_COUNTIES: readonly string[] = [
+  'ALACHUA', 'BAKER', 'BAY', 'BRADFORD', 'BREVARD', 'BROWARD', 'CALHOUN', 'CHARLOTTE', 'CITRUS', 'CLAY', 'COLLIER', 'COLUMBIA',
+  'DESOTO', 'DIXIE', 'DUVAL', 'ESCAMBIA', 'FLAGLER', 'FRANKLIN', 'GADSDEN', 'GILCHRIST', 'GLADES', 'GULF', 'HAMILTON', 'HARDEE',
+  'HENDRY', 'HERNANDO', 'HIGHLANDS', 'HILLSBOROUGH', 'HOLMES', 'INDIAN RIVER', 'JACKSON', 'JEFFERSON', 'LAFAYETTE', 'LAKE', 'LEE',
+  'LEON', 'LEVY', 'LIBERTY', 'MADISON', 'MANATEE', 'MARION', 'MARTIN', 'MIAMI-DADE', 'MONROE', 'NASSAU', 'OKALOOSA', 'OKEECHOBEE',
+  'ORANGE', 'OSCEOLA', 'PALM BEACH', 'PASCO', 'PINELLAS', 'POLK', 'PUTNAM', 'ST. JOHNS', 'ST. LUCIE', 'SANTA ROSA', 'SARASOTA',
+  'SEMINOLE', 'SUMTER', 'SUWANNEE', 'TAYLOR', 'UNION', 'VOLUSIA', 'WAKULLA', 'WALTON', 'WASHINGTON',
+];
+const COUNTY_SPELLINGS: Record<string, string> = { 'MIAMI DADE': 'MIAMI-DADE', MIAMIDADE: 'MIAMI-DADE', DADE: 'MIAMI-DADE', 'DE SOTO': 'DESOTO', 'ST JOHNS': 'ST. JOHNS', 'SAINT JOHNS': 'ST. JOHNS', 'ST LUCIE': 'ST. LUCIE', 'SAINT LUCIE': 'ST. LUCIE' };
+
+/**
+ * The county an intake form's own County box names — as families type it
+ * ("FL BROWARD", "FL / Broward", "broward", "Miami Dade County") — or null
+ * when it names none (often just "FL"). Only a real Florida county is
+ * taken; never inferred from a city.
+ */
+export function countyFromForm(answer: unknown): string | null {
+  if (typeof answer !== 'string') return null;
+  const words = answer.toUpperCase().replace(/[^A-Z\s-]/g, ' ').replace(/-/g, ' ').split(/\s+/).filter(Boolean);
+  while (words.length && ['FL', 'FLA', 'FLORIDA'].includes(words[0])) words.shift();
+  while (words.length && ['COUNTY', 'CO', 'FL', 'FLA', 'FLORIDA'].includes(words[words.length - 1])) words.pop();
+  const name = words.join(' ');
+  const county = COUNTY_SPELLINGS[name] ?? name;
+  return FLORIDA_COUNTIES.find((c) => c.replace(/-/g, ' ') === county.replace(/-/g, ' ')) ?? null;
+}
+
 /** The form's SEX box: F or M, blank until known. */
 export type ManateeSex = '' | 'F' | 'M';
 

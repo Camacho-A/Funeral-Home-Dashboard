@@ -9,6 +9,7 @@ import {
   manateeIssues,
   maskSsn,
   normalizeSsn,
+  countyFromForm,
   relationshipForForm,
   sexForForm,
   type ManateeApplicationValues,
@@ -147,6 +148,11 @@ describe('review — nothing is made from missing or guessed information', () =>
       complete({ decedentFirst: '', decedentLast: ' ', decedentSex: '', ssn: null, dateOfDeath: '', placeOfDeathCity: '', placeOfDeathCounty: '', representedName: '', representedRelationship: '' }),
     ).map((i) => i.field);
     expect(fields).toEqual(['decedentFirst', 'decedentLast', 'decedentSex', 'ssn', 'dateOfDeath', 'placeOfDeathCity', 'placeOfDeathCounty', 'representedName', 'representedRelationship']);
+  });
+
+  it('county: only a Florida county the form\'s County box names, however it was typed; never just a state', () => {
+    const typed = ['FL BROWARD', 'FL / BROWARD', 'broward', 'Broward County', 'FL MIAMI DADE', 'Miami-Dade', 'Dade', 'florida, palm beach', 'St Lucie', 'FL', 'Florida', '', 'Atlanta', 'GA FULTON', 'FL Pembroke Pines', null, 3];
+    expect(typed.map(countyFromForm)).toEqual(['BROWARD', 'BROWARD', 'BROWARD', 'BROWARD', 'MIAMI-DADE', 'MIAMI-DADE', 'MIAMI-DADE', 'PALM BEACH', 'ST. LUCIE', null, null, null, null, null, null, null, null]);
   });
 
   it('sex: the forms\' Male / Female as the form\'s F / M; anything else is left for staff', () => {

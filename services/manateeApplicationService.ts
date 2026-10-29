@@ -24,6 +24,7 @@ import {
   manateeIssues,
   maskSsn,
   normalizeSsn,
+  countyFromForm,
   relationshipForForm,
   sexForForm,
   type ManateeApplicationInput,
@@ -49,8 +50,10 @@ import { captureCaseSsnFromForms, readCaseSsn } from './caseSsnService';
  *     newest submission first. Names only ever from the forms' own
  *     first / middle / last boxes.
  *   - date of death, next of kin and relationship: the case.
- *   - county: neither the case nor any of the intake forms records it
- *     today, so staff always enter it — never inferred from a city name.
+ *   - county: the Arrangement Form's (else the Vital Statistics form's)
+ *     Place of Death "County" box, when it names a Florida county —
+ *     families often type just "FL" there, and then staff enter it. Never
+ *     inferred from a city name.
  *
  * The SSN never leaves the server except inside the filled PDF: the draft
  * carries only whether one is on file and its last four digits. It is
@@ -71,9 +74,10 @@ export function manateeApplicationEnabled(organizationId: string): boolean {
 }
 
 /** Which intake-form question holds each value, per form. */
-const FORM_QUESTIONS: Record<string, { name: string; sex?: string; ssn?: string; placeOfDeath: string; spouse?: string; label: FormSource }> = {
-  [ARRANGEMENT_FORMS_EXTERNAL_FORM_ID]: { name: '87', sex: '222', ssn: '11', placeOfDeath: '97', spouse: '105', label: 'arrangement_form' },
-  [VITAL_STATISTICS_EXTERNAL_FORM_ID]: { name: '3', sex: '32', ssn: '7', placeOfDeath: '30', spouse: '14', label: 'vital_statistics' },
+const FORM_QUESTIONS: Record<string, { name: string; sex?: string; ssn?: string; placeOfDeath: string; countyBox?: boolean; spouse?: string; label: FormSource }> = {
+  // Both forms label their Place of Death address's "state" box "County".
+  [ARRANGEMENT_FORMS_EXTERNAL_FORM_ID]: { name: '87', sex: '222', ssn: '11', placeOfDeath: '97', countyBox: true, spouse: '105', label: 'arrangement_form' },
+  [VITAL_STATISTICS_EXTERNAL_FORM_ID]: { name: '3', sex: '32', ssn: '7', placeOfDeath: '30', countyBox: true, spouse: '14', label: 'vital_statistics' },
   [FIRST_CALL_SHEET_EXTERNAL_FORM_ID]: { name: '3', placeOfDeath: '20', label: 'first_call_sheet' },
 };
 const FORM_PRIORITY: readonly FormSource[] = ['arrangement_form', 'vital_statistics', 'first_call_sheet'];
@@ -84,6 +88,7 @@ type FormFacts = {
   sex: 'F' | 'M' | null;
   ssn: string | null;
   city: string | null;
+  county: string | null;
   spouse: { first: string; middle: string; last: string } | null;
 };
 
@@ -102,6 +107,7 @@ function factsFromAnswers(answers: JotformAnswerMap, questions: (typeof FORM_QUE
     sex: questions.sex ? sexForForm(answers[questions.sex]?.answer) || null : null,
     ssn: questions.ssn ? normalizeSsn(text(answers[questions.ssn]?.answer)) : null,
     city: sub(answers[questions.placeOfDeath]?.answer, 'city') || null,
+    county: questions.countyBox ? countyFromForm(sub(answers[questions.placeOfDeath]?.answer, 'state')) : null,
     spouse: fullName(questions.spouse),
   };
 }
@@ -168,6 +174,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
   const city = firstFrom(forms, (f) => f.city);
   const spouse = firstFrom(forms, (f) => (f.spouse?.first || f.spouse?.last ? f.spouse : null));
   const sex = firstFrom(forms, (f) => f.sex);
+  const county = firstFrom(forms, (f) => f.county);
   const relationship = relationshipForForm(case_.nextOfKinRelationship, case_.nextOfKinRelationshipOther);
 
   const values: ManateeDraftValues = {
@@ -180,7 +187,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     ssnNotKnown: false,
     dateOfDeath: case_.dateOfDeath ?? '',
     placeOfDeathCity: city?.value ?? '',
-    placeOfDeathCounty: '',
+    placeOfDeathCounty: county?.value ?? '',
     spouseFirst: spouse?.value.first ?? '',
     spouseMiddle: spouse?.value.middle ?? '',
     spouseLast: spouse?.value.last ?? '',
@@ -199,7 +206,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     decedentSex: sex?.source ?? null,
     dateOfDeath: case_.dateOfDeath ? 'case' : null,
     placeOfDeathCity: city?.source ?? null,
-    placeOfDeathCounty: null,
+    placeOfDeathCounty: county?.source ?? null,
     spouseFirst: spouse?.source ?? null,
     spouseLast: spouse?.source ?? null,
     representedName: case_.nextOfKinName ? 'case' : null,
