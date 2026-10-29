@@ -18,6 +18,7 @@ import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { ARRANGEMENT_EXTRACTS, ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY, workflowStageComplete } from '@/domain/documents/arrangementPageExtracts';
 import {
   crematoryPackageFileName,
+  legacyCrematoryPackageFileName,
   normalizePackageName,
   packageDisplayName,
   parseCaseDate,
@@ -180,6 +181,11 @@ function expectedFileName(facts: Facts): string | null {
   return crematoryPackageFileName(confirmedPackageName(facts.case_), facts.case_.crematory?.readyDate?.date ?? null);
 }
 
+/** The pre-2026-10 name for the same name and date — see legacyCrematoryPackageFileName. */
+function legacyFileName(facts: Facts): string | null {
+  return legacyCrematoryPackageFileName(confirmedPackageName(facts.case_), facts.case_.crematory?.readyDate?.date ?? null);
+}
+
 /** Whether the saved package is exactly what the current permit, page 3
     and confirmed date produce (recorded when it was built). */
 function packageIsCurrent(facts: Facts): boolean {
@@ -192,7 +198,7 @@ function packageIsCurrent(facts: Facts): boolean {
       build.permitChecksumSha256 === facts.permit.checksumSha256 &&
       facts.crematoryForm &&
       build.crematoryFormChecksumSha256 === facts.crematoryForm.checksumSha256 &&
-      facts.package.fileName === expectedFileName(facts),
+      (facts.package.fileName === expectedFileName(facts) || facts.package.fileName === legacyFileName(facts)),
   );
 }
 

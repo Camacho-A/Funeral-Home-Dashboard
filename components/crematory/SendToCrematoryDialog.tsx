@@ -75,7 +75,7 @@ export function SendToCrematoryDialog({
   const chosen = candidates.filter((c) => selected.includes(c.caseId) && c.readiness.readyToSend);
   const attachments = useMemo(
     () =>
-      assignAttachmentFileNames(chosen.map((c) => ({ fileName: c.package!.fileName, caseNumber: c.caseNumber, summary: c }))).map((a) => ({
+      assignAttachmentFileNames(chosen.map((c) => ({ fileName: c.expectedFileName ?? c.package!.fileName, caseNumber: c.caseNumber, summary: c }))).map((a) => ({
         attachmentName: a.attachmentName,
         decedentDisplayName: a.summary.subjectName,
         expectedReadyDate: a.summary.readyDate.confirmed!,
@@ -508,7 +508,7 @@ function CaseRow({
               </span>
             )}
             {nameValue.first.trim() && nameValue.last.trim() && (
-              <span className={styles.hint}>File: {crematoryPackageFileName(nameValue, summary.readyDate.confirmed ?? summary.readyDate.suggested) ?? `${nameValue.last.trim()}_${nameValue.first.trim()}_MM-DD-YYYY.pdf`}</span>
+              <span className={styles.hint}>File: {crematoryPackageFileName(nameValue, summary.readyDate.confirmed ?? summary.readyDate.suggested) ?? `${nameValue.last.trim().toUpperCase()}_${nameValue.first.trim().toUpperCase()}_CREMATORY_PACKAGE_MM-DD-YYYY.pdf`}</span>
             )}
           </span>
         );

@@ -149,7 +149,9 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
     if (!stored || sha256(stored.buffer) !== l.facts.package!.checksumSha256) {
       throw new CrematoryError(`Nothing was sent. The Crematory Package for ${l.case_.caseNumber} could not be read intact from document storage.`, 503);
     }
-    files.push({ l, bytes: new Uint8Array(stored.buffer), fileName: l.facts.package!.fileName, caseNumber: l.case_.caseNumber });
+    // Attached under the current naming (a package built before 2026-10
+    // keeps its stored name; its bytes are sent unchanged).
+    files.push({ l, bytes: new Uint8Array(stored.buffer), fileName: l.summary.expectedFileName ?? l.facts.package!.fileName, caseNumber: l.case_.caseNumber });
   }
   const named = assignAttachmentFileNames(files);
 

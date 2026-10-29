@@ -3,6 +3,7 @@ import {
   assignAttachmentFileNames,
   crematoryEmailSubject,
   crematoryPackageFileName,
+  legacyCrematoryPackageFileName,
   defaultCrematoryMessage,
   normalizePackageName,
   packageDisplayName,
@@ -11,16 +12,23 @@ import {
   toCaseDate,
 } from './crematoryPackage';
 
-describe('crematoryPackageFileName — LastName_FirstName_MM-DD-YYYY.pdf', () => {
+describe('crematoryPackageFileName — LASTNAME_FIRSTNAME_CREMATORY_PACKAGE_MM-DD-YYYY.pdf', () => {
   it('uses the confirmed last and first name(s) exactly — middle names and multi-word surnames kept', () => {
-    expect(crematoryPackageFileName({ first: 'Mary Ann', last: 'Smith' }, '11/06/2026')).toBe('Smith_Mary Ann_11-06-2026.pdf');
-    expect(crematoryPackageFileName({ first: 'Estela', last: 'Salas Rueda' }, '2026-11-06')).toBe('Salas Rueda_Estela_11-06-2026.pdf');
-    expect(crematoryPackageFileName({ first: 'Richard', last: 'Reynolds' }, '11/06/2026')).toBe('Reynolds_Richard_11-06-2026.pdf');
-    expect(crematoryPackageFileName({ first: 'Rosa', last: "O'Neil" }, '11/06/2026')).toBe("O'Neil_Rosa_11-06-2026.pdf");
+    expect(crematoryPackageFileName({ first: 'Mary Ann', last: 'Smith' }, '11/06/2026')).toBe('SMITH_MARY ANN_CREMATORY_PACKAGE_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Estela', last: 'Salas Rueda' }, '2026-11-06')).toBe('SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Richard', last: 'Reynolds' }, '11/06/2026')).toBe('REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Rosa', last: "O'Neil" }, '11/06/2026')).toBe("O'NEIL_ROSA_CREMATORY_PACKAGE_11-06-2026.pdf");
+  });
+
+  it('the requested example, and the pre-2026-10 name kept only to recognise packages already built', () => {
+    expect(crematoryPackageFileName({ first: 'Hannelore', last: 'Willson' }, '10/30/2026')).toBe('WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf');
+    expect(legacyCrematoryPackageFileName({ first: 'Hannelore', last: 'Willson' }, '10/30/2026')).toBe('Willson_Hannelore_10-30-2026.pdf');
+    expect(readyDateFromPackageFileName('WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf')).toBe('10/30/2026');
+    expect(readyDateFromPackageFileName('REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026_B2026-043.pdf')).toBe('11/06/2026');
   });
 
   it('strips characters no file system accepts', () => {
-    expect(crematoryPackageFileName({ first: 'Juniper', last: 'Fair/weather:"?' }, '11/06/2026')).toBe('Fairweather_Juniper_11-06-2026.pdf');
+    expect(crematoryPackageFileName({ first: 'Juniper', last: 'Fair/weather:"?' }, '11/06/2026')).toBe('FAIRWEATHER_JUNIPER_CREMATORY_PACKAGE_11-06-2026.pdf');
   });
 
   it('never names a package without a confirmed name or a real date', () => {

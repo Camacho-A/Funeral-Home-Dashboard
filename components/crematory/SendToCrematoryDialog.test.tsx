@@ -144,6 +144,17 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory');
   });
 
+  it('the review lists each attachment under the current name, even for a package built under the old one', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(
+      overview([{ ...readyCase('1042', 'Hannelore Willson', 'B2026-901', '10/30/2026'), expectedFileName: 'WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf' }]),
+    );
+    open({ preselectedCaseIds: ['1042'] });
+    await screen.findByRole('checkbox', { name: 'Select Hannelore Willson' });
+    fireEvent.click(screen.getByRole('button', { name: 'Review email (1)' }));
+    expect(screen.getByText('WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('Willson_Hannelore_10-30-2026.pdf')).toBeNull();
+  });
+
   it('a case already sent shows "Sent" on one line and can never be selected again', async () => {
     const sent: CrematoryCaseSummary = {
       ...readyCase('1042', 'Richard Reynolds', 'B2026-901'),
@@ -194,7 +205,7 @@ describe('SendToCrematoryDialog', () => {
     expect(last).toHaveValue('');
     fireEvent.change(last, { target: { value: 'Smith' } });
     fireEvent.change(screen.getByLabelText('First name(s) for Mary Ann Smith'), { target: { value: 'Mary Ann' } });
-    expect(screen.getByText('File: Smith_Mary Ann_11-06-2026.pdf')).toBeInTheDocument();
+    expect(screen.getByText('File: SMITH_MARY ANN_CREMATORY_PACKAGE_11-06-2026.pdf')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm name' }));
     await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_package_name', first: 'Mary Ann', last: 'Smith' }));
   });

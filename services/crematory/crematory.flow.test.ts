@@ -175,7 +175,7 @@ describe('readiness — what needs attention', () => {
 });
 
 describe('the Crematory Package — one PDF per decedent', () => {
-  it('puts every permit page first, then Arrangement Form page 3 — unchanged — under LastName_FirstName_MM-DD-YYYY.pdf', async () => {
+  it('puts every permit page first, then Arrangement Form page 3 — unchanged — under LASTNAME_FIRSTNAME_CREMATORY_PACKAGE_MM-DD-YYYY.pdf', async () => {
     const { permit, arrangement } = await readyCase('1042');
     const { outcome, summary } = await pkg.buildCrematoryPackage(ctx(), '1042', 'mock', true);
     expect(outcome).toBe('saved');
@@ -183,7 +183,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
     // Without the send permission the package is built but not sendable.
     expect((await pkg.getCrematoryCaseSummary(ORG, '1042', false, 'mock')).readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
     const [saved] = docsOf('1042', 'cremation_form.crematory_package');
-    expect(saved).toMatchObject({ fileName: 'Reynolds_Richard_11-06-2026.pdf', mimeType: 'application/pdf', version: 1, status: 'active', generatedBy: 'staff-dana' });
+    expect(saved).toMatchObject({ fileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', mimeType: 'application/pdf', version: 1, status: 'active', generatedBy: 'staff-dana' });
 
     const merged = await loadPdf(blobs.get(saved.storageKey)!.buffer);
     const permitPdf = await loadPdf(permit);
@@ -193,7 +193,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
     expect(await contentOf(merged.getPage(1))).toBe(await contentOf(permitPdf.getPage(1)));
     expect(await contentOf(merged.getPage(2))).toBe(await contentOf(arrangementPdf.getPage(2)));
     expect(merged.getPage(0).getSize()).toEqual({ width: 612, height: 1008 });
-    expect(eventsOf('1042', 'crematory.package_built')[0].description).toBe('Crematory Package v1 built: Reynolds_Richard_11-06-2026.pdf');
+    expect(eventsOf('1042', 'crematory.package_built')[0].description).toBe('Crematory Package v1 built: REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf');
   });
 
   it('MARY ANN SMITH is named from the confirmed parts — Smith_Mary Ann — and the case name is never changed', async () => {
@@ -201,7 +201,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
     await readyCase('1042');
     await pkg.confirmPackageName(ctx(), '1042', { first: 'Mary Ann', last: 'Smith' }, 'mock');
     await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
-    expect(docsOf('1042', 'cremation_form.crematory_package')[0].fileName).toBe('Smith_Mary Ann_11-06-2026.pdf');
+    expect(docsOf('1042', 'cremation_form.crematory_package')[0].fileName).toBe('SMITH_MARY ANN_CREMATORY_PACKAGE_11-06-2026.pdf');
     expect(caseFixtures[index('1042')].decedentName).toBe('MARY ANN SMITH');
     expect(eventsOf('1042', 'crematory.package_name_confirmed').at(-1)!.description).toBe('Name for the Crematory Package confirmed: Smith, Mary Ann (was Reynolds, Richard)');
   });
@@ -256,7 +256,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
   it('keeps multi-word surnames whole in the file name', async () => {
     await readyCase('1044', '11/07/2026', '2026-11-07');
     await pkg.buildCrematoryPackage(ctx(), '1044', 'mock');
-    expect(docsOf('1044', 'cremation_form.crematory_package')[0].fileName).toBe('Salas Rueda_Estela_11-07-2026.pdf');
+    expect(docsOf('1044', 'cremation_form.crematory_package')[0].fileName).toBe('SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-07-2026.pdf');
   });
 
   it('building again with nothing changed creates nothing; a new permit, a new date or a newer page 3 each need review and a rebuild', async () => {
@@ -281,9 +281,9 @@ describe('the Crematory Package — one PDF per decedent', () => {
 
     const versions = docsOf('1042', 'cremation_form.crematory_package');
     expect(versions.map((d) => [d.version, d.status, d.fileName])).toEqual([
-      [1, 'superseded', 'Reynolds_Richard_11-06-2026.pdf'],
-      [2, 'superseded', 'Reynolds_Richard_11-06-2026.pdf'],
-      [3, 'active', 'Reynolds_Richard_11-09-2026.pdf'],
+      [1, 'superseded', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf'],
+      [2, 'superseded', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf'],
+      [3, 'active', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-09-2026.pdf'],
     ]);
     // Older versions keep their files.
     for (const v of versions) expect(createHash('sha256').update(blobs.get(v.storageKey)!.buffer).digest('hex')).toBe(v.checksumSha256);
@@ -345,7 +345,8 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
 
     expect(calls.filter(([url]) => url.endsWith('/me/messages'))).toHaveLength(1);
     const attached = calls.filter(([url]) => url.endsWith('/attachments')).map(([, init]) => JSON.parse(String(init!.body)));
-    expect(attached.map((a) => a.name)).toEqual(['Reynolds_Richard_11-06-2026.pdf', 'Salas Rueda_Estela_11-06-2026.pdf']);
+    expect(attached.map((a) => a.name)).toEqual(['REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', 'SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-06-2026.pdf']);
+    expect(attached.map((a) => [a['@odata.type'], a.contentType])).toEqual([['#microsoft.graph.fileAttachment', 'application/pdf'], ['#microsoft.graph.fileAttachment', 'application/pdf']]);
     for (const [i, caseId] of ['1042', '1044'].entries()) {
       const stored = blobs.get(docsOf(caseId, 'cremation_form.crematory_package')[0].storageKey)!.buffer;
       expect(Buffer.from(attached[i].contentBytes, 'base64').equals(stored)).toBe(true);
@@ -420,7 +421,32 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     const calls = fakeGraph();
     await sendCrematoryPackages(ctx(), request(), 'mock');
     const names = calls.filter(([url]) => url.endsWith('/attachments')).map(([, init]) => JSON.parse(String(init!.body)).name);
-    expect(names).toEqual(['Reynolds_Richard_11-06-2026_B2026-901.pdf', 'Reynolds_Richard_11-06-2026_B2026-902.pdf']);
+    expect(names).toEqual(['REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026_B2026-901.pdf', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026_B2026-902.pdf']);
+  });
+
+  it('a package built before the 2026-10 naming is still current — not rebuilt — and is attached, unchanged, under the new name', async () => {
+    await twoReadyCases();
+    // As built before the change: stored (and recorded) as Reynolds_Richard_11-06-2026.pdf.
+    const saved = docsOf('1042', 'cremation_form.crematory_package')[0];
+    const legacy = 'Reynolds_Richard_11-06-2026.pdf';
+    caseDocumentFixtures[caseDocumentFixtures.findIndex((d) => d.id === saved.id)] = { ...saved, fileName: legacy };
+    const c = caseFixtures[index('1042')];
+    caseFixtures[index('1042')] = { ...c, crematory: { ...c.crematory!, lastBuild: { ...c.crematory!.lastBuild!, fileName: legacy } } };
+
+    const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.package).toMatchObject({ fileName: legacy, current: true });
+    expect(summary.readiness.readyToSend).toBe(true);
+    expect((await pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).outcome).toBe('unchanged');
+    expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(1);
+
+    const calls = fakeGraph();
+    await sendCrematoryPackages(ctx(), request(), 'mock');
+    const attached = calls.filter(([url]) => url.endsWith('/attachments')).map(([, init]) => JSON.parse(String(init!.body)));
+    expect(attached[0].name).toBe('REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf');
+    expect(Buffer.from(attached[0].contentBytes, 'base64').equals(blobs.get(saved.storageKey)!.buffer)).toBe(true);
+    expect(docsOf('1042', 'cremation_form.crematory_package')[0].fileName).toBe(legacy);
+    expect(caseFixtures[index('1042')].crematory!.lastSubmission!).toMatchObject({ status: 'submitted', attachmentName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf' });
+    expect(eventsOf('1042', 'crematory.package_submitted')[0].description).toContain('(REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf)');
   });
 
   it('a package whose stored file no longer matches its checksum is never sent', async () => {
@@ -439,7 +465,7 @@ describe('the Cases page list', () => {
     await pkg.buildCrematoryPackage(ctx(), '1044', 'mock');
     const list = await pkg.listCrematoryCandidates(ORG, true, 'mock');
     const mine = list.filter((c) => c.caseId === '1042' || c.caseId === '1044');
-    expect(mine[0]).toMatchObject({ caseId: '1044', readiness: { readyToSend: true }, package: { fileName: 'Salas Rueda_Estela_11-06-2026.pdf' } });
+    expect(mine[0]).toMatchObject({ caseId: '1044', readiness: { readyToSend: true }, package: { fileName: 'SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-06-2026.pdf' } });
     expect(mine[1]).toMatchObject({ caseId: '1042', readiness: { readyToSend: false } });
     expect(list.every((c) => caseFixtures.find((x) => x.id === c.caseId)?.caseType === 'cremation')).toBe(true);
   });

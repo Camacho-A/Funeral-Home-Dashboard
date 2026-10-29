@@ -77,18 +77,37 @@ export function packageDisplayName(name: PackageName): string {
 }
 
 /**
- * LastName_FirstName_MM-DD-YYYY.pdf — e.g. Smith_Mary Ann_11-06-2026.pdf,
- * Salas Rueda_Estela_11-06-2026.pdf. The name is the one staff confirmed;
- * the date is the expected cremation ready date staff confirmed (never the
- * send date, never the Date of Cremation). Null when either is missing — a
- * package is never named with a guess.
+ * LASTNAME_FIRSTNAME_CREMATORY_PACKAGE_MM-DD-YYYY.pdf (2026-10) — e.g.
+ * WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf,
+ * SALAS RUEDA_MARY ANN_CREMATORY_PACKAGE_11-06-2026.pdf. Multi-word names
+ * keep their spaces — the underscores only ever separate surname, first
+ * name(s) and the rest. The name is the one staff confirmed; the date is
+ * the expected cremation ready date staff confirmed (never the send date,
+ * never the Date of Cremation). Null when either is missing — a package is
+ * never named with a guess.
  */
 export function crematoryPackageFileName(name: PackageName | null | undefined, expectedReadyDate: string | null | undefined): string | null {
+  const parts = fileNameParts(name, expectedReadyDate);
+  return parts ? `${parts.last.toUpperCase()}_${parts.first.toUpperCase()}_CREMATORY_PACKAGE_${parts.date}.pdf` : null;
+}
+
+/**
+ * The name packages were built with before 2026-10 (Willson_Hannelore_10-30-2026.pdf).
+ * A package already built under it is still the current package for the
+ * same name and date — never rebuilt just to be renamed; it is attached
+ * under the new name.
+ */
+export function legacyCrematoryPackageFileName(name: PackageName | null | undefined, expectedReadyDate: string | null | undefined): string | null {
+  const parts = fileNameParts(name, expectedReadyDate);
+  return parts ? `${parts.last}_${parts.first}_${parts.date}.pdf` : null;
+}
+
+function fileNameParts(name: PackageName | null | undefined, expectedReadyDate: string | null | undefined): (PackageName & { date: string }) | null {
   if (!name) return null;
   const normalized = normalizePackageName(name);
   const date = parseCaseDate(expectedReadyDate);
   if ('error' in normalized || !date) return null;
-  return `${normalized.last}_${normalized.first}_${pad(date.month)}-${pad(date.day)}-${date.year}.pdf`;
+  return { ...normalized, date: `${pad(date.month)}-${pad(date.day)}-${date.year}` };
 }
 
 /** The expected ready date encoded in a package file name, as MM/DD/YYYY. */
