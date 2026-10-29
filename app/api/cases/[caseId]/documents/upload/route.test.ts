@@ -75,6 +75,21 @@ describe('POST /api/cases/[caseId]/documents/upload', () => {
     expect(activityEventFixtures.at(-1)?.eventType).toBe('document.uploaded');
   });
 
+  it('an uploaded Arrangement Form or state permit schedules the Crematory Package preparation (2026-10); other uploads do not', async () => {
+    const { runAfterResponse } = await import('@/lib/afterResponse');
+    vi.mocked(runAfterResponse).mockClear();
+    for (const documentTypeKey of ['external_form.arrangement_forms', 'cremation_form.state_permit']) {
+      const formData = sampleFormData();
+      formData.set('documentTypeKey', documentTypeKey);
+      expect((await uploadRequest(formData)).status).toBe(201);
+    }
+    expect(vi.mocked(runAfterResponse).mock.calls.map(([label]) => label)).toEqual(['crematory package preparation', 'crematory package preparation']);
+
+    vi.mocked(runAfterResponse).mockClear();
+    expect((await uploadRequest(sampleFormData())).status).toBe(201);
+    expect(runAfterResponse).not.toHaveBeenCalled();
+  });
+
   it('a role without document.upload (readOnly) is refused', async () => {
     const readOnlyUser = { id: 'mock-user-readonly-upload-test', email: 'readonly-upload@beacon.test', displayName: 'Read Only Test User', source: 'mock' as const };
     mockMembershipFixtures.push({ organizationId: DEFAULT_ORGANIZATION_ID, userId: readOnlyUser.id, role: 'readOnly', isActive: true });

@@ -38,6 +38,8 @@ import type { CaseDocument, CaseDocumentWithActorName } from '@/types/caseDocume
 import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
 import { CaseFormsSection } from './CaseFormsSection';
+import { CrematoryPackageStatus } from './CrematoryPackageStatus';
+import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { Modal } from '@/components/ui/Modal';
 import { DocumentPreview } from '@/components/documents/DocumentPreview';
 import { printStoredDocument } from '@/utils/print';
@@ -444,6 +446,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
 
       {subTab === 'documents' && (
         <>
+          {sendToCrematoryConfig(organizationId) && <CrematoryPackageStatus organizationId={organizationId} caseId={caseId} />}
           <div className="sx-docs-toolbar">
             {/* Toolbar (2026-10): one primary action, every "create a
                 document" action in one menu, and the bulk actions together

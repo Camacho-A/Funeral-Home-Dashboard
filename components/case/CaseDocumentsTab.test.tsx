@@ -1039,8 +1039,9 @@ describe('CaseDocumentsTab — View shows the document in the browser', () => {
       renderTab();
       fireEvent.click(await screen.findByRole('button', { name: 'View' }));
 
-      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-      const [requestedUrl, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      // (The Crematory Package panel, 2026-10, reads its own status too.)
+      await waitFor(() => expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('disposition=inline'))).toBe(true));
+      const [requestedUrl, init] = fetchSpy.mock.calls.find(([url]) => String(url).includes('disposition=inline')) as [string, RequestInit];
       expect(requestedUrl).toContain('disposition=inline');
       // Same-origin and cookie-bearing: the viewer reads the SAME guarded
       // route Download uses. No blob URL, no signed URL, nothing new exposed.

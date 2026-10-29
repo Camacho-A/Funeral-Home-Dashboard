@@ -72,6 +72,26 @@ describe('preservePdfForSubmission', () => {
     expect(updated?.documentId).toBe('document-1');
   });
 
+  it('an Arrangement Form stored on a case schedules the Crematory Package preparation (2026-10); other forms do not', async () => {
+    const { fetchSubmissionPdf } = await import('../lib/jotform/jotformClient');
+    const { upload } = await import('./documentService');
+    const { runAfterResponse } = await import('../lib/afterResponse');
+    vi.mocked(fetchSubmissionPdf).mockResolvedValue(Buffer.from('%PDF-1.4 synthetic'));
+    vi.mocked(upload).mockResolvedValue({ id: 'document-1' } as never);
+    const { preservePdfForSubmission } = await import('./externalFormPdfService');
+
+    const arrangement = makeSubmission();
+    externalFormSubmissionFixtures.push(arrangement);
+    await preservePdfForSubmission(arrangement, 'case-1', CTX, 'mock');
+    expect(vi.mocked(runAfterResponse).mock.calls.map(([label]) => label)).toEqual(['crematory package preparation']);
+
+    vi.mocked(runAfterResponse).mockClear();
+    const firstCall = makeSubmission({ id: 'sub-2', externalFormId: '262664842044055', externalSubmissionId: 'ext-sub-2' });
+    externalFormSubmissionFixtures.push(firstCall);
+    await preservePdfForSubmission(firstCall, 'case-1', CTX, 'mock');
+    expect(runAfterResponse).not.toHaveBeenCalled();
+  });
+
   it('is idempotent — a submission already pdfStatus "stored" never calls upload again', async () => {
     const { upload } = await import('./documentService');
     const submission = makeSubmission({ pdfStatus: 'stored', documentId: 'already-stored-doc' });

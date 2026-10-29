@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '@/components/ui/Modal';
 import {
@@ -28,6 +28,14 @@ import styles from './SendToCrematoryDialog.module.css';
  * "Submitted" is what Outlook reports — never "delivered".
  */
 const PERMIT_TYPE = 'cremation_form.state_permit';
+
+/** Whether SOLIS can bring this case's page 3 or package up to date from
+    what is already on it (2026-10) — never for a case already sent. */
+function needsPreparation(c: CrematoryCaseSummary): boolean {
+  if (c.lastSubmission?.status === 'submitted' || c.lastSubmission?.status === 'uncertain') return false;
+  const form = c.readiness.requirements.find((r) => r.key === 'crematory_form');
+  return (form !== undefined && !form.ok) || (c.readiness.readyToBuild && !c.package?.current);
+}
 
 type Step = 'prepare' | 'review' | 'done';
 
@@ -88,6 +96,31 @@ export function SendToCrematoryDialog({
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ['crematory', organizationId] });
   }
+
+  // Opening the window prepares what it can from the cases' own documents
+  // (2026-10): page 3 extracted, packages built or rebuilt. Once per case
+  // per opening; nothing is ever sent.
+  const preparedOnce = useRef<Set<string>>(new Set());
+  const [preparing, setPreparing] = useState(false);
+  useEffect(() => {
+    if (!open) preparedOnce.current = new Set();
+  }, [open]);
+  useEffect(() => {
+    if (!open || !overview.data?.canPrepare) return;
+    const due = overview.data.candidates.filter((c) => !preparedOnce.current.has(c.caseId) && needsPreparation(c));
+    if (due.length === 0) return;
+    for (const c of due) preparedOnce.current.add(c.caseId);
+    setPreparing(true);
+    void (async () => {
+      for (const c of due) {
+        // A case that still needs something keeps showing what — not an error.
+        await crematoryCaseAction(organizationId, c.caseId, { action: 'prepare' }).catch(() => undefined);
+      }
+      await Promise.all([refresh(), ...due.map((c) => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) }))]);
+      setPreparing(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the overview changes
+  }, [open, overview.data]);
 
   async function act(summary: CrematoryCaseSummary, run: () => Promise<unknown>) {
     setCaseError(null);
@@ -178,6 +211,11 @@ export function SendToCrematoryDialog({
 
         {overview.data && step === 'prepare' && (
           <>
+            {preparing && (
+              <p className={styles.muted} role="status">
+                Preparing documents from each case&rsquo;s Arrangement Form and permit…
+              </p>
+            )}
             {!overview.data.canSend && (
               <div className="sx-form-banner sx-form-banner-info" role="status">
                 {overview.data.canPrepare

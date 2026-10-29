@@ -479,6 +479,9 @@ export type CaseCrematoryRecord = {
   readyDate?: { date: string; suggestedAtConfirmation: string | null; confirmedBy: string | null; confirmedAt: string } | null;
   /** What the current Crematory Package was built from. */
   lastBuild?: { packageDocumentId: string; permitChecksumSha256: string; crematoryFormChecksumSha256: string; fileName: string; builtAt: string; builtBy: string | null } | null;
+  /** Automatic preparation in progress (2026-10) — one server at a time
+      prepares a case's page 3 and package; expires on its own. */
+  preparing?: { token: string; until: string } | null;
   /** A send in progress — refuses a second one at the same time. */
   pendingSubmission?: { submissionId: string; startedAt: string; startedBy: string | null } | null;
   /** The most recent send attempt. `submitted` means Outlook accepted it —

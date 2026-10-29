@@ -144,6 +144,44 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory');
   });
 
+  it('opening the window prepares, once, the cases whose page 3 or package can be brought up to date — never sends', async () => {
+    const needsPage3: CrematoryCaseSummary = {
+      ...readyCase('1050', 'Walter Boone', 'B2026-903'),
+      readiness: { requirements: [...ALL_OK.filter((r) => r.key !== 'crematory_form'), requirement('crematory_form', false, 'A newer Arrangement Form arrived.')] as never, readyToBuild: false, readyToSend: false },
+      package: null,
+    };
+    const outdated: CrematoryCaseSummary = {
+      ...readyCase('1044', 'Estela Salas Rueda', 'B2026-902'),
+      readiness: { requirements: ALL_OK as never, readyToBuild: true, readyToSend: false },
+      package: { documentId: 'pkg-1044', version: 1, fileName: 'x.pdf', current: false },
+    };
+    const ready = readyCase('1042', 'Richard Reynolds', 'B2026-901');
+    client.fetchCrematoryOverview.mockResolvedValue(overview([ready, outdated, needsPage3]));
+    client.crematoryCaseAction.mockResolvedValue({});
+    open();
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledTimes(2));
+    expect(client.crematoryCaseAction.mock.calls.map(([, caseId, action]) => [caseId, action])).toEqual([
+      ['1044', { action: 'prepare' }],
+      ['1050', { action: 'prepare' }],
+    ]);
+    // Refetched afterwards; still only those two, once each.
+    await waitFor(() => expect(client.fetchCrematoryOverview.mock.calls.length).toBeGreaterThan(1));
+    expect(client.crematoryCaseAction).toHaveBeenCalledTimes(2);
+    expect(client.sendToCrematory).not.toHaveBeenCalled();
+  });
+
+  it('a staff member who cannot prepare packages triggers nothing', async () => {
+    const outdated: CrematoryCaseSummary = {
+      ...readyCase('1044', 'Estela Salas Rueda', 'B2026-902'),
+      readiness: { requirements: ALL_OK as never, readyToBuild: true, readyToSend: false },
+      package: { documentId: 'pkg-1044', version: 1, fileName: 'x.pdf', current: false },
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([outdated], { canPrepare: false, canSend: false }));
+    open();
+    await screen.findByRole('checkbox', { name: 'Select Estela Salas Rueda' });
+    expect(client.crematoryCaseAction).not.toHaveBeenCalled();
+  });
+
   it('the review lists each attachment under the current name, even for a package built under the old one', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(
       overview([{ ...readyCase('1042', 'Hannelore Willson', 'B2026-901', '10/30/2026'), expectedFileName: 'WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf' }]),

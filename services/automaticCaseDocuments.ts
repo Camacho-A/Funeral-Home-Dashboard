@@ -21,6 +21,8 @@ import { loadCaseOnServer } from './serverCaseLoader';
 import { buildCertificateOfCremationPdf, buildEnvelopePdf } from './officialDocumentTemplates';
 import { generateCremationLabelAfterCaseChange, type AutomaticCremationLabelOutcome } from './cremationLabelService';
 import { extractCrematoryFormAfterCaseChange, type AutomaticCrematoryFormOutcome } from './arrangementPageExtractService';
+import { sendToCrematoryConfig } from '../domain/crematory/crematorySettings';
+import { workflowStageComplete } from '../domain/documents/arrangementPageExtracts';
 
 /**
  * Automatic Envelope and Certificate of Cremation (2026-10). See
@@ -182,6 +184,18 @@ export async function regenerateOfficialDocumentsAfterCaseChange(
   if (label !== 'not_applicable') results.cremation_label = label;
   const crematoryForm = await extractCrematoryFormAfterCaseChange(before, after, ctx, dataAdapterMode);
   if (crematoryForm !== 'not_applicable') results.crematory_form = crematoryForm;
+  // Send to Crematory (2026-10): workflow 2 just completed (or page 3 was
+  // just saved) — the Crematory Package may now be ready to prepare.
+  const config = sendToCrematoryConfig(after.organizationId);
+  if (
+    config &&
+    after.organizationId === ctx.organizationId &&
+    (crematoryForm === 'generated' ||
+      (workflowStageComplete(after, config.authorizationWorkflowStage) && !(before && workflowStageComplete(before, config.authorizationWorkflowStage))))
+  ) {
+    const { prepareCrematoryDocuments } = await import('./crematory/crematoryPackageService');
+    await prepareCrematoryDocuments(ctx, after.id, dataAdapterMode);
+  }
   return results;
 }
 

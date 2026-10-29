@@ -63,6 +63,12 @@ export async function fetchCrematoryOverview(organizationId: string, caseId?: st
   return parse(await fetch(`/api/crematory?${params}`, { cache: 'no-store' }), 'Could not load cases for the crematory.');
 }
 
+/** One case's Crematory Package status (readiness, permit, package). */
+export async function fetchCrematoryCaseSummary(organizationId: string, caseId: string): Promise<CrematoryCaseSummary> {
+  const params = new URLSearchParams({ organizationId });
+  return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory?${params}`, { cache: 'no-store' }), 'Could not load the Crematory Package status.');
+}
+
 export async function crematoryCaseAction(
   organizationId: string,
   caseId: string,
@@ -70,7 +76,8 @@ export async function crematoryCaseAction(
     | { action: 'confirm_permit'; documentId: string }
     | { action: 'confirm_ready_date'; date: string }
     | { action: 'confirm_package_name'; first: string; last: string }
-    | { action: 'build_package' },
+    | { action: 'build_package' }
+    | { action: 'prepare' },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

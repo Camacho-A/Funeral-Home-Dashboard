@@ -110,7 +110,7 @@ async function uploadAs(caseId: string, fileName: string, documentTypeKey: strin
   return upload({ caseId, fileName, mimeType: 'application/pdf', documentTypeKey, idFactory: () => id }, bytes, ctx(), 'mock');
 }
 
-/** Everything a case needs, up to (not including) building the package. */
+/** Everything a case needs — the last confirmation also builds the package (2026-10, automatic). */
 async function readyCase(caseId: string, readyDate = '11/06/2026', iso = '2026-11-06') {
   const arrangement = await pdf(`ARRANGEMENT-${caseId}`, 6);
   await uploadAs(caseId, 'Arrangement Forms.pdf', 'external_form.arrangement_forms', arrangement, `arr-${caseId}`);
@@ -174,11 +174,145 @@ describe('readiness — what needs attention', () => {
   });
 });
 
+describe('automatic preparation — from what is already on the case (2026-10)', () => {
+  const FORM = 'external_form.crematory_form';
+  const PACKAGE = 'cremation_form.crematory_package';
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  it('an Arrangement Form is all page 3 needs — saved automatically, even before the permit; the package waits and says why', async () => {
+    const arrangement = await pdf('ARRANGEMENT-1042', 6);
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', arrangement, 'arr-1042');
+    expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')).toEqual({ crematoryForm: 'saved', package: 'needs_attention' });
+    const [page3] = docsOf('1042', FORM);
+    const saved = await loadPdf(blobs.get(page3.storageKey)!.buffer);
+    expect(saved.getPageCount()).toBe(1);
+    expect(await contentOf(saved.getPage(0))).toBe(await contentOf((await loadPdf(arrangement)).getPage(2)));
+    // The original Arrangement Form is kept, unchanged.
+    expect(createHash('sha256').update(blobs.get(docsOf('1042', 'external_form.arrangement_forms')[0].storageKey)!.buffer).digest('hex')).toBe(createHash('sha256').update(arrangement).digest('hex'));
+    // Nothing new the second time; no package without a confirmed permit, name and date.
+    expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')).toEqual({ crematoryForm: 'unchanged', package: 'needs_attention' });
+    expect(docsOf('1042', FORM)).toHaveLength(1);
+    expect(docsOf('1042', PACKAGE)).toHaveLength(0);
+    const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_uploaded', 'permit_verified', 'package_name', 'ready_date', 'package']);
+  });
+
+  it('a replaced Arrangement Form refreshes page 3 and rebuilds the package; earlier versions stay in History', async () => {
+    await readyCase('1042');
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+    await tick();
+    const corrected = await pdf('ARRANGEMENT-1042-CORRECTED', 6);
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', corrected, 'arr-1042-b');
+    expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')).toEqual({ crematoryForm: 'saved', package: 'saved' });
+    expect(docsOf('1042', FORM).map((d) => [d.version, d.status])).toEqual([[1, 'superseded'], [2, 'active']]);
+    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.status])).toEqual([[1, 'superseded'], [2, 'active']]);
+    const rebuilt = await loadPdf(blobs.get(docsOf('1042', PACKAGE)[1].storageKey)!.buffer);
+    expect(await contentOf(rebuilt.getPage(2))).toBe(await contentOf((await loadPdf(corrected)).getPage(2)));
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.readyToSend).toBe(true);
+  });
+
+  it('a case already sent is never touched — a changed source never leads to a new package or a resend', async () => {
+    await readyCase('1042');
+    const c = caseFixtures[index('1042')];
+    caseFixtures[index('1042')] = {
+      ...c,
+      crematory: { ...c.crematory!, lastSubmission: { submissionId: 's1', status: 'submitted', packageDocumentId: docsOf('1042', PACKAGE)[0].id, packageVersion: 1, attachmentName: 'x.pdf', to: ['intake@crematory.example'], cc: [], mailbox: 'office@funeralhome.example', internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: 'staff-lee' } },
+    };
+    await tick();
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-NEW', 6), 'arr-1042-c');
+    expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')).toEqual({ crematoryForm: 'not_needed', package: 'not_needed' });
+    expect(docsOf('1042', FORM)).toHaveLength(1);
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+  });
+
+  it('a case whose send is unclear, or being sent right now, is not touched either', async () => {
+    await readyCase('1042');
+    const base = caseFixtures[index('1042')];
+    const pkgId = docsOf('1042', PACKAGE)[0].id;
+    await tick();
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-NEW', 6), 'arr-1042-e');
+    for (const crematory of [
+      { ...base.crematory!, lastSubmission: { submissionId: 's1', status: 'uncertain' as const, packageDocumentId: pkgId, packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: 'timeout', at: '2026-10-27T15:00:00.000Z', by: 'staff-lee' } },
+      { ...base.crematory!, pendingSubmission: { submissionId: 's2', startedAt: new Date().toISOString(), startedBy: 'staff-lee' } },
+    ]) {
+      caseFixtures[index('1042')] = { ...base, crematory };
+      expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')).toEqual({ crematoryForm: 'not_needed', package: 'not_needed' });
+    }
+    expect(docsOf('1042', FORM)).toHaveLength(1);
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+  });
+
+  it('two preparations at once make one new version, not two', async () => {
+    await readyCase('1042');
+    await tick();
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-1042-B', 6), 'arr-1042-d');
+    const results = await Promise.all([pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock'), pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')]);
+    expect(results).toEqual([{ crematoryForm: 'saved', package: 'saved' }, { crematoryForm: 'unchanged', package: 'unchanged' }]);
+    expect(docsOf('1042', FORM)).toHaveLength(2);
+    expect(docsOf('1042', PACKAGE)).toHaveLength(2);
+  });
+
+  it('completing workflow 2 is enough: the case save prepares the package once everything else is confirmed', async () => {
+    const complete = caseFixtures[index('1042')].checklistState;
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], checklistState: { '2:0': true } };
+    await readyCase('1042');
+    expect(docsOf('1042', PACKAGE)).toHaveLength(0);
+    const before = caseFixtures[index('1042')];
+    caseFixtures[index('1042')] = { ...before, checklistState: complete };
+    const { regenerateOfficialDocumentsAfterCaseChange } = await import('../automaticCaseDocuments');
+    await regenerateOfficialDocumentsAfterCaseChange(before, caseFixtures[index('1042')], ctx(), 'mock');
+    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.fileName])).toEqual([[1, 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf']]);
+  });
+
+  it('across servers: while another server holds the case, nothing is saved here; once it lets go (or its lease expires), this one prepares', async () => {
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-1042', 6), 'arr-1042');
+    const hold = (until: number) => {
+      const c = caseFixtures[index('1042')];
+      caseFixtures[index('1042')] = { ...c, crematory: { ...(c.crematory ?? {}), preparing: { token: 'other-server', until: new Date(until).toISOString() } } };
+    };
+    // Held, and still held when this server stops waiting: nothing is saved here.
+    hold(Date.now() + 60_000);
+    expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock', { waitMs: 30, pollMs: 10 })).toEqual({ crematoryForm: 'unchanged', package: 'unchanged' });
+    expect(docsOf('1042', FORM)).toHaveLength(0);
+
+    // Released while this server waits: it then prepares, and lets go itself.
+    setTimeout(() => {
+      const c = caseFixtures[index('1042')];
+      caseFixtures[index('1042')] = { ...c, crematory: { ...c.crematory!, preparing: null } };
+    }, 30);
+    expect((await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock', { waitMs: 2_000, pollMs: 10 })).crematoryForm).toBe('saved');
+    expect(docsOf('1042', FORM)).toHaveLength(1);
+    expect(caseFixtures[index('1042')].crematory!.preparing).toBeNull();
+
+    // A lease left behind by a server that stopped mid-way expires.
+    await tick();
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-1042-B', 6), 'arr-1042-b');
+    hold(Date.now() - 1);
+    expect((await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock', { waitMs: 30, pollMs: 10 })).crematoryForm).toBe('saved');
+    expect(docsOf('1042', FORM)).toHaveLength(2);
+  });
+
+  it('nothing to do: no lease is taken and the case is not written', async () => {
+    await readyCase('1042');
+    const before = caseFixtures[index('1042')];
+    expect(await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock')).toEqual({ crematoryForm: 'unchanged', package: 'unchanged' });
+    expect(caseFixtures[index('1042')]).toBe(before);
+  });
+
+  it('only for organizations with Send to Crematory, and only their own cases', async () => {
+    await uploadAs('1042', 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf('ARRANGEMENT-1042', 6), 'arr-1042');
+    const other = { ...ctx(), organizationId: 'gus-camacho-jr' };
+    expect(await pkg.prepareCrematoryDocuments(other, '1042', 'mock')).toEqual({ crematoryForm: 'not_needed', package: 'not_needed' });
+    expect(docsOf('1042', FORM)).toHaveLength(0);
+  });
+});
+
 describe('the Crematory Package — one PDF per decedent', () => {
   it('puts every permit page first, then Arrangement Form page 3 — unchanged — under LASTNAME_FIRSTNAME_CREMATORY_PACKAGE_MM-DD-YYYY.pdf', async () => {
     const { permit, arrangement } = await readyCase('1042');
+    // Built automatically by the last confirmation; building again changes nothing.
     const { outcome, summary } = await pkg.buildCrematoryPackage(ctx(), '1042', 'mock', true);
-    expect(outcome).toBe('saved');
+    expect(outcome).toBe('unchanged');
     expect(summary.readiness.readyToSend).toBe(true);
     // Without the send permission the package is built but not sendable.
     expect((await pkg.getCrematoryCaseSummary(ORG, '1042', false, 'mock')).readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
@@ -201,7 +335,8 @@ describe('the Crematory Package — one PDF per decedent', () => {
     await readyCase('1042');
     await pkg.confirmPackageName(ctx(), '1042', { first: 'Mary Ann', last: 'Smith' }, 'mock');
     await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
-    expect(docsOf('1042', 'cremation_form.crematory_package')[0].fileName).toBe('SMITH_MARY ANN_CREMATORY_PACKAGE_11-06-2026.pdf');
+    // Confirming the corrected name rebuilt the package automatically under it.
+    expect(docsOf('1042', 'cremation_form.crematory_package').at(-1)!.fileName).toBe('SMITH_MARY ANN_CREMATORY_PACKAGE_11-06-2026.pdf');
     expect(caseFixtures[index('1042')].decedentName).toBe('MARY ANN SMITH');
     expect(eventsOf('1042', 'crematory.package_name_confirmed').at(-1)!.description).toBe('Name for the Crematory Package confirmed: Smith, Mary Ann (was Reynolds, Richard)');
   });
@@ -270,14 +405,16 @@ describe('the Crematory Package — one PDF per decedent', () => {
     let summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_verified', 'package']);
     await expect(pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 422 });
+    // Confirming it rebuilds the package automatically.
     await pkg.confirmPermit(ctx(), '1042', newPermit.id, 'mock');
-    expect((await pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).outcome).toBe('saved');
+    expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(2);
+    expect((await pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).outcome).toBe('unchanged');
 
-    // A different confirmed date renames the package.
+    // A different confirmed date: rebuilt automatically under the new name.
     await pkg.confirmReadyDate(ctx(), '1042', '11/09/2026', 'mock');
     summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
-    expect(summary.package).toMatchObject({ current: false });
-    await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
+    expect(summary.package).toMatchObject({ current: true, fileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-09-2026.pdf' });
+    expect((await pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).outcome).toBe('unchanged');
 
     const versions = docsOf('1042', 'cremation_form.crematory_package');
     expect(versions.map((d) => [d.version, d.status, d.fileName])).toEqual([

@@ -121,13 +121,16 @@ export type ExtractOutcome = { outcome: 'saved' | 'unchanged'; document: Extract
  * saves it as the next version — or reports `unchanged` when the latest
  * saved copy is already exactly this page. Refuses, creating nothing:
  *   - the Crematory Form when the permit is not confirmed by the case's own
- *     data and the staff member has not confirmed verifying it;
+ *     data and the staff member has not confirmed verifying it — except
+ *     when SOLIS prepares it automatically for the Crematory Package
+ *     (`automatic`, 2026-10): page 3 is only copied and saved, never sent,
+ *     and the package itself still needs the permit confirmed;
  *   - a case with no Arrangement Forms PDF, or one too short.
  */
 export async function extractArrangementPage(
   kind: ArrangementExtractKind,
   caseId: string,
-  options: { permitVerifiedByStaff?: boolean },
+  options: { permitVerifiedByStaff?: boolean; automatic?: boolean },
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
 ): Promise<ExtractOutcome> {
@@ -144,6 +147,7 @@ export async function extractArrangementPage(
     const permit = crematoryPermitStatus(case_);
     if (permit.confirmed) permitBasis = permit.basis;
     else if (options.permitVerifiedByStaff === true) permitBasis = 'verified by staff';
+    else if (options.automatic === true) permitBasis = 'prepared automatically for the Crematory Package';
     else {
       throw new ArrangementExtractError(
         "The permit isn't confirmed in this case's information yet. Confirm you have verified the permit is available, or record it on the case first.",

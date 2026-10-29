@@ -4,7 +4,10 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canUploadDocument } from '@/services/authorizationPolicyService';
 import { upload, DocumentServiceError } from '@/services/documentService';
-import { isValidDocumentTypeKey } from '@/domain/documents/documentTypeRegistry';
+import { DOCUMENT_TYPES, isValidDocumentTypeKey } from '@/domain/documents/documentTypeRegistry';
+import { ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY } from '@/domain/documents/arrangementPageExtracts';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
 import { getDataAdapterMode } from '@/lib/env';
 
 /** 15MB — see this phase's Security section (file size/type limits). */
@@ -88,6 +91,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       { organizationId: resolvedOrganizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId },
       dataAdapterMode,
     );
+    // Send to Crematory (2026-10): an Arrangement Form or state permit
+    // uploaded — page 3 and the Crematory Package are prepared from what is
+    // now on the case, after this response. Nothing is sent.
+    if (document.documentTypeKey === ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY || document.documentTypeKey === DOCUMENT_TYPES.CREMATION_FORM_STATE_PERMIT.key) {
+      const ctx = { organizationId: resolvedOrganizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId };
+      runAfterResponse('crematory package preparation', () => prepareCrematoryDocuments(ctx, caseId, dataAdapterMode));
+    }
     return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
     if (error instanceof DocumentServiceError) {

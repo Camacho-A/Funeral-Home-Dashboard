@@ -9,6 +9,8 @@ import type { ExternalFormConfig } from '../types/externalFormConfig';
 import { resolveFormLayout } from '../domain/externalForms/formRegistry';
 import type { ActivityContext } from './activityService';
 import { recordExternalFormPdfStored, recordExternalFormPdfFailed } from './activityService';
+import { runAfterResponse } from '../lib/afterResponse';
+import { ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY } from '../domain/documents/arrangementPageExtracts';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). PDF
@@ -169,6 +171,16 @@ export async function preservePdfForSubmission(
     await recordExternalFormPdfStored(ctx, caseId, submission.id, fileName, dataAdapterMode);
   } catch (error) {
     console.error('Failed to record external_form.pdf_stored activity event:', error instanceof Error ? error.message : error);
+  }
+
+  // Send to Crematory (2026-10): an Arrangement Form now on the case —
+  // page 3 and, when everything else is confirmed, the Crematory Package
+  // are prepared from it, after this response. Nothing is sent.
+  if (documentTypeKey === ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY) {
+    runAfterResponse('crematory package preparation', async () => {
+      const { prepareCrematoryDocuments } = await import('./crematory/crematoryPackageService');
+      await prepareCrematoryDocuments(ctx, caseId, dataAdapterMode);
+    });
   }
 
   return { outcome: 'stored', documentId: document.id };

@@ -34,6 +34,7 @@ import { evaluateCrematoryReadiness, type CrematoryReadiness } from '@/domain/cr
 import { resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
 import { mergePdfs, UnreadablePdfError } from '@/lib/pdf/mergePdfs';
 import { toDisplayCasingIfAllCaps } from '@/utils/string';
+import { ArrangementExtractError, extractArrangementPage } from '../arrangementPageExtractService';
 
 /**
  * Send to Crematory (2026-10). Everything between "the permit was uploaded"
@@ -50,10 +51,14 @@ import { toDisplayCasingIfAllCaps } from '@/utils/string';
  *   4. (crematorySendService.ts) one Outlook email carries one package per
  *      selected decedent.
  *
- * Nothing here ever sends anything, and nothing happens because a permit
- * was uploaded: every step is a staff action. Organization rules (the
- * subject's name, the workflow stage that must be complete) come from the
- * organization's profile, so another funeral home can use the same code.
+ * Nothing here ever sends anything. Staff confirm the permit, the name and
+ * the date; everything else is prepared automatically (2026-10,
+ * prepareCrematoryDocuments below): page 3 is extracted when an
+ * Arrangement Form arrives or changes, and the package is built as soon as
+ * everything it needs is confirmed — and rebuilt when a source changes.
+ * Organization rules (the subject's name, the workflow stage that must be
+ * complete) come from the organization's profile, so another funeral home
+ * can use the same code.
  */
 export class CrematoryError extends Error {
   constructor(
@@ -351,6 +356,7 @@ export async function confirmPermit(ctx: ActivityContext, caseId: string, docume
     description: `State permit "${facts.permit.fileName}" confirmed as the approved permit for ${decedentDisplayName(case_)}`,
     record: { documentId, checksumSha256: facts.permit.checksumSha256 },
   }, mode);
+  await prepareCrematoryDocuments(ctx, caseId, mode);
   return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
@@ -374,6 +380,7 @@ export async function confirmReadyDate(ctx: ActivityContext, caseId: string, dat
     description: `Expected cremation ready date confirmed: ${confirmed}${previous && previous !== confirmed ? ` (was ${previous})` : ''}`,
     record: { date: confirmed, previous, suggestedFromExpectedPickup: suggested },
   }, mode);
+  await prepareCrematoryDocuments(ctx, caseId, mode);
   return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
@@ -406,6 +413,7 @@ export async function confirmPackageName(
     description: `Name for the Crematory Package confirmed: ${name.last}, ${name.first}${previous && (previous.first !== name.first || previous.last !== name.last) ? ` (was ${previous.last}, ${previous.first})` : ''}`,
     record: { first: name.first, last: name.last, previous },
   }, mode);
+  await prepareCrematoryDocuments(ctx, caseId, mode);
   return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
@@ -487,6 +495,167 @@ export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string
     record: { version: document.version, fileName, permitDocumentId: facts.permit!.id, crematoryFormDocumentId: facts.crematoryForm!.id, checksumSha256: document.checksumSha256 },
   }, mode);
   return { outcome: 'saved', summary: await getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode) };
+}
+
+// ---------------------------------------------------------------------------
+// Automatic preparation (2026-10)
+// ---------------------------------------------------------------------------
+
+export type AutoPrepareResult = {
+  /** Page 3 of the Arrangement Form, saved as the Crematory Form. */
+  crematoryForm: 'saved' | 'unchanged' | 'no_arrangement_form' | 'not_needed' | 'failed';
+  /** The Crematory Package; `needs_attention` when something it needs is
+      missing or unconfirmed — never built with a guess. */
+  package: 'saved' | 'unchanged' | 'needs_attention' | 'not_needed' | 'failed';
+};
+
+const NOT_NEEDED: AutoPrepareResult = { crematoryForm: 'not_needed', package: 'not_needed' };
+const preparing = new Map<string, Promise<AutoPrepareResult>>();
+/** How long one server may hold a case's preparation before another may take over. */
+const PREPARATION_LEASE_MS = 120_000;
+
+/**
+ * Prepares everything a case's Crematory Package is made from, using what
+ * is already in the case's documents — called whenever one of its inputs
+ * may have changed (an Arrangement Form or permit stored on the case, a
+ * permit / name / date confirmed, workflow 2 completed, Send to Crematory
+ * opened):
+ *   1. page 3 of the latest Arrangement Form is saved as the Crematory
+ *      Form — nothing new when that page is already saved, a new version
+ *      when the Arrangement Form changed; the original is only read;
+ *   2. the package is built when every requirement is met (the permit
+ *      staff confirmed, page 3, workflow 2, the confirmed name and date) —
+ *      nothing new when the saved package is still current, the next
+ *      version when a source changed. Otherwise the case keeps showing what
+ *      needs attention.
+ * Never sends, and never touches a case already sent, being sent, or whose
+ * send is unclear (a changed source never leads to a resend).
+ *
+ * One preparation per case at a time, across servers: when there is work
+ * to do, a short lease is claimed on the case's crematory record with the
+ * case's conditional write — two servers can never both hold it, so two
+ * can never both save "the next version". A server that finds it held
+ * waits for it, then checks again; the holder re-checks before releasing,
+ * so a change that arrives meanwhile is never missed. Never throws.
+ */
+export function prepareCrematoryDocuments(
+  ctx: ActivityContext,
+  caseId: string,
+  mode: DataAdapterMode,
+  options: { waitMs?: number; pollMs?: number } = {},
+): Promise<AutoPrepareResult> {
+  if (!sendToCrematoryConfig(ctx.organizationId)) return Promise.resolve(NOT_NEEDED);
+  const key = `${ctx.organizationId}:${caseId}`;
+  const previous = preparing.get(key) ?? Promise.resolve(NOT_NEEDED);
+  const run = previous
+    .catch(() => NOT_NEEDED)
+    .then(() => prepareWithLease(ctx, caseId, mode, options))
+    .catch((error) => {
+      console.error(`[crematory-auto] Case ${caseId}: preparation failed:`, error instanceof Error ? error.message : error);
+      return { crematoryForm: 'failed', package: 'failed' } as AutoPrepareResult;
+    });
+  preparing.set(key, run);
+  void run.finally(() => {
+    if (preparing.get(key) === run) preparing.delete(key);
+  });
+  return run;
+}
+
+type Work = { page3: boolean; build: boolean };
+
+/** What preparation would do now — read-only. Null: never for this case. */
+async function pendingWork(organizationId: string, caseId: string, mode: DataAdapterMode): Promise<Work | null> {
+  const case_ = await loadCase(organizationId, caseId, mode).catch(() => null);
+  if (!case_) return null;
+  const record = case_.crematory;
+  const sentOrSending = Boolean(record?.pendingSubmission) || record?.lastSubmission?.status === 'submitted' || record?.lastSubmission?.status === 'uncertain';
+  if (case_.caseType !== 'cremation' || case_.isDeleted || sentOrSending) return null;
+  const facts = await loadFacts(organizationId, case_, mode);
+  const page3 = facts.arrangementForm !== null && (facts.crematoryForm === null || facts.crematoryForm.createdAt < facts.arrangementForm.createdAt);
+  const build = readinessOf(facts, false).readyToBuild && !packageIsCurrent(facts);
+  return { page3, build };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function prepareWithLease(ctx: ActivityContext, caseId: string, mode: DataAdapterMode, options: { waitMs?: number; pollMs?: number }): Promise<AutoPrepareResult> {
+  const first = await pendingWork(ctx.organizationId, caseId, mode);
+  if (!first) return NOT_NEEDED;
+  if (!first.page3 && !first.build) return quietResult(ctx.organizationId, caseId, mode);
+
+  const token = crypto.randomUUID();
+  const deadline = Date.now() + (options.waitMs ?? 30_000);
+  while (!(await claimPreparation(ctx.organizationId, caseId, token, mode))) {
+    if (Date.now() >= deadline) {
+      console.warn(`[crematory-auto] Case ${caseId}: another server is still preparing it; left to that server.`);
+      return { crematoryForm: 'unchanged', package: 'unchanged' };
+    }
+    await sleep(options.pollMs ?? 1_000);
+  }
+  try {
+    const result: AutoPrepareResult = { crematoryForm: 'unchanged', package: 'unchanged' };
+    // Up to three passes: a change that lands while this one works is picked up before the lease is released.
+    for (let pass = 0; pass < 3; pass++) {
+      const work = await pendingWork(ctx.organizationId, caseId, mode);
+      if (!work || (!work.page3 && !work.build)) break;
+      const done = await prepareOnce(ctx, caseId, mode);
+      if (done.crematoryForm === 'saved' || pass === 0) result.crematoryForm = done.crematoryForm;
+      if (done.package === 'saved' || pass === 0) result.package = done.package;
+      if (done.crematoryForm === 'failed' || done.package === 'failed') break;
+    }
+    return result;
+  } finally {
+    await applyCrematoryRecord(ctx.organizationId, caseId, (c) => (c.crematory?.preparing?.token === token ? { preparing: null } : null), mode).catch((error) =>
+      console.error(`[crematory-auto] Case ${caseId}: could not release the preparation lease (it expires on its own):`, error instanceof Error ? error.message : error),
+    );
+  }
+}
+
+/** Claims the case's preparation lease — atomically, through the case's conditional write. */
+async function claimPreparation(organizationId: string, caseId: string, token: string, mode: DataAdapterMode): Promise<boolean> {
+  try {
+    await applyCrematoryRecord(
+      organizationId,
+      caseId,
+      (c) => {
+        const held = c.crematory?.preparing;
+        if (held && held.token !== token && Date.parse(held.until) > Date.now()) throw new CrematoryError('Being prepared by another server.', 423);
+        return { preparing: { token, until: new Date(Date.now() + PREPARATION_LEASE_MS).toISOString() } };
+      },
+      mode,
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof CrematoryError && (error.status === 423 || error.status === 409)) return false;
+    throw error;
+  }
+}
+
+/** Nothing to do: report the case as it stands. */
+async function quietResult(organizationId: string, caseId: string, mode: DataAdapterMode): Promise<AutoPrepareResult> {
+  const facts = await loadFacts(organizationId, await loadCase(organizationId, caseId, mode), mode);
+  return {
+    crematoryForm: facts.arrangementForm ? 'unchanged' : 'no_arrangement_form',
+    package: readinessOf(facts, false).readyToBuild ? 'unchanged' : 'needs_attention',
+  };
+}
+
+async function prepareOnce(ctx: ActivityContext, caseId: string, mode: DataAdapterMode): Promise<AutoPrepareResult> {
+  const result: AutoPrepareResult = { crematoryForm: 'no_arrangement_form', package: 'needs_attention' };
+  try {
+    result.crematoryForm = (await extractArrangementPage('crematory_form', caseId, { automatic: true }, ctx, mode)).outcome;
+  } catch (error) {
+    result.crematoryForm = error instanceof ArrangementExtractError && error.status === 422 ? 'no_arrangement_form' : 'failed';
+    if (result.crematoryForm === 'failed') console.error(`[crematory-auto] Case ${caseId}: page 3 could not be prepared:`, error instanceof Error ? error.message : error);
+  }
+  try {
+    const facts = await loadFacts(ctx.organizationId, await loadCase(ctx.organizationId, caseId, mode), mode);
+    if (readinessOf(facts, false).readyToBuild) result.package = (await buildCrematoryPackage(ctx, caseId, mode)).outcome;
+  } catch (error) {
+    result.package = error instanceof CrematoryError && (error.status === 409 || error.status === 422) ? 'needs_attention' : 'failed';
+    if (result.package === 'failed') console.error(`[crematory-auto] Case ${caseId}: the package could not be prepared:`, error instanceof Error ? error.message : error);
+  }
+  return result;
 }
 
 /** For the send service: the case, its readiness and its package. */
