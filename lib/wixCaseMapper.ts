@@ -936,6 +936,9 @@ function readChecklistCompletions(value: unknown): Pick<Case, 'checklistCompleti
       eventId: typeof raw.eventId === 'string' ? raw.eventId : null,
       at: raw.at,
       actorId: typeof raw.actorId === 'string' ? raw.actorId : null,
+      // A historical correction (2026-10) — exactly as the server writes
+      // it (domain/workflow/checklistAutomation.ts): present only when true.
+      ...(raw.historical === true ? { historical: true } : {}),
     };
   }
   return Object.keys(records).length > 0 ? { checklistCompletions: records } : {};

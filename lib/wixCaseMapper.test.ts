@@ -7,6 +7,7 @@ import {
   applyCaseUpdateToWixData,
   describeMapWixCaseItemFailure,
 } from './wixCaseMapper';
+import { staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
 
 const validItem = {
   beaconCaseId: '1042',
@@ -1264,6 +1265,29 @@ describe('checklistCompletions and SLA fields (2026-10)', () => {
     expect(Object.keys(mapped!.slaDelays!)).toEqual(['d1']);
     expect(mapped!.slaDelays!.d1).toMatchObject({ id: 'd1', resolvedAt: null, resolution: null });
     expect(mapped!.stageEnteredAt).toBe('2026-10-20T12:00:00.000Z');
+  });
+
+  it('a historical correction survives the Wix write and read (2026-10) — exactly as the server writes it', () => {
+    const corrections = staffChecklistCompletionUpdate({ checklistState: {} }, { '1:0': true, '2:0': true }, 'identity-dana', '2026-10-29T15:00:00.000Z', {
+      historicalKeys: ['1:0'],
+    })!;
+    const existing = { ...validItem, checklistCompletions: { '0:8': record } } as unknown as Parameters<typeof buildCaseFieldPatch>[0];
+    const fields = buildCaseFieldPatch(existing, { checklistCompletions: corrections });
+    // Stored as JSON in Wix, then read back.
+    const stored = JSON.parse(JSON.stringify({ ...validItem, ...fields }));
+    expect(stored.checklistCompletions['1:0'].historical).toBe(true);
+    const mapped = mapWixCaseItem(stored)!;
+    expect(mapped.checklistCompletions!['1:0']).toEqual({ ...corrections['1:0'], historical: true });
+    expect(mapped.checklistCompletions!['2:0']).not.toHaveProperty('historical');
+    expect(mapped.checklistCompletions!['0:8']).toEqual(record);
+  });
+
+  it('records without the flag read exactly as before; anything but `true` is never a correction', () => {
+    const mapped = mapWixCaseItem({
+      ...validItem,
+      checklistCompletions: { '0:8': record, '1:0': { ...record, historical: false }, '1:1': { ...record, historical: 'true' }, '1:2': { ...record, historical: 1 } },
+    })!;
+    for (const key of ['0:8', '1:0', '1:1', '1:2']) expect(mapped.checklistCompletions![key]).toEqual(record);
   });
 
   it('none of these is ever accepted from a client patch', () => {
