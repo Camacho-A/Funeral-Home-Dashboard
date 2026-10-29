@@ -10,6 +10,7 @@ import {
   maskSsn,
   normalizeSsn,
   relationshipForForm,
+  sexForForm,
   type ManateeApplicationValues,
 } from './manateeDeathCertificateApplication';
 
@@ -18,6 +19,7 @@ const complete = (overrides: Partial<ManateeApplicationValues> = {}): ManateeApp
   decedentFirst: 'Mary Ann',
   decedentMiddle: 'Louise',
   decedentLast: 'Salas Rueda',
+  decedentSex: 'F',
   ssn: '000-12-3456',
   ssnNotKnown: false,
   dateOfDeath: '10/04/2026',
@@ -69,6 +71,7 @@ describe('field values', () => {
       'First Name': 'MARY ANN',
       Middle: 'LOUISE',
       Last: 'SALAS RUEDA',
+      Suffix2: 'F',
       SS: '000-12-3456',
       Month: '10',
       Day: '4',
@@ -141,9 +144,14 @@ describe('review — nothing is made from missing or guessed information', () =>
 
   it('flags every missing required value', () => {
     const fields = manateeIssues(
-      complete({ decedentFirst: '', decedentLast: ' ', ssn: null, dateOfDeath: '', placeOfDeathCity: '', placeOfDeathCounty: '', representedName: '', representedRelationship: '' }),
+      complete({ decedentFirst: '', decedentLast: ' ', decedentSex: '', ssn: null, dateOfDeath: '', placeOfDeathCity: '', placeOfDeathCounty: '', representedName: '', representedRelationship: '' }),
     ).map((i) => i.field);
-    expect(fields).toEqual(['decedentFirst', 'decedentLast', 'ssn', 'dateOfDeath', 'placeOfDeathCity', 'placeOfDeathCounty', 'representedName', 'representedRelationship']);
+    expect(fields).toEqual(['decedentFirst', 'decedentLast', 'decedentSex', 'ssn', 'dateOfDeath', 'placeOfDeathCity', 'placeOfDeathCounty', 'representedName', 'representedRelationship']);
+  });
+
+  it('sex: the forms\' Male / Female as the form\'s F / M; anything else is left for staff', () => {
+    expect(['Female', ' male ', 'MALE', 'Unknown', '', null, undefined, 3].map(sexForForm)).toEqual(['F', 'M', 'M', '', '', '', '', '']);
+    expect(manateeFieldValues(complete({ decedentSex: 'M' }))[MANATEE_FIELDS.decedentSex]).toBe('M');
   });
 
   it('a spouse is optional, but a partial spouse name is flagged', () => {

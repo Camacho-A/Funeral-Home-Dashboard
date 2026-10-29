@@ -36,7 +36,7 @@ const { ManateeApplicationError } = await import('@/services/manateeApplicationS
 const SAME_ORIGIN = { origin: 'http://localhost', host: 'localhost', 'content-type': 'application/json' };
 const params = { params: Promise.resolve({ caseId: '1042' }) };
 const values = {
-  decedentFirst: 'Mary Ann', decedentMiddle: '', decedentLast: 'Salas Rueda', ssnNotKnown: false, ssn: '000-12-3456',
+  decedentFirst: 'Mary Ann', decedentMiddle: '', decedentLast: 'Salas Rueda', decedentSex: 'F', ssnNotKnown: false, ssn: '000-12-3456',
   dateOfDeath: '10/04/2026', placeOfDeathCity: 'Pembroke Pines', placeOfDeathCounty: 'Broward',
   spouseFirst: '', spouseMiddle: '', spouseLast: '', representedName: 'Teresa', representedRelationship: 'Daughter',
   withCause: 1, withoutCause: 0, fedexFee: false,

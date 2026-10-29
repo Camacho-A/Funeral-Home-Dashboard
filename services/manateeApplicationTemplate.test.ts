@@ -10,6 +10,7 @@ const values: ManateeApplicationValues = {
   decedentFirst: 'Mary Ann',
   decedentMiddle: 'Louise',
   decedentLast: 'Salas Rueda',
+  decedentSex: 'F',
   ssn: '000123456',
   ssnNotKnown: false,
   dateOfDeath: '10/04/2026',
@@ -53,6 +54,8 @@ describe('buildManateeApplicationPdf', () => {
       'First Name': 'MARY ANN',
       Middle: 'LOUISE',
       Last: 'SALAS RUEDA',
+      // The SEX box (named "Suffix2" in the form).
+      Suffix2: 'F',
       SS: '000-12-3456',
       Month: '10',
       Day: '4',
@@ -82,7 +85,7 @@ describe('buildManateeApplicationPdf', () => {
     const filledNames = Object.keys(manateeFieldValues({ ...values, fedexFee: false }));
     const untouched = [...original.fields.keys()].filter((n) => !filledNames.includes(n));
     // Including the Request boxes, which nobody typed.
-    expect(untouched).toHaveLength(19);
+    expect(untouched).toHaveLength(18);
     expect(untouched).toEqual(expect.arrayContaining(['1 OF', 'of']));
     for (const name of untouched) {
       expect(filled.fields.get(name), name).toBe(original.fields.get(name));

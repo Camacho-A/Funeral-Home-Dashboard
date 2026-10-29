@@ -37,7 +37,7 @@ const SOURCE_LABEL: Record<Exclude<ManateeValueSource, null>, string> = {
   case: 'From the case',
 };
 
-type TextKey = Exclude<keyof ManateeDraftValues, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown' | 'requestNumber' | 'requestOf'>;
+type TextKey = Exclude<keyof ManateeDraftValues, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown' | 'requestNumber' | 'requestOf' | 'decedentSex'>;
 
 export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { organizationId: string; caseId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -210,6 +210,29 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
                 {text('decedentFirst', 'First name', { required: true })}
                 {text('decedentMiddle', 'Middle name')}
                 {text('decedentLast', 'Last name', { required: true })}
+              </div>
+              <div className={styles.grid3}>
+                <div className="sx-field">
+                  <label className="sx-label sx-label-required" htmlFor="manatee-decedentSex">
+                    Sex
+                  </label>
+                  <select
+                    id="manatee-decedentSex"
+                    className="sx-select"
+                    value={values.decedentSex}
+                    aria-invalid={issueFor('decedentSex') ? true : undefined}
+                    onChange={(e) => set('decedentSex', e.target.value as ManateeDraftValues['decedentSex'])}
+                  >
+                    <option value="">Select…</option>
+                    <option value="F">F — Female</option>
+                    <option value="M">M — Male</option>
+                  </select>
+                  {issueFor('decedentSex') ? (
+                    <span className={styles.issue}>{issueFor('decedentSex')}</span>
+                  ) : draft.data?.sources.decedentSex ? (
+                    <span className="sx-help">{SOURCE_LABEL[draft.data.sources.decedentSex]}</span>
+                  ) : null}
+                </div>
               </div>
               <div className={styles.grid3}>
                 {text('dateOfDeath', 'Date of death', { required: true, placeholder: 'MM/DD/YYYY', date: true })}

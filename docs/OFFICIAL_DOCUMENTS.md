@@ -86,7 +86,11 @@ Certificate Application…". Code: `domain/documents/manateeDeathCertificateAppl
 
 - **Staff review every value first.** Names come only from the intake forms'
   first / middle / last boxes; the SSN from the Arrangement Form or the Vital
-  Statistics form (shown in the window only as its last four digits); city of
+  Statistics form (shown in the window only as its last four digits); sex
+  (the form's SEX box, F / M — named "Suffix2" in the template) from the
+  Arrangement Form, else the Vital Statistics form, required before the
+  document is made; surviving spouse from the same forms' spouse name (blank
+  when the family left it blank, e.g. not married); city of
   death from the forms; date of death, next of kin and relationship from the
   case. No record holds the county, so staff enter it — never inferred from a
   city. Corrections apply to the document only, never the case.

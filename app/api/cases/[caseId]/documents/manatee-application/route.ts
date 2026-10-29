@@ -123,6 +123,8 @@ function parseInput(raw: unknown): ManateeApplicationInput | null {
   const withoutCause = int(r.withoutCause);
   if (withCause === null || withoutCause === null) return null;
   if (typeof r.fedexFee !== 'boolean' || typeof r.ssnNotKnown !== 'boolean') return null;
+  const decedentSex = r.decedentSex === undefined ? '' : r.decedentSex;
+  if (decedentSex !== '' && decedentSex !== 'F' && decedentSex !== 'M') return null;
   if (r.ssn !== undefined && r.ssn !== null && typeof r.ssn !== 'string') return null;
   const requestNumber = r.requestNumber === undefined ? '' : str(r.requestNumber, 4);
   const requestOf = r.requestOf === undefined ? '' : str(r.requestOf, 4);
@@ -131,6 +133,7 @@ function parseInput(raw: unknown): ManateeApplicationInput | null {
     ...(out as Omit<ManateeApplicationInput, 'withCause' | 'withoutCause' | 'fedexFee' | 'ssnNotKnown' | 'ssn' | 'requestNumber' | 'requestOf'>),
     withCause,
     withoutCause,
+    decedentSex,
     fedexFee: r.fedexFee,
     ssnNotKnown: r.ssnNotKnown,
     ssn: typeof r.ssn === 'string' ? r.ssn.slice(0, 20) : null,

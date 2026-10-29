@@ -59,6 +59,7 @@ const submission = (id: string, externalFormId: string, receivedAt: string): Ext
 const arrangementAnswers = {
   '87': { answer: { first: 'Mary Ann', middle: 'Louise', last: 'Salas Rueda', suffix: '' } },
   '11': { answer: '000-12-3456' },
+  '222': { answer: 'Female' },
   '97': { answer: { addr_line1: '100 Example St', city: 'Pembroke Pines', state: 'Florida', postal: '33000' } },
   '105': { answer: { first: 'Jonathan', middle: '', last: 'Salas Rueda' } },
 };
@@ -99,6 +100,7 @@ const reviewed = (overrides: Record<string, unknown> = {}) => ({
   decedentFirst: 'Mary Ann',
   decedentMiddle: 'Louise',
   decedentLast: 'Salas Rueda',
+  decedentSex: 'F' as const,
   ssnNotKnown: false,
   dateOfDeath: '10/04/2026',
   placeOfDeathCity: 'Pembroke Pines',
@@ -126,6 +128,7 @@ describe('the draft staff review', () => {
       decedentFirst: 'Mary Ann',
       decedentMiddle: 'Louise',
       decedentLast: 'Salas Rueda',
+      decedentSex: 'F',
       dateOfDeath: '10/04/2026',
       placeOfDeathCity: 'Pembroke Pines',
       // No record of the county anywhere — staff enter it; never inferred from the city.
@@ -138,7 +141,7 @@ describe('the draft staff review', () => {
       withoutCause: 0,
       fedexFee: false,
     });
-    expect(draft.sources).toMatchObject({ decedentFirst: 'arrangement_form', placeOfDeathCounty: null, dateOfDeath: 'case', representedRelationship: 'case' });
+    expect(draft.sources).toMatchObject({ decedentFirst: 'arrangement_form', decedentSex: 'arrangement_form', placeOfDeathCounty: null, dateOfDeath: 'case', representedRelationship: 'case' });
     // Captured from the Arrangement Form the first time it is needed, and locked.
     expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-3456', source: 'case', locked: true });
     expect(await getCaseSsnSummary(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toMatchObject({ last4: '3456', source: 'arrangement_form' });
@@ -153,8 +156,9 @@ describe('the draft staff review', () => {
     const draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
     expect(draft.values.decedentFirst).toBe('');
     expect(draft.values.decedentLast).toBe('');
+    expect(draft.values.decedentSex).toBe('');
     expect(draft.ssn.onFile).toBe(false);
-    expect(draft.issues.map((i) => i.field)).toEqual(expect.arrayContaining(['decedentFirst', 'decedentLast', 'ssn', 'placeOfDeathCity', 'placeOfDeathCounty']));
+    expect(draft.issues.map((i) => i.field)).toEqual(expect.arrayContaining(['decedentFirst', 'decedentLast', 'decedentSex', 'ssn', 'placeOfDeathCity', 'placeOfDeathCounty']));
   });
 
   it('prefers the Arrangement Form, and fills gaps from the Vital Statistics form', async () => {
@@ -166,6 +170,22 @@ describe('the draft staff review', () => {
     expect(draft.ssn).toEqual({ onFile: true, masked: '•••-••-7654', source: 'case', locked: true });
     expect(await getCaseSsnSummary(DEFAULT_ORGANIZATION_ID, CASE_ID, 'mock')).toMatchObject({ source: 'vital_statistics' });
     expect([draft.values.spouseFirst, draft.values.spouseLast]).toEqual(['Jon', 'Rueda']);
+  });
+
+  it('sex: the Arrangement Form\'s Male / Female as F / M, else the Vital Statistics form\'s; never guessed', async () => {
+    submissions.push(submission('sub-vs', VITAL_STATISTICS_EXTERNAL_FORM_ID, '2026-10-06T10:00:00.000Z'));
+    answersBySubmission.set('sub-vs', { '32': { answer: 'Male' } });
+    let draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
+    expect([draft.values.decedentSex, draft.sources.decedentSex]).toEqual(['F', 'arrangement_form']);
+
+    answersBySubmission.set('sub-arr', { ...arrangementAnswers, '222': { answer: '' } });
+    draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
+    expect([draft.values.decedentSex, draft.sources.decedentSex]).toEqual(['M', 'vital_statistics']);
+
+    answersBySubmission.set('sub-vs', { '32': { answer: 'Unknown' } });
+    draft = await getManateeApplicationDraft(DEFAULT_ORGANIZATION_ID, CASE_ID, ctx, 'mock');
+    expect([draft.values.decedentSex, draft.sources.decedentSex]).toEqual(['', null]);
+    expect(draft.issues.map((i) => i.message)).toContain("Select the decedent's sex (F or M).");
   });
 
   it('keeps SOLIS relationships the form has no list entry for — Legal Representative, Domestic Partner, Friend', async () => {

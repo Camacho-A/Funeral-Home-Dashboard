@@ -11,7 +11,7 @@ vi.mock('@/components/documents/DocumentPreview', () => ({ DocumentPreview: () =
 
 const draft = (overrides: Partial<ManateeDraft> = {}): ManateeDraft => ({
   values: {
-    decedentFirst: 'Mary Ann', decedentMiddle: 'Louise', decedentLast: 'Salas Rueda', ssnNotKnown: false, dateOfDeath: '10/04/2026',
+    decedentFirst: 'Mary Ann', decedentMiddle: 'Louise', decedentLast: 'Salas Rueda', decedentSex: 'F', ssnNotKnown: false, dateOfDeath: '10/04/2026',
     placeOfDeathCity: 'Pembroke Pines', placeOfDeathCounty: 'BROWARD', spouseFirst: '', spouseMiddle: '', spouseLast: '',
     representedName: 'TERESA SALAS RUEDA', representedRelationship: 'Daughter', withCause: 0, withoutCause: 0, fedexFee: false,
     requestNumber: '', requestOf: '',
@@ -73,6 +73,21 @@ describe('ManateeApplicationDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save to Documents' }));
     expect(await screen.findByText(/It has not been sent anywhere/)).toBeTruthy();
     expect(client.saveManateeApplication).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the sex from the forms as F / M, and sends what staff chose', async () => {
+    client.fetchManateeDraft.mockResolvedValue(draft({ sources: { decedentSex: 'vital_statistics' } }));
+    client.previewManateeApplication.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    renderDialog();
+    await screen.findByDisplayValue('Mary Ann');
+    const sex = screen.getByLabelText('Sex') as HTMLSelectElement;
+    expect(sex.value).toBe('F');
+    expect(screen.getByText('From the Vital Statistics form')).toBeTruthy();
+    fireEvent.change(sex, { target: { value: 'M' } });
+    fireEvent.change(screen.getByLabelText('With cause of death'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    await screen.findByText('PDF preview');
+    expect(client.previewManateeApplication.mock.calls[0][2]).toMatchObject({ decedentSex: 'M' });
   });
 
   it('missing values must be entered here; a typed SSN must have 9 digits', async () => {

@@ -25,6 +25,7 @@ import {
   maskSsn,
   normalizeSsn,
   relationshipForForm,
+  sexForForm,
   type ManateeApplicationInput,
   type ManateeApplicationValues,
   type ManateeDraft,
@@ -42,7 +43,7 @@ import { captureCaseSsnFromForms, readCaseSsn } from './caseSsnService';
  *
  * Sources, most reliable first, every value a suggestion staff can change
  * in the generation window (which never writes back to the case):
- *   - decedent first / middle / last, SSN, city of death, surviving spouse:
+ *   - decedent first / middle / last, sex, SSN, city of death, surviving spouse:
  *     the case's intake forms, read-only from Jotform — the Arrangement
  *     Form, then the Vital Statistics form, then the First Call Sheet,
  *     newest submission first. Names only ever from the forms' own
@@ -70,9 +71,9 @@ export function manateeApplicationEnabled(organizationId: string): boolean {
 }
 
 /** Which intake-form question holds each value, per form. */
-const FORM_QUESTIONS: Record<string, { name: string; ssn?: string; placeOfDeath: string; spouse?: string; label: FormSource }> = {
-  [ARRANGEMENT_FORMS_EXTERNAL_FORM_ID]: { name: '87', ssn: '11', placeOfDeath: '97', spouse: '105', label: 'arrangement_form' },
-  [VITAL_STATISTICS_EXTERNAL_FORM_ID]: { name: '3', ssn: '7', placeOfDeath: '30', spouse: '14', label: 'vital_statistics' },
+const FORM_QUESTIONS: Record<string, { name: string; sex?: string; ssn?: string; placeOfDeath: string; spouse?: string; label: FormSource }> = {
+  [ARRANGEMENT_FORMS_EXTERNAL_FORM_ID]: { name: '87', sex: '222', ssn: '11', placeOfDeath: '97', spouse: '105', label: 'arrangement_form' },
+  [VITAL_STATISTICS_EXTERNAL_FORM_ID]: { name: '3', sex: '32', ssn: '7', placeOfDeath: '30', spouse: '14', label: 'vital_statistics' },
   [FIRST_CALL_SHEET_EXTERNAL_FORM_ID]: { name: '3', placeOfDeath: '20', label: 'first_call_sheet' },
 };
 const FORM_PRIORITY: readonly FormSource[] = ['arrangement_form', 'vital_statistics', 'first_call_sheet'];
@@ -80,6 +81,7 @@ const FORM_PRIORITY: readonly FormSource[] = ['arrangement_form', 'vital_statist
 
 type FormFacts = {
   name: { first: string; middle: string; last: string } | null;
+  sex: 'F' | 'M' | null;
   ssn: string | null;
   city: string | null;
   spouse: { first: string; middle: string; last: string } | null;
@@ -97,6 +99,7 @@ function factsFromAnswers(answers: JotformAnswerMap, questions: (typeof FORM_QUE
   };
   return {
     name: fullName(questions.name),
+    sex: questions.sex ? sexForForm(answers[questions.sex]?.answer) || null : null,
     ssn: questions.ssn ? normalizeSsn(text(answers[questions.ssn]?.answer)) : null,
     city: sub(answers[questions.placeOfDeath]?.answer, 'city') || null,
     spouse: fullName(questions.spouse),
@@ -164,6 +167,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
   const ssn = await ssnFor(case_, forms, mode);
   const city = firstFrom(forms, (f) => f.city);
   const spouse = firstFrom(forms, (f) => (f.spouse?.first || f.spouse?.last ? f.spouse : null));
+  const sex = firstFrom(forms, (f) => f.sex);
   const relationship = relationshipForForm(case_.nextOfKinRelationship, case_.nextOfKinRelationshipOther);
 
   const values: ManateeDraftValues = {
@@ -172,6 +176,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     // separately on the case) — never a word taken from a full name.
     decedentMiddle: name ? name.value.middle || (case_.decedentMiddleName ?? '') : '',
     decedentLast: name?.value.last ?? '',
+    decedentSex: sex?.value ?? '',
     ssnNotKnown: false,
     dateOfDeath: case_.dateOfDeath ?? '',
     placeOfDeathCity: city?.value ?? '',
@@ -191,6 +196,7 @@ async function draftFor(case_: Case, mode: DataAdapterMode): Promise<{ draft: Om
     decedentFirst: name?.source ?? null,
     decedentMiddle: name ? (name.value.middle ? name.source : case_.decedentMiddleName ? 'case' : null) : null,
     decedentLast: name?.source ?? null,
+    decedentSex: sex?.source ?? null,
     dateOfDeath: case_.dateOfDeath ? 'case' : null,
     placeOfDeathCity: city?.source ?? null,
     placeOfDeathCounty: null,

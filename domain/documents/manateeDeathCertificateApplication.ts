@@ -29,6 +29,8 @@ export const MANATEE_FIELDS = {
   decedentFirst: 'First Name',
   decedentMiddle: 'Middle',
   decedentLast: 'Last',
+  /** The SEX box (a blank / F / M list) — named "Suffix2" in the template. */
+  decedentSex: 'Suffix2',
   ssn: 'SS',
   deathMonth: 'Month',
   deathDay: 'Day',
@@ -171,11 +173,21 @@ export function formatMoney(cents: number): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
+/** The form's SEX box: F or M, blank until known. */
+export type ManateeSex = '' | 'F' | 'M';
+
+/** An intake form's Male / Female answer as the form's box; anything else is left for staff. */
+export function sexForForm(answer: unknown): ManateeSex {
+  const value = typeof answer === 'string' ? answer.trim().toLowerCase() : '';
+  return value === 'female' ? 'F' : value === 'male' ? 'M' : '';
+}
+
 /** Everything the document prints, as staff confirmed it. */
 export type ManateeApplicationValues = {
   decedentFirst: string;
   decedentMiddle: string;
   decedentLast: string;
+  decedentSex: ManateeSex;
   /** The full SSN — only ever on the server and in the filled PDF. */
   ssn: string | null;
   /** Staff confirmed the SSN is not known; the box is left blank. */
@@ -205,6 +217,7 @@ export function manateeIssues(values: ManateeApplicationValues): ManateeIssue[] 
   const issues: ManateeIssue[] = [];
   if (!tidy(values.decedentFirst)) issues.push({ field: 'decedentFirst', message: "Enter the decedent's first name." });
   if (!tidy(values.decedentLast)) issues.push({ field: 'decedentLast', message: "Enter the decedent's last name." });
+  if (values.decedentSex !== 'F' && values.decedentSex !== 'M') issues.push({ field: 'decedentSex', message: "Select the decedent's sex (F or M)." });
   if (!values.ssnNotKnown && !normalizeSsn(values.ssn)) {
     issues.push({ field: 'ssn', message: 'Enter the 9-digit Social Security number, or mark it as not known.' });
   }
@@ -241,6 +254,7 @@ export function manateeFieldValues(values: ManateeApplicationValues): Record<str
     [MANATEE_FIELDS.decedentFirst]: upper(values.decedentFirst),
     [MANATEE_FIELDS.decedentMiddle]: upper(values.decedentMiddle),
     [MANATEE_FIELDS.decedentLast]: upper(values.decedentLast),
+    [MANATEE_FIELDS.decedentSex]: values.decedentSex,
     [MANATEE_FIELDS.ssn]: values.ssnNotKnown ? '' : (normalizeSsn(values.ssn) ?? ''),
     [MANATEE_FIELDS.deathMonth]: date.month,
     [MANATEE_FIELDS.deathDay]: date.day,
