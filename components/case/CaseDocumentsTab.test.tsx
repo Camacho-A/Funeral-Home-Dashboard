@@ -5,6 +5,7 @@ import { CaseDocumentsTab } from './CaseDocumentsTab';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as caseDocumentsClient from '@/lib/caseDocumentsClient';
 import * as identityAuthClient from '@/lib/identityAuthClient';
+import * as crematoryClient from '@/lib/crematoryClient';
 import { organizationsService } from '@/services/organizationsService';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { CaseDocumentWithActorName } from '@/types/caseDocument';
@@ -13,6 +14,10 @@ import type { Organization } from '@/types/organization';
 /** What a .docx is stored as — the one uploadable type no browser renders. */
 const WORD_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+vi.mock('@/lib/crematoryClient', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/crematoryClient')>('@/lib/crematoryClient');
+  return { ...actual, crematoryCaseAction: vi.fn(), fetchCrematoryCaseSummary: vi.fn(() => new Promise(() => {})) };
+});
 vi.mock('@/lib/caseDocumentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/caseDocumentsClient')>('@/lib/caseDocumentsClient');
   return {
@@ -1292,28 +1297,44 @@ describe('CaseDocumentsTab — Release Form and Crematory Form (2026-10)', () =>
     expect(createMenuItemNames()).toContain('Extract Release Form');
   });
 
-  it('without a recorded permit, asks staff to confirm before extracting the Crematory Form', async () => {
+  // Extract Crematory Form uses the same automatic preparation as Send to Crematory (2026-10).
+  const prepared = (crematoryForm: string, pkg = 'needs_attention') => ({ result: { crematoryForm, package: pkg } });
+
+  it('extracts page 3 without needing the permit — the same preparation as Send to Crematory', async () => {
     vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
-    vi.mocked(caseDocumentsClient.extractArrangementPage).mockResolvedValue({ outcome: 'saved', documentId: 'cf-1', version: 1 });
+    vi.mocked(crematoryClient.crematoryCaseAction).mockResolvedValue(prepared('saved'));
     renderTab();
     fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
-    expect(screen.getByText(/The permit isn.t recorded on this case yet/)).toBeInTheDocument();
+    expect(await screen.findByText("Crematory Form (Arrangement Form page 3) saved to this case's Documents.")).toBeInTheDocument();
+    expect(screen.queryByText(/The permit isn.t recorded on this case yet/)).toBeNull();
+    expect(crematoryClient.crematoryCaseAction).toHaveBeenCalledWith(DEFAULT_ORGANIZATION_ID, 'case-1', { action: 'prepare' });
     expect(caseDocumentsClient.extractArrangementPage).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Permit verified — Extract' }));
-    expect(await screen.findByText("Crematory Form v1 saved to this case's Documents.")).toBeInTheDocument();
-    expect(caseDocumentsClient.extractArrangementPage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'crematory_form', permitVerifiedByStaff: true }));
   });
 
-  it('with a recorded permit, extracts directly; an unchanged source says so; a missing source shows the error', async () => {
-    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state({ permit: { confirmed: true, basis: 'State approval recorded' } }));
-    vi.mocked(caseDocumentsClient.extractArrangementPage)
-      .mockResolvedValueOnce({ outcome: 'unchanged', documentId: 'cf-1', version: 1 })
-      .mockRejectedValueOnce(new Error('This case has no Arrangement Form PDF yet, so nothing was extracted.'));
+  it('says when page 3 is already current, when the package was updated too, and explains a missing form, a sent case, or a failure', async () => {
+    vi.mocked(caseDocumentsClient.fetchArrangementExtracts).mockResolvedValue(state());
+    vi.mocked(crematoryClient.crematoryCaseAction)
+      .mockResolvedValueOnce(prepared('unchanged'))
+      .mockResolvedValueOnce(prepared('saved', 'saved'))
+      .mockResolvedValueOnce(prepared('no_arrangement_form'))
+      .mockResolvedValueOnce(prepared('not_needed', 'not_needed'))
+      .mockRejectedValueOnce(new Error('The change could not be saved. Nothing was sent. Please try again.'));
     renderTab();
-    fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
-    expect(await screen.findByText(/The Crematory Form is already up to date/)).toBeInTheDocument();
-    fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
-    expect(await screen.findByText('This case has no Arrangement Form PDF yet, so nothing was extracted.')).toBeInTheDocument();
+    // The menu reads "Preparing…" while it runs; wait for it to be back between runs.
+    const run = async () => {
+      await screen.findByRole('button', { name: /Create document/ });
+      fireEvent.click(await findCreateMenuItem('Extract Crematory Form'));
+    };
+    await run();
+    expect(await screen.findByText(/The Crematory Form is already up to date — the Arrangement Form has not changed/)).toBeInTheDocument();
+    await run();
+    expect(await screen.findByText(/saved to this case's Documents\. The Crematory Package was updated to match\./)).toBeInTheDocument();
+    await run();
+    expect(await screen.findByText(/This case has no Arrangement Form PDF yet, so nothing was extracted/)).toBeInTheDocument();
+    await run();
+    expect(await screen.findByText(/already sent to the crematory/)).toBeInTheDocument();
+    await run();
+    expect(await screen.findByText('The change could not be saved. Nothing was sent. Please try again.')).toBeInTheDocument();
   });
 
   it('not offered without the generate permission, nor to another organization', async () => {

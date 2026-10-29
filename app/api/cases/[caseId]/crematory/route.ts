@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { activityContext, authorizeCrematory, crematoryErrorResponse } from '@/lib/crematory/routeAuth';
-import { buildCrematoryPackage, confirmPackageName, confirmPermit, confirmReadyDate, getCrematoryCaseSummary, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
+import { assignSourceDocument, buildCrematoryPackage, confirmPackageName, confirmPermit, confirmReadyDate, getCrematoryCaseSummary, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
 
 export const maxDuration = 60;
 
@@ -15,6 +15,8 @@ export const maxDuration = 60;
  *        { organizationId, action: 'build_package' }
  *        { organizationId, action: 'prepare' } → page 3 and the package
  *          prepared from what is already on the case (2026-10)
+ *        { organizationId, action: 'assign_document', documentId, as: 'state_permit' | 'arrangement_forms' }
+ *          → an untyped PDF already on the case, chosen by staff (2026-10)
  * Nothing here sends anything.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
@@ -59,6 +61,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
         const result = await prepareCrematoryDocuments(ctx, caseId, auth.mode);
         return NextResponse.json({ result, summary: await getCrematoryCaseSummary(auth.context.organizationId, caseId, auth.canSend, auth.mode) });
       }
+      case 'assign_document':
+        if (typeof body.documentId !== 'string' || (body.as !== 'state_permit' && body.as !== 'arrangement_forms')) {
+          return NextResponse.json({ error: "documentId and as ('state_permit' or 'arrangement_forms') are required." }, { status: 400 });
+        }
+        return NextResponse.json(await assignSourceDocument(ctx, caseId, body.documentId, body.as, auth.mode, auth.canSend));
       default:
         return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
     }

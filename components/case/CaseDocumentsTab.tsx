@@ -1,6 +1,9 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { crematoryCaseAction } from '@/lib/crematoryClient';
+import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { isSignatureRequestsEnabled } from '@/domain/organization/signatureRequestCapability';
@@ -152,6 +155,45 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
     }
   }
 
+  /**
+   * Extract Crematory Form with Send to Crematory (2026-10): the same
+   * automatic preparation — page 3 from the Arrangement Form alone (no
+   * permit needed), nothing new when it is already current, a new version
+   * when the Arrangement Form changed; the original is only read. The
+   * Crematory Package is brought up to date too when everything it needs is
+   * confirmed. Nothing is sent.
+   */
+  const queryClient = useQueryClient();
+  const preparesWithCrematory = sendToCrematoryConfig(organizationId) !== null;
+  async function prepareCrematoryForm() {
+    setExtractNotice(null);
+    setExtractPending('crematory_form');
+    try {
+      const { result } = (await crematoryCaseAction(organizationId, caseId, { action: 'prepare' })) as {
+        result: { crematoryForm: 'saved' | 'unchanged' | 'no_arrangement_form' | 'not_needed' | 'failed'; package: string };
+      };
+      const packageNote = result.package === 'saved' ? ' The Crematory Package was updated to match.' : '';
+      const notice: Record<typeof result.crematoryForm, { ok: boolean; message: string }> = {
+        saved: { ok: true, message: `Crematory Form (Arrangement Form page 3) saved to this case's Documents.${packageNote}` },
+        unchanged: { ok: true, message: `The Crematory Form is already up to date — the Arrangement Form has not changed since page 3 was extracted.${packageNote}` },
+        no_arrangement_form: {
+          ok: false,
+          message: "This case has no Arrangement Form PDF yet, so nothing was extracted. If it was uploaded without a document type, choose it in Send to Crematory.",
+        },
+        not_needed: { ok: false, message: 'Nothing was extracted: this case was already sent to the crematory (or is being sent, or is not a cremation case), so its documents are not changed here.' },
+        failed: { ok: false, message: 'Page 3 could not be extracted. Nothing was changed. Please try again.' },
+      };
+      setExtractNotice(notice[result.crematoryForm] ?? notice.failed);
+    } catch (error) {
+      setExtractNotice({ ok: false, message: error instanceof Error ? error.message : 'Page 3 could not be extracted. Nothing was changed. Please try again.' });
+    } finally {
+      setExtractPending(null);
+      // The Documents list and the Crematory Package panel reload in the background.
+      void queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) });
+      void queryClient.invalidateQueries({ queryKey: ['crematory', organizationId] });
+    }
+  }
+
   async function handleDownloadAll() {
     setBulkError(null);
     setBulkExcluded(null);
@@ -274,12 +316,13 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       createItems.push({
         label: 'Extract Crematory Form',
         disabled: extractPending !== null,
-        onSelect: () => (extracts.data!.permit.confirmed ? runExtract('crematory_form') : setConfirmingPermit(true)),
+        onSelect: () =>
+          preparesWithCrematory ? void prepareCrematoryForm() : extracts.data!.permit.confirmed ? runExtract('crematory_form') : setConfirmingPermit(true),
       });
     }
   }
   const createPending =
-    officialPending !== null ? 'Generating…' : extractPending !== null ? 'Extracting…' : null;
+    officialPending !== null ? 'Generating…' : extractPending === 'crematory_form' && preparesWithCrematory ? 'Preparing…' : extractPending !== null ? 'Extracting…' : null;
 
   function statusModifierClass(variant: ReturnType<typeof caseDocumentStatusVariant>): string {
     if (variant === 'success') return 'sx-status-ok';

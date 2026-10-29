@@ -1,5 +1,6 @@
 import type { CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
 import type { CaseCrematoryRecord } from '@/types/case';
+import type { CrematorySourceKind, UntypedCaseDocument } from '@/domain/crematory/crematoryPackage';
 
 /** Send to Crematory (2026-10). Client wrappers; errors throw with the server's message. */
 export type CrematoryCaseSummary = {
@@ -19,6 +20,8 @@ export type CrematoryCaseSummary = {
   package: { documentId: string; version: number | null; fileName: string; current: boolean } | null;
   expectedFileName: string | null;
   lastSubmission: CaseCrematoryRecord['lastSubmission'] | null;
+  /** Active, untyped PDFs on the case staff may choose as the permit or Arrangement Form. */
+  untypedDocuments: UntypedCaseDocument[];
 };
 export type CrematoryMailbox = { connected: false; configured: boolean } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
 export type CrematoryOverview = {
@@ -77,7 +80,8 @@ export async function crematoryCaseAction(
     | { action: 'confirm_ready_date'; date: string }
     | { action: 'confirm_package_name'; first: string; last: string }
     | { action: 'build_package' }
-    | { action: 'prepare' },
+    | { action: 'prepare' }
+    | { action: 'assign_document'; documentId: string; as: CrematorySourceKind },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

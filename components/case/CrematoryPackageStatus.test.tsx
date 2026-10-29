@@ -18,7 +18,7 @@ const summary = (over: Partial<CrematoryCaseSummary> = {}): CrematoryCaseSummary
     readiness: { requirements: OK, readyToBuild: true, readyToSend: true },
     permit: null, readyDate: { suggested: '11/06/2026', confirmed: '11/06/2026' },
     package: { documentId: 'pkg', version: 2, fileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', current: true },
-    expectedFileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', lastSubmission: null, ...over,
+    expectedFileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', lastSubmission: null, untypedDocuments: [], ...over,
   }) as CrematoryCaseSummary;
 const show = () =>
   render(

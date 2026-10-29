@@ -5,7 +5,7 @@ import type { CaseDocument } from '@/types/caseDocument';
 import type { ActivityContext } from '../activityService';
 import { recordCrematoryEvent } from '../activityService';
 import { ACTIVITY_EVENT_TYPES } from '@/types/activityEvent';
-import { generateBillingDocument, list as listCaseDocuments, readStoredCaseDocument, attachDocumentActorDisplayNames } from '../documentService';
+import { assignUntypedDocumentType, DocumentServiceError, generateBillingDocument, list as listCaseDocuments, readStoredCaseDocument, attachDocumentActorDisplayNames } from '../documentService';
 import { loadCaseOnServer } from '../serverCaseLoader';
 import { listForOrganization } from '../casesService';
 import { updateCaseWithRetry, writeMockCase } from '../caseWriteService';
@@ -23,8 +23,11 @@ import {
   packageDisplayName,
   parseCaseDate,
   suggestPackageName,
+  suggestSourceKind,
   toCaseDate,
+  type CrematorySourceKind,
   type PackageName,
+  type UntypedCaseDocument,
 } from '@/domain/crematory/crematoryPackage';
 import { listCaseSubmissionsNewestFirst } from '../externalForms/caseSubmissions';
 import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
@@ -93,6 +96,8 @@ type Facts = {
   crematoryForm: CaseDocument | null;
   package: CaseDocument | null;
   suggestedReadyDate: string | null;
+  /** Active, untyped PDFs on the case — what staff may choose as a source document. */
+  untyped: CaseDocument[];
 };
 
 export type PackageNameSuggestion = { name: PackageName; source: 'form' | 'case_name' };
@@ -178,6 +183,7 @@ async function loadFacts(organizationId: string, case_: Case, mode: DataAdapterM
     crematoryForm: latest(documents, (d) => d.documentTypeKey === ARRANGEMENT_EXTRACTS.crematory_form.documentTypeKey && d.origin === 'generated'),
     package: latest(documents, (d) => d.documentTypeKey === PACKAGE_TYPE && d.origin === 'generated'),
     suggestedReadyDate: await suggestedReadyDate(organizationId, case_.id, mode),
+    untyped: documents.filter((d) => d.status === 'active' && d.mimeType === 'application/pdf' && !d.documentTypeKey).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
   };
 }
 
@@ -244,6 +250,7 @@ export type CrematoryCaseSummary = {
   package: { documentId: string; version: number | null; fileName: string; current: boolean } | null;
   expectedFileName: string | null;
   lastSubmission: CaseCrematoryRecord['lastSubmission'] | null;
+  untypedDocuments: UntypedCaseDocument[];
 };
 
 async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode): Promise<CrematoryCaseSummary> {
@@ -265,6 +272,7 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     package: facts.package ? { documentId: facts.package.id, version: facts.package.version, fileName: facts.package.fileName, current: packageIsCurrent(facts) } : null,
     expectedFileName: expectedFileName(facts),
     lastSubmission: facts.case_.crematory?.lastSubmission ?? null,
+    untypedDocuments: facts.untyped.map((d) => ({ documentId: d.id, fileName: d.fileName, createdAt: d.createdAt, suggestedAs: suggestSourceKind(d.fileName) })),
   };
 }
 
@@ -495,6 +503,70 @@ export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string
     record: { version: document.version, fileName, permitDocumentId: facts.permit!.id, crematoryFormDocumentId: facts.crematoryForm!.id, checksumSha256: document.checksumSha256 },
   }, mode);
   return { outcome: 'saved', summary: await getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode) };
+}
+
+const SOURCE_TYPES: Record<CrematorySourceKind, { documentTypeKey: string; displayName: string }> = {
+  state_permit: { documentTypeKey: PERMIT_TYPE, displayName: DOCUMENT_TYPES.CREMATION_FORM_STATE_PERMIT.displayName },
+  arrangement_forms: { documentTypeKey: ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY, displayName: DOCUMENT_TYPES.EXTERNAL_FORM_ARRANGEMENT_FORMS.displayName },
+};
+
+/**
+ * Staff choose a PDF already uploaded to the case, without a type, as its
+ * state permit or Arrangement Form (2026-10) — so nothing is uploaded
+ * twice. Only that document's type is set (file, storage, version and
+ * every other field unchanged), recorded in the case activity. Refused,
+ * nothing written: a case sent, being sent or with an unclear send; a
+ * document that is not this case's own active, untyped PDF; or a case that
+ * already has a document of that type. Serialized per case with automatic
+ * preparation, across servers. Afterwards an Arrangement Form has its page
+ * 3 prepared at once; a permit still needs staff to confirm it is this
+ * decedent's.
+ */
+export async function assignSourceDocument(
+  ctx: ActivityContext,
+  caseId: string,
+  documentId: string,
+  as: CrematorySourceKind,
+  mode: DataAdapterMode,
+  canSend = false,
+): Promise<CrematoryCaseSummary> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  const target = SOURCE_TYPES[as];
+  if (!target) throw new CrematoryError('Choose the permit or the Arrangement Form.', 400);
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  const record = case_.crematory;
+  if (record?.pendingSubmission || record?.lastSubmission?.status === 'submitted' || record?.lastSubmission?.status === 'uncertain') {
+    throw new CrematoryError('This case was already sent (or is being sent) to the crematory, so its documents are not changed here.', 409);
+  }
+
+  const token = crypto.randomUUID();
+  const deadline = Date.now() + 30_000;
+  while (!(await claimPreparation(ctx.organizationId, caseId, token, mode))) {
+    if (Date.now() >= deadline) throw new CrematoryError('This case is being updated right now. Try again in a moment.', 409);
+    await sleep(1_000);
+  }
+  let assigned: CaseDocument;
+  try {
+    const documents = await listCaseDocuments(ctx.organizationId, caseId, mode);
+    const existing = latest(documents, (d) => d.documentTypeKey === target.documentTypeKey);
+    if (existing) throw new CrematoryError(`This case already has a ${target.displayName}: "${existing.fileName}".`, 409);
+    try {
+      assigned = await assignUntypedDocumentType(ctx.organizationId, caseId, documentId, target.documentTypeKey, mode);
+    } catch (error) {
+      if (error instanceof DocumentServiceError) throw new CrematoryError(`${error.message} Reopen and choose again.`, 409);
+      throw error;
+    }
+  } finally {
+    await applyCrematoryRecord(ctx.organizationId, caseId, (c) => (c.crematory?.preparing?.token === token ? { preparing: null } : null), mode).catch(() => undefined);
+  }
+  await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_DOCUMENT_TYPE_ASSIGNED, {
+    resourceId: assigned.id,
+    description: `"${assigned.fileName}" chosen as the ${target.displayName} (document type set; the file is unchanged)`,
+    record: { documentId: assigned.id, documentTypeKey: target.documentTypeKey, previousDocumentTypeKey: null },
+  }, mode);
+  if (as === 'arrangement_forms') await prepareCrematoryDocuments(ctx, caseId, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
 // ---------------------------------------------------------------------------

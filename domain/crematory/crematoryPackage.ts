@@ -110,6 +110,23 @@ function fileNameParts(name: PackageName | null | undefined, expectedReadyDate: 
   return { ...normalized, date: `${pad(date.month)}-${pad(date.day)}-${date.year}` };
 }
 
+/** The two source documents staff can pick from the case's untyped uploads (2026-10). */
+export type CrematorySourceKind = 'state_permit' | 'arrangement_forms';
+
+/** An active, untyped PDF already uploaded to the case — a candidate staff may choose. */
+export type UntypedCaseDocument = { documentId: string; fileName: string; createdAt: string; suggestedAs: CrematorySourceKind | null };
+
+/**
+ * A suggestion only, from the file name ("BARBER PERMIT.pdf" → permit,
+ * "…Arrangement…Forms.pdf" → Arrangement Form) — shown first for staff to
+ * look at, never chosen for them.
+ */
+export function suggestSourceKind(fileName: string): CrematorySourceKind | null {
+  if (/permit/i.test(fileName)) return 'state_permit';
+  if (/arrang/i.test(fileName)) return 'arrangement_forms';
+  return null;
+}
+
 /** The expected ready date encoded in a package file name, as MM/DD/YYYY. */
 export function readyDateFromPackageFileName(fileName: string): string | null {
   const match = /_(\d{2})-(\d{2})-(\d{4})(?:_[^_]*)?\.pdf$/i.exec(fileName);

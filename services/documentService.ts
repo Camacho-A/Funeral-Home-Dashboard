@@ -350,6 +350,42 @@ export async function setFamilyVisible(organizationId: string, caseId: string, d
   return mapped;
 }
 
+/**
+ * Send to Crematory (2026-10). Gives an uploaded, untyped document a type
+ * (state permit / Arrangement Forms) that staff explicitly chose it as.
+ * Only the type changes — the file, its storage, version, category and
+ * every other field are kept exactly. Refused (nothing written) unless the
+ * document is this case's own, active, a PDF, and still untyped when read
+ * here, so it is never retyped and two choices can never overwrite each
+ * other's. The caller serializes per case and records the activity.
+ */
+export async function assignUntypedDocumentType(
+  organizationId: string,
+  caseId: string,
+  documentId: string,
+  documentTypeKey: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<CaseDocument> {
+  const eligible = (d: CaseDocument | null | undefined): d is CaseDocument =>
+    Boolean(d) && d!.organizationId === organizationId && d!.caseId === caseId && d!.status === 'active' && d!.mimeType === 'application/pdf' && !d!.documentTypeKey;
+  if (dataAdapterMode === 'mock') {
+    const index = caseDocumentFixtures.findIndex((d) => d.id === documentId && d.organizationId === organizationId && d.caseId === caseId);
+    if (!eligible(caseDocumentFixtures[index])) throw new DocumentServiceError('That document is not an untyped PDF on this case.');
+    caseDocumentFixtures[index] = { ...caseDocumentFixtures[index], documentTypeKey };
+    return caseDocumentFixtures[index];
+  }
+  const response = await queryWixDataItems<WixCaseDocumentItem>('caseDocuments', {
+    filter: { organizationId, caseId, beaconCaseDocumentId: documentId },
+    paging: { limit: 1 },
+  });
+  const existingItem = response.dataItems[0];
+  if (!existingItem || !eligible(mapWixCaseDocumentItem(existingItem.data))) throw new DocumentServiceError('That document is not an untyped PDF on this case.');
+  const updated = await updateWixDataItem<WixCaseDocumentItem>('caseDocuments', existingItem.id, { ...existingItem.data, documentTypeKey });
+  const mapped = mapWixCaseDocumentItem(updated.data);
+  if (!mapped) throw new DocumentServiceError('Failed to update document.');
+  return mapped;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------

@@ -215,6 +215,9 @@ export const ACTIVITY_EVENT_TYPES = {
   CREMATORY_PACKAGE_BUILT: 'crematory.package_built',
   CREMATORY_PACKAGE_SUBMITTED: 'crematory.package_submitted',
   CREMATORY_PACKAGE_SEND_FAILED: 'crematory.package_send_failed',
+  /** An already-uploaded, untyped PDF chosen by staff as the case's state
+      permit or Arrangement Form (2026-10) — its type set, nothing else. */
+  CREMATORY_DOCUMENT_TYPE_ASSIGNED: 'crematory.document_type_assigned',
   /** Case SSN (2026-10). Captured from an intake form, or corrected by an
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',

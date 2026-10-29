@@ -12,8 +12,15 @@ import {
   type CrematoryCaseSummary,
   type CrematorySendResult,
 } from '@/lib/crematoryClient';
-import { buildCaseDocumentDownloadUrl, extractArrangementPage, uploadCaseDocument } from '@/lib/caseDocumentsClient';
-import { assignAttachmentFileNames, crematoryEmailSubject, crematoryPackageFileName, defaultCrematoryMessage, toCaseDate } from '@/domain/crematory/crematoryPackage';
+import { buildCaseDocumentDownloadUrl, buildCaseDocumentViewUrl, uploadCaseDocument } from '@/lib/caseDocumentsClient';
+import {
+  assignAttachmentFileNames,
+  crematoryEmailSubject,
+  crematoryPackageFileName,
+  defaultCrematoryMessage,
+  toCaseDate,
+  type CrematorySourceKind,
+} from '@/domain/crematory/crematoryPackage';
 import { parseRecipientList } from '@/domain/crematory/crematorySettings';
 import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
@@ -101,26 +108,51 @@ export function SendToCrematoryDialog({
   // (2026-10): page 3 extracted, packages built or rebuilt. Once per case
   // per opening; nothing is ever sent.
   const preparedOnce = useRef<Set<string>>(new Set());
-  const [preparing, setPreparing] = useState(false);
+  /** Cases being prepared right now — their checklist is not final until done. */
+  const [preparingIds, setPreparingIds] = useState<string[]>([]);
+  const [prepareErrors, setPrepareErrors] = useState<Record<string, string>>({});
+  const [chooser, setChooser] = useState<{ summary: CrematoryCaseSummary; kind: CrematorySourceKind } | null>(null);
   useEffect(() => {
     if (!open) preparedOnce.current = new Set();
   }, [open]);
+
+  /** Prepares one case's page 3 and package; refreshes its checklist when done. */
+  async function prepareCase(caseId: string) {
+    setPreparingIds((ids) => [...ids, caseId]);
+    setPrepareErrors((errors) => {
+      const next = { ...errors };
+      delete next[caseId];
+      return next;
+    });
+    try {
+      const { result } = (await crematoryCaseAction(organizationId, caseId, { action: 'prepare' })) as { result?: { crematoryForm: string; package: string } };
+      if (result && (result.crematoryForm === 'failed' || result.package === 'failed')) {
+        setPrepareErrors((e) => ({ ...e, [caseId]: `SOLIS could not prepare ${result.crematoryForm === 'failed' ? "page 3 of this case's Arrangement Form" : 'the Crematory Package'}. Nothing was sent. Try again.` }));
+      }
+    } catch (error) {
+      setPrepareErrors((e) => ({ ...e, [caseId]: `${error instanceof Error ? error.message : "This case's documents could not be prepared."} Nothing was sent. Try again.` }));
+    } finally {
+      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) })]);
+      setPreparingIds((ids) => ids.filter((id) => id !== caseId));
+    }
+  }
+
   useEffect(() => {
     if (!open || !overview.data?.canPrepare) return;
     const due = overview.data.candidates.filter((c) => !preparedOnce.current.has(c.caseId) && needsPreparation(c));
     if (due.length === 0) return;
     for (const c of due) preparedOnce.current.add(c.caseId);
-    setPreparing(true);
+    // Every due case shows "Preparing…" at once; each is prepared in turn.
+    setPreparingIds((ids) => [...ids, ...due.map((c) => c.caseId)]);
     void (async () => {
       for (const c of due) {
-        // A case that still needs something keeps showing what — not an error.
-        await crematoryCaseAction(organizationId, c.caseId, { action: 'prepare' }).catch(() => undefined);
+        setPreparingIds((ids) => ids.filter((id) => id !== c.caseId));
+        await prepareCase(c.caseId);
       }
-      await Promise.all([refresh(), ...due.map((c) => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) }))]);
-      setPreparing(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the overview changes
   }, [open, overview.data]);
+  const preparing = preparingIds.length > 0;
 
   async function act(summary: CrematoryCaseSummary, run: () => Promise<unknown>) {
     setCaseError(null);
@@ -213,8 +245,21 @@ export function SendToCrematoryDialog({
           <>
             {preparing && (
               <p className={styles.muted} role="status">
-                Preparing documents from each case&rsquo;s Arrangement Form and permit…
+                Preparing documents from each case&rsquo;s Arrangement Form and permit… The checklists update as each case finishes.
               </p>
+            )}
+            {chooser && (
+              <ChooseDocumentDialog
+                organizationId={organizationId}
+                summary={chooser.summary}
+                kind={chooser.kind}
+                onClose={() => setChooser(null)}
+                onChoose={(documentId) => {
+                  const { summary, kind } = chooser;
+                  setChooser(null);
+                  void act(summary, () => crematoryCaseAction(organizationId, summary.caseId, { action: 'assign_document', documentId, as: kind }));
+                }}
+              />
             )}
             {!overview.data.canSend && (
               <div className="sx-form-banner sx-form-banner-info" role="status">
@@ -242,7 +287,11 @@ export function SendToCrematoryDialog({
                   organizationId={organizationId}
                   onUploadPermit={(file) => act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE }))}
                   onConfirmPermit={() => setPermitPrompt(c)}
-                  onExtract={() => act(c, () => extractArrangementPage({ organizationId, caseId: c.caseId, kind: 'crematory_form' }))}
+                  onExtract={() => void prepareCase(c.caseId)}
+                  preparing={preparingIds.includes(c.caseId)}
+                  prepareError={prepareErrors[c.caseId] ?? null}
+                  onRetryPrepare={() => void prepareCase(c.caseId)}
+                  onChooseDocument={(kind) => setChooser({ summary: c, kind })}
                   onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
                   onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
                 />
@@ -419,6 +468,10 @@ function CaseRow({
   onNameChange,
   onConfirmName,
   canPrepare,
+  preparing,
+  prepareError,
+  onRetryPrepare,
+  onChooseDocument,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -437,6 +490,11 @@ function CaseRow({
   onNameChange: (value: { first: string; last: string }) => void;
   onConfirmName: (value: { first: string; last: string }) => void;
   canPrepare: boolean;
+  /** Automatic preparation is running for this case: the checklist is not final yet. */
+  preparing: boolean;
+  prepareError: string | null;
+  onRetryPrepare: () => void;
+  onChooseDocument: (kind: CrematorySourceKind) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
@@ -451,7 +509,8 @@ function CaseRow({
   const waiting: Record<StepKey, boolean> = {
     permit_uploaded: false,
     permit_verified: !ok('permit_uploaded'),
-    crematory_form: !ok('permit_verified'),
+    // Page 3 is prepared from the Arrangement Form alone (2026-10) — never waits on the permit.
+    crematory_form: false,
     workflow_2: false,
     package_name: false,
     ready_date: false,
@@ -460,6 +519,10 @@ function CaseRow({
 
   const status = sent ? (
     <span className="sx-status sx-status-ok">Sent</span>
+  ) : preparing ? (
+    <span className="sx-status" role="status">
+      Preparing…
+    </span>
   ) : ready ? (
     <span className="sx-status sx-status-ok">Ready</span>
   ) : (
@@ -488,8 +551,23 @@ function CaseRow({
           return null;
       }
     }
+    // Not final while SOLIS is preparing this case (2026-10).
+    if (preparing && (key === 'crematory_form' || key === 'package')) return <span className={styles.hint}>Preparing…</span>;
+    const chooseFromCase = (kind: CrematorySourceKind) =>
+      canPrepare && summary.untypedDocuments.length > 0 ? (
+        <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={() => onChooseDocument(kind)}>
+          Choose from this case&rsquo;s documents
+        </button>
+      ) : null;
     // The Arrangement Form not having arrived is the real blocker — say so.
-    if (key === 'crematory_form' && /not been received/i.test(r?.detail ?? '')) return <span className={styles.hint}>Waiting for the Arrangement Form</span>;
+    if (key === 'crematory_form' && /not been received/i.test(r?.detail ?? '')) {
+      return (
+        <>
+          <span className={styles.hint}>Waiting for the Arrangement Form</span>
+          {chooseFromCase('arrangement_forms')}
+        </>
+      );
+    }
     if (waiting[key]) return <span className={styles.hint}>{key === 'package' ? 'After the steps above' : 'After the step above'}</span>;
     if (!canPrepare) return <span className={styles.hint}>{r?.detail}</span>;
     switch (key) {
@@ -510,6 +588,7 @@ function CaseRow({
                 e.target.value = '';
               }}
             />
+            {chooseFromCase('state_permit')}
           </>
         );
       case 'permit_verified':
@@ -519,9 +598,7 @@ function CaseRow({
           </button>
         );
       case 'crematory_form':
-        return /not been received/i.test(r?.detail ?? '') ? (
-          <span className={styles.hint}>Waiting for the Arrangement Form</span>
-        ) : (
+        return (
           <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={onExtract}>
             Extract page 3
           </button>
@@ -618,11 +695,91 @@ function CaseRow({
         </p>
       )}
       {busy && <p className={styles.hint}>Working…</p>}
+      {prepareError && !preparing && (
+        <div className="sx-form-banner sx-form-banner-error" role="alert">
+          {prepareError}{' '}
+          {canPrepare && (
+            <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={onRetryPrepare}>
+              Try again
+            </button>
+          )}
+        </div>
+      )}
       {error && (
         <div className="sx-form-banner sx-form-banner-error" role="alert">
           {error}
         </div>
       )}
     </li>
+  );
+}
+
+const SOURCE_LABEL: Record<CrematorySourceKind, { name: string; hint: string }> = {
+  state_permit: { name: 'State Cremation Permit', hint: 'its name mentions a permit' },
+  arrangement_forms: { name: 'Arrangement Form', hint: 'its name mentions the Arrangement Form' },
+};
+
+/**
+ * "Choose from this case's documents" (2026-10): the case's own active,
+ * untyped PDFs, likely matches first — each can be opened to check — and
+ * nothing chosen until staff pick one and confirm. Only that document's
+ * type is set; the file is not changed or copied.
+ */
+function ChooseDocumentDialog({
+  organizationId,
+  summary,
+  kind,
+  onClose,
+  onChoose,
+}: {
+  organizationId: string;
+  summary: CrematoryCaseSummary;
+  kind: CrematorySourceKind;
+  onClose: () => void;
+  onChoose: (documentId: string) => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const label = SOURCE_LABEL[kind];
+  const documents = [...summary.untypedDocuments].sort((a, b) => Number(b.suggestedAs === kind) - Number(a.suggestedAs === kind));
+  return (
+    <Modal open onClose={onClose} title={`Choose the ${label.name}`}>
+      <div className="sx-modal-header">
+        <h2 className="sx-modal-title">Choose the {label.name}</h2>
+        <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onClose}>
+          ×
+        </button>
+      </div>
+      <div className="sx-modal-body">
+        <p className={styles.hint}>
+          PDFs already uploaded to {summary.decedentDisplayName}&rsquo;s case ({summary.caseNumber}) without a document type. Open one to check it, then choose it.
+          Only its document type is set — the file is not changed or copied.
+        </p>
+        <ul className={styles.cases}>
+          {documents.map((d) => (
+            <li key={d.documentId}>
+              <label>
+                <input type="radio" name="crematory-source-document" checked={picked === d.documentId} onChange={() => setPicked(d.documentId)} /> {d.fileName}
+              </label>{' '}
+              <span className={styles.hint}>
+                uploaded {formatTimestamp(d.createdAt)}
+                {d.suggestedAs === kind ? ` · Suggested — ${label.hint}` : ''}
+              </span>{' '}
+              <a href={buildCaseDocumentViewUrl(organizationId, summary.caseId, d.documentId)} target="_blank" rel="noreferrer">
+                Open
+              </a>
+            </li>
+          ))}
+        </ul>
+        {kind === 'state_permit' && <p className={styles.hint}>Next you&rsquo;ll confirm the permit is this decedent&rsquo;s.</p>}
+      </div>
+      <div className="sx-modal-footer">
+        <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" className="sx-btn sx-btn-primary" disabled={!picked} onClick={() => picked && onChoose(picked)}>
+          Use as the {label.name}
+        </button>
+      </div>
+    </Modal>
   );
 }

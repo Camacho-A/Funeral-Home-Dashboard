@@ -307,6 +307,64 @@ describe('automatic preparation — from what is already on the case (2026-10)',
   });
 });
 
+describe('choosing a document already on the case (2026-10)', () => {
+  const untyped = (caseId: string, fileName: string, bytes: Buffer, id: string, mimeType = 'application/pdf') =>
+    upload({ caseId, fileName, mimeType, idFactory: () => id }, bytes, ctx(), 'mock');
+  const pick = ({ storageKey, checksumSha256, version, category, fileName, mimeType, status, origin, createdAt }: Record<string, unknown>) => ({ storageKey, checksumSha256, version, category, fileName, mimeType, status, origin, createdAt });
+
+  it('an untyped permit is listed (suggested by its name, never chosen); choosing it sets only its type, and it still needs confirming', async () => {
+    const permit = await untyped('1042', 'FICTIONAL PERMIT.pdf', await pdf('PERMIT-1042', 2, [612, 1008]), 'permit-untyped');
+    await untyped('1042', 'Fictional Payment.pdf', await pdf('PAYMENT', 1), 'payment-untyped');
+    let summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.readiness.requirements.find((r) => r.key === 'permit_uploaded')!.ok).toBe(false);
+    expect(summary.untypedDocuments.map((d) => [d.fileName, d.suggestedAs])).toEqual(expect.arrayContaining([['FICTIONAL PERMIT.pdf', 'state_permit'], ['Fictional Payment.pdf', null]]));
+    // Preparing never classifies it from its name.
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect(caseDocumentFixtures.find((d) => d.id === permit.id)!.documentTypeKey).toBeNull();
+
+    const before = pick(caseDocumentFixtures.find((d) => d.id === permit.id)! as never);
+    summary = await pkg.assignSourceDocument(ctx(), '1042', permit.id, 'state_permit', 'mock', true);
+    const after = caseDocumentFixtures.find((d) => d.id === permit.id)!;
+    expect(after.documentTypeKey).toBe('cremation_form.state_permit');
+    expect(pick(after as never)).toEqual(before);
+    expect(summary.permit).toMatchObject({ documentId: permit.id, fileName: 'FICTIONAL PERMIT.pdf' });
+    expect(summary.readiness.requirements.filter((r) => ['permit_uploaded', 'permit_verified'].includes(r.key)).map((r) => [r.key, r.ok])).toEqual([['permit_uploaded', true], ['permit_verified', false]]);
+    expect(summary.untypedDocuments.map((d) => d.fileName)).toEqual(['Fictional Payment.pdf']);
+    expect(eventsOf('1042', 'crematory.document_type_assigned')[0].description).toBe('"FICTIONAL PERMIT.pdf" chosen as the State Cremation Permit (document type set; the file is unchanged)');
+    expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(0);
+    expect(caseFixtures[index('1042')].crematory!.preparing).toBeNull();
+  });
+
+  it('an untyped Arrangement Form, once chosen, has page 3 prepared at once', async () => {
+    const arrangement = await pdf('ARRANGEMENT-1042', 6);
+    const doc = await untyped('1042', 'Cremations-Arrangement-Fictional-Forms.pdf', arrangement, 'arr-untyped');
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).untypedDocuments[0].suggestedAs).toBe('arrangement_forms');
+    await pkg.assignSourceDocument(ctx(), '1042', doc.id, 'arrangement_forms', 'mock');
+    const [page3] = docsOf('1042', 'external_form.crematory_form');
+    expect(await contentOf((await loadPdf(blobs.get(page3.storageKey)!.buffer)).getPage(0))).toBe(await contentOf((await loadPdf(arrangement)).getPage(2)));
+  });
+
+  it('refuses — writing nothing — another case\'s document, a non-PDF, a typed document, a second permit, a sent case, and another organization', async () => {
+    const other = await untyped('1044', 'OTHER CASE PERMIT.pdf', await pdf('P', 1), 'permit-other-case');
+    await expect(pkg.assignSourceDocument(ctx(), '1042', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409 });
+    const image = await untyped('1042', 'permit.png', Buffer.from('\x89PNG fictional'), 'permit-png', 'image/png');
+    await expect(pkg.assignSourceDocument(ctx(), '1042', image.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409 });
+    const typed = await uploadAs('1042', 'Typed Permit.pdf', 'cremation_form.state_permit', await pdf('P2', 1), 'permit-typed');
+    await expect(pkg.assignSourceDocument(ctx(), '1042', typed.id, 'arrangement_forms', 'mock')).rejects.toMatchObject({ status: 409 });
+    const second = await untyped('1042', 'ANOTHER PERMIT.pdf', await pdf('P3', 1), 'permit-second');
+    await expect(pkg.assignSourceDocument(ctx(), '1042', second.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('already has a State Cremation Permit') });
+    expect(caseDocumentFixtures.find((d) => d.id === second.id)!.documentTypeKey).toBeNull();
+    expect(caseDocumentFixtures.find((d) => d.id === other.id)!.documentTypeKey).toBeNull();
+
+    const c = caseFixtures[index('1044')];
+    caseFixtures[index('1044')] = { ...c, crematory: { lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: 'x', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } } };
+    await expect(pkg.assignSourceDocument(ctx(), '1044', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.assignSourceDocument({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1044', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 404 });
+    expect(caseDocumentFixtures.find((d) => d.id === other.id)!.documentTypeKey).toBeNull();
+    expect(eventsOf('1042', 'crematory.document_type_assigned')).toHaveLength(0);
+  });
+});
+
 describe('the Crematory Package — one PDF per decedent', () => {
   it('puts every permit page first, then Arrangement Form page 3 — unchanged — under LASTNAME_FIRSTNAME_CREMATORY_PACKAGE_MM-DD-YYYY.pdf', async () => {
     const { permit, arrangement } = await readyCase('1042');

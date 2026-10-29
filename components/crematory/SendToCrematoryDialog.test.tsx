@@ -36,6 +36,7 @@ function readyCase(caseId: string, name: string, number: string, date = '11/06/2
     package: { documentId: `pkg-${caseId}`, version: 1, fileName: fileName ?? `${rest.join(' ')}_${first}_${date.replace(/\//g, '-')}.pdf`, current: true },
     expectedFileName: null,
     lastSubmission: null,
+    untypedDocuments: [],
   };
 }
 
@@ -76,8 +77,10 @@ describe('SendToCrematoryDialog', () => {
     expect(await screen.findByRole('button', { name: 'Confirm permit' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Select Walter Boone' })).toBeDisabled();
     expect(screen.getByText('1 of 7 done')).toBeInTheDocument();
-    // Steps that wait on an earlier one say so instead of offering an action.
-    expect(screen.getAllByText('After the step above').length).toBeGreaterThan(0);
+    // Steps that wait on earlier ones say so instead of offering an action —
+    // the package does; page 3 never waits on the permit (2026-10).
+    expect(screen.getByText('After the steps above')).toBeInTheDocument();
+    expect(screen.queryByText('After the step above')).toBeNull();
 
     // The date is suggested from the Expected Pickup but has to be confirmed.
     expect(screen.getByLabelText('Expected ready date for Walter Boone')).toHaveValue('2026-11-06');
@@ -167,6 +170,57 @@ describe('SendToCrematoryDialog', () => {
     // Refetched afterwards; still only those two, once each.
     await waitFor(() => expect(client.fetchCrematoryOverview.mock.calls.length).toBeGreaterThan(1));
     expect(client.crematoryCaseAction).toHaveBeenCalledTimes(2);
+    expect(client.sendToCrematory).not.toHaveBeenCalled();
+  });
+
+  it('a permit uploaded without a type: staff choose it from the case\'s documents — likely match first, never pre-selected', async () => {
+    const needsPermit: CrematoryCaseSummary = {
+      ...readyCase('1050', 'Walter Boone', 'B2026-903'),
+      readiness: { requirements: [...ALL_OK.filter((r) => !['permit_uploaded', 'permit_verified', 'package'].includes(r.key)), requirement('permit_uploaded', false, 'Upload the approved state cremation permit.'), requirement('permit_verified', false, 'Upload the permit first.'), requirement('package', false)] as never, readyToBuild: false, readyToSend: false },
+      permit: null,
+      package: null,
+      untypedDocuments: [
+        { documentId: 'doc-pay', fileName: 'BOONE PAYMENT.pdf', createdAt: '2026-10-01T10:00:00.000Z', suggestedAs: null },
+        { documentId: 'doc-permit', fileName: 'BOONE PERMIT.pdf', createdAt: '2026-10-02T10:00:00.000Z', suggestedAs: 'state_permit' },
+      ],
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([needsPermit]));
+    client.crematoryCaseAction.mockResolvedValue({});
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose from this case’s documents' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Choose the State Cremation Permit' });
+    const options = within(dialog).getAllByRole('radio');
+    expect(options.map((o) => (o.closest('label') as HTMLElement).textContent?.trim())).toEqual(['BOONE PERMIT.pdf', 'BOONE PAYMENT.pdf']);
+    expect(options.every((o) => !(o as HTMLInputElement).checked)).toBe(true);
+    expect(within(dialog).getByText(/Suggested — its name mentions a permit/)).toBeInTheDocument();
+    const use = within(dialog).getByRole('button', { name: 'Use as the State Cremation Permit' });
+    expect(use).toBeDisabled();
+    fireEvent.click(options[0]);
+    fireEvent.click(use);
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'assign_document', documentId: 'doc-permit', as: 'state_permit' }));
+  });
+
+  it('while a case is prepared its checklist shows "Preparing…", then refreshes; a failure says so and can be retried', async () => {
+    const outdated: CrematoryCaseSummary = {
+      ...readyCase('1044', 'Estela Salas Rueda', 'B2026-902'),
+      readiness: { requirements: ALL_OK as never, readyToBuild: true, readyToSend: false },
+      package: { documentId: 'pkg-1044', version: 1, fileName: 'x.pdf', current: false },
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([outdated]));
+    let finish: (value: unknown) => void = () => undefined;
+    client.crematoryCaseAction.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    open();
+    const row = (await screen.findByRole('checkbox', { name: 'Select Estela Salas Rueda' })).closest('li') as HTMLElement;
+    await waitFor(() => expect(within(row).getAllByText('Preparing…').length).toBeGreaterThan(0));
+    expect(within(row).queryByText(/of 7 done/)).toBeNull();
+    const loads = client.fetchCrematoryOverview.mock.calls.length;
+    finish({ result: { crematoryForm: 'unchanged', package: 'failed' } });
+    await waitFor(() => expect(within(row).getByRole('alert')).toHaveTextContent('SOLIS could not prepare the Crematory Package. Nothing was sent. Try again.'));
+    expect(client.fetchCrematoryOverview.mock.calls.length).toBeGreaterThan(loads);
+    client.crematoryCaseAction.mockResolvedValue({ result: { crematoryForm: 'unchanged', package: 'saved' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenLastCalledWith('managed-cremations', '1044', { action: 'prepare' }));
+    await waitFor(() => expect(within(row).queryByRole('alert')).toBeNull());
     expect(client.sendToCrematory).not.toHaveBeenCalled();
   });
 

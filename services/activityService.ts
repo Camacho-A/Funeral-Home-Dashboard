@@ -1183,7 +1183,8 @@ export function recordCrematoryEvent(
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_NAME_CONFIRMED
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_BUILT
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SUBMITTED
-    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SEND_FAILED,
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SEND_FAILED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_DOCUMENT_TYPE_ASSIGNED,
   details: { resourceId: string | null; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityEvent> {
