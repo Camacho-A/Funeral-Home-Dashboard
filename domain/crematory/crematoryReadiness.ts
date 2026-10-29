@@ -29,6 +29,9 @@ export type CrematoryReadinessInput = {
   workflow2Complete: boolean | null;
   /** The latest uploaded state permit (a PDF), if any. */
   permit: { documentId: string; checksumSha256: string; mimeType: string } | null;
+  /** How many state permits are current (active) on the case (2026-10).
+      More than one is a conflict staff resolve — never guessed. */
+  currentPermitCount: number;
   /** The staff confirmation on the case: which permit file was confirmed. */
   permitVerification: { documentId: string; checksumSha256: string } | null;
   arrangementForm: { createdAt: string } | null;
@@ -61,8 +64,12 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
 
   add('cremation', 'Cremation case', input.caseType === 'cremation' && !input.isArchived, input.isArchived ? 'This case is archived.' : 'Only cremation cases are sent to the crematory.');
 
-  add('permit_uploaded', 'State permit uploaded', input.permit !== null && input.permit.mimeType === 'application/pdf',
-    input.permit ? 'The state permit must be a PDF.' : 'Upload the approved state cremation permit.');
+  add('permit_uploaded', 'State permit uploaded', input.permit !== null && input.permit.mimeType === 'application/pdf' && input.currentPermitCount <= 1,
+    input.currentPermitCount > 1
+      ? `${input.currentPermitCount} state permits are current on this case. Choose the one to use; the others are kept as earlier versions.`
+      : input.permit
+        ? 'The state permit must be a PDF.'
+        : 'Upload the approved state cremation permit.');
 
   const verifiedCurrent =
     input.permit !== null &&

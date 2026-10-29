@@ -473,17 +473,40 @@ export type CaseCrematoryRecord = {
       package file name (LastName_FirstName_…), entered or confirmed by
       staff — never split from the full name, and never a change to the
       case's own name. */
-  packageName?: { first: string; last: string; confirmedBy: string | null; confirmedAt: string } | null;
+  packageName?: {
+    first: string;
+    last: string;
+    confirmedBy: string | null;
+    confirmedAt: string;
+    /** Where it came from (2026-10): staff (also when absent — every name
+        recorded before this existed), or the intake form's own first /
+        middle / last boxes, recorded automatically. */
+    source?: 'staff' | 'intake_form';
+  } | null;
   /** The expected cremation ready date staff entered or confirmed (MM/DD/YYYY),
       and the Expected Pickup it was suggested from at the time. */
-  readyDate?: { date: string; suggestedAtConfirmation: string | null; confirmedBy: string | null; confirmedAt: string } | null;
+  readyDate?: {
+    date: string;
+    suggestedAtConfirmation: string | null;
+    confirmedBy: string | null;
+    confirmedAt: string;
+    /** staff (also when absent), or the scheduled Expected Pickup, recorded
+        automatically (2026-10) — and kept in step with it until sent. */
+    source?: 'staff' | 'expected_pickup';
+  } | null;
   /** What the current Crematory Package was built from. */
   lastBuild?: { packageDocumentId: string; permitChecksumSha256: string; crematoryFormChecksumSha256: string; fileName: string; builtAt: string; builtBy: string | null } | null;
   /** Automatic preparation in progress (2026-10) — one server at a time
       prepares a case's page 3 and package; expires on its own. */
   preparing?: { token: string; until: string } | null;
   /** A send in progress — refuses a second one at the same time. */
-  pendingSubmission?: { submissionId: string; startedAt: string; startedBy: string | null } | null;
+  pendingSubmission?: {
+    submissionId: string;
+    startedAt: string;
+    startedBy: string | null;
+    /** The one acknowledgment record for the whole email (2026-10). */
+    acknowledgmentId?: string | null;
+  } | null;
   /** The most recent send attempt. `submitted` means Outlook accepted it —
       NOT that the crematory received it. `uncertain`: Outlook failed in a
       way that may still have sent it (check Sent Items before retrying). */
@@ -500,5 +523,12 @@ export type CaseCrematoryRecord = {
     error: string | null;
     at: string;
     by: string | null;
+    /** The exact PDF and subject sent (2026-10); absent on earlier sends. */
+    packageChecksumSha256?: string | null;
+    subject?: string | null;
+    /** The final review staff confirmed (2026-10), and the one
+        acknowledgment record covering every case in that email. */
+    reviewFingerprint?: string | null;
+    acknowledgmentId?: string | null;
   } | null;
 };

@@ -21,7 +21,7 @@ vi.mock('../../lib/vercelBlob/vercelBlobStorageProvider', () => ({
 }));
 
 const pkg = await import('./crematoryPackageService');
-const { sendCrematoryPackages } = await import('./crematorySendService');
+const { sendCrematoryPackages, reviewCrematorySend } = await import('./crematorySendService');
 const { connectMockCrematoryMailbox, resetMockCrematoryMailboxes } = await import('./crematoryMailboxService');
 const { upload } = await import('../documentService');
 const { extractArrangementPage } = await import('../arrangementPageExtractService');
@@ -149,7 +149,7 @@ describe('readiness — what needs attention', () => {
     expect(summary.readiness.readyToBuild).toBe(false);
     expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_uploaded', 'permit_verified', 'crematory_form', 'package_name', 'ready_date', 'package']);
     // A two-word case name can only be first + last: it is filled in for staff to confirm.
-    expect(summary.packageName).toEqual({ confirmed: null, suggested: { first: 'Richard', last: 'Reynolds' }, suggestedFrom: 'case_name' });
+    expect(summary.packageName).toEqual({ confirmed: null, suggested: { first: 'Richard', last: 'Reynolds' }, suggestedFrom: 'case_name', recordedFrom: null });
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(0);
   });
 
@@ -163,7 +163,7 @@ describe('readiness — what needs attention', () => {
   it('the expected ready date is suggested from the Expected Pickup but never taken as confirmed', async () => {
     expectedPickup('1042', '2026-11-06');
     const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
-    expect(summary.readyDate).toEqual({ suggested: '11/06/2026', confirmed: null });
+    expect(summary.readyDate).toEqual({ suggested: '11/06/2026', confirmed: null, recordedFrom: null });
     expect(summary.readiness.requirements.find((r) => r.key === 'ready_date')).toMatchObject({ ok: false });
   });
 
@@ -408,7 +408,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
       mappedFields: JSON.stringify({ decedentName: 'MARY ANN SMITH', decedentFirstName: 'MARY', decedentMiddleName: 'ANN', decedentLastName: 'SMITH' }),
     } as never);
     try {
-      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form' });
+      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form', recordedFrom: null });
     } finally {
       externalFormSubmissionFixtures.length = before;
     }
@@ -417,7 +417,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
   it('for an older submission, reads the name boxes back from Jotform (read-only); a long case name alone is never split', async () => {
     caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], decedentName: 'MARY ANN SMITH', decedentMiddleName: null };
     // Without any form, "MARY ANN SMITH" is ambiguous: nothing is filled in.
-    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: null, suggestedFrom: null });
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: null, suggestedFrom: null, recordedFrom: null });
 
     const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
     const before = externalFormSubmissionFixtures.length;
@@ -433,7 +433,7 @@ describe('the Crematory Package — one PDF per decedent', () => {
     });
     vi.stubGlobal('fetch', jotform);
     try {
-      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form' });
+      expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).packageName).toEqual({ confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form', recordedFrom: null });
       await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
       expect(jotform).toHaveBeenCalledTimes(1); // read once, then remembered
     } finally {
@@ -458,8 +458,8 @@ describe('the Crematory Package — one PDF per decedent', () => {
     expect((await pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).outcome).toBe('unchanged');
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(1);
 
-    // A corrected permit: unconfirmed until staff confirm it; the old package is stale.
-    const newPermit = await uploadAs('1042', 'State Permit (corrected).pdf', 'cremation_form.state_permit', await pdf('PERMIT-2', 1), 'permit-1042-b');
+    // A corrected permit (replacing the first): unconfirmed until staff confirm it; the old package is stale.
+    const { document: newPermit } = await pkg.addPermit(ctx(), '1042', { fileName: 'State Permit (corrected).pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-2', 1) }, { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock');
     let summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_verified', 'package']);
     await expect(pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 422 });
@@ -492,10 +492,10 @@ describe('the Crematory Package — one PDF per decedent', () => {
     expect(summary.readiness.requirements.find((r) => r.key === 'ready_date')).toMatchObject({ ok: false, detail: expect.stringContaining('Expected Pickup changed') });
   });
 
-  it('a permit confirmation is for one file: confirming a stale id is refused', async () => {
+  it('a permit confirmation is for one file: confirming a replaced permit is refused', async () => {
     await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-old');
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await uploadAs('1042', 'State Permit 2.pdf', 'cremation_form.state_permit', await pdf('PERMIT-B', 1), 'permit-new');
+    await pkg.addPermit(ctx(), '1042', { fileName: 'State Permit 2.pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-B', 1) }, { replacesDocumentId: 'permit-old', mayReplace: true }, 'mock');
     await expect(pkg.confirmPermit(ctx(), '1042', 'permit-old', 'mock')).rejects.toMatchObject({ status: 409 });
   });
 });
@@ -522,8 +522,16 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     message: 'Hello',
     submissionId: 'sub-0000-0001',
     confirmResend: false,
+    reviewFingerprint: '',
+    acknowledged: true,
     ...over,
   });
+  /** As the window does: the server's final review first, then Confirm & Send with its fingerprint. */
+  const fingerprintFor = (caseIds: string[]) => reviewCrematorySend(ORG, caseIds, 'mock').then((r) => r.fingerprint).catch(() => 'v1:not-reviewable');
+  const send = async (over: Partial<Parameters<typeof sendCrematoryPackages>[1]> = {}, who = ctx()) => {
+    const body = request(over);
+    return sendCrematoryPackages(who, { ...body, reviewFingerprint: over.reviewFingerprint ?? (await fingerprintFor(body.caseIds)) }, 'mock');
+  };
   async function twoReadyCases() {
     await readyCase('1042');
     await readyCase('1044');
@@ -535,7 +543,7 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
   it('attaches each case\'s package — and only those — to ONE email, and records it on each case', async () => {
     await twoReadyCases();
     const calls = fakeGraph();
-    const result = await sendCrematoryPackages(ctx('staff-lee'), request(), 'mock');
+    const result = await send({}, ctx('staff-lee'));
     expect(result).toMatchObject({ status: 'submitted', duplicate: false, mailbox: 'office@funeralhome.example', internetMessageId: '<msg-1@outlook>' });
 
     expect(calls.filter(([url]) => url.endsWith('/me/messages'))).toHaveLength(1);
@@ -558,16 +566,19 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
   it('each case is sent ONCE: the same request reports the first send, and nothing — not even an override — sends it again', async () => {
     await twoReadyCases();
     const calls = fakeGraph();
-    await sendCrematoryPackages(ctx(), request(), 'mock');
-    const again = await sendCrematoryPackages(ctx(), request(), 'mock');
+    await send();
+    const again = await send();
     expect(again.duplicate).toBe(true);
 
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0002' }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Each case is sent only once') });
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0003', confirmResend: true }), 'mock')).rejects.toMatchObject({ status: 409 });
-    // Even with a rebuilt package (a new date), a sent case stays sent.
-    await pkg.confirmReadyDate(ctx(), '1042', '11/09/2026', 'mock');
-    await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
-    await expect(sendCrematoryPackages(ctx(), request({ caseIds: ['1042'], submissionId: 'sub-0000-0007', confirmResend: true }), 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(send({ submissionId: 'sub-0000-0002' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Each case is sent only once') });
+    await expect(send({ submissionId: 'sub-0000-0003', confirmResend: true })).rejects.toMatchObject({ status: 409 });
+    // A sent case's date, name, permit and package are never changed again (2026-10) — and it stays sent.
+    await expect(pkg.confirmReadyDate(ctx(), '1042', '11/09/2026', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.confirmPackageName(ctx(), '1042', { first: 'Rick', last: 'Reynolds' }, 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.confirmPermit(ctx(), '1042', 'permit-1042', 'mock')).rejects.toMatchObject({ status: 409 });
+    expect(docsOf('1042', 'cremation_form.crematory_package').map((d) => [d.version, d.status])).toEqual([[1, 'active']]);
+    await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0007', confirmResend: true })).rejects.toMatchObject({ status: 409 });
     expect(calls.filter(([url]) => url.endsWith('/send'))).toHaveLength(1);
     expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.readyToSend).toBe(false);
   });
@@ -576,7 +587,7 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     await twoReadyCases();
     caseFixtures[index('1044')] = { ...caseFixtures[index('1044')], checklistState: { '2:0': true } };
     const calls = fakeGraph();
-    await expect(sendCrematoryPackages(ctx(), request(), 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('B2026-902') });
+    await expect(send()).rejects.toMatchObject({ status: 422, message: expect.stringContaining('B2026-902') });
     expect(calls).toHaveLength(0);
   });
 
@@ -584,28 +595,28 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     await readyCase('1042');
     await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
     const calls = fakeGraph();
-    await expect(sendCrematoryPackages(ctx(), request({ caseIds: ['1042'] }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('No Outlook mailbox') });
+    await expect(send({ caseIds: ['1042'] })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('No Outlook mailbox') });
     connectMockCrematoryMailbox(ORG, 'office@funeralhome.example', 'access-token');
-    await expect(sendCrematoryPackages(ctx(), request({ caseIds: ['1042'], to: [] }), 'mock')).rejects.toMatchObject({ status: 400 });
-    await expect(sendCrematoryPackages(ctx(), request({ caseIds: ['1042'], to: ['not-an-email'] }), 'mock')).rejects.toMatchObject({ status: 400 });
+    await expect(send({ caseIds: ['1042'], to: [] })).rejects.toMatchObject({ status: 400 });
+    await expect(send({ caseIds: ['1042'], to: ['not-an-email'] })).rejects.toMatchObject({ status: 400 });
     expect(calls).toHaveLength(0);
   });
 
   it('a failure before sending is recorded as not sent and can be retried; a failing send call is recorded as uncertain', async () => {
     await twoReadyCases();
     fakeGraph({ failAttachment: true });
-    await expect(sendCrematoryPackages(ctx(), request(), 'mock')).rejects.toMatchObject({ status: 502, message: expect.stringContaining('Nothing was sent') });
+    await expect(send()).rejects.toMatchObject({ status: 502, message: expect.stringContaining('Nothing was sent') });
     expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'failed' });
     expect(eventsOf('1042', 'crematory.package_send_failed')).toHaveLength(1);
 
     // A failing send call is recorded as uncertain ("may have been sent").
     fakeGraph({ failSend: 503 });
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0005' }), 'mock')).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
+    await expect(send({ submissionId: 'sub-0000-0005' })).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
     expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'uncertain' });
     // It is retried only after staff confirm, from Sent Items, that it did not go out.
     fakeGraph();
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0006' }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Check Sent Items') });
-    await expect(sendCrematoryPackages(ctx(), request({ submissionId: 'sub-0000-0004', confirmResend: true }), 'mock')).resolves.toMatchObject({ status: 'submitted' });
+    await expect(send({ submissionId: 'sub-0000-0006' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Check Sent Items') });
+    await expect(send({ submissionId: 'sub-0000-0004', confirmResend: true })).resolves.toMatchObject({ status: 'submitted' });
   });
 
   it('two decedents with the same name and date never share an attachment name', async () => {
@@ -614,7 +625,7 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     await pkg.confirmPackageName(ctx(), '1044', { first: 'Richard', last: 'Reynolds' }, 'mock');
     await pkg.buildCrematoryPackage(ctx(), '1044', 'mock');
     const calls = fakeGraph();
-    await sendCrematoryPackages(ctx(), request(), 'mock');
+    await send();
     const names = calls.filter(([url]) => url.endsWith('/attachments')).map(([, init]) => JSON.parse(String(init!.body)).name);
     expect(names).toEqual(['REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026_B2026-901.pdf', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026_B2026-902.pdf']);
   });
@@ -635,7 +646,7 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(1);
 
     const calls = fakeGraph();
-    await sendCrematoryPackages(ctx(), request(), 'mock');
+    await send();
     const attached = calls.filter(([url]) => url.endsWith('/attachments')).map(([, init]) => JSON.parse(String(init!.body)));
     expect(attached[0].name).toBe('REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf');
     expect(Buffer.from(attached[0].contentBytes, 'base64').equals(blobs.get(saved.storageKey)!.buffer)).toBe(true);
@@ -649,8 +660,171 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     const saved = docsOf('1042', 'cremation_form.crematory_package')[0];
     blobs.set(saved.storageKey, { buffer: Buffer.from('tampered'), contentType: 'application/pdf' });
     const calls = fakeGraph();
-    await expect(sendCrematoryPackages(ctx(), request(), 'mock')).rejects.toMatchObject({ status: 503 });
+    await expect(send()).rejects.toMatchObject({ status: 503 });
     expect(calls.some(([url]) => url.endsWith('/send'))).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // The final review and Confirm & Send (2026-10)
+  // -------------------------------------------------------------------------
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+
+  it('the review is the exact email, read-only: each package as stored, its permit verification, the default subject — and a fingerprint', async () => {
+    await twoReadyCases();
+    const before = JSON.stringify([caseFixtures[index('1042')], caseFixtures[index('1044')]]);
+    const counts = [caseDocumentFixtures.length, activityEventFixtures.length];
+    const review = await reviewCrematorySend(ORG, ['1042', '1044'], 'mock');
+    expect(review.fingerprint).toMatch(/^v1:[0-9a-f]{64}$/);
+    expect(review.cases.map((c) => [c.caseNumber, c.attachmentName, c.expectedReadyDate, c.readyDateFrom, c.packageVersion])).toEqual([
+      ['B2026-901', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', '11/06/2026', 'staff', 1],
+      ['B2026-902', 'SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-06-2026.pdf', '11/06/2026', 'staff', 1],
+    ]);
+    expect(review.cases[0].packageChecksumSha256).toBe(docsOf('1042', 'cremation_form.crematory_package')[0].checksumSha256);
+    expect(review.cases[0].permit).toMatchObject({ documentId: 'permit-1042', fileName: 'State Permit.pdf', verifiedBy: 'staff-dana' });
+    expect(review.subject).toBe('Manors Cremation — 2 Cases for Crematory — Expected 11/06/2026');
+    expect(review.mailbox).toBe('office@funeralhome.example');
+    // Nothing prepared, changed or recorded.
+    expect(JSON.stringify([caseFixtures[index('1042')], caseFixtures[index('1044')]])).toBe(before);
+    expect([caseDocumentFixtures.length, activityEventFixtures.length]).toEqual(counts);
+    expect((await reviewCrematorySend(ORG, ['1042', '1044'], 'mock')).fingerprint).toBe(review.fingerprint);
+  });
+
+  const acknowledgments = () => activityEventFixtures.slice(lengths.activity).filter((e) => e.eventType === 'crematory.send_confirmed');
+
+  it('Confirm & Send writes ONE acknowledgment for the whole email — who, when, the exact recipients, subject and every case\'s attachment — before anything is sent, linked to each case', async () => {
+    await twoReadyCases();
+    fakeGraph();
+    const review = await reviewCrematorySend(ORG, ['1042', '1044'], 'mock');
+    // Staff edited the CC, subject and message during the review: exactly those are sent and recorded.
+    await sendCrematoryPackages(ctx('staff-lee'), request({ reviewFingerprint: review.fingerprint, cc: ['office@funeralhome.example'], subject: 'Edited subject', message: 'Edited message' }), 'mock');
+    const checksums = ['1042', '1044'].map((id) => docsOf(id, 'cremation_form.crematory_package')[0].checksumSha256);
+    const acks = acknowledgments();
+    expect(acks).toHaveLength(1);
+    const [ack] = acks;
+    expect(ack).toMatchObject({ caseId: null, resourceType: 'crematorySubmission', resourceId: 'sub-0000-0001', actorIdentityId: 'staff-lee' });
+    expect(ack.description).toBe('Final review confirmed (Confirm & Send): 2 attachments (B2026-901, B2026-902) to intake@crematory.example — "Edited subject"');
+    const record = JSON.parse(ack.newValue!);
+    expect(record).toMatchObject({
+      submissionId: 'sub-0000-0001',
+      reviewFingerprint: review.fingerprint,
+      acknowledgedBy: 'staff-lee',
+      acknowledgedAt: expect.any(String),
+      to: ['intake@crematory.example'],
+      cc: ['office@funeralhome.example'],
+      subject: 'Edited subject',
+      messageSha256: sha('Edited message'),
+      caseIds: ['1042', '1044'],
+      attachments: [
+        { caseId: '1042', caseNumber: 'B2026-901', attachmentName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', packageVersion: 1, packageChecksumSha256: checksums[0] },
+        { caseId: '1044', caseNumber: 'B2026-902', attachmentName: 'SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-06-2026.pdf', packageVersion: 1, packageChecksumSha256: checksums[1] },
+      ],
+    });
+    // Recorded before anything was submitted; each case links to it.
+    const all = activityEventFixtures.slice(lengths.activity);
+    expect(all.indexOf(ack)).toBeLessThan(all.findIndex((e) => e.eventType === 'crematory.package_submitted'));
+    for (const [i, caseId] of ['1042', '1044'].entries()) {
+      expect(caseFixtures[index(caseId)].crematory!.lastSubmission).toMatchObject({
+        status: 'submitted',
+        acknowledgmentId: record.acknowledgmentId,
+        packageChecksumSha256: checksums[i],
+        subject: 'Edited subject',
+        reviewFingerprint: review.fingerprint,
+        cc: ['office@funeralhome.example'],
+      });
+      expect(JSON.parse(eventsOf(caseId, 'crematory.package_submitted')[0].newValue!)).toMatchObject({ acknowledgmentId: record.acknowledgmentId, acknowledgedBy: 'staff-lee', packageChecksumSha256: checksums[i] });
+    }
+  });
+
+  it('if the acknowledgment cannot be recorded, nothing is sent and no case is left locked or marked', async () => {
+    await twoReadyCases();
+    const calls = fakeGraph();
+    const review = await reviewCrematorySend(ORG, ['1042', '1044'], 'mock');
+    const push = vi.spyOn(activityEventFixtures, 'push').mockImplementationOnce(() => {
+      throw new Error('activity storage unavailable');
+    });
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: review.fingerprint }), 'mock')).rejects.toMatchObject({ status: 503, message: expect.stringContaining('Your confirmation could not be recorded') });
+    push.mockRestore();
+    expect(calls).toHaveLength(0);
+    expect(acknowledgments()).toHaveLength(0);
+    for (const id of ['1042', '1044']) {
+      expect(caseFixtures[index(id)].crematory!.pendingSubmission ?? null).toBeNull();
+      expect(caseFixtures[index(id)].crematory!.lastSubmission ?? null).toBeNull();
+    }
+    // Nothing was spent: the same review sends once the record can be written.
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: review.fingerprint }), 'mock')).resolves.toMatchObject({ status: 'submitted' });
+    expect(acknowledgments()).toHaveLength(1);
+  });
+
+  it('a later case failing its last check (its stored PDF unreadable) stops the whole email: no acknowledgment, nothing sent, the earlier case unlocked', async () => {
+    await twoReadyCases();
+    const calls = fakeGraph();
+    const review = await reviewCrematorySend(ORG, ['1042', '1044'], 'mock');
+    blobs.set(docsOf('1044', 'cremation_form.crematory_package')[0].storageKey, { buffer: Buffer.from('tampered'), contentType: 'application/pdf' });
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: review.fingerprint }), 'mock')).rejects.toMatchObject({ status: 503, message: expect.stringContaining('B2026-902') });
+    expect(calls).toHaveLength(0);
+    expect(acknowledgments()).toHaveLength(0);
+    for (const id of ['1042', '1044']) expect(caseFixtures[index(id)].crematory!.pendingSubmission ?? null).toBeNull();
+  });
+
+  it('reviewed is not sent: when Outlook fails after the acknowledgment, each case is recorded as failed (or uncertain), still not sent, and can be sent after a fresh confirmation', async () => {
+    await twoReadyCases();
+    fakeGraph({ failAttachment: true });
+    await expect(send()).rejects.toMatchObject({ status: 502 });
+    const [ack] = acknowledgments();
+    const { acknowledgmentId } = JSON.parse(ack.newValue!);
+    for (const id of ['1042', '1044']) {
+      expect(caseFixtures[index(id)].crematory!.lastSubmission).toMatchObject({ status: 'failed', acknowledgmentId });
+      expect(JSON.parse(eventsOf(id, 'crematory.package_send_failed')[0].newValue!)).toMatchObject({ acknowledgmentId });
+      const summary = await pkg.getCrematoryCaseSummary(ORG, id, true, 'mock');
+      expect(summary.readiness.requirements.find((r) => r.key === 'not_sent')!.ok).toBe(true);
+    }
+    fakeGraph({ failSend: 503 });
+    await expect(send({ submissionId: 'sub-0000-0010' })).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
+    expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'uncertain' });
+    fakeGraph();
+    await expect(send({ submissionId: 'sub-0000-0011', confirmResend: true })).resolves.toMatchObject({ status: 'submitted' });
+    // Three confirmations, three records; only the last is a send.
+    expect(acknowledgments().map((e) => e.resourceId)).toEqual(['sub-0000-0001', 'sub-0000-0010', 'sub-0000-0011']);
+    expect(caseFixtures[index('1044')].crematory!.lastSubmission).toMatchObject({ status: 'submitted', submissionId: 'sub-0000-0011' });
+  });
+
+  it('nothing is sent without the review, without the acknowledgment, for cases other than those reviewed, or once anything reviewed changed', async () => {
+    await twoReadyCases();
+    const calls = fakeGraph();
+    const review = await reviewCrematorySend(ORG, ['1042', '1044'], 'mock');
+    // A window opened before this update carries no fingerprint.
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: '' }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Send to Crematory was updated') });
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: review.fingerprint, acknowledged: false }), 'mock')).rejects.toMatchObject({ status: 400 });
+    await expect(sendCrematoryPackages(ctx(), request({ caseIds: ['1042'], reviewFingerprint: review.fingerprint }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('changed since you reviewed') });
+    // A change after the review (a corrected date rebuilds the package): the reviewed email is stale.
+    await pkg.confirmReadyDate(ctx(), '1042', '11/09/2026', 'mock');
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: review.fingerprint }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('changed since you reviewed') });
+    expect(calls).toHaveLength(0);
+    expect(acknowledgments()).toHaveLength(0);
+    expect(caseFixtures[index('1042')].crematory!.pendingSubmission ?? null).toBeNull();
+    // Reviewed again, it sends the new package.
+    await expect(send()).resolves.toMatchObject({ status: 'submitted', attachments: [expect.objectContaining({ attachmentName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-09-2026.pdf', packageVersion: 2 }), expect.anything()] });
+  });
+
+  it('never while a case is being prepared: the review and the send both refuse, nothing is sent and no case stays locked', async () => {
+    await twoReadyCases();
+    const calls = fakeGraph();
+    const review = await reviewCrematorySend(ORG, ['1042', '1044'], 'mock');
+    const c = caseFixtures[index('1044')];
+    caseFixtures[index('1044')] = { ...c, crematory: { ...c.crematory!, preparing: { token: 'other-server', until: new Date(Date.now() + 60_000).toISOString() } } };
+    await expect(reviewCrematorySend(ORG, ['1042', '1044'], 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('still being prepared') });
+    await expect(sendCrematoryPackages(ctx(), request({ reviewFingerprint: review.fingerprint }), 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('still being prepared') });
+    expect(calls).toHaveLength(0);
+    for (const id of ['1042', '1044']) expect(caseFixtures[index(id)].crematory!.pendingSubmission ?? null).toBeNull();
+  });
+
+  it('the review refuses a case that is not ready or already sent', async () => {
+    await twoReadyCases();
+    caseFixtures[index('1044')] = { ...caseFixtures[index('1044')], checklistState: { '2:0': true } };
+    await expect(reviewCrematorySend(ORG, ['1042', '1044'], 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('B2026-902') });
+    fakeGraph();
+    await send({ caseIds: ['1042'] });
+    await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Each case is sent only once') });
   });
 });
 
@@ -663,5 +837,258 @@ describe('the Cases page list', () => {
     expect(mine[0]).toMatchObject({ caseId: '1044', readiness: { readyToSend: true }, package: { fileName: 'SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-06-2026.pdf' } });
     expect(mine[1]).toMatchObject({ caseId: '1042', readiness: { readyToSend: false } });
     expect(list.every((c) => caseFixtures.find((x) => x.id === c.caseId)?.caseType === 'cremation')).toBe(true);
+  });
+});
+
+describe('the name and expected ready date, recorded automatically from reliable sources (2026-10)', () => {
+  const PACKAGE = 'cremation_form.crematory_package';
+  let forms = 0;
+  beforeEach(async () => {
+    forms = (await import('../__mocks__/externalFormFixtures')).externalFormSubmissionFixtures.length;
+  });
+  afterEach(async () => {
+    (await import('../__mocks__/externalFormFixtures')).externalFormSubmissionFixtures.length = forms;
+  });
+  /** A fictional intake form with its own first / middle / last name boxes. */
+  async function intakeForm(caseId: string, id: string, name: { first: string; middle?: string; last: string }) {
+    const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
+    externalFormSubmissionFixtures.push({
+      id, organizationId: ORG, provider: 'jotform', externalFormId: '262664842044055', externalSubmissionId: null, caseFormLinkId: null,
+      createdCaseId: caseId, status: 'matched', receivedAt: '2026-10-20T10:00:00.000Z',
+      mappedFields: JSON.stringify({ decedentFirstName: name.first, decedentMiddleName: name.middle ?? '', decedentLastName: name.last }),
+    } as never);
+  }
+  /** Everything but the name and date: Arrangement Form, a confirmed permit, workflow 2. */
+  async function documentsReady(caseId: string) {
+    await uploadAs(caseId, 'Arrangement Forms.pdf', 'external_form.arrangement_forms', await pdf(`ARRANGEMENT-${caseId}`, 6), `arr-${caseId}`);
+    const permit = await uploadAs(caseId, 'State Permit.pdf', 'cremation_form.state_permit', await pdf(`PERMIT-${caseId}`, 2, [612, 1008]), `permit-${caseId}`);
+    await pkg.confirmPermit(ctx(), caseId, permit.id, 'mock');
+  }
+  const summaryOf = (caseId: string) => pkg.getCrematoryCaseSummary(ORG, caseId, true, 'mock');
+  const requirement = async (caseId: string, key: string) => (await summaryOf(caseId)).readiness.requirements.find((r) => r.key === key)!;
+
+  it('a ready case needs no name or date confirmation: from the intake form, the Expected Pickup and a confirmed permit, the package is built on its own', async () => {
+    await intakeForm('1042', 'sub-1042', { first: 'RICHARD', last: 'REYNOLDS' });
+    expectedPickup('1042', '2026-11-06');
+    await documentsReady('1042');
+    const summary = await summaryOf('1042');
+    expect(summary.packageName).toMatchObject({ confirmed: { first: 'Richard', last: 'Reynolds' }, recordedFrom: 'intake_form' });
+    expect(summary.readyDate).toEqual({ suggested: '11/06/2026', confirmed: '11/06/2026', recordedFrom: 'expected_pickup' });
+    expect(summary.readiness.readyToSend).toBe(true);
+    expect(docsOf('1042', PACKAGE).map((d) => d.fileName)).toEqual(['REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf']);
+    expect(eventsOf('1042', 'crematory.package_name_recorded')[0].description).toBe('Name for the Crematory Package recorded from the intake form: Reynolds, Richard');
+    expect(eventsOf('1042', 'crematory.ready_date_recorded')[0].description).toBe('Expected cremation ready date recorded from the Expected Pickup: 11/06/2026');
+    expect(eventsOf('1042', 'crematory.package_name_confirmed')).toHaveLength(0);
+    expect(eventsOf('1042', 'crematory.ready_date_confirmed')).toHaveLength(0);
+  });
+
+  it('the name is never taken from the case name alone — two words are only a suggestion for staff', async () => {
+    expectedPickup('1042', '2026-11-06');
+    await documentsReady('1042');
+    const summary = await summaryOf('1042');
+    expect(summary.packageName).toEqual({ confirmed: null, suggested: { first: 'Richard', last: 'Reynolds' }, suggestedFrom: 'case_name', recordedFrom: null });
+    expect(summary.readiness.requirements.find((r) => r.key === 'package_name')!.ok).toBe(false);
+    expect(docsOf('1042', PACKAGE)).toHaveLength(0);
+  });
+
+  it('keeps multi-word surnames whole', async () => {
+    await intakeForm('1044', 'sub-1044', { first: 'ESTELA', last: 'SALAS RUEDA' });
+    expectedPickup('1044', '2026-11-07');
+    await documentsReady('1044');
+    expect((await summaryOf('1044')).packageName.confirmed).toEqual({ first: 'Estela', last: 'Salas Rueda' });
+    expect(docsOf('1044', PACKAGE)[0].fileName).toBe('SALAS RUEDA_ESTELA_CREMATORY_PACKAGE_11-07-2026.pdf');
+  });
+
+  it('forms that disagree, a name corrected on the case since the form, or a name staff already confirmed: left as they are, for staff', async () => {
+    // Two forms that disagree.
+    await intakeForm('1042', 'sub-a', { first: 'RICHARD', last: 'REYNOLDS' });
+    await intakeForm('1042', 'sub-b', { first: 'RICHARD', last: 'RAYNOLDS' });
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect((await summaryOf('1042')).packageName.confirmed).toBeNull();
+
+    // The case name corrected since the form (here, a suffix added).
+    const { externalFormSubmissionFixtures } = await import('../__mocks__/externalFormFixtures');
+    externalFormSubmissionFixtures.length = forms;
+    await intakeForm('1044', 'sub-c', { first: 'ESTELA', last: 'SALAS' });
+    await pkg.prepareCrematoryDocuments(ctx(), '1044', 'mock');
+    expect((await summaryOf('1044')).packageName.confirmed).toBeNull();
+
+    // A staff confirmation is never replaced.
+    await pkg.confirmPackageName(ctx(), '1042', { first: 'Rick', last: 'Reynolds' }, 'mock');
+    externalFormSubmissionFixtures.length = forms;
+    await intakeForm('1042', 'sub-d', { first: 'RICHARD', last: 'REYNOLDS' });
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect((await summaryOf('1042')).packageName).toMatchObject({ confirmed: { first: 'Rick', last: 'Reynolds' }, recordedFrom: 'staff' });
+    expect(eventsOf('1042', 'crematory.package_name_recorded')).toHaveLength(0);
+    expect(eventsOf('1044', 'crematory.package_name_recorded')).toHaveLength(0);
+  });
+
+  it('a date from the Expected Pickup follows it until sent: the package is rebuilt and the earlier review no longer sends', async () => {
+    await intakeForm('1042', 'sub-1042', { first: 'RICHARD', last: 'REYNOLDS' });
+    expectedPickup('1042', '2026-11-06');
+    await documentsReady('1042');
+    const review = await reviewCrematorySend(ORG, ['1042'], 'mock');
+
+    appointmentFixtures.find((a) => a.id === 'cremains-pickup-1042')!.startAt = '2026-11-10T05:00:00.000Z';
+    // Until SOLIS catches up, the case is not ready — never sent with the old date.
+    expect((await requirement('1042', 'ready_date')).ok).toBe(false);
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect((await summaryOf('1042')).readyDate).toEqual({ suggested: '11/10/2026', confirmed: '11/10/2026', recordedFrom: 'expected_pickup' });
+    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.status, d.fileName])).toEqual([
+      [1, 'superseded', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf'],
+      [2, 'active', 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-10-2026.pdf'],
+    ]);
+    expect(eventsOf('1042', 'crematory.ready_date_recorded').at(-1)!.description).toBe('Expected cremation ready date recorded from the Expected Pickup: 11/10/2026 (was 11/06/2026)');
+    connectMockCrematoryMailbox(ORG, 'office@funeralhome.example', 'access-token');
+    await expect(
+      sendCrematoryPackages(ctx(), { caseIds: ['1042'], to: ['intake@crematory.example'], cc: [], subject: 'S', message: 'M', submissionId: 'sub-0000-0100', confirmResend: false, reviewFingerprint: review.fingerprint, acknowledged: true }, 'mock'),
+    ).rejects.toMatchObject({ status: 409, message: expect.stringContaining('changed since you reviewed') });
+  });
+
+  it('a date staff entered is never changed: if the pickup moves afterwards, or is cancelled, the case needs attention', async () => {
+    await readyCase('1042');
+    await pkg.buildCrematoryPackage(ctx(), '1042', 'mock');
+    const pickup = appointmentFixtures.find((a) => a.id === 'cremains-pickup-1042')!;
+    pickup.startAt = '2026-11-10T05:00:00.000Z';
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect((await summaryOf('1042')).readyDate).toMatchObject({ confirmed: '11/06/2026', recordedFrom: 'staff' });
+    expect(await requirement('1042', 'ready_date')).toMatchObject({ ok: false, detail: expect.stringContaining('Expected Pickup changed') });
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+
+    // A date taken from a pickup that is then cancelled is not trusted either.
+    await intakeForm('1044', 'sub-1044', { first: 'ESTELA', last: 'SALAS RUEDA' });
+    expectedPickup('1044', '2026-11-07');
+    await documentsReady('1044');
+    expect((await summaryOf('1044')).readiness.readyToSend).toBe(true);
+    (appointmentFixtures.find((a) => a.id === 'cremains-pickup-1044')! as { status: string }).status = 'cancelled';
+    await pkg.prepareCrematoryDocuments(ctx(), '1044', 'mock');
+    expect((await requirement('1044', 'ready_date')).ok).toBe(false);
+    await expect(reviewCrematorySend(ORG, ['1044'], 'mock')).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('nothing is recorded on a case already sent', async () => {
+    const c = caseFixtures[index('1042')];
+    caseFixtures[index('1042')] = { ...c, crematory: { lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: 'x', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } } };
+    await intakeForm('1042', 'sub-1042', { first: 'RICHARD', last: 'REYNOLDS' });
+    expectedPickup('1042', '2026-11-06');
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect(caseFixtures[index('1042')].crematory!.packageName ?? null).toBeNull();
+    expect(caseFixtures[index('1042')].crematory!.readyDate ?? null).toBeNull();
+  });
+});
+
+describe('one current State Cremation Permit per case (2026-10)', () => {
+  const PERMIT = 'cremation_form.state_permit';
+  const PACKAGE = 'cremation_form.crematory_package';
+  const file = (fileName: string, bytes: Buffer) => ({ fileName, mimeType: 'application/pdf', bytes });
+  const current = (caseId: string) => caseDocumentFixtures.filter((d) => d.caseId === caseId && d.documentTypeKey === PERMIT && d.status === 'active');
+
+  it('the first permit is version 1; the same file again, or a second permit that does not say what it replaces, is refused — nothing stored', async () => {
+    const bytes = await pdf('PERMIT-1042', 2, [612, 1008]);
+    const { document, replaced } = await pkg.addPermit(ctx(), '1042', file('State Permit.pdf', bytes), { mayReplace: true }, 'mock');
+    expect(document).toMatchObject({ documentTypeKey: PERMIT, version: 1, supersedesId: null, status: 'active' });
+    expect(replaced).toBeNull();
+    expect(eventsOf('1042', 'crematory.permit_added')[0].description).toBe('State Cremation Permit added: "State Permit.pdf". It must be confirmed before a package uses it.');
+    const count = caseDocumentFixtures.length;
+    await expect(pkg.addPermit(ctx(), '1042', file('Copy.pdf', bytes), { mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining("already this case's State Cremation Permit") });
+    await expect(pkg.addPermit(ctx(), '1042', file('Other.pdf', await pdf('PERMIT-B', 1)), { mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Use Replace permit') });
+    // A file already on the case without a type is chosen, not uploaded again.
+    const untypedBytes = await pdf('UNTYPED-1044', 1);
+    await upload({ caseId: '1044', fileName: 'SALAS PERMIT.pdf', mimeType: 'application/pdf', idFactory: () => 'untyped-1044' }, untypedBytes, ctx(), 'mock');
+    const withUntyped = caseDocumentFixtures.length;
+    await expect(pkg.addPermit(ctx(), '1044', file('Permit.pdf', untypedBytes), { mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining("Choose it from this case's documents") });
+    expect(caseDocumentFixtures.length).toBe(withUntyped);
+    expect(withUntyped).toBe(count + 1);
+  });
+
+  it('a replacement names the permit it replaces and needs the prepare permission; the earlier permit is kept as superseded, and the new one is confirmed before the package is rebuilt', async () => {
+    await readyCase('1042');
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+    const corrected = file('State Permit (corrected).pdf', await pdf('PERMIT-1042-B', 1));
+    await expect(pkg.addPermit(ctx(), '1042', corrected, { replacesDocumentId: 'permit-1042', mayReplace: false }, 'mock')).rejects.toMatchObject({ status: 403 });
+    await expect(pkg.addPermit(ctx(), '1042', corrected, { replacesDocumentId: 'permit-other', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('no longer the current one') });
+    expect(current('1042').map((d) => d.id)).toEqual(['permit-1042']);
+
+    const { document } = await pkg.addPermit(ctx(), '1042', corrected, { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock');
+    expect(document).toMatchObject({ version: 2, supersedesId: 'permit-1042', status: 'active' });
+    const earlier = caseDocumentFixtures.find((d) => d.id === 'permit-1042')!;
+    expect(earlier.status).toBe('superseded');
+    expect(createHash('sha256').update(blobs.get(earlier.storageKey)!.buffer).digest('hex')).toBe(earlier.checksumSha256);
+    expect(eventsOf('1042', 'crematory.permit_replaced')[0].description).toContain('replaces "State Permit.pdf", which is kept as an earlier version');
+    let summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.readiness.requirements.filter((r) => !r.ok).map((r) => r.key)).toEqual(['permit_verified', 'package']);
+    // The earlier confirmation is cleared (it stays in the case activity); the package is outdated, not rebuilt.
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toBeNull();
+    expect(eventsOf('1042', 'crematory.permit_confirmed')).toHaveLength(1);
+    expect(summary.permit).toMatchObject({ documentId: document.id });
+    expect(summary.package).toMatchObject({ current: false });
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+    // The same replacement again (a double click): refused, nothing more stored.
+    await expect(pkg.addPermit(ctx(), '1042', corrected, { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409 });
+    expect(current('1042').map((d) => d.id)).toEqual([document.id]);
+
+    await pkg.confirmPermit(ctx(), '1042', document.id, 'mock');
+    summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.readiness.readyToSend).toBe(true);
+    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.status])).toEqual([[1, 'superseded'], [2, 'active']]);
+  });
+
+  it('two replacements at once: exactly one wins, the other is refused', async () => {
+    await readyCase('1042');
+    const results = await Promise.allSettled([
+      pkg.addPermit(ctx(), '1042', file('A.pdf', await pdf('PERMIT-A', 1)), { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock'),
+      pkg.addPermit(ctx(), '1042', file('B.pdf', await pdf('PERMIT-B', 1)), { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock'),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(current('1042')).toHaveLength(1);
+    expect(caseFixtures[index('1042')].crematory!.preparing).toBeNull();
+  });
+
+  it('if the new permit cannot be stored, the earlier permit stays current — nothing is half-replaced', async () => {
+    await readyCase('1042');
+    const { vercelBlobStorageProvider } = await import('../../lib/vercelBlob/vercelBlobStorageProvider');
+    vi.spyOn(vercelBlobStorageProvider, 'uploadFile').mockRejectedValueOnce(new Error('storage unavailable'));
+    await expect(pkg.addPermit(ctx(), '1042', file('New.pdf', await pdf('PERMIT-NEW', 1)), { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 503 });
+    expect(current('1042').map((d) => d.id)).toEqual(['permit-1042']);
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.readyToSend).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it('a case already sent: no permit is added or replaced, and its sent package is never rebuilt', async () => {
+    await readyCase('1042');
+    const c = caseFixtures[index('1042')];
+    caseFixtures[index('1042')] = { ...c, crematory: { ...c.crematory!, lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: docsOf('1042', PACKAGE)[0].id, packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } } };
+    const count = caseDocumentFixtures.length;
+    const message = expect.stringContaining('upload it without a document type');
+    await expect(pkg.addPermit(ctx(), '1042', file('New.pdf', await pdf('PERMIT-NEW', 1)), { replacesDocumentId: 'permit-1042', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message });
+    await expect(pkg.addPermit(ctx(), '1042', file('New.pdf', await pdf('PERMIT-NEW', 1)), { mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.buildCrematoryPackageNow(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 409 });
+    expect(caseDocumentFixtures.length).toBe(count);
+    expect(current('1042').map((d) => d.id)).toEqual(['permit-1042']);
+    // The sent package is exactly as it was.
+    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.status])).toEqual([[1, 'active']]);
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toMatchObject({ documentId: 'permit-1042' });
+  });
+
+  it('two current permits (from before): never ready and never resolved automatically; staff choose one and the other is kept as an earlier version', async () => {
+    await uploadAs('1042', 'Permit A.pdf', PERMIT, await pdf('PERMIT-A', 1), 'permit-a');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await uploadAs('1042', 'Permit B.pdf', PERMIT, await pdf('PERMIT-B', 1), 'permit-b');
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.requirements.find((r) => r.key === 'permit_uploaded')).toMatchObject({
+      ok: false,
+      detail: '2 state permits are current on this case. Choose the one to use; the others are kept as earlier versions.',
+    });
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect(current('1042')).toHaveLength(2);
+    await expect(pkg.confirmPermit(ctx(), '1042', 'permit-b', 'mock')).rejects.toMatchObject({ status: 409 });
+    await expect(pkg.addPermit(ctx(), '1042', file('C.pdf', await pdf('PERMIT-C', 1)), { replacesDocumentId: 'permit-b', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Choose the one to use') });
+
+    const summary = await pkg.chooseCurrentPermit(ctx(), '1042', 'permit-a', 'mock', true);
+    expect(current('1042').map((d) => d.id)).toEqual(['permit-a']);
+    expect(caseDocumentFixtures.find((d) => d.id === 'permit-b')!.status).toBe('superseded');
+    expect(summary.permit).toMatchObject({ documentId: 'permit-a' });
+    expect(summary.readiness.requirements.find((r) => r.key === 'permit_verified')!.ok).toBe(false);
+    expect(eventsOf('1042', 'crematory.current_permit_chosen')[0].description).toBe('"Permit A.pdf" chosen as the current State Cremation Permit; "Permit B.pdf" kept as earlier versions');
+    await expect(pkg.chooseCurrentPermit(ctx(), '1042', 'permit-a', 'mock')).rejects.toMatchObject({ status: 409 });
   });
 });

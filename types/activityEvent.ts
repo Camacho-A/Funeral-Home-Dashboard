@@ -218,6 +218,25 @@ export const ACTIVITY_EVENT_TYPES = {
   /** An already-uploaded, untyped PDF chosen by staff as the case's state
       permit or Arrangement Form (2026-10) — its type set, nothing else. */
   CREMATORY_DOCUMENT_TYPE_ASSIGNED: 'crematory.document_type_assigned',
+  /** A state permit stored on the case through Send to Crematory's own
+      rules (2026-10): the first permit, or a replacement — the earlier one
+      kept, marked superseded — or, where two were current, the one staff
+      chose to keep. */
+  CREMATORY_PERMIT_ADDED: 'crematory.permit_added',
+  CREMATORY_PERMIT_REPLACED: 'crematory.permit_replaced',
+  CREMATORY_CURRENT_PERMIT_CHOSEN: 'crematory.current_permit_chosen',
+  /** The package name or expected ready date recorded automatically from a
+      reliable source (2026-10): the intake form's own name boxes, or the
+      scheduled Expected Pickup. Never over a staff confirmation. */
+  CREMATORY_PACKAGE_NAME_RECORDED: 'crematory.package_name_recorded',
+  CREMATORY_READY_DATE_RECORDED: 'crematory.ready_date_recorded',
+  /** Staff reviewed the final email and pressed Confirm & Send (2026-10):
+      ONE record for the whole email — who, when, the exact recipients,
+      subject, and every case with its exact attachment — linked to each
+      case by its acknowledgmentId (on the case's send record and its
+      submitted / failed events). Recorded before anything is sent; no
+      acknowledgment, no send. It is never a send status by itself. */
+  CREMATORY_SEND_CONFIRMED: 'crematory.send_confirmed',
   /** Case SSN (2026-10). Captured from an intake form, or corrected by an
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',

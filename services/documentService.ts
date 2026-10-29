@@ -386,6 +386,18 @@ export async function assignUntypedDocumentType(
   return mapped;
 }
 
+/**
+ * Marks one of this case's active documents superseded (2026-10, a
+ * replaced state permit). The document, its file and its history are
+ * kept — it only stops being current. Refused, nothing written, for a
+ * document that is not this case's own active document.
+ */
+export async function supersedeCaseDocument(organizationId: string, caseId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<void> {
+  const current = (await list(organizationId, caseId, dataAdapterMode)).find((d) => d.id === documentId);
+  if (!current || current.status !== 'active') throw new DocumentServiceError('That document is not an active document on this case.');
+  await updateDocumentStatus(organizationId, documentId, 'superseded', dataAdapterMode);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -807,7 +819,14 @@ export async function downloadOrgDocumentBytes(storageKey: string): Promise<{ bu
 }
 
 export async function upload(
-  params: NewUploadedDocumentInput & { idFactory: () => string; now?: string },
+  params: NewUploadedDocumentInput & {
+    idFactory: () => string;
+    now?: string;
+    /** A replacement (2026-10, the state permit): its version number and
+        the document it replaces. Omitted for an ordinary upload. */
+    version?: number | null;
+    supersedesId?: string | null;
+  },
   fileBuffer: Buffer,
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
@@ -832,8 +851,8 @@ export async function upload(
     status: 'pending',
     templateId: null,
     templateVersion: null,
-    version: null,
-    supersedesId: null,
+    version: params.version ?? null,
+    supersedesId: params.supersedesId ?? null,
     signatureStatus: null,
     familyVisible: false,
     generatedBy: null,

@@ -2,7 +2,16 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { activityContext, authorizeCrematory, crematoryErrorResponse } from '@/lib/crematory/routeAuth';
-import { assignSourceDocument, buildCrematoryPackage, confirmPackageName, confirmPermit, confirmReadyDate, getCrematoryCaseSummary, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
+import {
+  assignSourceDocument,
+  buildCrematoryPackageNow,
+  chooseCurrentPermit,
+  confirmPackageName,
+  confirmPermit,
+  confirmReadyDate,
+  getCrematoryCaseSummary,
+  prepareCrematoryDocuments,
+} from '@/services/crematory/crematoryPackageService';
 
 export const maxDuration = 60;
 
@@ -17,6 +26,8 @@ export const maxDuration = 60;
  *          prepared from what is already on the case (2026-10)
  *        { organizationId, action: 'assign_document', documentId, as: 'state_permit' | 'arrangement_forms' }
  *          → an untyped PDF already on the case, chosen by staff (2026-10)
+ *        { organizationId, action: 'choose_current_permit', documentId }
+ *          → where two permits are current, the one to keep (2026-10)
  * Nothing here sends anything.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
@@ -24,7 +35,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   const auth = await authorizeCrematory(new URL(request.url).searchParams.get('organizationId'), 'read');
   if (!auth.context) return auth.response;
   try {
-    return NextResponse.json(await getCrematoryCaseSummary(auth.context.organizationId, caseId, auth.canSend, auth.mode), { headers: { 'Cache-Control': 'no-store' } });
+    const summary = await getCrematoryCaseSummary(auth.context.organizationId, caseId, auth.canSend, auth.mode);
+    return NextResponse.json({ ...summary, canPrepare: auth.canPrepare }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return crematoryErrorResponse(error, 'Could not load the crematory details. Please try again.');
   }
@@ -54,7 +66,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       case 'confirm_package_name':
         return NextResponse.json(await confirmPackageName(ctx, caseId, { first: body.first, last: body.last }, auth.mode, auth.canSend));
       case 'build_package': {
-        const { outcome, summary } = await buildCrematoryPackage(ctx, caseId, auth.mode, auth.canSend);
+        const { outcome, summary } = await buildCrematoryPackageNow(ctx, caseId, auth.mode, auth.canSend);
         return NextResponse.json({ outcome, summary }, { status: outcome === 'saved' ? 201 : 200 });
       }
       case 'prepare': {
@@ -66,6 +78,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
           return NextResponse.json({ error: "documentId and as ('state_permit' or 'arrangement_forms') are required." }, { status: 400 });
         }
         return NextResponse.json(await assignSourceDocument(ctx, caseId, body.documentId, body.as, auth.mode, auth.canSend));
+      case 'choose_current_permit':
+        if (typeof body.documentId !== 'string') return NextResponse.json({ error: 'documentId is required.' }, { status: 400 });
+        return NextResponse.json(await chooseCurrentPermit(ctx, caseId, body.documentId, auth.mode, auth.canSend));
       default:
         return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
     }

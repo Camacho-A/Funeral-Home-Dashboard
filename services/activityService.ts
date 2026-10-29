@@ -1174,6 +1174,35 @@ export function recordCaseSsnEvent(
   );
 }
 
+/**
+ * Send to Crematory (2026-10): the ONE acknowledgment record for an email
+ * covering several cases — a single row, written in one insert, so it is
+ * recorded for the whole batch or not at all. Not tied to one case: every
+ * case it covers is listed in it, and each case links to it by
+ * `acknowledgmentId`.
+ */
+export function recordCrematorySendAcknowledgment(
+  ctx: ActivityContext,
+  details: { submissionId: string; description: string; record: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'documents',
+      eventType: ACTIVITY_EVENT_TYPES.CREMATORY_SEND_CONFIRMED,
+      resourceType: 'crematorySubmission',
+      resourceId: details.submissionId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,
@@ -1184,7 +1213,12 @@ export function recordCrematoryEvent(
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_BUILT
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SUBMITTED
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SEND_FAILED
-    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_DOCUMENT_TYPE_ASSIGNED,
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_DOCUMENT_TYPE_ASSIGNED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_ADDED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_REPLACED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_CURRENT_PERMIT_CHOSEN
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_NAME_RECORDED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_READY_DATE_RECORDED,
   details: { resourceId: string | null; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityEvent> {

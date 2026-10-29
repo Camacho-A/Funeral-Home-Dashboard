@@ -7,6 +7,7 @@ const ready: CrematoryReadinessInput = {
   sentAt: null,
   workflow2Complete: true,
   permit: { documentId: 'permit-1', checksumSha256: 'a'.repeat(64), mimeType: 'application/pdf' },
+  currentPermitCount: 1,
   permitVerification: { documentId: 'permit-1', checksumSha256: 'a'.repeat(64) },
   arrangementForm: { createdAt: '2026-10-20T10:00:00.000Z' },
   crematoryForm: { createdAt: '2026-10-21T10:00:00.000Z' },
@@ -34,6 +35,13 @@ describe('evaluateCrematoryReadiness', () => {
       ['permit_verified', 'A different permit was uploaded since it was confirmed. Confirm the new one.'],
     ]);
     expect(failing({ ...ready, permit: { ...ready.permit!, mimeType: 'image/jpeg' } })).toEqual([['permit_uploaded', 'The state permit must be a PDF.']]);
+  });
+
+  it('two current permits are a conflict for staff to resolve — never ready, even if the newest is confirmed', () => {
+    expect(failing({ ...ready, currentPermitCount: 2 })).toEqual([
+      ['permit_uploaded', '2 state permits are current on this case. Choose the one to use; the others are kept as earlier versions.'],
+    ]);
+    expect(evaluateCrematoryReadiness({ ...ready, currentPermitCount: 2 })).toMatchObject({ readyToBuild: false, readyToSend: false });
   });
 
   it('page 3 must be extracted from the latest Arrangement Form', () => {

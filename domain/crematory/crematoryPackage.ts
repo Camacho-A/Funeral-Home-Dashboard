@@ -71,6 +71,35 @@ export function suggestPackageName(structured: { first?: string | null; middle?:
   return 'error' in normalized ? null : normalized;
 }
 
+/** A decedent's name exactly as one intake form structured it. */
+export type StructuredDecedentName = { first: string; middle: string | null; last: string };
+
+const sameName = (value: string | null | undefined) => (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+
+/**
+ * The package name SOLIS may record without asking (2026-10) — or null,
+ * leaving it for staff. Only from the intake forms' own first / middle /
+ * last boxes, and only when:
+ *   - every form that has them gives the same first and last name, and no
+ *     two give different middle names (nor the case's own middle name);
+ *   - the case's name is exactly those words — "first last" or "first
+ *     middle last". A name corrected on the case since the form, a suffix,
+ *     or anything else that does not match leaves it for staff.
+ * Never from the case name alone: two words are not necessarily first and
+ * last. Multi-word surnames stay whole, as the form gave them.
+ */
+export function reliablePackageName(case_: { decedentName: string; decedentMiddleName?: string | null }, names: readonly StructuredDecedentName[]): PackageName | null {
+  if (names.length === 0) return null;
+  if (new Set(names.map((n) => `${sameName(n.first)}|${sameName(n.last)}`)).size !== 1) return null;
+  const middles = [...names.map((n) => n.middle), case_.decedentMiddleName ?? null].filter((m): m is string => Boolean(m && m.trim()));
+  if (new Set(middles.map(sameName)).size > 1) return null;
+  const { first, last } = names[0];
+  const middle = middles[0] ?? null;
+  const caseName = sameName(case_.decedentName);
+  if (caseName !== sameName(`${first} ${last}`) && !(middle && caseName === sameName(`${first} ${middle} ${last}`))) return null;
+  return suggestPackageName({ first, middle, last });
+}
+
 /** "First Last" for the email subject. */
 export function packageDisplayName(name: PackageName): string {
   return `${name.first} ${name.last}`;

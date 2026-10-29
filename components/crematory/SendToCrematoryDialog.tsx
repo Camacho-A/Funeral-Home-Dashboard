@@ -8,6 +8,7 @@ import {
   crematoryCaseAction,
   CrematoryRequestError,
   fetchCrematoryOverview,
+  reviewCrematorySend,
   sendToCrematory,
   type CrematoryCaseSummary,
   type CrematorySendResult,
@@ -24,6 +25,7 @@ import {
 import { parseRecipientList } from '@/domain/crematory/crematorySettings';
 import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
+import { ReplacePermitButton } from './ReplacePermitButton';
 import styles from './SendToCrematoryDialog.module.css';
 
 /**
@@ -85,6 +87,10 @@ export function SendToCrematoryDialog({
   const [sendError, setSendError] = useState<{ message: string; unclear: boolean } | null>(null);
   const [result, setResult] = useState<CrematorySendResult | null>(null);
   const submissionId = useRef<string>('');
+  /** What the server will check the send against (2026-10). */
+  const reviewFingerprint = useRef<string>('');
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const candidates = useMemo(() => overview.data?.candidates ?? [], [overview.data]);
   const chosen = candidates.filter((c) => selected.includes(c.caseId) && c.readiness.readyToSend);
@@ -167,7 +173,18 @@ export function SendToCrematoryDialog({
     }
   }
 
-  function startReview() {
+  async function startReview() {
+    setReviewError(null);
+    setReviewing(true);
+    try {
+      reviewFingerprint.current = (await reviewCrematorySend(organizationId, chosen.map((c) => c.caseId))).fingerprint;
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : 'Could not prepare the email for review.');
+      await refresh();
+      return;
+    } finally {
+      setReviewing(false);
+    }
     const name = overview.data!.organizationName;
     setTo(overview.data!.settings.to.join(', '));
     setCc(overview.data!.settings.cc.join(', '));
@@ -193,6 +210,8 @@ export function SendToCrematoryDialog({
         message,
         submissionId: submissionId.current,
         confirmResend: sendAgain,
+        reviewFingerprint: reviewFingerprint.current,
+        acknowledged: reviewed,
       });
       setResult(sent);
       setStep('done');
@@ -268,6 +287,11 @@ export function SendToCrematoryDialog({
                   : 'You can see what each case needs, but preparing and sending are limited to staff with those permissions.'}
               </div>
             )}
+            {reviewError && (
+              <div className="sx-form-banner sx-form-banner-error" role="alert">
+                {reviewError}
+              </div>
+            )}
             {candidates.length === 0 && <p className={styles.muted}>No open cremation cases.</p>}
             <ul className={styles.cases}>
               {candidates.map((c) => (
@@ -292,6 +316,7 @@ export function SendToCrematoryDialog({
                   prepareError={prepareErrors[c.caseId] ?? null}
                   onRetryPrepare={() => void prepareCase(c.caseId)}
                   onChooseDocument={(kind) => setChooser({ summary: c, kind })}
+                  onPermitReplaced={() => void Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) })])}
                   onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
                   onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
                 />
@@ -373,8 +398,8 @@ export function SendToCrematoryDialog({
           {step === 'done' ? 'Done' : 'Close'}
         </button>
         {step === 'prepare' && (
-          <button type="button" className="sx-btn sx-btn-primary" onClick={startReview} disabled={chosen.length === 0 || !overview.data?.canSend}>
-            Review email{chosen.length > 0 ? ` (${chosen.length})` : ''}
+          <button type="button" className="sx-btn sx-btn-primary" onClick={() => void startReview()} disabled={chosen.length === 0 || !overview.data?.canSend || reviewing}>
+            {reviewing ? 'Preparing review…' : `Review email${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
           </button>
         )}
         {step === 'review' && (
@@ -472,6 +497,7 @@ function CaseRow({
   prepareError,
   onRetryPrepare,
   onChooseDocument,
+  onPermitReplaced,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -495,6 +521,7 @@ function CaseRow({
   prepareError: string | null;
   onRetryPrepare: () => void;
   onChooseDocument: (kind: CrematorySourceKind) => void;
+  onPermitReplaced: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
@@ -504,6 +531,12 @@ function CaseRow({
   const sent = last?.status === 'submitted';
   const notCremation = req('cremation')?.ok === false;
   const done = STEPS.filter((step) => ok(step.key)).length;
+  // Replace Permit (2026-10): staff who prepare, before the case is sent
+  // (never once sent or while a send's outcome is unclear).
+  const replacePermit =
+    canPrepare && summary.permit && (!last || last.status === 'failed') ? (
+      <ReplacePermitButton organizationId={organizationId} caseId={summary.caseId} decedentDisplayName={summary.decedentDisplayName} permit={summary.permit} disabled={busy || preparing} onReplaced={onPermitReplaced} />
+    ) : null;
 
   // A step waits (○) while an earlier step it depends on is unfinished.
   const waiting: Record<StepKey, boolean> = {
@@ -534,7 +567,12 @@ function CaseRow({
     if (ok(key)) {
       switch (key) {
         case 'permit_uploaded':
-          return <span className={styles.value}>{summary.permit?.fileName}</span>;
+          return (
+            <>
+              <span className={styles.value}>{summary.permit?.fileName}</span>
+              {replacePermit}
+            </>
+          );
         case 'package_name':
           return summary.packageName.confirmed && <span className={styles.value}>{summary.packageName.confirmed.last}, {summary.packageName.confirmed.first}</span>;
         case 'ready_date':
@@ -666,7 +704,7 @@ function CaseRow({
         // Everything is done: one line, not seven checkmarks.
         <p className={styles.hint}>
           <a href={buildCaseDocumentDownloadUrl(organizationId, summary.caseId, summary.package.documentId)}>{summary.package.fileName}</a> · v{summary.package.version ?? 1} · expected{' '}
-          {summary.readyDate.confirmed}
+          {summary.readyDate.confirmed} {replacePermit}
         </p>
       ) : notCremation ? (
         <p className={styles.hint}>{req('cremation')?.detail}</p>

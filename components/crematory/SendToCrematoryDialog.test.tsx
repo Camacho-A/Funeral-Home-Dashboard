@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CrematoryCaseSummary, CrematoryOverview } from '@/lib/crematoryClient';
 
 /** Send to Crematory (2026-10). The window with the server faked; fictional cases and recipients. */
 const { client } = vi.hoisted(() => ({
-  client: { fetchCrematoryOverview: vi.fn(), crematoryCaseAction: vi.fn(), sendToCrematory: vi.fn() },
+  client: { fetchCrematoryOverview: vi.fn(), crematoryCaseAction: vi.fn(), sendToCrematory: vi.fn(), reviewCrematorySend: vi.fn() },
 }));
 vi.mock('@/lib/crematoryClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/crematoryClient')>('@/lib/crematoryClient');
@@ -28,11 +28,11 @@ function readyCase(caseId: string, name: string, number: string, date = '11/06/2
     caseId,
     caseNumber: number,
     decedentDisplayName: name,
-    packageName: { confirmed: { first, last: rest.join(' ') }, suggested: null, suggestedFrom: null },
+    packageName: { confirmed: { first, last: rest.join(' ') }, suggested: null, suggestedFrom: null, recordedFrom: 'staff' },
     subjectName: name,
     readiness: { requirements: ALL_OK as never, readyToBuild: true, readyToSend: true },
     permit: { documentId: `permit-${caseId}`, fileName: 'State Permit.pdf', createdAt: '2026-10-27T15:00:00.000Z', uploadedBy: 'Dana' },
-    readyDate: { suggested: date, confirmed: date },
+    readyDate: { suggested: date, confirmed: date, recordedFrom: 'expected_pickup' },
     package: { documentId: `pkg-${caseId}`, version: 1, fileName: fileName ?? `${rest.join(' ')}_${first}_${date.replace(/\//g, '-')}.pdf`, current: true },
     expectedFileName: null,
     lastSubmission: null,
@@ -47,7 +47,7 @@ const notReady: CrematoryCaseSummary = {
     readyToBuild: false,
     readyToSend: false,
   },
-  readyDate: { suggested: '11/06/2026', confirmed: null },
+  readyDate: { suggested: '11/06/2026', confirmed: null, recordedFrom: null },
   package: null,
 };
 
@@ -62,6 +62,8 @@ const overview = (candidates: CrematoryCaseSummary[], over: Partial<CrematoryOve
 });
 
 afterEach(() => vi.clearAllMocks());
+// The server's final review (2026-10): only its fingerprint is used by this window.
+beforeEach(() => client.reviewCrematorySend.mockResolvedValue({ fingerprint: 'v1:reviewed', cases: [], to: [], cc: [], subject: '', message: '', mailbox: null }));
 const open = (props: { caseId?: string; preselectedCaseIds?: string[] } = {}) =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -116,6 +118,7 @@ describe('SendToCrematoryDialog', () => {
     expect(await screen.findByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Estela Salas Rueda' }));
     fireEvent.click(screen.getByRole('button', { name: 'Review email (2)' }));
+    await screen.findByLabelText('Subject');
 
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory — Expected 11/06/2026');
     expect(screen.getByLabelText('To')).toHaveValue('intake@crematory.example');
@@ -130,12 +133,26 @@ describe('SendToCrematoryDialog', () => {
     expect(await screen.findByText(/Submitted to Outlook from office@funeralhome.example/)).toHaveTextContent('not that the crematory received it');
     expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
     expect(client.sendToCrematory.mock.calls[0][0]).toMatchObject({ caseIds: ['1042', '1044'], to: ['intake@crematory.example'], cc: [], confirmResend: false, subject: 'Manors Cremation — 2 Cases for Crematory — Expected 11/06/2026' });
+    // Sent only as reviewed: the server's review fingerprint, and the staff member's acknowledgment.
+    expect(client.reviewCrematorySend).toHaveBeenCalledWith('managed-cremations', ['1042', '1044']);
+    expect(client.sendToCrematory.mock.calls[0][0]).toMatchObject({ reviewFingerprint: 'v1:reviewed', acknowledged: true });
+  });
+
+  it('if the server will not prepare the review (a case changed or is still being prepared), the email is not shown and nothing is sent', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
+    client.reviewCrematorySend.mockRejectedValueOnce(new CrematoryRequestError('Nothing was sent. B2026-901 is still being prepared. Try again in a moment.', 409));
+    open({ caseId: '1042' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('still being prepared');
+    expect(screen.queryByLabelText('Subject')).toBeNull();
+    expect(client.sendToCrematory).not.toHaveBeenCalled();
   });
 
   it('one case from the case page: the single-decedent subject', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
     open({ caseId: '1042' });
     fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    await screen.findByLabelText('Subject');
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — Richard Reynolds — Expected 11/06/2026');
     expect(client.fetchCrematoryOverview).toHaveBeenCalledWith('managed-cremations', '1042');
   });
@@ -144,6 +161,7 @@ describe('SendToCrematoryDialog', () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901'), readyCase('1044', 'Estela Salas Rueda', 'B2026-902', '11/07/2026')]));
     open({ preselectedCaseIds: ['1042', '1044'] });
     fireEvent.click(await screen.findByRole('button', { name: 'Review email (2)' }));
+    await screen.findByLabelText('Subject');
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory');
   });
 
@@ -243,8 +261,22 @@ describe('SendToCrematoryDialog', () => {
     open({ preselectedCaseIds: ['1042'] });
     await screen.findByRole('checkbox', { name: 'Select Hannelore Willson' });
     fireEvent.click(screen.getByRole('button', { name: 'Review email (1)' }));
+    await screen.findByLabelText('Subject');
     expect(screen.getByText('WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf')).toBeInTheDocument();
     expect(screen.queryByText('Willson_Hannelore_10-30-2026.pdf')).toBeNull();
+  });
+
+  it('Replace permit is offered on a case not yet sent (2026-10), and refreshes the case afterwards', async () => {
+    const caseDocs = await import('@/lib/caseDocumentsClient');
+    vi.mocked(caseDocs.uploadCaseDocument).mockResolvedValue({ id: 'permit-v2' } as never);
+    client.fetchCrematoryOverview.mockResolvedValue(overview([{ ...readyCase('1042', 'Richard Reynolds', 'B2026-901'), permit: { documentId: 'permit-1042', fileName: 'FICTIONAL PERMIT.pdf', createdAt: '2026-10-20T10:00:00.000Z', uploadedBy: null } }]));
+    open({ caseId: '1042' });
+    await screen.findByRole('button', { name: 'Replace permit' });
+    const loads = client.fetchCrematoryOverview.mock.calls.length;
+    fireEvent.change(screen.getByLabelText('New State Cremation Permit for Richard Reynolds'), { target: { files: [new File([new Uint8Array([1])], 'CORRECTED.pdf', { type: 'application/pdf' })] } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)!);
+    await waitFor(() => expect(caseDocs.uploadCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ caseId: '1042', documentTypeKey: 'cremation_form.state_permit', replacesDocumentId: 'permit-1042' })));
+    await waitFor(() => expect(client.fetchCrematoryOverview.mock.calls.length).toBeGreaterThan(loads));
   });
 
   it('a case already sent shows "Sent" on one line and can never be selected again', async () => {
@@ -262,6 +294,7 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByText(/Sent .* to intake@crematory.example · Reynolds_Richard_11-06-2026.pdf/)).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Build package' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Replace permit' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
   });
 
@@ -272,6 +305,7 @@ describe('SendToCrematoryDialog', () => {
       .mockResolvedValueOnce({ status: 'submitted', duplicate: false, mailbox: 'office@funeralhome.example', internetMessageId: null, to: ['intake@crematory.example'], cc: [], attachments: [] });
     open({ caseId: '1042' });
     fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    await screen.findByLabelText('Subject');
     fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Send to Crematory (1)' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('may have been sent');
@@ -287,7 +321,7 @@ describe('SendToCrematoryDialog', () => {
     const unnamed: CrematoryCaseSummary = {
       ...notReady,
       decedentDisplayName: 'Mary Ann Smith',
-      packageName: { confirmed: null, suggested: null, suggestedFrom: null },
+      packageName: { confirmed: null, suggested: null, suggestedFrom: null, recordedFrom: null },
       readiness: { requirements: [requirement('package_name', false, "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name.")] as never, readyToBuild: false, readyToSend: false },
     };
     client.fetchCrematoryOverview.mockResolvedValue(overview([unnamed]));
@@ -322,7 +356,7 @@ describe('SendToCrematoryDialog', () => {
     const filled: CrematoryCaseSummary = {
       ...notReady,
       decedentDisplayName: 'Mary Ann Smith',
-      packageName: { confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form' },
+      packageName: { confirmed: null, suggested: { first: 'Mary Ann', last: 'Smith' }, suggestedFrom: 'form', recordedFrom: null },
       readiness: { requirements: [requirement('package_name', false, 'x')] as never, readyToBuild: false, readyToSend: false },
     };
     client.fetchCrematoryOverview.mockResolvedValue(overview([filled]));

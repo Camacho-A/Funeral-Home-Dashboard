@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CrematoryCaseSummary } from '@/lib/crematoryClient';
 import type { CrematoryRequirementKey } from '@/domain/crematory/crematoryReadiness';
@@ -7,6 +7,8 @@ import type { CrematoryRequirementKey } from '@/domain/crematory/crematoryReadin
 /** Crematory Package status on the Documents tab (2026-10). Fictional case. */
 const { fetchCrematoryCaseSummary } = vi.hoisted(() => ({ fetchCrematoryCaseSummary: vi.fn() }));
 vi.mock('@/lib/crematoryClient', async () => ({ ...(await vi.importActual<object>('@/lib/crematoryClient')), fetchCrematoryCaseSummary }));
+const { uploadCaseDocument } = vi.hoisted(() => ({ uploadCaseDocument: vi.fn() }));
+vi.mock('@/lib/caseDocumentsClient', async () => ({ ...(await vi.importActual<object>('@/lib/caseDocumentsClient')), uploadCaseDocument }));
 const { CrematoryPackageStatus } = await import('./CrematoryPackageStatus');
 
 const req = (key: string, ok: boolean, detail: string | null = null) => ({ key: key as CrematoryRequirementKey, label: key, ok, detail });
@@ -46,6 +48,48 @@ describe('CrematoryPackageStatus', () => {
     show();
     expect(await screen.findByText('Needs attention')).toBeInTheDocument();
     expect(screen.getByText(/Confirm the uploaded permit is the approved permit/)).toBeInTheDocument();
+  });
+
+  describe('Replace permit (2026-10)', () => {
+    const PERMIT = { documentId: 'permit-1042', fileName: 'FICTIONAL PERMIT.pdf', createdAt: '2026-10-20T10:00:00.000Z', uploadedBy: 'Dana' };
+    const choose = (name = 'FICTIONAL PERMIT CORRECTED.pdf') =>
+      fireEvent.change(screen.getByLabelText('New State Cremation Permit for Richard Reynolds'), { target: { files: [new File([new Uint8Array([1])], name, { type: 'application/pdf' })] } });
+
+    it('staff who prepare replace the permit of a case not yet sent — naming the permit it replaces, after confirming', async () => {
+      uploadCaseDocument.mockResolvedValue({ id: 'permit-1042-v2' });
+      fetchCrematoryCaseSummary.mockResolvedValue(summary({ permit: PERMIT, canPrepare: true }));
+      show();
+      expect(await screen.findByText(/FICTIONAL PERMIT\.pdf/)).toBeInTheDocument();
+      choose();
+      expect(screen.getByText(/The current permit is kept as an earlier version/)).toBeInTheDocument();
+      expect(uploadCaseDocument).not.toHaveBeenCalled();
+      // The confirmation's own Replace permit button (the last one).
+      fireEvent.click(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)!);
+      await waitFor(() => expect(uploadCaseDocument).toHaveBeenCalledTimes(1));
+      expect(uploadCaseDocument.mock.calls[0][0]).toMatchObject({ organizationId: 'managed-cremations', caseId: '1042', documentTypeKey: 'cremation_form.state_permit', replacesDocumentId: 'permit-1042' });
+      await waitFor(() => expect(screen.queryByText(/The current permit is kept as an earlier version/)).toBeNull());
+    });
+
+    it('a refused replacement (the same file, or another replacement first) says why and changes nothing', async () => {
+      uploadCaseDocument.mockRejectedValue(new Error("This file is already this case's State Cremation Permit (\"FICTIONAL PERMIT.pdf\"). Nothing was uploaded."));
+      fetchCrematoryCaseSummary.mockResolvedValue(summary({ permit: PERMIT, canPrepare: true }));
+      show();
+      await screen.findByText(/FICTIONAL PERMIT\.pdf/);
+      choose('FICTIONAL PERMIT.pdf');
+      fireEvent.click(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)!);
+      expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was uploaded');
+    });
+
+    it('not offered once the case is sent (or its send is unclear), nor to staff who cannot prepare', async () => {
+      const sent = { submissionId: 's', status: 'submitted' as const, packageDocumentId: 'pkg', packageVersion: 2, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null };
+      for (const over of [{ permit: PERMIT, canPrepare: true, lastSubmission: sent }, { permit: PERMIT, canPrepare: true, lastSubmission: { ...sent, status: 'uncertain' as const } }, { permit: PERMIT, canPrepare: false }]) {
+        fetchCrematoryCaseSummary.mockResolvedValue(summary(over));
+        const { unmount } = show();
+        expect(await screen.findByText(/FICTIONAL PERMIT\.pdf/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Replace permit' })).toBeNull();
+        unmount();
+      }
+    });
   });
 
   it('not a cremation case: nothing shown', async () => {

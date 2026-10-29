@@ -1,7 +1,9 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchCrematoryCaseSummary, type CrematoryCaseSummary } from '@/lib/crematoryClient';
+import { ReplacePermitButton } from '@/components/crematory/ReplacePermitButton';
+import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { formatTimestamp } from '@/utils/format';
 import styles from './CrematoryPackageStatus.module.css';
 
@@ -9,8 +11,10 @@ import styles from './CrematoryPackageStatus.module.css';
  * Crematory Package status on the case's Documents tab (2026-10): the
  * documents the package is made from — the Arrangement Form's page 3, the
  * state permit — and the package itself, each with what (if anything) it
- * still needs. Read-only: SOLIS prepares page 3 and the package itself;
- * staff confirm the permit, name and date in Send to Crematory.
+ * still needs. SOLIS prepares page 3 and the package itself; staff confirm
+ * the permit, name and date in Send to Crematory. The one action here is
+ * Replace permit (2026-10), for staff who prepare packages, before the
+ * case is sent.
  */
 const ROWS: Array<{ key: string; label: string }> = [
   { key: 'crematory_form', label: 'Arrangement Form page 3 (Crematory Form)' },
@@ -30,12 +34,19 @@ export function packageHeadline(s: CrematoryCaseSummary): { text: string; tone: 
 }
 
 export function CrematoryPackageStatus({ organizationId, caseId }: { organizationId: string; caseId: string }) {
+  const queryClient = useQueryClient();
   const summary = useQuery({ queryKey: ['crematory', organizationId, 'case', caseId], queryFn: () => fetchCrematoryCaseSummary(organizationId, caseId), staleTime: 0 });
   const s = summary.data;
   if (!s?.readiness?.requirements) return null;
   if (!s.readiness.requirements.find((r) => r.key === 'cremation')?.ok) return null;
   const headline = packageHeadline(s);
   const requirement = (key: string) => s.readiness.requirements.find((r) => r.key === key);
+  const canReplace = s.canPrepare === true && s.permit !== null && (!s.lastSubmission || s.lastSubmission.status === 'failed');
+  const replaced = () =>
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['crematory', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+    ]);
   return (
     <section className={styles.panel} aria-label="Crematory Package">
       <div className={styles.head}>
@@ -59,6 +70,12 @@ export function CrematoryPackageStatus({ organizationId, caseId }: { organizatio
               </span>{' '}
               {label}
               {!r.ok && r.detail ? <span className={styles.detail}> — {r.detail}</span> : null}
+              {key === 'permit_uploaded' && s.permit && (
+                <>
+                  <span className={styles.detail}> — {s.permit.fileName}</span>{' '}
+                  {canReplace && r.ok && <ReplacePermitButton organizationId={organizationId} caseId={caseId} decedentDisplayName={s.decedentDisplayName} permit={s.permit} onReplaced={replaced} />}
+                </>
+              )}
             </li>
           );
         })}

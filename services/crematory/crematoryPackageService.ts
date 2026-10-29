@@ -5,7 +5,16 @@ import type { CaseDocument } from '@/types/caseDocument';
 import type { ActivityContext } from '../activityService';
 import { recordCrematoryEvent } from '../activityService';
 import { ACTIVITY_EVENT_TYPES } from '@/types/activityEvent';
-import { assignUntypedDocumentType, DocumentServiceError, generateBillingDocument, list as listCaseDocuments, readStoredCaseDocument, attachDocumentActorDisplayNames } from '../documentService';
+import {
+  assignUntypedDocumentType,
+  DocumentServiceError,
+  generateBillingDocument,
+  list as listCaseDocuments,
+  readStoredCaseDocument,
+  attachDocumentActorDisplayNames,
+  supersedeCaseDocument,
+  upload as uploadCaseDocument,
+} from '../documentService';
 import { loadCaseOnServer } from '../serverCaseLoader';
 import { listForOrganization } from '../casesService';
 import { updateCaseWithRetry, writeMockCase } from '../caseWriteService';
@@ -22,11 +31,13 @@ import {
   normalizePackageName,
   packageDisplayName,
   parseCaseDate,
+  reliablePackageName,
   suggestPackageName,
   suggestSourceKind,
   toCaseDate,
   type CrematorySourceKind,
   type PackageName,
+  type StructuredDecedentName,
   type UntypedCaseDocument,
 } from '@/domain/crematory/crematoryPackage';
 import { listCaseSubmissionsNewestFirst } from '../externalForms/caseSubmissions';
@@ -92,6 +103,8 @@ export const decedentDisplayName = (case_: Pick<Case, 'decedentName'>) => toDisp
 type Facts = {
   case_: Case;
   permit: CaseDocument | null;
+  /** Every current (active) state permit — more than one is a conflict. */
+  currentPermits: CaseDocument[];
   arrangementForm: CaseDocument | null;
   crematoryForm: CaseDocument | null;
   package: CaseDocument | null;
@@ -117,37 +130,46 @@ async function structuredNameFromJotform(submission: ExternalFormSubmission): Pr
   return pending;
 }
 
+/** The decedent's name as each intake form structured it — first /
+    middle / last boxes kept on the submission or, for submissions received
+    before those were kept, read back from Jotform (read-only) — newest
+    first. */
+async function structuredNamesFor(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<StructuredDecedentName[]> {
+  const toName = (fields: Partial<Record<string, string>> | null): StructuredDecedentName | null =>
+    fields?.decedentFirstName?.trim() && fields.decedentLastName?.trim()
+      ? { first: fields.decedentFirstName, middle: fields.decedentMiddleName?.trim() ? fields.decedentMiddleName : null, last: fields.decedentLastName }
+      : null;
+  const names: StructuredDecedentName[] = [];
+  for (const submission of await listCaseSubmissionsNewestFirst(organizationId, case_.id, mode)) {
+    let stored: Partial<Record<string, string>> | null = null;
+    try {
+      stored = JSON.parse(submission.mappedFields) as Partial<Record<string, string>>;
+    } catch {
+      stored = null;
+    }
+    const name = toName(stored) ?? toName(await structuredNameFromJotform(submission));
+    if (name) names.push(name);
+  }
+  return names;
+}
+
 /**
  * Fills in the package name for staff to confirm (2026-10), from the most
  * reliable source available:
  *   1. the decedent's name as an intake form structured it — the first /
- *      middle / last boxes — kept on the submission, or (for submissions
- *      received before those were kept) read back from Jotform, read-only;
- *   2. otherwise a case name of exactly two words ("RICHARD REYNOLDS"),
- *      which can only mean first and last;
+ *      middle / last boxes (see structuredNamesFor);
+ *   2. otherwise a case name of exactly two words ("RICHARD REYNOLDS") —
+ *      only ever a suggestion for staff to check, never recorded on its own;
  *   3. otherwise nothing: a longer name ("MARY ANN SMITH") cannot say which
  *      words are the surname, so staff type it.
- * Always a suggestion — staff confirm it before any file is named.
  */
 async function suggestedPackageNameFor(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<PackageNameSuggestion | null> {
   try {
-    const newestFirst = await listCaseSubmissionsNewestFirst(organizationId, case_.id, mode);
-    const fromName = (fields: Partial<Record<string, string>> | null) =>
-      fields?.decedentFirstName && fields.decedentLastName
-        ? suggestPackageName({ first: fields.decedentFirstName, middle: fields.decedentMiddleName ?? case_.decedentMiddleName ?? null, last: fields.decedentLastName })
-        : null;
-
-    for (const submission of newestFirst) {
-      let stored: Partial<Record<string, string>> | null = null;
-      try {
-        stored = JSON.parse(submission.mappedFields) as Partial<Record<string, string>>;
-      } catch {
-        stored = null;
-      }
-      const name = fromName(stored) ?? fromName(await structuredNameFromJotform(submission));
+    const [newest] = await structuredNamesFor(organizationId, case_, mode);
+    if (newest) {
+      const name = suggestPackageName({ first: newest.first, middle: newest.middle ?? case_.decedentMiddleName ?? null, last: newest.last });
       if (name) return { name, source: 'form' };
     }
-
     const words = (case_.decedentName ?? '').trim().split(/\s+/).filter(Boolean);
     if (words.length === 2) {
       const name = suggestPackageName({ first: words[0], middle: case_.decedentMiddleName ?? null, last: words[1] });
@@ -158,6 +180,36 @@ async function suggestedPackageNameFor(organizationId: string, case_: Case, mode
     console.error('Could not look up a name for the package:', error instanceof Error ? error.message : error);
     return null;
   }
+}
+
+/**
+ * The name and expected ready date SOLIS may record on its own (2026-10),
+ * where staff have not — null for each when there is nothing reliable to
+ * record or nothing to change:
+ *   - the name only from the intake forms' own name boxes, agreeing with
+ *     each other and with the case's name (reliablePackageName), and never
+ *     over a name already recorded — a staff confirmation or correction is
+ *     kept as it is;
+ *   - the date only from a valid, scheduled (not cancelled) Expected
+ *     Pickup — and, for a date recorded that way, again whenever the pickup
+ *     moves. A date staff entered or confirmed is never changed; if the
+ *     pickup moves after it, the case needs attention instead.
+ */
+async function automaticDetails(organizationId: string, case_: Case, mode: DataAdapterMode): Promise<{ name: PackageName | null; date: string | null }> {
+  const record = case_.crematory;
+  let name: PackageName | null = null;
+  if (!record?.packageName) {
+    try {
+      name = reliablePackageName(case_, await structuredNamesFor(organizationId, case_, mode));
+    } catch (error) {
+      console.error(`[crematory-auto] Case ${case_.id}: could not read the intake form name:`, error instanceof Error ? error.message : error);
+    }
+  }
+  const suggested = await suggestedReadyDate(organizationId, case_.id, mode);
+  const current = record?.readyDate;
+  const followsPickup = !current || (current.source === 'expected_pickup' && (current.date !== suggested || current.suggestedAtConfirmation !== suggested));
+  const date = suggested && parseCaseDate(suggested) && followsPickup ? suggested : null;
+  return { name, date };
 }
 
 /** The confirmed package name on the case, if valid. */
@@ -179,6 +231,7 @@ async function loadFacts(organizationId: string, case_: Case, mode: DataAdapterM
   return {
     case_,
     permit: latest(documents, (d) => d.documentTypeKey === PERMIT_TYPE),
+    currentPermits: documents.filter((d) => d.status === 'active' && d.documentTypeKey === PERMIT_TYPE),
     arrangementForm: latest(documents, (d) => d.documentTypeKey === ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY && d.mimeType === 'application/pdf'),
     crematoryForm: latest(documents, (d) => d.documentTypeKey === ARRANGEMENT_EXTRACTS.crematory_form.documentTypeKey && d.origin === 'generated'),
     package: latest(documents, (d) => d.documentTypeKey === PACKAGE_TYPE && d.origin === 'generated'),
@@ -222,6 +275,7 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
     sentAt: facts.case_.crematory?.lastSubmission?.status === 'submitted' ? facts.case_.crematory.lastSubmission.at : null,
     workflow2Complete: config ? workflowStageComplete(facts.case_, config.authorizationWorkflowStage) : null,
     permit: facts.permit ? { documentId: facts.permit.id, checksumSha256: facts.permit.checksumSha256, mimeType: facts.permit.mimeType } : null,
+    currentPermitCount: facts.currentPermits.length,
     permitVerification: record.permitVerification ? { documentId: record.permitVerification.documentId, checksumSha256: record.permitVerification.checksumSha256 } : null,
     arrangementForm: facts.arrangementForm ? { createdAt: facts.arrangementForm.createdAt } : null,
     crematoryForm: facts.crematoryForm ? { createdAt: facts.crematoryForm.createdAt } : null,
@@ -241,12 +295,19 @@ export type CrematoryCaseSummary = {
   decedentDisplayName: string;
   /** The confirmed name for the file and subject, and a suggestion from
       the intake form's structured name (never from the full name). */
-  packageName: { confirmed: PackageName | null; suggested: PackageName | null; suggestedFrom: PackageNameSuggestion['source'] | null };
+  packageName: {
+    confirmed: PackageName | null;
+    suggested: PackageName | null;
+    suggestedFrom: PackageNameSuggestion['source'] | null;
+    /** Who recorded the name (2026-10): staff, or SOLIS from the intake form. */
+    recordedFrom: 'staff' | 'intake_form' | null;
+  };
   /** "First Last" from the confirmed package name, for the subject. */
   subjectName: string;
   readiness: CrematoryReadiness;
   permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;
-  readyDate: { suggested: string | null; confirmed: string | null };
+  /** `confirmed`: the date recorded — by staff, or from the Expected Pickup (2026-10). */
+  readyDate: { suggested: string | null; confirmed: string | null; recordedFrom: 'staff' | 'expected_pickup' | null };
   package: { documentId: string; version: number | null; fileName: string; current: boolean } | null;
   expectedFileName: string | null;
   lastSubmission: CaseCrematoryRecord['lastSubmission'] | null;
@@ -261,14 +322,18 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     caseNumber: facts.case_.caseNumber,
     decedentDisplayName: decedentDisplayName(facts.case_),
     packageName: await (async () => {
-      if (confirmedName) return { confirmed: confirmedName, suggested: null, suggestedFrom: null };
+      if (confirmedName) return { confirmed: confirmedName, suggested: null, suggestedFrom: null, recordedFrom: facts.case_.crematory?.packageName?.source ?? 'staff' };
       const suggestion = await suggestedPackageNameFor(facts.case_.organizationId, facts.case_, mode);
-      return { confirmed: null, suggested: suggestion?.name ?? null, suggestedFrom: suggestion?.source ?? null };
+      return { confirmed: null, suggested: suggestion?.name ?? null, suggestedFrom: suggestion?.source ?? null, recordedFrom: null };
     })(),
     subjectName: confirmedName ? packageDisplayName(confirmedName) : decedentDisplayName(facts.case_),
     readiness: readinessOf(facts, canSend),
     permit: permitWithName ? { documentId: permitWithName.id, fileName: permitWithName.fileName, createdAt: permitWithName.createdAt, uploadedBy: permitWithName.actorDisplayName } : null,
-    readyDate: { suggested: facts.suggestedReadyDate, confirmed: facts.case_.crematory?.readyDate?.date ?? null },
+    readyDate: {
+      suggested: facts.suggestedReadyDate,
+      confirmed: facts.case_.crematory?.readyDate?.date ?? null,
+      recordedFrom: facts.case_.crematory?.readyDate ? (facts.case_.crematory.readyDate.source ?? 'staff') : null,
+    },
     package: facts.package ? { documentId: facts.package.id, version: facts.package.version, fileName: facts.package.fileName, current: packageIsCurrent(facts) } : null,
     expectedFileName: expectedFileName(facts),
     lastSubmission: facts.case_.crematory?.lastSubmission ?? null,
@@ -335,6 +400,18 @@ function refuseArchived(case_: Case) {
   if (case_.isDeleted) throw new CrematoryError('This case is archived and read-only.', 409);
 }
 
+/** Sent, being sent, or with a send Outlook left unclear (2026-10): its
+    permit, name, date and Crematory Package are never changed again. */
+export function isSentOrSending(case_: Case): boolean {
+  const record = case_.crematory;
+  return Boolean(record?.pendingSubmission) || record?.lastSubmission?.status === 'submitted' || record?.lastSubmission?.status === 'uncertain';
+}
+
+const SENT_MESSAGE = 'This case was already sent (or is being sent) to the crematory, so its permit, name, date and Crematory Package are not changed here.';
+function refuseSent(case_: Case, message = SENT_MESSAGE) {
+  if (isSentOrSending(case_)) throw new CrematoryError(message, 409);
+}
+
 async function audit(ctx: ActivityContext, caseId: string, eventType: Parameters<typeof recordCrematoryEvent>[2], details: Parameters<typeof recordCrematoryEvent>[3], mode: DataAdapterMode) {
   try {
     await recordCrematoryEvent(ctx, caseId, eventType, details, mode);
@@ -349,14 +426,16 @@ export async function confirmPermit(ctx: ActivityContext, caseId: string, docume
   assertSendToCrematoryEnabled(ctx.organizationId);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
+  refuseSent(case_);
   const facts = await loadFacts(ctx.organizationId, case_, mode);
+  if (facts.currentPermits.length > 1) throw new CrematoryError('This case has more than one current state permit. Choose the one to use first.', 409);
   if (!facts.permit || facts.permit.id !== documentId) throw new CrematoryError('That is not the latest state permit uploaded to this case. Reopen and try again.', 409);
   if (facts.permit.mimeType !== 'application/pdf') throw new CrematoryError('The state permit must be a PDF to be included in the Crematory Package.', 422);
   const verifiedAt = new Date().toISOString();
   await applyCrematoryRecord(
     ctx.organizationId,
     caseId,
-    (current) => (refuseArchived(current), { permitVerification: { documentId, checksumSha256: facts.permit!.checksumSha256, verifiedBy: ctx.actorIdentityId, verifiedAt } }),
+    (current) => (refuseArchived(current), refuseSent(current), { permitVerification: { documentId, checksumSha256: facts.permit!.checksumSha256, verifiedBy: ctx.actorIdentityId, verifiedAt } }),
     mode,
   );
   await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_CONFIRMED, {
@@ -375,12 +454,13 @@ export async function confirmReadyDate(ctx: ActivityContext, caseId: string, dat
   if (!confirmed || !parseCaseDate(confirmed)) throw new CrematoryError('Enter a valid expected ready date.', 422);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
+  refuseSent(case_);
   const suggested = await suggestedReadyDate(ctx.organizationId, caseId, mode);
   const previous = case_.crematory?.readyDate?.date ?? null;
   await applyCrematoryRecord(
     ctx.organizationId,
     caseId,
-    (current) => (refuseArchived(current), { readyDate: { date: confirmed, suggestedAtConfirmation: suggested, confirmedBy: ctx.actorIdentityId, confirmedAt: new Date().toISOString() } }),
+    (current) => (refuseArchived(current), refuseSent(current), { readyDate: { date: confirmed, suggestedAtConfirmation: suggested, confirmedBy: ctx.actorIdentityId, confirmedAt: new Date().toISOString(), source: 'staff' } }),
     mode,
   );
   await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_READY_DATE_CONFIRMED, {
@@ -409,11 +489,12 @@ export async function confirmPackageName(
   if ('error' in name) throw new CrematoryError(name.error, 422);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
+  refuseSent(case_);
   const previous = confirmedPackageName(case_);
   await applyCrematoryRecord(
     ctx.organizationId,
     caseId,
-    (current) => (refuseArchived(current), { packageName: { ...name, confirmedBy: ctx.actorIdentityId, confirmedAt: new Date().toISOString() } }),
+    (current) => (refuseArchived(current), refuseSent(current), { packageName: { ...name, confirmedBy: ctx.actorIdentityId, confirmedAt: new Date().toISOString(), source: 'staff' } }),
     mode,
   );
   await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_NAME_CONFIRMED, {
@@ -436,6 +517,9 @@ export type BuildOutcome = { outcome: 'saved' | 'unchanged'; summary: CrematoryC
 export async function buildCrematoryPackage(ctx: ActivityContext, caseId: string, mode: DataAdapterMode, canSend = false): Promise<BuildOutcome> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  // A sent package is never superseded by a rebuild (2026-10).
+  refuseSent(case_);
   const facts = await loadFacts(ctx.organizationId, case_, mode);
   const readiness = readinessOf(facts, true);
   if (!readiness.readyToBuild) {
@@ -535,37 +619,200 @@ export async function assignSourceDocument(
   if (!target) throw new CrematoryError('Choose the permit or the Arrangement Form.', 400);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   refuseArchived(case_);
-  const record = case_.crematory;
-  if (record?.pendingSubmission || record?.lastSubmission?.status === 'submitted' || record?.lastSubmission?.status === 'uncertain') {
-    throw new CrematoryError('This case was already sent (or is being sent) to the crematory, so its documents are not changed here.', 409);
-  }
+  refuseSent(case_, DOCUMENTS_SENT_MESSAGE);
 
-  const token = crypto.randomUUID();
-  const deadline = Date.now() + 30_000;
-  while (!(await claimPreparation(ctx.organizationId, caseId, token, mode))) {
-    if (Date.now() >= deadline) throw new CrematoryError('This case is being updated right now. Try again in a moment.', 409);
-    await sleep(1_000);
-  }
-  let assigned: CaseDocument;
-  try {
+  const assigned = await withPreparationLease(ctx.organizationId, caseId, mode, DOCUMENTS_SENT_MESSAGE, async () => {
     const documents = await listCaseDocuments(ctx.organizationId, caseId, mode);
     const existing = latest(documents, (d) => d.documentTypeKey === target.documentTypeKey);
     if (existing) throw new CrematoryError(`This case already has a ${target.displayName}: "${existing.fileName}".`, 409);
     try {
-      assigned = await assignUntypedDocumentType(ctx.organizationId, caseId, documentId, target.documentTypeKey, mode);
+      return await assignUntypedDocumentType(ctx.organizationId, caseId, documentId, target.documentTypeKey, mode);
     } catch (error) {
       if (error instanceof DocumentServiceError) throw new CrematoryError(`${error.message} Reopen and choose again.`, 409);
       throw error;
     }
-  } finally {
-    await applyCrematoryRecord(ctx.organizationId, caseId, (c) => (c.crematory?.preparing?.token === token ? { preparing: null } : null), mode).catch(() => undefined);
-  }
+  });
   await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_DOCUMENT_TYPE_ASSIGNED, {
     resourceId: assigned.id,
     description: `"${assigned.fileName}" chosen as the ${target.displayName} (document type set; the file is unchanged)`,
     record: { documentId: assigned.id, documentTypeKey: target.documentTypeKey, previousDocumentTypeKey: null },
   }, mode);
   if (as === 'arrangement_forms') await prepareCrematoryDocuments(ctx, caseId, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
+}
+
+const DOCUMENTS_SENT_MESSAGE = 'This case was already sent (or is being sent) to the crematory, so its documents are not changed here.';
+
+/**
+ * Runs `work` holding the case's preparation lease (2026-10) — the same
+ * one automatic preparation takes — so it never runs alongside a
+ * preparation, another permit change, or a send, on any server. Waits up
+ * to 30 seconds for it; refused, nothing done, once the case is sent or
+ * being sent.
+ */
+async function withPreparationLease<T>(organizationId: string, caseId: string, mode: DataAdapterMode, sentMessage: string, work: () => Promise<T>): Promise<T> {
+  const token = crypto.randomUUID();
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const claim = await claimPreparation(organizationId, caseId, token, mode);
+    if (claim === 'claimed') break;
+    if (claim === 'closed') throw new CrematoryError(sentMessage, 409);
+    if (Date.now() >= deadline) throw new CrematoryError('This case is being updated right now. Try again in a moment.', 409);
+    await sleep(1_000);
+  }
+  try {
+    return await work();
+  } finally {
+    await applyCrematoryRecord(organizationId, caseId, (c) => (c.crematory?.preparing?.token === token ? { preparing: null } : null), mode).catch(() => undefined);
+  }
+}
+
+/** Staff build or rebuild the package themselves — serialized with preparation and sending. */
+export async function buildCrematoryPackageNow(ctx: ActivityContext, caseId: string, mode: DataAdapterMode, canSend = false): Promise<BuildOutcome> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  return withPreparationLease(ctx.organizationId, caseId, mode, SENT_MESSAGE, () => buildCrematoryPackage(ctx, caseId, mode, canSend));
+}
+
+// ---------------------------------------------------------------------------
+// The state permit — one current permit per case (2026-10)
+// ---------------------------------------------------------------------------
+
+export type PermitFile = { fileName: string; mimeType: string; bytes: Buffer; category?: CaseDocument['category'] };
+const PERMIT_SENT_MESSAGE =
+  'This case was already sent (or is being sent) to the crematory, so its State Cremation Permit is not changed. To keep this file on the case, upload it without a document type.';
+
+/**
+ * Stores a state permit on the case — the one way a permit is uploaded for
+ * an organization with Send to Crematory, from the Documents tab or from
+ * Send to Crematory alike, so the case keeps ONE current permit and every
+ * screen uses the same document:
+ *   - the first permit is stored as version 1;
+ *   - a replacement names the permit it replaces (so two people replacing
+ *     at once can never both win), is limited to staff who prepare
+ *     Crematory Packages, and is stored as the next version; the earlier
+ *     permit is kept with its file and history, marked superseded, and its
+ *     confirmation cleared (the confirmation stays in the case activity).
+ *     The new one must be confirmed before any package uses it, so the
+ *     current package is outdated until it is rebuilt from it;
+ *   - refused, nothing stored: the same file already on the case; a second
+ *     permit without saying which it replaces; a case with more than one
+ *     current permit (staff choose first — never resolved automatically);
+ *     and a case sent, being sent, or whose send is unclear.
+ * If the upload fails nothing changes: the earlier permit stays current.
+ */
+export async function addPermit(
+  ctx: ActivityContext,
+  caseId: string,
+  file: PermitFile,
+  options: { replacesDocumentId?: string | null; mayReplace: boolean },
+  mode: DataAdapterMode,
+): Promise<{ document: CaseDocument; replaced: CaseDocument | null }> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  refuseSent(case_, PERMIT_SENT_MESSAGE);
+  const replacesDocumentId = options.replacesDocumentId || null;
+  if (replacesDocumentId && !options.mayReplace) throw new CrematoryError('Replacing the State Cremation Permit is limited to staff who prepare Crematory Packages.', 403);
+  const checksum = sha256(file.bytes);
+
+  const result = await withPreparationLease(ctx.organizationId, caseId, mode, PERMIT_SENT_MESSAGE, async () => {
+    const active = (await listCaseDocuments(ctx.organizationId, caseId, mode)).filter((d) => d.status === 'active');
+    const same = active.find((d) => d.checksumSha256 === checksum);
+    if (same) {
+      throw new CrematoryError(
+        same.documentTypeKey === PERMIT_TYPE
+          ? `This file is already this case's State Cremation Permit ("${same.fileName}"). Nothing was uploaded.`
+          : same.documentTypeKey
+            ? `This file is already on this case as "${same.fileName}". Nothing was uploaded.`
+            : `This file is already on this case as "${same.fileName}". Choose it from this case's documents instead. Nothing was uploaded.`,
+        409,
+      );
+    }
+    const current = active.filter((d) => d.documentTypeKey === PERMIT_TYPE);
+    if (current.length > 1) throw new CrematoryError(`This case has ${current.length} current state permits. Choose the one to use before adding another. Nothing was uploaded.`, 409);
+    const previous = current[0] ?? null;
+    if (previous && replacesDocumentId !== previous.id) {
+      throw new CrematoryError(
+        replacesDocumentId
+          ? 'The permit you are replacing is no longer the current one. Reopen and try again. Nothing was uploaded.'
+          : `This case already has a State Cremation Permit ("${previous.fileName}"). Use Replace permit instead of adding a second one. Nothing was uploaded.`,
+        409,
+      );
+    }
+    if (!previous && replacesDocumentId) throw new CrematoryError('The permit you are replacing is no longer the current one. Reopen and try again. Nothing was uploaded.', 409);
+
+    let document: CaseDocument;
+    try {
+      document = await uploadCaseDocument(
+        {
+          caseId,
+          fileName: file.fileName,
+          mimeType: file.mimeType,
+          documentTypeKey: PERMIT_TYPE,
+          category: file.category ?? undefined,
+          idFactory: () => crypto.randomUUID(),
+          version: previous ? (previous.version ?? 1) + 1 : 1,
+          supersedesId: previous?.id ?? null,
+        },
+        file.bytes,
+        ctx,
+        mode,
+      );
+    } catch (error) {
+      if (error instanceof DocumentServiceError) throw new CrematoryError(`${error.message} Nothing was saved as the permit.`, 503);
+      throw error;
+    }
+    if (previous) {
+      try {
+        await supersedeCaseDocument(ctx.organizationId, caseId, previous.id, mode);
+      } catch (error) {
+        console.error(`Case ${caseId}: permit ${previous.id} could not be marked superseded:`, error instanceof Error ? error.message : error);
+        // Both stay current — a conflict nothing is ever sent with until staff choose.
+        throw new CrematoryError(`The new permit "${document.fileName}" was saved, but "${previous.fileName}" could not be marked as replaced. Both are kept; choose the current one before sending.`, 503);
+      }
+      // The earlier permit's confirmation no longer applies (a stale one
+      // could never match the new file anyway — this makes it explicit).
+      await applyCrematoryRecord(ctx.organizationId, caseId, (c) => (c.crematory?.permitVerification ? { permitVerification: null } : null), mode);
+    }
+    return { document, replaced: previous };
+  });
+
+  const { document, replaced } = result;
+  await audit(ctx, caseId, replaced ? ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_REPLACED : ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_ADDED, {
+    resourceId: document.id,
+    description: replaced
+      ? `State Cremation Permit replaced: "${document.fileName}" (v${document.version}) replaces "${replaced.fileName}", which is kept as an earlier version. It must be confirmed before a package uses it.`
+      : `State Cremation Permit added: "${document.fileName}". It must be confirmed before a package uses it.`,
+    record: { documentId: document.id, fileName: document.fileName, checksumSha256: document.checksumSha256, version: document.version, replacedDocumentId: replaced?.id ?? null },
+  }, mode);
+  return result;
+}
+
+/**
+ * Where a case has more than one current state permit (only ever from
+ * before 2026-10), staff choose the one to use. The others are kept with
+ * their files and history, marked superseded. Never done automatically.
+ */
+export async function chooseCurrentPermit(ctx: ActivityContext, caseId: string, documentId: string, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  refuseSent(case_, PERMIT_SENT_MESSAGE);
+  const { chosen, others } = await withPreparationLease(ctx.organizationId, caseId, mode, PERMIT_SENT_MESSAGE, async () => {
+    const current = (await listCaseDocuments(ctx.organizationId, caseId, mode)).filter((d) => d.status === 'active' && d.documentTypeKey === PERMIT_TYPE);
+    if (current.length < 2) throw new CrematoryError('This case has only one current state permit. Reopen and try again.', 409);
+    const chosen = current.find((d) => d.id === documentId);
+    if (!chosen) throw new CrematoryError("That is not one of this case's current state permits. Reopen and try again.", 409);
+    const others = current.filter((d) => d.id !== documentId);
+    for (const other of others) await supersedeCaseDocument(ctx.organizationId, caseId, other.id, mode);
+    return { chosen, others };
+  });
+  await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_CURRENT_PERMIT_CHOSEN, {
+    resourceId: chosen.id,
+    description: `"${chosen.fileName}" chosen as the current State Cremation Permit; ${others.map((d) => `"${d.fileName}"`).join(', ')} kept as earlier versions`,
+    record: { documentId: chosen.id, supersededDocumentIds: others.map((d) => d.id) },
+  }, mode);
+  await prepareCrematoryDocuments(ctx, caseId, mode);
   return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
@@ -633,19 +880,18 @@ export function prepareCrematoryDocuments(
   return run;
 }
 
-type Work = { page3: boolean; build: boolean };
+type Work = { page3: boolean; build: boolean; details: boolean };
 
 /** What preparation would do now — read-only. Null: never for this case. */
 async function pendingWork(organizationId: string, caseId: string, mode: DataAdapterMode): Promise<Work | null> {
   const case_ = await loadCase(organizationId, caseId, mode).catch(() => null);
   if (!case_) return null;
-  const record = case_.crematory;
-  const sentOrSending = Boolean(record?.pendingSubmission) || record?.lastSubmission?.status === 'submitted' || record?.lastSubmission?.status === 'uncertain';
-  if (case_.caseType !== 'cremation' || case_.isDeleted || sentOrSending) return null;
+  if (case_.caseType !== 'cremation' || case_.isDeleted || isSentOrSending(case_)) return null;
   const facts = await loadFacts(organizationId, case_, mode);
   const page3 = facts.arrangementForm !== null && (facts.crematoryForm === null || facts.crematoryForm.createdAt < facts.arrangementForm.createdAt);
   const build = readinessOf(facts, false).readyToBuild && !packageIsCurrent(facts);
-  return { page3, build };
+  const automatic = await automaticDetails(organizationId, case_, mode);
+  return { page3, build, details: automatic.name !== null || automatic.date !== null };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -653,11 +899,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function prepareWithLease(ctx: ActivityContext, caseId: string, mode: DataAdapterMode, options: { waitMs?: number; pollMs?: number }): Promise<AutoPrepareResult> {
   const first = await pendingWork(ctx.organizationId, caseId, mode);
   if (!first) return NOT_NEEDED;
-  if (!first.page3 && !first.build) return quietResult(ctx.organizationId, caseId, mode);
+  if (!first.page3 && !first.build && !first.details) return quietResult(ctx.organizationId, caseId, mode);
 
   const token = crypto.randomUUID();
   const deadline = Date.now() + (options.waitMs ?? 30_000);
-  while (!(await claimPreparation(ctx.organizationId, caseId, token, mode))) {
+  for (;;) {
+    const claim = await claimPreparation(ctx.organizationId, caseId, token, mode);
+    if (claim === 'claimed') break;
+    if (claim === 'closed') return NOT_NEEDED;
     if (Date.now() >= deadline) {
       console.warn(`[crematory-auto] Case ${caseId}: another server is still preparing it; left to that server.`);
       return { crematoryForm: 'unchanged', package: 'unchanged' };
@@ -669,7 +918,7 @@ async function prepareWithLease(ctx: ActivityContext, caseId: string, mode: Data
     // Up to three passes: a change that lands while this one works is picked up before the lease is released.
     for (let pass = 0; pass < 3; pass++) {
       const work = await pendingWork(ctx.organizationId, caseId, mode);
-      if (!work || (!work.page3 && !work.build)) break;
+      if (!work || (!work.page3 && !work.build && !work.details)) break;
       const done = await prepareOnce(ctx, caseId, mode);
       if (done.crematoryForm === 'saved' || pass === 0) result.crematoryForm = done.crematoryForm;
       if (done.package === 'saved' || pass === 0) result.package = done.package;
@@ -683,23 +932,89 @@ async function prepareWithLease(ctx: ActivityContext, caseId: string, mode: Data
   }
 }
 
-/** Claims the case's preparation lease — atomically, through the case's conditional write. */
-async function claimPreparation(organizationId: string, caseId: string, token: string, mode: DataAdapterMode): Promise<boolean> {
+/**
+ * Claims the case's preparation lease — atomically, through the case's
+ * conditional write. 'closed' once the case is sent, being sent or unclear:
+ * a send and a preparation never overlap (the send likewise starts only
+ * while no lease is held — see crematorySendService).
+ */
+async function claimPreparation(organizationId: string, caseId: string, token: string, mode: DataAdapterMode): Promise<'claimed' | 'held' | 'closed'> {
   try {
     await applyCrematoryRecord(
       organizationId,
       caseId,
       (c) => {
+        if (isSentOrSending(c)) throw new CrematoryError('Sent or being sent.', 410);
         const held = c.crematory?.preparing;
         if (held && held.token !== token && Date.parse(held.until) > Date.now()) throw new CrematoryError('Being prepared by another server.', 423);
         return { preparing: { token, until: new Date(Date.now() + PREPARATION_LEASE_MS).toISOString() } };
       },
       mode,
     );
-    return true;
+    return 'claimed';
   } catch (error) {
-    if (error instanceof CrematoryError && (error.status === 423 || error.status === 409)) return false;
+    if (error instanceof CrematoryError && error.status === 410) return 'closed';
+    if (error instanceof CrematoryError && (error.status === 423 || error.status === 409)) return 'held';
     throw error;
+  }
+}
+
+/** Whether a preparation lease is held on the case right now. */
+export function preparationInProgress(case_: Case, now = Date.now()): boolean {
+  const held = case_.crematory?.preparing;
+  return Boolean(held && Date.parse(held.until) > now);
+}
+
+/**
+ * Records the package name and expected ready date where SOLIS reliably
+ * can (see automaticDetails), never over a staff confirmation, never on a
+ * case sent or being sent — each recorded in the case activity. Runs only
+ * inside automatic preparation, so the package is then built (or rebuilt,
+ * when the Expected Pickup moved) from it — and a final review made before
+ * that no longer matches.
+ */
+async function recordAutomaticDetails(ctx: ActivityContext, caseId: string, mode: DataAdapterMode): Promise<void> {
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  if (case_.isDeleted || isSentOrSending(case_)) return;
+  const want = await automaticDetails(ctx.organizationId, case_, mode);
+  if (!want.name && !want.date) return;
+  const at = new Date().toISOString();
+  const wrote: { name: PackageName | null; date: { date: string; previous: string | null } | null } = { name: null, date: null };
+  await applyCrematoryRecord(
+    ctx.organizationId,
+    caseId,
+    (current) => {
+      wrote.name = null;
+      wrote.date = null;
+      if (current.isDeleted || isSentOrSending(current)) return null;
+      const change: Partial<CaseCrematoryRecord> = {};
+      if (want.name && !current.crematory?.packageName) {
+        change.packageName = { ...want.name, confirmedBy: null, confirmedAt: at, source: 'intake_form' };
+        wrote.name = want.name;
+      }
+      const date = current.crematory?.readyDate;
+      if (want.date && (!date || date.source === 'expected_pickup')) {
+        change.readyDate = { date: want.date, suggestedAtConfirmation: want.date, confirmedBy: null, confirmedAt: at, source: 'expected_pickup' };
+        wrote.date = { date: want.date, previous: date?.date ?? null };
+      }
+      return change.packageName || change.readyDate ? change : null;
+    },
+    mode,
+  );
+  if (wrote.name) {
+    await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_NAME_RECORDED, {
+      resourceId: null,
+      description: `Name for the Crematory Package recorded from the intake form: ${wrote.name.last}, ${wrote.name.first}`,
+      record: { first: wrote.name.first, last: wrote.name.last, source: 'intake_form', automatic: true },
+    }, mode);
+  }
+  if (wrote.date) {
+    const { date, previous } = wrote.date;
+    await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_READY_DATE_RECORDED, {
+      resourceId: null,
+      description: `Expected cremation ready date recorded from the Expected Pickup: ${date}${previous && previous !== date ? ` (was ${previous})` : ''}`,
+      record: { date, previous, source: 'expected_pickup', automatic: true },
+    }, mode);
   }
 }
 
@@ -714,6 +1029,11 @@ async function quietResult(organizationId: string, caseId: string, mode: DataAda
 
 async function prepareOnce(ctx: ActivityContext, caseId: string, mode: DataAdapterMode): Promise<AutoPrepareResult> {
   const result: AutoPrepareResult = { crematoryForm: 'no_arrangement_form', package: 'needs_attention' };
+  try {
+    await recordAutomaticDetails(ctx, caseId, mode);
+  } catch (error) {
+    console.error(`[crematory-auto] Case ${caseId}: the name or date could not be recorded:`, error instanceof Error ? error.message : error);
+  }
   try {
     result.crematoryForm = (await extractArrangementPage('crematory_form', caseId, { automatic: true }, ctx, mode)).outcome;
   } catch (error) {

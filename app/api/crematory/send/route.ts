@@ -10,8 +10,10 @@ export const maxDuration = 120;
  * Send to Crematory (2026-10). Sends ONE Outlook email with one Crematory
  * Package per selected case, after the staff member reviewed and
  * confirmed it. Body: { organizationId, caseIds, to, cc, subject, message,
- * submissionId, confirmResend }. 200 → submitted to Outlook (not a
- * delivery confirmation).
+ * submissionId, confirmResend, reviewFingerprint, acknowledged } — the
+ * fingerprint from POST /api/crematory/review (2026-10) and the staff
+ * member's Confirm & Send. 200 → submitted to Outlook (not a delivery
+ * confirmation).
  */
 export async function POST(request: Request) {
   const csrfResponse = requireSameOrigin(request);
@@ -38,6 +40,8 @@ export async function POST(request: Request) {
         message: typeof body.message === 'string' ? body.message : '',
         submissionId: typeof body.submissionId === 'string' ? body.submissionId : '',
         confirmResend: body.confirmResend === true,
+        reviewFingerprint: typeof body.reviewFingerprint === 'string' ? body.reviewFingerprint : '',
+        acknowledged: body.acknowledged === true,
       },
       auth.mode,
     );

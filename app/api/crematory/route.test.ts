@@ -29,6 +29,7 @@ vi.mock('@/services/authorizationPolicyService', async () => {
 
 const overview = await import('./route');
 const send = await import('./send/route');
+const review = await import('./review/route');
 const settings = await import('@/app/api/organization/crematory-settings/route');
 const mailbox = await import('@/app/api/organization/crematory-settings/mailbox/route');
 const caseRoute = await import('@/app/api/cases/[caseId]/crematory/route');
@@ -129,10 +130,31 @@ describe('Send to Crematory routes', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     expect((await postSend({ caseIds: 'all' })).status).toBe(400);
-    const response = await postSend({ caseIds: ['1042'], to: ['intake@crematory.example'], cc: [], subject: 'Manors Cremation — Test', message: '', submissionId: 'sub-0000-0001' });
-    expect(response.status).toBe(422);
+    const body = { caseIds: ['1042'], to: ['intake@crematory.example'], cc: [], subject: 'Manors Cremation — Test', message: '', submissionId: 'sub-0000-0001' };
+    // Without the final review (a window opened before 2026-10's update): refused, nothing sent.
+    const unreviewed = await postSend(body);
+    expect(unreviewed.status).toBe(409);
+    expect((await unreviewed.json()).error).toContain('Send to Crematory was updated');
+    expect((await postSend({ ...body, reviewFingerprint: 'v1:x' })).status).toBe(400);
+    expect((await postSend({ ...body, reviewFingerprint: 'v1:x', acknowledged: true })).status).toBe(422);
     expect(fetch).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("one case's status tells the Documents tab whether this staff member may replace the permit (2026-10)", async () => {
+    const getCase = () => caseRoute.GET(new Request(`http://localhost/api/cases/1042/crematory?organizationId=${org()}`), { params: Promise.resolve({ caseId: '1042' }) });
+    expect(await (await getCase()).json()).toMatchObject({ caseId: '1042', canPrepare: true });
+    permissions.prepare = false;
+    expect(await (await getCase()).json()).toMatchObject({ caseId: '1042', canPrepare: false });
+  });
+
+  it('the final review needs the send permission, and refuses a case that is not ready (2026-10)', async () => {
+    const postReview = (body: Record<string, unknown>) => review.POST(new Request('http://localhost/api/crematory/review', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: org(), ...body }) }));
+    expect((await postReview({ caseIds: 'all' })).status).toBe(400);
+    expect((await postReview({ caseIds: ['1042'] })).status).toBe(422);
+    permissions.send = false;
+    expect((await postReview({ caseIds: ['1042'] })).status).toBe(403);
+    expect((await review.POST(new Request('http://localhost/api/crematory/review', { method: 'POST', headers: { ...SAME_ORIGIN, origin: 'http://evil.test' }, body: '{}' }))).status).toBe(403);
   });
 
   it('an organization without Send to Crematory gets nothing', async () => {

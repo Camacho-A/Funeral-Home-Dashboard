@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
-import { canUploadDocument } from '@/services/authorizationPolicyService';
+import { canGenerateDocument, canUploadDocument } from '@/services/authorizationPolicyService';
 import { upload, DocumentServiceError } from '@/services/documentService';
 import { DOCUMENT_TYPES, isValidDocumentTypeKey } from '@/domain/documents/documentTypeRegistry';
 import { ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY } from '@/domain/documents/arrangementPageExtracts';
 import { runAfterResponse } from '@/lib/afterResponse';
-import { prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
+import { addPermit, CrematoryError, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
+import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { getDataAdapterMode } from '@/lib/env';
 
 /** 15MB — see this phase's Security section (file size/type limits). */
@@ -76,6 +77,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const correlationId = crypto.randomUUID();
+  const ctx = { organizationId: resolvedOrganizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId };
+
+  // Send to Crematory (2026-10): a state permit — from the Documents tab or
+  // from Send to Crematory — is stored under the one-current-permit rules
+  // (no duplicate, a replacement names the permit it replaces, never on a
+  // case already sent). Its page 3 and package are then prepared after this
+  // response. Nothing is sent.
+  if (documentTypeKey === DOCUMENT_TYPES.CREMATION_FORM_STATE_PERMIT.key && sendToCrematoryConfig(resolvedOrganizationId)) {
+    const replaces = formData.get('replacesDocumentId');
+    try {
+      const { document } = await addPermit(
+        ctx,
+        caseId,
+        { fileName: file.name, mimeType: file.type, bytes: fileBuffer, category: typeof category === 'string' ? (category as never) : undefined },
+        {
+          replacesDocumentId: typeof replaces === 'string' && replaces ? replaces : null,
+          mayReplace: await canGenerateDocument({ identityId: userId, organizationId: resolvedOrganizationId, roleKey: role }, dataAdapterMode),
+        },
+        dataAdapterMode,
+      );
+      runAfterResponse('crematory package preparation', () => prepareCrematoryDocuments(ctx, caseId, dataAdapterMode));
+      return NextResponse.json({ document }, { status: 201 });
+    } catch (error) {
+      if (error instanceof CrematoryError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  }
 
   try {
     const document = await upload(
@@ -88,14 +116,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
         idFactory: () => crypto.randomUUID(),
       },
       fileBuffer,
-      { organizationId: resolvedOrganizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId },
+      ctx,
       dataAdapterMode,
     );
     // Send to Crematory (2026-10): an Arrangement Form or state permit
     // uploaded — page 3 and the Crematory Package are prepared from what is
     // now on the case, after this response. Nothing is sent.
     if (document.documentTypeKey === ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY || document.documentTypeKey === DOCUMENT_TYPES.CREMATION_FORM_STATE_PERMIT.key) {
-      const ctx = { organizationId: resolvedOrganizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId };
       runAfterResponse('crematory package preparation', () => prepareCrematoryDocuments(ctx, caseId, dataAdapterMode));
     }
     return NextResponse.json({ document }, { status: 201 });

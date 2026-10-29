@@ -94,6 +94,17 @@ describe('POST /api/cases/[caseId]/cremains-pickup', () => {
     expect(body.appointment.startAt.startsWith('2026-10-09')).toBe(true);
   });
 
+  it('a new or changed Expected Pickup schedules Send to Crematory preparation after the response (2026-10) — a refused one does not', async () => {
+    const { runAfterResponse } = await import('@/lib/afterResponse');
+    vi.mocked(runAfterResponse).mockClear();
+    expect((await request('POST', TEST_CASE_ID, { organizationId: DEFAULT_ORGANIZATION_ID, expectedDate: '2026-10-09' })).status).toBe(201);
+    expect((await request('PATCH', TEST_CASE_ID, { organizationId: DEFAULT_ORGANIZATION_ID, expectedDate: '2026-10-16' })).status).toBe(200);
+    expect(vi.mocked(runAfterResponse).mock.calls.map(([label]) => label)).toEqual(['crematory package preparation', 'crematory package preparation']);
+    vi.mocked(runAfterResponse).mockClear();
+    expect((await request('POST', TEST_CASE_ID, { organizationId: DEFAULT_ORGANIZATION_ID, expectedDate: '2026-10-09' })).status).toBe(409);
+    expect(runAfterResponse).not.toHaveBeenCalled();
+  });
+
   it('refuses a second pickup for the same case with a clear 409', async () => {
     await request('POST', TEST_CASE_ID, { organizationId: DEFAULT_ORGANIZATION_ID, expectedDate: '2026-10-09' });
     const second = await request('POST', TEST_CASE_ID, { organizationId: DEFAULT_ORGANIZATION_ID, expectedDate: '2026-10-13' });

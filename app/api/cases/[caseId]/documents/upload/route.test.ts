@@ -29,16 +29,24 @@ const { POST } = await import('./route');
 
 const TEST_CASE_ID = 'case-upload-route-test';
 
-function uploadRequest(formData: FormData, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }) {
-  return POST(new Request(`http://localhost/api/cases/${TEST_CASE_ID}/documents/upload`, { method: 'POST', headers, body: formData }), { params: Promise.resolve({ caseId: TEST_CASE_ID }) });
+function uploadRequest(formData: FormData, headers: Record<string, string> = { origin: 'http://localhost', host: 'localhost' }, caseId = TEST_CASE_ID) {
+  return POST(new Request(`http://localhost/api/cases/${caseId}/documents/upload`, { method: 'POST', headers, body: formData }), { params: Promise.resolve({ caseId }) });
 }
 
-function sampleFormData(overrides: Record<string, string> = {}) {
+function sampleFormData(overrides: Record<string, string> = {}, bytes = [1, 2, 3]) {
   const formData = new FormData();
   formData.set('organizationId', overrides.organizationId ?? DEFAULT_ORGANIZATION_ID);
-  formData.set('file', new File([new Uint8Array([1, 2, 3])], 'scan.pdf', { type: overrides.mimeType ?? 'application/pdf' }));
+  formData.set('file', new File([new Uint8Array(bytes)], overrides.fileName ?? 'scan.pdf', { type: overrides.mimeType ?? 'application/pdf' }));
   return formData;
 }
+/** A fictional case of the organization with Send to Crematory. */
+const PERMIT_CASE_ID = '1042';
+const permitUpload = (bytes: number[], extra: Record<string, string> = {}) => {
+  const formData = sampleFormData({ fileName: 'FICTIONAL PERMIT.pdf' }, bytes);
+  formData.set('documentTypeKey', 'cremation_form.state_permit');
+  for (const [key, value] of Object.entries(extra)) formData.set(key, value);
+  return uploadRequest(formData, undefined, PERMIT_CASE_ID);
+};
 
 beforeEach(() => {
   mockSession = { user: mockDefaultUser };
@@ -78,16 +86,36 @@ describe('POST /api/cases/[caseId]/documents/upload', () => {
   it('an uploaded Arrangement Form or state permit schedules the Crematory Package preparation (2026-10); other uploads do not', async () => {
     const { runAfterResponse } = await import('@/lib/afterResponse');
     vi.mocked(runAfterResponse).mockClear();
-    for (const documentTypeKey of ['external_form.arrangement_forms', 'cremation_form.state_permit']) {
-      const formData = sampleFormData();
-      formData.set('documentTypeKey', documentTypeKey);
-      expect((await uploadRequest(formData)).status).toBe(201);
-    }
+    const formData = sampleFormData();
+    formData.set('documentTypeKey', 'external_form.arrangement_forms');
+    expect((await uploadRequest(formData)).status).toBe(201);
+    expect((await permitUpload([7, 7, 7])).status).toBe(201);
     expect(vi.mocked(runAfterResponse).mock.calls.map(([label]) => label)).toEqual(['crematory package preparation', 'crematory package preparation']);
 
     vi.mocked(runAfterResponse).mockClear();
     expect((await uploadRequest(sampleFormData())).status).toBe(201);
     expect(runAfterResponse).not.toHaveBeenCalled();
+  });
+
+  it('a state permit is stored under the one-current-permit rules (2026-10): a duplicate or a second permit is refused; a replacement names the one it replaces', async () => {
+    const first = await permitUpload([4, 4, 4]);
+    expect(first.status).toBe(201);
+    const { document } = await first.json();
+    expect(document).toMatchObject({ documentTypeKey: 'cremation_form.state_permit', version: 1, status: 'active' });
+
+    const duplicate = await permitUpload([4, 4, 4]);
+    expect(duplicate.status).toBe(409);
+    expect((await duplicate.json()).error).toContain("already this case's State Cremation Permit");
+    const second = await permitUpload([5, 5, 5]);
+    expect(second.status).toBe(409);
+    expect((await second.json()).error).toContain('Use Replace permit');
+    expect(caseDocumentFixtures.filter((d) => d.caseId === PERMIT_CASE_ID)).toHaveLength(1);
+
+    const replacement = await permitUpload([5, 5, 5], { replacesDocumentId: document.id });
+    expect(replacement.status).toBe(201);
+    expect((await replacement.json()).document).toMatchObject({ version: 2, supersedesId: document.id, status: 'active' });
+    expect(caseDocumentFixtures.find((d) => d.id === document.id)!.status).toBe('superseded');
+    expect(activityEventFixtures.map((e) => e.eventType)).toEqual(expect.arrayContaining(['crematory.permit_added', 'crematory.permit_replaced']));
   });
 
   it('a role without document.upload (readOnly) is refused', async () => {

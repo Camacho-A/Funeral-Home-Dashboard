@@ -12,16 +12,21 @@ export type CrematoryCaseSummary = {
     suggested: { first: string; last: string } | null;
     /** 'form': the family's own first/middle/last boxes; 'case_name': a two-word case name. */
     suggestedFrom: 'form' | 'case_name' | null;
+    /** Who recorded the name: staff, or SOLIS from the intake form (2026-10). */
+    recordedFrom: 'staff' | 'intake_form' | null;
   };
   subjectName: string;
   readiness: CrematoryReadiness;
   permit: { documentId: string; fileName: string; createdAt: string; uploadedBy: string | null } | null;
-  readyDate: { suggested: string | null; confirmed: string | null };
+  readyDate: { suggested: string | null; confirmed: string | null; recordedFrom: 'staff' | 'expected_pickup' | null };
   package: { documentId: string; version: number | null; fileName: string; current: boolean } | null;
   expectedFileName: string | null;
   lastSubmission: CaseCrematoryRecord['lastSubmission'] | null;
   /** Active, untyped PDFs on the case staff may choose as the permit or Arrangement Form. */
   untypedDocuments: UntypedCaseDocument[];
+  /** One case's own status (GET /api/cases/[id]/crematory, 2026-10): whether
+      this staff member may prepare — confirm, replace the permit. */
+  canPrepare?: boolean;
 };
 export type CrematoryMailbox = { connected: false; configured: boolean } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
 export type CrematoryOverview = {
@@ -42,6 +47,29 @@ export type CrematorySendResult = {
   to: string[];
   cc: string[];
   attachments: Array<{ caseId: string; caseNumber: string; decedentDisplayName: string; attachmentName: string; packageDocumentId: string; packageVersion: number | null }>;
+};
+/** The final review (2026-10): the exact email Confirm & Send would send, and its fingerprint. */
+export type CrematoryReview = {
+  fingerprint: string;
+  cases: Array<{
+    caseId: string;
+    caseNumber: string;
+    decedentDisplayName: string;
+    subjectName: string;
+    expectedReadyDate: string;
+    readyDateFrom: 'staff' | 'expected_pickup';
+    attachmentName: string;
+    packageDocumentId: string;
+    packageVersion: number | null;
+    packageChecksumSha256: string;
+    permit: { documentId: string; fileName: string; verifiedBy: string | null; verifiedByName: string | null; verifiedAt: string };
+    lastSendUnclear: boolean;
+  }>;
+  to: string[];
+  cc: string[];
+  subject: string;
+  message: string;
+  mailbox: string | null;
 };
 
 /** A refusal the page can act on (e.g. "already sent — send again?"). */
@@ -81,9 +109,15 @@ export async function crematoryCaseAction(
     | { action: 'confirm_package_name'; first: string; last: string }
     | { action: 'build_package' }
     | { action: 'prepare' }
-    | { action: 'assign_document'; documentId: string; as: CrematorySourceKind },
+    | { action: 'assign_document'; documentId: string; as: CrematorySourceKind }
+    | { action: 'choose_current_permit'; documentId: string },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
+}
+
+/** Read-only: what Confirm & Send would send for these cases. */
+export async function reviewCrematorySend(organizationId: string, caseIds: string[]): Promise<CrematoryReview> {
+  return parse(await fetch('/api/crematory/review', json({ organizationId, caseIds })), 'Could not prepare the email for review.');
 }
 
 export async function sendToCrematory(body: {
@@ -95,6 +129,10 @@ export async function sendToCrematory(body: {
   message: string;
   submissionId: string;
   confirmResend: boolean;
+  /** From reviewCrematorySend — the server refuses a send that differs from it. */
+  reviewFingerprint: string;
+  /** Staff confirmed the review. */
+  acknowledged: boolean;
 }): Promise<CrematorySendResult> {
   return parse(await fetch('/api/crematory/send', json(body)), 'The email could not be sent.');
 }

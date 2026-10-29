@@ -12,6 +12,8 @@ import type { Case } from '@/types/case';
 import { createManualExpectedPickup, changeExpectedPickupDate } from '@/services/cremainsPickupService';
 import { resolveCremainsPickupSettings } from '@/domain/organization/cremainsPickupCapability';
 import { isLocalDate, weekdayOf } from '@/domain/scheduling/cremainsPickupSchedule';
+import { runAfterResponse } from '@/lib/afterResponse';
+import { prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
 
 /**
  * Expected Cremains Pickup — staff-managed date (2026-10).
@@ -164,6 +166,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       { status: result.reason === 'already_exists' ? 409 : 422 },
     );
   }
+  // Send to Crematory (2026-10): a date recorded from the Expected Pickup
+  // follows it — updated, and the package rebuilt, after this response.
+  // Never for a case already sent; nothing is sent.
+  runAfterResponse('crematory package preparation', () => prepareCrematoryDocuments(resolved.ctx, resolved.case_.id, resolved.dataAdapterMode));
   return NextResponse.json({ appointment: result.appointment }, { status: 201 });
 }
 
@@ -202,5 +208,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
           : 'Invalid expected pickup date.';
     return NextResponse.json({ error: message }, { status });
   }
+  runAfterResponse('crematory package preparation', () => prepareCrematoryDocuments(resolved.ctx, resolved.case_.id, resolved.dataAdapterMode));
   return NextResponse.json({ appointment: result.appointment });
 }

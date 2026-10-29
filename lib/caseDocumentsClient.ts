@@ -97,12 +97,15 @@ export async function uploadCaseDocument(params: {
   file: File;
   documentTypeKey?: string;
   category?: string;
+  /** Replace Permit (2026-10): the current state permit this file replaces. */
+  replacesDocumentId?: string;
 }): Promise<CaseDocument> {
   const formData = new FormData();
   formData.set('organizationId', params.organizationId);
   formData.set('file', params.file);
   if (params.documentTypeKey) formData.set('documentTypeKey', params.documentTypeKey);
   if (params.category) formData.set('category', params.category);
+  if (params.replacesDocumentId) formData.set('replacesDocumentId', params.replacesDocumentId);
 
   const response = await fetch(`/api/cases/${encodeURIComponent(params.caseId)}/documents/upload`, { method: 'POST', body: formData });
   const body = await parseJsonOrThrow(response);
