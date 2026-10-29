@@ -33,7 +33,7 @@ import {
   isCaseDocumentEligibleForBulkAction,
 } from '@/domain/documents/caseDocumentDisplay';
 import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
-import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
+import { getDocumentTypeDefinition, UPLOADABLE_DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { buildCaseDocumentDownloadUrl, buildCaseDocumentViewUrl } from '@/lib/caseDocumentsClient';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
 import { RemoveDocumentDialog } from './RemoveDocumentDialog';
@@ -118,6 +118,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkExcluded, setBulkExcluded] = useState<{ action: 'Print All' | 'Download All'; items: BulkDocumentExclusion[] } | null>(null);
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
+  const [uploadTypeKey, setUploadTypeKey] = useState('');
   /** Cremation Label (2026-10): the label dialog — for the case (null id)
       or for one saved version from a row. */
   const [labelDialog, setLabelDialog] = useState<{ documentId?: string } | null>(null);
@@ -232,7 +233,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
     const file = e.target.files?.[0];
     if (file) {
       setUploadingFileName(file.name);
-      upload.mutate({ file }, { onSettled: () => setUploadingFileName(null) });
+      // Send to Crematory organizations choose the document type (2026-10):
+      // a State Cremation Permit goes through the server's permit rules, an
+      // Arrangement Form has page 3 prepared from it.
+      const documentTypeKey = preparesWithCrematory && uploadTypeKey ? uploadTypeKey : undefined;
+      upload.mutate({ file, documentTypeKey }, { onSettled: () => setUploadingFileName(null), onSuccess: () => setUploadTypeKey('') });
     }
     e.target.value = '';
   }
@@ -499,6 +504,22 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             )}
             {canUpload && (
               <>
+                {preparesWithCrematory && (
+                  <select
+                    className="sx-input"
+                    aria-label="Document type for the upload"
+                    value={uploadTypeKey}
+                    onChange={(e) => setUploadTypeKey(e.target.value)}
+                    disabled={upload.isPending}
+                  >
+                    <option value="">No document type</option>
+                    {UPLOADABLE_DOCUMENT_TYPES.map((type) => (
+                      <option key={type.key} value={type.key}>
+                        {type.displayName}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button type="button" className="sx-btn sx-btn-primary" onClick={() => fileInputRef.current?.click()} disabled={upload.isPending}>
                   {upload.isPending ? 'Uploading…' : 'Upload File'}
                 </button>
@@ -531,6 +552,12 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               {bulkDownload.isPending ? 'Preparing…' : 'Download All'}
             </button>
           </div>
+
+          {preparesWithCrematory && upload.error && (
+            <div className="sx-form-banner sx-form-banner-error sx-docs-bulk-note" role="alert">
+              {upload.error.message}
+            </div>
+          )}
 
           {extractNotice && (
             <div className={`sx-form-banner ${extractNotice.ok ? 'sx-form-banner-info' : 'sx-form-banner-error'} sx-docs-bulk-note`} role={extractNotice.ok ? 'status' : 'alert'}>

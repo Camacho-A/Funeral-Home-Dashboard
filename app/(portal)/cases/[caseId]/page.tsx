@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { officialDocumentsFor } from '@/domain/documents/officialDocumentTriggers';
 import { CaseSlaPanel } from '@/components/case/CaseSlaPanel';
 import { useCase } from '@/hooks/useCase';
@@ -26,6 +27,7 @@ import { CaseHeader } from '@/components/case/CaseHeader';
 import { PrintLabelDialog } from '@/components/case/PrintLabelDialog';
 import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
+import { workflowStageToOpen } from '@/domain/workflow/workflowStageToOpen';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import type { StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
@@ -74,6 +76,11 @@ type CaseDetailTab = 'overview' | 'caseInfo' | 'workflow' | 'billing' | 'documen
 export default function CaseDetailPage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = use(params);
   const [viewingDisplayStage, setViewingDisplayStage] = useState<number | null>(null);
+  /** Resolve Workflow 2 (2026-10): open a workflow stage's checklist and bring it into view. */
+  const nextStepRef = useRef<HTMLElement>(null);
+  const [revealNextStep, setRevealNextStep] = useState(0);
+  const router = useRouter();
+  const requestedWorkflowStage = useSearchParams().get('workflowStage');
   const [activeTab, setActiveTab] = useState<CaseDetailTab>('overview');
   const [printLabelOpen, setPrintLabelOpen] = useState(false);
   const [sendToCrematoryOpen, setSendToCrematoryOpen] = useState(false);
@@ -120,6 +127,26 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
   const caseTasks = useCaseTasks(caseId);
+
+  // Opens a workflow stage the case has reached (a later one opens the
+  // case's current step instead). Changes nothing on the case.
+  function openWorkflowStage(displayStage: number | string) {
+    if (!viewModel) return;
+    setSendToCrematoryOpen(false);
+    setActiveTab('overview');
+    setViewingDisplayStage(workflowStageToOpen(displayStage, viewModel.displayStage));
+    setRevealNextStep((n) => n + 1);
+  }
+  useEffect(() => {
+    if (revealNextStep > 0) nextStepRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [revealNextStep]);
+  // From Send to Crematory on the Cases page: /cases/[id]?workflowStage=2.
+  useEffect(() => {
+    if (!requestedWorkflowStage || !viewModel || !case_) return;
+    if (sendToCrematoryConfig(case_.organizationId)) openWorkflowStage(requestedWorkflowStage);
+    router.replace(`/cases/${encodeURIComponent(caseId)}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per request, when the case has loaded
+  }, [requestedWorkflowStage, viewModel === null]);
 
   // Keeps the stalled-loading watchdog where it still matters: this is
   // the case page's OWN pending state, not a route-level Suspense shell.
@@ -324,7 +351,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         }
       />
       {sendToCrematoryOpen && (
-        <SendToCrematoryDialog open onClose={() => setSendToCrematoryOpen(false)} organizationId={organizationId} caseId={case_.id} />
+        <SendToCrematoryDialog open onClose={() => setSendToCrematoryOpen(false)} organizationId={organizationId} caseId={case_.id} onResolveWorkflow={(_id, stage) => openWorkflowStage(stage)} />
       )}
       {printLabelOpen && (
         <PrintLabelDialog open onClose={() => setPrintLabelOpen(false)} caseId={case_.id} organizationId={organizationId} />
@@ -472,7 +499,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         <div className={styles.overview}>
           <div className={styles.overviewMain}>
             {(viewingDisplayStage != null || hasVisibleChecklistItems(viewModel.checklist)) && (
-            <section aria-label="Next step">
+            <section aria-label="Next step" ref={nextStepRef}>
               <div className={styles.eyebrow}>Next step</div>
               <ChecklistCard
                 checklist={viewModel.checklist}

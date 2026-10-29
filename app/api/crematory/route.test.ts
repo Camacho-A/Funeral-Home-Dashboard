@@ -112,6 +112,15 @@ describe('Send to Crematory routes', () => {
     expect(await (await getOverview()).json()).toMatchObject({ canSend: false, canPrepare: true });
   });
 
+  it('recording a possible earlier send needs the send permission (2026-10)', async () => {
+    permissions.send = false;
+    const response = await caseRoute.POST(
+      new Request('http://localhost/api/cases/1042/crematory', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: org(), action: 'record_previous_send', decision: 'not_previously_sent', verification: 'Checked Sent Items', confirmedChecked: true }) }),
+      { params: Promise.resolve({ caseId: '1042' }) },
+    );
+    expect(response.status).toBe(403);
+  });
+
   it('preparing needs document permission; viewing needs case read', async () => {
     permissions.prepare = false;
     permissions.send = false;

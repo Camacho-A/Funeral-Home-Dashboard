@@ -167,10 +167,44 @@ describe('readiness — what needs attention', () => {
     expect(summary.readiness.requirements.find((r) => r.key === 'ready_date')).toMatchObject({ ok: false });
   });
 
-  it('workflow 2 must be complete', async () => {
-    await readyCase('1042');
+  it('workflow 2 is required to SEND, not to build (2026-10): the package is prepared, and the exact unchecked steps are named', async () => {
     caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], checklistState: { '2:0': true } };
-    await expect(pkg.buildCrematoryPackage(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('workflow 2') });
+    await readyCase('1042');
+    expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(1);
+    const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
+    expect(summary.package).toMatchObject({ current: true });
+    expect(summary.readiness.requirements.filter((r) => !r.ok)).toEqual([
+      { key: 'workflow_2', label: 'Workflow 2 complete', ok: false, detail: 'Not yet checked on the case: Cause of death entered · Attestation Received / Hard Saved.' },
+    ]);
+    expect(summary.workflow2).toEqual({ displayStage: 2, medicalExaminer: false, missing: ['Cause of death entered', 'Attestation Received / Hard Saved'] });
+    await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('Workflow 2 complete') });
+    // Nothing on the workflow was checked by SOLIS.
+    expect(caseFixtures[index('1042')].checklistState).toEqual({ '2:0': true });
+  });
+
+  it('a Medical Examiner case needs the ME verification steps — never the doctor steps — including a case switched to ME after doctor steps were checked', async () => {
+    // As the doctor-workflow steps were checked before the case was marked ME.
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], isMedicalExaminerCase: true, checklistState: { '2:1': true, '2:2': true } };
+    await readyCase('1042');
+    let summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.workflow2).toEqual({ displayStage: 2, medicalExaminer: true, missing: ['Medical Examiner EDRS entry verified', 'Medical Examiner cause of death verified', 'Required ME information confirmed'] });
+    expect(summary.readiness.requirements.find((r) => r.key === 'workflow_2')!.detail).toBe(
+      'Medical Examiner case — not yet checked on the case: Medical Examiner EDRS entry verified · Medical Examiner cause of death verified · Required ME information confirmed.',
+    );
+    expect(summary.readiness.requirements.find((r) => r.key === 'workflow_2')!.detail).not.toMatch(/doctor/i);
+    expect(summary.readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
+
+    // Staff check the ME steps on the case: complete. The doctor ticks are kept, not counted.
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], checklistState: { '2:1': true, '2:2': true, '2:3': true, '2:4': true, '2:5': true } };
+    summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.workflow2!.missing).toEqual([]);
+    expect(summary.readiness.readyToSend).toBe(true);
+
+    // Back to a standard case: the doctor steps count again — "EDRS submitted & sent to doctor" was never checked.
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], isMedicalExaminerCase: false };
+    summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.workflow2).toMatchObject({ medicalExaminer: false, missing: ['EDRS submitted & sent to doctor'] });
   });
 });
 
@@ -252,16 +286,17 @@ describe('automatic preparation — from what is already on the case (2026-10)',
     expect(docsOf('1042', PACKAGE)).toHaveLength(2);
   });
 
-  it('completing workflow 2 is enough: the case save prepares the package once everything else is confirmed', async () => {
+  it('the package is ready before workflow 2 is complete; completing it later rebuilds nothing and makes the case ready to send', async () => {
     const complete = caseFixtures[index('1042')].checklistState;
     caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], checklistState: { '2:0': true } };
     await readyCase('1042');
-    expect(docsOf('1042', PACKAGE)).toHaveLength(0);
+    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.fileName])).toEqual([[1, 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf']]);
     const before = caseFixtures[index('1042')];
     caseFixtures[index('1042')] = { ...before, checklistState: complete };
     const { regenerateOfficialDocumentsAfterCaseChange } = await import('../automaticCaseDocuments');
     await regenerateOfficialDocumentsAfterCaseChange(before, caseFixtures[index('1042')], ctx(), 'mock');
-    expect(docsOf('1042', PACKAGE).map((d) => [d.version, d.fileName])).toEqual([[1, 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf']]);
+    expect(docsOf('1042', PACKAGE)).toHaveLength(1);
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).readiness.readyToSend).toBe(true);
   });
 
   it('across servers: while another server holds the case, nothing is saved here; once it lets go (or its lease expires), this one prepares', async () => {
@@ -1090,5 +1125,89 @@ describe('one current State Cremation Permit per case (2026-10)', () => {
     expect(summary.readiness.requirements.find((r) => r.key === 'permit_verified')!.ok).toBe(false);
     expect(eventsOf('1042', 'crematory.current_permit_chosen')[0].description).toBe('"Permit A.pdf" chosen as the current State Cremation Permit; "Permit B.pdf" kept as earlier versions');
     await expect(pkg.chooseCurrentPermit(ctx(), '1042', 'permit-a', 'mock')).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('a possible earlier send outside SOLIS (2026-10)', () => {
+  const WARNING = 'This case indicates that documents may already have been sent to the crematory outside SOLIS. Verify the previous send before continuing.';
+  /** Workflow 3's "Permit sent to crematory" checked by staff — with no SOLIS send. */
+  const markPermitSent = (caseId: string) => {
+    const c = caseFixtures[index(caseId)];
+    caseFixtures[index(caseId)] = { ...c, checklistState: { ...(c.checklistState ?? {}), '3:0': true } };
+  };
+  const requirementOf = async (caseId: string) => (await pkg.getCrematoryCaseSummary(ORG, caseId, true, 'mock')).readiness.requirements.find((r) => r.key === 'previous_send');
+  const B = { decision: 'not_previously_sent', verification: 'Outlook Sent Items and the fax log for October', confirmedChecked: true };
+  const A = { decision: 'sent_outside_solis', method: 'email', sentOn: '2026-10-21', verification: 'Found the email in Outlook Sent Items' };
+
+  it('is flagged — never taken as a send, never ignored — and blocks the first send (alone or in a batch) until staff record what happened; the package is still prepared', async () => {
+    await readyCase('1042');
+    await readyCase('1044');
+    markPermitSent('1042');
+    const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.previousSend).toEqual({ indicated: true, recorded: null });
+    expect(await requirementOf('1042')).toEqual({ key: 'previous_send', label: 'No earlier send outside SOLIS', ok: false, detail: WARNING });
+    expect(summary.readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
+    expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(1);
+    expect(caseFixtures[index('1042')].crematory!.lastSubmission ?? null).toBeNull();
+    await expect(reviewCrematorySend(ORG, ['1042', '1044'], 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('B2026-901') });
+    // Not flagged without the checked step.
+    expect(await requirementOf('1044')).toBeUndefined();
+  });
+
+  it('a simple acknowledgment is not enough: the decision, how it was verified, and (B) the explicit confirmation — or (A) the method — are required; a future date is refused', async () => {
+    await readyCase('1042');
+    markPermitSent('1042');
+    for (const input of [{}, { decision: 'not_previously_sent' }, { ...B, verification: 'ok' }, { ...B, confirmedChecked: false }, { ...A, method: undefined }, { ...A, method: 'pigeon' }, { ...A, sentOn: '2099-01-01' }, { ...A, sentOn: 'yesterday' }]) {
+      await expect(pkg.recordPreviousSend(ctx(), '1042', input, 'mock')).rejects.toMatchObject({ status: 422 });
+    }
+    expect(caseFixtures[index('1042')].crematory!.previousSend ?? null).toBeNull();
+    expect(eventsOf('1042', 'crematory.previous_send_recorded')).toHaveLength(0);
+  });
+
+  it('B — not previously sent: recorded once with who, when and what was checked; the case can then be reviewed and sent as usual', async () => {
+    await readyCase('1042');
+    markPermitSent('1042');
+    const summary = await pkg.recordPreviousSend(ctx('staff-lee'), '1042', B, 'mock', true);
+    expect(summary.previousSend).toMatchObject({ indicated: false, recorded: { decision: 'not_previously_sent', verification: 'Outlook Sent Items and the fax log for October', recordedBy: 'staff-lee', recordedAt: expect.any(String) } });
+    expect((await requirementOf('1042'))!.ok).toBe(true);
+    expect(summary.readiness.readyToSend).toBe(true);
+    const [event] = eventsOf('1042', 'crematory.previous_send_recorded');
+    expect(event.actorIdentityId).toBe('staff-lee');
+    expect(event.description).toBe('Recorded as NOT previously sent to the crematory, after checking the sending records. Checked: Outlook Sent Items and the fax log for October');
+    expect(JSON.parse(event.newValue!)).toMatchObject({ decision: 'not_previously_sent', verifiedBy: 'staff-lee', verifiedAt: expect.any(String) });
+    await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).resolves.toMatchObject({ fingerprint: expect.stringMatching(/^v1:/) });
+    // Recorded once.
+    await expect(pkg.recordPreviousSend(ctx(), '1042', A, 'mock')).rejects.toMatchObject({ status: 409 });
+    // The checklist is never touched.
+    expect(caseFixtures[index('1042')].checklistState!['3:0']).toBe(true);
+  });
+
+  it('A — sent outside SOLIS: recorded with the method and date; the case is never sent through the first send, not even with the resend confirmation', async () => {
+    await readyCase('1042');
+    markPermitSent('1042');
+    await pkg.recordPreviousSend(ctx(), '1042', A, 'mock');
+    expect(await requirementOf('1042')).toMatchObject({ ok: false, detail: 'Recorded as already sent to the crematory outside SOLIS (Email, 10/21/2026). It is not sent again through the first send.' });
+    expect(eventsOf('1042', 'crematory.previous_send_recorded')[0].description).toBe(
+      'Recorded as already sent to the crematory outside SOLIS (Email, 10/21/2026) — not sent again through the first send. Verified: Found the email in Outlook Sent Items',
+    );
+    await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).rejects.toMatchObject({ status: 422 });
+    connectMockCrematoryMailbox(ORG, 'office@funeralhome.example', 'access-token');
+    await expect(
+      sendCrematoryPackages(ctx(), { caseIds: ['1042'], to: ['intake@crematory.example'], cc: [], subject: 'S', message: 'M', submissionId: 'sub-0000-0200', confirmResend: true, reviewFingerprint: 'v1:x', acknowledged: true }, 'mock'),
+    ).rejects.toMatchObject({ status: 422 });
+    // Unticking the step later never clears what was recorded.
+    caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], checklistState: { ...caseFixtures[index('1042')].checklistState, '3:0': false } };
+    expect((await requirementOf('1042'))!.ok).toBe(false);
+  });
+
+  it('nothing to record where SOLIS itself sent the case or the step is not checked; only for organizations with Send to Crematory', async () => {
+    await readyCase('1042');
+    await expect(pkg.recordPreviousSend(ctx(), '1042', B, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('does not show a possible earlier send') });
+    markPermitSent('1042');
+    const c = caseFixtures[index('1042')];
+    caseFixtures[index('1042')] = { ...c, crematory: { ...c.crematory!, lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: 'x', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } } };
+    expect((await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock')).previousSend.indicated).toBe(false);
+    await expect(pkg.recordPreviousSend(ctx(), '1042', B, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('SOLIS already has a send') });
+    await expect(pkg.recordPreviousSend({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1042', B, 'mock')).rejects.toMatchObject({ status: 404 });
   });
 });

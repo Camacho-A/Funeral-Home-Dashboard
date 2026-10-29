@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DocumentTemplateCategory } from '@/types/documentTemplate';
-import { DOCUMENT_TYPES, getDocumentTypeDefinition, isValidDocumentTypeKey } from './documentTypeRegistry';
+import { DOCUMENT_TYPES, getDocumentTypeDefinition, isValidDocumentTypeKey, SOLIS_BUILT_DOCUMENT_TYPE_KEYS, UPLOADABLE_DOCUMENT_TYPES } from './documentTypeRegistry';
 
 const CATEGORIES: DocumentTemplateCategory[] = [
   'contract',
@@ -68,3 +68,22 @@ describe('isValidDocumentTypeKey / getDocumentTypeDefinition', () => {
     expect(getDocumentTypeDefinition('not.a.real.key')).toBeNull();
   });
 });
+
+describe('UPLOADABLE_DOCUMENT_TYPES (Documents → Upload File, 2026-10)', () => {
+  it('is the canonical list — same keys and names, no duplicates — State Cremation Permit and Arrangement Forms first', () => {
+    expect(UPLOADABLE_DOCUMENT_TYPES.slice(0, 2).map((t) => t.key)).toEqual(['cremation_form.state_permit', 'external_form.arrangement_forms']);
+    for (const t of UPLOADABLE_DOCUMENT_TYPES) {
+      expect(isValidDocumentTypeKey(t.key)).toBe(true);
+      expect(Object.values(DOCUMENT_TYPES)).toContain(t);
+    }
+    expect(new Set(UPLOADABLE_DOCUMENT_TYPES.map((t) => t.key)).size).toBe(UPLOADABLE_DOCUMENT_TYPES.length);
+    expect(new Set(UPLOADABLE_DOCUMENT_TYPES.map((t) => t.displayName)).size).toBe(UPLOADABLE_DOCUMENT_TYPES.length);
+  });
+
+  it('leaves out only what Send to Crematory builds itself', () => {
+    expect([...SOLIS_BUILT_DOCUMENT_TYPE_KEYS].sort()).toEqual(['cremation_form.crematory_package', 'external_form.crematory_form']);
+    expect(UPLOADABLE_DOCUMENT_TYPES).toHaveLength(Object.keys(DOCUMENT_TYPES).length - 2);
+    expect(UPLOADABLE_DOCUMENT_TYPES.some((t) => SOLIS_BUILT_DOCUMENT_TYPE_KEYS.has(t.key))).toBe(false);
+  });
+});
+

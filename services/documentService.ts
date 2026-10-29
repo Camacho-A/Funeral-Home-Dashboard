@@ -4,7 +4,7 @@ import { CREMATION_LABEL_MIME_TYPE } from '@/domain/labels/cremationLabel';
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryAllWixDataItems, queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixCaseDocumentItem,
   buildWixCaseDocumentData,
@@ -408,10 +408,12 @@ export async function list(organizationId: string, caseId: string, dataAdapterMo
       .filter((d) => d.organizationId === organizationId && d.caseId === caseId)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
-  const response = await queryWixDataItems<WixCaseDocumentItem>('caseDocuments', {
-    filter: { organizationId, caseId },
-  });
-  return response.dataItems
+  // Every page (2026-10): an unpaginated Wix query silently stops at 50
+  // rows, and a case past 50 documents (each regenerated version is one)
+  // would lose the rest — its permit among them. Still one organization's
+  // one case.
+  const items = await queryAllWixDataItems<WixCaseDocumentItem>('caseDocuments', { organizationId, caseId });
+  return items
     .map((item) => mapWixCaseDocumentItem(item.data))
     .filter((d): d is CaseDocument => d !== null)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));

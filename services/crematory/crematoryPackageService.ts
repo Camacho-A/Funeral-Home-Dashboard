@@ -24,7 +24,11 @@ import { expectedPickupAppointmentId } from '../cremainsPickupService';
 import { expectedDateOf } from '@/domain/scheduling/cremainsPickupPresentation';
 import { getOrganization } from '../organizationProvisioningService';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
-import { ARRANGEMENT_EXTRACTS, ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY, workflowStageComplete } from '@/domain/documents/arrangementPageExtracts';
+import { ARRANGEMENT_EXTRACTS, ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY, visibleItems, workflowStageComplete } from '@/domain/documents/arrangementPageExtracts';
+import { presentedChecklistLabel } from '@/domain/organization/checklistRelabel';
+import { checklistItemsForEvent } from '@/domain/sla/slaMilestones';
+import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
+import { previousSendMethodLabel, validatePreviousSend, type PreviousSendInput } from '@/domain/crematory/previousSend';
 import {
   crematoryPackageFileName,
   legacyCrematoryPackageFileName,
@@ -266,6 +270,35 @@ function packageIsCurrent(facts: Facts): boolean {
   );
 }
 
+/** Workflow 2 as the case shows it (2026-10): the stage, whether this is a
+    Medical Examiner case, and the steps not yet checked — the ME
+    verification steps on an ME case, never the doctor steps it replaces. */
+function workflow2Of(case_: Case): { displayStage: number; medicalExaminer: boolean; missing: string[] } | null {
+  const config = sendToCrematoryConfig(case_.organizationId);
+  if (!config) return null;
+  const stage = config.authorizationWorkflowStage;
+  const items = visibleItems(case_, stage);
+  if (items.length === 0) return null;
+  return {
+    displayStage: stage,
+    medicalExaminer: case_.isMedicalExaminerCase === true,
+    missing: items.filter((item) => case_.checklistState?.[checklistItemKey(stage, item.index)] !== true).map((item) => presentedChecklistLabel(case_.organizationId, stage, item)),
+  };
+}
+
+/** Workflow 3's "Permit sent to crematory" is checked (2026-10). A checked
+    step is staff's own note — it never proves an email went out. */
+function permitSentChecked(case_: Case): boolean {
+  const items = checklistItemsForEvent(case_, 'permit_sent');
+  return items.length > 0 && items.every((item) => case_.checklistState?.[checklistItemKey(item.displayStage, item.index)] === true);
+}
+
+/** Whether SOLIS has a send of its own for the case (sent, or possibly sent). */
+function solisSendOnRecord(case_: Case): boolean {
+  const status = case_.crematory?.lastSubmission?.status;
+  return status === 'submitted' || status === 'uncertain' || Boolean(case_.crematory?.pendingSubmission);
+}
+
 function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
   const config = sendToCrematoryConfig(facts.case_.organizationId);
   const record = facts.case_.crematory ?? {};
@@ -274,6 +307,14 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
     isArchived: facts.case_.isDeleted === true,
     sentAt: facts.case_.crematory?.lastSubmission?.status === 'submitted' ? facts.case_.crematory.lastSubmission.at : null,
     workflow2Complete: config ? workflowStageComplete(facts.case_, config.authorizationWorkflowStage) : null,
+    workflow2Missing: workflow2Of(facts.case_)?.missing ?? [],
+    medicalExaminerCase: facts.case_.isMedicalExaminerCase === true,
+    previousSend: {
+      indicated: permitSentChecked(facts.case_) && !solisSendOnRecord(facts.case_),
+      recorded: record.previousSend
+        ? { decision: record.previousSend.decision, method: previousSendMethodLabel(record.previousSend.method), sentOn: record.previousSend.sentOn }
+        : null,
+    },
     permit: facts.permit ? { documentId: facts.permit.id, checksumSha256: facts.permit.checksumSha256, mimeType: facts.permit.mimeType } : null,
     currentPermitCount: facts.currentPermits.length,
     permitVerification: record.permitVerification ? { documentId: record.permitVerification.documentId, checksumSha256: record.permitVerification.checksumSha256 } : null,
@@ -312,6 +353,11 @@ export type CrematoryCaseSummary = {
   expectedFileName: string | null;
   lastSubmission: CaseCrematoryRecord['lastSubmission'] | null;
   untypedDocuments: UntypedCaseDocument[];
+  /** Workflow 2 as the case shows it, with the steps not yet checked (2026-10). */
+  workflow2: { displayStage: number; medicalExaminer: boolean; missing: string[] } | null;
+  /** A possible earlier send outside SOLIS (2026-10): flagged while
+      unresolved, and what staff recorded. */
+  previousSend: { indicated: boolean; recorded: CaseCrematoryRecord['previousSend'] | null };
 };
 
 async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode): Promise<CrematoryCaseSummary> {
@@ -338,6 +384,11 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     expectedFileName: expectedFileName(facts),
     lastSubmission: facts.case_.crematory?.lastSubmission ?? null,
     untypedDocuments: facts.untyped.map((d) => ({ documentId: d.id, fileName: d.fileName, createdAt: d.createdAt, suggestedAs: suggestSourceKind(d.fileName) })),
+    workflow2: workflow2Of(facts.case_),
+    previousSend: {
+      indicated: permitSentChecked(facts.case_) && !solisSendOnRecord(facts.case_) && !facts.case_.crematory?.previousSend,
+      recorded: facts.case_.crematory?.previousSend ?? null,
+    },
   };
 }
 
@@ -671,6 +722,53 @@ async function withPreparationLease<T>(organizationId: string, caseId: string, m
 export async function buildCrematoryPackageNow(ctx: ActivityContext, caseId: string, mode: DataAdapterMode, canSend = false): Promise<BuildOutcome> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   return withPreparationLease(ctx.organizationId, caseId, mode, SENT_MESSAGE, () => buildCrematoryPackage(ctx, caseId, mode, canSend));
+}
+
+/**
+ * Staff record what happened to a case Workflow 3 marks "Permit sent to
+ * crematory" while SOLIS has no send of its own (2026-10) — once, with the
+ * method and date if it was sent outside SOLIS, or an explicit
+ * confirmation that they checked and it was not, and in both cases how
+ * they verified it. Recorded in the case activity.
+ *   - sent outside SOLIS: the case is never sent through the first send;
+ *   - not previously sent: the warning is resolved and the case can be
+ *     sent as usual (every other check still applies).
+ * Refused — nothing recorded — when the case does not show a possible
+ * earlier send, SOLIS already sent it (or is sending it), or a decision is
+ * already recorded. Never changes the workflow checklist.
+ */
+export async function recordPreviousSend(ctx: ActivityContext, caseId: string, input: PreviousSendInput, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  const case_ = await loadCase(ctx.organizationId, caseId, mode);
+  refuseArchived(case_);
+  // Today in UTC — never behind the organization's own date in the Americas.
+  const now = new Date();
+  const today = `${String(now.getUTCMonth() + 1).padStart(2, '0')}/${String(now.getUTCDate()).padStart(2, '0')}/${now.getUTCFullYear()}`;
+  const valid = validatePreviousSend(input, today);
+  if ('error' in valid) throw new CrematoryError(valid.error, 422);
+  const refusal = (c: Case) => {
+    if (solisSendOnRecord(c)) throw new CrematoryError('SOLIS already has a send for this case, so there is nothing to record here.', 409);
+    if (c.crematory?.previousSend) throw new CrematoryError('What happened to the earlier send is already recorded for this case.', 409);
+    if (!permitSentChecked(c)) throw new CrematoryError('This case does not show a possible earlier send to the crematory.', 409);
+  };
+  refusal(case_);
+  const recordedAt = new Date().toISOString();
+  await applyCrematoryRecord(
+    ctx.organizationId,
+    caseId,
+    (current) => (refuseArchived(current), refusal(current), { previousSend: { ...valid, recordedBy: ctx.actorIdentityId, recordedAt } }),
+    mode,
+  );
+  const method = previousSendMethodLabel(valid.method);
+  await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PREVIOUS_SEND_RECORDED, {
+    resourceId: null,
+    description:
+      valid.decision === 'sent_outside_solis'
+        ? `Recorded as already sent to the crematory outside SOLIS (${[method, valid.sentOn ?? 'date unknown'].join(', ')}) — not sent again through the first send. Verified: ${valid.verification}`
+        : `Recorded as NOT previously sent to the crematory, after checking the sending records. Checked: ${valid.verification}`,
+    record: { decision: valid.decision, method: valid.method, sentOn: valid.sentOn, verification: valid.verification, verifiedBy: ctx.actorIdentityId, verifiedAt: recordedAt },
+  }, mode);
+  return getCrematoryCaseSummary(ctx.organizationId, caseId, canSend, mode);
 }
 
 // ---------------------------------------------------------------------------

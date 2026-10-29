@@ -80,7 +80,9 @@ export function useUploadCaseDocument(organizationId: string, caseId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: { file: File; documentTypeKey?: string; category?: string }) => uploadCaseDocument({ organizationId, caseId, ...params }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+    // The Crematory Package status reads the same documents (2026-10).
+    onSuccess: () =>
+      Promise.all([queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }), queryClient.invalidateQueries({ queryKey: ['crematory', organizationId] })]),
   });
 }
 
@@ -89,7 +91,8 @@ export function useArchiveCaseDocument(organizationId: string, caseId: string) {
   return useMutation({
     mutationFn: (params: { documentId: string; removal?: { reason: string; note: string | null } | null }) =>
       archiveCaseDocument({ organizationId, caseId, ...params }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
+    onSuccess: () =>
+      Promise.all([queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }), queryClient.invalidateQueries({ queryKey: ['crematory', organizationId] })]),
   });
 }
 

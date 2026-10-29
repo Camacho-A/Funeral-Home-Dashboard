@@ -123,6 +123,21 @@ export function getDocumentTypeDefinition(key: string): DocumentTypeDefinition |
   return DOCUMENT_TYPES_BY_KEY[key] ?? null;
 }
 
+/** Send to Crematory builds these itself (page 3 of the Arrangement Form,
+    and the package) — never uploaded as such (2026-10). */
+export const SOLIS_BUILT_DOCUMENT_TYPE_KEYS: ReadonlySet<string> = new Set([DOCUMENT_TYPES.EXTERNAL_FORM_CREMATORY_FORM.key, DOCUMENT_TYPES.CREMATION_FORM_CREMATORY_PACKAGE.key]);
+
+/** The types staff can choose for an upload on the Documents tab (2026-10):
+    the canonical types above — never a second list — less those SOLIS
+    builds itself; the two Send to Crematory sources first. */
+export const UPLOADABLE_DOCUMENT_TYPES: readonly DocumentTypeDefinition[] = (() => {
+  const first: string[] = [DOCUMENT_TYPES.CREMATION_FORM_STATE_PERMIT.key, DOCUMENT_TYPES.EXTERNAL_FORM_ARRANGEMENT_FORMS.key];
+  const rest = Object.values(DOCUMENT_TYPES)
+    .filter((t) => !first.includes(t.key) && !SOLIS_BUILT_DOCUMENT_TYPE_KEYS.has(t.key))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return [...first.map((key) => DOCUMENT_TYPES_BY_KEY[key]), ...rest];
+})();
+
 /** Display labels for the ten broad `DocumentTemplateCategory` values —
     a domain decision, kept out of UI components per `Badge`'s own
     convention (see `domain/activity/activityDisplay.ts` for the same

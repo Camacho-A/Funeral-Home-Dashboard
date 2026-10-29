@@ -9,7 +9,7 @@ const { fetchCrematoryCaseSummary } = vi.hoisted(() => ({ fetchCrematoryCaseSumm
 vi.mock('@/lib/crematoryClient', async () => ({ ...(await vi.importActual<object>('@/lib/crematoryClient')), fetchCrematoryCaseSummary }));
 const { uploadCaseDocument } = vi.hoisted(() => ({ uploadCaseDocument: vi.fn() }));
 vi.mock('@/lib/caseDocumentsClient', async () => ({ ...(await vi.importActual<object>('@/lib/caseDocumentsClient')), uploadCaseDocument }));
-const { CrematoryPackageStatus } = await import('./CrematoryPackageStatus');
+const { CrematoryPackageStatus, preparationDue } = await import('./CrematoryPackageStatus');
 
 const req = (key: string, ok: boolean, detail: string | null = null) => ({ key: key as CrematoryRequirementKey, label: key, ok, detail });
 const OK = ['cremation', 'permit_uploaded', 'permit_verified', 'crematory_form', 'workflow_2', 'package_name', 'ready_date', 'not_sent', 'package', 'permission'].map((k) => req(k, true));
@@ -20,7 +20,8 @@ const summary = (over: Partial<CrematoryCaseSummary> = {}): CrematoryCaseSummary
     readiness: { requirements: OK, readyToBuild: true, readyToSend: true },
     permit: null, readyDate: { suggested: '11/06/2026', confirmed: '11/06/2026' },
     package: { documentId: 'pkg', version: 2, fileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', current: true },
-    expectedFileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', lastSubmission: null, untypedDocuments: [], ...over,
+    expectedFileName: 'REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026.pdf', lastSubmission: null, untypedDocuments: [],
+    workflow2: { displayStage: 2, medicalExaminer: false, missing: [] }, previousSend: { indicated: false, recorded: null }, ...over,
   }) as CrematoryCaseSummary;
 const show = () =>
   render(
@@ -90,6 +91,22 @@ describe('CrematoryPackageStatus', () => {
         unmount();
       }
     });
+  });
+
+  it('a possible earlier send outside SOLIS is flagged here too (2026-10)', async () => {
+    fetchCrematoryCaseSummary.mockResolvedValue(summary({ previousSend: { indicated: true, recorded: null } }));
+    show();
+    expect(await screen.findByRole('alert')).toHaveTextContent('may already have been sent to the crematory outside SOLIS');
+  });
+
+  it('checks again while SOLIS is due to prepare something — page 3 from an Arrangement Form on the case, or the package — and not once it is current or sent (2026-10)', () => {
+    expect(preparationDue(summary())).toBe(false);
+    expect(preparationDue(summary({ package: { documentId: 'pkg', version: 1, fileName: 'x.pdf', current: false } }))).toBe(true);
+    const page3 = (detail: string) => summary({ readiness: { requirements: [...OK.filter((r) => r.key !== 'crematory_form'), req('crematory_form', false, detail)], readyToBuild: false, readyToSend: false } });
+    expect(preparationDue(page3('Extract the Crematory Form (page 3) from the Arrangement Form.'))).toBe(true);
+    expect(preparationDue(page3('The completed Arrangement Form has not been received yet.'))).toBe(false);
+    const sent = { submissionId: 's', status: 'submitted' as const, packageDocumentId: 'pkg', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null };
+    expect(preparationDue(summary({ package: { documentId: 'pkg', version: 1, fileName: 'x.pdf', current: false }, lastSubmission: sent }))).toBe(false);
   });
 
   it('not a cremation case: nothing shown', async () => {

@@ -16,6 +16,8 @@ vi.mock('@/lib/caseDocumentsClient', async () => {
   return { ...actual, uploadCaseDocument: vi.fn(), extractArrangementPage: vi.fn() };
 });
 
+const { router } = vi.hoisted(() => ({ router: { push: vi.fn(), replace: vi.fn() } }));
+vi.mock('next/navigation', () => ({ useRouter: () => router }));
 const { SendToCrematoryDialog } = await import('./SendToCrematoryDialog');
 const { CrematoryRequestError } = await import('@/lib/crematoryClient');
 
@@ -37,6 +39,8 @@ function readyCase(caseId: string, name: string, number: string, date = '11/06/2
     expectedFileName: null,
     lastSubmission: null,
     untypedDocuments: [],
+    workflow2: { displayStage: 2, medicalExaminer: false, missing: [] },
+    previousSend: { indicated: false, recorded: null },
   };
 }
 
@@ -64,10 +68,11 @@ const overview = (candidates: CrematoryCaseSummary[], over: Partial<CrematoryOve
 afterEach(() => vi.clearAllMocks());
 // The server's final review (2026-10): only its fingerprint is used by this window.
 beforeEach(() => client.reviewCrematorySend.mockResolvedValue({ fingerprint: 'v1:reviewed', cases: [], to: [], cc: [], subject: '', message: '', mailbox: null }));
-const open = (props: { caseId?: string; preselectedCaseIds?: string[] } = {}) =>
+const onClose = vi.fn();
+const open = (props: { caseId?: string; preselectedCaseIds?: string[]; onResolveWorkflow?: (caseId: string, stage: number) => void } = {}) =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <SendToCrematoryDialog open onClose={() => {}} organizationId="managed-cremations" {...props} />
+      <SendToCrematoryDialog open onClose={onClose} organizationId="managed-cremations" {...props} />
     </QueryClientProvider>,
   );
 
@@ -277,6 +282,144 @@ describe('SendToCrematoryDialog', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Replace permit' }).at(-1)!);
     await waitFor(() => expect(caseDocs.uploadCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ caseId: '1042', documentTypeKey: 'cremation_form.state_permit', replacesDocumentId: 'permit-1042' })));
     await waitFor(() => expect(client.fetchCrematoryOverview.mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it('an untyped PDF that looks like the permit is shown in the permit step to open and check; "Use as permit" picks it in the chooser — staff still choose it there (2026-10)', async () => {
+    const untypedPermit: CrematoryCaseSummary = {
+      ...readyCase('1050', 'Walter Gollis', 'B2026-903'),
+      readiness: { requirements: [...ALL_OK.filter((r) => r.key !== 'permit_uploaded' && r.key !== 'permit_verified' && r.key !== 'package'), requirement('permit_uploaded', false, 'Upload the approved state cremation permit.'), requirement('permit_verified', false, 'Upload the permit first.'), requirement('package', false)] as never, readyToBuild: false, readyToSend: false },
+      permit: null,
+      package: null,
+      untypedDocuments: [
+        { documentId: 'doc-payment', fileName: 'GOLLIS PAYMENT.pdf', createdAt: '2026-10-13T19:00:00.000Z', suggestedAs: null },
+        { documentId: 'doc-permit', fileName: 'GOLLIS PERMIT.pdf', createdAt: '2026-10-14T16:36:00.000Z', suggestedAs: 'state_permit' },
+      ],
+    };
+    client.fetchCrematoryOverview.mockResolvedValue(overview([untypedPermit]));
+    client.crematoryCaseAction.mockResolvedValue({});
+    open({ caseId: '1050' });
+    const line = (await screen.findByText('GOLLIS PERMIT.pdf', { selector: 'strong' })).parentElement!;
+    expect(line).toHaveTextContent('GOLLIS PERMIT.pdf may be the permit');
+    expect(within(line).getByRole('link', { name: 'Open' })).toHaveAttribute('href', expect.stringContaining('doc-permit'));
+    expect(screen.queryByText(/GOLLIS PAYMENT\.pdf may be/)).toBeNull();
+    // Nothing is classified until staff choose it.
+    expect(client.crematoryCaseAction).not.toHaveBeenCalledWith('managed-cremations', '1050', expect.objectContaining({ action: 'assign_document' }));
+    fireEvent.click(within(line).getByRole('button', { name: 'Use as permit' }));
+    expect(screen.getByRole('radio', { name: /GOLLIS PERMIT\.pdf/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /Use as the State Cremation Permit/ }));
+    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'assign_document', documentId: 'doc-permit', as: 'state_permit' }));
+  });
+
+  describe('Workflow 2 (2026-10)', () => {
+    const meCase: CrematoryCaseSummary = {
+      ...readyCase('1042', 'Louis Fictional', 'B2026-901'),
+      readiness: {
+        requirements: [...ALL_OK.filter((r) => r.key !== 'workflow_2'), requirement('workflow_2', false, 'Medical Examiner case — not yet checked on the case: Medical Examiner EDRS entry verified · Required ME information confirmed.')] as never,
+        readyToBuild: true,
+        readyToSend: false,
+      },
+      workflow2: { displayStage: 2, medicalExaminer: true, missing: ['Medical Examiner EDRS entry verified', 'Required ME information confirmed'] },
+    };
+
+    it('lists the exact steps still unchecked, in Medical Examiner wording, and the package is still prepared', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([meCase]));
+      open({ preselectedCaseIds: ['1042'] });
+      expect(await screen.findByText(/Medical Examiner case — to check: Medical Examiner EDRS entry verified · Required ME information confirmed/)).toBeInTheDocument();
+      expect(screen.queryByText(/sent to doctor/i)).toBeNull();
+      expect(screen.queryByText(/Finish it on the/)).toBeNull();
+      expect(screen.getByRole('checkbox', { name: 'Select Louis Fictional' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
+    });
+
+    it('Resolve Workflow 2 from All Cases closes this window and opens the case on its Workflow 2 step', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([meCase]));
+      open({ preselectedCaseIds: ['1042'] });
+      fireEvent.click(await screen.findByRole('button', { name: 'Resolve Workflow 2' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(router.push).toHaveBeenCalledWith('/cases/1042?workflowStage=2');
+      expect(client.crematoryCaseAction).not.toHaveBeenCalled();
+    });
+
+    it("Resolve Workflow 2 on the case's own page hands over to the page (no navigation to the same address)", async () => {
+      const onResolveWorkflow = vi.fn();
+      client.fetchCrematoryOverview.mockResolvedValue(overview([meCase]));
+      open({ caseId: '1042', onResolveWorkflow });
+      fireEvent.click(await screen.findByRole('button', { name: 'Resolve Workflow 2' }));
+      expect(onResolveWorkflow).toHaveBeenCalledWith('1042', 2);
+      expect(router.push).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a possible earlier send outside SOLIS (2026-10)', () => {
+    const WARNING = 'This case indicates that documents may already have been sent to the crematory outside SOLIS. Verify the previous send before continuing.';
+    const flagged: CrematoryCaseSummary = {
+      ...readyCase('1042', 'Richard Reynolds', 'B2026-901'),
+      readiness: { requirements: [...ALL_OK, requirement('not_sent', true), requirement('previous_send', false, WARNING)] as never, readyToBuild: true, readyToSend: false },
+      previousSend: { indicated: true, recorded: null },
+    };
+
+    it('warns, cannot be selected, and is resolved only by recording what the sending records show', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([flagged]));
+      client.crematoryCaseAction.mockResolvedValue({});
+      open({ preselectedCaseIds: ['1042'] });
+      expect(await screen.findByRole('alert')).toHaveTextContent(WARNING);
+      expect(screen.getByText('Verify previous send', { selector: '.sx-status' })).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeDisabled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify previous send' }));
+      const record = screen.getByRole('button', { name: 'Record' });
+      expect(record).toBeDisabled();
+      fireEvent.click(screen.getByLabelText(/They were not previously sent/));
+      fireEvent.change(screen.getByLabelText('Which sending records you checked'), { target: { value: 'Outlook Sent Items and the fax log, 10/01–10/29' } });
+      // A note alone is not enough: the explicit confirmation is required.
+      expect(record).toBeDisabled();
+      fireEvent.click(screen.getByLabelText(/I checked the available sending records/));
+      expect(record).toBeEnabled();
+      fireEvent.click(record);
+      await waitFor(() =>
+        expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1042', {
+          action: 'record_previous_send',
+          decision: 'not_previously_sent',
+          verification: 'Outlook Sent Items and the fax log, 10/01–10/29',
+          confirmedChecked: true,
+        }),
+      );
+    });
+
+    it('sent outside SOLIS: the method and how it was verified are required; the date is optional', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([flagged]));
+      client.crematoryCaseAction.mockResolvedValue({});
+      open({ preselectedCaseIds: ['1042'] });
+      fireEvent.click(await screen.findByRole('button', { name: 'Verify previous send' }));
+      fireEvent.click(screen.getByLabelText(/They were already sent outside SOLIS/));
+      fireEvent.change(screen.getByLabelText('How you verified the earlier send'), { target: { value: 'Found in Outlook Sent Items, 10/21' } });
+      expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled();
+      fireEvent.change(screen.getByLabelText('How they were sent'), { target: { value: 'email' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+      await waitFor(() =>
+        expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1042', { action: 'record_previous_send', decision: 'sent_outside_solis', method: 'email', sentOn: undefined, verification: 'Found in Outlook Sent Items, 10/21' }),
+      );
+    });
+
+    it('staff without the send permission see the warning but cannot resolve it; a case recorded as sent outside SOLIS is not sent again', async () => {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([flagged], { canSend: false }));
+      const { unmount } = open({ preselectedCaseIds: ['1042'] });
+      expect(await screen.findByText(/must verify it/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Verify previous send' })).toBeNull();
+      unmount();
+
+      const outside: CrematoryCaseSummary = {
+        ...flagged,
+        readiness: { ...flagged.readiness, requirements: [...ALL_OK, requirement('previous_send', false, 'Recorded as already sent to the crematory outside SOLIS (Email, 10/21/2026). It is not sent again through the first send.')] as never },
+        previousSend: { indicated: false, recorded: { decision: 'sent_outside_solis', method: 'email', sentOn: '10/21/2026', verification: 'Found in Sent Items', recordedBy: 'staff', recordedAt: '2026-10-29T15:00:00.000Z' } },
+      };
+      client.fetchCrematoryOverview.mockResolvedValue(overview([outside]));
+      open({ preselectedCaseIds: ['1042'] });
+      expect(await screen.findByText('Sent outside SOLIS')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('It is not sent again through the first send.');
+      expect(screen.queryByRole('button', { name: 'Verify previous send' })).toBeNull();
+      expect(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeDisabled();
+    });
   });
 
   it('a case already sent shows "Sent" on one line and can never be selected again', async () => {

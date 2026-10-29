@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchCrematoryCaseSummary, type CrematoryCaseSummary } from '@/lib/crematoryClient';
 import { ReplacePermitButton } from '@/components/crematory/ReplacePermitButton';
@@ -25,9 +26,20 @@ const ROWS: Array<{ key: string; label: string }> = [
   { key: 'ready_date', label: 'Expected ready date confirmed' },
 ];
 
+/** Whether SOLIS is expected to prepare something for this case now: page 3
+    from an Arrangement Form already on it, or the package from sources in
+    place — never for a case sent or being sent. */
+export function preparationDue(s: CrematoryCaseSummary): boolean {
+  if (!s.readiness?.requirements || s.lastSubmission?.status === 'submitted' || s.lastSubmission?.status === 'uncertain') return false;
+  const form = s.readiness.requirements.find((r) => r.key === 'crematory_form');
+  const page3Due = form !== undefined && !form.ok && !/not been received/i.test(form.detail ?? '');
+  return page3Due || (s.readiness.readyToBuild && s.package?.current !== true);
+}
+
 export function packageHeadline(s: CrematoryCaseSummary): { text: string; tone: 'ok' | 'warn' | 'neutral' } {
   if (s.lastSubmission?.status === 'submitted') return { text: `Sent to the crematory ${formatTimestamp(s.lastSubmission.at)}`, tone: 'ok' };
   if (s.lastSubmission?.status === 'uncertain') return { text: 'Send outcome unclear — check Sent Items in Send to Crematory', tone: 'warn' };
+  if (s.previousSend?.recorded?.decision === 'sent_outside_solis') return { text: 'Recorded as sent outside SOLIS', tone: 'neutral' };
   if (s.package?.current) return { text: 'Ready', tone: 'ok' };
   if (s.readiness.readyToBuild) return { text: 'Being prepared', tone: 'neutral' };
   return { text: s.package ? 'Outdated — needs attention' : 'Needs attention', tone: 'warn' };
@@ -35,7 +47,24 @@ export function packageHeadline(s: CrematoryCaseSummary): { text: string; tone: 
 
 export function CrematoryPackageStatus({ organizationId, caseId }: { organizationId: string; caseId: string }) {
   const queryClient = useQueryClient();
-  const summary = useQuery({ queryKey: ['crematory', organizationId, 'case', caseId], queryFn: () => fetchCrematoryCaseSummary(organizationId, caseId), staleTime: 0 });
+  // SOLIS prepares page 3 and the package after an upload or a change
+  // (2026-10): while that is due, check again every few seconds — for up
+  // to two minutes — so the panel updates without reopening the case.
+  const pollingSince = useRef<number | null>(null);
+  const summary = useQuery({
+    queryKey: ['crematory', organizationId, 'case', caseId],
+    queryFn: () => fetchCrematoryCaseSummary(organizationId, caseId),
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const due = query.state.data ? preparationDue(query.state.data) : false;
+      if (!due) {
+        pollingSince.current = null;
+        return false;
+      }
+      pollingSince.current ??= Date.now();
+      return Date.now() - pollingSince.current < 120_000 ? 3_000 : false;
+    },
+  });
   const s = summary.data;
   if (!s?.readiness?.requirements) return null;
   if (!s.readiness.requirements.find((r) => r.key === 'cremation')?.ok) return null;
@@ -57,6 +86,11 @@ export function CrematoryPackageStatus({ organizationId, caseId }: { organizatio
         <p className={styles.file}>
           {s.package.fileName}
           {s.package.version !== null ? ` · v${s.package.version}` : ''}
+        </p>
+      )}
+      {s.previousSend?.indicated && (
+        <p className={styles.detail} role="alert">
+          This case indicates that documents may already have been sent to the crematory outside SOLIS. Verify the previous send in Send to Crematory before continuing.
         </p>
       )}
       <ul className={styles.list}>

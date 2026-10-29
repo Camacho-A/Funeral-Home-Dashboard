@@ -11,6 +11,7 @@ import {
   confirmReadyDate,
   getCrematoryCaseSummary,
   prepareCrematoryDocuments,
+  recordPreviousSend,
 } from '@/services/crematory/crematoryPackageService';
 
 export const maxDuration = 60;
@@ -28,6 +29,9 @@ export const maxDuration = 60;
  *          → an untyped PDF already on the case, chosen by staff (2026-10)
  *        { organizationId, action: 'choose_current_permit', documentId }
  *          → where two permits are current, the one to keep (2026-10)
+ *        { organizationId, action: 'record_previous_send', decision, method?, sentOn?, verification, confirmedChecked? }
+ *          → a possible earlier send outside SOLIS, resolved by staff who
+ *            may send (2026-10)
  * Nothing here sends anything.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
@@ -81,6 +85,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       case 'choose_current_permit':
         if (typeof body.documentId !== 'string') return NextResponse.json({ error: 'documentId is required.' }, { status: 400 });
         return NextResponse.json(await chooseCurrentPermit(ctx, caseId, body.documentId, auth.mode, auth.canSend));
+      case 'record_previous_send':
+        // Deciding whether the crematory already has the documents is part of sending.
+        if (!auth.canSend) return NextResponse.json({ error: 'You are not authorized to send documents to the crematory (ask an administrator for the Send Crematory Packages permission).' }, { status: 403 });
+        return NextResponse.json(
+          await recordPreviousSend(ctx, caseId, { decision: body.decision, method: body.method, sentOn: body.sentOn, verification: body.verification, confirmedChecked: body.confirmedChecked }, auth.mode, auth.canSend),
+        );
       default:
         return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
     }

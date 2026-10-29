@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '@/components/ui/Modal';
@@ -26,6 +27,7 @@ import { parseRecipientList } from '@/domain/crematory/crematorySettings';
 import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { ReplacePermitButton } from './ReplacePermitButton';
+import { PreviousSendDialog } from './PreviousSendDialog';
 import styles from './SendToCrematoryDialog.module.css';
 
 /**
@@ -54,6 +56,7 @@ export function SendToCrematoryDialog({
   organizationId,
   caseId,
   preselectedCaseIds,
+  onResolveWorkflow,
 }: {
   open: boolean;
   onClose: () => void;
@@ -62,9 +65,25 @@ export function SendToCrematoryDialog({
   caseId?: string;
   /** Cases already ticked on the Cases page — selected if they are ready. */
   preselectedCaseIds?: string[];
+  /** Resolve Workflow 2 (2026-10) on the case page itself: it closes this
+      window and opens the stage. Elsewhere the case page is opened on it. */
+  onResolveWorkflow?: (caseId: string, displayStage: number) => void;
 }) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const queryKey = ['crematory', organizationId, caseId ?? 'all'];
+  const [previousSendFor, setPreviousSendFor] = useState<CrematoryCaseSummary | null>(null);
+
+  /** Closes this window and opens the case on its Workflow 2 step; nothing on the case changes. */
+  function resolveWorkflow(c: CrematoryCaseSummary) {
+    const stage = c.workflow2?.displayStage ?? 2;
+    if (onResolveWorkflow) {
+      onResolveWorkflow(c.caseId, stage);
+      return;
+    }
+    onClose();
+    router.push(`/cases/${encodeURIComponent(c.caseId)}?workflowStage=${stage}`);
+  }
   const overview = useQuery({ queryKey, queryFn: () => fetchCrematoryOverview(organizationId, caseId), enabled: open });
   const [selected, setSelected] = useState<string[]>(caseId ? [caseId] : (preselectedCaseIds ?? []));
   const [step, setStep] = useState<Step>('prepare');
@@ -117,7 +136,7 @@ export function SendToCrematoryDialog({
   /** Cases being prepared right now — their checklist is not final until done. */
   const [preparingIds, setPreparingIds] = useState<string[]>([]);
   const [prepareErrors, setPrepareErrors] = useState<Record<string, string>>({});
-  const [chooser, setChooser] = useState<{ summary: CrematoryCaseSummary; kind: CrematorySourceKind } | null>(null);
+  const [chooser, setChooser] = useState<{ summary: CrematoryCaseSummary; kind: CrematorySourceKind; documentId?: string } | null>(null);
   useEffect(() => {
     if (!open) preparedOnce.current = new Set();
   }, [open]);
@@ -272,6 +291,7 @@ export function SendToCrematoryDialog({
                 organizationId={organizationId}
                 summary={chooser.summary}
                 kind={chooser.kind}
+                initialDocumentId={chooser.documentId}
                 onClose={() => setChooser(null)}
                 onChoose={(documentId) => {
                   const { summary, kind } = chooser;
@@ -315,8 +335,11 @@ export function SendToCrematoryDialog({
                   preparing={preparingIds.includes(c.caseId)}
                   prepareError={prepareErrors[c.caseId] ?? null}
                   onRetryPrepare={() => void prepareCase(c.caseId)}
-                  onChooseDocument={(kind) => setChooser({ summary: c, kind })}
+                  onChooseDocument={(kind, documentId) => setChooser({ summary: c, kind, documentId })}
                   onPermitReplaced={() => void Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) })])}
+                  canSend={overview.data!.canSend}
+                  onResolveWorkflow={() => resolveWorkflow(c)}
+                  onVerifyPreviousSend={() => setPreviousSendFor(c)}
                   onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
                   onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
                 />
@@ -414,6 +437,18 @@ export function SendToCrematoryDialog({
         )}
       </div>
 
+      {previousSendFor && (
+        <PreviousSendDialog
+          organizationId={organizationId}
+          summary={previousSendFor}
+          onClose={() => setPreviousSendFor(null)}
+          onRecorded={() => {
+            setPreviousSendFor(null);
+            void refresh();
+          }}
+        />
+      )}
+
       {permitPrompt && permitPrompt.permit && (
         <Modal open onClose={() => setPermitPrompt(null)} title="Confirm the state permit">
           <div className="sx-modal-header">
@@ -498,6 +533,9 @@ function CaseRow({
   onRetryPrepare,
   onChooseDocument,
   onPermitReplaced,
+  canSend,
+  onResolveWorkflow,
+  onVerifyPreviousSend,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -520,8 +558,12 @@ function CaseRow({
   preparing: boolean;
   prepareError: string | null;
   onRetryPrepare: () => void;
-  onChooseDocument: (kind: CrematorySourceKind) => void;
+  /** Opens the chooser — with `documentId` already picked for an inline suggestion. */
+  onChooseDocument: (kind: CrematorySourceKind, documentId?: string) => void;
   onPermitReplaced: () => void;
+  canSend: boolean;
+  onResolveWorkflow: () => void;
+  onVerifyPreviousSend: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
@@ -550,14 +592,19 @@ function CaseRow({
     package: !summary.readiness.readyToBuild,
   };
 
+  const previousSend = req('previous_send');
   const status = sent ? (
     <span className="sx-status sx-status-ok">Sent</span>
+  ) : summary.previousSend?.recorded?.decision === 'sent_outside_solis' ? (
+    <span className="sx-status sx-status-warn">Sent outside SOLIS</span>
   ) : preparing ? (
     <span className="sx-status" role="status">
       Preparing…
     </span>
   ) : ready ? (
     <span className="sx-status sx-status-ok">Ready</span>
+  ) : previousSend && !previousSend.ok ? (
+    <span className="sx-status sx-status-warn">Verify previous send</span>
   ) : (
     <span className="sx-status sx-status-warn">{done} of {STEPS.length} done</span>
   );
@@ -591,16 +638,55 @@ function CaseRow({
     }
     // Not final while SOLIS is preparing this case (2026-10).
     if (preparing && (key === 'crematory_form' || key === 'package')) return <span className={styles.hint}>Preparing…</span>;
+    // Resolve Workflow 2 (2026-10): the exact steps still unchecked — the
+    // ME verification steps on an ME case — and the way to them. Staff
+    // check them on the case themselves; nothing is checked from here.
+    if (key === 'workflow_2' && summary.workflow2) {
+      return (
+        <span className={styles.inputs}>
+          {summary.workflow2.missing.length > 0 && (
+            <span className={styles.hint}>
+              {summary.workflow2.medicalExaminer ? 'Medical Examiner case — to check: ' : 'To check: '}
+              {summary.workflow2.missing.join(' · ')}
+            </span>
+          )}
+          <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={onResolveWorkflow}>
+            Resolve Workflow 2
+          </button>
+        </span>
+      );
+    }
     const chooseFromCase = (kind: CrematorySourceKind) =>
       canPrepare && summary.untypedDocuments.length > 0 ? (
         <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={() => onChooseDocument(kind)}>
           Choose from this case&rsquo;s documents
         </button>
       ) : null;
+    // An untyped PDF on the case whose name suggests it (2026-10): shown
+    // first, to open and check. "Use as …" opens the chooser with it
+    // picked — staff still choose it there; a name never classifies it.
+    const suggestions = (kind: CrematorySourceKind) =>
+      canPrepare
+        ? summary.untypedDocuments
+            .filter((d) => d.suggestedAs === kind)
+            .map((d) => (
+              <span key={d.documentId} className={styles.hint}>
+                <strong>{d.fileName}</strong> may be the {kind === 'state_permit' ? 'permit' : 'Arrangement Form'} ·{' '}
+                <a href={buildCaseDocumentViewUrl(organizationId, summary.caseId, d.documentId)} target="_blank" rel="noreferrer">
+                  Open
+                </a>{' '}
+                ·{' '}
+                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy} onClick={() => onChooseDocument(kind, d.documentId)}>
+                  {kind === 'state_permit' ? 'Use as permit' : 'Use as Arrangement Form'}
+                </button>
+              </span>
+            ))
+        : null;
     // The Arrangement Form not having arrived is the real blocker — say so.
     if (key === 'crematory_form' && /not been received/i.test(r?.detail ?? '')) {
       return (
         <>
+          {suggestions('arrangement_forms')}
           <span className={styles.hint}>Waiting for the Arrangement Form</span>
           {chooseFromCase('arrangement_forms')}
         </>
@@ -612,6 +698,7 @@ function CaseRow({
       case 'permit_uploaded':
         return (
           <>
+            {suggestions('state_permit')}
             <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={() => fileInput.current?.click()}>
               Upload PDF
             </button>
@@ -642,11 +729,7 @@ function CaseRow({
           </button>
         );
       case 'workflow_2':
-        return (
-          <span className={styles.hint}>
-            Finish it on the <Link href={`/cases/${summary.caseId}`}>case</Link>
-          </span>
-        );
+        return <span className={styles.hint}>{r?.detail}</span>;
       case 'package_name':
         return (
           <span className={styles.inputs}>
@@ -695,6 +778,20 @@ function CaseRow({
         </label>
         {status}
       </div>
+
+      {!sent && previousSend && !previousSend.ok && (
+        <div className={`sx-form-banner ${summary.previousSend?.recorded ? 'sx-form-banner-info' : 'sx-form-banner-error'}`} role={summary.previousSend?.recorded ? 'status' : 'alert'}>
+          {previousSend.detail}{' '}
+          {!summary.previousSend?.recorded &&
+            (canSend ? (
+              <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={onVerifyPreviousSend}>
+                Verify previous send
+              </button>
+            ) : (
+              <span className={styles.hint}>Staff with the Send Crematory Packages permission must verify it.</span>
+            ))}
+        </div>
+      )}
 
       {sent && last ? (
         <p className={styles.hint}>
@@ -767,16 +864,18 @@ function ChooseDocumentDialog({
   organizationId,
   summary,
   kind,
+  initialDocumentId,
   onClose,
   onChoose,
 }: {
   organizationId: string;
   summary: CrematoryCaseSummary;
   kind: CrematorySourceKind;
+  initialDocumentId?: string;
   onClose: () => void;
   onChoose: (documentId: string) => void;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(initialDocumentId ?? null);
   const label = SOURCE_LABEL[kind];
   const documents = [...summary.untypedDocuments].sort((a, b) => Number(b.suggestedAs === kind) - Number(a.suggestedAs === kind));
   return (

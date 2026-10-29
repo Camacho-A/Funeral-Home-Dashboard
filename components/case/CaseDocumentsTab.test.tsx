@@ -30,6 +30,7 @@ vi.mock('@/lib/caseDocumentsClient', async () => {
     generateOfficialCaseDocument: vi.fn(),
     fetchArrangementExtracts: vi.fn().mockResolvedValue({ source: null, isMedicalExaminerCase: false, permit: { confirmed: false, basis: null }, latest: { me_form: null, crematory_form: null } }),
     extractArrangementPage: vi.fn(),
+    uploadCaseDocument: vi.fn(),
   };
 });
 
@@ -1343,5 +1344,52 @@ describe('CaseDocumentsTab — Release Form and Crematory Form (2026-10)', () =>
     renderTab();
     await screen.findAllByText(/documents/i);
     expect(screen.queryByRole('button', { name: /Extract/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('Upload File — choosing the document type (Send to Crematory, 2026-10)', () => {
+  const chooseFile = (container: HTMLElement, name = 'GOLLIS PERMIT.pdf') =>
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File([new Uint8Array([1])], name, { type: 'application/pdf' })] } });
+
+  it('offers the canonical document types — State Cremation Permit and Arrangement Forms first, never the documents SOLIS builds itself — and uploads with the chosen type', async () => {
+    mockPermissions(['document.upload']);
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.uploadCaseDocument).mockResolvedValue(makeDocument({ id: 'permit-new', origin: 'uploaded', documentTypeKey: 'cremation_form.state_permit' }));
+    const { container } = renderTab();
+    const select = await screen.findByLabelText('Document type for the upload');
+    const options = within(select).getAllByRole('option').map((o) => [o.getAttribute('value'), o.textContent]);
+    expect(options.slice(0, 3)).toEqual([['', 'No document type'], ['cremation_form.state_permit', 'State Cremation Permit'], ['external_form.arrangement_forms', 'Arrangement Forms']]);
+    expect(options.map(([, label]) => label)).not.toContain('Crematory Package');
+    expect(options.map(([, label]) => label)).not.toContain('Crematory Form');
+    expect(new Set(options.map(([value]) => value)).size).toBe(options.length);
+
+    fireEvent.change(select, { target: { value: 'cremation_form.state_permit' } });
+    chooseFile(container);
+    await waitFor(() => expect(caseDocumentsClient.uploadCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ caseId: 'case-1', documentTypeKey: 'cremation_form.state_permit' })));
+  });
+
+  it("shows the server's refusal — e.g. a duplicate of a file already on the case — instead of failing silently", async () => {
+    mockPermissions(['document.upload']);
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.uploadCaseDocument).mockRejectedValue(new Error('This file is already on this case as "GOLLIS PERMIT.pdf". Choose it from this case\'s documents instead. Nothing was uploaded.'));
+    const { container } = renderTab();
+    fireEvent.change(await screen.findByLabelText('Document type for the upload'), { target: { value: 'cremation_form.state_permit' } });
+    chooseFile(container);
+    expect(await screen.findByText(/Nothing was uploaded/)).toBeInTheDocument();
+  });
+
+  it('organizations without Send to Crematory are unchanged: no type choice, uploaded without a type', async () => {
+    const OTHER = SECOND_MOCK_ORGANIZATION_ID;
+    mockPermissions(['document.upload']);
+    mockOrganization({ id: OTHER });
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.uploadCaseDocument).mockResolvedValue(makeDocument({ origin: 'uploaded', documentTypeKey: null }));
+    const { container } = renderTab(OTHER);
+    await screen.findByRole('button', { name: 'Upload File' });
+    expect(screen.queryByLabelText('Document type for the upload')).toBeNull();
+    chooseFile(container, 'scan.pdf');
+    await waitFor(() => expect(caseDocumentsClient.uploadCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ documentTypeKey: undefined })));
   });
 });

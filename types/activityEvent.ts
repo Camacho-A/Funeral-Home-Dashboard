@@ -237,6 +237,10 @@ export const ACTIVITY_EVENT_TYPES = {
       submitted / failed events). Recorded before anything is sent; no
       acknowledgment, no send. It is never a send status by itself. */
   CREMATORY_SEND_CONFIRMED: 'crematory.send_confirmed',
+  /** Staff recorded whether a case Workflow 3 marks as sent had in fact
+      been sent to the crematory outside SOLIS (2026-10): the decision,
+      method, date if known, and how they verified it. */
+  CREMATORY_PREVIOUS_SEND_RECORDED: 'crematory.previous_send_recorded',
   /** Case SSN (2026-10). Captured from an intake form, or corrected by an
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',

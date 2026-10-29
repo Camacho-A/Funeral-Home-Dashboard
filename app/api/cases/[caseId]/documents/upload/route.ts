@@ -4,7 +4,7 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canGenerateDocument, canUploadDocument } from '@/services/authorizationPolicyService';
 import { upload, DocumentServiceError } from '@/services/documentService';
-import { DOCUMENT_TYPES, isValidDocumentTypeKey } from '@/domain/documents/documentTypeRegistry';
+import { DOCUMENT_TYPES, isValidDocumentTypeKey, SOLIS_BUILT_DOCUMENT_TYPE_KEYS } from '@/domain/documents/documentTypeRegistry';
 import { ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY } from '@/domain/documents/arrangementPageExtracts';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { addPermit, CrematoryError, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
@@ -69,6 +69,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const authResult = await requireAuthorizedOrganization(organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId: resolvedOrganizationId, userId, role } = authResult.context;
+  // Send to Crematory (2026-10): page 3 and the package are built by SOLIS
+  // from their sources, so a file is never uploaded as one of them.
+  if (typeof documentTypeKey === 'string' && SOLIS_BUILT_DOCUMENT_TYPE_KEYS.has(documentTypeKey) && sendToCrematoryConfig(resolvedOrganizationId)) {
+    return NextResponse.json({ error: `SOLIS prepares the ${DOCUMENT_TYPES.EXTERNAL_FORM_CREMATORY_FORM.key === documentTypeKey ? 'Crematory Form' : 'Crematory Package'} itself. Upload its source documents instead.` }, { status: 400 });
+  }
   const dataAdapterMode = getDataAdapterMode();
 
   if (!(await canUploadDocument({ identityId: userId, organizationId: resolvedOrganizationId, roleKey: role }, dataAdapterMode))) {

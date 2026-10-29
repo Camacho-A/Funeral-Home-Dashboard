@@ -499,6 +499,17 @@ export type CaseCrematoryRecord = {
   /** Automatic preparation in progress (2026-10) — one server at a time
       prepares a case's page 3 and package; expires on its own. */
   preparing?: { token: string; until: string } | null;
+  /** What staff recorded (2026-10) about a possible earlier send outside
+      SOLIS, flagged because Workflow 3 says "Permit sent to crematory"
+      while SOLIS has no send of its own. Recorded once, never inferred. */
+  previousSend?: {
+    decision: 'sent_outside_solis' | 'not_previously_sent';
+    method: string | null;
+    sentOn: string | null;
+    verification: string;
+    recordedBy: string | null;
+    recordedAt: string;
+  } | null;
   /** A send in progress — refuses a second one at the same time. */
   pendingSubmission?: {
     submissionId: string;

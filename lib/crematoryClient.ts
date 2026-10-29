@@ -27,6 +27,10 @@ export type CrematoryCaseSummary = {
   /** One case's own status (GET /api/cases/[id]/crematory, 2026-10): whether
       this staff member may prepare — confirm, replace the permit. */
   canPrepare?: boolean;
+  /** Workflow 2 as the case shows it, with the steps not yet checked (2026-10). */
+  workflow2: { displayStage: number; medicalExaminer: boolean; missing: string[] } | null;
+  /** A possible earlier send outside SOLIS (2026-10). */
+  previousSend: { indicated: boolean; recorded: CaseCrematoryRecord['previousSend'] | null };
 };
 export type CrematoryMailbox = { connected: false; configured: boolean } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
 export type CrematoryOverview = {
@@ -110,7 +114,8 @@ export async function crematoryCaseAction(
     | { action: 'build_package' }
     | { action: 'prepare' }
     | { action: 'assign_document'; documentId: string; as: CrematorySourceKind }
-    | { action: 'choose_current_permit'; documentId: string },
+    | { action: 'choose_current_permit'; documentId: string }
+    | { action: 'record_previous_send'; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

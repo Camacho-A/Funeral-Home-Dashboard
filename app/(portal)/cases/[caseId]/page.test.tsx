@@ -572,5 +572,15 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
     // fetch reaches.
     expect(SOURCE.indexOf('if (caseFailed)')).toBeLessThan(SOURCE.indexOf('if (!case_ || !viewModel) return null;'));
   });
-});
 
+  it('Resolve Workflow 2 (2026-10): Send to Crematory on this page hands over to the page, which closes it and opens the stage; from All Cases, ?workflowStage= opens it — Manors only', () => {
+    expect(SOURCE).toMatch(/<SendToCrematoryDialog open onClose=\{\(\) => setSendToCrematoryOpen\(false\)\} organizationId=\{organizationId\} caseId=\{case_\.id\} onResolveWorkflow=\{\(_id, stage\) => openWorkflowStage\(stage\)\} \/>/);
+    expect(SOURCE).toMatch(/setSendToCrematoryOpen\(false\);\s*setActiveTab\('overview'\);\s*setViewingDisplayStage\(workflowStageToOpen\(displayStage, viewModel\.displayStage\)\);/);
+    expect(SOURCE).toMatch(/useSearchParams\(\)\.get\('workflowStage'\)/);
+    expect(SOURCE).toMatch(/if \(sendToCrematoryConfig\(case_\.organizationId\)\) openWorkflowStage\(requestedWorkflowStage\);/);
+    expect(SOURCE).toMatch(/<section aria-label="Next step" ref=\{nextStepRef\}>/);
+    // Navigation only: nothing on the checklist is changed by it.
+    const handler = SOURCE.slice(SOURCE.indexOf('function openWorkflowStage'), SOURCE.indexOf('// From Send to Crematory on the Cases page'));
+    expect(handler).not.toMatch(/toggleChecklistItem|mutations\./);
+  });
+});

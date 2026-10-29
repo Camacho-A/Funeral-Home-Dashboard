@@ -118,6 +118,17 @@ describe('POST /api/cases/[caseId]/documents/upload', () => {
     expect(activityEventFixtures.map((e) => e.eventType)).toEqual(expect.arrayContaining(['crematory.permit_added', 'crematory.permit_replaced']));
   });
 
+  it('a file is never uploaded as the Crematory Form or Crematory Package SOLIS builds itself (2026-10)', async () => {
+    for (const documentTypeKey of ['external_form.crematory_form', 'cremation_form.crematory_package']) {
+      const formData = sampleFormData();
+      formData.set('documentTypeKey', documentTypeKey);
+      const response = await uploadRequest(formData);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain('SOLIS prepares the');
+    }
+    expect(caseDocumentFixtures).toHaveLength(0);
+  });
+
   it('a role without document.upload (readOnly) is refused', async () => {
     const readOnlyUser = { id: 'mock-user-readonly-upload-test', email: 'readonly-upload@beacon.test', displayName: 'Read Only Test User', source: 'mock' as const };
     mockMembershipFixtures.push({ organizationId: DEFAULT_ORGANIZATION_ID, userId: readOnlyUser.id, role: 'readOnly', isActive: true });
