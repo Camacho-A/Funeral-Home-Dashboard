@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { crematoryCaseAction, type CrematoryCaseSummary } from '@/lib/crematoryClient';
 import { PREVIOUS_SEND_METHODS } from '@/domain/crematory/previousSend';
+import styles from './PreviousSendDialog.module.css';
 
 /**
  * Verify a possible earlier send (2026-10). Workflow 3 says "Permit sent to
@@ -73,58 +74,67 @@ export function PreviousSendDialog({
           </p>
         )}
         <p>
-          <strong>{summary.decedentDisplayName}</strong> ({summary.caseNumber}): this case indicates that documents may already have been sent to the crematory outside SOLIS. What do the sending records show?
+          <strong>{summary.decedentDisplayName}</strong> ({summary.caseNumber}): this case indicates that documents may already have been sent to the crematory outside SOLIS.
         </p>
-        <fieldset>
-          <label>
-            <input type="radio" name="previous-send" checked={decision === 'sent_outside_solis'} onChange={() => setDecision('sent_outside_solis')} /> They were already sent outside SOLIS
+        <fieldset className={styles.choices}>
+          <legend className={styles.legend}>What do the sending records show?</legend>
+          <label className={styles.choice}>
+            <input type="radio" name="previous-send" checked={decision === 'sent_outside_solis'} onChange={() => setDecision('sent_outside_solis')} />
+            They were already sent outside SOLIS
           </label>
-          <br />
-          <label>
-            <input type="radio" name="previous-send" checked={decision === 'not_previously_sent'} onChange={() => setDecision('not_previously_sent')} /> They were not previously sent
+          <label className={styles.choice}>
+            <input type="radio" name="previous-send" checked={decision === 'not_previously_sent'} onChange={() => setDecision('not_previously_sent')} />
+            They were not previously sent
           </label>
         </fieldset>
 
         {decision === 'sent_outside_solis' && (
           <>
-            <label className="sx-label" htmlFor="previous-send-method">
-              How they were sent
-            </label>
-            <select id="previous-send-method" className="sx-input" value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option value="">Choose…</option>
-              {Object.entries(PREVIOUS_SEND_METHODS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <label className="sx-label" htmlFor="previous-send-date">
-              Date sent (if known)
-            </label>
-            <input id="previous-send-date" type="date" className="sx-input" value={sentOn} onChange={(e) => setSentOn(e.target.value)} />
-            <p>This case will not be sent again through Send to Crematory.</p>
+            <div className={styles.field}>
+              <label className={styles.legend} htmlFor="previous-send-method">
+                How they were sent
+              </label>
+              <select id="previous-send-method" className="sx-input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="">Choose…</option>
+                {Object.entries(PREVIOUS_SEND_METHODS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.legend} htmlFor="previous-send-date">
+                Date sent (if known)
+              </label>
+              <input id="previous-send-date" type="date" className="sx-input" value={sentOn} onChange={(e) => setSentOn(e.target.value)} />
+            </div>
+            <p className={styles.note}>This case will not be sent again through Send to Crematory.</p>
           </>
         )}
         {decision && (
-          <>
-            <label className="sx-label" htmlFor="previous-send-verification">
+          <div className={styles.field}>
+            <label className={styles.legend} htmlFor="previous-send-verification">
               {decision === 'sent_outside_solis' ? 'How you verified the earlier send' : 'Which sending records you checked'}
             </label>
             <textarea id="previous-send-verification" className="sx-textarea" rows={3} value={verification} onChange={(e) => setVerification(e.target.value)} />
-          </>
+          </div>
         )}
         {decision === 'not_previously_sent' && (
-          <label>
-            <input type="checkbox" checked={confirmedChecked} onChange={(e) => setConfirmedChecked(e.target.checked)} /> I checked the available sending records and determined these documents were not previously sent to the crematory.
-          </label>
+          <div className={styles.field}>
+            <label className={styles.confirm}>
+              <input type="checkbox" checked={confirmedChecked} onChange={(e) => setConfirmedChecked(e.target.checked)} />
+              I checked the available sending records and determined these documents were not previously sent to the crematory.
+            </label>
+          </div>
         )}
         {correcting && (
-          <>
-            <label className="sx-label" htmlFor="previous-send-reason">
+          <div className={styles.field}>
+            <label className={styles.legend} htmlFor="previous-send-reason">
               Why the record is being corrected
             </label>
             <textarea id="previous-send-reason" className="sx-textarea" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-          </>
+          </div>
         )}
         {error && (
           <div className="sx-form-banner sx-form-banner-error" role="alert">

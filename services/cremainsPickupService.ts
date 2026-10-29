@@ -138,6 +138,18 @@ export function paperworkCompletedAtFromRecords(case_: Case, settings: CremainsP
   return latest;
 }
 
+/**
+ * Whether any configured paperwork item was last decided as a HISTORICAL
+ * CORRECTION (2026-10) — checked after the case had already moved beyond
+ * its stage. Such a record's time is when the correction was made, not
+ * when the paperwork was done, so it never dates (or creates, or moves)
+ * an Expected Pickup. See domain/workflow/earlierStages.ts.
+ */
+export function paperworkHasHistoricalCorrection(case_: Case, settings: CremainsPickupSettings): boolean {
+  const { displayStage, items } = settings.paperworkStage;
+  return items.some(({ index }) => case_.checklistCompletions?.[checklistItemKey(displayStage, index)]?.historical === true);
+}
+
 /** Whether the organization's own "cremains are here" checklist item is
     checked — the canonical receipt signal, guarded the same way. */
 export function isReceiptItemChecked(case_: Case, settings: CremainsPickupSettings): boolean {
@@ -174,6 +186,8 @@ export type SyncOutcome =
  *   receipt item checked ....................... mark received (terminal)
  *   paperwork incomplete, pickup exists ........ LEAVE IT ALONE
  *   paperwork incomplete, no pickup ............ nothing
+ *   historical correction (receiptOnly) ........ receipt only, never schedules
+ *   paperwork completed by a correction ........ nothing (no real date)
  *   paperwork complete, no pickup .............. create (ESTIMATED)
  *   paperwork complete, pickup is terminal ..... nothing (never resurrect)
  *   paperwork complete, human-decided .......... nothing (override wins)
@@ -233,6 +247,9 @@ async function syncExpectedPickupForCaseUncoalesced(
         paperworkCompletedAtFromRecords. */
     paperworkCompletedAt: string;
     now?: string;
+    /** A historical correction (2026-10): only the receipt step may act —
+        nothing is created, re-dated or overwritten. */
+    receiptOnly?: boolean;
   },
   ctx: ActivityContext,
   dataAdapterMode: DataAdapterMode,
@@ -263,6 +280,10 @@ async function syncExpectedPickupForCaseUncoalesced(
     return { action: 'received', appointment: received };
   }
 
+  if (params.receiptOnly) {
+    return { action: 'unchanged', appointment: existing, reason: 'historical_correction' };
+  }
+
   if (!isPaperworkComplete(case_, settings)) {
     // Includes the "task was unchecked" case — see the doc comment.
     return {
@@ -270,6 +291,10 @@ async function syncExpectedPickupForCaseUncoalesced(
       appointment: existing,
       reason: existing ? 'paperwork_incomplete_existing_pickup_preserved' : 'paperwork_incomplete',
     };
+  }
+
+  if (paperworkHasHistoricalCorrection(case_, settings)) {
+    return { action: 'unchanged', appointment: existing, reason: 'historical_paperwork_correction' };
   }
 
   const expectedDate = calculateExpectedPickupDateFromInstant({

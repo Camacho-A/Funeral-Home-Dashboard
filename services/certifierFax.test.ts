@@ -230,8 +230,11 @@ describe('existing (v1-v6) cases keep their original rule', () => {
     const case_ = buildCase(shape, { rawStage: 3 });
     expect(computeFirstIncompleteRawStage(case_, false)).toBeGreaterThanOrEqual(3);
     const items = case_.workflowSnapshot!.stages.find((s) => s.rawStage === 0)!.checklist.items;
-    // A completed (past) stage stays done.
-    expect(resolveChecklist(items, 0, case_, { isPastStage: true }).every((i) => i.done)).toBe(true);
+    // The past stage shows what is really missing (2026-10) — and staff can
+    // complete it there — but the case is never moved back to it.
+    const past = resolveChecklist(items, 0, case_, { isPastStage: true });
+    expect(past.some((i) => !i.done)).toBe(true);
+    expect(past.every((i) => !i.locked)).toBe(true);
   });
 });
 

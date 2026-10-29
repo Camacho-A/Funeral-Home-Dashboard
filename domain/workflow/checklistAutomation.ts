@@ -106,6 +106,9 @@ export function staffChecklistCompletionUpdate(
   patchChecklistState: Record<string, boolean>,
   actorId: string | null,
   now: string,
+  /** Historical corrections (2026-10): the keys, on stages the case had
+      already moved beyond, whose records say so. */
+  options: { historicalKeys?: readonly string[] } = {},
 ): Record<string, ChecklistCompletionRecord> | null {
   const records: Record<string, ChecklistCompletionRecord> = {};
   for (const [key, value] of Object.entries(patchChecklistState)) {
@@ -118,6 +121,7 @@ export function staffChecklistCompletionUpdate(
       eventId: null,
       at: now,
       actorId,
+      ...(options.historicalKeys?.includes(key) ? { historical: true } : {}),
     };
   }
   return Object.keys(records).length > 0 ? records : null;

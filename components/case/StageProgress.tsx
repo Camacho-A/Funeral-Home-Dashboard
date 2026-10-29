@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { StepperStage } from './StageStepper';
+import { stageIsIncomplete, stageStatusText, type StepperStage } from './StageStepper';
 import styles from './StageProgress.module.css';
 
 /**
@@ -28,6 +28,7 @@ export function StageProgress({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const currentIndex = Math.max(0, stages.findIndex((s) => s.current));
+  const incompleteCount = stages.filter(stageIsIncomplete).length;
 
   useEffect(() => {
     if (!open) return;
@@ -52,14 +53,18 @@ export function StageProgress({
         className={styles.trigger}
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label={`Workflow progress: step ${currentIndex + 1} of ${stages.length}. Show all stages`}
+        aria-label={`Workflow progress: step ${currentIndex + 1} of ${stages.length}${
+          incompleteCount > 0 ? `; ${incompleteCount} earlier ${incompleteCount === 1 ? 'stage has' : 'stages have'} steps not checked` : ''
+        }. Show all stages`}
         onClick={() => setOpen((v) => !v)}
       >
         <span className={styles.bar} aria-hidden="true">
           {stages.map((s) => (
             <span
               key={s.label}
-              className={`${styles.segment} ${s.done ? styles.segmentDone : s.current ? styles.segmentCurrent : styles.segmentUpcoming}`}
+              className={`${styles.segment} ${
+                stageIsIncomplete(s) ? styles.segmentIncomplete : s.done ? styles.segmentDone : s.current ? styles.segmentCurrent : styles.segmentUpcoming
+              }`}
             />
           ))}
         </span>
@@ -79,16 +84,31 @@ export function StageProgress({
                 className={`${styles.item} ${s.current ? styles.itemCurrent : ''}`}
                 disabled={!s.viewable}
                 aria-current={s.current ? 'step' : undefined}
+                aria-label={`${s.label}: ${stageStatusText(s)}`}
+                title={stageStatusText(s)}
                 onClick={() => {
                   onStepClick(index);
                   setOpen(false);
                 }}
               >
-                <span className={`${styles.dot} ${s.done ? styles.dotDone : s.current ? styles.dotCurrent : styles.dotUpcoming}`}>
-                  {s.done ? '✓' : index + 1}
+                <span
+                  className={`${styles.dot} ${
+                    stageIsIncomplete(s) ? styles.dotIncomplete : s.done ? styles.dotDone : s.current ? styles.dotCurrent : styles.dotUpcoming
+                  }`}
+                  aria-hidden="true"
+                >
+                  {stageIsIncomplete(s) ? s.incompleteSteps : s.done ? '✓' : index + 1}
                 </span>
                 <span className={styles.itemLabel}>{s.label}</span>
-                <span className={styles.itemHint}>{s.done ? 'View' : s.current ? 'Current' : ''}</span>
+                <span className={`${styles.itemHint} ${stageIsIncomplete(s) ? styles.itemHintIncomplete : ''}`} aria-hidden="true">
+                  {stageIsIncomplete(s)
+                    ? `${s.incompleteSteps} ${s.incompleteSteps === 1 ? 'step' : 'steps'} not checked`
+                    : s.done
+                      ? 'View'
+                      : s.current
+                        ? 'Current'
+                        : ''}
+                </span>
               </button>
             </li>
           ))}

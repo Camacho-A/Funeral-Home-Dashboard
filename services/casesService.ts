@@ -1,6 +1,7 @@
 import type { OrganizationContext } from '../types/organization';
 import { isSlaTrackingEnabled } from '../domain/sla/slaSettings';
 import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
+import { historicalChecklistKeys } from '../domain/workflow/earlierStages';
 import { caseRevision } from '../lib/wixCaseMapper';
 import {
   CASE_REVISION_CONFLICT_REASON,
@@ -668,7 +669,9 @@ export async function update(
   // PATCH route — every item this edit changes is recorded as staff's.
   const staffCompletions =
     normalizedPatch.checklistState && isChecklistAutomationEnabled(existingCase.organizationId)
-      ? staffChecklistCompletionUpdate(existingCase, normalizedPatch.checklistState, options.actorId ?? null, new Date().toISOString())
+      ? staffChecklistCompletionUpdate(existingCase, normalizedPatch.checklistState, options.actorId ?? null, new Date().toISOString(), {
+          historicalKeys: historicalChecklistKeys(existingCase, normalizedPatch.checklistState),
+        })
       : null;
   const updated: Case = {
     ...existingCase,

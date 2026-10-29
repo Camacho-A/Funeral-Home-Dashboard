@@ -119,16 +119,24 @@
 .step {
   display: grid;
   grid-template-columns: 18px 150px minmax(0, 1fr);
-  align-items: center;
+  /* Top-aligned (2026-10): a step whose content runs to several lines
+     (suggested documents, a list of steps to check) keeps its label level
+     with the first line rather than centred against the whole block. */
+  align-items: start;
   column-gap: 8px;
   min-height: 34px;
+  padding: 2px 0;
   font-size: 13px;
+}
+
+.stepLabel {
+  line-height: 30px;
 }
 
 .mark {
   text-align: center;
   font-size: 12px;
-  line-height: 1;
+  line-height: 30px;
 }
 
 .step[data-state='done'] .mark {
@@ -160,8 +168,24 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  align-content: flex-start;
   gap: 6px;
   min-width: 0;
+  min-height: 30px;
+}
+
+/* A one-line hint or value sits on the same 30px line as the step's label. */
+.stepContent > .hint,
+.stepContent > .value {
+  line-height: 30px;
+}
+
+/* Existing documents that may be the source (2026-10): a block beneath the step's own actions. */
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-basis: 100%;
 }
 
 .inputs {

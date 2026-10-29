@@ -243,10 +243,13 @@ export function useCaseMutations(caseId: string) {
      * checklist (ChecklistCard); a viewed/past stage renders read-only and
      * never calls this.
      */
-    toggleChecklistItem(case_: Case, index: number, newDone: boolean) {
-      const displayStage = case_.workflowSnapshot
-        ? findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage
-        : case_.rawStage;
+    /** `onDisplayStage`: the stage the item belongs to when it is not the
+        case's current one — an earlier stage being completed or corrected
+        (2026-10). Recorded on that stage; the case's stage is unchanged. */
+    toggleChecklistItem(case_: Case, index: number, newDone: boolean, onDisplayStage?: number | null) {
+      const displayStage =
+        onDisplayStage ??
+        (case_.workflowSnapshot ? findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage : case_.rawStage);
       save({ checklistState: { [checklistItemKey(displayStage, index)]: newDone } });
     },
 

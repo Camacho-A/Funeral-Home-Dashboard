@@ -506,7 +506,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               <>
                 {preparesWithCrematory && (
                   <select
-                    className="sx-input"
+                    className="sx-input sx-docs-upload-type"
                     aria-label="Document type for the upload"
                     value={uploadTypeKey}
                     onChange={(e) => setUploadTypeKey(e.target.value)}

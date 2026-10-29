@@ -297,7 +297,8 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
 
   /** A checklist-backed event: done when every backing item is done (or
       the case has moved past their stage); its time is the latest
-      completion record, when every item has one. */
+      completion record, when every item has one that is not a historical
+      correction. */
   const fromChecklist = (key: SlaEventKey | SlaDerivedEventKey): EventInfo => {
     const items = checklistItemsForEvent(case_, key);
     if (items.length === 0) return NOT_OCCURRED;
@@ -307,7 +308,9 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
     if (!allDone) return NOT_OCCURRED;
     const times = items.map((item) => {
       const record = case_.checklistCompletions?.[checklistItemKey(item.displayStage, item.index)];
-      return record?.done ? eventTimeFromIso(record.at, calendar) : null;
+      // A historical correction's time is when the correction was made,
+      // never when the work happened (2026-10): unknown, not that date.
+      return record?.done && record.historical !== true ? eventTimeFromIso(record.at, calendar) : null;
     });
     if (times.some((time) => time === null)) return { occurred: true, time: null, source: 'checklist' };
     const latest = (times as EventTime[]).reduce((a, b) => (a.date > b.date || (a.date === b.date && (a.minutes ?? 0) >= (b.minutes ?? 0)) ? a : b));
@@ -360,7 +363,7 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
       ? NOT_OCCURRED
       : either(
           case_.checklistState[checklistItemKey(ME_VERIFIED_ITEM.displayStage, ME_VERIFIED_ITEM.index)] === true && meRecord?.done
-            ? { occurred: true, time: eventTimeFromIso(meRecord.at, calendar), source: 'checklist' }
+            ? { occurred: true, time: meRecord.historical === true ? null : eventTimeFromIso(meRecord.at, calendar), source: 'checklist' }
             : NOT_OCCURRED,
           currentDisplayStage > ME_VERIFIED_ITEM.displayStage || approval.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED,
         );

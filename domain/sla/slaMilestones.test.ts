@@ -418,3 +418,52 @@ describe('Cremains already back with Manors', () => {
     expect(evaluateCaseSla(b2026036({ isDeleted: true }), SETTINGS, NOW)).toMatchObject({ enabled: false, current: null, milestones: [] });
   });
 });
+
+/**
+ * Historical corrections (2026-10): a tick made after the case had moved
+ * beyond its stage is recorded when the correction was made — never read
+ * as when the work happened. The event's time is unknown unless a real
+ * date was recorded; existing history is never rewritten.
+ */
+describe('historical corrections — the correction date is never the event date', () => {
+  const corrected = (at: string): ChecklistCompletionRecord => ({ ...done(at), historical: true });
+  const timeOf = (case_: Case, key: string) => evaluateCaseSla(case_, SETTINGS, ny('2026-10-29')).events.find((e) => e.key === key)!;
+
+  it('a corrected EDRS tick: the event occurred, its time is unknown', () => {
+    const case_ = base({ rawStage: 4, checklistState: { '2:0': true }, checklistCompletions: { '2:0': corrected(ny('2026-10-28')) } });
+    expect(timeOf(case_, 'edrs_submitted')).toMatchObject({ occurred: true, time: null });
+  });
+
+  it('a recorded SLA date is used when there is one', () => {
+    const case_ = base({
+      rawStage: 4,
+      slaEvents: events({ edrs_submitted: ny('2026-10-20', '09:30') }),
+      checklistState: { '2:0': true },
+      checklistCompletions: { '2:0': corrected(ny('2026-10-28')) },
+    });
+    expect(timeOf(case_, 'edrs_submitted')).toMatchObject({ occurred: true, time: { date: '2026-10-20' }, source: 'recorded' });
+  });
+
+  it('an ordinary tick keeps its own time, as before', () => {
+    const case_ = base({ rawStage: 3, checklistState: { '2:0': true }, checklistCompletions: { '2:0': done(ny('2026-10-20', '14:00')) } });
+    expect(timeOf(case_, 'edrs_submitted')).toMatchObject({ occurred: true, time: { date: '2026-10-20' } });
+  });
+
+  it('a corrected ME verification never starts the approval clock on the correction date', () => {
+    const me = (record: ChecklistCompletionRecord) =>
+      base({ rawStage: 3, isMedicalExaminerCase: true, slaEvents: events({ case_received: ny('2026-10-19') }), checklistState: { '2:5': true }, checklistCompletions: { '2:5': record } });
+    expect(milestone(me(done(ny('2026-10-28'))), 'approval', ny('2026-10-28', '12:00'))).toMatchObject({ state: 'active', deadline: '2026-10-30' });
+    expect(milestone(me(corrected(ny('2026-10-28'))), 'approval', ny('2026-10-28', '12:00'))).toMatchObject({ state: 'start_date_needed', deadline: null });
+  });
+
+  it('a corrected EDRS tick never completes a milestone on the correction date', () => {
+    const case_ = base({
+      rawStage: 3,
+      slaEvents: events({ case_received: ny('2026-10-19') }),
+      checklistState: { '2:0': true },
+      checklistCompletions: { '2:0': corrected(ny('2026-10-28')) },
+    });
+    const edrs = milestone(case_, 'edrs_entry', ny('2026-10-29'));
+    expect(edrs.completedAt?.date).not.toBe('2026-10-28');
+  });
+});

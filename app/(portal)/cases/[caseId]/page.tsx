@@ -202,6 +202,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     done: index < viewModel.presentedDisplayStage,
     current: index === viewModel.presentedDisplayStage,
     viewable: index <= viewModel.presentedDisplayStage,
+    // True earlier-stage status (2026-10, Manors only — empty elsewhere):
+    // the required steps still unchecked across the stage's canonical group.
+    incompleteSteps:
+      index < viewModel.presentedDisplayStage
+        ? (viewModel.canonicalDisplayStagesByPresentedIndex[index] ?? [index]).reduce(
+            (sum, canonical) => sum + (viewModel.earlierStageUncheckedSteps[canonical] ?? 0),
+            0,
+          )
+        : 0,
   }));
 
   // A presented stage can cover more than one canonical display stage
@@ -211,7 +220,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   // stage, which carries the substantive intake items.
   function viewPresentedStage(presentedIndex: number) {
     const group = viewModel!.canonicalDisplayStagesByPresentedIndex[presentedIndex] ?? [presentedIndex];
-    const canonical = group.includes(viewModel!.displayStage) ? viewModel!.displayStage : group[0];
+    // An earlier group with steps not checked opens the first stage that has them.
+    const firstUnchecked = group.find((stage) => (viewModel!.earlierStageUncheckedSteps[stage] ?? 0) > 0);
+    const canonical = group.includes(viewModel!.displayStage) ? viewModel!.displayStage : (firstUnchecked ?? group[0]);
     setViewingDisplayStage(canonical === viewModel!.displayStage ? null : canonical);
   }
 
@@ -513,7 +524,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                     : null
                 }
                 onBackToCurrentStage={() => setViewingDisplayStage(null)}
-                onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone)}
+                onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone, viewingDisplayStage)}
                 onFieldChange={(index, value) => mutations.setFieldValue(case_, index, value)}
                 onSaveCertifierName={(value) => mutations.setCertifierName(case_, value)}
                 onSaveCertifierPhone={(value) => mutations.setCertifierPhone(case_, value)}
@@ -523,6 +534,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   arrangementContactName: case_.arrangementContactName ?? null,
                 }}
                 isArchived={case_.isDeleted === true}
+                canEdit={!permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('case.update')}
+                earlierStageEditable={viewModel.earlierStagesEditable}
                 resolveActorName={(identityId) => staffList.find((staff) => staff.identityId === identityId)?.displayName ?? null}
                 releaseSuggestions={[
                   { role: 'Next of kin', name: case_.nextOfKinName },

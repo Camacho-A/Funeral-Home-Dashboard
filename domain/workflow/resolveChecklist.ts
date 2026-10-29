@@ -6,6 +6,7 @@ import { readChecklistValue } from './checklistItemKey';
 import { retiredChecklistIndices } from '../organization/checklistRetirement';
 import { presentedChecklistLabel } from '../organization/checklistRelabel';
 import { applyMedicalExaminerVariant } from '../organization/medicalExaminerWorkflow';
+import { isTrueEarlierStageStatusEnabled } from './earlierStages';
 import { findCaseFieldForChecklistIndex } from './resolveIntake';
 import { PAYMENT_CONFIRMATION_LABEL, getChecklistLabels } from '../cases/checklist';
 import { CERTIFIER_INFORMATION_LABEL, LEGACY_CERTIFIER_ITEM_LABEL } from '../cases/legacyCertifierPresentation';
@@ -291,12 +292,23 @@ export function resolveChecklist(
     .filter(({ index }) => !retired.has(index));
 
   const attributionEnabled = isChecklistAutomationEnabled(case_.organizationId);
+  // A stage the case has moved beyond shows its TRUE status (2026-10) where
+  // the organization has it (isTrueEarlierStageStatusEnabled — Manors). It
+  // used to read as fully done because the case had advanced — so a case
+  // moved on without its steps checked (the Dashboard's bulk advance, a
+  // historical import, or a Medical Examiner reclassification after the
+  // doctor steps were ticked) looked complete while the completion that
+  // actually matters (e.g. Send to Crematory's Workflow 2) said otherwise.
+  // Elsewhere an earlier stage still reads as complete, unchanged.
+  const pastStageReadsDone = isPastStage && !isTrueEarlierStageStatusEnabled(case_.organizationId);
   return visible.map(({ item, index }, position) => {
-    const done = isPastStage || isItemDone(item, index);
+    const done = pastStageReadsDone || isItemDone(item, index);
     // Locking follows the previous VISIBLE item, so retiring one never
     // leaves the next item permanently blocked behind something hidden.
+    // An earlier stage is never locked: staff complete or correct its
+    // steps in any order.
     const previous = position === 0 ? null : visible[position - 1];
-    const priorDone = previous === null ? true : isPastStage || isItemDone(previous.item, previous.index);
+    const priorDone = previous === null ? true : isItemDone(previous.item, previous.index);
     const locked = !isPastStage && position > 0 && !priorDone;
 
     return {

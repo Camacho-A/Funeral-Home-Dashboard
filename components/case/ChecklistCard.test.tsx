@@ -79,11 +79,34 @@ describe('ChecklistCard — baseline behavior (first test file for this componen
     expect(screen.getByRole('checkbox', { name: 'Weight' })).toBeDisabled();
   });
 
-  it('viewingStageLabel (past-stage read-only mode) disables the field input and shows the banner', () => {
-    renderChecklist([item({ index: 3, label: 'Weight', hasField: true, fieldValue: '150' })], { viewingStageLabel: 'First Call & Payment' });
-    expect(weightField()).toBeDisabled();
+  it('viewing an earlier stage shows the banner and keeps its fields editable — saved on that stage, the case stays where it is (2026-10)', () => {
+    renderChecklist([item({ index: 3, label: 'Weight', hasField: true, fieldValue: '150' })], { viewingStageLabel: 'First Call & Payment', earlierStageEditable: true });
+    expect(weightField()).toBeEnabled();
     expect(screen.getByText('First Call & Payment')).toBeInTheDocument();
+    expect(screen.getByText(/the case stays at its current step/)).toBeInTheDocument();
     expect(screen.getByText('Back to current stage')).toBeInTheDocument();
+  });
+
+  it('an archived case, or a staff member who may not edit cases, gets a read-only earlier stage', () => {
+    for (const overrides of [{ isArchived: true }, { canEdit: false }]) {
+      const { onToggleItem } = renderChecklist([item({ index: 3, label: 'Weight', hasField: true, fieldValue: '150' }), item({ index: 0, label: 'Labels made' })], { viewingStageLabel: 'First Call & Payment', earlierStageEditable: true, ...overrides });
+      expect(weightField()).toBeDisabled();
+      expect(screen.getByText(/Read only\./)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Labels made' }));
+      expect(onToggleItem).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it('without true earlier-stage status (every organization but Manors), an earlier stage stays read-only, exactly as before', () => {
+    const { onToggleItem } = renderChecklist([item({ index: 3, label: 'Weight', hasField: true, fieldValue: '150' }), item({ index: 0, label: 'Labels made' })], {
+      viewingStageLabel: 'First Call & Payment',
+    });
+    expect(weightField()).toBeDisabled();
+    expect(screen.getByText(/read only/)).toBeInTheDocument();
+    expect(screen.queryByText(/as a correction/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Labels made' }));
+    expect(onToggleItem).not.toHaveBeenCalled();
   });
 
   it('a locked field-backed item\'s textbox is disabled', () => {
@@ -356,8 +379,11 @@ describe('ChecklistCard — Time of Death 12-hour display (valueKind: "time", 20
     expect(screen.getByRole('combobox', { name: 'AM or PM' })).toBeDisabled();
   });
 
-  it('viewingStageLabel (past-stage read-only mode) disables all three selects', () => {
-    renderChecklist([timeItem({ fieldValue: '15:45' })], { viewingStageLabel: 'First Call & Payment' });
+  it('on an earlier stage the selects stay editable (2026-10); read-only only when the case cannot be edited', () => {
+    renderChecklist([timeItem({ fieldValue: '15:45' })], { viewingStageLabel: 'First Call & Payment', earlierStageEditable: true });
+    expect(screen.getByRole('combobox', { name: 'Hour' })).toBeEnabled();
+    cleanup();
+    renderChecklist([timeItem({ fieldValue: '15:45' })], { viewingStageLabel: 'First Call & Payment', earlierStageEditable: true, isArchived: true });
     expect(screen.getByRole('combobox', { name: 'Hour' })).toBeDisabled();
   });
 });
@@ -786,8 +812,8 @@ describe('ChecklistCard — terminal "Family picked up ashes" action (2026-10)',
     expect(screen.getByRole('button', { name: 'Record family pickup' })).toBeDisabled();
   });
 
-  it('viewing a past stage read-only offers no way to record a release', () => {
-    renderChecklist([terminalItem()], { viewingStageLabel: 'Ready for Pickup / Contact Family' });
+  it('a read-only view (archived case) offers no way to record a release', () => {
+    renderChecklist([terminalItem()], { viewingStageLabel: 'Ready for Pickup / Contact Family', isArchived: true });
     expect(screen.getByRole('button', { name: 'Record family pickup' })).toBeDisabled();
   });
 
@@ -933,15 +959,18 @@ describe('ChecklistCard — Medical Examiner classification (2026-10)', () => {
     expect(onToggleMedicalExaminerCase).toHaveBeenCalledWith(true);
   });
 
-  it('the viewed stage\'s own checklist items stay read-only alongside it', () => {
-    // The ungating above is scoped to the classification. A past stage's
-    // items must not become editable just because it is being viewed.
+  it('the viewed earlier stage\'s own items are editable for staff who may edit the case (2026-10), and read-only for those who may not', () => {
     const { onToggleItem } = renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], {
       viewingStageLabel: 'Intake & JotForm',
+      earlierStageEditable: true,
       onToggleMedicalExaminerCase: vi.fn(),
     });
     fireEvent.click(screen.getByRole('checkbox', { name: 'NAME OF DECEASED' }));
-    expect(onToggleItem).not.toHaveBeenCalled();
+    expect(onToggleItem).toHaveBeenCalledWith(0, true);
+    cleanup();
+    const readOnly = renderChecklist([item({ index: 0, label: 'NAME OF DECEASED' })], { viewingStageLabel: 'Intake & JotForm', earlierStageEditable: true, canEdit: false });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'NAME OF DECEASED' }));
+    expect(readOnly.onToggleItem).not.toHaveBeenCalled();
   });
 
   it('can be un-classified again from the same place', () => {
@@ -1102,6 +1131,20 @@ describe('ChecklistCard — why an item is complete (2026-10)', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /is complete/ }));
     expect(screen.getByRole('note')).toHaveTextContent('Dana Reyes');
+  });
+
+  it('a historical correction says it was recorded later — not when the work happened (2026-10)', () => {
+    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor', done: true, completion: { ...manual, record: { ...manual.record, historical: true } } })], {
+      resolveActorName: (id: string) => (id === 'identity-7' ? 'Dana Reyes' : null),
+    });
+    fireEvent.click(screen.getByRole('button', { name: /is complete/ }));
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent('Recorded later as a correction to an earlier step — not when the work happened.');
+    expect(note).toHaveTextContent('Dana Reyes');
+    cleanup();
+    renderChecklist([item({ index: 0, label: 'EDRS submitted & sent to doctor', done: true, completion: manual })]);
+    fireEvent.click(screen.getByRole('button', { name: /is complete/ }));
+    expect(screen.getByRole('note')).not.toHaveTextContent('correction');
   });
 
   it('an item with no recorded source says so instead of guessing', () => {

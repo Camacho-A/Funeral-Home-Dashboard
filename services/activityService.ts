@@ -423,6 +423,30 @@ export function recordCaseUpdated(ctx: ActivityContext, caseId: string, changedF
   );
 }
 
+/** A historical checklist correction (2026-10) — see domain/workflow/earlierStages.ts. */
+export function recordChecklistCorrected(
+  ctx: ActivityContext,
+  caseId: string,
+  details: { description: string; changes: Array<{ key: string; stage: string; label: string; done: boolean }> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_CHECKLIST_CORRECTED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: JSON.stringify({ historicalCorrection: true, changes: details.changes }),
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordStageChanged(ctx: ActivityContext, caseId: string, fromStage: string, toStage: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   return record(
     envelope(ctx, {

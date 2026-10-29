@@ -34,6 +34,11 @@ export type CaseProgress = {
  * has passed through both raw stages; `displayStagesInOrder` collapses
  * them to the one StageTemplate the case/checklist UI actually shows.
  *
+ * 2026-10: with `resolveEarlierStage` (Case Detail's view model always
+ * passes it), an earlier stage counts only its items actually done —
+ * moving past a stage no longer completes it. The note below describes
+ * the fallback used without it.
+ *
  * A stage strictly before the case's current DISPLAY stage is treated as
  * fully complete, unconditionally — the exact same trust assumption
  * domain/workflow/resolveChecklist.ts's own `isPastStage` flag already
@@ -71,6 +76,10 @@ export function computeCaseProgress(
   /** Medical Examiner case (2026-10). Defaults false, so every existing
       caller keeps its previous totals. */
   isMedicalExaminerCase: boolean = false,
+  /** Each earlier stage's resolved checklist (2026-10): its items count as
+      done only when they actually are. Omitted, an earlier stage counts
+      as complete, as before — for callers with only a snapshot. */
+  resolveEarlierStage?: (displayStage: number) => ChecklistItemViewModel[],
 ): CaseProgress {
   let completedItems = 0;
   let totalItems = 0;
@@ -88,8 +97,16 @@ export function computeCaseProgress(
     );
     const stageItemCount = activeChecklistItemCount(organizationId, stage.displayStage, presentedItems);
     if (stage.displayStage < currentDisplayStage) {
-      totalItems += stageItemCount;
-      completedItems += stageItemCount;
+      if (resolveEarlierStage) {
+        // Only what was actually completed — reaching a later stage never
+        // completes an earlier one's steps.
+        const resolved = resolveEarlierStage(stage.displayStage);
+        totalItems += resolved.length;
+        completedItems += resolved.filter((item) => item.done).length;
+      } else {
+        totalItems += stageItemCount;
+        completedItems += stageItemCount;
+      }
     } else if (stage.displayStage === currentDisplayStage) {
       totalItems += currentStageChecklist.length;
       completedItems += currentStageChecklist.filter((item) => item.done).length;

@@ -88,16 +88,17 @@ export function ReplacePermitButton({
             <p>
               Replace <strong>{permit.fileName}</strong> with <strong>{file.name}</strong> for <strong>{decedentDisplayName}</strong>?
             </p>
-            <PermitPdfPreview source={{ kind: 'file', file }} fileName={file.name} onVerified={() => setShown(true)} onFailed={() => setShown(false)} />
-            <ul>
-              <li>The current permit is kept as an earlier version, with its history.</li>
-              <li>The new permit must be confirmed before the Crematory Package uses it; until then the package is outdated.</li>
-            </ul>
+            {/* Above the PDF (2026-10): a refusal is seen without scrolling past it. */}
             {error && (
               <div className="sx-form-banner sx-form-banner-error" role="alert">
                 {error}
               </div>
             )}
+            <PermitPdfPreview source={{ kind: 'file', file }} fileName={file.name} onVerified={() => setShown(true)} onFailed={() => setShown(false)} />
+            <ul>
+              <li>The current permit is kept as an earlier version, with its history.</li>
+              <li>The new permit must be confirmed before the Crematory Package uses it; until then the package is outdated.</li>
+            </ul>
           </div>
           <div className="sx-modal-footer">
             <button type="button" className="sx-btn sx-btn-ghost" onClick={close} disabled={busy}>

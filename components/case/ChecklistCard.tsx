@@ -412,6 +412,8 @@ export function ChecklistCard({
   isMedicalExaminerCase,
   onToggleMedicalExaminerCase,
   isArchived,
+  canEdit = true,
+  earlierStageEditable = false,
   releaseSuggestions,
   resolveActorName,
 }: {
@@ -444,9 +446,16 @@ export function ChecklistCard({
       control entirely. */
   isMedicalExaminerCase?: boolean;
   onToggleMedicalExaminerCase?: (next: boolean) => void;
-  /** Archived cases are read-only (2026-10). Independent of the
-      past-stage read-only above — either one alone locks the card. */
+  /** Archived cases are read-only (2026-10). */
   isArchived?: boolean;
+  /** Whether this staff member may edit the case (`case.update`). Without
+      it the card is read-only — on any stage, the current one included;
+      the server refuses such a change regardless. */
+  canEdit?: boolean;
+  /** An earlier stage (viewingStageLabel set) can be completed or corrected
+      here (2026-10) — where the organization has it
+      (domain/workflow/earlierStages.ts). Otherwise it is read-only, as before. */
+  earlierStageEditable?: boolean;
   /** Names offered as one-click "Released to" values (2026-10). */
   releaseSuggestions?: ReleaseSuggestion[];
   /** Checklist completion attribution (2026-10): a staff member's name
@@ -454,7 +463,12 @@ export function ChecklistCard({
   resolveActorName?: (identityId: string) => string | null;
 }) {
   const [openCompletion, setOpenCompletion] = useState<number | null>(null);
-  const readOnly = viewingStageLabel !== null || isArchived === true;
+  // An earlier stage is editable (2026-10): staff complete or correct its
+  // steps there. Doing so never moves the case — it stays at its current
+  // stage (services/workflowReconciliationService.ts never goes back).
+  // Only an archived case, or a staff member who may not edit cases, is
+  // read-only.
+  const readOnly = isArchived === true || canEdit === false || (viewingStageLabel !== null && !earlierStageEditable);
 
   /**
    * The Medical Examiner classification is NOT gated by the past-stage
@@ -506,9 +520,16 @@ export function ChecklistCard({
 
       {viewingStageLabel && (
         <div className={styles.viewingBanner}>
-          <span>
-            Viewing <b>{viewingStageLabel}</b> — read only
-          </span>
+          {earlierStageEditable ? (
+            <span>
+              Viewing <b>{viewingStageLabel}</b> — an earlier step.{' '}
+              {readOnly ? 'Read only.' : 'Checking a step here records it on this step as a correction; the case stays at its current step.'}
+            </span>
+          ) : (
+            <span>
+              Viewing <b>{viewingStageLabel}</b> — read only
+            </span>
+          )}
           <button type="button" className={styles.backToCurrentButton} onClick={onBackToCurrentStage}>
             Back to current stage
           </button>
@@ -770,6 +791,9 @@ function CompletionDetails({ item, resolveActorName }: { item: ChecklistItemView
     rows = [
       ['Why', describeCompletionEvent(record)],
       ['When', formatCompletionTime(record.at)],
+      ...(record.historical === true
+        ? ([['Correction', 'Recorded later as a correction to an earlier step — not when the work happened.']] as Array<[string, string]>)
+        : []),
       ['By', by],
       ...(record.eventId ? ([['Related record', record.eventId]] as Array<[string, string]>) : []),
     ];

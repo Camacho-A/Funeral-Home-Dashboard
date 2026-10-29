@@ -36,13 +36,30 @@ export function preparationDue(s: CrematoryCaseSummary): boolean {
   return page3Due || (s.readiness.readyToBuild && s.package?.current !== true);
 }
 
+/**
+ * The panel's one-line status (2026-10), from the server's own readiness —
+ * never from the PDF existing alone:
+ *   sent through SOLIS · send unclear · last send failed · recorded as sent
+ *   outside SOLIS · possible earlier send to verify · being prepared ·
+ *   ready for final review and sending · package prepared but something
+ *   still required before sending (named) · needs attention.
+ * The viewer's own send permission is not part of it — the case's
+ * readiness is the same whoever looks at it.
+ */
 export function packageHeadline(s: CrematoryCaseSummary): { text: string; tone: 'ok' | 'warn' | 'neutral' } {
   if (s.lastSubmission?.status === 'submitted') return { text: `Sent to the crematory ${formatTimestamp(s.lastSubmission.at)}`, tone: 'ok' };
   if (s.lastSubmission?.status === 'uncertain') return { text: 'Send outcome unclear — check Sent Items in Send to Crematory', tone: 'warn' };
   if (s.previousSend?.recorded?.decision === 'sent_outside_solis') return { text: 'Recorded as sent outside SOLIS', tone: 'neutral' };
-  if (s.package?.current) return { text: 'Ready', tone: 'ok' };
-  if (s.readiness.readyToBuild) return { text: 'Being prepared', tone: 'neutral' };
-  return { text: s.package ? 'Outdated — needs attention' : 'Needs attention', tone: 'warn' };
+  if (s.previousSend?.indicated) return { text: 'Possible earlier send — verify it in Send to Crematory', tone: 'warn' };
+  const failedNote = s.lastSubmission?.status === 'failed' ? ' (the last send failed)' : '';
+  if (preparationDue(s)) return { text: `Being prepared${failedNote}`, tone: 'neutral' };
+  if (s.package?.current) {
+    const blocking = s.readiness.requirements.filter((r) => !r.ok && r.key !== 'permission' && r.key !== 'package');
+    if (blocking.length === 0) return { text: `Ready for final review and sending${failedNote}`, tone: 'ok' };
+    if (blocking.some((r) => r.key === 'workflow_2')) return { text: 'Package prepared — Workflow 2 required before sending.', tone: 'warn' };
+    return { text: `Package prepared — ${blocking[0].label} required before sending.`, tone: 'warn' };
+  }
+  return { text: `${s.package ? 'Outdated — needs attention' : 'Needs attention'}${failedNote}`, tone: 'warn' };
 }
 
 export function CrematoryPackageStatus({ organizationId, caseId }: { organizationId: string; caseId: string }) {

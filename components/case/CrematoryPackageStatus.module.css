@@ -14,6 +14,13 @@
   flex-wrap: wrap;
 }
 
+/* The status names what still blocks sending (2026-10) — longer than a
+   one-word chip, so it may wrap on a narrow screen instead of overflowing. */
+.head > :global(.sx-status) {
+  white-space: normal;
+  max-width: 100%;
+}
+
 .title {
   margin: 0;
   font-size: var(--font-size-13-5);

@@ -789,9 +789,13 @@ describe('resolveChecklist — relabeled checklist items', () => {
     expect(items[2]).toMatchObject({ label: NEW, done: false, locked: true });
   });
 
-  it('reads as done on a past stage, like every other item', () => {
-    const items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ rawStage: 6 }), { isPastStage: true });
-    expect(items[2]).toMatchObject({ label: NEW, done: true });
+  it('on a past stage it shows its TRUE status like every other item — moving past a stage never completes it (2026-10)', () => {
+    let items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ rawStage: 6 }), { isPastStage: true });
+    expect(items[2]).toMatchObject({ label: NEW, done: false, locked: false });
+    // Never locked on a past stage: staff complete it in any order.
+    expect(items.every((i) => !i.locked)).toBe(true);
+    items = resolveChecklist(EDRS_ITEMS, EDRS_DISPLAY_STAGE, edrsCase({ rawStage: 6, checklistState: { '2:2': true } }), { isPastStage: true });
+    expect(items.map((i) => i.done)).toEqual([false, false, true]);
   });
 
   it('does not stop the Medical Examiner variant from matching the stored label', () => {

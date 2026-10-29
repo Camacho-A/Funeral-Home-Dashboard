@@ -72,6 +72,37 @@ function baseCase(overrides: Partial<Case>): Case {
   };
 }
 
+
+/**
+ * Every step of every stage before `beforeDisplayStage` actually completed
+ * (2026-10) — ticked, its field filled, and the structured case data its
+ * derived items read present. Moving a case past a stage no longer
+ * completes it, so a "genuinely completed" fixture has to say so.
+ */
+function completeEarlierStages(case_: Case, beforeDisplayStage: number): Case {
+  const checklistState: Record<string, boolean> = { ...(case_.checklistState ?? {}) };
+  const fieldValues: Record<number, string> = { ...(case_.fieldValues ?? {}) };
+  for (const stage of case_.workflowSnapshot?.stages ?? []) {
+    if (stage.displayStage >= beforeDisplayStage) continue;
+    for (const item of stage.checklist.items) {
+      checklistState[`${stage.displayStage}:${item.index}`] = true;
+      if (item.hasField && !fieldValues[item.index]) fieldValues[item.index] = item.label.toUpperCase().includes('TIME') ? '10:30 AM' : 'FICTIONAL';
+    }
+  }
+  return {
+    ...case_,
+    checklistState,
+    fieldValues,
+    paymentStatus: 'paid_in_full',
+    certifierName: case_.certifierName ?? 'DR. FICTIONAL',
+    certifierPhone: case_.certifierPhone ?? '555-0100',
+    certifierFax: case_.certifierFax ?? '555-0101',
+    nextOfKinName: case_.nextOfKinName || 'FICTIONAL NOK',
+    nextOfKinPhone: case_.nextOfKinPhone || '555-0102',
+    nextOfKinEmail: case_.nextOfKinEmail ?? 'nok@example.test',
+  } as Case;
+}
+
 describe('buildCaseViewModel — Managed Cremations fidelity', () => {
   it('resolves the EDRS stage (raw 3) as the attention stage with its known SLA target', () => {
     const case_ = baseCase({ rawStage: 3, daysWaitingInStage: 6 });
@@ -286,8 +317,8 @@ describe('buildCaseViewModel — overall progress indicator (Case list scalabili
     expect(vm.progressCompletedItems).toBeGreaterThan(0);
   });
 
-  it('a genuinely completed case (stageLabel "Completed") is exactly 100% — every stage passed, terminal item satisfied', () => {
-    const case_ = baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' });
+  it('a genuinely completed case (stageLabel "Completed") is exactly 100% — every earlier step done, terminal item satisfied', () => {
+    const case_ = completeEarlierStages(baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' }), 99);
     const vm = buildCaseViewModel(case_, { staffList: [] });
     expect(vm.stageLabel).toBe('Completed');
     expect(vm.progressPercent).toBe(100);
@@ -295,11 +326,52 @@ describe('buildCaseViewModel — overall progress indicator (Case list scalabili
   });
 
   it('a case at the terminal raw stage that never satisfied the return requirement is below 100% and never shows "Completed" — the inconsistency is surfaced, not hidden', () => {
-    const case_ = baseCase({ rawStage: 7, returnMethod: 'undecided' });
+    const case_ = completeEarlierStages(baseCase({ rawStage: 7, returnMethod: 'undecided' }), 99);
     const vm = buildCaseViewModel(case_, { staffList: [] });
     expect(vm.rowSummaryText).not.toBe('Completed');
     expect(vm.progressPercent).toBeLessThan(100);
-    expect(vm.progressPercent).toBeGreaterThan(90); // every prior stage still counts fully — only the one terminal item is outstanding
+    expect(vm.progressPercent).toBeGreaterThan(90); // every earlier step done — only the one terminal item is outstanding
+  });
+
+  it('a case moved forward without its steps checked shows what is really done (2026-10) — reaching a stage never completes the ones before it', () => {
+    const unchecked = buildCaseViewModel(baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' }), { staffList: [] });
+    const completed = buildCaseViewModel(completeEarlierStages(baseCase({ rawStage: 7, returnMethod: 'pickup', pickupStatus: 'released' }), 99), { staffList: [] });
+    expect(unchecked.progressTotalItems).toBe(completed.progressTotalItems);
+    expect(unchecked.progressCompletedItems).toBeLessThan(completed.progressCompletedItems);
+    expect(unchecked.progressPercent).toBeLessThan(50);
+    // The stage itself is unchanged.
+    expect(unchecked.stageLabel).toBe(completed.stageLabel);
+  });
+
+  it('true earlier-stage status (2026-10) is Manors only: the per-stage unchecked counts, and earlier stages open for correction', () => {
+    const case_ = baseCase({ rawStage: 4 });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.earlierStagesEditable).toBe(true);
+    const current = findStageByRawStage(case_.workflowSnapshot!, 4)!.displayStage;
+    const counted = Object.keys(vm.earlierStageUncheckedSteps).map(Number);
+    expect(counted.length).toBeGreaterThan(0);
+    expect(counted.every((stage) => stage < current)).toBe(true);
+    // Each count is the unchecked items Case Detail shows for that stage.
+    for (const stage of counted) {
+      const viewed = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: stage });
+      expect(vm.earlierStageUncheckedSteps[stage]).toBe(viewed.checklist.filter((item) => !item.done).length);
+    }
+    expect(buildCaseViewModel(completeEarlierStages(case_, current), { staffList: [] }).earlierStageUncheckedSteps).toEqual({});
+  });
+
+  it.each(['gus-camacho-jr', SECOND_MOCK_ORGANIZATION_ID])('%s is unchanged (2026-10): earlier stages read as complete and stay read-only; progress as before', (organizationId) => {
+    const case_ = baseCase({ organizationId, rawStage: 4 });
+    const vm = buildCaseViewModel(case_, { staffList: [] });
+    expect(vm.earlierStagesEditable).toBe(false);
+    expect(vm.earlierStageUncheckedSteps).toEqual({});
+    // Checking every earlier step changes nothing: they already count as done.
+    const current = findStageByRawStage(case_.workflowSnapshot!, 4)!.displayStage;
+    const completed = buildCaseViewModel(completeEarlierStages(case_, current), { staffList: [] });
+    expect(vm.progressCompletedItems).toBe(completed.progressCompletedItems);
+    expect(vm.progressPercent).toBe(completed.progressPercent);
+    const viewed = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
+    expect(viewed.checklist.length).toBeGreaterThan(0);
+    expect(viewed.checklist.every((item) => item.done)).toBe(true);
   });
 
   it('percent is bounded within 0-100 at every stage, from the first to the last', () => {
@@ -617,16 +689,17 @@ describe('buildCaseViewModel — legacy (v3) Certifier past-stage editing (Task 
     expect(vm.checklist[6].locked).toBe(false);
   });
 
-  it('15. unrelated past-stage items remain read-only/historical — only Certifier (6) and Family Contact (7) get the live-editing exception', () => {
+  it('15. unrelated past-stage items keep no requiredCaseFields of their own — only Certifier (6) and Family Contact (7) get the structured editor — and show their TRUE completion (2026-10)', () => {
     const case_ = v3CaseAtRawStage3();
     const vm = buildCaseViewModel(case_, { staffList: [], viewingDisplayStage: 0 });
-    // Every other item in this past-stage view still reports done (past
-    // stage, done-by-definition) with no requiredCaseFields of its own.
     vm.checklist.forEach((item, i) => {
       if (i === 6 || i === 7) return;
-      expect(item.done).toBe(true);
       expect(item.requiredCaseFields).toBeUndefined();
+      // Never "done by definition" just because the case moved on, and never locked.
+      expect(item.locked).toBe(false);
     });
+    // This fixture checked nothing on the stage, so a plain manual item reads as not done.
+    expect(vm.checklist.some((item, i) => i !== 6 && i !== 7 && !item.done)).toBe(true);
   });
 
   it('the default (current-stage) view of this same case does not show the Certifier item at all — it belongs to an earlier, already-passed stage', () => {
@@ -1145,19 +1218,24 @@ describe('buildCaseViewModel — progress is immune to the cross-stage checklist
     expect(permitStage.checklist.items).toHaveLength(2);
     expect(dcStage.checklist.items).toHaveLength(2);
 
-    const case_ = baseCase({
-      rawStage: 4,
-      // Permit's own current stage is meant to read as fully done, so both
-      // of its 2 items need an explicit composite key now — checklist
-      // default-done fix (2026-10) retired the old free credit for item 0.
-      checklistState: { '3:0': true, '3:1': true },
-    });
+    const case_ = completeEarlierStages(
+      baseCase({
+        rawStage: 4,
+        // Permit's own current stage is meant to read as fully done, so both
+        // of its 2 items need an explicit composite key now — checklist
+        // default-done fix (2026-10) retired the old free credit for item 0.
+        checklistState: { '3:0': true, '3:1': true },
+      }),
+      // Every step before Permit genuinely done (2026-10: a stage's steps
+      // count only when actually completed) — DC Application Sent untouched.
+      3,
+    );
     const vm = buildCaseViewModel(case_, { staffList: [] });
 
     // Every stage strictly before Permit (First Call & Payment combined
     // 10 items — 11 less the retired duplicate credit-card payment item
-    // (2026-10) — Jotform 1, EDRS 3: 14 total) is fully credited by the
-    // "past stage" rule; Permit itself (current stage, 2 items) is fully
+    // (2026-10) — Jotform 1, EDRS 3: 14 total) is fully done (completed
+    // above, as it must be — the "past stage" free credit is gone); Permit itself (current stage, 2 items) is fully
     // done; every stage at/after DC Application Sent contributes 0
     // completed and its own item count toward the total: DC 2, Ready for
     // Pickup 5, Completed 1 — 8 total.

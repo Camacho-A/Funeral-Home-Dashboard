@@ -695,11 +695,12 @@ function CaseRow({
     // An untyped PDF on the case whose name suggests it (2026-10): shown
     // first, to open and check. "Use as …" opens the chooser with it
     // picked — staff still choose it there; a name never classifies it.
-    const suggestions = (kind: CrematorySourceKind) =>
-      canPrepare
-        ? summary.untypedDocuments
-            .filter((d) => d.suggestedAs === kind)
-            .map((d) => (
+    const suggestions = (kind: CrematorySourceKind) => {
+      const matches = canPrepare ? summary.untypedDocuments.filter((d) => d.suggestedAs === kind) : [];
+      if (matches.length === 0) return null;
+      return (
+        <div className={styles.suggestions}>
+          {matches.map((d) => (
               <span key={d.documentId} className={styles.hint}>
                 <strong>{d.fileName}</strong> may be the {kind === 'state_permit' ? 'permit' : 'Arrangement Form'} ·{' '}
                 <a href={buildCaseDocumentViewUrl(organizationId, summary.caseId, d.documentId)} target="_blank" rel="noreferrer">
@@ -710,15 +711,17 @@ function CaseRow({
                   {kind === 'state_permit' ? 'Use as permit' : 'Use as Arrangement Form'}
                 </button>
               </span>
-            ))
-        : null;
+          ))}
+        </div>
+      );
+    };
     // The Arrangement Form not having arrived is the real blocker — say so.
     if (key === 'crematory_form' && /not been received/i.test(r?.detail ?? '')) {
       return (
         <>
-          {suggestions('arrangement_forms')}
           <span className={styles.hint}>Waiting for the Arrangement Form</span>
           {chooseFromCase('arrangement_forms')}
+          {suggestions('arrangement_forms')}
         </>
       );
     }
@@ -728,7 +731,6 @@ function CaseRow({
       case 'permit_uploaded':
         return (
           <>
-            {suggestions('state_permit')}
             <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={() => fileInput.current?.click()}>
               Upload PDF
             </button>
@@ -744,6 +746,7 @@ function CaseRow({
               }}
             />
             {chooseFromCase('state_permit')}
+            {suggestions('state_permit')}
           </>
         );
       case 'permit_verified':
@@ -940,8 +943,8 @@ function ChooseDocumentDialog({
       </div>
       <div className="sx-modal-body">
         <p className={styles.hint}>
-          PDFs already uploaded to {summary.decedentDisplayName}&rsquo;s case ({summary.caseNumber}) without a document type. Open one to check it, then choose it.
-          Only its document type is set — the file is not changed or copied.
+          PDFs already uploaded to {summary.decedentDisplayName}&rsquo;s case ({summary.caseNumber}) without a document type.{' '}
+          {needsPreview ? 'Pick one to see it below, check it, then use it.' : 'Open one to check it, then choose it.'} Only its document type is set — the file is not changed or copied.
         </p>
         <ul className={styles.cases}>
           {documents.map((d) => (

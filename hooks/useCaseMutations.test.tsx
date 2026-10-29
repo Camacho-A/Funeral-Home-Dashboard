@@ -405,6 +405,19 @@ describe('useCaseMutations#toggleChecklistItem — optimistic update (Task #21, 
     resolve(testCase({ checklistState: { [KEY_0]: false } }));
   });
 
+  it('an item on an EARLIER stage (2026-10) is recorded under that stage\'s key — never the current stage\'s, and no stage change is sent', async () => {
+    const { result } = renderWithClient();
+    const case_ = testCase({ checklistState: {} });
+
+    act(() => {
+      result.current.toggleChecklistItem(case_, 1, true, 2);
+    });
+
+    await waitFor(() => expect(casesService.update).toHaveBeenCalled());
+    const [, , patch] = vi.mocked(casesService.update).mock.calls[0];
+    expect(patch).toEqual({ checklistState: { '2:1': true } });
+  });
+
   it('3. the persistence request still occurs with the correct checklistState patch', async () => {
     const { result } = renderWithClient();
     const case_ = testCase({ checklistState: { [KEY_0]: false, [KEY_1]: true } });

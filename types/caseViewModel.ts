@@ -222,6 +222,12 @@ export type CaseViewModel = {
       current-stage item reads below 100, and this can disagree with
       `displayStage` alone implying "almost done." */
   progressPercent: number;
+  /** Earlier stages (2026-10, where the organization has it — see
+      domain/workflow/earlierStages.ts): staff may complete or correct an
+      earlier stage's steps, and how many steps each earlier stage (by
+      canonical display stage) still has unchecked. Empty when off. */
+  earlierStagesEditable: boolean;
+  earlierStageUncheckedSteps: Record<number, number>;
   progressCompletedItems: number;
   progressTotalItems: number;
 

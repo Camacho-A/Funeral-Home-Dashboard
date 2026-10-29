@@ -731,3 +731,105 @@ describe('createManualExpectedPickup / changeExpectedPickupDate', () => {
     expect(before.checklistState).toEqual({});
   });
 });
+
+/**
+ * Historical corrections (2026-10): a checklist change on a stage the case
+ * had already moved beyond is not when the work happened, so it never
+ * creates, re-dates or overwrites the Expected Pickup — only the receipt
+ * step may act on it. See domain/workflow/earlierStages.ts.
+ */
+describe('syncExpectedPickupForCase — historical corrections (2026-10)', () => {
+  const record = (at: string, historical = false) => ({
+    done: true,
+    method: 'manual' as const,
+    source: 'staff_confirmation' as const,
+    eventType: 'staff.checklist_toggle',
+    eventId: null,
+    at,
+    actorId: 'identity-dana',
+    ...(historical ? { historical: true } : {}),
+  });
+  const P0 = checklistItemKey(PAPERWORK_STAGE, 0);
+  const P1 = checklistItemKey(PAPERWORK_STAGE, 1);
+  const CORRECTED_AT = '2026-10-27T16:00:00.000Z';
+  const sync = (case_: Case, receiptOnly?: boolean) =>
+    syncExpectedPickupForCase({ case_, organization: ORGANIZATION, paperworkCompletedAt: CORRECTED_AT, receiptOnly }, ctx(), 'mock');
+  const pickupsFor = (case_: Case) => appointmentFixtures.filter((a) => a.caseId === case_.id);
+
+  it('without an Expected Pickup: a correction completing the paperwork creates none, then or on a later ordinary save', async () => {
+    const corrected = buildCase({ rawStage: 5, checklistState: paperworkComplete(), checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(CORRECTED_AT, true) } });
+    const now = await sync(corrected, true);
+    expect(now).toMatchObject({ action: 'unchanged', appointment: null, reason: 'historical_correction' });
+    const later = await sync(corrected);
+    expect(later).toMatchObject({ action: 'unchanged', appointment: null, reason: 'historical_paperwork_correction' });
+    expect(pickupsFor(corrected)).toHaveLength(0);
+  });
+
+  it('an automatically scheduled pickup keeps its date — never re-dated from the correction', async () => {
+    const original = buildCase({ checklistState: paperworkComplete(), checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(PAPERWORK_AT) } });
+    const created = await syncExpectedPickupForCase({ case_: original, organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT }, ctx(), 'mock');
+    expect(expectedDateOf(created.appointment!)).toBe(EXPECTED);
+    expect(isManuallyDecided(created.appointment!)).toBe(false);
+
+    const corrected = { ...original, rawStage: 5, checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(CORRECTED_AT, true) } };
+    expect(await sync(corrected, true)).toMatchObject({ action: 'unchanged', reason: 'historical_correction' });
+    const later = await sync(corrected);
+    expect(later).toMatchObject({ action: 'unchanged', reason: 'historical_paperwork_correction' });
+    expect(expectedDateOf(later.appointment!)).toBe(EXPECTED);
+    expect(pickupsFor(corrected)).toHaveLength(1);
+  });
+
+  it('a staff-entered pickup date is preserved', async () => {
+    const case_ = buildCase({ rawStage: 5, checklistState: paperworkComplete(), checklistCompletions: { [P0]: record(CORRECTED_AT, true), [P1]: record(CORRECTED_AT, true) } });
+    const manual = await createManualExpectedPickup({ case_, organization: ORGANIZATION, expectedDate: '2026-10-09' }, ctx(), 'mock');
+    expect(manual.created).toBe(true);
+    for (const receiptOnly of [true, false]) {
+      const outcome = await sync(case_, receiptOnly);
+      expect(outcome.action).toBe('unchanged');
+      expect(expectedDateOf(outcome.appointment!)).toBe('2026-10-09');
+    }
+    expect(pickupsFor(case_)).toHaveLength(1);
+  });
+
+  it('the receipt step still marks the pickup received through its usual path', async () => {
+    const original = buildCase({ checklistState: paperworkComplete(), checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(PAPERWORK_AT) } });
+    await syncExpectedPickupForCase({ case_: original, organization: ORGANIZATION, paperworkCompletedAt: PAPERWORK_AT }, ctx(), 'mock');
+    const receiptKey = checklistItemKey(RECEIPT.displayStage, RECEIPT.index);
+    const received = {
+      ...original,
+      rawStage: 6,
+      checklistState: { ...paperworkComplete(), [receiptKey]: true },
+      checklistCompletions: { ...original.checklistCompletions, [receiptKey]: record(CORRECTED_AT, true) },
+    };
+    const outcome = await sync(received, true);
+    expect(outcome.action).toBe('received');
+    expect(expectedDateOf(outcome.appointment!)).toBe(EXPECTED);
+  });
+
+  it('a correction elsewhere never blocks scheduling: only paperwork records that are corrections do', async () => {
+    const otherKey = checklistItemKey(0, 8);
+    const case_ = buildCase({
+      checklistState: paperworkComplete(),
+      checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(PAPERWORK_AT), [otherKey]: record(CORRECTED_AT, true) },
+    });
+    const outcome = await sync(case_);
+    expect(outcome.action).toBe('created');
+    expect(expectedDateOf(outcome.appointment!)).toBe(EXPECTED);
+  });
+
+  it('paperwork re-checked as an ordinary current-stage step (the correction record replaced) schedules again', async () => {
+    const case_ = buildCase({ checklistState: paperworkComplete(), checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(CORRECTED_AT, true) } });
+    expect((await sync(case_)).action).toBe('unchanged');
+    const rechecked = { ...case_, checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(PAPERWORK_AT) } };
+    const outcome = await sync(rechecked);
+    expect(outcome.action).toBe('created');
+    expect(expectedDateOf(outcome.appointment!)).toBe(EXPECTED);
+  });
+
+  it('an ordinary (non-correction) save still schedules exactly as before', async () => {
+    const case_ = buildCase({ checklistState: paperworkComplete(), checklistCompletions: { [P0]: record(PAPERWORK_AT), [P1]: record(PAPERWORK_AT) } });
+    const outcome = await sync(case_);
+    expect(outcome.action).toBe('created');
+    expect(expectedDateOf(outcome.appointment!)).toBe(EXPECTED);
+  });
+});

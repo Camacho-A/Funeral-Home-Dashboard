@@ -115,6 +115,32 @@ vi.mock('@/services/organizationProvisioningService', () => ({
   getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
 }));
 
+// Historical corrections (2026-10): observe what the expected-pickup sync
+// is asked to do (the real one still runs), and let a test switch true
+// earlier-stage status off to stand in for any organization but Manors.
+const { syncExpectedPickupSpy, earlierStageStatus } = vi.hoisted(() => ({
+  syncExpectedPickupSpy: vi.fn(),
+  earlierStageStatus: { override: null as boolean | null },
+}));
+vi.mock('@/services/cremainsPickupService', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/services/cremainsPickupService')>();
+  return {
+    ...original,
+    syncExpectedPickupForCase: (...args: Parameters<typeof original.syncExpectedPickupForCase>) => {
+      syncExpectedPickupSpy(...args);
+      return original.syncExpectedPickupForCase(...args);
+    },
+  };
+});
+vi.mock('@/domain/workflow/earlierStages', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/domain/workflow/earlierStages')>();
+  return {
+    ...original,
+    isTrueEarlierStageStatusEnabled: (organizationId: string | null | undefined) =>
+      earlierStageStatus.override ?? original.isTrueEarlierStageStatusEnabled(organizationId),
+  };
+});
+
 const { GET, PATCH } = await import('./route');
 
 function requestFor(caseId: string, organizationId: string | null) {
@@ -2738,5 +2764,124 @@ describe('PATCH /api/cases/[caseId] — case revisions and concurrency', () => {
     const response = await rawPatchRequest('1042', { organizationId: SECOND_MOCK_ORGANIZATION_ID, patch: { weight: '1' }, expectedRevision: 0 });
     expect(response.status).toBe(404);
     expect(conditionalPatchCalls).toHaveLength(0);
+  });
+});
+
+describe('PATCH /api/cases/[caseId] — historical checklist corrections (2026-10)', () => {
+  beforeEach(() => {
+    process.env.DATA_ADAPTER = 'wix';
+    process.env.WIX_API_KEY = 'test-key';
+    process.env.WIX_SITE_ID = 'test-site';
+    syncExpectedPickupSpy.mockClear();
+    earlierStageStatus.override = null;
+  });
+  afterEach(() => {
+    earlierStageStatus.override = null;
+  });
+
+  const SNAPSHOT = buildCaseWorkflowSnapshot(standardCremationWorkflowTemplateFixture, standardCremationWorkflowTemplateFixture.versions[0]);
+  /** A case at raw stage 3 (display stage 2) — stages 0 and 1 are earlier. */
+  function mockStage3Case(extra: Record<string, unknown> = {}) {
+    mockWixQueries([
+      {
+        id: '1042',
+        dataCollectionId: 'cases',
+        data: {
+          ...EXISTING_WIX_CASE_DATA,
+          currentStage: 3,
+          workflowTemplateId: standardCremationWorkflowTemplateFixture.id,
+          workflowTemplateVersion: standardCremationWorkflowTemplateFixture.versions[0].version,
+          workflowSnapshot: SNAPSHOT,
+          fieldValues: { 0: 'X', 1: 'X', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X', 7: 'X', 9: 'X', 10: 'X' },
+          checklistState: { '0:0': true, '0:8': true, '0:9': true, '0:10': true },
+          ...extra,
+        },
+      },
+    ]);
+    mockUpdateWixDataItem.mockImplementation((_c: string, itemId: string, data: Record<string, unknown>) => Promise.resolve({ id: itemId, dataCollectionId: 'cases', data }));
+  }
+  const writtenCompletions = () =>
+    (mockUpdateWixDataItem.mock.calls[0][2] as { checklistCompletions: Record<string, Record<string, unknown>> }).checklistCompletions;
+  const activityTypes = () => mockInsertWixDataItem.mock.calls.filter(([c]) => c === 'activityEvents').map(([, data]) => (data as { eventType: string }).eventType);
+
+  it('an earlier-stage change is saved, attributed, flagged historical by the server — and the case stays where it is', async () => {
+    mockStage3Case();
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } } });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.case.rawStage).toBe(3);
+    expect(body.case.checklistState['0:8']).toBe(false);
+    expect(writtenCompletions()['0:8']).toMatchObject({ done: false, method: 'manual', actorId: mockDefaultUser.id, historical: true });
+    expect(Date.parse(writtenCompletions()['0:8'].at as string)).not.toBeNaN();
+  });
+
+  it('asks the expected-pickup sync for the receipt step only — never to create or re-date a pickup', async () => {
+    mockStage3Case();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '1:0': true } } });
+    expect(syncExpectedPickupSpy).toHaveBeenCalledTimes(1);
+    expect(syncExpectedPickupSpy.mock.calls[0][0]).toMatchObject({ receiptOnly: true });
+  });
+
+  it('a save that also changes a current-stage step keeps ordinary pickup scheduling — only the earlier key is flagged', async () => {
+    mockStage3Case();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false, '2:0': true } } });
+    expect(syncExpectedPickupSpy.mock.calls[0][0]).toMatchObject({ receiptOnly: false });
+    expect(writtenCompletions()['0:8']).toMatchObject({ historical: true });
+    expect(writtenCompletions()['2:0']).not.toHaveProperty('historical');
+  });
+
+  it('a non-checklist save after a correction syncs as usual', async () => {
+    mockStage3Case();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { fieldValues: { 3: '160 lb' } } });
+    for (const [params] of syncExpectedPickupSpy.mock.calls) expect(params).toMatchObject({ receiptOnly: false });
+  });
+
+  it('is recorded in the activity log as a correction, alongside the usual case update', async () => {
+    mockStage3Case();
+    await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } } });
+    expect(activityTypes()).toEqual(expect.arrayContaining(['case.updated', 'case.checklist_corrected']));
+    const corrected = mockInsertWixDataItem.mock.calls.find(([, data]) => (data as { eventType: string }).eventType === 'case.checklist_corrected')![1] as {
+      description: string;
+      newValue: string;
+    };
+    expect(corrected.description).toMatch(/^Earlier step corrected: unchecked "/);
+    expect(JSON.parse(corrected.newValue)).toMatchObject({ historicalCorrection: true, changes: [{ key: '0:8', done: false }] });
+  });
+
+  it('a client cannot claim or deny a correction — only the stored stage decides', async () => {
+    mockStage3Case();
+    await patchRequest('1042', {
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      historical: false,
+      patch: { checklistState: { '0:8': false }, checklistCompletions: { '0:8': { done: false, historical: false } } },
+    });
+    expect(writtenCompletions()['0:8']).toMatchObject({ historical: true, method: 'manual' });
+  });
+
+  it('an ordinary current-stage update is unchanged: no correction flag, a normal pickup sync, no correction event', async () => {
+    mockStage3Case();
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '2:0': true } } });
+    expect(response.status).toBe(200);
+    expect(writtenCompletions()['2:0']).not.toHaveProperty('historical');
+    expect(syncExpectedPickupSpy.mock.calls[0][0]).toMatchObject({ receiptOnly: false });
+    expect(activityTypes()).not.toContain('case.checklist_corrected');
+  });
+
+  it('without true earlier-stage status (any organization but Manors) the server refuses earlier-stage changes and writes nothing', async () => {
+    earlierStageStatus.override = false;
+    mockStage3Case();
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } } });
+    expect(response.status).toBe(403);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    // The current stage is still editable, exactly as before.
+    const current = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '2:0': true } } });
+    expect(current.status).toBe(200);
+  });
+
+  it('an archived case refuses a correction like any other edit', async () => {
+    mockStage3Case({ isArchived: true, archivedAt: '2026-10-01T00:00:00.000Z' });
+    const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '0:8': false } } });
+    expect(response.status).toBe(409);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 });

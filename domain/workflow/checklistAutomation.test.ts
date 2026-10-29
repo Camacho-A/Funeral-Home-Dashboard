@@ -85,8 +85,10 @@ describe('Why an item is complete', () => {
     expect(checklistCompletionInfo(case_, 0, 0, true)).toEqual({ kind: 'derived' });
   });
 
-  it('a past stage with no records says "unavailable", and open items carry nothing', () => {
-    expect(stage2(manors(), true).every((item) => item.completion?.kind === 'unavailable')).toBe(true);
+  it('a past stage shows only what was actually done (2026-10): a done item without a record says "unavailable", and open items carry nothing', () => {
+    const past = stage2(manors({ checklistState: { '2:0': true } }), true);
+    expect(past.map((item) => [item.done, item.completion?.kind ?? null])).toEqual([[true, 'unavailable'], [false, null], [false, null]]);
+    expect(stage2(manors(), true).every((item) => !item.done && item.completion === undefined)).toBe(true);
     expect(stage2(manors()).every((item) => item.completion === undefined)).toBe(true);
   });
 

@@ -9,6 +9,8 @@
 .sx-docs-title { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; color: var(--sx-text); }
 .sx-docs-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 24px; }
 .sx-docs-toolbar-spacer { flex: 1; }
+/* Upload File's document-type choice (2026-10): beside the button, not a full-width row. */
+.sx-docs-toolbar > .sx-docs-upload-type { width: auto; flex: 0 1 220px; min-width: 150px; }
 .sx-docs-group { margin: 0 0 28px; }
 .sx-doc-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; min-height: 56px; padding: 8px 8px; margin: 0 -8px; border-bottom: 1px solid var(--sx-border-soft); border-radius: 7px; transition: background-color var(--sx-ease); }
 .sx-doc-row:hover { background: var(--sx-subtle); }
@@ -37,6 +39,7 @@
   .sx-docs-toolbar > .sx-menu-root > .sx-btn { width: 100%; height: 44px; }
   .sx-docs-toolbar > .sx-btn-ghost { flex: 1 1 calc(50% - 4px); height: 44px; }
   .sx-docs-toolbar-spacer { display: none; }
+  .sx-docs-toolbar > .sx-docs-upload-type { flex: 1 1 calc(50% - 4px); height: 44px; }
   .sx-doc-row { grid-template-columns: 32px minmax(0, 1fr) 44px; row-gap: 4px; align-items: start; padding: 12px 0; margin: 0; border-radius: 0; }
   .sx-doc-name { white-space: normal; overflow-wrap: anywhere; }
   .sx-doc-meta { white-space: normal; }

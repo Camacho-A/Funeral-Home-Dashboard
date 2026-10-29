@@ -118,6 +118,16 @@
   background: var(--solis-success, var(--color-success));
 }
 
+.dotIncomplete {
+  background: var(--color-warning-text);
+  border-color: var(--color-warning-text);
+  color: #ffffff;
+}
+
+.connectorIncomplete {
+  background: var(--color-warning-border);
+}
+
 .connectorUpcoming {
   background: var(--color-border);
 }

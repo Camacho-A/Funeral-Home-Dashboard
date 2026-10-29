@@ -1,3 +1,4 @@
+import { isTrueEarlierStageStatusEnabled } from '../workflow/earlierStages';
 import type { Case } from '../../types/case';
 import type { SlaSettings } from '../sla/slaSettings';
 import { SLA_STATUS_LABEL, describeDeadline, evaluateCaseSla, slaNeedsAttention } from '../sla/slaMilestones';
@@ -328,6 +329,24 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // further down) because the checklist presentation below needs it too —
   // one derivation, used by both.
   const canonicalStageLabels = displayStagesInOrder(snapshot).map((stage) => stage.label);
+  /** A stage the case has moved beyond, exactly as Case Detail shows it —
+      its TRUE completion (2026-10), with every presentation overlay the
+      viewed-stage checklist below applies. Shared by that view and by
+      progress, so the two can never disagree. */
+  const resolveEarlierStageChecklist = (displayStage: number): ChecklistItemViewModel[] =>
+    applyCombinedIntakeLabelCase(
+      applyFamilyContactPresentation(
+        applyLegacyCertifierPresentation(
+          resolveChecklist(findStageByDisplayStage(snapshot, displayStage)?.checklist.items ?? [], displayStage, case_, { isPastStage: true }),
+          case_,
+          true,
+        ),
+        case_,
+      ),
+      case_,
+      canonicalStageLabels,
+      displayStage,
+    );
 
   // Conditional shipping/tracking (2026-09): the terminal return-of-remains
   // requirement is now derived from structured data (returnMethod +
@@ -384,13 +403,25 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // its own `rawStage` — the stage the checklist UI is actually resolved
   // against (effectiveCurrentChecklist, computed from `case_.rawStage`
   // directly above).
+  const trueEarlierStages = isTrueEarlierStageStatusEnabled(case_.organizationId);
   const caseProgress = computeCaseProgress(
     snapshot,
     rawDisplayStage,
     effectiveCurrentChecklist,
     case_.organizationId,
     case_.isMedicalExaminerCase === true,
+    trueEarlierStages ? resolveEarlierStageChecklist : undefined,
   );
+  // The stepper's "Passed — N steps not checked" (2026-10): the same
+  // resolved checklist Case Detail shows for each earlier stage.
+  const earlierStageUncheckedSteps: Record<number, number> = {};
+  if (trueEarlierStages) {
+    for (const stage of displayStagesInOrder(snapshot)) {
+      if (stage.displayStage >= rawDisplayStage) continue;
+      const unchecked = resolveEarlierStageChecklist(stage.displayStage).filter((item) => !item.done).length;
+      if (unchecked > 0) earlierStageUncheckedSteps[stage.displayStage] = unchecked;
+    }
+  }
   // 2026-10: the case's real stage, always. A case in the final stage
   // used to be shown one stage back ("Ready for Pickup / Contact Family")
   // until the family pickup was recorded, while the stage counts and the
@@ -501,32 +532,24 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
         ? 'danger'
         : 'neutral';
 
-  // A stage the case has already moved beyond is complete by definition
-  // (see domain/workflow/resolveChecklist.ts's doc comment) — determined
-  // here from the case's own effective stage, not assumed from how the
-  // caller (the StageStepper) happens to restrict which stages are
-  // clickable.
+  // An earlier stage shows its TRUE completion (2026-10) — moving past a
+  // stage never completes it. Whether it is earlier is determined here
+  // from the case's own effective stage, not from how the caller (the
+  // StageStepper) restricts which stages are clickable.
   const viewedStage = viewingDisplayStage != null ? findStageByDisplayStage(snapshot, viewingDisplayStage) : null;
   const viewedChecklist =
     viewingDisplayStage != null
-      ? applyCombinedIntakeLabelCase(
-          applyFamilyContactPresentation(
-            applyLegacyCertifierPresentation(
-              resolveChecklist(
-                viewedStage?.checklist.items ?? [],
-                viewingDisplayStage,
-                case_,
-                { isPastStage: viewingDisplayStage < effectiveDisplayStage },
-              ),
+      ? viewingDisplayStage < effectiveDisplayStage
+        ? resolveEarlierStageChecklist(viewingDisplayStage)
+        : applyCombinedIntakeLabelCase(
+            applyFamilyContactPresentation(
+              applyLegacyCertifierPresentation(resolveChecklist(viewedStage?.checklist.items ?? [], viewingDisplayStage, case_, { isPastStage: false }), case_, false),
               case_,
-              viewingDisplayStage < effectiveDisplayStage,
             ),
             case_,
-          ),
-          case_,
-          canonicalStageLabels,
-          viewingDisplayStage,
-        )
+            canonicalStageLabels,
+            viewingDisplayStage,
+          )
       : effectiveCurrentChecklist;
 
   return {
@@ -587,6 +610,8 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
     viewingDisplayStage,
 
     progressPercent: caseProgress.percent,
+    earlierStagesEditable: trueEarlierStages,
+    earlierStageUncheckedSteps,
     progressCompletedItems: caseProgress.completedItems,
     progressTotalItems: caseProgress.totalItems,
 

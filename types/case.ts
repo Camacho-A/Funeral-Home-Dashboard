@@ -462,6 +462,10 @@ export type ChecklistCompletionRecord = {
   eventId: string | null;
   at: string;
   actorId: string | null;
+  /** A historical correction (2026-10): checked or unchecked on a stage the
+      case had already moved beyond. `at` is when the correction was made —
+      never when the work itself happened (domain/workflow/earlierStages.ts). */
+  historical?: boolean;
 };
 
 /** Send to Crematory (2026-10). Every entry records who did it and when. */

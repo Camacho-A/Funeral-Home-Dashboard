@@ -26,7 +26,7 @@ vi.mock('@/components/crematory/PermitPdfPreview', async () => {
     },
   };
 });
-const { CrematoryPackageStatus, preparationDue } = await import('./CrematoryPackageStatus');
+const { CrematoryPackageStatus, preparationDue, packageHeadline } = await import('./CrematoryPackageStatus');
 
 const req = (key: string, ok: boolean, detail: string | null = null) => ({ key: key as CrematoryRequirementKey, label: key, ok, detail });
 const OK = ['cremation', 'permit_uploaded', 'permit_verified', 'crematory_form', 'workflow_2', 'package_name', 'ready_date', 'not_sent', 'package', 'permission'].map((k) => req(k, true));
@@ -48,10 +48,10 @@ const show = () =>
   );
 
 describe('CrematoryPackageStatus', () => {
-  it('a current package: Ready, its file name and version, every source ticked', async () => {
+  it('a current package with nothing else outstanding: ready for final review and sending, its file name and version, every source ticked', async () => {
     fetchCrematoryCaseSummary.mockResolvedValue(summary());
     show();
-    expect(await screen.findByText('Ready')).toBeInTheDocument();
+    expect(await screen.findByText('Ready for final review and sending')).toBeInTheDocument();
     expect(screen.getByText(/REYNOLDS_RICHARD_CREMATORY_PACKAGE_11-06-2026\.pdf · v2/)).toBeInTheDocument();
     expect(screen.getByText(/Arrangement Form page 3 \(Crematory Form\)/)).toBeInTheDocument();
   });
@@ -136,6 +136,28 @@ describe('CrematoryPackageStatus', () => {
     expect(preparationDue(page3('The completed Arrangement Form has not been received yet.'))).toBe(false);
     const sent = { submissionId: 's', status: 'submitted' as const, packageDocumentId: 'pkg', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null };
     expect(preparationDue(summary({ package: { documentId: 'pkg', version: 1, fileName: 'x.pdf', current: false }, lastSubmission: sent }))).toBe(false);
+  });
+
+  describe('the status line follows the server\'s readiness, never the PDF alone (2026-10)', () => {
+    const without = (...keys: string[]) => [...OK.filter((r) => !keys.includes(r.key)), ...keys.map((k) => req(k, false))];
+    const sent = { submissionId: 's', status: 'submitted' as const, packageDocumentId: 'pkg', packageVersion: 2, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null };
+    it.each([
+      ['prepared, Workflow 2 outstanding', summary({ readiness: { requirements: without('workflow_2'), readyToBuild: true, readyToSend: false } }), 'Package prepared — Workflow 2 required before sending.', 'warn'],
+      ['prepared, something else outstanding', summary({ readiness: { requirements: without('previous_send'), readyToBuild: true, readyToSend: false } }), 'Package prepared — previous_send required before sending.', 'warn'],
+      ['ready for the final review', summary(), 'Ready for final review and sending', 'ok'],
+      ['ready, though this viewer may not send', summary({ readiness: { requirements: without('permission'), readyToBuild: true, readyToSend: false } }), 'Ready for final review and sending', 'ok'],
+      ['being prepared', summary({ package: { documentId: 'pkg', version: 1, fileName: 'x.pdf', current: false } }), 'Being prepared', 'neutral'],
+      ['missing information', summary({ package: null, readiness: { requirements: without('permit_uploaded', 'permit_verified', 'package'), readyToBuild: false, readyToSend: false } }), 'Needs attention', 'warn'],
+      ['sent through SOLIS', summary({ lastSubmission: sent }), 'Sent to the crematory', 'ok'],
+      ['send unclear', summary({ lastSubmission: { ...sent, status: 'uncertain' as const } }), 'Send outcome unclear', 'warn'],
+      ['last send failed', summary({ lastSubmission: { ...sent, status: 'failed' as const } }), 'Ready for final review and sending (the last send failed)', 'ok'],
+      ['recorded as sent outside SOLIS', summary({ previousSend: { indicated: false, recorded: { decision: 'sent_outside_solis', method: 'email', sentOn: null, verification: 'x', recordedBy: null, recordedAt: '2026-10-29T00:00:00.000Z' } } }), 'Recorded as sent outside SOLIS', 'neutral'],
+      ['possible earlier send', summary({ previousSend: { indicated: true, recorded: null } }), 'Possible earlier send', 'warn'],
+    ] as const)('%s', (_name, s_, text, tone) => {
+      const headline = packageHeadline(s_ as CrematoryCaseSummary);
+      expect(headline.text).toContain(text);
+      expect(headline.tone).toBe(tone);
+    });
   });
 
   it('not a cremation case: nothing shown', async () => {

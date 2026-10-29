@@ -203,6 +203,15 @@ export type OrganizationFeaturePreferences = {
   /** Automatic checklist completion (2026-10): verified events complete
       their checklist items and the completion is recorded and shown as
       automatic (domain/workflow/checklistAutomation.ts). */
+  /**
+   * Earlier workflow stages (2026-10): a stage the case has moved beyond
+   * shows its TRUE checklist status (moving past a stage never completes
+   * it), staff who may edit the case can complete or correct its steps —
+   * the case never moves — progress counts only steps actually done, and
+   * the stepper marks a passed stage with unchecked steps. Off by
+   * default: such a stage reads as complete and is read-only, as before.
+   */
+  trueEarlierStageStatus: boolean;
   automaticChecklistCompletion: boolean;
   /** SLA tracking (2026-10): business-day milestones, the header's current
       SLA, dashboard counts and SLA alerts (domain/sla/). */
@@ -309,6 +318,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   additionalItemsTerminology: false,
   legacyCertifierPresentation: false,
   automaticChecklistCompletion: false,
+  trueEarlierStageStatus: false,
   slaTracking: false,
   dymoCaseLabel: false,
   arrangementPageExtracts: false,
@@ -379,6 +389,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     additionalItemsTerminology: true,
     legacyCertifierPresentation: true,
     automaticChecklistCompletion: true,
+    trueEarlierStageStatus: true,
     slaTracking: true,
     dymoCaseLabel: true,
     arrangementPageExtracts: true,

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '@/domain/workflow/checklistAutomation';
+import { describeChecklistCorrection, historicalChecklistKeys, isTrueEarlierStageStatusEnabled } from '@/domain/workflow/earlierStages';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
 import { getDataAdapterMode } from '@/lib/env';
@@ -22,6 +23,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import {
   recordCaseUpdated,
+  recordChecklistCorrected,
   recordCaseUpdateConflict,
   recordStageChanged,
   recordReturnMethodChanged,
@@ -365,6 +367,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
             { status: 400 },
           );
         }
+        // Earlier stages are editable only where the organization has
+        // true earlier-stage status (Manors, 2026-10); elsewhere they stay
+        // read-only, as before — enforced here, not just in the UI.
+        if (
+          patch.rawStage === undefined &&
+          !isTrueEarlierStageStatusEnabled(organizationId) &&
+          historicalChecklistKeys(current, patch.checklistState).length > 0
+        ) {
+          return NextResponse.json({ case: null, error: 'Earlier workflow steps cannot be changed for this organization.' }, { status: 403 });
+        }
       }
       return null;
     };
@@ -403,6 +415,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     let row: LoadedCaseRow | null = firstRow;
     let existing: Case = firstRow.case_;
     let written: LoadedCaseRow | null = null;
+    let historicalKeys: string[] = [];
+    let historicalBase: Case = firstRow.case_;
     for (let attempt = 0; attempt < CASE_WRITE_MAX_ATTEMPTS && !written; attempt++) {
       if (attempt > 0) {
         row = await loadCaseRow(organizationId, caseId);
@@ -411,6 +425,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       const current: LoadedCaseRow = row!;
       const refusal = refuseAgainst(current.case_);
       if (refusal) return refusal;
+      // Historical corrections (2026-10): decided here, from the case as
+      // stored — never from the browser (domain/workflow/earlierStages.ts).
+      const currentHistoricalKeys = historicalChecklistKeys(current.case_, patch.checklistState);
+      historicalKeys = currentHistoricalKeys;
+      historicalBase = current.case_;
 
       // Checklist completion attribution (2026-10): every item this edit
       // completes or reopens is recorded as the staff member's decision, in
@@ -418,7 +437,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       // can say who completed it. Server-computed, never taken from the client.
       const staffCompletions =
         patch.checklistState && isChecklistAutomationEnabled(organizationId)
-          ? staffChecklistCompletionUpdate(current.case_, patch.checklistState, context.userId, new Date().toISOString())
+          ? staffChecklistCompletionUpdate(current.case_, patch.checklistState, context.userId, new Date().toISOString(), {
+              historicalKeys: currentHistoricalKeys,
+            })
           : null;
       // SLA tracking (2026-10): a manual stage change records when the case
       // entered its new stage, in the same write.
@@ -614,6 +635,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
               ? { id: organization.id, timezone: organization.timezone, cremainsPickupSettings: organization.cremainsPickupSettings }
               : null,
             paperworkCompletedAt: new Date().toISOString(),
+            // A historical correction is not when the work happened: only
+            // the receipt step may act on it — never a new or re-dated pickup.
+            // A save that also changes current-stage steps syncs as usual
+            // (the service itself never dates a pickup from a correction).
+            receiptOnly: historicalKeys.length > 0 && historicalKeys.length === Object.keys(patch.checklistState ?? {}).length,
           },
           { organizationId, actorIdentityId: context.userId, actorMembershipId: null, actorRoleKey: context.role, correlationId },
           'wix',
@@ -723,6 +749,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         }
         if (Object.keys(changedFields).length > 0) {
           await recordCaseUpdated(activityCtx, caseId, changedFields, 'wix');
+        }
+        // A historical correction is also recorded as such, naming the
+        // earlier steps it changed (2026-10).
+        if (historicalKeys.length > 0 && patch.checklistState) {
+          const corrected = Object.fromEntries(historicalKeys.map((key) => [key, patch.checklistState![key]]));
+          await recordChecklistCorrected(activityCtx, caseId, describeChecklistCorrection(historicalBase, corrected), 'wix');
         }
       } catch (error) {
         console.error('Failed to record case-update activity event(s):', error instanceof Error ? error.message : error);

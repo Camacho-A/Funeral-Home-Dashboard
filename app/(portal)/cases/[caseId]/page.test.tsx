@@ -583,4 +583,19 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
     const handler = SOURCE.slice(SOURCE.indexOf('function openWorkflowStage'), SOURCE.indexOf('// From Send to Crematory on the Cases page'));
     expect(handler).not.toMatch(/toggleChecklistItem|mutations\./);
   });
+
+  it('earlier stages (2026-10): the checklist gets the case-edit permission, and a tick is recorded on the stage being viewed', () => {
+    expect(SOURCE).toMatch(/onToggleItem=\{\(index, newDone\) => mutations\.toggleChecklistItem\(case_, index, newDone, viewingDisplayStage\)\}/);
+    expect(SOURCE).toMatch(
+      /canEdit=\{!permissionsQuery\.isSuccess \|\| permissionsQuery\.data\.permissions\.includes\('case\.update'\)\}\s*earlierStageEditable=\{viewModel\.earlierStagesEditable\}\s*resolveActorName/,
+    );
+    expect(SOURCE).toMatch(/isArchived=\{case_\.isDeleted === true\}/);
+  });
+
+  it('the stepper (2026-10): a passed stage carries its unchecked-step count, summed over its canonical stages; an earlier group opens on the stage that has them', () => {
+    expect(SOURCE).toContain('viewModel.earlierStageUncheckedSteps[canonical] ?? 0');
+    expect(SOURCE).toMatch(/incompleteSteps:\s*index < viewModel\.presentedDisplayStage/);
+    expect(SOURCE).toContain('(firstUnchecked ?? group[0])');
+  });
 });
+

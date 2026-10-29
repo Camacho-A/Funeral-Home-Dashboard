@@ -130,6 +130,10 @@ export type CaseCreatedMetadata = {
 export const ACTIVITY_EVENT_TYPES = {
   CASE_CREATED: 'case.created',
   CASE_UPDATED: 'case.updated',
+  /** A checklist correction on a stage the case had already moved beyond
+      (2026-10): which steps, checked or unchecked, by whom. The case's
+      stage is unchanged. */
+  CASE_CHECKLIST_CORRECTED: 'case.checklist_corrected',
   /** Case concurrency (2026-10). A save refused because the case changed
       since the editor loaded it. Same type string as Gus SOLIS. */
   CASE_UPDATE_CONFLICT: 'case.update.conflict',
