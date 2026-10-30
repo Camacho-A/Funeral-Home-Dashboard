@@ -1283,9 +1283,9 @@ function PaymentSummaryLine({ summary }: { summary: CasePaymentSummary }) {
         {summary.detail}
       </span>
       {summary.mismatch === 'marked_paid_with_balance' && (
-        <span className={styles.paymentSummaryNote}>Marked paid, but the payment records still show a balance due.</span>
+        <span className={styles.paymentSummaryNote}>Payment records still show a balance due.</span>
       )}
-      {summary.mismatch === 'paid_but_not_marked' && <span className={styles.paymentSummaryNote}>The payment records show this case is paid in full.</span>}
+      {summary.mismatch === 'paid_but_not_marked' && <span className={styles.paymentSummaryNote}>Payment records show this case is paid.</span>}
     </div>
   );
 }

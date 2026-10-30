@@ -631,7 +631,7 @@ describe('CaseInformationCard — payment records beside the stored Payment valu
         onUpdateCaseInfo={vi.fn()}
       />,
     );
-    expect(screen.getByText('Marked paid, but the payment records still show a balance due.')).toBeInTheDocument();
+    expect(screen.getByText('Payment records still show a balance due.')).toBeInTheDocument();
   });
 
   it('the summary never writes: the stored value changes only through the select', () => {
