@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { paymentsClient } from '@/services/paymentsClient';
 import { useOrganization } from './useOrganization';
 import type { ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods';
@@ -8,6 +8,20 @@ import type { ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods'
  * organizationId-leading query-key convention as every other
  * organization-scoped hook (useCase, useCases, ...).
  */
+
+/**
+ * Everything on the case page that a payment can move (2026-10): the
+ * payment history, the Case Order's balance, and the case itself — the
+ * server marks a case "Paid in full" when a verified payment clears its
+ * balance (services/paymentWorkflow.ts markCasePaidIfVerified), and the
+ * Case Information "Payment" field only shows that once ['case', …] is
+ * read again.
+ */
+export function invalidateCasePaymentState(queryClient: QueryClient, organizationId: string, caseId: string) {
+  queryClient.invalidateQueries({ queryKey: ['casePayments', organizationId, caseId] });
+  queryClient.invalidateQueries({ queryKey: ['caseOrder', organizationId, caseId] });
+  queryClient.invalidateQueries({ queryKey: ['case', organizationId, caseId] });
+}
 
 export function useCasePayments(caseId: string, enabled: boolean = true) {
   const organization = useOrganization();
@@ -43,10 +57,7 @@ export function useRecordManualPayment(caseId: string) {
   return useMutation({
     mutationFn: (input: { method: ManualPaymentMethod; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string }) =>
       paymentsClient.recordManualPayment(organization, caseId, input),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });
-      queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });
-    },
+    onSuccess: () => invalidateCasePaymentState(queryClient, organization.organizationId, caseId),
   });
 }
 
@@ -58,7 +69,7 @@ export function useResolveReturnedPayment(caseId: string) {
 
   function invalidate(paymentId: string) {
     queryClient.invalidateQueries({ queryKey: ['casePayment', organization.organizationId, caseId, paymentId] });
-    queryClient.invalidateQueries({ queryKey: ['casePayments', organization.organizationId, caseId] });
+    invalidateCasePaymentState(queryClient, organization.organizationId, caseId);
   }
 
   const cancel = useMutation({

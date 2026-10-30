@@ -16,6 +16,9 @@ import { useStaff } from '@/hooks/useStaff';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
+import { useCaseOrder } from '@/hooks/useCaseOrder';
+import { useCasePayments } from '@/hooks/useCasePayments';
+import { summarizeCasePayment } from '@/domain/cases/casePaymentSummary';
 import { isFamilyPortalEnabled } from '@/domain/organization/familyPortalCapability';
 import { shouldShowCaseOwner } from '@/domain/organization/caseOwnerVisibility';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
@@ -123,6 +126,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const permissionsQuery = useMyPermissions(organizationId);
   const canSeeWorkflowTab = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
   const canSeeBillingTab = Boolean(permissionsQuery.data?.permissions.includes('payment.read'));
+  // The derived payment status beside the stored "Payment" value (2026-10):
+  // the same order/payment queries the Case Order card reads, under the
+  // same permissions — nothing is fetched that the viewer could not see.
+  const canReadCaseOrder = Boolean(permissionsQuery.data?.permissions.includes('caseOrder.read'));
+  const { data: caseOrder } = useCaseOrder(caseId, canReadCaseOrder);
+  const { data: casePayments } = useCasePayments(caseId, canReadCaseOrder && canSeeBillingTab);
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
@@ -294,6 +303,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             dateOfCremation={case_.dateOfCremation ?? null}
             showDateOfCremation={officialDocumentsFor(case_.organizationId).includes('certificate_of_cremation')}
             paymentStatus={viewModel.paymentStatus}
+            paymentSummary={
+              canReadCaseOrder && canSeeBillingTab ? summarizeCasePayment({ order: caseOrder?.order, payments: casePayments, recordedStatus: viewModel.paymentStatus }) : null
+            }
             pickupStatus={case_.pickupStatus}
             pickupReleasedTo={case_.pickupReleasedTo}
             pickupReleasedAt={case_.pickupReleasedAt}

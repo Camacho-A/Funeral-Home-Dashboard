@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateCasePaymentState } from './useCasePayments';
 import type { LedgerAccountType, LedgerAccountNormalBalance } from '@/types/ledgerAccount';
 import {
   fetchChartOfAccounts,
@@ -125,7 +126,10 @@ export function usePostWriteOff(organizationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: { caseId: string; amountCents: number; reason: string }) => postWriteOff({ organizationId, ...params }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: journalEntriesKey(organizationId) }),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: journalEntriesKey(organizationId) });
+      invalidateCasePaymentState(queryClient, organizationId, params.caseId);
+    },
   });
 }
 
@@ -150,7 +154,10 @@ export function useRefundPayment(organizationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: { caseId: string; paymentId: string }) => refundPayment(organizationId, params.caseId, params.paymentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: journalEntriesKey(organizationId) }),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: journalEntriesKey(organizationId) });
+      invalidateCasePaymentState(queryClient, organizationId, params.caseId);
+    },
   });
 }
 

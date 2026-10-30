@@ -462,3 +462,31 @@ button.missingValue:focus-visible {
   color: var(--solis-danger, var(--color-danger-text, #b42318));
   cursor: pointer;
 }
+
+/* Payment records' own status under the stored Payment value (2026-10). */
+.paymentSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sx-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.paymentSummaryLabel {
+  font-weight: 600;
+}
+
+.paymentSummarySuccess {
+  color: var(--sx-green-text);
+}
+
+.paymentSummaryWarning {
+  color: var(--sx-amber-text);
+}
+
+.paymentSummaryNote {
+  color: var(--sx-text-2);
+}

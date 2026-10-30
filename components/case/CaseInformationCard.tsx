@@ -33,6 +33,7 @@ import { PENDING_MEDICAL_EXAMINER_LABEL } from '@/domain/organization/medicalExa
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { toDisplayName } from '@/utils/displayName';
 import { RecordPickupDialog, type ReleaseSuggestion } from './RecordPickupDialog';
+import type { CasePaymentSummary } from '@/domain/cases/casePaymentSummary';
 import styles from './CaseInformationCard.module.css';
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -651,6 +652,7 @@ export function CaseInformationCard({
   dateOfCremation,
   showDateOfCremation = false,
   paymentStatus,
+  paymentSummary = null,
   pickupStatus,
   pickupReleasedTo,
   pickupReleasedAt,
@@ -748,6 +750,10 @@ export function CaseInformationCard({
   dateOfCremation?: string | null;
   showDateOfCremation?: boolean;
   paymentStatus: PaymentStatus;
+  /** What the verified payment records say (2026-10) — shown beside the
+      stored value, never written back. Null with no Case Order, or when
+      the viewer may not read orders and payments. */
+  paymentSummary?: CasePaymentSummary | null;
   /** Manors launch-prep. Structured pickup/release tracking — see
       types/case.ts's own comment on why this exists separately from the
       free-text case log. */
@@ -1096,6 +1102,7 @@ export function CaseInformationCard({
             <option value="awaiting_payment">{PAYMENT_STATUS_LABEL.awaiting_payment}</option>
             <option value="paid_in_full">{PAYMENT_STATUS_LABEL.paid_in_full}</option>
           </SelectField>
+          {paymentSummary && <PaymentSummaryLine summary={paymentSummary} />}
         </div>
         {!showOwner && (
           <>
@@ -1258,5 +1265,27 @@ export function CaseInformationCard({
 
     </div>
     </ReadOnlyContext.Provider>
+  );
+}
+
+/**
+ * The payment records' own answer under the stored "Payment" value
+ * (2026-10). Amounts always; the status word only when it adds something
+ * the select cannot say (partly paid) or disagrees with it.
+ */
+function PaymentSummaryLine({ summary }: { summary: CasePaymentSummary }) {
+  const toneClass = summary.mismatch ? styles.paymentSummaryWarning : summary.tone === 'success' ? styles.paymentSummarySuccess : summary.tone === 'warning' ? styles.paymentSummaryWarning : '';
+  const showLabel = summary.state === 'partial_payment' || summary.mismatch !== null;
+  return (
+    <div className={`${styles.paymentSummary} ${toneClass}`} data-payment-state={summary.state}>
+      <span>
+        {showLabel && <strong className={styles.paymentSummaryLabel}>{summary.label} · </strong>}
+        {summary.detail}
+      </span>
+      {summary.mismatch === 'marked_paid_with_balance' && (
+        <span className={styles.paymentSummaryNote}>Marked paid, but the payment records still show a balance due.</span>
+      )}
+      {summary.mismatch === 'paid_but_not_marked' && <span className={styles.paymentSummaryNote}>The payment records show this case is paid in full.</span>}
+    </div>
   );
 }

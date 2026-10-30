@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { CaseInformationCard } from './CaseInformationCard';
+import type { CasePaymentSummary } from '@/domain/cases/casePaymentSummary';
 
 const baseProps = {
   dateOfBirth: '03/14/1951',
@@ -571,6 +572,72 @@ describe('CaseInformationCard — payment status (Phase 17)', () => {
     fireEvent.change(select, { target: { value: 'paid_in_full' } });
 
     expect(onUpdateCaseInfo).toHaveBeenCalledWith({ paymentStatus: 'paid_in_full' });
+  });
+});
+
+describe('CaseInformationCard — payment records beside the stored Payment value (2026-10)', () => {
+  const summary = (over: Partial<CasePaymentSummary>): CasePaymentSummary => ({
+    state: 'awaiting_payment',
+    label: 'Awaiting payment',
+    detail: '$890.00 due',
+    tone: 'neutral',
+    totalCents: 89000,
+    paidCents: 0,
+    balanceDueCents: 89000,
+    pendingCents: 0,
+    refundedCents: 0,
+    mismatch: null,
+    ...over,
+  });
+
+  it('no summary (no Case Order, or no permission): the Payment field renders exactly as before', () => {
+    const { container } = render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    expect(container.querySelector('[data-payment-state]')).toBeNull();
+    expect(screen.getByDisplayValue('Awaiting payment')).toBeInTheDocument();
+  });
+
+  it('partially paid: the amounts and "Partially paid" show under the select', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        paymentSummary={summary({ state: 'partial_payment', label: 'Partially paid', detail: '$445.00 of $890.00 paid · $445.00 due', tone: 'warning' })}
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Partially paid ·')).toBeInTheDocument();
+    expect(screen.getByText(/\$445\.00 of \$890\.00 paid · \$445\.00 due/)).toBeInTheDocument();
+  });
+
+  it('paid in full and marked paid: only the amount — the select already says it', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        paymentStatus="paid_in_full"
+        paymentSummary={summary({ state: 'paid_in_full', label: 'Paid in full', detail: '$890.00 paid', tone: 'success' })}
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Paid in full')).toBeInTheDocument();
+    expect(screen.getByText('$890.00 paid')).toBeInTheDocument();
+    expect(screen.queryByText(/still show a balance/)).not.toBeInTheDocument();
+  });
+
+  it('marked paid but refunded: says so instead of agreeing with the stored value', () => {
+    render(
+      <CaseInformationCard
+        {...baseProps}
+        paymentStatus="paid_in_full"
+        paymentSummary={summary({ detail: '$890.00 due · $890.00 refunded', mismatch: 'marked_paid_with_balance' })}
+        onUpdateCaseInfo={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Marked paid, but the payment records still show a balance due.')).toBeInTheDocument();
+  });
+
+  it('the summary never writes: the stored value changes only through the select', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} paymentSummary={summary({ mismatch: null })} onUpdateCaseInfo={onUpdateCaseInfo} />);
+    expect(onUpdateCaseInfo).not.toHaveBeenCalled();
   });
 });
 
