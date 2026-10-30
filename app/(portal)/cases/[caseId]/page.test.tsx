@@ -588,7 +588,7 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
     expect(SOURCE).toContain('<SendToCrematoryButton case_={case_} onOpen={() => setSendToCrematoryOpen(true)} />');
     const button = SOURCE.slice(SOURCE.indexOf('function SendToCrematoryButton'));
     expect(button).toContain('crematorySendState(case_)');
-    expect(button).toMatch(/state\.kind === 'sent'[\s\S]*disabled[\s\S]*Sent to Crematory · \{formatCrematorySentAt\(state\.at\)\}/);
+    expect(button).toMatch(/state\.kind === 'sent'[\s\S]*disabled[\s\S]*Sent to Crematory<\/span>&nbsp;· \{formatCrematorySentAt\(state\.at\)\}/);
     expect(button).toMatch(/state\.kind === 'sending'[\s\S]*disabled[\s\S]*Sending to Crematory…/);
     expect(button).not.toMatch(/checklistState|checklistCompletions/);
   });

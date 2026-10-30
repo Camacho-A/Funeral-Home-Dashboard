@@ -605,8 +605,9 @@ function SendToCrematoryButton({ case_, onOpen }: { case_: Case; onOpen: () => v
   const state = crematorySendState(case_);
   if (state.kind === 'sent') {
     return (
-      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled title={`Sent to Crematory ${formatCrematorySentAt(state.at)}. Each case is sent only once.`}>
-        Sent to Crematory · {formatCrematorySentAt(state.at)}
+      // Disabled, but read as a status rather than a faded action.
+      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled style={{ opacity: 1 }} title={`Sent to Crematory ${formatCrematorySentAt(state.at)}. Each case is sent only once.`}>
+        <span className="sx-status sx-status-ok">Sent to Crematory</span>&nbsp;· {formatCrematorySentAt(state.at)}
       </button>
     );
   }
