@@ -51,9 +51,84 @@ function registry(): MockStoreRegistry {
 export function mockCollection<T>(key: string, init: () => T): T {
   const store = registry();
   if (!store.has(key)) {
-    store.set(key, init());
+    store.set(key, restoreSandboxCollection(key) ?? init());
+    if (isSandboxBrowser()) watchSandboxPageExit();
   }
   return store.get(key) as T;
+}
+
+/**
+ * SOLIS sandbox (2026-10) — browser only. In mock mode the browser keeps
+ * its own copy of the cases and tasks it edits, which a page refresh used
+ * to throw away. In the sandbox (lib/sandbox.ts) the collections staff
+ * actually change are saved to this browser's localStorage when the page
+ * is left or hidden, and restored on the next load. Scoped to the
+ * deployment's commit, so a new sandbox build starts from fresh fixtures.
+ * Nothing here runs on the server, outside the sandbox, or in tests.
+ */
+const SANDBOX_PERSISTED_COLLECTIONS: readonly string[] = ['caseFixtures', 'taskFixtures', 'caseLogFixtures', 'activityEventFixtures'];
+
+function isSandboxBrowser(): boolean {
+  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_SOLIS_SANDBOX === 'true';
+}
+
+function sandboxStorageKey(key: string): string {
+  return `solis.sandbox.${process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? 'local'}.${key}`;
+}
+
+function restoreSandboxCollection(key: string): unknown {
+  if (!isSandboxBrowser() || !SANDBOX_PERSISTED_COLLECTIONS.includes(key)) return undefined;
+  try {
+    const saved = window.localStorage.getItem(sandboxStorageKey(key));
+    const parsed: unknown = saved ? JSON.parse(saved) : undefined;
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Process-wide like the store itself, so every module instance agrees.
+const SANDBOX_STATE_KEY = Symbol.for('solis.sandbox.persistence.v1');
+function sandboxState(): { watching: boolean; resetting: boolean } {
+  const holder = globalThis as typeof globalThis & { [SANDBOX_STATE_KEY]?: { watching: boolean; resetting: boolean } };
+  holder[SANDBOX_STATE_KEY] ??= { watching: false, resetting: false };
+  return holder[SANDBOX_STATE_KEY];
+}
+
+function saveSandboxCollections(): void {
+  if (!isSandboxBrowser() || sandboxState().resetting) return;
+  const store = registry();
+  for (const key of SANDBOX_PERSISTED_COLLECTIONS) {
+    if (!store.has(key)) continue;
+    try {
+      window.localStorage.setItem(sandboxStorageKey(key), JSON.stringify(store.get(key)));
+    } catch {
+      // Storage full or blocked: the sandbox simply forgets on refresh.
+    }
+  }
+}
+
+function watchSandboxPageExit(): void {
+  if (sandboxState().watching) return;
+  sandboxState().watching = true;
+  window.addEventListener('pagehide', saveSandboxCollections);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveSandboxCollections();
+  });
+}
+
+/** The sandbox banner's "Reset fictional data": forget this browser's saved copy. */
+export function resetSandboxBrowserData(): void {
+  if (!isSandboxBrowser()) return;
+  sandboxState().resetting = true;
+  try {
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const name = window.localStorage.key(i);
+      if (name?.startsWith('solis.sandbox.')) window.localStorage.removeItem(name);
+    }
+  } catch {
+    // Nothing saved to clear.
+  }
 }
 
 /** Drops every stored collection (or just `keys`). The NEXT evaluation of a

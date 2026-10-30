@@ -4,6 +4,7 @@ import type { CaseWriteOff } from '../../types/caseWriteOff';
 import { mockCollection } from './mockStore';
 import { GUS_ORGANIZATION_ID } from './organizationIds';
 import { STARTER_CHART_OF_ACCOUNTS } from '../../domain/ledger/starterChartOfAccounts';
+import { sandboxLedgerAccounts } from './sandboxFixtures';
 
 /**
  * Phase 31 (Financial Management & General Ledger). Mock-mode, in-process
@@ -13,7 +14,11 @@ import { STARTER_CHART_OF_ACCOUNTS } from '../../domain/ledger/starterChartOfAcc
  * tests by each test file itself (`fixtures.length = 0`). The only rows
  * seeded here are the fictional Gus organization's starter chart (below).
  */
-export const ledgerAccountFixtures: LedgerAccount[] = mockCollection('ledgerAccountFixtures', gusStarterChartOfAccounts);
+export const ledgerAccountFixtures: LedgerAccount[] = mockCollection('ledgerAccountFixtures', (): LedgerAccount[] => [
+  ...gusStarterChartOfAccounts(),
+  // SOLIS sandbox only (lib/sandbox.ts): Manors' starter chart.
+  ...sandboxLedgerAccounts(),
+]);
 
 /**
  * Gus Camacho local demo (2026-10): the fictional Gus organization starts

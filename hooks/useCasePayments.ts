@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { paymentsClient } from '@/services/paymentsClient';
 import { useOrganization } from './useOrganization';
+import { withMockPaymentStatusSync } from './mockPaymentStatusSync';
 import type { ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods';
 
 /**
@@ -56,7 +57,7 @@ export function useRecordManualPayment(caseId: string) {
 
   return useMutation({
     mutationFn: (input: { method: ManualPaymentMethod; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string }) =>
-      paymentsClient.recordManualPayment(organization, caseId, input),
+      withMockPaymentStatusSync(organization, caseId, () => paymentsClient.recordManualPayment(organization, caseId, input)),
     onSuccess: () => invalidateCasePaymentState(queryClient, organization.organizationId, caseId),
   });
 }
@@ -78,7 +79,8 @@ export function useResolveReturnedPayment(caseId: string) {
   });
 
   const simulateSuccess = useMutation({
-    mutationFn: (paymentId: string) => paymentsClient.simulateMockPaymentSuccess(organization, caseId, paymentId),
+    mutationFn: (paymentId: string) =>
+      withMockPaymentStatusSync(organization, caseId, () => paymentsClient.simulateMockPaymentSuccess(organization, caseId, paymentId)),
     onSuccess: (_, paymentId) => invalidate(paymentId),
   });
 

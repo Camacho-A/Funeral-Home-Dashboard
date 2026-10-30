@@ -1,5 +1,15 @@
 import { getAuthAdapterMode } from '@/lib/env';
 import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/authFixtures';
+import { MANORS_ADMIN_DEMO_PASSWORD, SANDBOX_READ_ONLY_EMAIL } from '@/services/__mocks__/identityFixtures';
+import { isSandboxEnabled } from '@/lib/sandbox';
+
+/** SOLIS sandbox sign-ins (lib/sandbox.ts) — fictional demo accounts, one per role worth trying. */
+const SANDBOX_SIGN_IN_ACCOUNTS = [
+  `${MOCK_LOGIN_EMAIL} (Dana, administrator)`,
+  'chris@managedcremations.test (Chris, manager)',
+  'priya@managedcremations.test (Priya, office staff)',
+  `${SANDBOX_READ_ONLY_EMAIL} (Riley, read-only)`,
+];
 import { sanitizeRedirectPath } from '@/lib/auth/redirect';
 import { ProductBrand } from '@/components/layout/ProductBrand';
 import { loadLoginOrganization } from './branding';
@@ -173,6 +183,13 @@ export default async function LoginPage({
         {demoAccount && (
           <p className={styles.hint}>
             Local demo data — sign in with {demoAccount.email} / {demoAccount.password}
+          </p>
+        )}
+        {authAdapter === 'identity' && isSandboxEnabled() && (
+          <p className={styles.hint}>
+            Sandbox — fictional accounts only. Password for each: {MANORS_ADMIN_DEMO_PASSWORD}
+            <br />
+            {SANDBOX_SIGN_IN_ACCOUNTS.join(' · ')}
           </p>
         )}
         {authAdapter === 'mock' && (

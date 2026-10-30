@@ -1,5 +1,6 @@
 'use client';
 
+import { SandboxBanner } from '@/components/sandbox/SandboxBanner';
 import { useEffect, useState } from 'react';
 import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
@@ -69,6 +70,7 @@ export function AppShell({
           onMenuClick={() => setMobileNavOpen(true)}
         />
         <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''}`}>
+          <SandboxBanner />
           {children}
         </main>
       </div>
