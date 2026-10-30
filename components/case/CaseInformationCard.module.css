@@ -8,7 +8,7 @@
   background: var(--color-surface-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-9) var(--space-9) var(--space-10);
+  padding: 16px 18px 18px;
   box-shadow: var(--shadow-card);
 }
 
@@ -18,13 +18,13 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--sx-muted);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
+  gap: 10px 16px;
   font-size: 13.5px;
   align-items: start;
 }
@@ -35,8 +35,8 @@
 }
 
 .operationalRow {
-  margin-top: 18px;
-  padding-top: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--sx-border-soft);
 }
 
@@ -47,9 +47,9 @@
   text-transform: uppercase;
   letter-spacing: 0.07em;
   text-align: left;
-  margin-top: 20px;
-  margin-bottom: 12px;
-  padding-top: 18px;
+  margin-top: 14px;
+  margin-bottom: 8px;
+  padding-top: 12px;
   border-top: 1px solid var(--sx-border-soft);
 }
 
@@ -59,7 +59,7 @@
   color: var(--sx-muted);
   text-align: left;
   margin-top: -4px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .fieldLabel {
@@ -72,7 +72,7 @@
 }
 
 .fieldValue {
-  margin-top: 3px;
+  margin-top: 2px;
   font-weight: 500;
   line-height: 1.4;
   color: var(--sx-text);
@@ -198,7 +198,9 @@
   gap: 6px;
   width: auto;
   max-width: 100%;
-  margin-top: 4px;
+  /* Aligned with the values around it — the inline-edit button's hover
+     bleed (negative side margins) does not apply to the pill. */
+  margin: 4px 0 0;
   padding: 3px 10px;
   border: 1px dashed oklch(0.82 0.08 75);
   border-radius: 999px;
@@ -265,8 +267,8 @@ button.missingValue:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 18px;
-  padding: 10px 12px;
+  margin-top: 12px;
+  padding: 8px 12px;
   border-radius: 10px;
   background: var(--sx-subtle, oklch(0.975 0.003 255));
   border: 1px solid var(--solis-border-soft, var(--color-border));
@@ -322,7 +324,9 @@ button.missingValue:focus-visible {
    let fields spread back into more columns. */
 @media (max-width: 1024px) {
   .grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    /* 140px keeps two columns even on a phone, so short values (dates,
+       times, weight) sit side by side instead of one per row. */
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
 

@@ -63,3 +63,14 @@ describe('CaseTasksCard — assignee picker (2026-10)', () => {
     expect(screen.getByText('Dana')).toBeInTheDocument();
   });
 });
+
+describe('long task text stays inside the card (2026-10)', () => {
+  it('rows wrap, the text may shrink and break long words, and the assignee can move under it', async () => {
+    const css = (await import('fs')).readFileSync('components/case/CaseTasksCard.module.css', 'utf8');
+    const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`), css.indexOf('}', css.indexOf(`${selector} {`)));
+    expect(rule('.row')).toMatch(/flex-wrap:\s*wrap/);
+    expect(css).toMatch(/\.text,\s*\.textDone\s*\{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere/);
+    expect(rule('.assigneePicker')).toMatch(/max-width:\s*100%/);
+    expect(rule('.assignee')).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+});

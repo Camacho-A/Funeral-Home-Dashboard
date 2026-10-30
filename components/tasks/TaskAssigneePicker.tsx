@@ -65,6 +65,8 @@ export function TaskAssigneePicker({
         value={assigneeStaffId ?? ''}
         disabled={disabled}
         aria-label={`Assignee for ${taskLabel}`}
+        // A long name is shortened inside the control; hovering shows it whole.
+        title={display.name}
         onChange={(e) => onChange(e.target.value || null)}
       >
         <option value="">Unassigned</option>

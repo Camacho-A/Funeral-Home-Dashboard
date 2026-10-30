@@ -2,7 +2,9 @@
    list, not a showcase — the job is scanning a backlog quickly, so rows
    stay dense and only unread state is given visual weight. */
 .page {
-  padding: 24px 28px 48px;
+  /* The shell's content area already pads every page; adding more here
+     pushed this page out of line with the others (UI review, 2026-10). */
+  padding: 0 0 48px;
   max-width: 920px;
 }
 

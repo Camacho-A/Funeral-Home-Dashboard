@@ -54,7 +54,7 @@ export function TaskRow({
       </span>
       <span className="sx-task-meta">
         {task.linkedCaseName ? (
-          <Link href={`/cases/${task.linkedCaseId}`} className="sx-task-case">
+          <Link href={`/cases/${task.linkedCaseId}`} className="sx-task-case" title={toDisplayName(task.linkedCaseName)}>
             {toDisplayName(task.linkedCaseName)}
           </Link>
         ) : (

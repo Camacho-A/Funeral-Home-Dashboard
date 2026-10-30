@@ -43,7 +43,9 @@
 .sx-seg-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--sx-navy-tint); color: var(--sx-navy); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sx-composer:not([data-can-assign]) { grid-template-columns: minmax(0, 1fr) 220px auto; }
 .sx-task-row > .sx-task-meta > .sx-assignee { justify-self: start; }
-.sx-assignee { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; color: var(--sx-text-2); white-space: nowrap; }
+.sx-assignee { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: 12.5px; color: var(--sx-text-2); white-space: nowrap; }
+.sx-assignee-name { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.sx-assignee-select { min-width: 0; }
 .sx-assignee-avatar { width: 22px; height: 22px; font-size: 9.5px; }
 .sx-assignee-avatar[data-unassigned] { background: transparent; border: 1.5px dashed oklch(0.78 0.01 255); }
 .sx-assignee[data-kind='unassigned'] .sx-assignee-select, .sx-assignee[data-kind='unassigned'] .sx-assignee-name { color: var(--sx-muted); }
