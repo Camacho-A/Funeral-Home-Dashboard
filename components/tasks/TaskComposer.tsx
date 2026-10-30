@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { Button } from '@/components/ui/Button';
@@ -46,7 +46,13 @@ export function TaskComposer({
   // Task assignment (2026-10): a new task defaults to the person adding it
   // ("Assign to me") once staff have loaded — or Unassigned when they have
   // no staff profile — never to whoever happens to be first in the list.
-  const me = myStaffId ? staffOptions.find((staff) => staff.id === myStaffId) : undefined;
+  // The staff list may already be cached in the browser while the server
+  // rendered without it; the first render is the same on both (2026-10,
+  // avoids a hydration mismatch) and the options appear right after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const staff = mounted ? staffOptions : [];
+  const me = myStaffId ? staff.find((s) => s.id === myStaffId) : undefined;
   const assigneeStaffId = !canAssign ? null : chosenAssignee !== undefined ? chosenAssignee : (me?.id ?? null);
 
   function handleAdd() {
@@ -83,11 +89,11 @@ export function TaskComposer({
         >
           <option value="">Unassigned</option>
           {me && <option value={me.id}>{me.name} (me)</option>}
-          {staffOptions
-            .filter((staff) => staff.id !== me?.id)
-            .map((staff) => (
-              <option key={staff.id} value={staff.id}>
-                {staff.name}
+          {staff
+            .filter((option) => option.id !== me?.id)
+            .map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
               </option>
             ))}
         </SelectField>
