@@ -48,6 +48,12 @@
   border-radius: var(--radius-xl);
 }
 
+.assigneePicker {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 45%;
+}
+
 .composer {
   display: flex;
   gap: var(--space-4);

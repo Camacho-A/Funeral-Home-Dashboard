@@ -42,3 +42,24 @@ describe('CaseTasksCard — empty state and completion UX (Phase 17)', () => {
     expect(input).toHaveValue('');
   });
 });
+
+describe('CaseTasksCard — assignee picker (2026-10)', () => {
+  it('with assignment, each task’s assignee can be changed; without it the name is plain text', () => {
+    const onReassign = vi.fn();
+    const staff = [{ id: 'staff-dana', name: 'Dana' }, { id: 'staff-chris', name: 'Chris' }];
+    const { rerender } = render(
+      <CaseTasksCard
+        tasks={[{ ...TASK, assigneeStaffId: 'staff-dana' }]}
+        assignment={{ staff, myStaffId: 'staff-dana', canAssign: true, onReassign }}
+        onToggleTask={vi.fn()}
+        onAddTask={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: `Assignee for ${TASK.text}` }), { target: { value: 'staff-chris' } });
+    expect(onReassign).toHaveBeenCalledWith('task-1', 'staff-chris');
+
+    rerender(<CaseTasksCard tasks={[TASK]} onToggleTask={vi.fn()} onAddTask={vi.fn()} />);
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText('Dana')).toBeInTheDocument();
+  });
+});

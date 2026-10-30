@@ -485,5 +485,26 @@ describe('POST /api/tasks', () => {
         expect.any(String),
       );
     });
+
+    it('a task created for yourself is assigned to you without notifying you (2026-10)', async () => {
+      mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+        if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: [{ ...STAFF_DANA_PROFILE_ITEM, data: { ...STAFF_DANA_PROFILE_ITEM.data, identityId: mockDefaultUser.id } }] });
+        if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+        if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+        return Promise.resolve({ dataItems: [] });
+      });
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, assigneeStaffId: 'staff-dana' }));
+      expect(response.status).toBe(201);
+      expect(mockInsertWixDataItem).toHaveBeenCalledWith('tasks', expect.objectContaining({ assigneeId: 'staff-dana' }), expect.any(String));
+      expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('notifications', expect.anything(), expect.any(String));
+    });
+
+    it('an unassigned task is created without an assignee or a notification', async () => {
+      mockAssignableStaffDana();
+      const response = await POST(postRequest({ ...VALID_CREATE_BODY, assigneeStaffId: null }));
+      expect(response.status).toBe(201);
+      expect(mockInsertWixDataItem).toHaveBeenCalledWith('tasks', expect.objectContaining({ assigneeId: null }), expect.any(String));
+      expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('notifications', expect.anything(), expect.any(String));
+    });
   });
 });

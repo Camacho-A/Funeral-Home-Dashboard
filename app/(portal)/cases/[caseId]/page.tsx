@@ -12,6 +12,10 @@ import { useCaseViewModel } from '@/hooks/useCaseViewModel';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { useCaseLog } from '@/hooks/useCaseLog';
 import { useCaseTasks } from '@/hooks/useCaseTasks';
+import { useReassignTask } from '@/hooks/useReassignTask';
+import { useSession } from '@/hooks/useSession';
+import { taskAssigneeDisplay } from '@/domain/tasks/assignment';
+import type { TaskAssignmentContext } from '@/components/tasks/TaskRow';
 import { useStaff } from '@/hooks/useStaff';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useOrganization } from '@/hooks/useOrganization';
@@ -136,6 +140,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
   const caseTasks = useCaseTasks(caseId);
+  const reassignTask = useReassignTask();
+  const session = useSession();
 
   // Opens a workflow stage the case has reached (a later one opens the
   // case's current step instead). Changes nothing on the case.
@@ -244,9 +250,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     id: task.id,
     text: task.text,
     isDone: task.isDone,
-    assigneeName:
-      staffList.find((staff) => staff.id === task.assigneeStaffId)?.displayName ?? 'Office',
+    assigneeName: taskAssigneeDisplay(task.assigneeStaffId, staffOptions).name,
+    assigneeStaffId: task.assigneeStaffId,
   }));
+  const caseTaskAssignment: TaskAssignmentContext = {
+    staff: staffOptions,
+    myStaffId: session.staffId,
+    canAssign: !permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('task.assign'),
+    onReassign: (taskId, assigneeStaffId) => reassignTask.mutate({ taskId, assigneeStaffId }),
+  };
 
   /**
    * Defined ONCE and rendered in exactly one place at a time — the
@@ -585,6 +597,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
               <CaseTasksCard
                 tasks={caseTaskItems}
+                assignment={caseTaskAssignment}
                 onToggleTask={(taskId, newDone) => caseTasks.toggleTask({ taskId, isDone: newDone })}
                 onAddTask={(text) =>
                   caseTasks.addTask({

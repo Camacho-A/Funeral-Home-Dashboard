@@ -5,6 +5,8 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { TaskAssigneePicker } from '@/components/tasks/TaskAssigneePicker';
+import type { TaskAssignmentContext } from '@/components/tasks/TaskRow';
 import styles from './CaseTasksCard.module.css';
 
 export type CaseTaskItem = {
@@ -12,6 +14,8 @@ export type CaseTaskItem = {
   text: string;
   isDone: boolean;
   assigneeName: string;
+  /** StaffProfile id, or null when unassigned (2026-10). */
+  assigneeStaffId?: string | null;
 };
 
 /**
@@ -22,10 +26,14 @@ export type CaseTaskItem = {
  */
 export function CaseTasksCard({
   tasks,
+  assignment,
   onToggleTask,
   onAddTask,
 }: {
   tasks: CaseTaskItem[];
+  /** Task assignment (2026-10): when given, each task's assignee is a
+      picker (reassign, unassign, "Assign to me"), as on the Tasks page. */
+  assignment?: TaskAssignmentContext;
   onToggleTask: (taskId: string, newDone: boolean) => void;
   onAddTask: (text: string) => void;
 }) {
@@ -55,7 +63,21 @@ export function CaseTasksCard({
                 aria-label={task.text}
               />
               <span className={task.isDone ? styles.textDone : styles.text}>{task.text}</span>
-              <span className={styles.assignee}>{task.assigneeName}</span>
+              {assignment ? (
+                <span className={styles.assigneePicker}>
+                  <TaskAssigneePicker
+                    taskLabel={task.text}
+                    assigneeStaffId={task.assigneeStaffId ?? null}
+                    staff={assignment.staff}
+                    myStaffId={assignment.myStaffId}
+                    canAssign={assignment.canAssign}
+                    showAssignToMe={false}
+                    onChange={(assigneeStaffId) => assignment.onReassign(task.id, assigneeStaffId)}
+                  />
+                </span>
+              ) : (
+                <span className={styles.assignee}>{task.assigneeName}</span>
+              )}
             </div>
           ))}
         </div>
