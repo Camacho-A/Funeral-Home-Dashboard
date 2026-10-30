@@ -57,6 +57,30 @@ describe('automaticChecklistCompletion — the rules', () => {
   });
 });
 
+describe('automaticChecklistCompletion — an event proved by a staff action (Send to Crematory, 2026-10)', () => {
+  const PERMIT_SENT = { displayStage: 3, index: 0 };
+  const SENT = { source: 'workflow_event' as const, eventType: 'crematory.package_submitted', eventId: 'sub-1' };
+
+  it('records the staff member who sent it', () => {
+    expect(automaticChecklistCompletion(manors(), PERMIT_SENT, SENT, NOW, { actorId: 'identity-dana' })).toEqual({
+      checklistState: { '3:0': true },
+      checklistCompletions: { '3:0': { done: true, method: 'automatic', source: 'workflow_event', eventType: 'crematory.package_submitted', eventId: 'sub-1', at: NOW, actorId: 'identity-dana' } },
+    });
+    expect(describeCompletionEvent({ done: true, method: 'automatic', source: 'workflow_event', eventType: 'crematory.package_submitted', eventId: 'sub-1', at: NOW, actorId: 'identity-dana' })).toMatch(/sent to the crematory through SOLIS/);
+  });
+
+  it('a reopen made before the send is superseded only when the caller says so; a reopen after it, or a staff tick, never is', () => {
+    const reopenedBefore = manors({ checklistState: { '3:0': false }, checklistCompletions: { '3:0': { ...manual(false), at: '2026-10-19T09:00:00.000Z' } } });
+    expect(automaticChecklistCompletion(reopenedBefore, PERMIT_SENT, SENT, NOW)).toBeNull();
+    expect(automaticChecklistCompletion(reopenedBefore, PERMIT_SENT, SENT, NOW, { overrideEarlierReopen: true })).not.toBeNull();
+    const reopenedAfter = manors({ checklistState: { '3:0': false }, checklistCompletions: { '3:0': { ...manual(false), at: '2026-10-21T09:00:00.000Z' } } });
+    expect(automaticChecklistCompletion(reopenedAfter, PERMIT_SENT, SENT, NOW, { overrideEarlierReopen: true })).toBeNull();
+    const ticked = manors({ checklistState: { '3:0': true }, checklistCompletions: { '3:0': manual(true) } });
+    expect(automaticChecklistCompletion(ticked, PERMIT_SENT, SENT, NOW, { overrideEarlierReopen: true })).toBeNull();
+    expect(automaticChecklistCompletion(manors({ isDeleted: true }), PERMIT_SENT, SENT, NOW, { overrideEarlierReopen: true })).toBeNull();
+  });
+});
+
 describe('staffChecklistCompletionUpdate — manual control', () => {
   it('records every item a staff edit completes or reopens, with the staff member and time', () => {
     const current = manors({ checklistState: { '0:8': true, '2:0': false } });

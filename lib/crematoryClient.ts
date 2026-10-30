@@ -53,6 +53,9 @@ export type CrematorySendResult = {
   to: string[];
   cc: string[];
   attachments: Array<{ caseId: string; caseNumber: string; decedentDisplayName: string; attachmentName: string; packageDocumentId: string; packageVersion: number | null }>;
+  /** Workflow 3's "sent to crematory" items (2026-10): the cases whose
+      checklist could not be saved after the send. */
+  checklist?: { failed: Array<{ caseId: string; caseNumber: string }> };
 };
 /** The final review (2026-10): the exact email Confirm & Send would send, and its fingerprint. */
 export type CrematoryReview = {
@@ -118,7 +121,8 @@ export async function crematoryCaseAction(
     | { action: 'assign_document'; documentId: string; as: CrematorySourceKind; displayedChecksumSha256?: string }
     | { action: 'choose_current_permit'; documentId: string }
     | { action: 'record_previous_send'; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean }
-    | { action: 'correct_previous_send'; reason: string; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean },
+    | { action: 'correct_previous_send'; reason: string; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean }
+    | { action: 'complete_sent_checklist' },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

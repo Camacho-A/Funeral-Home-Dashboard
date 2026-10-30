@@ -14,6 +14,7 @@ import {
   prepareCrematoryDocuments,
   recordPreviousSend,
 } from '@/services/crematory/crematoryPackageService';
+import { retryCrematorySentChecklist } from '@/services/crematory/crematorySentChecklist';
 
 export const maxDuration = 60;
 
@@ -34,6 +35,9 @@ export const maxDuration = 60;
  *          → a possible earlier send outside SOLIS, resolved by staff who
  *            may send (2026-10)
  *        { organizationId, action: 'correct_previous_send', reason, decision, … }
+ *        { organizationId, action: 'complete_sent_checklist' } → (2026-10) Workflow 3's
+ *          two "sent to crematory" items from the case's own send record, when
+ *          saving them at send time failed. Never sends anything.
  *          → an administrator corrects that record (2026-10)
  *        confirm_permit and assign_document (as a permit) carry
  *        displayedChecksumSha256: the stored PDF SOLIS showed (2026-10)
@@ -112,6 +116,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
             auth.canSend,
           ),
         );
+      case 'complete_sent_checklist': {
+        const outcome = await retryCrematorySentChecklist(ctx, caseId, auth.mode);
+        return NextResponse.json({ outcome, summary: await getCrematoryCaseSummary(auth.context.organizationId, caseId, auth.canSend, auth.mode) });
+      }
       default:
         return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
     }

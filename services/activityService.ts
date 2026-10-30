@@ -578,9 +578,11 @@ export function recordChecklistItemCompletedAutomatically(
       previousValue: JSON.stringify({ [item.key]: false }),
       newValue: JSON.stringify({ [item.key]: true }),
       description: `Checklist: "${item.label}" completed automatically (${item.sourceLabel}).`,
-      metadata: JSON.stringify({ checklistItemKey: item.key, source: item.source, eventType: item.eventType, eventId: item.eventId, completedBy: 'solis-automation' }),
+      // Attributed to the staff member whose action proved it when there is
+      // one (a Send to Crematory, 2026-10); otherwise SOLIS itself.
+      metadata: JSON.stringify({ checklistItemKey: item.key, source: item.source, eventType: item.eventType, eventId: item.eventId, completedBy: ctx.actorIdentityId ?? 'solis-automation' }),
       severity: 'info',
-      isSystemGenerated: true,
+      isSystemGenerated: !ctx.actorIdentityId,
     }),
     dataAdapterMode,
   );

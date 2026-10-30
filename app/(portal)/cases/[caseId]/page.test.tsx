@@ -584,6 +584,15 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
     expect(handler).not.toMatch(/toggleChecklistItem|mutations\./);
   });
 
+  it('Send to Crematory in the header (2026-10) follows the send record — disabled with the sent date once sent, and while sending — never the checklist', () => {
+    expect(SOURCE).toContain('<SendToCrematoryButton case_={case_} onOpen={() => setSendToCrematoryOpen(true)} />');
+    const button = SOURCE.slice(SOURCE.indexOf('function SendToCrematoryButton'));
+    expect(button).toContain('crematorySendState(case_)');
+    expect(button).toMatch(/state\.kind === 'sent'[\s\S]*disabled[\s\S]*Sent to Crematory · \{formatCrematorySentAt\(state\.at\)\}/);
+    expect(button).toMatch(/state\.kind === 'sending'[\s\S]*disabled[\s\S]*Sending to Crematory…/);
+    expect(button).not.toMatch(/checklistState|checklistCompletions/);
+  });
+
   it('earlier stages (2026-10): the checklist gets the case-edit permission, and a tick is recorded on the stage being viewed', () => {
     expect(SOURCE).toMatch(/onToggleItem=\{\(index, newDone\) => mutations\.toggleChecklistItem\(case_, index, newDone, viewingDisplayStage\)\}/);
     expect(SOURCE).toMatch(

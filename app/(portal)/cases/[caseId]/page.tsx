@@ -27,6 +27,8 @@ import { CaseHeader } from '@/components/case/CaseHeader';
 import { PrintLabelDialog } from '@/components/case/PrintLabelDialog';
 import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
+import { crematorySendState, formatCrematorySentAt } from '@/domain/crematory/sendState';
+import type { Case } from '@/types/case';
 import { workflowStageToOpen } from '@/domain/workflow/workflowStageToOpen';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import type { StepperStage } from '@/components/case/StageStepper';
@@ -352,11 +354,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   Print Label
                 </button>
               )}
-              {sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation' && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setSendToCrematoryOpen(true)}>
-                  Send to Crematory
-                </button>
-              )}
+              {sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation' && <SendToCrematoryButton case_={case_} onOpen={() => setSendToCrematoryOpen(true)} />}
             </>
           ) : undefined
         }
@@ -594,5 +592,34 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Send to Crematory in the case header (2026-10). Follows the case's own
+ * send record — never the checklist: once sent it stays disabled, with when
+ * it was sent, after any refresh; while a send is in progress it is
+ * disabled too. The server refuses a second send regardless.
+ */
+function SendToCrematoryButton({ case_, onOpen }: { case_: Case; onOpen: () => void }) {
+  const state = crematorySendState(case_);
+  if (state.kind === 'sent') {
+    return (
+      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled title={`Sent to Crematory ${formatCrematorySentAt(state.at)}. Each case is sent only once.`}>
+        Sent to Crematory · {formatCrematorySentAt(state.at)}
+      </button>
+    );
+  }
+  if (state.kind === 'sending') {
+    return (
+      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled>
+        Sending to Crematory…
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={onOpen}>
+      Send to Crematory
+    </button>
   );
 }

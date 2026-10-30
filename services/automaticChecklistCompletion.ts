@@ -28,6 +28,7 @@ export type AutomaticCompletionOutcome = 'completed' | 'unchanged' | 'not_applic
 
 const TRIGGER_DESCRIPTION: Record<string, string> = {
   'payment.paid_in_full': 'payment received in full',
+  'crematory.package_submitted': 'sent to the crematory through SOLIS',
   'external_form.arrangement_received': 'Arrangement Form received',
   'sla.event_recorded': 'workflow event recorded',
 };
@@ -46,10 +47,19 @@ export async function recordAutomaticCompletion(
   trigger: AutomaticTrigger,
   dataAdapterMode: DataAdapterMode,
   correlationId: string = crypto.randomUUID(),
+  /** The staff member whose action proved the item (2026-10); SOLIS otherwise. */
+  actor: { identityId: string; roleKey: string | null } | null = null,
 ): Promise<void> {
   try {
     await recordChecklistItemCompletedAutomatically(
-      { organizationId: case_.organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true },
+      {
+        organizationId: case_.organizationId,
+        actorIdentityId: actor?.identityId ?? null,
+        actorMembershipId: null,
+        actorRoleKey: actor?.roleKey ?? null,
+        correlationId,
+        isSystemGenerated: !actor,
+      },
       case_.id,
       {
         key: checklistItemKey(location.displayStage, location.index),
@@ -111,6 +121,78 @@ export async function completeChecklistItemAutomatically(
   if (!done) return 'unchanged';
   await recordAutomaticCompletion(done.case_, done.location, trigger, dataAdapterMode);
   return 'completed';
+}
+
+/**
+ * Several checklist items completed by ONE verified event, in ONE
+ * revision-conditioned write (Send to Crematory, 2026-10: both crematory
+ * paperwork items). `decideApplicable` re-checks, on the case as it is at
+ * write time, that the event still holds — nothing is written otherwise.
+ * Each item is decided by the shared rules (never on an archived case,
+ * never twice, never over a staff tick); one activity event per item that
+ * actually changed. Returns the keys completed.
+ */
+export async function completeChecklistItemsAutomatically(
+  organizationId: string,
+  caseId: string,
+  trigger: AutomaticTrigger,
+  locate: (case_: Case) => ChecklistItemLocation[],
+  dataAdapterMode: DataAdapterMode,
+  options: {
+    decideApplicable?: (case_: Case) => boolean;
+    actor?: { identityId: string; roleKey: string | null } | null;
+    overrideEarlierReopen?: boolean;
+    correlationId?: string;
+  } = {},
+): Promise<{ outcome: AutomaticCompletionOutcome; completedKeys: string[] }> {
+  if (!isChecklistAutomationEnabled(organizationId)) return { outcome: 'not_applicable', completedKeys: [] };
+  const now = new Date().toISOString();
+  const completionOptions = { actorId: options.actor?.identityId ?? null, overrideEarlierReopen: options.overrideEarlierReopen === true };
+  let applied: { case_: Case; locations: ChecklistItemLocation[] } | null = null;
+
+  const decide = (case_: Case) => {
+    applied = null;
+    if (options.decideApplicable && !options.decideApplicable(case_)) return null;
+    const locations: ChecklistItemLocation[] = [];
+    const patch: { checklistState: Record<string, boolean>; checklistCompletions: NonNullable<Case['checklistCompletions']> } = { checklistState: {}, checklistCompletions: {} };
+    for (const location of locate(case_)) {
+      const one = automaticChecklistCompletion(case_, location, trigger, now, completionOptions);
+      if (!one) continue;
+      Object.assign(patch.checklistState, one.checklistState);
+      Object.assign(patch.checklistCompletions, one.checklistCompletions);
+      locations.push(location);
+    }
+    if (locations.length === 0) return null;
+    applied = { case_, locations };
+    return patch;
+  };
+
+  if (dataAdapterMode === 'mock') {
+    const current = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId);
+    const patch = current ? decide(current) : null;
+    if (current && patch) {
+      writeMockCase(organizationId, caseId, (latest) => ({
+        ...latest,
+        checklistState: { ...latest.checklistState, ...patch.checklistState },
+        checklistCompletions: { ...latest.checklistCompletions, ...patch.checklistCompletions },
+      }));
+    }
+  } else {
+    const outcome = await updateCaseWithRetry(organizationId, caseId, (row) => {
+      const patch = decide(row.case_);
+      return patch ? buildCaseFieldPatch(row.data, patch) : null;
+    });
+    if (outcome.result === 'conflict') throw new Error(`Automatic checklist completion for case ${caseId} lost to concurrent writes on every attempt.`);
+    if (outcome.result === 'failed') throw new Error(`Automatic checklist completion for case ${caseId} failed: ${outcome.reason}`);
+    if (outcome.result !== 'applied') applied = null;
+  }
+
+  const done = applied as { case_: Case; locations: ChecklistItemLocation[] } | null;
+  if (!done) return { outcome: 'unchanged', completedKeys: [] };
+  for (const location of done.locations) {
+    await recordAutomaticCompletion(done.case_, location, trigger, dataAdapterMode, options.correlationId, options.actor ?? null);
+  }
+  return { outcome: 'completed', completedKeys: done.locations.map((l) => checklistItemKey(l.displayStage, l.index)) };
 }
 
 /**

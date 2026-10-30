@@ -18,6 +18,9 @@ import { getRegisteredOrganizationProfile } from '../organization/organizationPr
  *                                    linked (services/automaticChecklistCompletion.ts)
  *   SLA-mapped items                 the workflow event recorded by staff on
  *                                    the SLA panel (domain/sla/slaMilestones.ts)
+ *   "Permit sent to crematory" and   the Crematory Package was sent through
+ *   "Authorization of release sent   SOLIS and Outlook accepted it
+ *   to crematory"                    (services/crematory/crematorySentChecklist.ts)
  *
  * Every decision about an item, automatic or by staff, leaves a
  * `ChecklistCompletionRecord`, so the checklist can say WHY an item is done.
@@ -75,11 +78,21 @@ export function automaticChecklistCompletion(
   location: ChecklistItemLocation,
   trigger: AutomaticTrigger,
   now: string,
+  /** Send to Crematory (2026-10): `actorId` attributes the completion to the
+      staff member whose action proved it (default: SOLIS Automation), and
+      `overrideEarlierReopen` lets an event that happens AFTER a staff
+      member reopened the item complete it again — the send is newer
+      evidence than the earlier reopen. A staff tick is never touched. */
+  options: { actorId?: string | null; overrideEarlierReopen?: boolean } = {},
 ): Pick<CaseUpdate, 'checklistState' | 'checklistCompletions'> | null {
   if (case_.isDeleted) return null;
   if (readChecklistValue(case_.checklistState, location.displayStage, location.index) === true) return null;
   const key = checklistItemKey(location.displayStage, location.index);
-  if (case_.checklistCompletions?.[key]?.method === 'manual') return null;
+  const previous = case_.checklistCompletions?.[key];
+  if (previous?.method === 'manual') {
+    const reopenedEarlier = previous.done === false && Date.parse(previous.at) <= Date.parse(now);
+    if (!(options.overrideEarlierReopen && reopenedEarlier)) return null;
+  }
   return {
     checklistState: { [key]: true },
     checklistCompletions: {
@@ -90,7 +103,7 @@ export function automaticChecklistCompletion(
         eventType: trigger.eventType,
         eventId: trigger.eventId,
         at: now,
-        actorId: SOLIS_AUTOMATION_ID,
+        actorId: options.actorId ?? SOLIS_AUTOMATION_ID,
       },
     },
   };
@@ -178,6 +191,8 @@ export function describeCompletionEvent(record: ChecklistCompletionRecord): stri
       return 'The Arrangement Form submission was received and linked to this case.';
     case 'sla.event_recorded':
       return 'The matching workflow event was recorded in the case’s SLA details.';
+    case 'crematory.package_submitted':
+      return 'The Crematory Package was sent to the crematory through SOLIS (accepted by Outlook).';
     case 'staff.checklist_toggle':
       return record.done ? 'A staff member checked this item.' : 'A staff member reopened this item.';
     default:

@@ -110,6 +110,10 @@ export function SendToCrematoryDialog({
   const [sendError, setSendError] = useState<{ message: string; unclear: boolean } | null>(null);
   const [result, setResult] = useState<CrematorySendResult | null>(null);
   const submissionId = useRef<string>('');
+  /** One send at a time from this window (2026-10): a second click before
+      the button re-renders as disabled does nothing. */
+  const sendInFlight = useRef(false);
+  const [checklistRetry, setChecklistRetry] = useState<{ busy: boolean; error: string | null; done: boolean }>({ busy: false, error: null, done: false });
   /** What the server will check the send against (2026-10). */
   const reviewFingerprint = useRef<string>('');
   const [reviewing, setReviewing] = useState(false);
@@ -221,6 +225,8 @@ export function SendToCrematoryDialog({
   }
 
   async function send() {
+    if (sendInFlight.current) return;
+    sendInFlight.current = true;
     setSending(true);
     setSendError(null);
     try {
@@ -237,15 +243,30 @@ export function SendToCrematoryDialog({
         acknowledged: reviewed,
       });
       setResult(sent);
+      setChecklistRetry({ busy: false, error: null, done: false });
       setStep('done');
-      await refresh();
+      // The case header, checklist and stage read the case itself.
+      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['case', organizationId] })]);
     } catch (error) {
       const unclear = error instanceof CrematoryRequestError && error.status === 409 && /may have been sent/i.test(error.message);
       setSendError({ message: error instanceof Error ? error.message : 'The email could not be sent.', unclear });
       submissionId.current = crypto.randomUUID();
       await refresh();
     } finally {
+      sendInFlight.current = false;
       setSending(false);
+    }
+  }
+
+  /** The email went out; only saving the checklist failed. Never sends. */
+  async function retrySentChecklist(cases: Array<{ caseId: string }>) {
+    setChecklistRetry({ busy: true, error: null, done: false });
+    try {
+      for (const c of cases) await crematoryCaseAction(organizationId, c.caseId, { action: 'complete_sent_checklist' });
+      setChecklistRetry({ busy: false, error: null, done: true });
+      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['case', organizationId] })]);
+    } catch (error) {
+      setChecklistRetry({ busy: false, error: error instanceof Error ? error.message : 'The checklist could not be saved.', done: false });
     }
   }
 
@@ -407,6 +428,18 @@ export function SendToCrematoryDialog({
             <div className="sx-form-banner sx-form-banner-info">
               Submitted to Outlook from {result.mailbox} to {result.to.join(', ')}. This confirms Outlook accepted the email — not that the crematory received it.
             </div>
+            {result.checklist && result.checklist.failed.length > 0 && !checklistRetry.done ? (
+              <div className="sx-form-banner sx-form-banner-error" role="alert">
+                The email was sent and is recorded, but Workflow 3 (&ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to
+                crematory&rdquo;) could not be checked for {result.checklist.failed.map((c) => c.caseNumber).join(', ')}. Nothing will be sent again.{' '}
+                <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={checklistRetry.busy} onClick={() => void retrySentChecklist(result.checklist!.failed)}>
+                  {checklistRetry.busy ? 'Saving…' : 'Save checklist again'}
+                </button>
+                {checklistRetry.error && <span className={styles.muted}> {checklistRetry.error}</span>}
+              </div>
+            ) : (
+              <p className={styles.muted}>Workflow 3 updated: &ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to crematory&rdquo; are checked.</p>
+            )}
             <ul className={styles.attachments}>
               {result.attachments.map((a) => (
                 <li key={a.attachmentName}>

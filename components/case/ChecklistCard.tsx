@@ -784,9 +784,14 @@ function CompletionDetails({ item, resolveActorName }: { item: ChecklistItemView
     rows = [['Why', item.returnRequirement ? 'Completed from the recorded release of the cremated remains.' : 'Completed from the information recorded on the case.']];
   } else if (completion.kind === 'automatic' || completion.kind === 'manual') {
     const record = completion.record;
+    // An automatic completion proved by a staff member's own action (a Send
+    // to Crematory, 2026-10) names them; otherwise SOLIS did it alone.
+    const staffActor = record.actorId && record.actorId !== SOLIS_AUTOMATION_ID ? (resolveActorName?.(record.actorId) || 'a staff member') : null;
     const by =
       record.method === 'automatic' || record.actorId === SOLIS_AUTOMATION_ID
-        ? 'SOLIS Automation'
+        ? staffActor
+          ? `SOLIS Automation — sent by ${staffActor}`
+          : 'SOLIS Automation'
         : (record.actorId && resolveActorName?.(record.actorId)) || 'A staff member';
     rows = [
       ['Why', describeCompletionEvent(record)],

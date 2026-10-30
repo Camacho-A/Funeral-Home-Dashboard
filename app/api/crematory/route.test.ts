@@ -185,4 +185,32 @@ describe('Send to Crematory routes', () => {
     expect((await getSettings()).status).toBe(404);
     expect((await postSend({ caseIds: ['x'] })).status).toBe(404);
   });
+
+  describe('Workflow 3 after a send (2026-10)', () => {
+    const completeChecklist = (headers = SAME_ORIGIN, organizationId = org()) =>
+      caseRoute.POST(
+        new Request('http://localhost/api/cases/1042/crematory', { method: 'POST', headers, body: JSON.stringify({ organizationId, action: 'complete_sent_checklist' }) }),
+        { params: Promise.resolve({ caseId: '1042' }) },
+      );
+
+    it('the checklist retry needs document permission, the same origin, and a case SOLIS actually sent — it never sends', async () => {
+      permissions.prepare = false;
+      expect((await completeChecklist()).status).toBe(403);
+      permissions.prepare = true;
+      expect((await completeChecklist({ ...SAME_ORIGIN, origin: 'https://evil.example' })).status).toBe(403);
+      const notSent = await completeChecklist();
+      expect(notSent.status).toBe(409);
+      expect((await notSent.json()).error).toContain('has not been sent to the crematory through SOLIS');
+    });
+
+    it("another organization's request is refused for the retry and for sending", async () => {
+      expect((await completeChecklist(SAME_ORIGIN, SECOND_MOCK_ORGANIZATION_ID)).status).toBe(403);
+      const crossOrgSend = await send.POST(
+        new Request('http://localhost/api/crematory/send', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: SECOND_MOCK_ORGANIZATION_ID, caseIds: ['1042'] }) }),
+      );
+      expect(crossOrgSend.status).toBe(403);
+      session = { ...session, organizationId: SECOND_MOCK_ORGANIZATION_ID };
+      expect((await completeChecklist()).status).toBe(404);
+    });
+  });
 });

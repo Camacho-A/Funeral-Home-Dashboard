@@ -20,7 +20,21 @@ vi.mock('../../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   },
 }));
 
+/** Send to Crematory checklist (2026-10): lets a test make saving the
+    checklist fail after a successful send. */
+const sentChecklistFault = vi.hoisted(() => ({ fail: false }));
+vi.mock('./crematorySentChecklist', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./crematorySentChecklist')>();
+  return {
+    ...actual,
+    completeCrematorySentChecklist: (...args: Parameters<typeof actual.completeCrematorySentChecklist>) =>
+      sentChecklistFault.fail ? Promise.reject(new Error('Wix 503 while saving the case')) : actual.completeCrematorySentChecklist(...args),
+  };
+});
+
 const pkg = await import('./crematoryPackageService');
+const { completeCrematorySentChecklist, retryCrematorySentChecklist } = await import('./crematorySentChecklist');
+const { crematorySendState } = await import('@/domain/crematory/sendState');
 const { sendCrematoryPackages, reviewCrematorySend } = await import('./crematorySendService');
 const { connectMockCrematoryMailbox, resetMockCrematoryMailboxes } = await import('./crematoryMailboxService');
 const { upload } = await import('../documentService');
@@ -138,6 +152,7 @@ afterEach(() => {
   appointmentFixtures.length = lengths.appointments;
   blobs.clear();
   vi.unstubAllGlobals();
+  sentChecklistFault.fail = false;
 });
 
 /** What SOLIS showed staff before they confirmed or chose a permit: that document's stored checksum (2026-10). */
@@ -862,6 +877,209 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     fakeGraph();
     await send({ caseIds: ['1042'] });
     await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Each case is sent only once') });
+  });
+
+  describe('Workflow 3 after a send, and never sending twice (2026-10)', () => {
+    const PERMIT_SENT = '3:0';
+    const RELEASE_SENT = '3:1';
+    const sendsOf = (calls: Call[]) => calls.filter(([url]) => url.endsWith('/send')).length;
+
+    it('a successful send checks "Permit sent to crematory" and "Authorization of release sent to crematory" on every sent case, attributed to the sender — and they stay checked', async () => {
+      await twoReadyCases();
+      fakeGraph();
+      const result = await send({}, ctx('staff-lee'));
+      expect(result.checklist).toEqual({ failed: [] });
+
+      for (const caseId of ['1042', '1044']) {
+        // Read back as a fresh load of the case would (a refresh / reopen).
+        const stored = caseFixtures[index(caseId)];
+        expect(stored.checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
+        const sentAt = stored.crematory!.lastSubmission!.at;
+        for (const key of [PERMIT_SENT, RELEASE_SENT]) {
+          expect(stored.checklistCompletions![key]).toMatchObject({
+            done: true,
+            method: 'automatic',
+            source: 'workflow_event',
+            eventType: 'crematory.package_submitted',
+            eventId: 'sub-0000-0001',
+            actorId: 'staff-lee',
+          });
+          expect(Date.parse(stored.checklistCompletions![key].at)).toBeGreaterThanOrEqual(Date.parse(sentAt));
+        }
+        const events = eventsOf(caseId, 'case.checklist.completed_automatically');
+        expect(events).toHaveLength(2);
+        expect(events.every((e) => e.actorIdentityId === 'staff-lee')).toBe(true);
+        expect(crematorySendState(stored)).toEqual({ kind: 'sent', at: sentAt });
+        // Earlier stages and the case's other ticks are untouched; the stage never moves back.
+        expect(stored.checklistState).toMatchObject({ '2:0': true, '2:1': true, '2:2': true });
+        expect(stored.rawStage).toBeGreaterThanOrEqual(originals.get(caseId)!.rawStage);
+      }
+    });
+
+    it('a failed send, or one Outlook left unclear, checks nothing; only the confirmed send that follows does', async () => {
+      await twoReadyCases();
+      fakeGraph({ failAttachment: true });
+      await expect(send()).rejects.toMatchObject({ status: 502 });
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+      expect(caseFixtures[index('1042')].checklistState[RELEASE_SENT]).toBeUndefined();
+
+      fakeGraph({ failSend: 503 });
+      await expect(send({ submissionId: 'sub-0000-0005' })).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
+      expect(caseFixtures[index('1042')].crematory!.lastSubmission!.status).toBe('uncertain');
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+      expect(eventsOf('1042', 'case.checklist.completed_automatically')).toHaveLength(0);
+
+      // Never resent automatically: only after staff confirm from Sent Items.
+      const calls = fakeGraph();
+      await expect(send({ submissionId: 'sub-0000-0006' })).rejects.toMatchObject({ status: 409 });
+      expect(sendsOf(calls)).toBe(0);
+      await send({ submissionId: 'sub-0000-0007', confirmResend: true });
+      expect(caseFixtures[index('1042')].checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
+    });
+
+    it('while a send is in progress the case is "being sent": a second request — another staff member, or the same request again (a double click) — is refused and sends nothing', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      const startedAt = new Date().toISOString();
+      caseFixtures[index('1042')] = {
+        ...caseFixtures[index('1042')],
+        crematory: { ...caseFixtures[index('1042')].crematory, pendingSubmission: { submissionId: 'sub-0000-0001', startedAt, startedBy: 'staff-lee', acknowledgmentId: 'ack-1' } },
+      };
+      expect(crematorySendState(caseFixtures[index('1042')])).toEqual({ kind: 'sending' });
+      await expect(send({ submissionId: 'sub-0000-0001' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('being sent right now') });
+      await expect(send({ submissionId: 'sub-0000-0002' }, ctx('staff-kim'))).rejects.toMatchObject({ status: 409, message: expect.stringContaining('being sent right now') });
+      expect(sendsOf(calls)).toBe(0);
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+    });
+
+    it('two staff members sending at the same moment: exactly one email goes out; the other is refused', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      const outcomes = await Promise.allSettled([send({ submissionId: 'sub-0000-00a1' }, ctx('staff-lee')), send({ submissionId: 'sub-0000-00b2' }, ctx('staff-kim'))]);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((o) => o.status === 'rejected').map((o) => (o as PromiseRejectedResult).reason.status)).toEqual([409]);
+      expect(sendsOf(calls)).toBe(1);
+      expect(calls.filter(([url]) => url.endsWith('/me/messages'))).toHaveLength(1);
+    });
+
+    it('the same request twice at the same moment (a double click) sends ONE email', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      const fingerprint = await fingerprintFor(['1042', '1044']);
+      const outcomes = await Promise.allSettled([send({ reviewFingerprint: fingerprint }), send({ reviewFingerprint: fingerprint })]);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      expect(sendsOf(calls)).toBe(1);
+    });
+
+    it('once sent, the case can never be sent again — not after unchecking Workflow 3, not with an override; unchecking never re-enables it', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      await send();
+      // Staff uncheck both items afterwards.
+      caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], checklistState: { ...caseFixtures[index('1042')].checklistState, [PERMIT_SENT]: false, [RELEASE_SENT]: false } };
+      const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+      expect(summary.readiness.readyToSend).toBe(false);
+      expect(summary.readiness.requirements.find((r) => r.key === 'not_sent')).toMatchObject({ ok: false });
+      expect(crematorySendState(caseFixtures[index('1042')]).kind).toBe('sent');
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0009' })).rejects.toMatchObject({ status: 409 });
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0010', confirmResend: true })).rejects.toMatchObject({ status: 409 });
+      expect(sendsOf(calls)).toBe(1);
+    });
+
+    it('a case sent before this change (sent, Workflow 3 never checked) stays protected: no resend, and its checklist is not rewritten by a refused attempt', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      const before = caseFixtures[index('1042')];
+      caseFixtures[index('1042')] = {
+        ...before,
+        crematory: { ...before.crematory, pendingSubmission: null, lastSubmission: { ...(before.crematory?.lastSubmission ?? {}), submissionId: 'sub-legacy-0001', status: 'submitted', at: '2026-10-20T15:00:00.000Z', by: 'staff-old' } as never },
+      };
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0011' })).rejects.toMatchObject({ status: 409 });
+      expect(sendsOf(calls)).toBe(0);
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+    });
+
+    it('checking the items never sends: completing the checklist (including a staff retry) calls Outlook zero times', async () => {
+      await twoReadyCases();
+      fakeGraph();
+      sentChecklistFault.fail = true;
+      await send({ caseIds: ['1042'] });
+      sentChecklistFault.fail = false;
+      const calls = fakeGraph();
+      await expect(retryCrematorySentChecklist(ctx(), '1042', 'mock')).resolves.toBe('completed');
+      await expect(retryCrematorySentChecklist(ctx(), '1042', 'mock')).resolves.toBe('unchanged');
+      expect(calls).toHaveLength(0);
+    });
+
+    it('if the checklist cannot be saved after the send: the send stays recorded, the failure is reported, nothing is resent — and a retry completes it', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      sentChecklistFault.fail = true;
+      const result = await send();
+      expect(result.status).toBe('submitted');
+      expect(result.checklist.failed.map((c) => c.caseNumber)).toEqual(['B2026-901', 'B2026-902']);
+      expect(caseFixtures[index('1042')].crematory!.lastSubmission!.status).toBe('submitted');
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+      expect(sendsOf(calls)).toBe(1);
+
+      // The same request again (the window retrying) reports the first send, sends nothing, and completes the checklist.
+      sentChecklistFault.fail = false;
+      const again = await send();
+      expect(again).toMatchObject({ duplicate: true, checklist: { failed: [] } });
+      expect(sendsOf(calls)).toBe(1);
+      for (const caseId of ['1042', '1044']) expect(caseFixtures[index(caseId)].checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
+    });
+
+    it('a staff reopen made before the send is superseded by the send; a staff tick is kept as it was', async () => {
+      await twoReadyCases();
+      fakeGraph();
+      const earlier = '2026-10-01T12:00:00.000Z';
+      caseFixtures[index('1042')] = {
+        ...caseFixtures[index('1042')],
+        checklistState: { ...caseFixtures[index('1042')].checklistState, [PERMIT_SENT]: false, [RELEASE_SENT]: true },
+        checklistCompletions: {
+          [PERMIT_SENT]: { done: false, method: 'manual', source: 'staff_confirmation', eventType: 'staff.checklist_toggle', eventId: null, at: earlier, actorId: 'staff-dana' },
+          [RELEASE_SENT]: { done: true, method: 'manual', source: 'staff_confirmation', eventType: 'staff.checklist_toggle', eventId: null, at: earlier, actorId: 'staff-dana' },
+        },
+      };
+      // The checked "Permit sent" step would have flagged a possible earlier send; here it is unchecked, so the case is ready.
+      await send({ caseIds: ['1042'], reviewFingerprint: await fingerprintFor(['1042']) });
+      const stored = caseFixtures[index('1042')];
+      expect(stored.checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
+      expect(stored.checklistCompletions![PERMIT_SENT]).toMatchObject({ method: 'automatic', done: true });
+      expect(stored.checklistCompletions![RELEASE_SENT]).toEqual({ done: true, method: 'manual', source: 'staff_confirmation', eventType: 'staff.checklist_toggle', eventId: null, at: earlier, actorId: 'staff-dana' });
+    });
+
+    it('archived: a sent case archived since is never written, and the retry is refused', async () => {
+      await twoReadyCases();
+      fakeGraph();
+      sentChecklistFault.fail = true;
+      await send({ caseIds: ['1042'] });
+      sentChecklistFault.fail = false;
+      caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], isDeleted: true };
+      await expect(retryCrematorySentChecklist(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 409 });
+      expect(await completeCrematorySentChecklist(ctx(), '1042', 'sub-0000-0001', 'mock')).toBe('unchanged');
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+    });
+
+    it('a case SOLIS has not sent is never checked from a send — not by a retry, not by a send id that is not its own', async () => {
+      await twoReadyCases();
+      await expect(retryCrematorySentChecklist(ctx(), '1042', 'mock')).rejects.toMatchObject({ status: 409 });
+      expect(await completeCrematorySentChecklist(ctx(), '1042', 'sub-not-this-case', 'mock')).toBe('unchanged');
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+    });
+
+    it('another organization\'s case is never checked', async () => {
+      await twoReadyCases();
+      fakeGraph();
+      sentChecklistFault.fail = true;
+      await send({ caseIds: ['1042'] });
+      sentChecklistFault.fail = false;
+      const otherOrg = { ...ctx(), organizationId: 'evergreen-memorial-group' };
+      await expect(retryCrematorySentChecklist(otherOrg, '1042', 'mock')).rejects.toMatchObject({ status: 404 });
+      expect(await completeCrematorySentChecklist(otherOrg, '1042', 'sub-0000-0001', 'mock')).toBe('not_applicable');
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+    });
   });
 });
 

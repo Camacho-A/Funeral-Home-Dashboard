@@ -163,6 +163,55 @@ describe('SendToCrematoryDialog', () => {
     expect(client.sendToCrematory.mock.calls[0][0]).toMatchObject({ reviewFingerprint: 'v1:reviewed', acknowledged: true });
   });
 
+  describe('sending once, and Workflow 3 afterwards (2026-10)', () => {
+    const submitted = (checklist?: { failed: Array<{ caseId: string; caseNumber: string }> }) => ({
+      status: 'submitted' as const,
+      duplicate: false,
+      mailbox: 'office@funeralhome.example',
+      internetMessageId: '<m@x>',
+      to: ['intake@crematory.example'],
+      cc: [],
+      attachments: [{ caseId: '1042', caseNumber: 'B2026-901', decedentDisplayName: 'Richard Reynolds', attachmentName: 'Reynolds_Richard_11-06-2026.pdf', packageDocumentId: 'pkg-1042', packageVersion: 1 }],
+      ...(checklist ? { checklist } : {}),
+    });
+    async function toReviewedSend() {
+      client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
+      open({ caseId: '1042' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+      await screen.findByLabelText('Subject');
+      fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
+      return screen.getByRole('button', { name: 'Send to Crematory (1)' });
+    }
+
+    it('while sending, the button is disabled and says so; a double click sends one request', async () => {
+      let finish: (value: unknown) => void = () => undefined;
+      client.sendToCrematory.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+      const button = await toReviewedSend();
+      fireEvent.click(button);
+      fireEvent.click(button);
+      fireEvent.doubleClick(button);
+      expect(await screen.findByRole('button', { name: 'Sending…' })).toBeDisabled();
+      expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
+      finish(submitted({ failed: [] }));
+      expect(await screen.findByText(/Workflow 3 updated/)).toHaveTextContent('Permit sent to crematory');
+      expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
+    });
+
+    it('if the checklist could not be saved, it says the email was sent, and "Save checklist again" retries the checklist only — never sends', async () => {
+      client.sendToCrematory.mockResolvedValue(submitted({ failed: [{ caseId: '1042', caseNumber: 'B2026-901' }] }));
+      client.crematoryCaseAction.mockResolvedValue({});
+      fireEvent.click(await toReviewedSend());
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('The email was sent and is recorded');
+      expect(alert).toHaveTextContent('B2026-901');
+      expect(alert).toHaveTextContent('Nothing will be sent again');
+      fireEvent.click(within(alert).getByRole('button', { name: 'Save checklist again' }));
+      await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1042', { action: 'complete_sent_checklist' }));
+      expect(await screen.findByText(/Workflow 3 updated/)).toBeInTheDocument();
+      expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('if the server will not prepare the review (a case changed or is still being prepared), the email is not shown and nothing is sent', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
     client.reviewCrematorySend.mockRejectedValueOnce(new CrematoryRequestError('Nothing was sent. B2026-901 is still being prepared. Try again in a moment.', 409));

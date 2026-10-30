@@ -17,6 +17,8 @@ import {
   loadForSending,
   preparationInProgress,
 } from './crematoryPackageService';
+import { completeCrematorySentChecklist } from './crematorySentChecklist';
+import { CREMATORY_PENDING_STALE_MS } from '@/domain/crematory/sendState';
 
 /**
  * Send to Crematory (2026-10). ONE Outlook email, from the organization's
@@ -70,10 +72,23 @@ export type SendRequest = {
 };
 
 export type SentAttachment = { caseId: string; caseNumber: string; decedentDisplayName: string; attachmentName: string; packageDocumentId: string; packageVersion: number | null };
-export type SendResult = { status: 'submitted'; duplicate: boolean; mailbox: string; internetMessageId: string | null; to: string[]; cc: string[]; attachments: SentAttachment[] };
+/** Workflow 3's two "sent to crematory" items (2026-10): completed on each
+    sent case, or — if that save failed — named here so staff see it and can
+    retry it without sending again. */
+export type SentChecklistResult = { failed: Array<{ caseId: string; caseNumber: string }> };
+export type SendResult = {
+  status: 'submitted';
+  duplicate: boolean;
+  mailbox: string;
+  internetMessageId: string | null;
+  to: string[];
+  cc: string[];
+  attachments: SentAttachment[];
+  checklist: SentChecklistResult;
+};
 
 const MAX_CASES = 20;
-const PENDING_STALE_MS = 10 * 60 * 1000;
+const PENDING_STALE_MS = CREMATORY_PENDING_STALE_MS;
 const sha256 = (bytes: Uint8Array | string) => crypto.createHash('sha256').update(bytes).digest('hex');
 type Loaded = Awaited<ReturnType<typeof loadForSending>>;
 
@@ -211,6 +226,26 @@ export async function reviewCrematorySend(organizationId: string, requestedCaseI
   };
 }
 
+/**
+ * After a confirmed send: completes each case's two "sent to crematory"
+ * checklist items (crematorySentChecklist.ts). Never throws — the email is
+ * already sent and recorded; a case whose checklist could not be saved is
+ * reported (and logged) so staff can retry it, and nothing is ever re-sent
+ * for it.
+ */
+async function completeSentChecklists(ctx: ActivityContext, sent: ReadonlyArray<{ caseId: string; caseNumber: string }>, submissionId: string, mode: DataAdapterMode): Promise<SentChecklistResult> {
+  const failed: SentChecklistResult['failed'] = [];
+  for (const c of sent) {
+    try {
+      await completeCrematorySentChecklist(ctx, c.caseId, submissionId, mode);
+    } catch (error) {
+      console.error(`The crematory email was sent, but the checklist for case ${c.caseId} could not be saved:`, error instanceof Error ? error.message : error);
+      failed.push(c);
+    }
+  }
+  return { failed };
+}
+
 async function audit(ctx: ActivityContext, caseId: string, eventType: Parameters<typeof recordCrematoryEvent>[2], details: Parameters<typeof recordCrematoryEvent>[3], mode: DataAdapterMode) {
   try {
     await recordCrematoryEvent(ctx, caseId, eventType, details, mode);
@@ -248,7 +283,11 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
   // what was already done, send nothing.
   if (loaded.every((l) => l.case_.crematory?.lastSubmission?.submissionId === request.submissionId && l.case_.crematory.lastSubmission.status === 'submitted')) {
     const first = loaded[0].case_.crematory!.lastSubmission!;
+    // A checklist that could not be saved the first time is completed now —
+    // idempotent, and nothing is sent.
+    const checklist = await completeSentChecklists(ctx, loaded.map((l) => ({ caseId: l.case_.id, caseNumber: l.case_.caseNumber })), request.submissionId, mode);
     return {
+      checklist,
       status: 'submitted',
       duplicate: true,
       mailbox: first.mailbox ?? '',
@@ -272,10 +311,13 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
   const STALE_REVIEW = 'Nothing was sent. A Crematory Package, date or permit changed since you reviewed the email. Review it again.';
   if (reviewFingerprintOf(loaded) !== request.reviewFingerprint) throw new CrematoryError(STALE_REVIEW, 409);
 
+  // A send already in progress — by another staff member, or this same
+  // request arriving twice (a double click, a retried call) — is never
+  // joined: only one request ever holds the case and sends (2026-10).
   const now = Date.now();
   const busy = loaded.filter((l) => {
     const pending = l.case_.crematory?.pendingSubmission;
-    return pending && pending.submissionId !== request.submissionId && now - Date.parse(pending.startedAt) < PENDING_STALE_MS;
+    return pending && now - Date.parse(pending.startedAt) < PENDING_STALE_MS;
   });
   if (busy.length > 0) throw new CrematoryError(`Nothing was sent. ${busy.map((l) => l.case_.caseNumber).join(', ')} ${busy.length === 1 ? 'is' : 'are'} being sent right now.`, 409);
 
@@ -321,7 +363,7 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
           const record = current.crematory;
           if (record?.lastSubmission?.status === 'submitted') throw new CrematoryError(`Nothing was sent. ${current.caseNumber} was already sent to the crematory.`, 409);
           const pending = record?.pendingSubmission;
-          if (pending && pending.submissionId !== request.submissionId && Date.now() - Date.parse(pending.startedAt) < PENDING_STALE_MS) {
+          if (pending && Date.now() - Date.parse(pending.startedAt) < PENDING_STALE_MS) {
             throw new CrematoryError(`Nothing was sent. ${current.caseNumber} is being sent right now.`, 409);
           }
           if (preparationInProgress(current)) throw new CrematoryError(`Nothing was sent. ${current.caseNumber} is still being prepared. Try again in a moment.`, 409);
@@ -459,7 +501,9 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
         },
       }, mode);
     }
-    return { status: 'submitted', duplicate: false, mailbox: mailbox.accountEmail, internetMessageId: result.internetMessageId, to: recipients.to, cc: recipients.cc, attachments };
+    // Workflow 3's "sent to crematory" items, now that the send is recorded.
+    const checklist = await completeSentChecklists(ctx, attachments, request.submissionId, mode);
+    return { status: 'submitted', duplicate: false, mailbox: mailbox.accountEmail, internetMessageId: result.internetMessageId, to: recipients.to, cc: recipients.cc, attachments, checklist };
   } catch (error) {
     const mayHaveSent = error instanceof OutlookMailError ? error.mayHaveSent : false;
     const reason = error instanceof Error ? error.message : 'Outlook could not send the email.';
