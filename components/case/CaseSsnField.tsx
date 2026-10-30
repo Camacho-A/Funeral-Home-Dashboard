@@ -34,21 +34,22 @@ export function CaseSsnField({
   return (
     <div>
       <div className={styles.fieldLabel}>Social Security number</div>
-      {ssnOnFile ? (
-        <div className={styles.fieldValue}>
-          •••-••-{ssnOnFile.last4} <span className="sx-status" title="Locked — corrections by an administrator only">Locked</span>
-          <div className={styles.fieldLabel}>{CASE_SSN_SOURCE_LABEL[ssnOnFile.source]}</div>
-        </div>
-      ) : (
-        <div className={styles.fieldValue}>
-          <span className={styles.fieldLabel}>Not on file — saved from the Arrangement Form when it arrives</span>
-        </div>
-      )}
-      {isAdministrator && !readOnly && (
-        <button type="button" className={styles.editNameButton} onClick={() => setCorrecting(true)}>
-          {ssnOnFile ? 'Correct…' : 'Enter…'}
-        </button>
-      )}
+      {/* Compact (2026-10): the value and its one action on a single line;
+          where it came from is on hover, not a second line of text. */}
+      <div className={`${styles.fieldValue} ${styles.ssnLine}`}>
+        {ssnOnFile ? (
+          <span title={`${CASE_SSN_SOURCE_LABEL[ssnOnFile.source]} · locked — corrections by an administrator only`}>
+            •••-••-{ssnOnFile.last4} <span className="sx-status">Locked</span>
+          </span>
+        ) : (
+          <span title="Saved from the Arrangement Form when it arrives">Not on file</span>
+        )}
+        {isAdministrator && !readOnly && (
+          <button type="button" className={styles.editNameButton} onClick={() => setCorrecting(true)}>
+            {ssnOnFile ? 'Correct…' : 'Enter…'}
+          </button>
+        )}
+      </div>
       {correcting && <CorrectSsnDialog organizationId={organizationId} caseId={caseId} hasSsn={Boolean(ssnOnFile)} onClose={() => setCorrecting(false)} />}
     </div>
   );

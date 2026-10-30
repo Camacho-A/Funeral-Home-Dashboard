@@ -23,11 +23,12 @@ beforeEach(() => {
 });
 
 describe('CaseSsnField', () => {
-  it('shows only the last four, locked, with its source — and no edit for staff', () => {
+  it('shows only the last four, locked, with its source on hover (compact, 2026-10) — and no edit for staff', () => {
     renderField();
     expect(screen.getByText(/•••-••-3456/)).toBeTruthy();
     expect(screen.getByText('Locked')).toBeTruthy();
-    expect(screen.getByText('From the Arrangement Form')).toBeTruthy();
+    expect(screen.getByTitle(/^From the Arrangement Form/)).toBeTruthy();
+    expect(screen.queryByText('From the Arrangement Form')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Correct…' })).toBeNull();
   });
 

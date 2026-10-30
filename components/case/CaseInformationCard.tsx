@@ -840,7 +840,7 @@ export function CaseInformationCard({
   );
 
   const crematedRemainsControl = (
-    <div>
+    <div className={styles.fullRow}>
       <div className={styles.fieldLabel}>Cremated Remains</div>
       <SelectField
         className={`${styles.paymentSelect} ${pickupStatus === 'released' ? styles.paymentSuccess : styles.paymentPending}`}
@@ -935,7 +935,16 @@ export function CaseInformationCard({
           value={timeOfDeath}
           onSave={(v) => onSaveTimeOfDeath(v)}
         />
-        {ssnField}
+        {/* Weight beside Time of death, SSN further down beside the
+            veteran flag (2026-10): short values pair up, no empty half-rows. */}
+        <EditableField
+          label="Weight"
+          emptyLabel={mePending}
+          value={weight}
+          onSave={(v) => onSaveWeight(v)}
+          valueClassName={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}
+          trailingBadge={weightOver200 ? <span className={styles.notifyBadge}>Notify crematory</span> : null}
+        />
         {/* Tag Number (2026-10). With the deceased's identifying details,
             so it is the first thing staff see — and a missing one is
             noticed — rather than sitting in the operational row further
@@ -978,15 +987,37 @@ export function CaseInformationCard({
           uppercase
           onSave={(v) => onUpdateCaseInfo({ placeOfDeath: v })}
         />
-        <EditableField
-          label="Weight"
-          emptyLabel={mePending}
-          value={weight}
-          onSave={(v) => onSaveWeight(v)}
-          valueClassName={`${styles.weightValue} ${weightOver200 ? styles.weightOver : styles.weightNormal}`}
-          trailingBadge={weightOver200 ? <span className={styles.notifyBadge}>Notify crematory</span> : null}
-        />
+        {ssnField}
+        {/* Served in the armed forces (2026-10): with the identifying
+            details rather than at the foot of the card. */}
+        <div
+          className={`${styles.veteranRow} ${styles.veteranCell} ${veteranFlagLocked ? styles.veteranRowLocked : styles.veteranRowUnlocked}`}
+          onClick={veteranFlagLocked ? undefined : () => onToggleVeteran(!isVeteran)}
+        >
+          <Checkbox
+            checked={isVeteran}
+            disabled={veteranFlagLocked}
+            onChange={veteranFlagLocked ? undefined : () => onToggleVeteran(!isVeteran)}
+            tone="brand"
+            aria-label="Served in the armed forces"
+          />
+          <span className={styles.veteranLabel}>
+            Served in the armed forces
+            {veteranFlagLocked && <span className={styles.veteranLockedNote}>editable during First Call &amp; Payment only</span>}
+          </span>
+        </div>
       </div>
+      {isVeteran && (
+        <VaNotificationPanel
+          vaSteps={vaSteps}
+          vaCallbackDone={vaCallbackDone}
+          vaPublishChoice={vaPublishChoice}
+          vaNotificationResponsibility={vaNotificationResponsibility}
+          onToggleStep={onToggleVaStep}
+          onSetPublishChoice={onSetVaPublishChoice}
+          onSetVaNotificationResponsibility={onSetVaNotificationResponsibility}
+        />
+      )}
 
       <div className={styles.sectionHeading}>Next of kin / primary contact</div>
       <div className={styles.grid}>
@@ -1222,32 +1253,7 @@ export function CaseInformationCard({
         )}
       </div>
 
-      <div
-        className={`${styles.veteranRow} ${veteranFlagLocked ? styles.veteranRowLocked : styles.veteranRowUnlocked}`}
-        onClick={veteranFlagLocked ? undefined : () => onToggleVeteran(!isVeteran)}
-      >
-        <Checkbox
-          checked={isVeteran}
-          disabled={veteranFlagLocked}
-          onChange={veteranFlagLocked ? undefined : () => onToggleVeteran(!isVeteran)}
-          tone="brand"
-          aria-label="Served in the armed forces"
-        />
-        <span className={styles.veteranLabel}>Served in the armed forces</span>
-        {veteranFlagLocked && <span className={styles.veteranLockedNote}>editable during First Call &amp; Payment only</span>}
-      </div>
 
-      {isVeteran && (
-        <VaNotificationPanel
-          vaSteps={vaSteps}
-          vaCallbackDone={vaCallbackDone}
-          vaPublishChoice={vaPublishChoice}
-          vaNotificationResponsibility={vaNotificationResponsibility}
-          onToggleStep={onToggleVaStep}
-          onSetPublishChoice={onSetVaPublishChoice}
-          onSetVaNotificationResponsibility={onSetVaNotificationResponsibility}
-        />
-      )}
       {/* Automatic archiving (2026-10): there is no manual "Archive
           case" action any more — a case files itself away the moment it
           genuinely completes. What remains is the archived-state notice

@@ -677,11 +677,11 @@ describe('CaseInformationCard — Tag Number (Manors launch-prep; moved to the t
     expect(screen.queryByText(/Tag Number Missing/)).not.toBeInTheDocument();
   });
 
-  it('sits with the identifying details — Name, Date of birth, Date of death, Time of death — in the first grid', () => {
+  it('sits with the identifying details — Name, dates, Time of death and Weight (paired, 2026-10) — in the first grid', () => {
     render(<CaseInformationCard {...baseProps} tagNumber="T-1042" onUpdateCaseInfo={vi.fn()} />);
     const firstGrid = screen.getByText('Name').closest('div[class*="grid"]')!;
     const labels = Array.from(firstGrid.children).map((child) => child.querySelector('div')?.textContent ?? '');
-    expect(labels.slice(0, 5)).toEqual(['Name', 'Date of birth', 'Date of death', 'Time of death', 'Tag Number']);
+    expect(labels.slice(0, 6)).toEqual(['Name', 'Date of birth', 'Date of death', 'Time of death', 'Weight', 'Tag Number']);
   });
 
   it('there is exactly one Tag Number field in the card, and the old "Tag #" field is gone', () => {
@@ -1956,7 +1956,7 @@ describe('CaseInformationCard — Date of Cremation (2026-10)', () => {
     render(<CaseInformationCard {...baseProps} showDateOfCremation dateOfCremation="10/10/2026" onUpdateCaseInfo={vi.fn()} />);
     const firstGrid = screen.getByText('Name').closest('div[class*="grid"]')!;
     const labels = Array.from(firstGrid.children).map((child) => child.querySelector('div')?.textContent ?? '');
-    expect(labels.slice(0, 6)).toEqual(['Name', 'Date of birth', 'Date of death', 'Time of death', 'Tag Number', 'Date of Cremation']);
+    expect(labels.slice(0, 8)).toEqual(['Name', 'Date of birth', 'Date of death', 'Time of death', 'Weight', 'Tag Number', 'Date of Cremation', 'Location']);
     expect(field().getByRole('button', { name: '10/10/2026' })).toBeInTheDocument();
   });
 
@@ -2045,5 +2045,19 @@ describe('CaseInformationCard — Date of Cremation (2026-10)', () => {
   it('is not shown for an organization without the Certificate of Cremation', () => {
     render(<CaseInformationCard {...baseProps} dateOfCremation="07/15/2026" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.queryByText('Date of Cremation')).not.toBeInTheDocument();
+  });
+});
+
+describe('CaseInformationCard — compact layout, second pass (2026-10)', () => {
+  it('Served in the armed forces sits in the first grid with the identifying details, after Location', () => {
+    render(<CaseInformationCard {...baseProps} onUpdateCaseInfo={vi.fn()} />);
+    const firstGrid = screen.getByText('Name').closest('div[class*="grid"]')!;
+    expect(within(firstGrid as HTMLElement).getByText('Served in the armed forces')).toBeInTheDocument();
+    expect(screen.getAllByText('Served in the armed forces')).toHaveLength(1);
+  });
+
+  it('Cremated Remains takes the full row so its value is never cut off', () => {
+    render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.getByText('Cremated Remains').parentElement!.className).toMatch(/fullRow/);
   });
 });

@@ -40,6 +40,12 @@
   border-top: 1px solid var(--sx-border-soft);
 }
 
+/* A row with nothing to show (e.g. no pickup or shipping details yet)
+   leaves no divider and no blank strip behind. */
+.operationalRow:empty {
+  display: none;
+}
+
 .sectionHeading {
   font-size: 11px;
   font-weight: 600;
@@ -540,4 +546,44 @@ button.missingValue:focus-visible {
 
 .paymentSummaryNote {
   color: var(--sx-text-2);
+}
+
+/* Case Information layout (2026-10, second pass). */
+.fullRow {
+  grid-column: 1 / -1;
+}
+
+.ssnLine {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+/* Served in the armed forces, as a field beside the SSN rather than a
+   full-width bar at the foot of the card: the checkbox sits inline with
+   its label, which wraps beside it if the column is narrow. */
+.veteranCell {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  align-self: start;
+  gap: 8px;
+  margin-top: 0;
+  padding: 2px 0 0;
+  border: none;
+  background: none;
+}
+
+.veteranCell .veteranLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.veteranCell .veteranLockedNote {
+  display: block;
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
 }
