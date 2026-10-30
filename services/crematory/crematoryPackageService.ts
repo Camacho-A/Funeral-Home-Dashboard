@@ -51,6 +51,7 @@ import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
 import { evaluateCrematoryReadiness, type CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
 import { resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
 import { mergePdfs, UnreadablePdfError } from '@/lib/pdf/mergePdfs';
+import { sendOutcomeNeedingReview, type SendOutcomeReview } from '@/domain/crematory/sendState';
 import { toDisplayCasingIfAllCaps } from '@/utils/string';
 import { ArrangementExtractError, extractArrangementPage } from '../arrangementPageExtractService';
 
@@ -306,6 +307,7 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
     caseType: facts.case_.caseType,
     isArchived: facts.case_.isDeleted === true,
     sentAt: facts.case_.crematory?.lastSubmission?.status === 'submitted' ? facts.case_.crematory.lastSubmission.at : null,
+    sendNeedsReview: sendOutcomeNeedingReview(facts.case_.crematory) !== null,
     workflow2Complete: config ? workflowStageComplete(facts.case_, config.authorizationWorkflowStage) : null,
     workflow2Missing: workflow2Of(facts.case_)?.missing ?? [],
     medicalExaminerCase: facts.case_.isMedicalExaminerCase === true,
@@ -358,6 +360,9 @@ export type CrematoryCaseSummary = {
   /** A possible earlier send outside SOLIS (2026-10): flagged while
       unresolved, and what staff recorded. */
   previousSend: { indicated: boolean; recorded: CaseCrematoryRecord['previousSend'] | null };
+  /** A send SOLIS could not confirm (2026-10) — blocks sending until an
+      administrator resolves it. */
+  sendReview: SendOutcomeReview | null;
 };
 
 async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode): Promise<CrematoryCaseSummary> {
@@ -385,6 +390,7 @@ async function summarize(facts: Facts, canSend: boolean, mode: DataAdapterMode):
     package: facts.package ? { documentId: facts.package.id, version: facts.package.version, fileName: facts.package.fileName, current: packageIsCurrent(facts) } : null,
     expectedFileName: expectedFileName(facts),
     lastSubmission: facts.case_.crematory?.lastSubmission ?? null,
+    sendReview: sendOutcomeNeedingReview(facts.case_.crematory),
     untypedDocuments: facts.untyped.map((d) => ({ documentId: d.id, fileName: d.fileName, createdAt: d.createdAt, suggestedAs: suggestSourceKind(d.fileName), checksumSha256: d.checksumSha256 })),
     workflow2: workflow2Of(facts.case_),
     previousSend: {

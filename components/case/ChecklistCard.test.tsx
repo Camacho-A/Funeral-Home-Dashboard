@@ -1160,3 +1160,33 @@ describe('ChecklistCard — why an item is complete (2026-10)', () => {
     expect(onToggleItem).toHaveBeenCalledWith(8, false);
   });
 });
+
+describe('ChecklistCard — administrator-only items (Send to Crematory, 2026-10)', () => {
+  const items = () => [item({ index: 0, label: 'Permit sent to crematory' }), item({ index: 1, label: 'Authorization of release sent to crematory' }), item({ index: 2, label: 'Something else' })];
+
+  it('for staff who are not administrators those items are read-only and say so; the others still toggle', () => {
+    const { onToggleItem } = renderChecklist(items(), { adminOnlyIndexes: [0, 1] });
+    for (const label of ['Permit sent to crematory', 'Authorization of release sent to crematory']) {
+      const box = screen.getByRole('checkbox', { name: label });
+      expect(box).toBeDisabled();
+      fireEvent.click(box);
+    }
+    expect(screen.getAllByText('Administrators only')).toHaveLength(2);
+    expect(onToggleItem).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Something else' }));
+    expect(onToggleItem).toHaveBeenCalledWith(2, true);
+  });
+
+  it('administrators (no restricted items) can toggle them', () => {
+    const { onToggleItem } = renderChecklist(items(), { adminOnlyIndexes: [] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Permit sent to crematory' }));
+    expect(onToggleItem).toHaveBeenCalledWith(0, true);
+    expect(screen.queryByText('Administrators only')).not.toBeInTheDocument();
+  });
+
+  it('an archived (read-only) case shows no hint — nothing there is editable', () => {
+    renderChecklist(items(), { adminOnlyIndexes: [0, 1], isArchived: true });
+    expect(screen.queryByText('Administrators only')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Permit sent to crematory' })).toBeDisabled();
+  });
+});

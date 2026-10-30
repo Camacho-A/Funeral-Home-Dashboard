@@ -134,6 +134,19 @@ describe('Send to Crematory routes', () => {
     expect(await (await getOverview()).json()).toMatchObject({ canManage: true });
   });
 
+  it('resolving a send SOLIS could not confirm is for administrators only (2026-10)', async () => {
+    const post = (body: Record<string, unknown>) =>
+      caseRoute.POST(new Request('http://localhost/api/cases/1042/crematory', { method: 'POST', headers: SAME_ORIGIN, body: JSON.stringify({ organizationId: org(), ...body }) }), { params: Promise.resolve({ caseId: '1042' }) });
+    permissions.manage = false;
+    permissions.send = true;
+    const refused = await post({ action: 'reconcile_send', decision: 'not_sent', reason: 'Not in Sent Items' });
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error).toContain('Only an administrator');
+    permissions.manage = true;
+    // An administrator gets past the permission check (this case has no send to resolve).
+    expect((await post({ action: 'reconcile_send', decision: 'not_sent', reason: 'Not in Sent Items' })).status).toBe(409);
+  });
+
   it('preparing needs document permission; viewing needs case read', async () => {
     permissions.prepare = false;
     permissions.send = false;

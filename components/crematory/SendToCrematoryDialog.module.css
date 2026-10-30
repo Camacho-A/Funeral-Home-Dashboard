@@ -217,3 +217,21 @@
     width: 100%;
   }
 }
+
+/* A send SOLIS could not confirm (2026-10). */
+.unconfirmedTitle {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.unconfirmedActions {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.unconfirmedButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -1246,7 +1246,8 @@ export function recordCrematoryEvent(
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_NAME_RECORDED
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_READY_DATE_RECORDED
     | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PREVIOUS_SEND_RECORDED
-    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PREVIOUS_SEND_CORRECTED,
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_PREVIOUS_SEND_CORRECTED
+    | typeof ACTIVITY_EVENT_TYPES.CREMATORY_SEND_RECONCILED,
   details: { resourceId: string | null; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityEvent> {

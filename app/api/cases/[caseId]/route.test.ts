@@ -241,7 +241,12 @@ const ADMINISTRATOR_ROLE_ITEM = {
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
 };
-const ADMINISTRATOR_ROLE_PERMISSION_ITEMS = ['case.read', 'case.update', 'task.assign'].map((permissionKey) => ({
+// organization.manage (2026-10): the real Administrator role holds every
+// permission; this seed now includes the one that makes it an administrator
+// for Send to Crematory's administrator-only checklist items. Callers
+// without it are tested explicitly below.
+let rolePermissionKeys: string[] = ['case.read', 'case.update', 'task.assign', 'organization.manage'];
+const ADMINISTRATOR_ROLE_PERMISSION_ITEMS_FOR = (keys: readonly string[]) => keys.map((permissionKey) => ({
   id: `role-permission-administrator-${permissionKey}`,
   dataCollectionId: 'rolePermissions',
   data: { beaconRolePermissionId: `role-permission-administrator-${permissionKey}`, roleId: 'role-administrator', permissionKey, createdAt: '2026-01-01T00:00:00.000Z' },
@@ -257,7 +262,7 @@ function mockWixQueries(caseItems: { id: string; dataCollectionId: string; data:
   writtenCaseRows = new Map();
   mockQueryWixDataItems.mockImplementation((collectionId: string) => {
     if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
-    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
+    if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS_FOR(rolePermissionKeys) });
     if (collectionId === 'cases') return Promise.resolve({ dataItems: caseItems });
     return Promise.resolve({ dataItems: [] });
   });
@@ -273,6 +278,7 @@ beforeEach(() => {
   mockSession = fixtureIdentitySession(mockDefaultUser);
   writtenCaseRows = new Map();
   conditionalPatchCalls = [];
+  rolePermissionKeys = ['case.read', 'case.update', 'task.assign', 'organization.manage'];
 });
 
 afterEach(() => {
@@ -1834,6 +1840,58 @@ describe('PATCH /api/cases/[caseId] — checklistState write validation (B2026-0
     mockAdminQueries(permitStageCaseData({}));
     const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:1': 'yes' } } });
     expect(response.status).toBe(400);
+  });
+
+  describe('Send to Crematory — Workflow 3\'s two "sent to crematory" items are administrator-only by hand (2026-10)', () => {
+    const asNonAdministrator = () => {
+      rolePermissionKeys = ['case.read', 'case.update', 'task.assign'];
+    };
+
+    it('an administrator can check and uncheck them', async () => {
+      mockAdminQueries(permitStageCaseData({ '3:1': true }));
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:0': true, '3:1': false } } });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.case.checklistState).toMatchObject({ '3:0': true, '3:1': false });
+    });
+
+    it.each([
+      ['checking "Permit sent to crematory"', {}, { '3:0': true }],
+      ['checking "Authorization of release sent to crematory"', {}, { '3:1': true }],
+      ['unchecking one SOLIS checked', { '3:0': true, '3:1': true }, { '3:1': false }],
+      ['changing one alongside an ordinary item', {}, { '2:0': true, '3:0': true }],
+    ])('staff who are not administrators are refused %s — 403, nothing written', async (_label, stored, patch) => {
+      asNonAdministrator();
+      mockAdminQueries(permitStageCaseData(stored));
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: patch } });
+      expect(response.status).toBe(403);
+      expect((await response.json()).error).toMatch(/Only an administrator/);
+      expect(conditionalPatchCalls).toHaveLength(0);
+      expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+    });
+
+    it('every other item is unaffected, and an unchanged value carried in a patch is not a change', async () => {
+      asNonAdministrator();
+      mockAdminQueries(permitStageCaseData({ '3:0': true }));
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '2:0': true, '3:0': true } } });
+      expect(response.status).toBe(200);
+      expect((await response.json()).case.checklistState).toMatchObject({ '2:0': true, '3:0': true });
+    });
+
+    it('an archived case stays read-only for everyone', async () => {
+      mockAdminQueries({ ...permitStageCaseData({}), isArchived: true, archivedAt: '2026-10-01T00:00:00.000Z' });
+      const response = await patchRequest('1042', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { checklistState: { '3:0': true } } });
+      expect(response.status).toBe(409);
+      expect(conditionalPatchCalls).toHaveLength(0);
+    });
+
+    it('another organization\'s case is never reached', async () => {
+      mockAdminQueries(permitStageCaseData({}));
+      mockSession = fixtureIdentitySession(mockMultiOrgUser);
+      const response = await patchRequest('1042', { organizationId: 'some-other-organization', patch: { checklistState: { '3:0': true } } });
+      expect([403, 404]).toContain(response.status);
+      expect(conditionalPatchCalls).toHaveLength(0);
+    });
   });
 
   it('5. accepts a valid composite key that exists in the case\'s own workflow snapshot', async () => {

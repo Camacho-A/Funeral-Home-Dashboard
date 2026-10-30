@@ -1,3 +1,4 @@
+import { SEND_NEEDS_REVIEW_MESSAGE } from './sendState';
 import { toCaseDate } from './crematoryPackage';
 
 /**
@@ -17,6 +18,7 @@ export type CrematoryRequirementKey =
   | 'package_name'
   | 'ready_date'
   | 'package'
+  | 'send_outcome'
   | 'permission';
 
 export type CrematoryRequirement = { key: CrematoryRequirementKey; label: string; ok: boolean; detail: string | null };
@@ -26,6 +28,9 @@ export type CrematoryReadinessInput = {
   isArchived: boolean;
   /** When the case was already sent successfully — each case is sent once. */
   sentAt: string | null;
+  /** A send that may have reached the crematory and whose outcome SOLIS
+      could not confirm (2026-10): blocked until an administrator resolves it. */
+  sendNeedsReview?: boolean;
   /** Every step of workflow 2 checked; null when the workflow has no stage 2. */
   workflow2Complete: boolean | null;
   /** The workflow 2 steps not yet checked, worded as the case shows them —
@@ -124,6 +129,9 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
   const readyToBuild = r.every((requirement) => requirement.ok || requirement.key === 'workflow_2');
 
   add('not_sent', 'Not sent yet', input.sentAt === null, 'Already sent to the crematory. Each case is sent only once.');
+  if (input.sentAt === null && input.sendNeedsReview) {
+    add('send_outcome', 'Last send resolved', false, SEND_NEEDS_REVIEW_MESSAGE);
+  }
   const previous = input.previousSend;
   if (previous && input.sentAt === null && (previous.indicated || previous.recorded)) {
     const outside = previous.recorded?.decision === 'sent_outside_solis';

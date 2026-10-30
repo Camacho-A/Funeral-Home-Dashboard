@@ -1,5 +1,6 @@
 import type { CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
 import type { CaseCrematoryRecord } from '@/types/case';
+import type { SendOutcomeReview } from '@/domain/crematory/sendState';
 import type { CrematorySourceKind, UntypedCaseDocument } from '@/domain/crematory/crematoryPackage';
 
 /** Send to Crematory (2026-10). Client wrappers; errors throw with the server's message. */
@@ -31,6 +32,9 @@ export type CrematoryCaseSummary = {
   workflow2: { displayStage: number; medicalExaminer: boolean; missing: string[] } | null;
   /** A possible earlier send outside SOLIS (2026-10). */
   previousSend: { indicated: boolean; recorded: CaseCrematoryRecord['previousSend'] | null };
+  /** A send SOLIS could not confirm (2026-10): blocks sending until an
+      administrator resolves it. Absent from older servers. */
+  sendReview?: SendOutcomeReview | null;
 };
 export type CrematoryMailbox = { connected: false; configured: boolean } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
 export type CrematoryOverview = {
@@ -56,6 +60,9 @@ export type CrematorySendResult = {
   /** Workflow 3's "sent to crematory" items (2026-10): the cases whose
       checklist could not be saved after the send. */
   checklist?: { failed: Array<{ caseId: string; caseNumber: string }> };
+  /** Outlook accepted the email but SOLIS could not record it on these
+      cases (2026-10); they stay blocked until an administrator resolves them. */
+  unrecorded?: Array<{ caseId: string; caseNumber: string }>;
 };
 /** The final review (2026-10): the exact email Confirm & Send would send, and its fingerprint. */
 export type CrematoryReview = {
@@ -122,7 +129,8 @@ export async function crematoryCaseAction(
     | { action: 'choose_current_permit'; documentId: string }
     | { action: 'record_previous_send'; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean }
     | { action: 'correct_previous_send'; reason: string; decision: 'sent_outside_solis' | 'not_previously_sent'; method?: string; sentOn?: string; verification: string; confirmedChecked?: boolean }
-    | { action: 'complete_sent_checklist' },
+    | { action: 'complete_sent_checklist' }
+    | { action: 'reconcile_send'; decision: 'sent' | 'not_sent'; reason: string },
 ): Promise<unknown> {
   return parse(await fetch(`/api/cases/${encodeURIComponent(caseId)}/crematory`, json({ organizationId, ...action })), 'The change could not be saved.');
 }

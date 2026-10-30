@@ -585,7 +585,7 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
   });
 
   it('Send to Crematory in the header (2026-10) follows the send record — disabled with the sent date once sent, and while sending — never the checklist', () => {
-    expect(SOURCE).toContain('<SendToCrematoryButton case_={case_} onOpen={() => setSendToCrematoryOpen(true)} />');
+    expect(SOURCE).toContain('<SendToCrematoryButton case_={case_} isAdministrator={isAdministrator} onOpen={() => setSendToCrematoryOpen(true)} />');
     const button = SOURCE.slice(SOURCE.indexOf('function SendToCrematoryButton'));
     expect(button).toContain('crematorySendState(case_)');
     expect(button).toMatch(/state\.kind === 'sent'[\s\S]*disabled[\s\S]*Sent to Crematory<\/span>&nbsp;· \{formatCrematorySentAt\(state\.at\)\}/);
@@ -596,7 +596,7 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
   it('earlier stages (2026-10): the checklist gets the case-edit permission, and a tick is recorded on the stage being viewed', () => {
     expect(SOURCE).toMatch(/onToggleItem=\{\(index, newDone\) => mutations\.toggleChecklistItem\(case_, index, newDone, viewingDisplayStage\)\}/);
     expect(SOURCE).toMatch(
-      /canEdit=\{!permissionsQuery\.isSuccess \|\| permissionsQuery\.data\.permissions\.includes\('case\.update'\)\}\s*earlierStageEditable=\{viewModel\.earlierStagesEditable\}\s*resolveActorName/,
+      /canEdit=\{!permissionsQuery\.isSuccess \|\| permissionsQuery\.data\.permissions\.includes\('case\.update'\)\}\s*adminOnlyIndexes=\{crematoryAdminOnlyIndexes\}\s*earlierStageEditable=\{viewModel\.earlierStagesEditable\}\s*resolveActorName/,
     );
     expect(SOURCE).toMatch(/isArchived=\{case_\.isDeleted === true\}/);
   });

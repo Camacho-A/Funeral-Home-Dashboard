@@ -9,6 +9,7 @@ import { captureCaseMapBaseValues, type CaseMapBaseValues } from '@/domain/cases
 import { isCaseRevisionConflictError } from '@/domain/cases/caseRevisionConflict';
 import { findStageByRawStage } from '@/domain/workflow/resolveStages';
 import { useOrganization } from './useOrganization';
+import { myPermissionsKey } from './useRbac';
 
 /**
  * The Case Detail mutations the Frontend Engineering Plan's Hooks section
@@ -144,7 +145,15 @@ export function useCaseMutations(caseId: string) {
     mutationFn: ({ patch, baseValues }: CaseEdit) => {
       const cached = queryClient.getQueryData<Case>(queryKey);
       const expectedRevision = Math.max(cached ? caseRevision(cached) : 0, knownRevision.current);
-      return casesService.update(organization, caseId, patch, organization.dataAdapterMode, { expectedRevision, baseValues });
+      // Mock mode only: the browser applies the administrator-only rule for
+      // Workflow 3's "sent to crematory" items itself (with real data the
+      // server decides). Read from the permissions the page already loaded.
+      const permissions = queryClient.getQueryData<{ permissions?: string[] }>(myPermissionsKey(organization.organizationId))?.permissions ?? [];
+      return casesService.update(organization, caseId, patch, organization.dataAdapterMode, {
+        expectedRevision,
+        baseValues,
+        isAdministrator: permissions.includes('organization.manage'),
+      });
     },
     onMutate: async ({ patch }) => {
       if (!('checklistState' in patch) || !patch.checklistState) return undefined;

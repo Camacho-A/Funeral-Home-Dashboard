@@ -248,6 +248,11 @@ export const ACTIVITY_EVENT_TYPES = {
   /** An administrator corrected that record (2026-10): the answer before,
       the answer after, and why. Earlier answers are kept on the case. */
   CREMATORY_PREVIOUS_SEND_CORRECTED: 'crematory.previous_send_corrected',
+  /** An administrator resolved a send whose outcome SOLIS could not confirm
+      (2026-10) — Outlook said it may have been sent, or the attempt reached
+      Outlook and its result was never recorded — as sent or not sent, with
+      a reason. The attempt's details and the decision are kept. */
+  CREMATORY_SEND_RECONCILED: 'crematory.send_reconciled',
   /** Case SSN (2026-10). Captured from an intake form, or corrected by an
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',

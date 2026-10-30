@@ -583,23 +583,70 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
   });
 
-  it('a send that may have gone out is retried only after confirming it is not in Sent Items', async () => {
+  // Replaced (2026-10, durable duplicate-send protection): a send that may
+  // have gone out used to be retried here once staff ticked "I checked Sent
+  // Items — it was not sent". It is now never sent again from the window;
+  // an administrator resolves it from the case.
+  it('a send that may have gone out is never retried from the window', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
-    client.sendToCrematory
-      .mockRejectedValueOnce(new CrematoryRequestError('Nothing was sent. The last send for Richard Reynolds (B2026-901) may have been sent. Check Sent Items in the mailbox, then confirm it was not sent to try again.', 409))
-      .mockResolvedValueOnce({ status: 'submitted', duplicate: false, mailbox: 'office@funeralhome.example', internetMessageId: null, to: ['intake@crematory.example'], cc: [], attachments: [] });
+    client.sendToCrematory.mockRejectedValueOnce(
+      new CrematoryRequestError('Outlook did not respond. The email may still have been sent. It will not be sent again until an administrator checks Sent Items in office@funeralhome.example and records whether it was sent.', 502),
+    );
     open({ caseId: '1042' });
     fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
     await screen.findByLabelText('Subject');
     fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Send to Crematory (1)' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('may have been sent');
-    const send = screen.getByRole('button', { name: 'Send to Crematory (1)' });
-    expect(send).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'I checked Sent Items — it was not sent' }));
-    fireEvent.click(send);
-    await waitFor(() => expect(client.sendToCrematory).toHaveBeenCalledTimes(2));
-    expect(client.sendToCrematory.mock.calls[1][0]).toMatchObject({ confirmResend: true });
+    expect(await screen.findByRole('alert')).toHaveTextContent('may still have been sent');
+    expect(screen.getByRole('button', { name: 'Send to Crematory (1)' })).toBeDisabled();
+    expect(screen.queryByRole('checkbox', { name: /I checked Sent Items/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/An administrator resolves this from the case/)).toBeInTheDocument();
+    expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
+  });
+
+  const unresolved = (reason: 'uncertain' | 'unrecorded'): CrematoryCaseSummary => ({
+    ...readyCase('1042', 'Richard Reynolds', 'B2026-901'),
+    readiness: { requirements: [requirement('send_outcome', false, 'The last send may have reached the crematory, but SOLIS could not confirm it.')] as never, readyToBuild: true, readyToSend: false },
+    sendReview: { reason, submissionId: 'sub-1', at: '2026-10-30T14:00:00.000Z', mailbox: 'office@funeralhome.example' },
+  });
+
+  it('a send SOLIS could not confirm: staff see it needs an administrator, with no way to send', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(overview([unresolved('unrecorded')], { canManage: false }));
+    open({ caseId: '1042' });
+    expect(await screen.findByText('Send outcome uncertain — administrator review required')).toBeInTheDocument();
+    expect(screen.getByText(/SOLIS could not record whether it was accepted/)).toBeInTheDocument();
+    expect(screen.getByText('Ask an administrator to resolve it.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'It was sent' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Review email/ })).toBeDisabled();
+  });
+
+  it('an administrator records what Sent Items shows — with a reason — and nothing is sent', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(overview([unresolved('uncertain')], { canManage: true }));
+    client.crematoryCaseAction.mockResolvedValue({});
+    open({ caseId: '1042' });
+    const sent = await screen.findByRole('button', { name: 'It was sent' });
+    expect(sent).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'It was not sent' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('What Sent Items shows'), { target: { value: 'Not in Sent Items' } });
+    fireEvent.click(screen.getByRole('button', { name: 'It was not sent' }));
+    await waitFor(() =>
+      expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1042', { action: 'reconcile_send', decision: 'not_sent', reason: 'Not in Sent Items' }),
+    );
+    expect(client.sendToCrematory).not.toHaveBeenCalled();
+  });
+
+  it('Outlook accepted but SOLIS could not record it: the result says so and that nothing will be resent', async () => {
+    client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
+    client.sendToCrematory.mockResolvedValueOnce({
+      status: 'submitted', duplicate: false, mailbox: 'office@funeralhome.example', internetMessageId: null, to: ['intake@crematory.example'], cc: [], attachments: [],
+      checklist: { failed: [] }, unrecorded: [{ caseId: '1042', caseNumber: 'B2026-901' }],
+    });
+    open({ caseId: '1042' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    await screen.findByLabelText('Subject');
+    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Crematory (1)' }));
+    expect(await screen.findByText(/SOLIS could not record the send on B2026-901/)).toHaveTextContent('Nothing will be sent again');
   });
 
   it('with nothing to fill it from, staff type the name for the file and confirm it', async () => {

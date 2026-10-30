@@ -35,7 +35,7 @@ vi.mock('./crematorySentChecklist', async (importOriginal) => {
 const pkg = await import('./crematoryPackageService');
 const { completeCrematorySentChecklist, retryCrematorySentChecklist } = await import('./crematorySentChecklist');
 const { crematorySendState } = await import('@/domain/crematory/sendState');
-const { sendCrematoryPackages, reviewCrematorySend } = await import('./crematorySendService');
+const { sendCrematoryPackages, reviewCrematorySend, reconcileCrematorySend } = await import('./crematorySendService');
 const { connectMockCrematoryMailbox, resetMockCrematoryMailboxes } = await import('./crematoryMailboxService');
 const { upload } = await import('../documentService');
 const { extractArrangementPage } = await import('../arrangementPageExtractService');
@@ -554,13 +554,19 @@ describe('the Crematory Package — one PDF per decedent', () => {
 
 describe('sending — one Outlook email, one PDF per decedent', () => {
   type Call = [string, RequestInit | undefined];
-  function fakeGraph(options: { failAttachment?: boolean; failSend?: number } = {}) {
+  function fakeGraph(options: { failAttachment?: boolean; failSend?: number; onFirstContact?: () => void; onSend?: () => void } = {}) {
     const calls: Call[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       calls.push([url, init]);
-      if (url.endsWith('/me/messages') && init?.method === 'POST') return new Response(JSON.stringify({ id: 'draft-1', internetMessageId: '<msg-1@outlook>' }), { status: 201 });
+      if (url.endsWith('/me/messages') && init?.method === 'POST') {
+        options.onFirstContact?.();
+        return new Response(JSON.stringify({ id: 'draft-1', internetMessageId: '<msg-1@outlook>' }), { status: 201 });
+      }
       if (url.endsWith('/attachments')) return options.failAttachment ? new Response(JSON.stringify({ error: { code: 'ErrorQuotaExceeded' } }), { status: 507 }) : new Response('{}', { status: 201 });
-      if (url.endsWith('/send')) return options.failSend ? new Response(JSON.stringify({ error: { code: 'X' } }), { status: options.failSend }) : new Response(null, { status: 202 });
+      if (url.endsWith('/send')) {
+        options.onSend?.();
+        return options.failSend ? new Response(JSON.stringify({ error: { code: 'X' } }), { status: options.failSend }) : new Response(null, { status: 202 });
+      }
       if (init?.method === 'DELETE') return new Response(null, { status: 204 });
       throw new Error(`unexpected ${url}`);
     }));
@@ -665,10 +671,16 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     fakeGraph({ failSend: 503 });
     await expect(send({ submissionId: 'sub-0000-0005' })).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
     expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'uncertain' });
-    // It is retried only after staff confirm, from Sent Items, that it did not go out.
-    fakeGraph();
-    await expect(send({ submissionId: 'sub-0000-0006' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Check Sent Items') });
-    await expect(send({ submissionId: 'sub-0000-0004', confirmResend: true })).resolves.toMatchObject({ status: 'submitted' });
+    // (2026-10, replaces "staff confirm and resend") It is never sent again —
+    // not even with the old staff confirmation — until an administrator
+    // checks Sent Items and records that it was not sent.
+    const calls = fakeGraph();
+    await expect(send({ submissionId: 'sub-0000-0006' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('administrator must check Sent Items') });
+    await expect(send({ submissionId: 'sub-0000-0004', confirmResend: true })).rejects.toMatchObject({ status: 409 });
+    expect(calls.filter(([url]) => url.endsWith('/send'))).toHaveLength(0);
+    await reconcileCrematorySend(ctx('admin-ana'), '1042', { decision: 'not_sent', reason: 'Not in Sent Items' }, 'mock');
+    await reconcileCrematorySend(ctx('admin-ana'), '1044', { decision: 'not_sent', reason: 'Not in Sent Items' }, 'mock');
+    await expect(send({ submissionId: 'sub-0000-0007' })).resolves.toMatchObject({ status: 'submitted' });
   });
 
   it('two decedents with the same name and date never share an attachment name', async () => {
@@ -834,7 +846,10 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
     await expect(send({ submissionId: 'sub-0000-0010' })).rejects.toMatchObject({ message: expect.stringContaining('may still have been sent') });
     expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'uncertain' });
     fakeGraph();
-    await expect(send({ submissionId: 'sub-0000-0011', confirmResend: true })).resolves.toMatchObject({ status: 'submitted' });
+    // (2026-10) Resolved by an administrator first — never by the sender's own confirmation.
+    await expect(send({ submissionId: 'sub-0000-0011', confirmResend: true })).rejects.toMatchObject({ status: 409 });
+    for (const id of ['1042', '1044']) await reconcileCrematorySend(ctx('admin-ana'), id, { decision: 'not_sent', reason: 'Checked Sent Items: not there' }, 'mock');
+    await expect(send({ submissionId: 'sub-0000-0011' })).resolves.toMatchObject({ status: 'submitted' });
     // Three confirmations, three records; only the last is a send.
     expect(acknowledgments().map((e) => e.resourceId)).toEqual(['sub-0000-0001', 'sub-0000-0010', 'sub-0000-0011']);
     expect(caseFixtures[index('1044')].crematory!.lastSubmission).toMatchObject({ status: 'submitted', submissionId: 'sub-0000-0011' });
@@ -929,11 +944,15 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
       expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
       expect(eventsOf('1042', 'case.checklist.completed_automatically')).toHaveLength(0);
 
-      // Never resent automatically: only after staff confirm from Sent Items.
+      // Never resent automatically, nor by the sender's confirmation (2026-10):
+      // only after an administrator records, from Sent Items, that it did not go out.
       const calls = fakeGraph();
       await expect(send({ submissionId: 'sub-0000-0006' })).rejects.toMatchObject({ status: 409 });
+      await expect(send({ submissionId: 'sub-0000-0006', confirmResend: true })).rejects.toMatchObject({ status: 409 });
       expect(sendsOf(calls)).toBe(0);
-      await send({ submissionId: 'sub-0000-0007', confirmResend: true });
+      for (const id of ['1042', '1044']) await reconcileCrematorySend(ctx('admin-ana'), id, { decision: 'not_sent', reason: 'Not in Sent Items' }, 'mock');
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+      await send({ submissionId: 'sub-0000-0007' });
       expect(caseFixtures[index('1042')].checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
     });
 
@@ -1079,6 +1098,159 @@ describe('sending — one Outlook email, one PDF per decedent', () => {
       await expect(retryCrematorySentChecklist(otherOrg, '1042', 'mock')).rejects.toMatchObject({ status: 404 });
       expect(await completeCrematorySentChecklist(otherOrg, '1042', 'sub-0000-0001', 'mock')).toBe('not_applicable');
       expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+    });
+  });
+
+  describe('durable duplicate-send protection (2026-10)', () => {
+    const PERMIT_SENT = '3:0';
+    const RELEASE_SENT = '3:1';
+    const sendsOf = (calls: Call[]) => calls.filter(([url]) => url.endsWith('/send')).length;
+    const DAY = 24 * 60 * 60 * 1000;
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a staff member who is not an administrator, but may send, still has both items checked automatically by the send', async () => {
+      await twoReadyCases();
+      fakeGraph();
+      await send({}, { ...ctx('staff-priya'), actorRoleKey: 'officeStaff' });
+      for (const id of ['1042', '1044']) expect(caseFixtures[index(id)].checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
+    });
+
+    it('the attempt — with exactly what is being emailed — is on every case before Outlook is contacted', async () => {
+      await twoReadyCases();
+      let atContact: Array<Case['crematory']> = [];
+      fakeGraph({ onFirstContact: () => (atContact = ['1042', '1044'].map((id) => structuredClone(caseFixtures[index(id)].crematory))) });
+      await send();
+      for (const record of atContact) {
+        expect(record!.pendingSubmission).toMatchObject({
+          submissionId: 'sub-0000-0001',
+          outlookContactedAt: expect.any(String),
+          attempt: expect.objectContaining({ to: ['intake@crematory.example'], mailbox: 'office@funeralhome.example', attachmentName: expect.stringContaining('_CREMATORY_PACKAGE_') }),
+        });
+      }
+      // Once the outcome is recorded, the attempt is released.
+      for (const id of ['1042', '1044']) {
+        expect(caseFixtures[index(id)].crematory!.pendingSubmission ?? null).toBeNull();
+        expect(caseFixtures[index(id)].crematory!.lastSubmission!.status).toBe('submitted');
+      }
+    });
+
+    it('Outlook accepted, SOLIS could not record it: blocked, never resent — after any amount of time — until an administrator records it', async () => {
+      await twoReadyCases();
+      // SOLIS loses case 1042 right after Outlook accepts, so saving "submitted" on it fails.
+      let lost: Case | null = null;
+      fakeGraph({ onSend: () => (lost = caseFixtures.splice(index('1042'), 1)[0]) });
+      const result = await send();
+      caseFixtures.push(lost!);
+      expect(result.unrecorded).toEqual([{ caseId: '1042', caseNumber: 'B2026-901' }]);
+      expect(caseFixtures[index('1044')].crematory!.lastSubmission!.status).toBe('submitted');
+      const record = caseFixtures[index('1042')].crematory!;
+      expect(record.lastSubmission ?? null).toBeNull();
+      expect(record.pendingSubmission).toMatchObject({ submissionId: 'sub-0000-0001', outlookContactedAt: expect.any(String) });
+      // Its checklist is not completed from an unrecorded send; the other case's is.
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+      expect(caseFixtures[index('1044')].checklistState[PERMIT_SENT]).toBe(true);
+      expect(JSON.parse(eventsOf('1042', 'crematory.package_submitted')[0].newValue!)).toMatchObject({ sendRecordSaved: false });
+
+      // An hour, a day, a month later — still blocked; Outlook is never contacted again.
+      for (const later of [60 * 60 * 1000, DAY, 30 * DAY]) {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(Date.now() + later);
+        const calls = fakeGraph();
+        expect(crematorySendState(caseFixtures[index('1042')]).kind).toBe('needs_review');
+        await expect(send({ caseIds: ['1042'], submissionId: `sub-later-${later}` })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('administrator must check Sent Items') });
+        await expect(send({ caseIds: ['1042'], submissionId: `sub-later-${later}-b`, confirmResend: true })).rejects.toMatchObject({ status: 409 });
+        await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).rejects.toMatchObject({ status: 409 });
+        expect(calls).toHaveLength(0);
+        vi.useRealTimers();
+      }
+      const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+      expect(summary.sendReview).toMatchObject({ reason: 'unrecorded', submissionId: 'sub-0000-0001' });
+      expect(summary.readiness.requirements.find((r) => r.key === 'send_outcome')).toMatchObject({ ok: false });
+
+      // An administrator records it as sent: the case is sent, from the attempt's own details, and checked.
+      const resolved = await reconcileCrematorySend(ctx('admin-ana'), '1042', { decision: 'sent', reason: 'Found in Sent Items at 2:14 PM' }, 'mock');
+      expect(resolved).toEqual({ decision: 'sent', checklist: { failed: [] } });
+      const after = caseFixtures[index('1042')].crematory!;
+      expect(after.pendingSubmission ?? null).toBeNull();
+      expect(after.lastSubmission).toMatchObject({
+        submissionId: 'sub-0000-0001',
+        status: 'submitted',
+        to: ['intake@crematory.example'],
+        attachmentName: expect.stringContaining('_CREMATORY_PACKAGE_'),
+        reconciliation: { previousStatus: 'unrecorded', decision: 'sent', reason: 'Found in Sent Items at 2:14 PM', by: 'admin-ana', at: expect.any(String) },
+      });
+      expect(caseFixtures[index('1042')].checklistState).toMatchObject({ [PERMIT_SENT]: true, [RELEASE_SENT]: true });
+      expect(eventsOf('1042', 'crematory.send_reconciled')).toHaveLength(1);
+      expect(crematorySendState(caseFixtures[index('1042')]).kind).toBe('sent');
+      const calls = fakeGraph();
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-after-resolve' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('already sent') });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('a send Outlook left unclear stays blocked however long ago; "not sent" from an administrator lets a new Confirm & Send go out', async () => {
+      await twoReadyCases();
+      fakeGraph({ failSend: 503 });
+      await expect(send({ caseIds: ['1042'] })).rejects.toMatchObject({ status: 502, message: expect.stringContaining('administrator') });
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.now() + 7 * DAY);
+      let calls = fakeGraph();
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0002' })).rejects.toMatchObject({ status: 409 });
+      expect(calls).toHaveLength(0);
+      vi.useRealTimers();
+
+      // A reason is required; nothing to resolve on a case without one.
+      await expect(reconcileCrematorySend(ctx('admin-ana'), '1042', { decision: 'not_sent', reason: '' }, 'mock')).rejects.toMatchObject({ status: 400 });
+      await expect(reconcileCrematorySend(ctx('admin-ana'), '1042', { decision: 'maybe', reason: 'x y z' }, 'mock')).rejects.toMatchObject({ status: 400 });
+      await expect(reconcileCrematorySend(ctx('admin-ana'), '1044', { decision: 'not_sent', reason: 'Checked' }, 'mock')).rejects.toMatchObject({ status: 409 });
+
+      await reconcileCrematorySend(ctx('admin-ana'), '1042', { decision: 'not_sent', reason: 'Not in Sent Items' }, 'mock');
+      expect(caseFixtures[index('1042')].crematory!.lastSubmission).toMatchObject({ status: 'failed', reconciliation: { previousStatus: 'uncertain', decision: 'not_sent' } });
+      expect(caseFixtures[index('1042')].checklistState[PERMIT_SENT]).toBeUndefined();
+      expect(JSON.parse(eventsOf('1042', 'crematory.send_reconciled')[0].newValue!)).toMatchObject({ decision: 'not_sent', previousStatus: 'uncertain', reason: 'Not in Sent Items' });
+      // Resolving never sends; only a new, explicit Confirm & Send does.
+      calls = fakeGraph();
+      expect(sendsOf(calls)).toBe(0);
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0003' })).resolves.toMatchObject({ status: 'submitted' });
+      expect(sendsOf(calls)).toBe(1);
+    });
+
+    it('an archived case cannot be resolved', async () => {
+      await twoReadyCases();
+      fakeGraph({ failSend: 503 });
+      await expect(send({ caseIds: ['1042'] })).rejects.toMatchObject({ status: 502 });
+      caseFixtures[index('1042')] = { ...caseFixtures[index('1042')], isDeleted: true };
+      await expect(reconcileCrematorySend(ctx('admin-ana'), '1042', { decision: 'not_sent', reason: 'Checked' }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('archived') });
+    });
+
+    it('two staff sending the same cases at the same moment, or one request twice at once: exactly one email', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      const outcomes = await Promise.allSettled([send({ submissionId: 'sub-0000-0101' }, ctx('staff-lee')), send({ submissionId: 'sub-0000-0102' }, ctx('staff-kim'))]);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((o) => o.status === 'rejected').map((o) => (o as PromiseRejectedResult).reason.status)).toEqual([409]);
+      expect(sendsOf(calls)).toBe(1);
+    });
+
+    it('the same request twice at once (a double click): exactly one email', async () => {
+      await twoReadyCases();
+      const calls = fakeGraph();
+      const outcomes = await Promise.allSettled([send({ submissionId: 'sub-0000-0201' }), send({ submissionId: 'sub-0000-0201' })]);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      expect(sendsOf(calls)).toBe(1);
+    });
+
+    it('a lock left before Outlook was ever contacted still frees the case after 10 minutes — nothing can have gone out', async () => {
+      await twoReadyCases();
+      const startedAt = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+      caseFixtures[index('1042')] = {
+        ...caseFixtures[index('1042')],
+        crematory: { ...caseFixtures[index('1042')].crematory, pendingSubmission: { submissionId: 'sub-old', startedAt, startedBy: 'staff-lee', acknowledgmentId: null } },
+      };
+      const calls = fakeGraph();
+      await expect(send({ caseIds: ['1042'], submissionId: 'sub-0000-0301' })).resolves.toMatchObject({ status: 'submitted' });
+      expect(sendsOf(calls)).toBe(1);
     });
   });
 });

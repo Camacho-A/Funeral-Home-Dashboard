@@ -29,7 +29,7 @@ import {
  */
 const permissionCatalogKey = ['rbacPermissionCatalog'];
 const rolesKey = (organizationId: string) => ['rbacRoles', organizationId];
-const myPermissionsKey = (organizationId: string) => ['rbacMyPermissions', organizationId];
+export const myPermissionsKey = (organizationId: string) => ['rbacMyPermissions', organizationId];
 /** The plain `['rbacMembers', organizationId]` prefix — used for
     invalidation, since TanStack Query's `invalidateQueries` matches any
     cached key starting with the given array, so invalidating this shorter

@@ -15,6 +15,7 @@ import {
   recordPreviousSend,
 } from '@/services/crematory/crematoryPackageService';
 import { retryCrematorySentChecklist } from '@/services/crematory/crematorySentChecklist';
+import { reconcileCrematorySend } from '@/services/crematory/crematorySendService';
 
 export const maxDuration = 60;
 
@@ -35,6 +36,9 @@ export const maxDuration = 60;
  *          → a possible earlier send outside SOLIS, resolved by staff who
  *            may send (2026-10)
  *        { organizationId, action: 'correct_previous_send', reason, decision, … }
+ *        { organizationId, action: 'reconcile_send', decision: 'sent' | 'not_sent', reason }
+ *          → (2026-10) an administrator resolves a send SOLIS could not
+ *            confirm, after checking Sent Items. Never sends anything.
  *        { organizationId, action: 'complete_sent_checklist' } → (2026-10) Workflow 3's
  *          two "sent to crematory" items from the case's own send record, when
  *          saving them at send time failed. Never sends anything.
@@ -116,6 +120,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
             auth.canSend,
           ),
         );
+      case 'reconcile_send': {
+        // Administrators only (2026-10): resolving a send SOLIS could not
+        // confirm decides whether the crematory may be emailed again.
+        if (!auth.canManage) return NextResponse.json({ error: 'Only an administrator can resolve an unconfirmed send.' }, { status: 403 });
+        const outcome = await reconcileCrematorySend(ctx, caseId, { decision: body.decision, reason: body.reason }, auth.mode);
+        return NextResponse.json({ outcome, summary: await getCrematoryCaseSummary(auth.context.organizationId, caseId, auth.canSend, auth.mode) });
+      }
       case 'complete_sent_checklist': {
         const outcome = await retryCrematorySentChecklist(ctx, caseId, auth.mode);
         return NextResponse.json({ outcome, summary: await getCrematoryCaseSummary(auth.context.organizationId, caseId, auth.canSend, auth.mode) });

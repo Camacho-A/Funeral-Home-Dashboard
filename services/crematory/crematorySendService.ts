@@ -18,7 +18,9 @@ import {
   preparationInProgress,
 } from './crematoryPackageService';
 import { completeCrematorySentChecklist } from './crematorySentChecklist';
-import { CREMATORY_PENDING_STALE_MS } from '@/domain/crematory/sendState';
+import { loadCaseOnServer } from '../serverCaseLoader';
+import { SEND_NEEDS_REVIEW_MESSAGE, sendLockHeld, sendOutcomeNeedingReview } from '@/domain/crematory/sendState';
+import type { CrematorySendAttemptDetails } from '@/types/case';
 
 /**
  * Send to Crematory (2026-10). ONE Outlook email, from the organization's
@@ -34,9 +36,19 @@ import { CREMATORY_PENDING_STALE_MS } from '@/domain/crematory/sendState';
  *   - each package's stored bytes must still match its recorded checksum;
  *   - the same request (submissionId) is never sent twice;
  *   - a case is sent ONCE: after a successful send it can never be sent
- *     again; a send Outlook left unclear ("may have been sent") is retried
- *     only after staff check Sent Items and confirm it did not go out;
+ *     again;
  *   - a case already being sent refuses a second, simultaneous send;
+ *   - (2026-10, durable duplicate-send protection) before Outlook is
+ *     contacted, the attempt — with exactly what is about to be emailed —
+ *     is recorded on every case (`outlookContactedAt`). If that cannot be
+ *     recorded, Outlook is never contacted. From then on, an attempt whose
+ *     outcome is not recorded (the server stopped, or Outlook accepted it
+ *     and saving "submitted" failed), and a send Outlook itself left
+ *     unclear, block every further send — never expiring, never retried
+ *     automatically — until an administrator checks Sent Items and records
+ *     whether it was sent (reconcileCrematorySend). Only a lock taken
+ *     before Outlook was contacted, when nothing can have gone out,
+ *     expires on its own (domain/crematory/sendState.ts);
  *   - (2026-10) the email is sent only as staff reviewed it: the request
  *     carries the review fingerprint (reviewCrematorySend) and the staff
  *     member's explicit acknowledgment. Any change since — a rebuilt
@@ -64,7 +76,9 @@ export type SendRequest = {
   subject: string;
   message: string;
   submissionId: string;
-  confirmResend: boolean;
+  /** Accepted for compatibility with older pages; it no longer allows
+      anything (2026-10) — an unclear send is resolved by an administrator. */
+  confirmResend?: boolean;
   /** From reviewCrematorySend: what staff reviewed (2026-10). */
   reviewFingerprint: string;
   /** Staff pressed Confirm & Send, acknowledging the review. */
@@ -85,10 +99,13 @@ export type SendResult = {
   cc: string[];
   attachments: SentAttachment[];
   checklist: SentChecklistResult;
+  /** Outlook accepted the email, but SOLIS could not record that on these
+      cases (2026-10). They stay blocked — never sent again — until an
+      administrator records the send as sent. */
+  unrecorded: Array<{ caseId: string; caseNumber: string }>;
 };
 
 const MAX_CASES = 20;
-const PENDING_STALE_MS = CREMATORY_PENDING_STALE_MS;
 const sha256 = (bytes: Uint8Array | string) => crypto.createHash('sha256').update(bytes).digest('hex');
 type Loaded = Awaited<ReturnType<typeof loadForSending>>;
 
@@ -186,6 +203,7 @@ export async function reviewCrematorySend(organizationId: string, requestedCaseI
   const caseIds = validCaseIds(requestedCaseIds);
   const loaded: Loaded[] = [];
   for (const caseId of caseIds) loaded.push(await loadForSending(organizationId, caseId, mode));
+  refuseUnresolvedSends(loaded);
   refuseUnsendable(loaded);
 
   const verifierIds = [...new Set(loaded.map((l) => l.case_.crematory?.permitVerification?.verifiedBy).filter((id): id is string => Boolean(id)))];
@@ -288,6 +306,7 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
     const checklist = await completeSentChecklists(ctx, loaded.map((l) => ({ caseId: l.case_.id, caseNumber: l.case_.caseNumber })), request.submissionId, mode);
     return {
       checklist,
+      unrecorded: [],
       status: 'submitted',
       duplicate: true,
       mailbox: first.mailbox ?? '',
@@ -305,6 +324,11 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
     };
   }
 
+  // A send that may have reached the crematory and whose outcome SOLIS could
+  // not confirm blocks every further send until an administrator resolves
+  // it (2026-10) — whatever this request says, however long ago it was.
+  refuseUnresolvedSends(loaded);
+
   // Each case is sent to the crematory ONCE. After a successful send it can
   // never be sent again — no override. And only when ready, not being prepared.
   refuseUnsendable(loaded);
@@ -315,23 +339,8 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
   // request arriving twice (a double click, a retried call) — is never
   // joined: only one request ever holds the case and sends (2026-10).
   const now = Date.now();
-  const busy = loaded.filter((l) => {
-    const pending = l.case_.crematory?.pendingSubmission;
-    return pending && now - Date.parse(pending.startedAt) < PENDING_STALE_MS;
-  });
+  const busy = loaded.filter((l) => sendLockHeld(l.case_.crematory, now));
   if (busy.length > 0) throw new CrematoryError(`Nothing was sent. ${busy.map((l) => l.case_.caseNumber).join(', ')} ${busy.length === 1 ? 'is' : 'are'} being sent right now.`, 409);
-
-  // A send whose outcome Outlook left unclear may be retried only once a
-  // staff member has checked Sent Items and confirmed it did NOT go out.
-  if (!request.confirmResend) {
-    const unclear = loaded.filter((l) => l.case_.crematory?.lastSubmission?.status === 'uncertain');
-    if (unclear.length > 0) {
-      throw new CrematoryError(
-        `Nothing was sent. The last send for ${unclear.map((l) => `${l.summary.decedentDisplayName} (${l.case_.caseNumber})`).join(', ')} may have been sent. Check Sent Items in the mailbox, then confirm it was not sent to try again.`,
-        409,
-      );
-    }
-  }
 
   let mailbox: { accessToken: string; accountEmail: string };
   try {
@@ -362,10 +371,8 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
         (current) => {
           const record = current.crematory;
           if (record?.lastSubmission?.status === 'submitted') throw new CrematoryError(`Nothing was sent. ${current.caseNumber} was already sent to the crematory.`, 409);
-          const pending = record?.pendingSubmission;
-          if (pending && Date.now() - Date.parse(pending.startedAt) < PENDING_STALE_MS) {
-            throw new CrematoryError(`Nothing was sent. ${current.caseNumber} is being sent right now.`, 409);
-          }
+          if (sendOutcomeNeedingReview(record)) throw new CrematoryError(`Nothing was sent. ${current.caseNumber}: ${SEND_NEEDS_REVIEW_MESSAGE}`, 409);
+          if (sendLockHeld(record)) throw new CrematoryError(`Nothing was sent. ${current.caseNumber} is being sent right now.`, 409);
           if (preparationInProgress(current)) throw new CrematoryError(`Nothing was sent. ${current.caseNumber} is still being prepared. Try again in a moment.`, 409);
           return { pendingSubmission: { submissionId: request.submissionId, startedAt, startedBy: ctx.actorIdentityId, acknowledgmentId } };
         },
@@ -441,8 +448,11 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
     throw new CrematoryError('Nothing was sent. Your confirmation could not be recorded. Please try again.', 503);
   }
 
-  const record = (status: 'submitted' | 'failed' | 'uncertain', internetMessageId: string | null, error: string | null) => async (a: SentAttachment) => {
-    await applyCrematoryRecord(
+  /** Records the outcome on one case and releases its attempt. False when it
+      could not be saved — the attempt then stays, blocking the case until
+      an administrator resolves it (never sent again automatically). */
+  const record = (status: 'submitted' | 'failed' | 'uncertain', internetMessageId: string | null, error: string | null) => async (a: SentAttachment): Promise<boolean> => {
+    return applyCrematoryRecord(
       ctx.organizationId,
       a.caseId,
       () => ({
@@ -467,63 +477,223 @@ export async function sendCrematoryPackages(ctx: ActivityContext, request: SendR
         },
       }),
       mode,
-    ).catch((e) => console.error(`Failed to record the crematory send on case ${a.caseId}:`, e instanceof Error ? e.message : e));
+    ).then(
+      () => true,
+      (e) => {
+        console.error(`Failed to record the crematory send on case ${a.caseId}:`, e instanceof Error ? e.message : e);
+        return false;
+      },
+    );
   };
 
+  // The durable send attempt (2026-10): on every case, exactly what is about
+  // to be emailed, recorded BEFORE Outlook is contacted. If it cannot be
+  // recorded on every case, Outlook is never contacted and nothing is sent.
+  // Once recorded, the attempt never expires: until its outcome is recorded
+  // or an administrator resolves it, no case in it can be sent again.
+  const outlookContactedAt = new Date().toISOString();
   try {
-    const result = await sendOutlookMessage(mailbox.accessToken, {
+    for (const a of attachments) {
+      const attempt: CrematorySendAttemptDetails = {
+        packageDocumentId: a.packageDocumentId,
+        packageVersion: a.packageVersion,
+        attachmentName: a.attachmentName,
+        packageChecksumSha256: checksumOf.get(a.caseId) ?? null,
+        to: recipients.to,
+        cc: recipients.cc,
+        mailbox: mailbox.accountEmail,
+        subject,
+        reviewFingerprint: request.reviewFingerprint,
+      };
+      await applyCrematoryRecord(
+        ctx.organizationId,
+        a.caseId,
+        (current) => {
+          const pending = current.crematory?.pendingSubmission;
+          if (pending?.submissionId !== request.submissionId) throw new CrematoryError(`Nothing was sent. ${current.caseNumber} is no longer held for this send. Review it again.`, 409);
+          return { pendingSubmission: { ...pending, outlookContactedAt, attempt } };
+        },
+        mode,
+      );
+    }
+  } catch (error) {
+    console.error('Failed to record the crematory send attempt:', error instanceof Error ? error.message : error);
+    await unlock();
+    throw error instanceof CrematoryError ? error : new CrematoryError('Nothing was sent. The send could not be recorded before contacting Outlook. Please try again.', 503);
+  }
+
+  let result: Awaited<ReturnType<typeof sendOutlookMessage>>;
+  try {
+    result = await sendOutlookMessage(mailbox.accessToken, {
       to: recipients.to,
       cc: recipients.cc,
       subject,
       bodyText: request.message,
       attachments: named.map((n) => ({ name: n.attachmentName, contentType: 'application/pdf', bytes: n.bytes })),
     });
-    for (const a of attachments) {
-      await record('submitted', result.internetMessageId, null)(a);
-      await audit(ctx, a.caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SUBMITTED, {
-        resourceId: a.packageDocumentId,
-        description: `Crematory Package v${a.packageVersion ?? 1} (${a.attachmentName}) submitted from ${mailbox.accountEmail} to ${recipients.to.join(', ')} — submitted to Outlook, delivery not confirmed`,
-        record: {
-          submissionId: request.submissionId,
-          mailbox: mailbox.accountEmail,
-          to: recipients.to,
-          cc: recipients.cc,
-          subject,
-          internetMessageId: result.internetMessageId,
-          attachmentName: a.attachmentName,
-          packageVersion: a.packageVersion,
-          packageChecksumSha256: checksumOf.get(a.caseId) ?? null,
-          reviewFingerprint: request.reviewFingerprint,
-          acknowledgmentId,
-          acknowledgedBy: ctx.actorIdentityId,
-          expectedReadyDate: readyDateFromPackageFileName(a.attachmentName),
-          casesInEmail: attachments.map((x) => x.caseNumber),
-        },
-      }, mode);
-    }
-    // Workflow 3's "sent to crematory" items, now that the send is recorded.
-    const checklist = await completeSentChecklists(ctx, attachments, request.submissionId, mode);
-    return { status: 'submitted', duplicate: false, mailbox: mailbox.accountEmail, internetMessageId: result.internetMessageId, to: recipients.to, cc: recipients.cc, attachments, checklist };
   } catch (error) {
     const mayHaveSent = error instanceof OutlookMailError ? error.mayHaveSent : false;
     const reason = error instanceof Error ? error.message : 'Outlook could not send the email.';
     const status = mayHaveSent ? 'uncertain' : 'failed';
+    let allRecorded = true;
     for (const a of attachments) {
-      await record(status, null, reason)(a);
+      // Not recorded: the attempt stays, and the case stays blocked until an
+      // administrator resolves it — never released on a guess.
+      if (!(await record(status, null, reason)(a))) allRecorded = false;
       await audit(ctx, a.caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SEND_FAILED, {
         resourceId: a.packageDocumentId,
         description: mayHaveSent
-          ? `Crematory Package v${a.packageVersion ?? 1} send may not have completed: ${reason} Check Sent Items in ${mailbox.accountEmail} before trying again.`
+          ? `Crematory Package v${a.packageVersion ?? 1} send may not have completed: ${reason} An administrator must check Sent Items in ${mailbox.accountEmail} and record whether it was sent.`
           : `Crematory Package v${a.packageVersion ?? 1} was not sent: ${reason}`,
         record: { submissionId: request.submissionId, status, mailbox: mailbox.accountEmail, to: recipients.to, attachmentName: a.attachmentName, error: reason, acknowledgmentId },
         severity: 'warning',
       }, mode);
     }
     throw new CrematoryError(
-      mayHaveSent
-        ? `${reason} The email may still have been sent — check Sent Items in ${mailbox.accountEmail} before trying again.`
+      mayHaveSent || !allRecorded
+        ? `${reason} The email may still have been sent. It will not be sent again until an administrator checks Sent Items in ${mailbox.accountEmail} and records whether it was sent.`
         : `${reason} Nothing was sent; the packages are saved and you can try again.`,
       502,
     );
   }
+
+  // Outlook accepted the email. Nothing below can turn that into a resend.
+  const unrecorded: SendResult['unrecorded'] = [];
+  for (const a of attachments) {
+    const saved = await record('submitted', result.internetMessageId, null)(a);
+    if (!saved) unrecorded.push({ caseId: a.caseId, caseNumber: a.caseNumber });
+    await audit(ctx, a.caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PACKAGE_SUBMITTED, {
+      resourceId: a.packageDocumentId,
+      description: `Crematory Package v${a.packageVersion ?? 1} (${a.attachmentName}) submitted from ${mailbox.accountEmail} to ${recipients.to.join(', ')} — submitted to Outlook, delivery not confirmed${saved ? '' : '. SOLIS could not save this on the case; it stays blocked until an administrator records it as sent'}`,
+      record: {
+        submissionId: request.submissionId,
+        mailbox: mailbox.accountEmail,
+        to: recipients.to,
+        cc: recipients.cc,
+        subject,
+        internetMessageId: result.internetMessageId,
+        attachmentName: a.attachmentName,
+        packageVersion: a.packageVersion,
+        packageChecksumSha256: checksumOf.get(a.caseId) ?? null,
+        reviewFingerprint: request.reviewFingerprint,
+        acknowledgmentId,
+        acknowledgedBy: ctx.actorIdentityId,
+        expectedReadyDate: readyDateFromPackageFileName(a.attachmentName),
+        casesInEmail: attachments.map((x) => x.caseNumber),
+        sendRecordSaved: saved,
+      },
+      ...(saved ? {} : { severity: 'warning' as const }),
+    }, mode);
+  }
+  // Workflow 3's "sent to crematory" items, on every case whose send is recorded.
+  const recorded = attachments.filter((a) => !unrecorded.some((u) => u.caseId === a.caseId));
+  const checklist = await completeSentChecklists(ctx, recorded, request.submissionId, mode);
+  return { status: 'submitted', duplicate: false, mailbox: mailbox.accountEmail, internetMessageId: result.internetMessageId, to: recipients.to, cc: recipients.cc, attachments, checklist, unrecorded };
+}
+
+function refuseUnresolvedSends(loaded: readonly Loaded[]) {
+  const unresolved = loaded.filter((l) => sendOutcomeNeedingReview(l.case_.crematory));
+  if (unresolved.length > 0) {
+    throw new CrematoryError(`Nothing was sent. ${unresolved.map((l) => `${l.summary.decedentDisplayName} (${l.case_.caseNumber})`).join(', ')}: ${SEND_NEEDS_REVIEW_MESSAGE}`, 409);
+  }
+}
+
+export type ReconcileSendRequest = { decision: unknown; reason: unknown };
+export type ReconcileSendResult = { decision: 'sent' | 'not_sent'; checklist: SentChecklistResult };
+
+/**
+ * An administrator resolves a send SOLIS could not confirm (2026-10) —
+ * Outlook said it may have been sent ("uncertain"), or the attempt reached
+ * Outlook and its result was never recorded ("unrecorded") — after checking
+ * Sent Items in the mailbox:
+ *   - 'sent': the case is recorded as sent (permanently, as any send), and
+ *     Workflow 3's two "sent to crematory" items are completed from it;
+ *   - 'not_sent': the attempt is recorded as not sent, and the case can be
+ *     sent again — only ever by a new, explicit Confirm & Send.
+ * A reason is required. The attempt's details, the earlier status, the
+ * decision, who and when are kept on the send record and in activity.
+ * Nothing is sent here. Refused for an archived case and for a case with
+ * nothing to resolve.
+ */
+export async function reconcileCrematorySend(ctx: ActivityContext, caseId: string, request: ReconcileSendRequest, mode: DataAdapterMode): Promise<ReconcileSendResult> {
+  assertSendToCrematoryEnabled(ctx.organizationId);
+  if (request.decision !== 'sent' && request.decision !== 'not_sent') throw new CrematoryError("decision must be 'sent' or 'not_sent'.", 400);
+  const decision = request.decision;
+  const reason = typeof request.reason === 'string' ? request.reason.trim() : '';
+  if (reason.length < 3 || reason.length > 1000) throw new CrematoryError('Say how you checked (for example, what Sent Items shows).', 400);
+
+  const at = new Date().toISOString();
+  let resolved: { submissionId: string; previousStatus: 'uncertain' | 'unrecorded'; packageDocumentId: string; attachmentName: string } | null = null;
+  await applyCrematoryRecord(
+    ctx.organizationId,
+    caseId,
+    (current) => {
+      if (current.isDeleted) throw new CrematoryError('This case is archived and read-only.', 409);
+      const record = current.crematory;
+      const review = sendOutcomeNeedingReview(record);
+      if (!review) throw new CrematoryError('This case has no send waiting to be resolved.', 409);
+      const pending = record?.pendingSubmission;
+      const last = record?.lastSubmission;
+      // What the attempt emailed: from the durable attempt, or the unclear send record.
+      const base =
+        review.reason === 'unrecorded' && pending?.attempt
+          ? {
+              packageDocumentId: pending.attempt.packageDocumentId,
+              packageVersion: pending.attempt.packageVersion,
+              attachmentName: pending.attempt.attachmentName,
+              to: pending.attempt.to,
+              cc: pending.attempt.cc,
+              mailbox: pending.attempt.mailbox,
+              internetMessageId: null,
+              packageChecksumSha256: pending.attempt.packageChecksumSha256,
+              subject: pending.attempt.subject,
+              reviewFingerprint: pending.attempt.reviewFingerprint,
+              acknowledgmentId: pending.acknowledgmentId ?? null,
+            }
+          : {
+              packageDocumentId: last?.packageDocumentId ?? '',
+              packageVersion: last?.packageVersion ?? null,
+              attachmentName: last?.attachmentName ?? '',
+              to: last?.to ?? [],
+              cc: last?.cc ?? [],
+              mailbox: last?.mailbox ?? null,
+              internetMessageId: last?.internetMessageId ?? null,
+              packageChecksumSha256: last?.packageChecksumSha256 ?? null,
+              subject: last?.subject ?? null,
+              reviewFingerprint: last?.reviewFingerprint ?? null,
+              acknowledgmentId: last?.acknowledgmentId ?? null,
+            };
+      resolved = { submissionId: review.submissionId, previousStatus: review.reason, packageDocumentId: base.packageDocumentId, attachmentName: base.attachmentName };
+      return {
+        pendingSubmission: null,
+        lastSubmission: {
+          ...base,
+          submissionId: review.submissionId,
+          status: decision === 'sent' ? 'submitted' : 'failed',
+          error: decision === 'sent' ? null : 'An administrator confirmed in Sent Items that this email was not sent.',
+          // A send recorded as sent keeps when it went out; "not sent" is recorded now.
+          at: decision === 'sent' ? review.at : at,
+          by: decision === 'sent' ? (pending?.startedBy ?? last?.by ?? null) : ctx.actorIdentityId,
+          reconciliation: { previousStatus: review.reason, decision, reason, by: ctx.actorIdentityId, at },
+        },
+      };
+    },
+    mode,
+  );
+  const done = resolved as { submissionId: string; previousStatus: 'uncertain' | 'unrecorded'; packageDocumentId: string; attachmentName: string } | null;
+  if (!done) throw new CrematoryError('This case has no send waiting to be resolved.', 409);
+
+  await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_SEND_RECONCILED, {
+    resourceId: done.packageDocumentId || null,
+    description:
+      decision === 'sent'
+        ? `An administrator recorded the unconfirmed crematory send (${done.attachmentName || 'Crematory Package'}) as sent: ${reason}`
+        : `An administrator recorded the unconfirmed crematory send (${done.attachmentName || 'Crematory Package'}) as not sent — the case can be sent again: ${reason}`,
+    record: { submissionId: done.submissionId, previousStatus: done.previousStatus, decision, reason },
+    severity: 'warning',
+  }, mode);
+
+  const case_ = decision === 'sent' ? await loadCaseOnServer(ctx.organizationId, caseId, mode).catch(() => null) : null;
+  const checklist = decision === 'sent' ? await completeSentChecklists(ctx, [{ caseId, caseNumber: case_?.caseNumber ?? caseId }], done.submissionId, mode) : { failed: [] };
+  return { decision, checklist };
 }

@@ -28,6 +28,8 @@ import { PrintLabelDialog } from '@/components/case/PrintLabelDialog';
 import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { crematorySendState, formatCrematorySentAt } from '@/domain/crematory/sendState';
+import { crematorySentChecklistKeys } from '@/domain/crematory/sentChecklistItems';
+import { findStageByRawStage } from '@/domain/workflow/resolveStages';
 import type { Case } from '@/types/case';
 import { workflowStageToOpen } from '@/domain/workflow/workflowStageToOpen';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
@@ -180,6 +182,19 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     throw new Error(`Case ${caseId} not found for this organization`);
   }
   if (!case_ || !viewModel) return null;
+
+  // Send to Crematory (2026-10): Workflow 3's two "sent to crematory" items
+  // are changed by hand only by administrators (organization.manage); SOLIS
+  // completes them when the email is sent. The indexes on the stage shown.
+  const isAdministrator = Boolean(permissionsQuery.data?.permissions.includes('organization.manage'));
+  const shownDisplayStage =
+    viewingDisplayStage ?? (case_.workflowSnapshot ? (findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage) : case_.rawStage);
+  const crematoryAdminOnlyIndexes = isAdministrator
+    ? []
+    : crematorySentChecklistKeys(case_)
+        .map((key) => key.split(':').map(Number))
+        .filter(([stage]) => stage === shownDisplayStage)
+        .map(([, index]) => index);
 
   /**
    * Which presented step the checklist below is currently showing — the
@@ -354,7 +369,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   Print Label
                 </button>
               )}
-              {sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation' && <SendToCrematoryButton case_={case_} onOpen={() => setSendToCrematoryOpen(true)} />}
+              {sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation' && <SendToCrematoryButton case_={case_} isAdministrator={isAdministrator} onOpen={() => setSendToCrematoryOpen(true)} />}
             </>
           ) : undefined
         }
@@ -533,6 +548,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                 }}
                 isArchived={case_.isDeleted === true}
                 canEdit={!permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('case.update')}
+                adminOnlyIndexes={crematoryAdminOnlyIndexes}
                 earlierStageEditable={viewModel.earlierStagesEditable}
                 resolveActorName={(identityId) => staffList.find((staff) => staff.identityId === identityId)?.displayName ?? null}
                 releaseSuggestions={[
@@ -601,7 +617,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
  * it was sent, after any refresh; while a send is in progress it is
  * disabled too. The server refuses a second send regardless.
  */
-function SendToCrematoryButton({ case_, onOpen }: { case_: Case; onOpen: () => void }) {
+function SendToCrematoryButton({ case_, onOpen, isAdministrator = false }: { case_: Case; onOpen: () => void; isAdministrator?: boolean }) {
   const state = crematorySendState(case_);
   if (state.kind === 'sent') {
     return (
@@ -615,6 +631,22 @@ function SendToCrematoryButton({ case_, onOpen }: { case_: Case; onOpen: () => v
     return (
       <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled>
         Sending to Crematory…
+      </button>
+    );
+  }
+  if (state.kind === 'needs_review') {
+    // A send SOLIS could not confirm (2026-10): nothing more can be sent.
+    // Administrators open it to record what Sent Items shows.
+    return (
+      <button
+        type="button"
+        className="sx-btn sx-btn-ghost sx-btn-sm"
+        disabled={!isAdministrator}
+        style={{ opacity: 1 }}
+        onClick={isAdministrator ? onOpen : undefined}
+        title="The last send may have reached the crematory, but SOLIS could not confirm it. An administrator must check Sent Items and record whether it was sent."
+      >
+        <span className="sx-status sx-status-warn">Send outcome uncertain</span>&nbsp;· {isAdministrator ? 'Review' : 'administrator review required'}
       </button>
     );
   }

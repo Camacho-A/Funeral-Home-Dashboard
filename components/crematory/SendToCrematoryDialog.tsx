@@ -102,11 +102,10 @@ export function SendToCrematoryDialog({
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [reviewed, setReviewed] = useState(false);
-  const [sendAgain, setSendAgain] = useState(false);
   const [sending, setSending] = useState(false);
-  /** `unclear`: the last send may have gone out — staff must check Sent
-      Items and confirm it did not before trying again. A case sent
-      successfully can never be sent again (the server refuses). */
+  /** `unclear`: the send may have gone out (2026-10) — nothing more can be
+      sent from here; an administrator resolves it after checking Sent
+      Items. A case sent successfully can never be sent again. */
   const [sendError, setSendError] = useState<{ message: string; unclear: boolean } | null>(null);
   const [result, setResult] = useState<CrematorySendResult | null>(null);
   const submissionId = useRef<string>('');
@@ -218,7 +217,6 @@ export function SendToCrematoryDialog({
     setSubject(crematoryEmailSubject(name, chosen.map((c) => ({ decedentDisplayName: c.subjectName, expectedReadyDate: c.readyDate.confirmed! }))));
     setMessage(defaultCrematoryMessage(name, attachments));
     setReviewed(false);
-    setSendAgain(false);
     setSendError(null);
     submissionId.current = crypto.randomUUID();
     setStep('review');
@@ -238,7 +236,7 @@ export function SendToCrematoryDialog({
         subject,
         message,
         submissionId: submissionId.current,
-        confirmResend: sendAgain,
+        confirmResend: false,
         reviewFingerprint: reviewFingerprint.current,
         acknowledged: reviewed,
       });
@@ -248,7 +246,7 @@ export function SendToCrematoryDialog({
       // The case header, checklist and stage read the case itself.
       await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['case', organizationId] })]);
     } catch (error) {
-      const unclear = error instanceof CrematoryRequestError && error.status === 409 && /may have been sent/i.test(error.message);
+      const unclear = error instanceof CrematoryRequestError && /may (still )?have been sent|could not confirm/i.test(error.message);
       setSendError({ message: error instanceof Error ? error.message : 'The email could not be sent.', unclear });
       submissionId.current = crypto.randomUUID();
       await refresh();
@@ -370,6 +368,13 @@ export function SendToCrematoryDialog({
                   onVerifyPreviousSend={() => setPreviousSendFor(c)}
                   canManage={overview.data!.canManage === true}
                   onCorrectPreviousSend={() => setCorrectingPreviousSend(c)}
+                  onResolveSend={(decision, reason) =>
+                    act(c, async () => {
+                      await crematoryCaseAction(organizationId, c.caseId, { action: 'reconcile_send', decision, reason });
+                      // The case header and checklist read the case itself.
+                      await queryClient.invalidateQueries({ queryKey: ['case', organizationId] });
+                    })
+                  }
                   onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
                   onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
                 />
@@ -416,9 +421,7 @@ export function SendToCrematoryDialog({
               </div>
             )}
             {sendError?.unclear && (
-              <label className={styles.confirm}>
-                <input type="checkbox" checked={sendAgain} onChange={(e) => setSendAgain(e.target.checked)} /> I checked Sent Items — it was not sent
-              </label>
+              <p className={styles.hint}>Nothing more will be sent from here. An administrator resolves this from the case after checking Sent Items.</p>
             )}
           </div>
         )}
@@ -428,6 +431,12 @@ export function SendToCrematoryDialog({
             <div className="sx-form-banner sx-form-banner-info">
               Submitted to Outlook from {result.mailbox} to {result.to.join(', ')}. This confirms Outlook accepted the email — not that the crematory received it.
             </div>
+            {result.unrecorded && result.unrecorded.length > 0 && (
+              <div className="sx-form-banner sx-form-banner-error" role="alert">
+                Outlook accepted the email, but SOLIS could not record the send on {result.unrecorded.map((c) => c.caseNumber).join(', ')}. Nothing will be sent again for{' '}
+                {result.unrecorded.length === 1 ? 'that case' : 'those cases'}; an administrator must record {result.unrecorded.length === 1 ? 'it' : 'them'} as sent from the case.
+              </div>
+            )}
             {result.checklist && result.checklist.failed.length > 0 && !checklistRetry.done ? (
               <div className="sx-form-banner sx-form-banner-error" role="alert">
                 The email was sent and is recorded, but Workflow 3 (&ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to
@@ -472,7 +481,7 @@ export function SendToCrematoryDialog({
             type="button"
             className="sx-btn sx-btn-primary"
             onClick={send}
-            disabled={sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || (sendError?.unclear === true && !sendAgain)}
+            disabled={sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || sendError?.unclear === true}
           >
             {sending ? 'Sending…' : `Send to Crematory (${chosen.length})`}
           </button>
@@ -597,6 +606,7 @@ function CaseRow({
   onVerifyPreviousSend,
   canManage,
   onCorrectPreviousSend,
+  onResolveSend,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -627,6 +637,8 @@ function CaseRow({
   onVerifyPreviousSend: () => void;
   canManage: boolean;
   onCorrectPreviousSend: () => void;
+  /** Administrators: resolve a send SOLIS could not confirm (2026-10). */
+  onResolveSend: (decision: 'sent' | 'not_sent', reason: string) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
@@ -904,7 +916,9 @@ function CaseRow({
         </ol>
       )}
 
-      {last && !sent && (
+      {summary.sendReview ? (
+        <UnconfirmedSend review={summary.sendReview} canManage={canManage} busy={busy} onResolve={onResolveSend} />
+      ) : last && !sent && (
         <p className={styles.warn}>
           {last.status === 'uncertain'
             ? `The last send may not have completed (${formatTimestamp(last.at)}) — check Sent Items in ${last.mailbox ?? 'the mailbox'}.`
@@ -1015,5 +1029,63 @@ function ChooseDocumentDialog({
         </button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * A send SOLIS could not confirm (2026-10): Outlook said it may have been
+ * sent, or the attempt reached Outlook and its result was never recorded.
+ * Nothing can be sent for the case until an administrator checks Sent Items
+ * and records what happened. Never offers to send again from here.
+ */
+function UnconfirmedSend({
+  review,
+  canManage,
+  busy,
+  onResolve,
+}: {
+  review: NonNullable<CrematoryCaseSummary['sendReview']>;
+  canManage: boolean;
+  busy: boolean;
+  onResolve: (decision: 'sent' | 'not_sent', reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const mailbox = review.mailbox ?? 'the mailbox';
+  const ready = reason.trim().length >= 3 && !busy;
+  return (
+    <div className="sx-form-banner sx-form-banner-error" role="alert">
+      <p className={styles.unconfirmedTitle}>Send outcome uncertain — administrator review required</p>
+      <p>
+        {review.reason === 'uncertain'
+          ? `Outlook reported a problem on ${formatTimestamp(review.at)} and the email may still have been sent.`
+          : `The email was handed to Outlook on ${formatTimestamp(review.at)}, but SOLIS could not record whether it was accepted.`}{' '}
+        This case cannot be sent again until an administrator checks Sent Items in {mailbox} and records what happened.
+      </p>
+      {canManage ? (
+        <div className={styles.unconfirmedActions}>
+          <label className="sx-label" htmlFor={`unconfirmed-reason-${review.submissionId}`}>
+            What Sent Items shows
+          </label>
+          <textarea
+            id={`unconfirmed-reason-${review.submissionId}`}
+            className="sx-textarea"
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Found in Sent Items at 2:14 PM to the crematory"
+          />
+          <div className={styles.unconfirmedButtons}>
+            <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" disabled={!ready} onClick={() => onResolve('sent', reason.trim())}>
+              It was sent
+            </button>
+            <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={!ready} onClick={() => onResolve('not_sent', reason.trim())}>
+              It was not sent
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className={styles.muted}>Ask an administrator to resolve it.</p>
+      )}
+    </div>
   );
 }

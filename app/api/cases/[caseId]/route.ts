@@ -35,7 +35,8 @@ import {
   type FieldChange,
 } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
-import { canReadCases, canEditCase, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
+import { canReadCases, canEditCase, canManageOrganization, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
+import { adminOnlyChecklistChanges, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE } from '@/domain/crematory/sentChecklistItems';
 import type { Case, ReturnMethod } from '@/types/case';
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
@@ -242,9 +243,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   // save. Nothing is used from it until authorization has passed.
   const firstRowRead = loadCaseRow(organizationId, caseId);
   firstRowRead.catch(() => undefined);
-  const [hasFullEdit, hasPickupOnlyEdit] = await Promise.all([
+  const [hasFullEdit, hasPickupOnlyEdit, isAdministrator] = await Promise.all([
     canEditCase(policyParams, 'wix'),
     canUpdatePickup(policyParams, 'wix'),
+    // Send to Crematory (2026-10): only administrators change Workflow 3's
+    // two "sent to crematory" items by hand (see refuseAgainst below).
+    patch.checklistState ? canManageOrganization(policyParams, 'wix') : Promise.resolve(false),
   ]);
   if (!hasFullEdit && !hasPickupOnlyEdit) {
     return NextResponse.json({ case: null, error: 'Not authorized to update this case.' }, { status: 403 });
@@ -376,6 +380,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
           historicalChecklistKeys(current, patch.checklistState).length > 0
         ) {
           return NextResponse.json({ case: null, error: 'Earlier workflow steps cannot be changed for this organization.' }, { status: 403 });
+        }
+        // Send to Crematory (2026-10): "Permit sent to crematory" and
+        // "Authorization of release sent to crematory" are completed by
+        // SOLIS when the email is sent; by hand, administrators only. Only a
+        // real change counts — re-sending a key at its current value is not
+        // a change. Judged on the case as stored, every attempt.
+        if (!isAdministrator && adminOnlyChecklistChanges(current, patch.checklistState).length > 0) {
+          return NextResponse.json({ case: null, error: CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE }, { status: 403 });
         }
       }
       return null;

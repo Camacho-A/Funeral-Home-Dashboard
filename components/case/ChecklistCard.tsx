@@ -416,6 +416,7 @@ export function ChecklistCard({
   earlierStageEditable = false,
   releaseSuggestions,
   resolveActorName,
+  adminOnlyIndexes,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -461,6 +462,12 @@ export function ChecklistCard({
   /** Checklist completion attribution (2026-10): a staff member's name
       from their identity id, for "Completed manually" details. */
   resolveActorName?: (identityId: string) => string | null;
+  /** Send to Crematory (2026-10): items on this stage only an administrator
+      may check or uncheck by hand — Workflow 3's two "sent to crematory"
+      items, which SOLIS completes when the email is sent. Shown read-only
+      to everyone else; the server refuses the change regardless. Omit (or
+      pass an empty list) for an administrator. */
+  adminOnlyIndexes?: readonly number[];
 }) {
   const [openCompletion, setOpenCompletion] = useState<number | null>(null);
   // An earlier stage is editable (2026-10): staff complete or correct its
@@ -559,7 +566,8 @@ export function ChecklistCard({
           // — never independently toggleable, or it would become a second,
           // contradicting completion signal alongside the structured data
           // that actually drives it.
-          const disabled = readOnly || item.hasField || item.locked || item.isDerived;
+          const adminOnly = adminOnlyIndexes?.includes(item.index) === true;
+          const disabled = readOnly || item.hasField || item.locked || item.isDerived || adminOnly;
           const labelClass = item.done
             ? styles.itemLabelDone
             : item.locked
@@ -577,6 +585,11 @@ export function ChecklistCard({
                   aria-label={item.label}
                 />
                 <span className={`${styles.itemLabel} ${labelClass}`}>{item.label}</span>
+                {adminOnly && !readOnly && (
+                  <span className={styles.adminOnlyHint} title="SOLIS checks this automatically when the crematory email is sent. Only an administrator can change it by hand.">
+                    Administrators only
+                  </span>
+                )}
                 {item.done && item.completion && (
                   <CompletionNote item={item} expanded={openCompletion === item.index} onToggle={() => setOpenCompletion(openCompletion === item.index ? null : item.index)} />
                 )}

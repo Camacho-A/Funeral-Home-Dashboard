@@ -2,6 +2,7 @@ import type { OrganizationContext } from '../types/organization';
 import { isSlaTrackingEnabled } from '../domain/sla/slaSettings';
 import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
 import { historicalChecklistKeys } from '../domain/workflow/earlierStages';
+import { adminOnlyChecklistChanges, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE } from '../domain/crematory/sentChecklistItems';
 import { caseRevision } from '../lib/wixCaseMapper';
 import {
   CASE_REVISION_CONFLICT_REASON,
@@ -529,6 +530,10 @@ export type CaseUpdateOptions = {
   baseValues?: CaseMapBaseValues;
   /** The staff member making the edit, for checklist completion attribution. */
   actorId?: string | null;
+  /** Mock mode only (2026-10): the caller is an administrator, who alone may
+      change Workflow 3's two "sent to crematory" items by hand. With real
+      data the server decides (app/api/cases/[caseId]/route.ts). */
+  isAdministrator?: boolean;
 };
 
 export async function update(
@@ -622,6 +627,10 @@ export async function update(
     );
     if (invalidEntries.length > 0) {
       throw new Error(`Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}`);
+    }
+    // Send to Crematory (2026-10): mirrors the Wix PATCH route's rule.
+    if (options.isAdministrator !== true && adminOnlyChecklistChanges(caseFixtures[index], patch.checklistState).length > 0) {
+      throw new Error(CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE);
     }
   }
   // Task #15 (2026-09, future-historical-date validation): mirrors the

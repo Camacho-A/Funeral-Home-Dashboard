@@ -538,6 +538,14 @@ export type CaseCrematoryRecord = {
     startedBy: string | null;
     /** The one acknowledgment record for the whole email (2026-10). */
     acknowledgmentId?: string | null;
+    /** Durable send attempt (2026-10): written, with exactly what is about
+        to be emailed, BEFORE Outlook is contacted. From then on the attempt
+        may have reached the crematory, so it never expires: until its
+        outcome is recorded — or an administrator resolves it — the case
+        cannot be sent again. Absent: Outlook was never contacted, and a
+        lock left behind expires (domain/crematory/sendState.ts). */
+    outlookContactedAt?: string | null;
+    attempt?: CrematorySendAttemptDetails | null;
   } | null;
   /** The most recent send attempt. `submitted` means Outlook accepted it —
       NOT that the crematory received it. `uncertain`: Outlook failed in a
@@ -562,5 +570,27 @@ export type CaseCrematoryRecord = {
         acknowledgment record covering every case in that email. */
     reviewFingerprint?: string | null;
     acknowledgmentId?: string | null;
+    /** Set when an administrator resolved a send SOLIS could not confirm
+        (2026-10): what it was before, the decision, who, when and why. */
+    reconciliation?: {
+      previousStatus: 'uncertain' | 'unrecorded';
+      decision: 'sent' | 'not_sent';
+      reason: string;
+      by: string | null;
+      at: string;
+    } | null;
   } | null;
+};
+
+/** What a send attempt is about to email for one case (2026-10). */
+export type CrematorySendAttemptDetails = {
+  packageDocumentId: string;
+  packageVersion: number | null;
+  attachmentName: string;
+  packageChecksumSha256: string | null;
+  to: string[];
+  cc: string[];
+  mailbox: string | null;
+  subject: string | null;
+  reviewFingerprint: string | null;
 };

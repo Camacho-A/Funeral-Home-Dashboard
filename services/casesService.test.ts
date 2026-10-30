@@ -25,6 +25,10 @@ function updateAtCurrentRevision(
   const current = caseFixtures.find((c) => c.id === caseId && c.organizationId === context.organizationId);
   return casesService.update(context as Parameters<typeof casesService.update>[0], caseId, patch, mode, {
     expectedRevision: current ? caseRevision(current) : 0,
+    // Dana, an administrator (2026-10): Workflow 3's two "sent to crematory"
+    // items — used below as ordinary valid keys — are administrator-only by
+    // hand; that rule has its own tests (casesService.crematoryItems.test.ts).
+    isAdministrator: true,
   });
 }
 
