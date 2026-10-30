@@ -1,4 +1,4 @@
-import { TaskRow, type TaskRowItem } from './TaskRow';
+import { TaskRow, type TaskAssignmentContext, type TaskRowItem } from './TaskRow';
 
 /**
  * SOLIS Tasks/Calendar/Settings phase, §1.2 — splits the already-sorted
@@ -8,10 +8,12 @@ import { TaskRow, type TaskRowItem } from './TaskRow';
  */
 export function TaskList({
   tasks,
+  assignment,
   onToggleTask,
   onRemoveTask,
 }: {
   tasks: TaskRowItem[];
+  assignment: TaskAssignmentContext;
   onToggleTask: (taskId: string, newDone: boolean) => void;
   onRemoveTask: (taskId: string) => void;
 }) {
@@ -28,6 +30,7 @@ export function TaskList({
           <TaskRow
             key={task.id}
             task={task}
+            assignment={assignment}
             onToggle={(newDone) => onToggleTask(task.id, newDone)}
             onRemove={() => onRemoveTask(task.id)}
           />
@@ -43,6 +46,7 @@ export function TaskList({
             <TaskRow
               key={task.id}
               task={task}
+              assignment={assignment}
               onToggle={(newDone) => onToggleTask(task.id, newDone)}
               onRemove={() => onRemoveTask(task.id)}
             />

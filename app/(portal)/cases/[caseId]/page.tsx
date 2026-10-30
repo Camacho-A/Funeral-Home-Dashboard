@@ -12,10 +12,17 @@ import { useCaseViewModel } from '@/hooks/useCaseViewModel';
 import { useCaseMutations } from '@/hooks/useCaseMutations';
 import { useCaseLog } from '@/hooks/useCaseLog';
 import { useCaseTasks } from '@/hooks/useCaseTasks';
+import { useReassignTask } from '@/hooks/useReassignTask';
+import { useSession } from '@/hooks/useSession';
+import { taskAssigneeDisplay } from '@/domain/tasks/assignment';
+import type { TaskAssignmentContext } from '@/components/tasks/TaskRow';
 import { useStaff } from '@/hooks/useStaff';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
+import { useCaseOrder } from '@/hooks/useCaseOrder';
+import { useCasePayments } from '@/hooks/useCasePayments';
+import { summarizeCasePayment } from '@/domain/cases/casePaymentSummary';
 import { isFamilyPortalEnabled } from '@/domain/organization/familyPortalCapability';
 import { shouldShowCaseOwner } from '@/domain/organization/caseOwnerVisibility';
 import { defaultAssigneeForCase } from '@/domain/tasks/rules';
@@ -127,10 +134,18 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   const permissionsQuery = useMyPermissions(organizationId);
   const canSeeWorkflowTab = Boolean(permissionsQuery.data?.permissions.includes('user.manageRoles'));
   const canSeeBillingTab = Boolean(permissionsQuery.data?.permissions.includes('payment.read'));
+  // The derived payment status beside the stored "Payment" value (2026-10):
+  // the same order/payment queries the Case Order card reads, under the
+  // same permissions — nothing is fetched that the viewer could not see.
+  const canReadCaseOrder = Boolean(permissionsQuery.data?.permissions.includes('caseOrder.read'));
+  const { data: caseOrder } = useCaseOrder(caseId, canReadCaseOrder);
+  const { data: casePayments } = useCasePayments(caseId, canReadCaseOrder && canSeeBillingTab);
   const viewModel = useCaseViewModel(case_, viewingDisplayStage);
   const mutations = useCaseMutations(caseId);
   const caseLog = useCaseLog(caseId);
   const caseTasks = useCaseTasks(caseId);
+  const reassignTask = useReassignTask();
+  const session = useSession();
 
   // Opens a workflow stage the case has reached (a later one opens the
   // case's current step instead). Changes nothing on the case.
@@ -252,9 +267,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     id: task.id,
     text: task.text,
     isDone: task.isDone,
-    assigneeName:
-      staffList.find((staff) => staff.id === task.assigneeStaffId)?.displayName ?? 'Office',
+    assigneeName: taskAssigneeDisplay(task.assigneeStaffId, staffOptions).name,
+    assigneeStaffId: task.assigneeStaffId,
   }));
+  const caseTaskAssignment: TaskAssignmentContext = {
+    staff: staffOptions,
+    myStaffId: session.staffId,
+    canAssign: !permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('task.assign'),
+    onReassign: (taskId, assigneeStaffId) => reassignTask.mutate({ taskId, assigneeStaffId }),
+  };
 
   /**
    * Defined ONCE and rendered in exactly one place at a time — the
@@ -311,6 +332,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             dateOfCremation={case_.dateOfCremation ?? null}
             showDateOfCremation={officialDocumentsFor(case_.organizationId).includes('certificate_of_cremation')}
             paymentStatus={viewModel.paymentStatus}
+            paymentSummary={
+              canReadCaseOrder && canSeeBillingTab ? summarizeCasePayment({ order: caseOrder?.order, payments: casePayments, recordedStatus: viewModel.paymentStatus }) : null
+            }
             pickupStatus={case_.pickupStatus}
             pickupReleasedTo={case_.pickupReleasedTo}
             pickupReleasedAt={case_.pickupReleasedAt}
@@ -365,7 +389,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel || (sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation') ? (
             <>
               {getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setPrintLabelOpen(true)}>
+                <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => setPrintLabelOpen(true)}>
                   Print Label
                 </button>
               )}
@@ -587,6 +611,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
               <CaseTasksCard
                 tasks={caseTaskItems}
+                assignment={caseTaskAssignment}
                 onToggleTask={(taskId, newDone) => caseTasks.toggleTask({ taskId, isDone: newDone })}
                 onAddTask={(text) =>
                   caseTasks.addTask({
@@ -622,14 +647,14 @@ function SendToCrematoryButton({ case_, onOpen, isAdministrator = false }: { cas
   if (state.kind === 'sent') {
     return (
       // Disabled, but read as a status rather than a faded action.
-      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled style={{ opacity: 1 }} title={`Sent to Crematory ${formatCrematorySentAt(state.at)}. Each case is sent only once.`}>
+      <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled style={{ opacity: 1 }} title={`Sent to Crematory ${formatCrematorySentAt(state.at)}. Each case is sent only once.`}>
         <span className="sx-status sx-status-ok">Sent to Crematory</span>&nbsp;· {formatCrematorySentAt(state.at)}
       </button>
     );
   }
   if (state.kind === 'sending') {
     return (
-      <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled>
+      <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled>
         Sending to Crematory…
       </button>
     );
@@ -640,7 +665,7 @@ function SendToCrematoryButton({ case_, onOpen, isAdministrator = false }: { cas
     return (
       <button
         type="button"
-        className="sx-btn sx-btn-ghost sx-btn-sm"
+        className="sx-btn sx-btn-secondary sx-btn-sm"
         disabled={!isAdministrator}
         style={{ opacity: 1 }}
         onClick={isAdministrator ? onOpen : undefined}
@@ -651,7 +676,7 @@ function SendToCrematoryButton({ case_, onOpen, isAdministrator = false }: { cas
     );
   }
   return (
-    <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={onOpen}>
+    <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={onOpen}>
       Send to Crematory
     </button>
   );

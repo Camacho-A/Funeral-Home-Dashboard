@@ -31,8 +31,10 @@
   color: var(--color-text-muted);
 }
 
+/* UI modernization (2026-10): "Progress" sits over the bars it labels —
+   the header and every row's bar start at the same edge. */
 .headerRight {
-  text-align: right;
+  text-align: left;
 }
 
 .row {
@@ -48,8 +50,12 @@
 }
 
 .row:hover {
-  background: oklch(0.98 0.003 255);
+  background: var(--sx-hover, oklch(0.98 0.003 255));
   text-decoration: none;
+}
+
+.row:hover .name {
+  color: var(--sx-link, var(--color-brand));
 }
 
 .row:focus-visible {
@@ -143,7 +149,7 @@
 
 .progressCol {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-width: 0;
 }
 

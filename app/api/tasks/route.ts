@@ -180,7 +180,9 @@ export async function POST(request: Request) {
     // Phase 30: completes one of the three notification integrations
     // Phase 28 deferred — best-effort, never fails the actual task
     // creation, matching every other notification call site's convention.
-    if (assigneeProfile) {
+    // Task assignment (2026-10): a task you create for yourself never
+    // notifies you about your own action.
+    if (assigneeProfile && assigneeProfile.identityId !== context.userId) {
       try {
         await createNotification(
           {

@@ -7,6 +7,7 @@ import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
 import { caseOrderFixtures } from '@/services/__mocks__/pricingFixtures';
 import { seedChartOfAccounts } from '@/services/chartOfAccountsService';
 import type { PaymentRecord } from '@/types/payment';
+import { caseFixtures } from '@/services/__mocks__/fixtures';
 
 let idCounter = 0;
 function idFactory(): string {
@@ -87,6 +88,38 @@ describe('POST /api/cases/[caseId]/payments/[paymentId]/refund', () => {
     expect(updatedPayment?.status).toBe('refunded');
     const updatedOrder = caseOrderFixtures.find((o) => o.id === 'refund-route-order-1');
     expect(updatedOrder?.balanceDue).toBe(50_000);
+  });
+
+  it('payment status after a refund (2026-10): a paid case left with a balance returns to Awaiting payment', async () => {
+    const index = caseFixtures.findIndex((c) => c.organizationId === DEFAULT_ORGANIZATION_ID && !c.isDeleted);
+    const original = caseFixtures[index];
+    caseFixtures[index] = { ...original, paymentStatus: 'paid_in_full' };
+    const savedOrders = caseOrderFixtures.map((o) => ({ ...o }));
+    caseOrderFixtures.forEach((o, i) => {
+      if (o.caseId === original.id) caseOrderFixtures[i] = { ...o, status: 'superseded' };
+    });
+    caseOrderFixtures.forEach((o, i) => {
+      if (o.id === 'refund-route-order-1') caseOrderFixtures[i] = { ...o, caseId: original.id };
+    });
+    const payment = paymentRecordFixtures.find((p) => p.id === 'refund-route-payment-1')!;
+    payment.caseId = original.id;
+    try {
+      const response = await postRequest(original.id, 'refund-route-payment-1', { organizationId: DEFAULT_ORGANIZATION_ID });
+      expect(response.status).toBe(200);
+      expect((await response.json()).paymentStatus).toBe('reopened');
+      expect(caseFixtures[index].paymentStatus).toBe('awaiting_payment');
+      expect(caseFixtures[index].checklistState).toEqual(original.checklistState);
+      expect(caseFixtures[index].rawStage).toBe(original.rawStage);
+    } finally {
+      caseFixtures[index] = original;
+      caseOrderFixtures.splice(0, caseOrderFixtures.length, ...savedOrders);
+    }
+  });
+
+  it('a refund on a case with no case record to correct still succeeds and reports the status unchanged', async () => {
+    const response = await postRequest('refund-route-case-1', 'refund-route-payment-1', { organizationId: DEFAULT_ORGANIZATION_ID });
+    expect(response.status).toBe(200);
+    expect((await response.json()).paymentStatus).toBe('unchanged');
   });
 
   it('returns 400 when refunding an already-refunded payment', async () => {

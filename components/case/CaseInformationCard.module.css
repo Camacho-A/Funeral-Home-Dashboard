@@ -1,87 +1,110 @@
 /* SOLIS Phase 3 — Case Information as a right-rail panel.
-   Same classes/markup; restyled: no card box, sentence-case labels,
-   1–2 column field grid that fits the ~380px rail, quieter section heads. */
+   UI modernization (2026-10): the same classes and markup, presented as
+   one calm card — a fixed two-column field grid (every row lines up),
+   small muted labels over clear values, sections divided by a hairline
+   instead of underlined headings, and inline actions ("Edit Name",
+   "Enter…", "Correct…") as quiet text buttons rather than links. */
 .card {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 18px;
+  box-shadow: var(--shadow-card);
 }
 
 .title {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: oklch(0.55 0.01 255);
-  padding-bottom: 10px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--color-border);
+  color: var(--sx-muted);
+  margin-bottom: 10px;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
   font-size: 13.5px;
+  align-items: start;
+}
+
+/* A missing Tag Number prompt gets the whole row, so it reads on one line. */
+.grid > div:has(.missingValue) {
+  grid-column: 1 / -1;
 }
 
 .operationalRow {
-  margin-top: 18px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sx-border-soft);
 }
 
 .sectionHeading {
   font-size: 11px;
   font-weight: 600;
-  color: oklch(0.55 0.01 255);
+  color: var(--sx-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-align: left;
-  margin-top: 28px;
-  margin-bottom: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--color-border);
+  margin-top: 14px;
+  margin-bottom: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sx-border-soft);
 }
 
 .sectionHelperText {
-  font-size: 12.5px;
-  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--sx-muted);
   text-align: left;
-  margin-top: -6px;
-  margin-bottom: 12px;
+  margin-top: -4px;
+  margin-bottom: 8px;
 }
 
 .fieldLabel {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 400;
+  color: var(--sx-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.3;
   text-transform: none;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
 }
 
 .fieldValue {
   margin-top: 2px;
   font-weight: 500;
-  color: var(--color-text-primary);
+  line-height: 1.4;
+  color: var(--sx-text);
   overflow-wrap: anywhere;
 }
 
-.editableValue {
-  margin-top: 2px;
+/* Secondary lines inside a value (the SSN's source, "Not on file…") read
+   as notes beneath it, not as a second label. */
+.fieldValue .fieldLabel {
   display: block;
-  width: 100%;
+  margin-top: 3px;
+  font-weight: 400;
+  color: var(--sx-faint, var(--sx-muted));
+}
+
+.editableValue {
+  margin: 1px -6px 0;
+  display: block;
+  width: calc(100% + 12px);
   text-align: left;
   font-family: inherit;
   font-size: inherit;
   font-weight: 500;
-  color: var(--color-text-primary);
+  line-height: 1.4;
+  color: var(--sx-text);
   background: none;
   border: none;
-  border-bottom: 1px dashed transparent;
-  padding: 0;
+  border-radius: 6px;
+  padding: 2px 6px;
   cursor: pointer;
   overflow-wrap: anywhere;
-  transition: border-color 0.12s ease;
+  transition: background-color var(--sx-ease, 0.12s ease), box-shadow var(--sx-ease, 0.12s ease);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -90,10 +113,14 @@
   }
 }
 
-.editableValue:hover,
+.editableValue:hover {
+  background: var(--sx-hover);
+}
+
 .editableValue:focus-visible {
-  border-bottom-color: oklch(0.8 0.006 255);
   outline: none;
+  background: var(--sx-hover);
+  box-shadow: var(--sx-focus);
 }
 
 .editableValueCompact {
@@ -171,14 +198,17 @@
   gap: 6px;
   width: auto;
   max-width: 100%;
-  margin-top: 2px;
-  padding: 3px 8px;
-  border: 1px solid oklch(0.88 0.06 75);
-  border-radius: 6px;
+  /* Aligned with the values around it — the inline-edit button's hover
+     bleed (negative side margins) does not apply to the pill. */
+  margin: 4px 0 0;
+  padding: 3px 10px;
+  border: 1px dashed oklch(0.82 0.08 75);
+  border-radius: 999px;
+  cursor: pointer;
   background: var(--sx-amber-bg, oklch(0.965 0.04 75));
   color: var(--sx-amber-text, oklch(0.47 0.12 60));
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -237,10 +267,10 @@ button.missingValue:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 20px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: oklch(0.975 0.003 255);
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--sx-subtle, oklch(0.975 0.003 255));
   border: 1px solid var(--solis-border-soft, var(--color-border));
 }
 
@@ -263,28 +293,40 @@ button.missingValue:focus-visible {
   margin-left: auto;
 }
 
-/* Inline selects inside the rail: compact, consistent with Phase 1 inputs. */
+/* Inline selects inside the rail: compact, consistent with sx inputs,
+   and never wider than their column. */
 .card select {
-  height: 32px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 34px;
   padding: 0 28px 0 10px;
-  border-radius: 7px;
-  border: 1px solid oklch(0.91 0.004 255);
+  border-radius: 8px;
+  border: 1px solid var(--sx-border-input);
   background-color: #ffffff;
   font-family: inherit;
   font-size: 13px;
-  color: var(--color-text-primary);
+  color: var(--sx-text);
+  transition: border-color var(--sx-ease, 0.12s ease);
+}
+
+.card select:hover {
+  border-color: oklch(0.8 0.01 255);
 }
 
 .card select:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--sx-navy);
+  box-shadow: var(--sx-focus);
 }
 
 /* Below 1024px the rail becomes full width again (page.module.css), so
    let fields spread back into more columns. */
 @media (max-width: 1024px) {
   .grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    /* 140px keeps two columns even on a phone, so short values (dates,
+       times, weight) sit side by side instead of one per row. */
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
 
@@ -336,15 +378,24 @@ button.missingValue:focus-visible {
 .editNameButton {
   border: none;
   background: none;
-  padding: 0;
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-family: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--solis-selected-fg, #1f3b63);
+  color: var(--sx-link, var(--solis-selected-fg, #1f3b63));
   cursor: pointer;
+  transition: background-color var(--sx-ease, 0.12s ease);
 }
 
 .editNameButton:hover {
-  text-decoration: underline;
+  background: var(--sx-navy-tint);
+}
+
+.editNameButton:focus-visible {
+  outline: none;
+  box-shadow: var(--sx-focus);
 }
 
 .editNameBody {
@@ -461,4 +512,32 @@ button.missingValue:focus-visible {
   font-weight: 600;
   color: var(--solis-danger, var(--color-danger-text, #b42318));
   cursor: pointer;
+}
+
+/* Payment records' own status under the stored Payment value (2026-10). */
+.paymentSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sx-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.paymentSummaryLabel {
+  font-weight: 600;
+}
+
+.paymentSummarySuccess {
+  color: var(--sx-green-text);
+}
+
+.paymentSummaryWarning {
+  color: var(--sx-amber-text);
+}
+
+.paymentSummaryNote {
+  color: var(--sx-text-2);
 }

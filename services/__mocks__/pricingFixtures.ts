@@ -4,6 +4,7 @@ import type { CaseOrderAuditEntry } from '../../types/caseOrderAudit';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { SERVICE_CODES } from '../../domain/pricing/serviceCodes';
 import { mockCollection } from './mockStore';
+import { sandboxCaseOrderLineItems, sandboxCaseOrders } from './sandboxFixtures';
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). Mock-mode
@@ -127,6 +128,6 @@ export const serviceCatalogFixtures: ServiceCatalogItem[] = mockCollection('serv
   },
 ]);
 
-export const caseOrderFixtures: CaseOrder[] = mockCollection('caseOrderFixtures', (): CaseOrder[] => []);
-export const caseOrderLineItemFixtures: CaseOrderLineItem[] = mockCollection('caseOrderLineItemFixtures', (): CaseOrderLineItem[] => []);
+export const caseOrderFixtures: CaseOrder[] = mockCollection('caseOrderFixtures', (): CaseOrder[] => sandboxCaseOrders());
+export const caseOrderLineItemFixtures: CaseOrderLineItem[] = mockCollection('caseOrderLineItemFixtures', (): CaseOrderLineItem[] => sandboxCaseOrderLineItems());
 export const caseOrderAuditFixtures: CaseOrderAuditEntry[] = mockCollection('caseOrderAuditFixtures', (): CaseOrderAuditEntry[] => []);

@@ -2,6 +2,7 @@ import type { PaymentIntegration, PaymentRecord } from '../../types/payment';
 import type { WebhookEventRecord } from '../../types/webhookEvent';
 import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
 import { mockCollection } from './mockStore';
+import { sandboxPaymentRecords } from './sandboxFixtures';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Mock-mode fixtures for
@@ -37,7 +38,7 @@ export const paymentIntegrationFixtures: PaymentIntegration[] = mockCollection('
 /** No seeded payment records — every mock-mode test/demo case starts with
     an empty payment history, matching every other mock entity's "start
     from a clean, explicit fixture" convention. */
-export const paymentRecordFixtures: PaymentRecord[] = mockCollection('paymentRecordFixtures', (): PaymentRecord[] => []);
+export const paymentRecordFixtures: PaymentRecord[] = mockCollection('paymentRecordFixtures', (): PaymentRecord[] => sandboxPaymentRecords());
 
 /**
  * Mock-mode-only webhook event lifecycle tracking — a plain in-memory

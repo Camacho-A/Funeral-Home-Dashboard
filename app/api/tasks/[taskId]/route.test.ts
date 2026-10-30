@@ -420,12 +420,56 @@ describe('PATCH /api/tasks/[taskId] — Phase 30 (Identity Model Hardening & Sta
     expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('notifications', expect.objectContaining({ notificationType: 'task.assigned' }), expect.any(String));
   });
 
-  it('allows unassigning (a null patch value) with no staff-profile lookup at all', async () => {
+  it('allows unassigning (a null patch value) with no staff-profile lookup at all — for a caller with task.assign (2026-10)', async () => {
     mockQueryWixDataItems.mockImplementation((collectionId: string) => {
       if (collectionId === 'staffProfiles') throw new Error('must not be queried for a null (unassign) patch');
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
       return Promise.resolve({ dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: EXISTING_WIX_TASK_DATA }] });
     });
     const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: null } });
     expect(response.status).toBe(200);
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('tasks', 'task-100', expect.objectContaining({ assigneeId: null }));
+    expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('notifications', expect.anything(), expect.any(String));
+  });
+
+  it('refuses unassigning without task.assign (2026-10) — 422, nothing written', async () => {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS.filter((item) => item.data.permissionKey !== 'task.assign') });
+      return Promise.resolve({ dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: EXISTING_WIX_TASK_DATA }] });
+    });
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: null } });
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toMatch(/task\.assign/);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('refuses reassignment without task.assign — 422, nothing written', async () => {
+    mockQueryWixDataItems.mockImplementation((collectionId: string) => {
+      if (collectionId === 'staffProfiles') return Promise.resolve({ dataItems: [CHRIS_PROFILE_ITEM] });
+      if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
+      if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS.filter((item) => item.data.permissionKey !== 'task.assign') });
+      return Promise.resolve({ dataItems: [{ id: 'task-100', dataCollectionId: 'tasks', data: EXISTING_WIX_TASK_DATA }] });
+    });
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-chris' } });
+    expect(response.status).toBe(422);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('"Assign to me" — taking a task yourself sends no task.assigned notification (2026-10)', async () => {
+    const ME = { ...CHRIS_PROFILE_ITEM, id: 'staff-me', data: { ...CHRIS_PROFILE_ITEM.data, beaconStaffProfileId: 'staff-me', identityId: mockDefaultUser.id, displayName: 'Me' } };
+    mockTaskAndStaffProfiles(ME);
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-me' } });
+    expect(response.status).toBe(200);
+    expect(mockUpdateWixDataItem).toHaveBeenCalledWith('tasks', 'task-100', expect.objectContaining({ assigneeId: 'staff-me' }));
+    expect(mockInsertWixDataItem).not.toHaveBeenCalledWith('notifications', expect.anything(), expect.any(String));
+  });
+
+  it("refuses assigning a staff profile from another organization — 422, nothing written", async () => {
+    mockTaskAndStaffProfiles({ ...CHRIS_PROFILE_ITEM, data: { ...CHRIS_PROFILE_ITEM.data, organizationId: 'evergreen-memorial-group' } });
+    const response = await patchRequest('task-100', { organizationId: DEFAULT_ORGANIZATION_ID, patch: { assigneeStaffId: 'staff-chris' } });
+    expect(response.status).toBe(422);
+    expect(mockUpdateWixDataItem).not.toHaveBeenCalled();
   });
 });

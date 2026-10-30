@@ -4,6 +4,7 @@ import type { Identity } from '../../types/identity';
 import type { DataAdapterMode } from '../env';
 import { getSessionById, touchLoadedSession } from '../../services/sessionService';
 import { getIdentityById } from '../../services/identityService';
+import { restoreSandboxSession } from './sandboxSessionRestore';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). The
@@ -49,7 +50,10 @@ export async function resolveIdentitySession(
   const identityPromise = getIdentityById(session.user.id, dataAdapterMode);
   identityPromise.catch(() => {});
 
-  const identitySession = await getSessionById(session.sessionId, dataAdapterMode);
+  const identitySession =
+    (await getSessionById(session.sessionId, dataAdapterMode)) ??
+    // SOLIS sandbox only — see lib/auth/sandboxSessionRestore.ts.
+    restoreSandboxSession(session, await identityPromise, dataAdapterMode);
   if (!identitySession) {
     return { valid: false, reason: 'session_not_found' };
   }

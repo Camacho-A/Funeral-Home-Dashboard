@@ -12,6 +12,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { recordTaskCompleted } from '@/services/activityService';
 import { assertAssignableStaffProfile, StaffAssignmentError } from '@/services/staffProfileService';
 import { createNotification } from '@/services/notificationService';
+import { hasPermission } from '@/services/permissionService';
 
 /**
  * Phase 16 (Wix Write Integration). Updates or deletes one task by its
@@ -93,6 +94,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
     }
   }
 
+  // Task assignment (2026-10): taking a task off someone (unassigning) is
+  // an assignment change too, so it needs the same task.assign permission
+  // a reassignment does — not just any membership.
+  if (patch.assigneeStaffId === null) {
+    const allowed = await hasPermission({ identityId: context.userId, organizationId, roleKey: context.role }, 'wix', 'task.assign');
+    if (!allowed) {
+      return NextResponse.json({ task: null, error: 'Caller lacks the "task.assign" permission required to unassign this task.' }, { status: 422 });
+    }
+  }
+
   try {
     const existingItem = await findAuthorizedTask(taskId, organizationId);
     if (!existingItem) {
@@ -129,7 +140,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ta
     // reassignment to someone new, or an initial assignment), never a
     // no-op patch naming the same staff member already assigned;
     // best-effort, never fails the actual update.
-    if (assigneeProfile && (!existing || existing.assigneeStaffId !== assigneeProfile.id)) {
+    // Task assignment (2026-10): taking a task yourself ("Assign to me")
+    // never notifies you about your own action.
+    if (assigneeProfile && assigneeProfile.identityId !== context.userId && (!existing || existing.assigneeStaffId !== assigneeProfile.id)) {
       try {
         await createNotification(
           {

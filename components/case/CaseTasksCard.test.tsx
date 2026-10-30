@@ -42,3 +42,44 @@ describe('CaseTasksCard — empty state and completion UX (Phase 17)', () => {
     expect(input).toHaveValue('');
   });
 });
+
+describe('CaseTasksCard — assignee picker (2026-10)', () => {
+  it('with assignment, each task’s assignee can be changed; without it the name is plain text', () => {
+    const onReassign = vi.fn();
+    const staff = [{ id: 'staff-dana', name: 'Dana' }, { id: 'staff-chris', name: 'Chris' }];
+    const { rerender } = render(
+      <CaseTasksCard
+        tasks={[{ ...TASK, assigneeStaffId: 'staff-dana' }]}
+        assignment={{ staff, myStaffId: 'staff-dana', canAssign: true, onReassign }}
+        onToggleTask={vi.fn()}
+        onAddTask={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: `Assignee for ${TASK.text}` }), { target: { value: 'staff-chris' } });
+    expect(onReassign).toHaveBeenCalledWith('task-1', 'staff-chris');
+
+    rerender(<CaseTasksCard tasks={[TASK]} onToggleTask={vi.fn()} onAddTask={vi.fn()} />);
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText('Dana')).toBeInTheDocument();
+  });
+});
+
+describe('long task text stays inside the card (2026-10)', () => {
+  it('the assignee sits above the text, and the text may shrink and break long words', async () => {
+    const css = (await import('fs')).readFileSync('components/case/CaseTasksCard.module.css', 'utf8');
+    const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`), css.indexOf('}', css.indexOf(`${selector} {`)));
+    expect(rule('.body')).toMatch(/flex-direction:\s*column/);
+    expect(css).toMatch(/\.text,\s*\.textDone\s*\{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere/);
+    expect(rule('.assigneePicker')).toMatch(/max-width:\s*100%/);
+    expect(rule('.assignee')).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+});
+
+describe('assignee above the task (2026-10)', () => {
+  it('renders the assignee before the task text in each row', () => {
+    render(<CaseTasksCard tasks={[{ id: 't1', text: 'Follow up with the hospital', isDone: false, assigneeName: 'Chris' }]} onToggleTask={() => {}} onAddTask={() => {}} />);
+    const assignee = screen.getByText('Chris');
+    const text = screen.getByText('Follow up with the hospital');
+    expect(assignee.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

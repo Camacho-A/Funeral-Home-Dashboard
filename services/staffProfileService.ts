@@ -180,7 +180,10 @@ export async function assertStaffProfileIsActiveAndInOrganization(
   dataAdapterMode: DataAdapterMode,
 ): Promise<StaffProfile> {
   const profile = await getById(organizationId, staffProfileId, dataAdapterMode);
-  if (!profile) {
+  // The query is already scoped by organizationId; the row's own
+  // organization is checked too (2026-10), so a cross-tenant profile can
+  // never be assigned even if a query filter were ever dropped.
+  if (!profile || profile.organizationId !== organizationId) {
     throw new StaffAssignmentError(`No staff profile "${staffProfileId}" exists in this organization.`);
   }
   if (!profile.isActive) {

@@ -8,7 +8,7 @@ import { checklistItemKey } from '../domain/workflow/checklistItemKey';
 import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
 import { postPaymentTransaction } from './financialTransactionService';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
-import type { ActivityContext } from './activityService';
+import { recordCaseUpdated, type ActivityContext } from './activityService';
 import { automaticChecklistCompletion, isChecklistAutomationEnabled } from '../domain/workflow/checklistAutomation';
 import { recordAutomaticCompletion } from './automaticChecklistCompletion';
 
@@ -166,4 +166,66 @@ export async function markCasePaidIfVerified(
   // Only a write that actually landed completed anything.
   if (outcome.result === 'applied') await recordIfCompleted();
   await reconcileCaseWorkflow(organizationId, caseId, dataAdapterMode);
+}
+
+/**
+ * Payment status after a refund (2026-10). The counterpart of
+ * `markCasePaidIfVerified` for the one event that can take money back: a
+ * completed refund (`financialTransactionService#postRefundTransaction`,
+ * the only path that turns a succeeded payment into a non-paying one).
+ *
+ * Returns the case to "Awaiting payment" only when ALL of these hold:
+ *   - the case has an active Case Order — its server-computed
+ *     `balanceDue` (succeeded payments plus write-offs; pending, failed
+ *     and cancelled payments never count) is the authoritative balance. A
+ *     case without one has no balance to judge by and is left alone;
+ *   - that balance, refreshed now, is genuinely above zero — a refund
+ *     still covered by other payments or a write-off never reopens a
+ *     settled case;
+ *   - the case is currently "Paid in full" and not archived.
+ *
+ * Sets `paymentStatus` and nothing else. Payment records, journal entries
+ * and the checklist's own ticks and completion records are history and
+ * are kept; the workflow stage is never moved (reconciliation only ever
+ * raises it). The change is recorded in the case's activity as an
+ * ordinary Payment update attributed to whoever issued the refund.
+ */
+export async function markCaseUnpaidAfterRefund(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+  ctx: ActivityContext,
+): Promise<'reopened' | 'unchanged'> {
+  const activeOrder = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  if (!activeOrder) return 'unchanged';
+  const refreshed = await refreshBalanceForCase(organizationId, caseId, dataAdapterMode);
+  if (!((refreshed?.balanceDue ?? 0) > 0)) return 'unchanged';
+
+  const unpaidPatch = (case_: Case): CaseUpdate | null =>
+    case_.isDeleted || case_.paymentStatus !== 'paid_in_full' ? null : { paymentStatus: 'awaiting_payment' };
+
+  let reopened = false;
+  if (dataAdapterMode === 'mock') {
+    const case_ = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId);
+    const patch = case_ ? unpaidPatch(case_) : null;
+    if (!case_ || !patch) return 'unchanged';
+    writeMockCase(organizationId, caseId, (current) => ({ ...current, ...patch }));
+    reopened = true;
+  } else {
+    const outcome = await updateCaseWithRetry(organizationId, caseId, (row) => {
+      const patch = unpaidPatch(row.case_);
+      return patch ? buildCaseFieldPatch(row.data, patch) : null;
+    });
+    if (outcome.result === 'conflict') throw new Error(`Returning case ${caseId} to awaiting payment lost to concurrent writes on every attempt.`);
+    if (outcome.result === 'failed') throw new Error(`Returning case ${caseId} to awaiting payment failed: ${outcome.reason}`);
+    reopened = outcome.result === 'applied';
+  }
+  if (!reopened) return 'unchanged';
+
+  try {
+    await recordCaseUpdated(ctx, caseId, { paymentStatus: { previous: 'paid_in_full', next: 'awaiting_payment' } }, dataAdapterMode);
+  } catch (error) {
+    console.error('Failed to record the payment status change after a refund:', error instanceof Error ? error.message : error);
+  }
+  return 'reopened';
 }

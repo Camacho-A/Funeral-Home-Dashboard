@@ -7,6 +7,7 @@ import { canPostJournalEntry } from '@/services/authorizationPolicyService';
 import { postRefundTransaction, FinancialTransactionServiceError } from '@/services/financialTransactionService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
+import { markCaseUnpaidAfterRefund } from '@/services/paymentWorkflow';
 
 /**
  * Phase 31 (Financial Management & General Ledger). Refunds an
@@ -51,7 +52,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       ctx,
       dataAdapterMode,
     );
-    return NextResponse.json({ entry });
+    // Payment status after a refund (2026-10): a refund that leaves a real
+    // balance returns the case to "Awaiting payment". The refund itself has
+    // already happened at the provider and in the ledger, so a failure here
+    // never turns it into an error — the case page's payment summary still
+    // shows the balance and says the stored status disagrees.
+    let paymentStatus: 'reopened' | 'unchanged' | 'not_updated' = 'unchanged';
+    try {
+      paymentStatus = await markCaseUnpaidAfterRefund(organizationId, caseId, dataAdapterMode, ctx);
+    } catch (error) {
+      paymentStatus = 'not_updated';
+      console.error('Refund succeeded but the case payment status was not updated:', error instanceof Error ? error.message : error);
+    }
+    return NextResponse.json({ entry, paymentStatus });
   } catch (error) {
     if (error instanceof FinancialTransactionServiceError) {
       return NextResponse.json({ error: error.message }, { status: 400 });

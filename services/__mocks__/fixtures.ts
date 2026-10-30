@@ -9,6 +9,7 @@ import { buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
 import { formatCaseNumber } from '../../domain/cases/caseNumber';
 import { mockCollection } from './mockStore';
 import { buildGusCaseFixtures, buildGusStaffFixtures, buildGusTaskFixtures } from './gusFixtures';
+import { sandboxPaymentStatusFor, sandboxTasks } from './sandboxFixtures';
 
 /**
  * Re-exported from ./organizationIds (not declared here) so
@@ -315,7 +316,7 @@ export const caseFixtures: Case[] = mockCollection('caseFixtures', (): Case[] =>
   certifierLicenseNumber: null,
   certifierFax: null,
   tagNumber: null,
-  paymentStatus: toPaymentStatus(raw.paymentStatus),
+  paymentStatus: sandboxPaymentStatusFor(raw.id, toPaymentStatus(raw.paymentStatus)),
   pickupStatus: 'awaiting_pickup',
   pickupReleasedTo: null,
   pickupReleasedAt: null,
@@ -385,6 +386,8 @@ export const taskFixtures: CaseTask[] = mockCollection('taskFixtures', (): CaseT
     createdAt: '07/14/2026',
   },
   ...buildGusTaskFixtures(),
+  // SOLIS sandbox examples — empty unless the sandbox switch is on.
+  ...sandboxTasks(),
 ]);
 
 /**

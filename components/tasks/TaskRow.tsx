@@ -1,40 +1,41 @@
 import Link from 'next/link';
 import { toDisplayName } from '@/utils/displayName';
+import type { AssigneeStaff } from '@/domain/tasks/assignment';
+import { TaskAssigneePicker } from './TaskAssigneePicker';
 
 export type TaskRowItem = {
   id: string;
   text: string;
   isDone: boolean;
-  assigneeName: string;
+  /** StaffProfile id, or null for an unassigned task (2026-10). */
+  assigneeStaffId: string | null;
   linkedCaseId: string | null;
   linkedCaseName: string | null;
 };
 
-/** First letters of the first two words, uppercase — SOLIS Tasks phase §1.4. */
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? '')
-    .join('');
-}
+/** What every row needs to show and change its assignee (2026-10). */
+export type TaskAssignmentContext = {
+  staff: readonly AssigneeStaff[];
+  myStaffId: string | null;
+  canAssign: boolean;
+  onReassign: (taskId: string, assigneeStaffId: string | null) => void;
+};
 
 /**
- * SOLIS Tasks/Calendar/Settings phase, §1.4: presentation only — new
- * `.sx-task-row` markup, a native checkbox (no component test constrains
- * this file's markup, so the contract's literal `<input type="checkbox">`
- * is used directly rather than the shared `<Checkbox>` button component).
- * `toDisplayName` applies to the linked case name only — the task's own
- * `text` stays exactly as stored (ALL CAPS is the data standard). Same
- * `onToggle`/`onRemove` handlers, unchanged.
+ * SOLIS Tasks/Calendar/Settings phase, §1.4: a native checkbox, the task's
+ * own text exactly as stored (ALL CAPS is the data standard), the linked
+ * case, and the assignee. Task assignment (2026-10): the assignee is a
+ * picker (reassign, unassign, "Assign to me") for staff with task.assign.
+ * Same `onToggle`/`onRemove` handlers, unchanged.
  */
 export function TaskRow({
   task,
+  assignment,
   onToggle,
   onRemove,
 }: {
   task: TaskRowItem;
+  assignment: TaskAssignmentContext;
   onToggle: (newDone: boolean) => void;
   onRemove: () => void;
 }) {
@@ -53,18 +54,21 @@ export function TaskRow({
       </span>
       <span className="sx-task-meta">
         {task.linkedCaseName ? (
-          <Link href={`/cases/${task.linkedCaseId}`} className="sx-task-case">
+          <Link href={`/cases/${task.linkedCaseId}`} className="sx-task-case" title={toDisplayName(task.linkedCaseName)}>
             {toDisplayName(task.linkedCaseName)}
           </Link>
         ) : (
           <span />
         )}
-        <span className="sx-task-assignee">
-          <span className="sx-avatar" style={{ width: 20, height: 20, fontSize: 9.5 }}>
-            {initials(task.assigneeName)}
-          </span>
-          {task.assigneeName}
-        </span>
+        <TaskAssigneePicker
+          taskLabel={task.text}
+          assigneeStaffId={task.assigneeStaffId}
+          staff={assignment.staff}
+          myStaffId={assignment.myStaffId}
+          canAssign={assignment.canAssign}
+          showAssignToMe={!task.isDone}
+          onChange={(assigneeStaffId) => assignment.onReassign(task.id, assigneeStaffId)}
+        />
       </span>
       <button type="button" className="sx-icon-btn" aria-label={`Remove ${task.text}`} onClick={onRemove}>
         ×

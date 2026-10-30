@@ -1,4 +1,5 @@
 import type { Identity, IdentitySecrets } from '../../types/identity';
+import { isSandboxEnabled } from '../../lib/sandbox';
 import type { Membership } from '../../types/membership';
 import type { IdentitySession } from '../../types/identitySession';
 import type { EmailVerificationToken } from '../../types/emailVerificationToken';
@@ -41,6 +42,10 @@ const NOW = '2026-07-24T00:00:00.000Z';
 export const MANORS_ADMIN_DEMO_PASSWORD = 'SolisDemo123!';
 export const MANORS_ADMIN_IDENTITY_ID = 'identity-manors-admin';
 export const MANORS_ADMIN_MEMBERSHIP_ID = 'membership-manors-admin';
+
+/** SOLIS sandbox only (lib/sandbox.ts) — absent from every other mock run. */
+export const SANDBOX_READ_ONLY_IDENTITY_ID = 'identity-manors-sandbox-readonly';
+export const SANDBOX_READ_ONLY_EMAIL = 'readonly@managedcremations.test';
 
 /**
  * Phase 30 (Identity Model Hardening & Staff Assignment Unification).
@@ -129,6 +134,29 @@ export const identityFixtures: MockIdentityRecord[] = mockCollection('identityFi
   },
   // Gus Camacho Jr. demo identities (mock/local development only).
   ...buildGusIdentityFixtures(),
+  // SOLIS sandbox only (lib/sandbox.ts): a read-only demo account.
+  ...(isSandboxEnabled()
+    ? [
+        {
+          id: SANDBOX_READ_ONLY_IDENTITY_ID,
+          email: SANDBOX_READ_ONLY_EMAIL,
+          normalizedEmail: SANDBOX_READ_ONLY_EMAIL,
+          displayName: 'Riley',
+          phone: null,
+          status: 'active' as const,
+          emailVerified: true,
+          passwordVersion: 1,
+          mfaEnabled: false,
+          lastLoginAt: null,
+          createdAt: NOW,
+          updatedAt: NOW,
+          get passwordHash() { return hashPassword(MANORS_ADMIN_DEMO_PASSWORD); },
+          mfaSecretReference: null,
+          mfaVerifiedAt: null,
+          mfaRecoveryCodeHashes: [],
+        },
+      ]
+    : []),
 ]);
 
 export const membershipFixtures: Membership[] = mockCollection('membershipFixtures', (): Membership[] => [
@@ -167,6 +195,22 @@ export const membershipFixtures: Membership[] = mockCollection('membershipFixtur
   },
   // Gus Camacho Jr. demo memberships — Gus only, never Manors.
   ...buildGusMembershipFixtures(),
+  // SOLIS sandbox only: the read-only demo account's Manors membership.
+  ...(isSandboxEnabled()
+    ? [
+        {
+          id: 'membership-manors-sandbox-readonly',
+          identityId: SANDBOX_READ_ONLY_IDENTITY_ID,
+          organizationId: DEFAULT_ORGANIZATION_ID,
+          role: 'readOnly',
+          status: 'active' as const,
+          invitedBy: MANORS_ADMIN_IDENTITY_ID,
+          joinedAt: NOW,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ]
+    : []),
 ]);
 
 export const identitySessionFixtures: IdentitySession[] = mockCollection('identitySessionFixtures', (): IdentitySession[] => []);

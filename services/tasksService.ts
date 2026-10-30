@@ -143,6 +143,12 @@ export async function update(
       body: JSON.stringify({ organizationId: context.organizationId, patch }),
     });
     if (!response.ok) {
+      // A refused assignment (422) says why — e.g. a missing task.assign
+      // permission — rather than reading as a missing task (2026-10).
+      if (response.status === 422) {
+        const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        if (typeof body?.error === 'string' && body.error) throw new Error(body.error);
+      }
       throw new Error(`Task ${taskId} not found for this organization`);
     }
     const body = (await response.json()) as { task: CaseTask };
