@@ -372,12 +372,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel || (sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation') ? (
             <>
               {getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setPrintLabelOpen(true)}>
+                <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => setPrintLabelOpen(true)}>
                   Print Label
                 </button>
               )}
               {sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation' && (
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setSendToCrematoryOpen(true)}>
+                <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => setSendToCrematoryOpen(true)}>
                   Send to Crematory
                 </button>
               )}

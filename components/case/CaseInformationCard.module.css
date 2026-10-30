@@ -5,11 +5,11 @@
    instead of underlined headings, and inline actions ("Edit Name",
    "Enter…", "Correct…") as quiet text buttons rather than links. */
 .card {
-  background: var(--sx-surface, #fff);
-  border: 1px solid var(--sx-border);
-  border-radius: 12px;
-  padding: 18px 18px 20px;
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.03);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-9) var(--space-9) var(--space-10);
+  box-shadow: var(--shadow-card);
 }
 
 .title {
