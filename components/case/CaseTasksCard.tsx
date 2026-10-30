@@ -62,22 +62,25 @@ export function CaseTasksCard({
                 size="sm"
                 aria-label={task.text}
               />
-              <span className={task.isDone ? styles.textDone : styles.text}>{task.text}</span>
-              {assignment ? (
-                <span className={styles.assigneePicker}>
-                  <TaskAssigneePicker
-                    taskLabel={task.text}
-                    assigneeStaffId={task.assigneeStaffId ?? null}
-                    staff={assignment.staff}
-                    myStaffId={assignment.myStaffId}
-                    canAssign={assignment.canAssign}
-                    showAssignToMe={false}
-                    onChange={(assigneeStaffId) => assignment.onReassign(task.id, assigneeStaffId)}
-                  />
-                </span>
-              ) : (
-                <span className={styles.assignee}>{task.assigneeName}</span>
-              )}
+              {/* Who has it first, then what it is (2026-10). */}
+              <div className={styles.body}>
+                {assignment ? (
+                  <span className={styles.assigneePicker}>
+                    <TaskAssigneePicker
+                      taskLabel={task.text}
+                      assigneeStaffId={task.assigneeStaffId ?? null}
+                      staff={assignment.staff}
+                      myStaffId={assignment.myStaffId}
+                      canAssign={assignment.canAssign}
+                      showAssignToMe={false}
+                      onChange={(assigneeStaffId) => assignment.onReassign(task.id, assigneeStaffId)}
+                    />
+                  </span>
+                ) : (
+                  <span className={styles.assignee}>{task.assigneeName}</span>
+                )}
+                <span className={task.isDone ? styles.textDone : styles.text}>{task.text}</span>
+              </div>
             </div>
           ))}
         </div>

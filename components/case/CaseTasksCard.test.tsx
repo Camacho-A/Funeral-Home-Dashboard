@@ -65,12 +65,21 @@ describe('CaseTasksCard — assignee picker (2026-10)', () => {
 });
 
 describe('long task text stays inside the card (2026-10)', () => {
-  it('rows wrap, the text may shrink and break long words, and the assignee can move under it', async () => {
+  it('the assignee sits above the text, and the text may shrink and break long words', async () => {
     const css = (await import('fs')).readFileSync('components/case/CaseTasksCard.module.css', 'utf8');
     const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`), css.indexOf('}', css.indexOf(`${selector} {`)));
-    expect(rule('.row')).toMatch(/flex-wrap:\s*wrap/);
+    expect(rule('.body')).toMatch(/flex-direction:\s*column/);
     expect(css).toMatch(/\.text,\s*\.textDone\s*\{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere/);
     expect(rule('.assigneePicker')).toMatch(/max-width:\s*100%/);
     expect(rule('.assignee')).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+});
+
+describe('assignee above the task (2026-10)', () => {
+  it('renders the assignee before the task text in each row', () => {
+    render(<CaseTasksCard tasks={[{ id: 't1', text: 'Follow up with the hospital', isDone: false, assigneeName: 'Chris' }]} onToggleTask={() => {}} onAddTask={() => {}} />);
+    const assignee = screen.getByText('Chris');
+    const text = screen.getByText('Follow up with the hospital');
+    expect(assignee.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
