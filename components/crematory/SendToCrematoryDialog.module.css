@@ -235,3 +235,15 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Sending not yet switched on for this funeral home (2026-11). */
+.sendingOffNotice {
+  margin: 0 20px 12px;
+  padding: 8px 12px;
+  border: 1px solid #e3c766;
+  border-radius: 8px;
+  background: #fdf6dc;
+  color: #5c4500;
+  font-size: 13px;
+  line-height: 1.45;
+}

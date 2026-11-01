@@ -36,6 +36,7 @@ import type { Case, NextOfKinRelationship, ReturnMethod } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import type { ServiceSelections } from '@/types/caseOrder';
 import styles from './NewCaseModal.module.css';
+import { isWorkflowByServiceType, serviceOptionsFor } from '@/domain/workflow/serviceWorkflows';
 
 /**
  * Phase 11 (Workflow Template Architecture): intake sections/fields are no
@@ -180,7 +181,15 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // domain/cases/returnMethod.ts.
   const [returnMethod, setReturnMethod] = useState<ReturnMethod>('undecided');
   const { data: templates, isSuccess: templatesLoaded } = useWorkflowTemplates();
-  const template = templates?.find((t) => t.isEnabled);
+  // Service-based workflows (2026-11): an organization that opens every
+  // case for a named service (Gus) picks it here; the case gets that
+  // service's workflow. Everyone else sees exactly the form they had.
+  const chooseService = isWorkflowByServiceType(organization.organizationId);
+  const serviceOptions = chooseService ? serviceOptionsFor(templates ?? []) : [];
+  const [serviceTypeCode, setServiceTypeCode] = useState<string>('');
+  const template = chooseService && serviceTypeCode
+    ? templates?.find((t) => t.id === serviceOptions.find((o) => o.serviceTypeCode === serviceTypeCode)?.templateId)
+    : templates?.find((t) => t.isEnabled);
   const templateIntake = template?.versions[template.versions.length - 1]?.intake;
   // FALLBACK_INTAKE only ever applies once the real fetch has genuinely
   // resolved and come back with no usable intake fields — never while
@@ -311,6 +320,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   function resetForm() {
+    setServiceTypeCode('');
     setDraft({});
     setTouched({});
     setRevealedFields({});
@@ -410,7 +420,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // but a non-empty value must still be well-formed before submitting.
   const nextOfKinEmailTrimmed = nextOfKinEmailInput.trim();
   const hasInvalidNextOfKinEmail = nextOfKinEmailTrimmed !== '' && !isValidEmail(nextOfKinEmailTrimmed);
-  const canSubmit = !hasMissingRequired && !hasFieldErrors && !hasInvalidNextOfKinEmail;
+  const canSubmit = !hasMissingRequired && !hasFieldErrors && !hasInvalidNextOfKinEmail && (!chooseService || serviceTypeCode !== '');
 
   function goToCase(caseId: string) {
     resetForm();
@@ -477,6 +487,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         assignedStaffId: assignedStaffId ?? undefined,
         fieldValues: buildIntakeFieldValues(effectiveIntake, draft),
         returnMethod,
+        ...(chooseService ? { serviceTypeCode } : {}),
       });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Failed to create case.');
@@ -820,6 +831,21 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                       readonly look. */}
                   <div className={styles.readOnlyValue}>{session.displayName}</div>
                 </div>
+                {chooseService && (
+                  <div>
+                    <label className="sx-label" htmlFor="new-case-service">
+                      Service
+                    </label>
+                    <SelectField id="new-case-service" className="sx-select" value={serviceTypeCode} onChange={(e) => setServiceTypeCode(e.target.value)} required>
+                      <option value="">Choose a service…</option>
+                      {serviceOptions.map((option) => (
+                        <option key={option.serviceTypeCode} value={option.serviceTypeCode}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </div>
+                )}
                 <div>
                   <div className="sx-label">Assigned Staff</div>
                   {/* Manors go-live fix: defaults to yourself, always — only

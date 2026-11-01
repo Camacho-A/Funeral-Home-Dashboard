@@ -69,6 +69,34 @@ describe('sandbox examples', () => {
     expect(sandbox.some((t) => t.assigneeStaffId === 'staff-chris' || t.assigneeStaffId === 'staff-priya')).toBe(true);
     expect(sandbox.some((t) => t.assigneeStaffId === null)).toBe(true);
     expect(sandbox.some((t) => t.isDone)).toBe(true);
-    expect(sandbox.every((t) => t.organizationId === 'managed-cremations')).toBe(true);
+    expect(sandbox.every((t) => t.organizationId === 'managed-cremations' || t.organizationId === 'gus-camacho-jr')).toBe(true);
+    // Each funeral home's examples refer only to its own staff and cases.
+    for (const t of sandbox.filter((x) => x.organizationId === 'gus-camacho-jr')) {
+      if (t.assigneeStaffId) expect(t.assigneeStaffId).toMatch(/^staff-gus-/);
+      if (t.caseId) expect(t.caseId).toMatch(/^gus-case-/);
+    }
+    for (const t of sandbox.filter((x) => x.organizationId === 'managed-cremations')) {
+      if (t.assigneeStaffId) expect(t.assigneeStaffId).not.toMatch(/gus/);
+      if (t.caseId) expect(t.caseId).not.toMatch(/gus/);
+    }
+  });
+
+  it('with it, Gus gets the same payment states on its own cases, at an obviously fictional amount — never a Manors price', async () => {
+    const f = await loadFixtures(true);
+    const summary = (caseId: string) => {
+      const order = f.orders.find((o) => o.caseId === caseId)!;
+      const case_ = f.cases.find((c) => c.id === caseId)!;
+      expect(order.organizationId).toBe('gus-camacho-jr');
+      expect(case_.organizationId).toBe('gus-camacho-jr');
+      return summarizeCasePayment({ order, payments: f.payments.filter((p) => p.caseId === caseId), recordedStatus: case_.paymentStatus })!;
+    };
+    expect(summary('gus-case-002')).toMatchObject({ state: 'paid_in_full', mismatch: null });
+    expect(summary('gus-case-003')).toMatchObject({ state: 'partial_payment', mismatch: null });
+    expect(summary('gus-case-001')).toMatchObject({ state: 'awaiting_payment', mismatch: null });
+    expect(summary('gus-case-005')).toMatchObject({ state: 'awaiting_payment', mismatch: null, pendingCents: 100_000 });
+    expect(summary('gus-case-006')).toMatchObject({ state: 'awaiting_payment', mismatch: null, refundedCents: 100_000 });
+    const gusLines = f.lines.filter((l) => l.organizationId === 'gus-camacho-jr');
+    expect(gusLines.every((l) => l.description === 'Sandbox example service (not a Gus price)' && l.unitPrice === 100_000)).toBe(true);
+    expect(f.payments.filter((p) => p.organizationId === 'gus-camacho-jr').every((p) => p.caseId.startsWith('gus-case-'))).toBe(true);
   });
 });

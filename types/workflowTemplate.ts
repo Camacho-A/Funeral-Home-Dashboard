@@ -52,6 +52,15 @@ export type ChecklistItemTemplate = {
       ChecklistCard.tsx pick the right editor from template metadata
       instead of string-matching the item's label. */
   valueKind?: 'time';
+  /** Shared workflow foundation (2026-11). A stable, organization-neutral
+      identifier for the business requirement this item represents (e.g.
+      'cremation.crematory.permit_sent'). Optional and additive: storage
+      keys stay "{displayStage}:{index}" (domain/workflow/checklistItemKey.ts);
+      a stepId only lets shared logic FIND an item without depending on its
+      position or wording. Templates and snapshots written before 2026-11
+      (every existing Manors case) have none, and callers fall back to the
+      position-and-label checks they always used. */
+  stepId?: string;
 };
 
 export type ChecklistTemplate = {
@@ -74,6 +83,9 @@ export type StageTemplate = {
   isAttentionStage?: boolean;
   slaTargetDays: number | null;
   checklist: ChecklistTemplate;
+  /** Shared workflow foundation (2026-11): the stage's stable identifier,
+      e.g. 'cremation.crematory'. Optional — see ChecklistItemTemplate.stepId. */
+  stageKey?: string;
 };
 
 /**
@@ -242,6 +254,21 @@ export type WorkflowTemplateVersion = {
   stages: StageTemplate[];
   intake: IntakeTemplate;
   createdAt: string;
+  /** Service-based workflows (2026-11): the service type codes this version
+      serves (e.g. ['CREMATION_WITH_VIEWING']). Absent for an organization
+      that runs one workflow for every case (Manors). */
+  serviceTypeCodes?: string[];
+  /** Shared workflow foundation (2026-11): which shared base workflow and
+      which service extensions this version was composed from — recorded so
+      a case can always say what its process was built on. */
+  composition?: WorkflowComposition;
+};
+
+/** The shared base (e.g. the cremation foundation) plus the service
+    extensions layered on it, each at the version used. */
+export type WorkflowComposition = {
+  base: { key: string; version: number };
+  extensions: Array<{ key: string; version: number }>;
 };
 
 export type WorkflowTemplate = {
@@ -275,4 +302,9 @@ export type CaseWorkflowSnapshot = {
   workflowTemplateVersion: number;
   stages: StageTemplate[];
   intake: IntakeTemplate;
+  /** The service the case was opened for (2026-11), when its organization
+      chooses workflows by service. Absent on every case created before. */
+  serviceTypeCode?: string;
+  /** Copied from the template version (2026-11); absent before. */
+  composition?: WorkflowComposition;
 };

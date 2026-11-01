@@ -396,6 +396,7 @@ export async function create(
         weight: input.weight,
         assignedStaffId: input.assignedStaffId ?? session.staffId,
         fieldValues: input.fieldValues,
+        serviceTypeCode: input.serviceTypeCode ?? undefined,
         createdBy: session.staffId,
         intakeOwnerId: session.staffId,
         returnMethod: input.returnMethod,
@@ -444,7 +445,7 @@ export async function create(
 
   const version = latestTemplateVersion(template);
   const creationYear = new Date().getFullYear();
-  const workflowSnapshot = buildCaseWorkflowSnapshot(template, version);
+  const workflowSnapshot = buildCaseWorkflowSnapshot(template, version, input.serviceTypeCode);
   // SOLIS-wide ALL-CAPS data standard (2026-09): mirrors
   // lib/wixCaseMapper.ts#buildWixCaseData's normalization exactly, so
   // dev/test behavior (DATA_ADAPTER=mock) never diverges from production.

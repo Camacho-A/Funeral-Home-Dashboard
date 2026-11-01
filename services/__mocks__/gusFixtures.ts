@@ -6,7 +6,9 @@ import type { CaseTask } from '../../types/task';
 import type { Membership } from '../../types/membership';
 import type { Identity, IdentitySecrets } from '../../types/identity';
 import { GUS_ORGANIZATION_ID } from './organizationIds';
-import { gusWorkflowTemplateFixture } from './workflowTemplates';
+import { gusServiceWorkflowTemplateFixtures } from './workflowTemplates';
+import { latestTemplateVersion } from '../../domain/workflow/snapshot';
+import { sandboxPaymentStatusFor } from './sandboxFixtures';
 import { buildCaseWorkflowSnapshot } from '../../domain/workflow/snapshot';
 import { formatCaseNumber } from '../../domain/cases/caseNumber';
 import { hashPassword } from '../../lib/identity/passwordHashing';
@@ -237,12 +239,17 @@ function formatMmDdYyyy(date: Date): string {
  * browser bundles (both evaluate this module in mock mode) produce
  * identical rows.
  */
+const GUS_DEMO_SERVICE_ROTATION = ['DIRECT_CREMATION', 'CREMATION_WITH_VIEWING', 'CREMATION_WITH_FINAL_GOODBYE'] as const;
+
 export function buildGusCaseFixtures(now: Date = new Date()): Case[] {
   const today = startOfUtcDay(now);
   const year = today.getUTCFullYear();
-  const version = gusWorkflowTemplateFixture.versions[gusWorkflowTemplateFixture.versions.length - 1];
-
   return GUS_CASE_SEEDS.map((seed, index) => {
+    // Shared platform (2026-11): each demo case is opened for one of Gus's
+    // three cremation services, on that service's workflow.
+    const serviceTypeCode = GUS_DEMO_SERVICE_ROTATION[index % GUS_DEMO_SERVICE_ROTATION.length];
+    const template = gusServiceWorkflowTemplateFixtures.find((t) => latestTemplateVersion(t).serviceTypeCodes?.includes(serviceTypeCode))!;
+    const version = latestTemplateVersion(template);
     const deathDate = new Date(today.getTime() - seed.daysAgo * 24 * 60 * 60 * 1000);
     return {
       id: `gus-case-${String(index + 1).padStart(3, '0')}`,
@@ -266,7 +273,7 @@ export function buildGusCaseFixtures(now: Date = new Date()): Case[] {
       certifierLicenseNumber: null,
       certifierFax: null,
       tagNumber: null,
-      paymentStatus: seed.paymentStatus,
+      paymentStatus: sandboxPaymentStatusFor(`gus-case-${String(index + 1).padStart(3, '0')}`, seed.paymentStatus),
       pickupStatus: 'awaiting_pickup',
       pickupReleasedTo: null,
       pickupReleasedAt: null,
@@ -290,10 +297,10 @@ export function buildGusCaseFixtures(now: Date = new Date()): Case[] {
       intakeOwnerId: seed.assignedStaffId,
       createdAt: deathDate.toISOString(),
       isDeleted: false,
-      workflowTemplateId: gusWorkflowTemplateFixture.id,
+      workflowTemplateId: template.id,
       workflowTemplateVersion: version.version,
       caseType: 'cremation',
-      workflowSnapshot: buildCaseWorkflowSnapshot(gusWorkflowTemplateFixture, version),
+      workflowSnapshot: buildCaseWorkflowSnapshot(template, version, serviceTypeCode),
     };
   });
 }

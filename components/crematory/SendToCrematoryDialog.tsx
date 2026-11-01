@@ -23,7 +23,7 @@ import {
   toCaseDate,
   type CrematorySourceKind,
 } from '@/domain/crematory/crematoryPackage';
-import { parseRecipientList } from '@/domain/crematory/crematorySettings';
+import { parseRecipientList, isCrematorySendingEnabled } from '@/domain/crematory/crematorySettings';
 import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { ReplacePermitButton } from './ReplacePermitButton';
@@ -86,6 +86,7 @@ export function SendToCrematoryDialog({
     router.push(`/cases/${encodeURIComponent(c.caseId)}?workflowStage=${stage}`);
   }
   const overview = useQuery({ queryKey, queryFn: () => fetchCrematoryOverview(organizationId, caseId), enabled: open });
+  const sendingEnabled = isCrematorySendingEnabled(organizationId);
   const [selected, setSelected] = useState<string[]>(caseId ? [caseId] : (preselectedCaseIds ?? []));
   const [step, setStep] = useState<Step>('prepare');
   const [busyCase, setBusyCase] = useState<string | null>(null);
@@ -462,6 +463,12 @@ export function SendToCrematoryDialog({
           </div>
         )}
       </div>
+      {!sendingEnabled && step !== 'done' && (
+        <p className={styles.sendingOffNotice} role="note">
+          Sending is not switched on for this funeral home yet. You can prepare and review packages; nothing will be emailed until the crematory recipients,
+          mailbox and documents are verified.
+        </p>
+      )}
       <div className="sx-modal-footer">
         {step === 'review' && (
           <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setStep('prepare')} disabled={sending}>
@@ -481,7 +488,7 @@ export function SendToCrematoryDialog({
             type="button"
             className="sx-btn sx-btn-primary"
             onClick={send}
-            disabled={sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || sendError?.unclear === true}
+            disabled={!sendingEnabled || sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || sendError?.unclear === true}
           >
             {sending ? 'Sending…' : `Send to Crematory (${chosen.length})`}
           </button>

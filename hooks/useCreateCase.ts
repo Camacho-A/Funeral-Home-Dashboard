@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { isWorkflowByServiceType, selectWorkflowTemplate, TEMPLATE_SELECTION_MESSAGES } from '@/domain/workflow/serviceWorkflows';
 import type { NewCaseInput } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { useOrganization } from './useOrganization';
@@ -31,11 +32,21 @@ export function useCreateCase() {
 
   return useMutation({
     mutationFn: (input: NewCaseInput) => {
-      const template = templates?.find((t) => t.isEnabled);
-      if (!template) {
-        throw new Error(`No enabled workflow template found for organization ${organization.organizationId}`);
-      }
-      return casesService.create(organization, input, session, template, organization.dataAdapterMode);
+      // Service-based workflows (2026-11): an organization that chooses
+      // workflows by service gets the named service's template; every
+      // other organization keeps "first enabled template" exactly.
+      const selection = selectWorkflowTemplate(templates ?? [], {
+        workflowByServiceType: isWorkflowByServiceType(organization.organizationId),
+        serviceTypeCode: input.serviceTypeCode,
+      });
+      if (!selection.ok) throw new Error(TEMPLATE_SELECTION_MESSAGES[selection.reason]);
+      return casesService.create(
+        organization,
+        { ...input, serviceTypeCode: selection.serviceTypeCode },
+        session,
+        selection.template,
+        organization.dataAdapterMode,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });

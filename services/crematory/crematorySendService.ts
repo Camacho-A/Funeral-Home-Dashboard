@@ -5,7 +5,7 @@ import { recordCrematoryEvent, recordCrematorySendAcknowledgment } from '../acti
 import { ACTIVITY_EVENT_TYPES } from '@/types/activityEvent';
 import { readStoredCaseDocument } from '../documentService';
 import { assignAttachmentFileNames, crematoryEmailSubject, defaultCrematoryMessage, readyDateFromPackageFileName } from '@/domain/crematory/crematoryPackage';
-import { CrematorySettingsError, normalizeRecipients } from '@/domain/crematory/crematorySettings';
+import { CrematorySettingsError, normalizeRecipients, CREMATORY_SENDING_NOT_ENABLED_MESSAGE } from '@/domain/crematory/crematorySettings';
 import { sendOutlookMessage, OutlookMailError } from '@/lib/microsoft/outlookMail';
 import { getIdentityById } from '../identityService';
 import { getCrematoryMailboxAccess, getCrematoryMailboxStatus, CrematoryMailboxError } from './crematoryMailboxService';
@@ -273,7 +273,10 @@ async function audit(ctx: ActivityContext, caseId: string, eventType: Parameters
 }
 
 export async function sendCrematoryPackages(ctx: ActivityContext, request: SendRequest, mode: DataAdapterMode): Promise<SendResult> {
-  assertSendToCrematoryEnabled(ctx.organizationId);
+  const config = assertSendToCrematoryEnabled(ctx.organizationId);
+  // Offered but not yet switched on (2026-11): checked before anything else,
+  // so no lock is taken and Outlook is never contacted.
+  if (config.sendingEnabled === false) throw new CrematoryError(CREMATORY_SENDING_NOT_ENABLED_MESSAGE, 409);
 
   const caseIds = validCaseIds(request.caseIds);
   if (!/^[A-Za-z0-9-]{8,64}$/.test(request.submissionId)) throw new CrematoryError('A valid submission id is required.', 400);

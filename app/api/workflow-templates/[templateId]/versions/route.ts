@@ -107,6 +107,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       stages,
       intake,
       createdAt: new Date().toISOString(),
+      ...carriedServiceFields(latest),
     };
     template.versions.push(newVersion);
     return NextResponse.json({ workflowTemplate: template });
@@ -132,6 +133,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       stages,
       intake,
       createdAt,
+      ...carriedServiceFields(latest),
     });
 
     // Setting the Wix item's own _id to `${templateId}-v${version}` (the
@@ -154,6 +156,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       stages,
       intake,
       createdAt,
+      ...carriedServiceFields(latest),
     };
     const workflowTemplate: WorkflowTemplate = {
       ...existing,
@@ -170,4 +173,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
     const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
     return NextResponse.json({ error: message }, { status: 503 });
   }
+}
+
+/** Service-based workflows (2026-11): an edit keeps the service(s) and the
+    composition the template version serves, so editing a Gus service's
+    workflow never takes that service out of New Case. Absent for Manors. */
+function carriedServiceFields(latest: WorkflowTemplateVersion): Pick<WorkflowTemplateVersion, 'serviceTypeCodes' | 'composition'> {
+  return {
+    ...(latest.serviceTypeCodes ? { serviceTypeCodes: [...latest.serviceTypeCodes] } : {}),
+    ...(latest.composition ? { composition: structuredClone(latest.composition) } : {}),
+  };
 }

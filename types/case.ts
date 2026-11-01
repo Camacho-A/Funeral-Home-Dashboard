@@ -406,6 +406,10 @@ export type NewCaseInput = Pick<Case, 'decedentName' | 'nextOfKinName' | 'nextOf
     >
   > & {
     fieldValues?: Record<number, string>;
+    /** Service-based workflows (2026-11): the service this case is for, when
+        its organization chooses workflows by service (see
+        domain/workflow/serviceWorkflows.ts). Ignored everywhere else. */
+    serviceTypeCode?: string | null;
   };
 
 /**

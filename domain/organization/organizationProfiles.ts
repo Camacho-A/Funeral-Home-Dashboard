@@ -236,7 +236,16 @@ export type OrganizationFeaturePreferences = {
   /** Case SSN (2026-10): captured from the Arrangement Form, encrypted and
       locked on the case (domain/cases/caseSsn.ts). */
   caseSsn: boolean;
-  sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number } | null;
+  /** Send to Crematory. `sendingEnabled: false` (2026-11) offers the whole
+      process — readiness, package preparation, review — but refuses to
+      email anyone until the organization's recipients, mailbox and
+      documents are verified. Absent = sending allowed (Manors). */
+  sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number; sendingEnabled?: boolean } | null;
+  /** Service-based workflows (2026-11): every new case names its service
+      (e.g. Direct Cremation, Cremation with Viewing) and gets that
+      service's workflow (domain/workflow/serviceWorkflows.ts). Platform
+      default: off — one workflow for every case, as Manors runs today. */
+  workflowByServiceType: boolean;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -325,6 +334,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   sendToCrematory: null,
   manateeDeathCertificateApplication: false,
   caseSsn: false,
+  workflowByServiceType: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -471,20 +481,42 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
 };
 
 /**
- * Gus Camacho Jr. Funeral Home. Platform defaults everywhere — no Manors
- * business decision is inherited. Letterhead/legal name are deliberately
- * `null` (TO BE CONFIGURED): the Statement and Receipt then render from
- * Gus's own Organization record and primary Location, never from invented
- * data. Fill these in (or the record fields) once Gus confirms them.
+ * Gus Camacho Jr. Funeral Home. Platform defaults unless listed — no Manors
+ * business decision is inherited. Legal name, address and contact details
+ * come from Gus's own Organization record (onboarding); no logo or brand
+ * colors have been supplied yet (upload them in Settings › Branding).
+ *
+ * Features (2026-11, shared platform):
+ * - its cremation services each get their own workflow, built on the shared
+ *   cremation foundation (domain/workflow/serviceWorkflows.ts);
+ * - Family Portal and signature requests off, and the same five accounting
+ *   and report modules hidden — Gus's own SOLIS settings;
+ * - Send to Crematory offered with SENDING OFF: the process (readiness,
+ *   package, review, the admin-only crematory checklist items) is there,
+ *   but nothing is emailed until Gus's crematory recipients, mailbox and
+ *   documents are verified and this is switched on.
+ * Manors-only behaviours (SLA tracking, DYMO label, Manatee DC application,
+ * SSN, Medical Examiner variant, retired/relabelled items, automatic
+ * checklist completion) stay off.
  */
 const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
   displayName: 'Gus Camacho Jr. Funeral Home',
   shortName: 'Gus Camacho Jr.',
-  legalName: null, // TO BE CONFIGURED — falls back to Organization.legalName.
+  // Record-driven by design: the Statement and Receipt print Gus's own
+  // Organization record and primary Location (filled in at onboarding from
+  // the details Gus confirmed), never values held in code.
+  legalName: null,
   caseNumberPrefix: 'M',
-  letterhead: null, // TO BE CONFIGURED — falls back to Organization/Location.
+  letterhead: null,
   receiptFooter: null,
   vaNotificationLabel: null,
+  features: {
+    familyPortalEnabled: false,
+    signatureRequestsEnabled: false,
+    hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
+    workflowByServiceType: true,
+    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
+  },
 };
 
 /**

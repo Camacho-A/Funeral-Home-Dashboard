@@ -39,6 +39,7 @@ export function CaseHeader({
   onStepClick,
   sla,
   actions,
+  serviceName,
 }: {
   caseNumber: string;
   decedentName: string;
@@ -66,6 +67,9 @@ export function CaseHeader({
   /** Case-level actions shown under the case's identity (Print Label,
       2026-10). Omitted → nothing renders. */
   actions?: React.ReactNode;
+  /** Service-based workflows (2026-11): the service the case was opened for
+      (e.g. "Cremation with Viewing"). Omitted → nothing renders. */
+  serviceName?: string | null;
 }) {
   const hasWeight = weight !== undefined && weight !== null && String(weight).trim() !== '';
   const weightText = hasWeight ? (/lb/i.test(String(weight)) ? String(weight) : `${weight} lb`) : '';
@@ -79,7 +83,7 @@ export function CaseHeader({
         <div className={styles.identity}>
           <div className={styles.name}>{toDisplayName(decedentName)}</div>
           <div className={styles.meta}>
-            DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
+            {serviceName ? `${serviceName} · ` : ''}DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
             {tagNumber ? ` · Tag #${tagNumber}` : ''}
           </div>
           {/* The facts line carries handling flags, so it appears when there

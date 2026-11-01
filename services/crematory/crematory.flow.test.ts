@@ -411,7 +411,13 @@ describe('choosing a document already on the case (2026-10)', () => {
     const c = caseFixtures[index('1044')];
     caseFixtures[index('1044')] = { ...c, crematory: { lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: 'x', packageVersion: 1, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null } } };
     await expect(pkg.assignSourceDocument(ctx(), '1044', other.id, 'state_permit', 'mock', false, shown(other.id).displayedChecksumSha256)).rejects.toMatchObject({ status: 409 });
-    await expect(pkg.assignSourceDocument({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1044', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 404 });
+    // Another organization: one without Send to Crematory is refused outright…
+    await expect(pkg.assignSourceDocument({ ...ctx(), organizationId: 'some-other-organization' }, '1044', other.id, 'state_permit', 'mock')).rejects.toMatchObject({ status: 404 });
+    // …and one WITH it (Gus, shared platform 2026-11) never reaches this
+    // organization's case, even with a valid displayed checksum.
+    await expect(
+      pkg.assignSourceDocument({ ...ctx(), organizationId: 'gus-camacho-jr' }, '1044', other.id, 'state_permit', 'mock', false, shown(other.id).displayedChecksumSha256),
+    ).rejects.toMatchObject({ status: 404 });
     expect(caseDocumentFixtures.find((d) => d.id === other.id)!.documentTypeKey).toBeNull();
     expect(eventsOf('1042', 'crematory.document_type_assigned')).toHaveLength(0);
   });

@@ -25,7 +25,8 @@ import {
   presentedStageLabels,
 } from '@/domain/organization/workflowStagePresentation';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
-import { latestTemplateVersion, buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
+import { buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
+import { isWorkflowByServiceType, selectWorkflowTemplate, TEMPLATE_SELECTION_MESSAGES } from '@/domain/workflow/serviceWorkflows';
 import { reserveNextCaseNumber, advanceCaseSequencePast } from '@/lib/wixCaseNumberSequence';
 import { orgLocalYear, parseCaseNumber, resolveCaseNumberPrefix, caseNumberMatchesPrefix } from '@/domain/cases/caseNumber';
 import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
@@ -631,14 +632,21 @@ export async function POST(request: Request) {
 
   try {
     const templates = await fetchWixWorkflowTemplates(organizationId);
-    const template = templates.find((t) => t.isEnabled);
-    if (!template) {
-      return NextResponse.json(
-        { case: null, error: `No enabled workflow template found for this organization.` },
-        { status: 422 },
-      );
+    // Service-based workflows (2026-11): decided here, on the server, from
+    // the organization's own profile — never from what the browser says
+    // about how the organization works. Manors: first enabled template, as before.
+    const selection = selectWorkflowTemplate(templates, {
+      workflowByServiceType: isWorkflowByServiceType(organizationId),
+      serviceTypeCode: typeof b.serviceTypeCode === 'string' ? b.serviceTypeCode : null,
+    });
+    if (!selection.ok) {
+      return NextResponse.json({ case: null, error: TEMPLATE_SELECTION_MESSAGES[selection.reason] }, { status: 422 });
     }
-    const version = latestTemplateVersion(template);
+    const { template } = selection;
+    if (!selection.version) {
+      return NextResponse.json({ case: null, error: TEMPLATE_SELECTION_MESSAGES.no_template }, { status: 422 });
+    }
+    const version = selection.version;
 
     const beaconCaseId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -736,7 +744,7 @@ export async function POST(request: Request) {
       caseType: version.caseTypes[0],
       workflowTemplateId: template.id,
       workflowTemplateVersion: version.version,
-      workflowSnapshot: buildCaseWorkflowSnapshot(template, version),
+      workflowSnapshot: buildCaseWorkflowSnapshot(template, version, selection.serviceTypeCode),
       intakeOwnerId,
       createdBy,
       assignedStaffId,

@@ -1,4 +1,6 @@
 import type { Case } from '../../types/case';
+import { CREMATION_STEPS } from '../workflow/cremationFoundation';
+import { findStep, hasStepIds } from '../workflow/workflowSteps';
 import { SLA_EVENT_KEYS } from '../../types/sla';
 import type {
   SlaDelayReason,
@@ -76,15 +78,20 @@ const OCCURRED_TIME_UNKNOWN: EventInfo = { occurred: true, time: null, source: '
     - `me_verified`: a Medical Examiner case's staff verification. */
 export type SlaDerivedEventKey = 'cremains_received' | 'released' | 'me_verified';
 
-const CHECKLIST_EVENTS: Partial<Record<SlaEventKey | SlaDerivedEventKey, ReadonlyArray<{ displayStage: number; index: number; expectedLabel: string }>>> = {
-  edrs_submitted: [{ displayStage: 2, index: 0, expectedLabel: 'EDRS submitted & sent to doctor' }],
-  hard_saved: [{ displayStage: 2, index: 2, expectedLabel: 'Hardsave for state approval if not an online doctor' }],
-  permit_sent: [{ displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' }],
+// Shared workflow foundation (2026-11): each entry also names the step's
+// stable id. A snapshot built on the foundation is matched by id, so the
+// event still finds its item if a service extension moves it; every older
+// snapshot (all existing Manors cases) is matched exactly as before, by
+// position guarded by its label.
+const CHECKLIST_EVENTS: Partial<Record<SlaEventKey | SlaDerivedEventKey, ReadonlyArray<{ displayStage: number; index: number; expectedLabel: string; stepId: string }>>> = {
+  edrs_submitted: [{ displayStage: 2, index: 0, expectedLabel: 'EDRS submitted & sent to doctor', stepId: CREMATION_STEPS.edrsSubmitted }],
+  hard_saved: [{ displayStage: 2, index: 2, expectedLabel: 'Hardsave for state approval if not an online doctor', stepId: CREMATION_STEPS.attestation }],
+  permit_sent: [{ displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory', stepId: CREMATION_STEPS.permitSent }],
   sent_to_crematory: [
-    { displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' },
-    { displayStage: 3, index: 1, expectedLabel: 'Authorization of release sent to crematory' },
+    { displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory', stepId: CREMATION_STEPS.permitSent },
+    { displayStage: 3, index: 1, expectedLabel: 'Authorization of release sent to crematory', stepId: CREMATION_STEPS.authorizationSent },
   ],
-  cremains_received: [{ displayStage: 5, index: 0, expectedLabel: 'Ashes picked up (Tue/Fri)' }],
+  cremains_received: [{ displayStage: 5, index: 0, expectedLabel: 'Ashes picked up (Tue/Fri)', stepId: CREMATION_STEPS.remainsReceived }],
 };
 
 /** Medical Examiner cases: staff verify the ME's work instead of EDRS,
@@ -95,6 +102,10 @@ const ME_VERIFIED_ITEM = { displayStage: 2, index: 5 };
 export function checklistItemsForEvent(case_: Pick<Case, 'workflowSnapshot'>, event: SlaEventKey | SlaDerivedEventKey): Array<{ displayStage: number; index: number }> {
   const mapping = CHECKLIST_EVENTS[event];
   if (!mapping || !case_.workflowSnapshot) return [];
+  if (hasStepIds(case_.workflowSnapshot.stages)) {
+    const byId = mapping.map((entry) => findStep(case_.workflowSnapshot!.stages, entry.stepId));
+    return byId.every((item) => item !== null) ? (byId as Array<{ displayStage: number; index: number }>) : [];
+  }
   const found = mapping.filter((entry) => {
     const stage = case_.workflowSnapshot!.stages.find((candidate) => candidate.displayStage === entry.displayStage);
     return stage?.checklist.items.some((item) => item.index === entry.index && item.label === entry.expectedLabel) === true;

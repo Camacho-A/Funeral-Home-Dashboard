@@ -125,9 +125,11 @@ describe('requireFamilyAccess — deployment organization allowlist (2026-10)', 
     }
   });
 
+  // An organization with the Family Portal on (Gus turned its portal off on
+  // the shared platform, 2026-11, so it no longer serves as the example).
   it('still grants a grant whose organization is served', async () => {
-    await seedActiveGrant('primary_next_of_kin', 'case-allowlist-ok', 'gus-camacho-jr');
-    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    await seedActiveGrant('primary_next_of_kin', 'case-allowlist-ok', 'org-served');
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'org-served';
     expect((await requireFamilyAccess('case-allowlist-ok', 'document.read')).authorized).toBe(true);
   });
 });

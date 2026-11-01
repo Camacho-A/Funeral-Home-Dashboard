@@ -65,21 +65,28 @@ describe('Gus demo cases', () => {
     expect(cases[0].dateOfDeath).toBe('03/05/2031');
   });
 
-  it("run on Gus' own workflow template, spread across every stage, with some needing attention", () => {
-    const template = workflowTemplateFixtures.find((t) => t.id === GUS_WORKFLOW_TEMPLATE_ID)!;
-    expect(template.organizationId).toBe(GUS_ORGANIZATION_ID);
+  it("run on Gus' own service workflows (2026-11), spread across every stage and all three cremation services, with some needing attention", () => {
+    const gusTemplates = workflowTemplateFixtures.filter((t) => t.organizationId === GUS_ORGANIZATION_ID);
+    expect(gusTemplates.map((t) => t.name).sort()).toEqual(['Cremation with Final Goodbye', 'Cremation with Viewing', 'Direct Cremation']);
+    expect(gusTemplates.some((t) => t.id === GUS_WORKFLOW_TEMPLATE_ID)).toBe(true);
     for (const c of gusCases()) {
-      expect(c.workflowTemplateId).toBe(GUS_WORKFLOW_TEMPLATE_ID);
-      expect(c.workflowSnapshot?.stages.length).toBe(template.versions[0].stages.length);
+      const template = gusTemplates.find((t) => t.id === c.workflowTemplateId)!;
+      expect(template).toBeDefined();
+      const version = template.versions.find((v) => v.version === c.workflowTemplateVersion)!;
+      expect(version.serviceTypeCodes).toContain(c.workflowSnapshot?.serviceTypeCode);
+      expect(c.workflowSnapshot?.stages).toEqual(version.stages);
     }
+    expect(new Set(gusCases().map((c) => c.workflowSnapshot?.serviceTypeCode))).toEqual(
+      new Set(['DIRECT_CREMATION', 'CREMATION_WITH_VIEWING', 'CREMATION_WITH_FINAL_GOODBYE']),
+    );
     const stages = new Set(gusCases().map((c) => c.rawStage));
     expect([...stages].sort()).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     expect(gusCases().some((c) => c.isStalled)).toBe(true);
   });
 
-  it("never references Manors' JotForm integration from Gus' template", () => {
-    const template = workflowTemplateFixtures.find((t) => t.id === GUS_WORKFLOW_TEMPLATE_ID)!;
-    const integrationIds = template.versions.flatMap((v) => v.stages.flatMap((s) => s.checklist.items.map((i) => i.externalFormIntegrationId ?? null)));
+  it("never references Manors' JotForm integration from any Gus template", () => {
+    const templates = workflowTemplateFixtures.filter((t) => t.organizationId === GUS_ORGANIZATION_ID);
+    const integrationIds = templates.flatMap((t) => t.versions.flatMap((v) => v.stages.flatMap((s) => s.checklist.items.map((i) => i.externalFormIntegrationId ?? null))));
     expect(integrationIds.every((id) => id === null)).toBe(true);
   });
 

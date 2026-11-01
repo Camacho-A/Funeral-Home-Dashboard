@@ -1,9 +1,22 @@
-import { getAuthAdapterMode } from '@/lib/env';
+import { getAuthAdapterMode, getLoginOrganizationId } from '@/lib/env';
+import { GUS_ADMIN_EMAIL, GUS_DEMO_PASSWORD, GUS_DIRECTOR_EMAIL, GUS_ORGANIZATION_ID, GUS_VIEWER_EMAIL } from '@/services/__mocks__/gusFixtures';
 import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/authFixtures';
 import { MANORS_ADMIN_DEMO_PASSWORD, SANDBOX_READ_ONLY_EMAIL } from '@/services/__mocks__/identityFixtures';
 import { isSandboxEnabled } from '@/lib/sandbox';
 
 /** SOLIS sandbox sign-ins (lib/sandbox.ts) — fictional demo accounts, one per role worth trying. */
+/** The sandbox's fictional sign-ins for the funeral home it serves (2026-11). */
+const GUS_SANDBOX_SIGN_IN_ACCOUNTS = [
+  `${GUS_ADMIN_EMAIL} (Avery, administrator)`,
+  `${GUS_DIRECTOR_EMAIL} (Jordan, funeral director)`,
+  `${GUS_VIEWER_EMAIL} (Riley, read-only)`,
+];
+function sandboxSignInAccounts(): { password: string; accounts: readonly string[] } {
+  return getLoginOrganizationId() === GUS_ORGANIZATION_ID
+    ? { password: GUS_DEMO_PASSWORD, accounts: GUS_SANDBOX_SIGN_IN_ACCOUNTS }
+    : { password: MANORS_ADMIN_DEMO_PASSWORD, accounts: SANDBOX_SIGN_IN_ACCOUNTS };
+}
+
 const SANDBOX_SIGN_IN_ACCOUNTS = [
   `${MOCK_LOGIN_EMAIL} (Dana, administrator)`,
   'chris@managedcremations.test (Chris, manager)',
@@ -104,6 +117,7 @@ export default async function LoginPage({
   const { next: rawNext, error, notice } = await searchParams;
   const next = sanitizeRedirectPath(rawNext);
   const authAdapter = getAuthAdapterMode();
+  const sandboxAccounts = sandboxSignInAccounts();
   const errorMessage = error ? (ERROR_MESSAGES[error] ?? ERROR_MESSAGES.unknown) : null;
   const organization = await loadLoginOrganization();
   const demoAccount = loginDemoAccount();
@@ -187,9 +201,9 @@ export default async function LoginPage({
         )}
         {authAdapter === 'identity' && isSandboxEnabled() && (
           <p className={styles.hint}>
-            Sandbox — fictional accounts only. Password for each: {MANORS_ADMIN_DEMO_PASSWORD}
+            Sandbox — fictional accounts only. Password for each: {sandboxAccounts.password}
             <br />
-            {SANDBOX_SIGN_IN_ACCOUNTS.join(' · ')}
+            {sandboxAccounts.accounts.join(' · ')}
           </p>
         )}
         {authAdapter === 'mock' && (

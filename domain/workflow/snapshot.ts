@@ -22,11 +22,16 @@ export function latestTemplateVersion(template: WorkflowTemplate): WorkflowTempl
 export function buildCaseWorkflowSnapshot(
   template: WorkflowTemplate,
   version: WorkflowTemplateVersion,
+  serviceTypeCode?: string | null,
 ): CaseWorkflowSnapshot {
+  // The service and composition are recorded only when present, so a case
+  // created without them stores exactly the same snapshot as before.
   return structuredClone({
     workflowTemplateId: template.id,
     workflowTemplateVersion: version.version,
     stages: version.stages,
     intake: version.intake,
+    ...(serviceTypeCode ? { serviceTypeCode } : {}),
+    ...(version.composition ? { composition: version.composition } : {}),
   });
 }

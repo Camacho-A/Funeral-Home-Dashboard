@@ -38,15 +38,23 @@ describe('organization profile registry', () => {
     expect(Object.keys(ORGANIZATION_PROFILES).sort()).toEqual([GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID].sort());
   });
 
-  it('Gus Camacho Jr.: name, prefix M, platform-default features, no letterhead (record-driven), no Manors data', () => {
+  it('Gus Camacho Jr. (shared platform, 2026-11): record-driven identity, only the listed features differ from the platform, no Manors data', () => {
     const gus = getRegisteredOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID);
     expect(gus.displayName).toBe('Gus Camacho Jr. Funeral Home');
     expect(gus.caseNumberPrefix).toBe('M');
-    expect(gus.features).toEqual(PLATFORM_DEFAULT_FEATURES);
-    expect(gus.pinnedFeatures).toEqual([]);
-    expect(gus.letterhead).toBeNull();
-    expect(gus.receiptFooter).toBeNull();
+    // Record-driven: Statement/Receipt identity comes from Gus's own Organization record.
     expect(gus.legalName).toBeNull();
+    expect(gus.letterhead).toBeNull();
+    expect(gus.features).toEqual({
+      ...PLATFORM_DEFAULT_FEATURES,
+      familyPortalEnabled: false,
+      signatureRequestsEnabled: false,
+      hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
+      workflowByServiceType: true,
+      sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
+    });
+    expect(gus.pinnedFeatures).toEqual([]);
+    expect(gus.receiptFooter).toBeNull();
     expect(JSON.stringify(gus)).not.toMatch(/manors|commercial blvd|954-884-5770|broward|managed-cremations/i);
   });
 
@@ -110,18 +118,19 @@ describe('getOrganizationProfile precedence: record > profile > platform default
 describe('capabilities per organization (managed-cremations unchanged, Gus/unknown = defaults)', () => {
   const ids = [GUS_CAMACHO_ORGANIZATION_ID, UNKNOWN];
 
-  it('Family Portal', () => {
+  it('Family Portal (Gus off since the shared platform, 2026-11 — its own SOLIS setting)', () => {
     expect(isFamilyPortalEnabled({ id: MANORS_ORGANIZATION_ID })).toBe(false);
-    for (const id of ids) {
-      expect(isFamilyPortalEnabled({ id })).toBe(true);
-      expect(isFamilyPortalEnabled({ id, familyPortalEnabled: false })).toBe(false);
-    }
+    expect(isFamilyPortalEnabled({ id: GUS_CAMACHO_ORGANIZATION_ID })).toBe(false);
+    expect(isFamilyPortalEnabled({ id: UNKNOWN })).toBe(true);
+    expect(isFamilyPortalEnabled({ id: UNKNOWN, familyPortalEnabled: false })).toBe(false);
+    // The legacy compatibility map still names Manors alone; Gus comes from its profile.
     expect(FAMILY_PORTAL_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false });
   });
 
-  it('Signature Requests', () => {
+  it('Signature Requests (Gus off, 2026-11)', () => {
     expect(isSignatureRequestsEnabled({ id: MANORS_ORGANIZATION_ID })).toBe(false);
-    for (const id of ids) expect(isSignatureRequestsEnabled({ id })).toBe(true);
+    expect(isSignatureRequestsEnabled({ id: GUS_CAMACHO_ORGANIZATION_ID })).toBe(false);
+    expect(isSignatureRequestsEnabled({ id: UNKNOWN })).toBe(true);
     expect(SIGNATURE_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false });
   });
 
@@ -151,10 +160,11 @@ describe('capabilities per organization (managed-cremations unchanged, Gus/unkno
     for (const id of ids) expect(shouldShowCashAdvanceSection(id)).toBe(true);
   });
 
-  it('Hidden modules', () => {
+  it('Hidden modules (Gus hides the same five, 2026-11)', () => {
     for (const key of HIDEABLE_MODULE_KEYS) {
       expect(isModuleHidden({ id: MANORS_ORGANIZATION_ID, hiddenModules: null }, key)).toBe(true);
-      for (const id of ids) expect(isModuleHidden({ id, hiddenModules: null }, key)).toBe(false);
+      expect(isModuleHidden({ id: GUS_CAMACHO_ORGANIZATION_ID, hiddenModules: null }, key)).toBe(true);
+      expect(isModuleHidden({ id: UNKNOWN, hiddenModules: null }, key)).toBe(false);
     }
     expect(Object.keys(HIDDEN_MODULE_OVERRIDES)).toEqual([MANORS_ORGANIZATION_ID]);
   });

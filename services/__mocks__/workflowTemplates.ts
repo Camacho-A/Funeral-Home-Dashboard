@@ -14,6 +14,7 @@ import {
 import { getSlaTargetDays } from '../../domain/cases/sla';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
 import { mockCollection } from './mockStore';
+import { buildServiceWorkflowVersion, CREMATION_SERVICE_WORKFLOWS, type ServiceWorkflowDefinition } from '../../domain/workflow/serviceWorkflows';
 import { JOTFORM_INTEGRATION_ID } from './externalFormIntegrations';
 
 /**
@@ -531,8 +532,54 @@ export function buildGusWorkflowTemplateFixture(): WorkflowTemplate {
 
 export const gusWorkflowTemplateFixture: WorkflowTemplate = buildGusWorkflowTemplateFixture();
 
+/**
+ * Gus's cremation services on the shared platform (2026-11). One template
+ * per service, each composed from the shared cremation foundation
+ * (domain/workflow/serviceWorkflows.ts) — the cremation checklist is not
+ * repeated here. Direct Cremation keeps its existing template id and v1
+ * (so existing demo cases keep their snapshot) and gains v2 composed from
+ * the foundation. Gus's arrangement form is not connected yet, so its
+ * requirement is fulfilled by staff confirmation (no integration id).
+ */
+const GUS_FOUNDATION_OPTIONS = { arrangementFormIntegrationId: null } as const;
+const GUS_SERVICE_TEMPLATE_CREATED_AT = '2026-11-01T00:00:00.000Z';
+
+export const GUS_VIEWING_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-cremation-with-viewing';
+export const GUS_FINAL_GOODBYE_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-cremation-with-final-goodbye';
+
+function gusServiceTemplate(id: string, definition: ServiceWorkflowDefinition, earlierVersions: WorkflowTemplate['versions'] = []): WorkflowTemplate {
+  const nextVersion = (earlierVersions.at(-1)?.version ?? 0) + 1;
+  return {
+    id,
+    organizationId: GUS_ORGANIZATION_ID,
+    name: definition.name,
+    isEnabled: true,
+    caseTypes: [definition.caseType],
+    versions: [
+      ...earlierVersions,
+      buildServiceWorkflowVersion({
+        definition,
+        foundation: GUS_FOUNDATION_OPTIONS,
+        intake: standardCremationIntakeV5,
+        version: nextVersion,
+        createdAt: GUS_SERVICE_TEMPLATE_CREATED_AT,
+      }),
+    ],
+  };
+}
+
+export function buildGusServiceWorkflowTemplateFixtures(): WorkflowTemplate[] {
+  return [
+    gusServiceTemplate(GUS_WORKFLOW_TEMPLATE_ID, CREMATION_SERVICE_WORKFLOWS.DIRECT_CREMATION, buildGusWorkflowTemplateFixture().versions),
+    gusServiceTemplate(GUS_VIEWING_WORKFLOW_TEMPLATE_ID, CREMATION_SERVICE_WORKFLOWS.CREMATION_WITH_VIEWING),
+    gusServiceTemplate(GUS_FINAL_GOODBYE_WORKFLOW_TEMPLATE_ID, CREMATION_SERVICE_WORKFLOWS.CREMATION_WITH_FINAL_GOODBYE),
+  ];
+}
+
+export const gusServiceWorkflowTemplateFixtures: WorkflowTemplate[] = buildGusServiceWorkflowTemplateFixtures();
+
 export const workflowTemplateFixtures: WorkflowTemplate[] = mockCollection('workflowTemplateFixtures', (): WorkflowTemplate[] => [
   standardCremationWorkflowTemplateFixture,
   secondOrgWorkflowTemplateFixture,
-  gusWorkflowTemplateFixture,
+  ...buildGusServiceWorkflowTemplateFixtures(),
 ]);

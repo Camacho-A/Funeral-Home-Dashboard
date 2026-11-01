@@ -1,5 +1,6 @@
 'use client';
 
+import { serviceTypeName } from '@/domain/workflow/serviceWorkflows';
 import { use, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { officialDocumentsFor } from '@/domain/documents/officialDocumentTriggers';
@@ -385,6 +386,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         stages={stepperStages}
         onStepClick={(index) => viewPresentedStage(index)}
         sla={viewModel.sla}
+        serviceName={serviceTypeName(case_.workflowSnapshot?.serviceTypeCode)}
         actions={
           getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel || (sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation') ? (
             <>

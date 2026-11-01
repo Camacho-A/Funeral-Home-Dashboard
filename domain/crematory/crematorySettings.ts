@@ -55,6 +55,15 @@ export function resolveCrematorySettings(stored: unknown): CrematorySettings {
   }
 }
 
+export const CREMATORY_SENDING_NOT_ENABLED_MESSAGE =
+  'Nothing was sent. Sending to the crematory is not switched on for this funeral home yet — its crematory recipients, mailbox and documents must be verified first.';
+
+/** Whether this organization may actually email the crematory (2026-11). */
+export function isCrematorySendingEnabled(organizationId: string | null | undefined): boolean {
+  const config = sendToCrematoryConfig(organizationId);
+  return config !== null && config.sendingEnabled !== false;
+}
+
 export function sendToCrematoryConfig(organizationId: string | null | undefined) {
   return organizationId ? getRegisteredOrganizationProfile(organizationId).features.sendToCrematory : null;
 }

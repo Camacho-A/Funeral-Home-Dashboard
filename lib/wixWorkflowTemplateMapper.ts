@@ -5,8 +5,7 @@ import type {
   IntakeFieldTemplate,
   IntakeSectionTemplate,
   WorkflowTemplate,
-  WorkflowTemplateVersion,
-} from '../types/workflowTemplate';
+  WorkflowTemplateVersion, WorkflowComposition } from '../types/workflowTemplate';
 import { queryWixDataItems } from './wixDataApi';
 import { findForbiddenPaymentFields } from './paymentFieldGuard';
 
@@ -60,6 +59,9 @@ export type WixWorkflowTemplateVersionItem = {
   stages?: unknown;
   intake?: unknown;
   createdAt?: unknown;
+  /** Service-based workflows (2026-11). Optional; absent on every Manors row. */
+  serviceTypeCodes?: unknown;
+  composition?: unknown;
 };
 
 /** A validated template record, still missing its `versions` array — see buildWorkflowTemplate. */
@@ -127,13 +129,26 @@ export function mapWixWorkflowTemplateVersionItem(
     return null;
   }
 
+  const composition = parseComposition(item.composition);
   return {
     version: item.version,
     caseTypes: item.caseTypes,
     stages: item.stages as StageTemplate[],
     intake: item.intake as IntakeTemplate,
     createdAt: item.createdAt,
+    ...(isStringArray(item.serviceTypeCodes) && item.serviceTypeCodes.length > 0 ? { serviceTypeCodes: item.serviceTypeCodes } : {}),
+    ...(composition ? { composition } : {}),
   };
+}
+
+/** A recorded base-plus-extensions composition, or null when absent or malformed. */
+function parseComposition(value: unknown): WorkflowComposition | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as { base?: { key?: unknown; version?: unknown }; extensions?: unknown };
+  const isRef = (r: unknown): r is { key: string; version: number } =>
+    typeof r === 'object' && r !== null && typeof (r as { key?: unknown }).key === 'string' && typeof (r as { version?: unknown }).version === 'number';
+  if (!isRef(v.base) || !Array.isArray(v.extensions) || !v.extensions.every(isRef)) return null;
+  return { base: { key: v.base.key, version: v.base.version }, extensions: v.extensions.map((e) => ({ key: e.key, version: e.version })) };
 }
 
 /**
@@ -515,6 +530,8 @@ export function buildWixWorkflowTemplateVersionData(params: {
   stages: StageTemplate[];
   intake: IntakeTemplate;
   createdAt: string;
+  serviceTypeCodes?: string[];
+  composition?: WorkflowComposition;
 }): WixWorkflowTemplateVersionItem {
   return {
     beaconTemplateId: params.beaconTemplateId,
@@ -523,6 +540,9 @@ export function buildWixWorkflowTemplateVersionData(params: {
     stages: params.stages,
     intake: params.intake,
     createdAt: params.createdAt,
+    // Written only when present, so a Manors version row is unchanged.
+    ...(params.serviceTypeCodes ? { serviceTypeCodes: params.serviceTypeCodes } : {}),
+    ...(params.composition ? { composition: params.composition } : {}),
   };
 }
 
