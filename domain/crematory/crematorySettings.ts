@@ -1,4 +1,4 @@
-import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
+import { getRegisteredOrganizationProfile, type CrematoryAuthorizationDocumentSource } from '@/domain/organization/organizationProfiles';
 
 /**
  * Send to Crematory (2026-10). Each organization's own crematory
@@ -67,3 +67,10 @@ export function isCrematorySendingEnabled(organizationId: string | null | undefi
 export function sendToCrematoryConfig(organizationId: string | null | undefined) {
   return organizationId ? getRegisteredOrganizationProfile(organizationId).features.sendToCrematory : null;
 }
+
+/** Where this organization's cremation authorization document comes from
+    (2026-11); 'arrangement_form_page' unless its profile says otherwise. */
+export function crematoryAuthorizationDocumentSource(organizationId: string | null | undefined): CrematoryAuthorizationDocumentSource {
+  return sendToCrematoryConfig(organizationId)?.authorizationDocumentSource ?? 'arrangement_form_page';
+}
+

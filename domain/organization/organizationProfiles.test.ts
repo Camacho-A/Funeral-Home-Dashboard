@@ -53,7 +53,7 @@ describe('organization profile registry', () => {
       workflowByServiceType: true,
       enforceHiddenModulesServerSide: true,
       certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
-      sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
+      sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured' },
     });
     expect(gus.pinnedFeatures).toEqual(['familyPortalEnabled', 'signatureRequestsEnabled', 'hiddenModules']);
     expect(gus.receiptFooter).toBeNull();

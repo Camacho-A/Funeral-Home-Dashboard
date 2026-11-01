@@ -9,7 +9,7 @@ const outlook = vi.hoisted(() => ({ sendOutlookMessage: vi.fn() }));
 vi.mock('@/lib/microsoft/outlookMail', async (importOriginal) => ({ ...(await importOriginal<object>()), sendOutlookMessage: outlook.sendOutlookMessage }));
 
 const { sendCrematoryPackages } = await import('./crematorySendService');
-const { isCrematorySendingEnabled, sendToCrematoryConfig } = await import('@/domain/crematory/crematorySettings');
+const { crematoryAuthorizationDocumentSource, isCrematorySendingEnabled, sendToCrematoryConfig } = await import('@/domain/crematory/crematorySettings');
 const { caseFixtures } = await import('../__mocks__/fixtures');
 const { GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
 
@@ -21,6 +21,11 @@ describe('crematory sending switched off for an organization', () => {
     expect(isCrematorySendingEnabled(GUS_CAMACHO_ORGANIZATION_ID)).toBe(false);
     expect(isCrematorySendingEnabled(MANORS_ORGANIZATION_ID)).toBe(true);
     expect(isCrematorySendingEnabled('some-other-organization')).toBe(false);
+  });
+
+  it('the authorization document source is the organization\'s own: Manors its Arrangement Form page, Gus not set up yet', () => {
+    expect(crematoryAuthorizationDocumentSource(MANORS_ORGANIZATION_ID)).toBe('arrangement_form_page');
+    expect(crematoryAuthorizationDocumentSource(GUS_CAMACHO_ORGANIZATION_ID)).toBe('not_configured');
   });
 
   it('a send is refused with 409 before anything happens — no case changes, Outlook never contacted', async () => {

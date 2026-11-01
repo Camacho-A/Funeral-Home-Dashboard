@@ -49,7 +49,7 @@ import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
 import { evaluateCrematoryReadiness, type CrematoryReadiness } from '@/domain/crematory/crematoryReadiness';
-import { resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
+import { crematoryAuthorizationDocumentSource, resolveCrematorySettings, sendToCrematoryConfig, type CrematorySettings } from '@/domain/crematory/crematorySettings';
 import { mergePdfs, UnreadablePdfError } from '@/lib/pdf/mergePdfs';
 import { sendOutcomeNeedingReview, type SendOutcomeReview } from '@/domain/crematory/sendState';
 import { toDisplayCasingIfAllCaps } from '@/utils/string';
@@ -322,6 +322,7 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
     permitVerification: record.permitVerification ? { documentId: record.permitVerification.documentId, checksumSha256: record.permitVerification.checksumSha256 } : null,
     arrangementForm: facts.arrangementForm ? { createdAt: facts.arrangementForm.createdAt } : null,
     crematoryForm: facts.crematoryForm ? { createdAt: facts.crematoryForm.createdAt } : null,
+    authorizationDocumentSource: crematoryAuthorizationDocumentSource(facts.case_.organizationId),
     packageNameConfirmed: confirmedPackageName(facts.case_) !== null,
     readyDate: {
       suggested: facts.suggestedReadyDate,

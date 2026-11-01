@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateCrematoryReadiness, type CrematoryReadinessInput } from './crematoryReadiness';
+import { AUTHORIZATION_SOURCE_NOT_CONFIGURED_MESSAGE, evaluateCrematoryReadiness, type CrematoryReadinessInput } from './crematoryReadiness';
 
 const ready: CrematoryReadinessInput = {
   caseType: 'cremation',
@@ -78,5 +78,14 @@ describe('evaluateCrematoryReadiness', () => {
     expect(evaluateCrematoryReadiness({ ...ready, package: { fileName: 'x.pdf', current: false } })).toMatchObject({ readyToBuild: true, readyToSend: false });
     expect(failing({ ...ready, package: null })).toEqual([['package', 'Build the Crematory Package.']]);
     expect(evaluateCrematoryReadiness({ ...ready, canSend: false })).toMatchObject({ readyToBuild: true, readyToSend: false });
+  });
+
+  it('an organization with no authorization document source set up cannot build — never a guessed document (2026-11)', () => {
+    const result = evaluateCrematoryReadiness({ ...ready, authorizationDocumentSource: 'not_configured' });
+    expect(result.readyToBuild).toBe(false);
+    expect(result.readyToSend).toBe(false);
+    expect(failing({ ...ready, authorizationDocumentSource: 'not_configured' })).toEqual([['crematory_form', AUTHORIZATION_SOURCE_NOT_CONFIGURED_MESSAGE]]);
+    // Absent and 'arrangement_form_page' are the Manors behaviour, unchanged.
+    expect(evaluateCrematoryReadiness({ ...ready, authorizationDocumentSource: 'arrangement_form_page' })).toEqual(evaluateCrematoryReadiness(ready));
   });
 });

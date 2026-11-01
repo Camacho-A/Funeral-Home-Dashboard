@@ -240,7 +240,20 @@ export type OrganizationFeaturePreferences = {
       process — readiness, package preparation, review — but refuses to
       email anyone until the organization's recipients, mailbox and
       documents are verified. Absent = sending allowed (Manors). */
-  sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number; sendingEnabled?: boolean } | null;
+  sendToCrematory: {
+    emailOrganizationName: string;
+    authorizationWorkflowStage: number;
+    sendingEnabled?: boolean;
+    /** Where the cremation authorization document in the package comes
+        from (2026-11). The requirement — a valid authorization document —
+        is the same for everyone; its source is the organization's own:
+        'arrangement_form_page' = the Crematory Form page extracted from the
+        organization's Arrangement Forms PDF (Manors' JotForm, page 3);
+        'not_configured' = no source set up yet, so no package can be built.
+        Absent = 'arrangement_form_page' (Manors). Further sources (an
+        uploaded document, a native form) are added here when built. */
+    authorizationDocumentSource?: CrematoryAuthorizationDocumentSource;
+  } | null;
   /** Service-based workflows (2026-11): every new case names its service
       (e.g. Direct Cremation, Cremation with Viewing) and gets that
       service's workflow (domain/workflow/serviceWorkflows.ts). Platform
@@ -258,6 +271,8 @@ export type OrganizationFeaturePreferences = {
       historical nav-only behaviour, kept for Manors. */
   enforceHiddenModulesServerSide: boolean;
 };
+
+export type CrematoryAuthorizationDocumentSource = 'arrangement_form_page' | 'not_configured';
 
 /** Features whose value can also come from an Organization record field —
     and which a profile may therefore pin. */
@@ -533,7 +548,9 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     enforceHiddenModulesServerSide: true,
     // Same certifier requirement as Manors, fax included (decided 2026-11).
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
-    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
+    // Prepared and reviewed in SOLIS, never emailed until Gus's recipients,
+    // Outlook mailbox and authorization document source are set up.
+    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured' },
   },
   // Decided by the funeral home: no Family Portal or e-signatures, and these
   // modules hidden — an Organization record value can't switch them back on.

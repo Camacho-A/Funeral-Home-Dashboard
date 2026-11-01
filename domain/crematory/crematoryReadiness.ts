@@ -1,5 +1,9 @@
 import { SEND_NEEDS_REVIEW_MESSAGE } from './sendState';
 import { toCaseDate } from './crematoryPackage';
+import type { CrematoryAuthorizationDocumentSource } from '../organization/organizationProfiles';
+
+export const AUTHORIZATION_SOURCE_NOT_CONFIGURED_MESSAGE =
+  "This funeral home's cremation authorization document is not set up in SOLIS yet. An administrator must choose where it comes from before a Crematory Package can be built.";
 
 /**
  * Send to Crematory (2026-10). What a case still needs before its Crematory
@@ -53,6 +57,9 @@ export type CrematoryReadinessInput = {
   permitVerification: { documentId: string; checksumSha256: string } | null;
   arrangementForm: { createdAt: string } | null;
   crematoryForm: { createdAt: string } | null;
+  /** Where the authorization document comes from (2026-11). Absent =
+      the Arrangement Form page (Manors). */
+  authorizationDocumentSource?: CrematoryAuthorizationDocumentSource;
   /** Whether staff confirmed the last/first name(s) for the file name. */
   packageNameConfirmed: boolean;
   readyDate: {
@@ -96,8 +103,12 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
   add('permit_verified', 'Permit confirmed for this decedent', verifiedCurrent,
     input.permit === null ? 'Upload the permit first.' : input.permitVerification ? 'A different permit was uploaded since it was confirmed. Confirm the new one.' : 'Confirm the uploaded permit is the approved permit for this decedent.');
 
+  // The requirement is a valid authorization document; where it comes from
+  // is the organization's own (2026-11). Without a configured source nothing
+  // can be built — never a guessed document.
   const formCurrent = input.crematoryForm !== null && (input.arrangementForm === null || input.crematoryForm.createdAt >= input.arrangementForm.createdAt);
-  add('crematory_form', 'Arrangement Form page 3 extracted', formCurrent,
+  if (input.authorizationDocumentSource === 'not_configured') add('crematory_form', 'Cremation authorization document', false, AUTHORIZATION_SOURCE_NOT_CONFIGURED_MESSAGE);
+  else add('crematory_form', 'Arrangement Form page 3 extracted', formCurrent,
     input.crematoryForm === null
       ? input.arrangementForm
         ? 'Extract the Crematory Form (page 3) from the Arrangement Form.'
