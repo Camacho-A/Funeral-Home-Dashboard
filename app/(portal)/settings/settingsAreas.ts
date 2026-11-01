@@ -80,6 +80,17 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       visible: permissions.includes('caseNumber.manage') || permissions.includes('user.manageRoles'),
     },
     {
+      // 2026-10 (Gus Camacho Jr. service catalog): in-app catalog price
+      // editing. Same `serviceCatalog.edit` gate the route itself enforces
+      // (and the FTC General Price List already uses) — not identity-mode
+      // gated, matching Case Numbering's RBAC-only precedent.
+      key: 'services-pricing',
+      label: 'Services & Pricing',
+      description: 'Set the price of each service your organization offers.',
+      href: '/settings/services-pricing',
+      visible: permissions.includes('serviceCatalog.edit'),
+    },
+    {
       key: 'workflow-templates',
       label: 'Workflow Templates',
       description: 'Manage this organization’s case workflow stages and intake fields.',

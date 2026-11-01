@@ -33,7 +33,11 @@ export function mapWixServiceCatalogItem(item: WixServiceCatalogItem | undefined
     typeof item.displayName !== 'string' ||
     typeof item.category !== 'string' ||
     typeof item.pricingType !== 'string' ||
-    typeof item.defaultPrice !== 'number' ||
+    // 2026-10: null is a legitimate "price not set" (see
+    // types/serviceCatalog.ts) — a row must never be dropped from the
+    // catalog just because its price hasn't been entered yet. Absent or
+    // any other type is still malformed.
+    (typeof item.defaultPrice !== 'number' && item.defaultPrice !== null) ||
     typeof item.isActive !== 'boolean' ||
     typeof item.sortOrder !== 'number' ||
     typeof item.createdAt !== 'string' ||
@@ -49,7 +53,7 @@ export function mapWixServiceCatalogItem(item: WixServiceCatalogItem | undefined
     displayName: item.displayName,
     category: item.category,
     pricingType: item.pricingType,
-    defaultPrice: item.defaultPrice,
+    defaultPrice: typeof item.defaultPrice === 'number' ? item.defaultPrice : null,
     // Additive/backward-compatible: absent or non-string → null (derive from category).
     ftcClass: typeof item.ftcClass === 'string' ? item.ftcClass : null,
     isActive: item.isActive,

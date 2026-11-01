@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import type { DataAdapterMode } from '../../lib/env';
 import { listPaymentRecordsForCase, initiateCheckout, getPaymentRecordById } from '../paymentsService';
-import { getActiveCaseOrder } from '../pricingService';
+import { getCaseOrderState } from '../pricingService';
 import { buildPortalPaymentView, type PortalPaymentView } from '../../domain/portal/portalPaymentView';
 
 /**
@@ -51,7 +51,12 @@ export async function initiateFamilyCheckout(
   params: { organizationId: string; caseId: string; idempotencyKey: string; returnUrl: string; cancelUrl: string; paymentId?: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ paymentId: string; checkoutUrl: string | null }> {
-  const order = await getActiveCaseOrder(params.organizationId, params.caseId, dataAdapterMode);
+  // Phase 5A.2: no checkout while an unfinished order change holds the
+  // case's order — the balance to collect is not settled yet.
+  const { active: order, interruption } = await getCaseOrderState(params.organizationId, params.caseId, dataAdapterMode);
+  if (interruption) {
+    throw new PortalPaymentServiceError('Online payment is temporarily unavailable for this case. Please try again later or contact the funeral home.');
+  }
   if (!order) {
     throw new PortalPaymentServiceError('This case has no case order yet — services must be selected first.');
   }

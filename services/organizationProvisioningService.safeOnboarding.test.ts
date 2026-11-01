@@ -568,3 +568,31 @@ describe('org-specific roles', () => {
     }
   });
 });
+
+describe('service catalog seeded for gus-camacho-jr (2026-10)', () => {
+  it("is exactly GUS_SERVICE_CATALOG with every price unset — no Manors row, code or price copied", async () => {
+    const { GUS_SERVICE_CATALOG } = await import('../domain/onboarding/gusServiceCatalog');
+    await runFullGusOnboarding();
+
+    const rows = [...(fake.store.get('serviceCatalog')?.values() ?? [])];
+    const gusRows = rows.filter((r) => r.organizationId === GUS).sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder));
+    expect(gusRows.map((r) => ({ serviceCode: r.serviceCode, displayName: r.displayName, category: r.category, pricingType: r.pricingType, defaultPrice: r.defaultPrice, sortOrder: r.sortOrder }))).toEqual(
+      GUS_SERVICE_CATALOG.map((e) => ({ ...e })),
+    );
+    expect(gusRows.every((r) => r.defaultPrice === null)).toBe(true);
+    // Manors' own row is still the only Manors row, unchanged (byte-identity
+    // is asserted by the first test above).
+    expect(rows.filter((r) => r.organizationId === MANORS)).toHaveLength(1);
+
+    // Idempotent: a retry neither duplicates nor reprices anything.
+    const retry = await seedServiceCatalog(GUS, idFactory, 'wix');
+    expect(retry.isNew).toBe(false);
+    expect([...fake.store.get('serviceCatalog')!.values()].filter((r) => r.organizationId === GUS)).toHaveLength(6);
+  });
+
+  it('a different new organization gets the generic starter with no prices at all', async () => {
+    const { catalog } = await seedServiceCatalog('another-new-home', idFactory, 'wix');
+    expect(catalog.length).toBeGreaterThan(0);
+    expect(catalog.every((c) => c.defaultPrice === null && c.organizationId === 'another-new-home')).toBe(true);
+  });
+});

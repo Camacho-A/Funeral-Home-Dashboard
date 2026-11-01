@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canEditCaseOrder } from '@/services/authorizationPolicyService';
-import { getActiveCaseOrder, recalculateOrder, listMerchandiseSelectionsForCase } from '@/services/pricingService';
+import { getCaseOrderState, recalculateOrder, listMerchandiseSelectionsForCase, UnpricedCatalogItemError, CaseOrderConflictError, CaseOrderCommitError, CaseOrderInterruptedError } from '@/services/pricingService';
+import { caseOrderOperationErrorResponse } from '@/lib/caseOrderOperationResponses';
 import { syncReservation, releaseReservation, listReservationsForCase, InventoryServiceError } from '@/services/inventoryService';
 import { getProductById } from '@/services/merchandiseService';
 import { getDataAdapterMode } from '@/lib/env';
@@ -19,6 +20,12 @@ import type { MerchandiseSelection } from '@/types/caseOrder';
  * writes a new order version with the merchandise line items and posts the
  * split revenue delta). Reservation and order recalculation are both
  * idempotent, so a partial failure is safely retryable.
+ *
+ * Non-destructive order versioning (2026-10): a POST must name the order
+ * version it was made against (`expectedOrderId`; missing → 428). If the
+ * active order is no longer that version, 409 with the current order —
+ * checked BEFORE any reservation changes, and again by the order write
+ * itself (its compare-and-swap), so a stale list never replaces a newer one.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params;
@@ -57,8 +64,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'Not authorized to update this case order.' }, { status: 403 });
   }
 
-  const order = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  if (body.expectedOrderId === undefined || body.expectedOrderId === null) {
+    return NextResponse.json({ error: 'expectedOrderId is required: the id of the case order version being edited.', reason: 'order_version_required' }, { status: 428 });
+  }
+  if (typeof body.expectedOrderId !== 'string' || body.expectedOrderId.trim() === '') {
+    return NextResponse.json({ error: 'expectedOrderId must be a case order id.' }, { status: 400 });
+  }
+  const expectedOrderId = body.expectedOrderId;
+
+  // Phase 5A.2: checked BEFORE any reservation is touched — an unfinished
+  // order change holds the case's order (409, nothing written).
+  const { active: order, interruption } = await getCaseOrderState(organizationId, caseId, dataAdapterMode);
+  if (interruption) return caseOrderOperationErrorResponse(new CaseOrderInterruptedError(interruption))!;
   if (!order) return NextResponse.json({ error: 'This case has no active order; create the order before adding merchandise.' }, { status: 404 });
+  if (order.id !== expectedOrderId) {
+    const conflict = new CaseOrderConflictError(order);
+    return NextResponse.json({ error: conflict.message, reason: 'order_conflict', order }, { status: 409 });
+  }
 
   // Normalize + aggregate the desired list.
   const desired = new Map<string, MerchandiseSelection>();
@@ -98,10 +120,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   // Recalculate the order with the full merchandise list — one new version,
   // service lines carried forward, revenue split posted.
-  const result = await recalculateOrder(
-    { organizationId, caseId, selections: { merchandise: Array.from(desired.values()) }, performedBy: userId, idFactory, now: new Date().toISOString() },
-    dataAdapterMode,
-  );
+  let result: Awaited<ReturnType<typeof recalculateOrder>>;
+  try {
+    result = await recalculateOrder(
+      { organizationId, caseId, selections: { merchandise: Array.from(desired.values()) }, performedBy: userId, idFactory, now: new Date().toISOString(), expectedOrderId },
+      dataAdapterMode,
+    );
+  } catch (error) {
+    if (error instanceof CaseOrderConflictError) return NextResponse.json({ error: error.message, reason: 'order_conflict', order: error.current }, { status: 409 });
+    if (error instanceof CaseOrderCommitError) {
+      return NextResponse.json({ error: error.message, ...(error.conflict ? { reason: 'order_conflict' } : {}), needsRepair: !error.compensated }, { status: error.conflict ? 409 : 503 });
+    }
+    // 2026-10: a carried-forward service whose price has since been cleared
+    // (Settings › Services & Pricing) — the order can't be re-saved until
+    // it's priced again. Never persisted at an invented amount.
+    if (error instanceof UnpricedCatalogItemError) return NextResponse.json({ error: error.message }, { status: 422 });
+    const operationResponse = caseOrderOperationErrorResponse(error);
+    if (operationResponse) return operationResponse;
+    throw error;
+  }
   if (!result) return NextResponse.json({ error: 'This case has no active order.' }, { status: 404 });
   return NextResponse.json({ order: result.order, lineItems: result.lineItems });
 }

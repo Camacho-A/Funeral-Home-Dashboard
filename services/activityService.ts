@@ -14,6 +14,7 @@ import {
 import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { buildCsv, EXPORT_ROW_CAP } from '../domain/reporting/csvExport';
 import { getIdentityById } from './identityService';
+import { formatCentsAsCurrency } from '../utils/format';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The single service
@@ -460,6 +461,34 @@ export function recordStageChanged(ctx: ActivityContext, caseId: string, fromSta
       description: `Case stage changed from "${fromStage}" to "${toStage}"`,
       metadata: null,
       severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Interrupted order edits (2026-10, Phase 5A.2). One entry of the case
+    order operation journal (services/orderOperationJournal.ts) — same
+    shape and placement as recordServiceChangeJournalEntry above: category
+    `system`, no caseId, resource = the operation (its planned order id).
+    Throws when it can't be written; the caller decides whether that
+    blocks (`prepared`) or is best-effort. */
+export function recordCaseOrderOperationJournalEntry(
+  ctx: ActivityContext,
+  entry: { operationId: string; caseId: string; status: string; description: string; details: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'system',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_ORDER_OPERATION_JOURNAL,
+      resourceType: 'case_order_operation',
+      resourceId: entry.operationId,
+      previousValue: null,
+      newValue: JSON.stringify({ status: entry.status }),
+      description: entry.description,
+      metadata: JSON.stringify({ ...entry.details, operationId: entry.operationId, caseId: entry.caseId, status: entry.status }),
+      severity: entry.status === 'failed' ? 'critical' : entry.status === 'compensated' || entry.status === 'abandoned' ? 'warning' : 'info',
     }),
     dataAdapterMode,
   );
@@ -955,6 +984,35 @@ export function recordCaseOrderChanged(
       previousValue: JSON.stringify(diffEntries.map((d) => ({ action: d.action, value: d.previousValue }))),
       newValue: JSON.stringify(diffEntries.map((d) => ({ action: d.action, value: d.newValue }))),
       description: diffEntries.map((d) => d.description).join('; ') || 'Case order updated',
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** 2026-10 (Gus Camacho Jr. service catalog). One catalog row's price set,
+    changed or cleared (null = "price not set") by an administrator — see
+    ACTIVITY_EVENT_TYPES.SERVICE_CATALOG_PRICE_UPDATED. */
+export function recordServiceCatalogPriceUpdated(
+  ctx: ActivityContext,
+  serviceCatalogItemId: string,
+  displayName: string,
+  previousPriceCents: number | null,
+  newPriceCents: number | null,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  const describe = (cents: number | null) => (cents === null ? 'not set' : formatCentsAsCurrency(cents, 'usd'));
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType: ACTIVITY_EVENT_TYPES.SERVICE_CATALOG_PRICE_UPDATED,
+      resourceType: 'serviceCatalogItem',
+      resourceId: serviceCatalogItemId,
+      previousValue: JSON.stringify({ defaultPrice: previousPriceCents }),
+      newValue: JSON.stringify({ defaultPrice: newPriceCents }),
+      description: `Price for "${displayName}" changed from ${describe(previousPriceCents)} to ${describe(newPriceCents)}`,
       metadata: null,
       severity: 'info',
     }),

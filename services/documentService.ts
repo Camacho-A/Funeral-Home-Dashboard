@@ -28,7 +28,7 @@ import { mockOrganizationFixtures } from './__mocks__/authFixtures';
 import { organizationBrandingFixtures, organizationLocationFixtures } from './__mocks__/onboardingFixtures';
 import { caseDocumentFixtures } from './__mocks__/documentFixtures';
 import { get as getTemplate, getActiveVersion } from './documentTemplatesService';
-import { getActiveCaseOrder } from './pricingService';
+import { getCaseOrderState } from './pricingService';
 import { listAppointmentsForCase } from './scheduling/appointmentReads';
 import { resolveMergeContext, mergeTemplate, type MergeSourceData } from '../domain/documents/mergeEngine';
 import { puppeteerDocumentRenderer } from '../lib/puppeteerDocumentRenderer';
@@ -218,7 +218,9 @@ async function getServiceAppointmentForMerge(organizationId: string, caseId: str
 export async function resolveMergeSourceData(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<MergeSourceData> {
   const [caseRecord, caseOrder, organization, branding, location, serviceAppointment] = await Promise.all([
     getCaseForMerge(organizationId, caseId, dataAdapterMode),
-    getActiveCaseOrder(organizationId, caseId, dataAdapterMode),
+    // Phase 5A.2: the EFFECTIVE order — while an order change is unfinished,
+    // the version the case is still billed for, never "no order".
+    getCaseOrderState(organizationId, caseId, dataAdapterMode).then((state) => state.effective),
     getOrganizationForMerge(organizationId, dataAdapterMode),
     getBrandingForMerge(organizationId, dataAdapterMode),
     getPrimaryLocationForMerge(organizationId, dataAdapterMode),

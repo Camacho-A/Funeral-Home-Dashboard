@@ -221,6 +221,7 @@ describe('PATCH /api/cases/[caseId]/order', () => {
   it('returns 404 when the case has no order to edit', async () => {
     const response = await patchRequest(KNOWN_CASE().id, {
       organizationId: DEFAULT_ORGANIZATION_ID,
+      expectedOrderId: 'order-that-does-not-exist',
       selections: { weightTier: '201_250', extraDeathCertificateQuantity: 0, mailCremated: false },
       performedBy: 'Jordan Ellis',
     });
@@ -238,6 +239,7 @@ describe('PATCH /api/cases/[caseId]/order', () => {
 
     const edited = await patchRequest(caseId, {
       organizationId: DEFAULT_ORGANIZATION_ID,
+      expectedOrderId: createdBody.order.id,
       selections: { weightTier: '251_300', extraDeathCertificateQuantity: 1, mailCremated: false },
       performedBy: 'Sam Rivera',
     });
@@ -257,6 +259,60 @@ describe('PATCH /api/cases/[caseId]/order', () => {
     const originalStillExists = caseOrderFixtures.find((o) => o.id === createdBody.order.id);
     expect(originalStillExists?.status).toBe('superseded');
     expect(originalStillExists?.total).toBe(89_000); // never rewritten
+  });
+});
+
+describe('PATCH /api/cases/[caseId]/order — non-destructive versioning (2026-10)', () => {
+  const BASE = { weightTier: 'under_200', extraDeathCertificateQuantity: 0, mailCremated: false };
+
+  async function createOrder(caseId: string) {
+    const created = await postRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections: BASE });
+    return ((await created.json()) as { order: { id: string } }).order.id;
+  }
+
+  it('refuses an edit that names no order version (428) and writes nothing', async () => {
+    const caseId = KNOWN_CASE().id;
+    await createOrder(caseId);
+    const before = { orders: caseOrderFixtures.length, lines: caseOrderLineItemFixtures.length, audit: caseOrderAuditFixtures.length };
+    const response = await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections: { ...BASE, mailCremated: true } });
+    expect(response.status).toBe(428);
+    expect(((await response.json()) as { reason: string }).reason).toBe('order_version_required');
+    expect({ orders: caseOrderFixtures.length, lines: caseOrderLineItemFixtures.length, audit: caseOrderAuditFixtures.length }).toEqual(before);
+  });
+
+  it('rejects a malformed expectedOrderId (400)', async () => {
+    const caseId = KNOWN_CASE().id;
+    await createOrder(caseId);
+    const response = await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, expectedOrderId: 42, selections: BASE });
+    expect(response.status).toBe(400);
+  });
+
+  it('a stale edit (someone else saved a newer version first) is 409 with the current order and its lines; nothing written', async () => {
+    const caseId = KNOWN_CASE().id;
+    const v1 = await createOrder(caseId);
+    const first = await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, expectedOrderId: v1, selections: { ...BASE, mailCremated: true } });
+    const v2 = ((await first.json()) as { order: { id: string } }).order.id;
+    const before = { orders: caseOrderFixtures.length, lines: caseOrderLineItemFixtures.length, audit: caseOrderAuditFixtures.length };
+
+    const stale = await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, expectedOrderId: v1, selections: { ...BASE, extraDeathCertificateQuantity: 2 } });
+    expect(stale.status).toBe(409);
+    const body = (await stale.json()) as { reason: string; order: { id: string; version: number }; lineItems: unknown[] };
+    expect(body.reason).toBe('order_conflict');
+    expect(body.order).toMatchObject({ id: v2, version: 2 });
+    expect(body.lineItems.length).toBeGreaterThan(0);
+    expect({ orders: caseOrderFixtures.length, lines: caseOrderLineItemFixtures.length, audit: caseOrderAuditFixtures.length }).toEqual(before);
+    expect(caseOrderFixtures.filter((o) => o.caseId === caseId && o.status === 'active').map((o) => o.id)).toEqual([v2]);
+  });
+
+  it('records the replacing version on the superseded row without touching its totals', async () => {
+    const caseId = KNOWN_CASE().id;
+    const v1 = await createOrder(caseId);
+    const before = { ...caseOrderFixtures.find((o) => o.id === v1)! };
+    const edited = await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, expectedOrderId: v1, selections: { ...BASE, mailCremated: true } });
+    const v2 = ((await edited.json()) as { order: { id: string } }).order.id;
+    const after = caseOrderFixtures.find((o) => o.id === v1)!;
+    expect(after).toMatchObject({ status: 'superseded', supersededByOrderId: v2, total: before.total, balanceDue: before.balanceDue, version: 1, createdAt: before.createdAt });
+    expect(typeof after.supersededAt).toBe('string');
   });
 });
 
@@ -414,13 +470,14 @@ describe('case order — automatic Statement (2026-10)', () => {
   it('schedules the documents when an order is created and when it changes, not for an unchanged save', async () => {
     const caseId = KNOWN_CASE().id;
     runAfterResponse.mockClear();
-    await postRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections });
+    const created = (await (await postRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections })).json()) as { order: { id: string } };
     expect(runAfterResponse).toHaveBeenCalledTimes(1);
 
-    await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections: { ...selections, extraDeathCertificateQuantity: 2 } });
+    // Each edit is pinned to the version it was made against (order versioning).
+    const changed = (await (await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, expectedOrderId: created.order.id, selections: { ...selections, extraDeathCertificateQuantity: 2 } })).json()) as { order: { id: string } };
     expect(runAfterResponse).toHaveBeenCalledTimes(2);
 
-    await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, selections: { ...selections, extraDeathCertificateQuantity: 2 } });
+    await patchRequest(caseId, { organizationId: DEFAULT_ORGANIZATION_ID, expectedOrderId: changed.order.id, selections: { ...selections, extraDeathCertificateQuantity: 2 } });
     expect(runAfterResponse).toHaveBeenCalledTimes(2);
   });
 });

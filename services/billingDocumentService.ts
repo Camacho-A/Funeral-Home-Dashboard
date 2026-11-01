@@ -412,9 +412,14 @@ export async function generateGeneralPriceList(
   const activeServices = catalog.filter((s) => s.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
   const offerings = deriveOfferings(catalog, products);
 
-  const serviceLines: GplServiceLine[] = activeServices.map((s) => {
+  // 2026-10: a service whose price isn't set yet (`defaultPrice: null`) is
+  // omitted from the General Price List entirely — a GPL line must state a
+  // real price, never "$0.00" or a placeholder. Regenerate the GPL once
+  // the price is set in Settings › Services & Pricing.
+  const serviceLines: GplServiceLine[] = activeServices.flatMap((s) => {
+    if (s.defaultPrice === null) return [];
     const ftcClass = classifyServiceItem(s);
-    return { category: s.category, displayName: s.displayName, priceCents: s.defaultPrice, ftcClass, includesBasicServicesFee: ftcClass === FTC_CLASS.BASIC_SERVICES_FEE };
+    return [{ category: s.category, displayName: s.displayName, priceCents: s.defaultPrice, ftcClass, includesBasicServicesFee: ftcClass === FTC_CLASS.BASIC_SERVICES_FEE }];
   });
   const merchandiseLines: GplMerchandiseLine[] = products
     .filter((p) => p.isActive)

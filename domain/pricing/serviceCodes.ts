@@ -32,3 +32,22 @@ export const SERVICE_CODES = {
       distinct from MAIL_CREMATED_REMAINS, a different operational charge. */
   SHIPPING: 'SHIPPING',
 } as const;
+
+/**
+ * 2026-10 (Gus Camacho Jr. service catalog). The `ServiceCatalogItem.category`
+ * value for an organization's primary, mutually-exclusive service choice —
+ * "which service is this case for" (Direct Cremation, Cremation with
+ * Viewing, Graveside Burial Service Only, ...). Exactly one per case order,
+ * chosen via ServiceSelections.serviceTypeCode. Unlike Manors' 'base' row,
+ * a service_type row is never always-included — it's charged only when
+ * chosen. An organization with no service_type rows sees no change at all.
+ */
+export const SERVICE_TYPE_CATEGORY = 'service_type';
+
+/** Line-item metadata marking a persisted service line as the order's
+    chosen service type, so selectionsFromLineItems can reconstruct
+    `serviceTypeCode` from history alone (browser and server alike) without
+    re-reading the catalog — whose row may since have been renamed,
+    repriced or deactivated. Every other service line keeps `metadata: null`. */
+export const SERVICE_TYPE_LINE_METADATA_KEY = 'serviceRole';
+export const SERVICE_TYPE_LINE_METADATA_VALUE = 'service_type';

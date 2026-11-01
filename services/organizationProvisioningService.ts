@@ -75,7 +75,7 @@ import {
   type LaunchChecklistItem,
 } from '../domain/onboarding/launchReadiness';
 import { STARTER_WORKFLOW, MINIMAL_WORKFLOW, type StarterWorkflowContent } from '../domain/onboarding/starterWorkflow';
-import { STARTER_SERVICE_CATALOG } from '../domain/onboarding/starterServiceCatalog';
+import { resolveStarterServiceCatalog, type StarterServiceCatalogEntry } from '../domain/onboarding/starterServiceCatalog';
 import { mockOrganizationFixtures, mockMembershipFixtures } from './__mocks__/authFixtures';
 import { membershipFixtures } from './__mocks__/identityFixtures';
 import { workflowTemplateFixtures } from './__mocks__/workflowTemplates';
@@ -1096,17 +1096,24 @@ export async function getOrganizationServiceCatalog(
  * their own catalog records. Do not reference Manor's catalog rows from
  * another organization"). Idempotent: an organization is seeded at most
  * once — a retry finds existing rows and returns them unchanged.
+ *
+ * 2026-10: seeds `template` when given, otherwise the organization's own
+ * supplied catalog (Gus Camacho Jr. → GUS_SERVICE_CATALOG) or the generic,
+ * price-less starter — see domain/onboarding/starterServiceCatalog.ts's
+ * resolveStarterServiceCatalog. No path copies another organization's
+ * prices any more; unsupplied prices are seeded as null ("price not set").
  */
 export async function seedServiceCatalog(
   organizationId: string,
   idFactory: () => string,
   dataAdapterMode: DataAdapterMode,
+  template: readonly StarterServiceCatalogEntry[] = resolveStarterServiceCatalog(organizationId),
 ): Promise<{ catalog: ServiceCatalogItem[]; isNew: boolean }> {
   const existing = await getOrganizationServiceCatalog(organizationId, dataAdapterMode);
   if (existing.length > 0) return { catalog: existing, isNew: false };
 
   const now = nowIso();
-  const catalog: ServiceCatalogItem[] = STARTER_SERVICE_CATALOG.map((entry) => ({
+  const catalog: ServiceCatalogItem[] = template.map((entry) => ({
     id: idFactory(),
     organizationId,
     serviceCode: entry.serviceCode,

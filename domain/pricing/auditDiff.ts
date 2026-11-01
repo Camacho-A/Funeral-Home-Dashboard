@@ -22,6 +22,14 @@ export type SelectionDiffEntry = {
   description: string;
 };
 
+/** A missing row contributes 0 to an audit delta (that service simply
+    isn't sold). 2026-10: so does an unpriced row (`defaultPrice: null`) —
+    safe only because the server refuses to persist an order that selects an
+    unpriced item, so a delta can only ever involve an unpriced row on the
+    *previous* side (its price cleared after the order was saved); the
+    service-type diff below labels that case explicitly instead of showing
+    a misleading dollar figure. This value is an audit annotation only —
+    never an order total. */
 function catalogPrice(catalogByCode: Map<string, ServiceCatalogItem>, serviceCode: string | null): number {
   if (!serviceCode) return 0;
   return catalogByCode.get(serviceCode)?.defaultPrice ?? 0;
@@ -42,6 +50,26 @@ export function diffSelections(
 ): SelectionDiffEntry[] {
   const catalogByCode = new Map(catalog.map((item) => [item.serviceCode, item]));
   const entries: SelectionDiffEntry[] = [];
+
+  // 2026-10 (Gus Camacho Jr. service catalog). Absent and null both mean
+  // "no service type", so a Manors order (never has one) never diffs here.
+  const previousServiceType = previous.serviceTypeCode ?? null;
+  const nextServiceType = next.serviceTypeCode ?? null;
+  if (previousServiceType !== nextServiceType) {
+    const previousItem = previousServiceType ? catalogByCode.get(previousServiceType) : undefined;
+    const nextItem = nextServiceType ? catalogByCode.get(nextServiceType) : undefined;
+    const previousLabel = previousServiceType ? (previousItem?.displayName ?? previousServiceType) : 'None';
+    const newLabel = nextServiceType ? (nextItem?.displayName ?? nextServiceType) : 'None';
+    const unpriced = (previousItem && previousItem.defaultPrice === null) || (nextItem && nextItem.defaultPrice === null);
+    const delta = unpriced ? 0 : catalogPrice(catalogByCode, nextServiceType) - catalogPrice(catalogByCode, previousServiceType);
+    entries.push({
+      action: 'service_type_changed',
+      previousValue: previousLabel,
+      newValue: newLabel,
+      amountDeltaCents: delta,
+      description: `Changed: Service, ${previousLabel} → ${newLabel}, ${unpriced ? 'price not set' : formatSignedDollarsAndCents(delta)}`,
+    });
+  }
 
   if (previous.weightTier !== next.weightTier) {
     const delta =

@@ -197,3 +197,43 @@ describe('EditServicesModal — custom item round trip', () => {
     expect((captured[0].body.selections as Record<string, unknown>).customItems).toEqual([]);
   });
 });
+
+describe('EditServicesModal — non-destructive order versioning (2026-10)', () => {
+  it('pins an edit to the order version the form was loaded from (expectedOrderId)', async () => {
+    const captured = renderModal({ order: ORDER });
+    await addCustomItem('Extra memorial folder', '45.50');
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(captured.length).toBe(1));
+    expect(captured[0].body.expectedOrderId).toBe('order-1');
+  });
+
+  it('a first-order setup sends no expectedOrderId (POST creates version 1)', async () => {
+    const captured = renderModal({ order: null });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(captured.length).toBe(1));
+    expect(captured[0].method).toBe('POST');
+    expect(captured[0].body.expectedOrderId).toBeUndefined();
+  });
+
+  it('explains a refused stale edit (409 order_conflict) instead of claiming it saved', async () => {
+    renderModal({ order: ORDER });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/service-catalog')) return Promise.resolve({ ok: true, json: async () => ({ catalog: serviceCatalogFixtures }) });
+        if (url.includes('/order') && init?.method === 'PATCH') {
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            json: async () => ({ error: "This case's services were changed by someone else.", reason: 'order_conflict', order: { ...ORDER, id: 'order-2', version: 2 }, lineItems: [] }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+      }),
+    );
+    await addCustomItem('Extra memorial folder', '45.50');
+    fireEvent.click(saveButton());
+    expect(await screen.findByText(/changed by someone else while you were editing\. Nothing was saved\./)).toBeTruthy();
+  });
+});

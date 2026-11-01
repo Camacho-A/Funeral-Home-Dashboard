@@ -38,3 +38,9 @@ export function formatTimestamp(isoString: string): string {
 export function formatCentsAsCurrency(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(cents / 100);
 }
+
+/** 2026-10. A service catalog price (`ServiceCatalogItem.defaultPrice`) for
+    display — "Price not set" for an unpriced row (null), never "$0.00". */
+export function formatCatalogPrice(defaultPrice: number | null, currency: string = 'usd'): string {
+  return defaultPrice === null ? 'Price not set' : formatCentsAsCurrency(defaultPrice, currency);
+}

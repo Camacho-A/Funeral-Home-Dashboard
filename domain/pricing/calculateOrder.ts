@@ -2,7 +2,12 @@ import type { ServiceCatalogItem } from '../../types/serviceCatalog';
 import type { ServiceSelections, WeightTier, MerchandiseSelection, CaseOrderLineKind, CustomLineItemSelection, CaseOrderLineItem } from '../../types/caseOrder';
 import type { MerchandiseProduct } from '../../types/merchandiseProduct';
 import { getMerchandiseCategoryDefinition } from '../merchandise/merchandiseCategoryRegistry';
-import { SERVICE_CODES } from './serviceCodes';
+import {
+  SERVICE_CODES,
+  SERVICE_TYPE_CATEGORY,
+  SERVICE_TYPE_LINE_METADATA_KEY,
+  SERVICE_TYPE_LINE_METADATA_VALUE,
+} from './serviceCodes';
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine) — Solis's
@@ -53,14 +58,56 @@ export function weightTierServiceCode(tier: WeightTier): string | null {
   return null;
 }
 
+/** Sanity ceiling on a submitted serviceTypeCode — a real serviceCode is a
+    short machine identifier; anything longer is malformed input. */
+const MAX_SERVICE_TYPE_CODE_LENGTH = 100;
+
+/**
+ * 2026-10. True when a catalog row actually has a price — a non-negative
+ * integer number of cents. `null` ("price not set") and any malformed value
+ * are both "unpriced": the engine never substitutes $0 for either.
+ */
+export function isCatalogItemPriced(item: Pick<ServiceCatalogItem, 'defaultPrice'>): item is { defaultPrice: number } {
+  return typeof item.defaultPrice === 'number' && Number.isInteger(item.defaultPrice) && item.defaultPrice >= 0;
+}
+
+/** The active service_type rows of a catalog, in display order. Empty for an
+    organization with no service-type concept (Manors). */
+export function serviceTypeItems(catalog: ServiceCatalogItem[]): ServiceCatalogItem[] {
+  return catalog
+    .filter((item) => item.isActive && item.category === SERVICE_TYPE_CATEGORY)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+/**
+ * Validates a (normalized, but still untrusted) serviceTypeCode against the
+ * organization's own catalog: returns it only when it names an ACTIVE
+ * `service_type` row, otherwise null ("none chosen"). Never throws — same
+ * "an invalid selection is silently ignored, never charged" convention as
+ * every other selection in this module. The server always passes its own
+ * freshly-fetched, org-scoped catalog, so another organization's code (or
+ * a Manors base/addon code smuggled in as a service type) resolves to null.
+ */
+export function resolveServiceTypeCode(catalog: ServiceCatalogItem[], code: string | null | undefined): string | null {
+  if (typeof code !== 'string' || code.length === 0) return null;
+  return serviceTypeItems(catalog).some((item) => item.serviceCode === code) ? code : null;
+}
+
 /**
  * Clamps/normalizes raw (possibly attacker-controlled) selection input into
  * a safe shape — called server-side before calculateOrderTotals ever sees
  * it. An invalid weightTier falls back to 'under_200' (the zero-cost
  * option) rather than throwing, since a malformed/missing selection should
  * never silently charge more than the family actually chose.
+ *
+ * `serviceTypeCode` (2026-10) is only shape-checked here (a trimmed,
+ * non-blank, bounded string) — whether it names a real service type is a
+ * catalog question, answered by `resolveServiceTypeCode`. The key is only
+ * present on the result when a code was submitted, so an organization that
+ * never sends one (Manors) gets exactly the same object as before.
  */
 export function normalizeSelections(raw: {
+  serviceTypeCode?: unknown;
   weightTier?: unknown;
   extraDeathCertificateQuantity?: unknown;
   mailCremated?: unknown;
@@ -82,7 +129,12 @@ export function normalizeSelections(raw: {
   );
   const urnTransfer = raw.urnTransfer === true;
   const shipping = raw.shipping === true;
-  return { weightTier, extraDeathCertificateQuantity, mailCremated, keepsakeTransferQuantity, urnTransfer, shipping };
+  const normalized: ServiceSelections = { weightTier, extraDeathCertificateQuantity, mailCremated, keepsakeTransferQuantity, urnTransfer, shipping };
+  const rawServiceTypeCode = typeof raw.serviceTypeCode === 'string' ? raw.serviceTypeCode.trim() : '';
+  if (rawServiceTypeCode.length > 0 && rawServiceTypeCode.length <= MAX_SERVICE_TYPE_CODE_LENGTH) {
+    normalized.serviceTypeCode = rawServiceTypeCode;
+  }
+  return normalized;
 }
 
 export type CalculatedLineItem = {
@@ -103,12 +155,30 @@ export type CalculatedLineItem = {
   metadata: Record<string, string> | null;
 };
 
+/**
+ * 2026-10. A selected catalog item whose price is not set
+ * (`defaultPrice: null`). Reported instead of being itemized at a made-up
+ * amount: it contributes no line item and nothing to any total. The browser
+ * shows it as "Price not set"; the server refuses to persist an order while
+ * this list is non-empty (services/pricingService.ts's
+ * UnpricedCatalogItemError).
+ */
+export type UnpricedSelectedItem = {
+  serviceCode: string;
+  displayName: string;
+  quantity: number;
+  sortOrder: number;
+};
+
 export type CalculatedOrderTotals = {
   lineItems: CalculatedLineItem[];
   subtotal: number;
   discountTotal: number;
   taxTotal: number;
   total: number;
+  /** Selected items with no price set — always empty for a fully-priced
+      catalog (every Manors order). See UnpricedSelectedItem. */
+  unpricedItems: UnpricedSelectedItem[];
 };
 
 /**
@@ -127,10 +197,17 @@ export function calculateOrderTotals(
 ): CalculatedOrderTotals {
   const catalogByCode = new Map(catalog.filter((item) => item.isActive).map((item) => [item.serviceCode, item]));
   const lineItems: CalculatedLineItem[] = [];
+  const unpricedItems: UnpricedSelectedItem[] = [];
 
-  function addFlatLine(serviceCode: string, quantity: number) {
+  function addFlatLine(serviceCode: string, quantity: number, metadata: Record<string, string> | null = null) {
     const item = catalogByCode.get(serviceCode);
     if (!item) return;
+    // 2026-10: an unpriced row is reported, never itemized at $0 (or any
+    // other invented amount) — see UnpricedSelectedItem.
+    if (!isCatalogItemPriced(item)) {
+      unpricedItems.push({ serviceCode: item.serviceCode, displayName: item.displayName, quantity, sortOrder: item.sortOrder });
+      return;
+    }
     lineItems.push({
       lineKind: 'service',
       serviceCode: item.serviceCode,
@@ -139,11 +216,25 @@ export function calculateOrderTotals(
       unitPrice: item.defaultPrice,
       lineTotal: item.defaultPrice * quantity,
       sortOrder: item.sortOrder,
-      metadata: null,
+      metadata,
     });
   }
 
-  addFlatLine(SERVICE_CODES.DIRECT_CREMATION, 1);
+  // Manors' always-included base service. Guarded on category (2026-10):
+  // Gus Camacho Jr.'s catalog also has a DIRECT_CREMATION row, but as a
+  // service_type — charged only when chosen, never automatically.
+  const baseItem = catalogByCode.get(SERVICE_CODES.DIRECT_CREMATION);
+  if (baseItem && baseItem.category !== SERVICE_TYPE_CATEGORY) {
+    addFlatLine(SERVICE_CODES.DIRECT_CREMATION, 1);
+  }
+
+  // 2026-10: the one chosen service type, if any — re-validated against
+  // this catalog here too, so even an un-sanitized selection can never
+  // charge a non-service_type row through this path.
+  const serviceTypeCode = resolveServiceTypeCode(catalog, selections.serviceTypeCode);
+  if (serviceTypeCode) {
+    addFlatLine(serviceTypeCode, 1, { [SERVICE_TYPE_LINE_METADATA_KEY]: SERVICE_TYPE_LINE_METADATA_VALUE });
+  }
 
   const weightCode = weightTierServiceCode(selections.weightTier);
   if (weightCode) addFlatLine(weightCode, 1);
@@ -168,13 +259,14 @@ export function calculateOrderTotals(
   }
 
   lineItems.sort((a, b) => a.sortOrder - b.sortOrder);
+  unpricedItems.sort((a, b) => a.sortOrder - b.sortOrder);
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
   const discountTotal = 0;
   const taxTotal = 0;
   const total = subtotal - discountTotal + taxTotal;
 
-  return { lineItems, subtotal, discountTotal, taxTotal, total };
+  return { lineItems, subtotal, discountTotal, taxTotal, total, unpricedItems };
 }
 
 /**
@@ -234,7 +326,7 @@ export function selectionsFromLineItems(lineItems: CalculatedLineItem[]): Servic
     : byCode.has(SERVICE_CODES.WEIGHT_SURCHARGE_201_250)
       ? '201_250'
       : 'under_200';
-  return {
+  const selections: ServiceSelections = {
     weightTier,
     extraDeathCertificateQuantity: byCode.get(SERVICE_CODES.EXTRA_DEATH_CERTIFICATE)?.quantity ?? 0,
     mailCremated: byCode.has(SERVICE_CODES.MAIL_CREMATED_REMAINS),
@@ -242,6 +334,14 @@ export function selectionsFromLineItems(lineItems: CalculatedLineItem[]): Servic
     urnTransfer: byCode.has(SERVICE_CODES.URN_TRANSFER),
     shipping: byCode.has(SERVICE_CODES.SHIPPING),
   };
+  // 2026-10: the service type is identified by its line's own metadata
+  // marker (see SERVICE_TYPE_LINE_METADATA_KEY), never by serviceCode —
+  // Manors' always-on DIRECT_CREMATION base line shares a code with Gus's
+  // Direct Cremation service type but carries no marker. Present only when
+  // the order has one, mirroring normalizeSelections.
+  const serviceTypeLine = serviceLines.find((item) => item.metadata?.[SERVICE_TYPE_LINE_METADATA_KEY] === SERVICE_TYPE_LINE_METADATA_VALUE);
+  if (serviceTypeLine) selections.serviceTypeCode = serviceTypeLine.serviceCode;
+  return selections;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,7 +453,7 @@ export function calculateOrderTotalsWithMerchandise(
   const discountTotal = 0;
   const taxTotal = 0;
   const total = subtotal - discountTotal + taxTotal;
-  return { lineItems, subtotal, discountTotal, taxTotal, total };
+  return { lineItems, subtotal, discountTotal, taxTotal, total, unpricedItems: serviceTotals.unpricedItems };
 }
 
 /** The structured full-order calculation input — mirrors types/caseOrder.ts's

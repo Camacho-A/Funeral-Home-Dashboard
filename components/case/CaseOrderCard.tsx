@@ -85,8 +85,12 @@ export function CaseOrderCard({
 
   const order = data?.order ?? null;
   const lineItems = data?.lineItems ?? [];
+  // Interrupted order edits (Phase 5A.2): while a change to this case's
+  // services is unfinished, the order is locked — shown read-only (the
+  // version still billed), no edits, no payments.
+  const interruption = data?.interruption ?? null;
 
-  const canCollect = Boolean(order) && (order?.balanceDue ?? 0) > 0;
+  const canCollect = Boolean(order) && (order?.balanceDue ?? 0) > 0 && !interruption;
 
   function dollarsToCents(input: string): number | null {
     const n = Number(input);
@@ -145,12 +149,19 @@ export function CaseOrderCard({
         )}
       </div>
 
+      {interruption && (
+        <div className={styles.error} role="alert">
+          {interruption.stale
+            ? "A change to this case's services was interrupted before it finished. The order is locked — no edits or payments — until an administrator repairs it."
+            : "A change to this case's services is being saved. Editing and payments are paused for a moment — reload shortly."}
+        </div>
+      )}
       {isPending ? (
         <p className={styles.loading}>Loading…</p>
       ) : !order ? (
         <>
-          <EmptyState message="No case order yet." />
-          {canEditCaseOrder && (
+          <EmptyState message={interruption ? 'The case order is being changed.' : 'No case order yet.'} />
+          {canEditCaseOrder && !interruption && (
             <div className={styles.actions}>
               <Button onClick={() => setEditOpen(true)}>Set Up Services &amp; Charges</Button>
             </div>
@@ -184,7 +195,7 @@ export function CaseOrderCard({
           )}
 
           <div className={styles.actions}>
-            {canEditCaseOrder && (
+            {canEditCaseOrder && !interruption && (
               <Button variant="secondary" onClick={() => setEditOpen(true)}>
                 {additionalItemsLabel(organizationId)}
               </Button>

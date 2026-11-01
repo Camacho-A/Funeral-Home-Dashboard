@@ -15,7 +15,8 @@ import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { canCollectPayment } from '@/services/authorizationPolicyService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { createManualSucceededPayment } from '@/services/paymentsService';
-import { getActiveCaseOrder } from '@/services/pricingService';
+import { getCaseOrderState } from '@/services/pricingService';
+import { caseOrderInterruptionBody } from '@/lib/caseOrderOperationResponses';
 import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { recordPaymentRecorded } from '@/services/activityService';
@@ -124,7 +125,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'Case not found for this organization.' }, { status: 404 });
   }
 
-  const order = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  // Phase 5A.2: no payment is collected while an unfinished order change
+  // holds the case's order — the balance it would be checked against is
+  // not settled yet (409, nothing written).
+  const { active: order, interruption } = await getCaseOrderState(organizationId, caseId, dataAdapterMode);
+  if (interruption) {
+    return NextResponse.json(
+      caseOrderInterruptionBody(interruption, "This case's services are being changed (or need an administrator's repair), so payments are paused. Nothing was recorded."),
+      { status: 409 },
+    );
+  }
   if (!order) {
     return NextResponse.json({ error: 'This case has no case order yet — services must be selected first.' }, { status: 422 });
   }

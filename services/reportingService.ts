@@ -148,8 +148,17 @@ async function terminalStageChangeEvents(
   for (let page = 0; page < 50; page++) {
     const result = await listActivityForOrganization(organizationId, { category: 'cases' }, cursor, 200, dataAdapterMode);
     for (const event of result.events) {
-      if (event.eventType !== ACTIVITY_EVENT_TYPES.CASE_STAGE_CHANGED || !event.caseId) continue;
+      if (!event.caseId) continue;
       if (event.createdAt < fromDate || event.createdAt > toDate) continue;
+      // Manual completion (Phase 5A.1): a staff "Mark completed" is
+      // recorded as `case.completed`, never as a stage change — it counts
+      // as reaching the end of the workflow too. (Callers count distinct
+      // cases, so an automatic completion recorded both ways counts once.)
+      if (event.eventType === ACTIVITY_EVENT_TYPES.CASE_COMPLETED) {
+        matches.push({ caseId: event.caseId, createdAt: event.createdAt });
+        continue;
+      }
+      if (event.eventType !== ACTIVITY_EVENT_TYPES.CASE_STAGE_CHANGED) continue;
       try {
         const parsed = JSON.parse(event.newValue ?? 'null') as { stage?: string } | null;
         if (parsed?.stage === terminalLabel) matches.push({ caseId: event.caseId, createdAt: event.createdAt });

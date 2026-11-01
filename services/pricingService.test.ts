@@ -42,7 +42,10 @@ describe('getServiceCatalog', () => {
   it('returns only this organization\'s catalog, sorted by sortOrder ascending', async () => {
     const { getServiceCatalog } = await import('./pricingService');
     const catalog = await getServiceCatalog(DEFAULT_ORGANIZATION_ID, 'mock');
-    expect(catalog).toHaveLength(serviceCatalogFixtures.length);
+    // 2026-10: the shared mock fixture now also holds Gus Camacho Jr.'s
+    // rows, so "this organization's" count is the Manors subset.
+    expect(catalog).toHaveLength(serviceCatalogFixtures.filter((c) => c.organizationId === DEFAULT_ORGANIZATION_ID).length);
+    expect(catalog).toHaveLength(8);
     expect(catalog.every((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)).toBe(true);
     const sortOrders = catalog.map((c) => c.sortOrder);
     expect(sortOrders).toEqual([...sortOrders].sort((a, b) => a - b));

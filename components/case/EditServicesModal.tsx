@@ -7,9 +7,10 @@ import { ServicesAndChargesSelector, type ServicesAndChargesSelectorHandle } fro
 import { useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
 import { useOrganization } from '@/hooks/useOrganization';
-import { selectionsFromLineItems, customItemSelectionsFromLineItems } from '@/domain/pricing/calculateOrder';
+import { selectionsFromLineItems, customItemSelectionsFromLineItems, calculateOrderTotals } from '@/domain/pricing/calculateOrder';
 import { additionalItemsLabel, usesAdditionalItemsTerminology, ADDITIONAL_ITEMS_SUPPORTING_TEXT } from '@/domain/organization/caseOrderTerminology';
 import type { CaseOrder, CaseOrderLineItem, ServiceSelections, CustomLineItemSelection } from '@/types/caseOrder';
+import { isCaseOrderChangedError } from '@/services/pricingClient';
 import styles from './EditServicesModal.module.css';
 
 const DEFAULT_SELECTIONS: ServiceSelections = {
@@ -70,7 +71,25 @@ export function EditServicesModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Non-destructive order versioning (2026-10): when a save was refused
+  // because someone else changed the services first, the order query is
+  // refetched; once the newer version arrives, the form shows IT (staff
+  // re-make their change on top of it) — never the stale draft.
+  const orderId = order?.id ?? null;
+  const editConflict = isCaseOrderChangedError(editOrder.error);
+  useEffect(() => {
+    if (open && editConflict) {
+      setSelections(order ? selectionsFromLineItems(lineItems) : DEFAULT_SELECTIONS);
+      setCustomItems(order ? customItemSelectionsFromLineItems(lineItems) : []);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
   const mutation = order ? editOrder : createOrder;
+  // 2026-10: a selected item with no price set can't be saved (the server
+  // refuses it with 422); the selector explains why, so Save is simply
+  // disabled rather than offering a round trip that can only fail.
+  const hasUnpricedSelection = calculateOrderTotals(catalog, selections).unpricedItems.length > 0;
 
   function handleSave() {
     // Flush a custom item the user typed but never pressed "Add Custom
@@ -80,10 +99,12 @@ export function EditServicesModal({
     // the selector's own onChangeCustomItems state update is not visible
     // synchronously here.
     const flushed = selectorRef.current?.commitPendingCustomItem() ?? null;
-    mutation.mutate(
-      { selections, customItems: flushed ?? customItems },
-      { onSuccess: onClose },
-    );
+    if (order) {
+      // Pinned to the version this form was loaded from (2026-10).
+      editOrder.mutate({ selections, customItems: flushed ?? customItems, expectedOrderId: order.id }, { onSuccess: onClose });
+    } else {
+      createOrder.mutate({ selections, customItems: flushed ?? customItems }, { onSuccess: onClose });
+    }
   }
 
   const title = order ? additionalItemsLabel(organizationId) : 'Set Up Services & Charges';
@@ -105,7 +126,11 @@ export function EditServicesModal({
 
       {mutation.isError && (
         <div className={styles.error} role="alert">
-          {mutation.error instanceof Error ? mutation.error.message : 'Failed to save services.'}
+          {isCaseOrderChangedError(mutation.error)
+            ? 'These services were changed by someone else while you were editing. Nothing was saved. The latest services are now shown — make your change again and save.'
+            : mutation.error instanceof Error
+              ? mutation.error.message
+              : 'Failed to save services.'}
         </div>
       )}
 
@@ -113,7 +138,7 @@ export function EditServicesModal({
         <Button variant="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={mutation.isPending}>
+        <Button onClick={handleSave} disabled={mutation.isPending || hasUnpricedSelection}>
           {mutation.isPending ? 'Saving…' : 'Save'}
         </Button>
       </div>

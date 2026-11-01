@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ServiceSelections, CustomLineItemSelection } from '@/types/caseOrder';
-import { pricingClient } from '@/services/pricingClient';
+import { isCaseOrderChangedError, pricingClient } from '@/services/pricingClient';
 import { useOrganization } from './useOrganization';
 
 /**
@@ -32,14 +32,23 @@ export function useCreateCaseOrder(caseId: string) {
   });
 }
 
+/** Non-destructive order versioning (2026-10): the edit names the order
+    version it was made against (`expectedOrderId`). If someone else changed
+    the services first the server refuses it (CaseOrderChangedError) and
+    the order query is refetched, so the modal can show the latest. */
 export function useEditCaseOrder(caseId: string) {
   const organization = useOrganization();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[] }) =>
+    mutationFn: (input: { selections: ServiceSelections; customItems?: CustomLineItemSelection[]; expectedOrderId: string }) =>
       pricingClient.editCaseOrder(organization, caseId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });
+    },
+    onError: (error) => {
+      if (isCaseOrderChangedError(error)) {
+        queryClient.invalidateQueries({ queryKey: ['caseOrder', organization.organizationId, caseId] });
+      }
     },
   });
 }

@@ -537,6 +537,58 @@ export async function getJournalEntryWithLines(
   return { entry, lines };
 }
 
+/**
+ * Interrupted order edits (2026-10, Phase 5A.2). Finishes a POSTED entry
+ * whose process died between its line inserts — the one ledger state
+ * insertLinesCompensatingOnFailure can't net back (it only runs in a live
+ * process). Strictly append-only and verified: every line already stored
+ * must be exactly `expected[i]` at line number i+1 (account, direction,
+ * amount) and no compensating line may exist; then only the missing lines
+ * are inserted, under the same deterministic ids the original post would
+ * have used (`{entryId}-line-{n}`), so a repeat inserts nothing. Refuses
+ * (throws) on any mismatch — that entry needs an accountant, not code.
+ * Returns how many lines were added.
+ */
+export async function completePartiallyPostedEntryLines(
+  organizationId: string,
+  entryId: string,
+  expected: readonly NewJournalEntryLineInput[],
+  dataAdapterMode: DataAdapterMode,
+): Promise<number> {
+  assertJournalEntryBalances(expected);
+  const found = await getJournalEntryWithLines(organizationId, entryId, dataAdapterMode);
+  if (!found || found.entry.organizationId !== organizationId) throw new GeneralLedgerServiceError(`Journal entry ${entryId} not found.`);
+  if (found.entry.status !== 'posted') throw new GeneralLedgerServiceError(`Journal entry ${found.entry.entryNumber} is not posted; it can't be completed.`);
+  const stored = [...found.lines].sort((a, b) => a.lineNumber - b.lineNumber);
+  if (stored.length >= expected.length) throw new GeneralLedgerServiceError(`Journal entry ${found.entry.entryNumber} is not missing any lines.`);
+  stored.forEach((line, i) => {
+    const want = expected[i];
+    if (line.id !== `${entryId}-line-${i + 1}` || line.lineNumber !== i + 1 || line.accountId !== want.accountId || line.direction !== want.direction || line.amount !== want.amount) {
+      throw new GeneralLedgerServiceError(`Journal entry ${found.entry.entryNumber}'s stored lines do not match what it was meant to post; review it by hand.`);
+    }
+  });
+  const now = nowIso();
+  for (let i = stored.length; i < expected.length; i += 1) {
+    const input = expected[i];
+    await insertJournalEntryLineRow(
+      {
+        id: `${entryId}-line-${i + 1}`,
+        organizationId,
+        journalEntryId: entryId,
+        lineNumber: i + 1,
+        accountId: input.accountId,
+        direction: input.direction,
+        amount: input.amount,
+        caseId: input.caseId ?? null,
+        description: input.description ?? null,
+        createdAt: now,
+      },
+      dataAdapterMode,
+    );
+  }
+  return expected.length - stored.length;
+}
+
 export async function listJournalEntriesForCase(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<JournalEntry[]> {
   if (dataAdapterMode === 'mock') {
     return journalEntryFixtures

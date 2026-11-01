@@ -25,16 +25,26 @@ export type ServiceCatalogItem = {
   serviceCode: string;
   displayName: string;
   /** 'base' (always included, e.g. Direct Cremation), 'weight_surcharge'
-      (mutually-exclusive tier, selected via a radio group), or 'addon'
-      (independent opt-in, checkbox +/- quantity). See domain/pricing. */
+      (mutually-exclusive tier, selected via a radio group), 'addon'
+      (independent opt-in, checkbox +/- quantity), or 'service_type'
+      (2026-10, Gus Camacho Jr.: the one primary service a case order is
+      for — exactly one chosen per order via a radio group, see
+      ServiceSelections.serviceTypeCode). See domain/pricing. */
   category: string;
   /** 'flat' — unitPrice applies once regardless of any quantity control
       (Direct Cremation, a weight surcharge, Mail Cremated Remains). 'per_unit'
       — unitPrice multiplies by a staff-chosen quantity (Extra Death
       Certificates). */
   pricingType: string;
-  /** Integer cents — matches PaymentRecord.amount's existing convention. */
-  defaultPrice: number;
+  /** Integer cents — matches PaymentRecord.amount's existing convention.
+      2026-10: `null` means "price not set yet" — a catalog row whose
+      price the funeral home hasn't supplied (Gus Camacho Jr.'s catalog is
+      onboarded entirely unpriced; an administrator enters prices later in
+      Settings › Services & Pricing). Null is NEVER $0: the pricing engine
+      reports it as unpriced (domain/pricing/calculateOrder.ts's
+      `unpricedItems`), the server refuses to persist an order that
+      selects it, and every display labels it "Price not set". */
+  defaultPrice: number | null;
   /** Phase 39 (Family Billing & FTC Compliance). Optional additive override
       of the FTC line classification for this item (see
       domain/billing/ftcClassification.ts). Null/absent = derive from

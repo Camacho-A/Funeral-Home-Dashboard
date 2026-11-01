@@ -2,14 +2,16 @@
 
 import { Button } from '@/components/ui/Button';
 import { useSaveServices } from '@/hooks/useOnboarding';
-import { formatCentsAsCurrency } from '@/utils/format';
+import { formatCatalogPrice } from '@/utils/format';
 import type { OnboardingSession } from '@/types/onboarding';
 import styles from './OnboardingStepForm.module.css';
 
 /** Phase 20 (Organization Onboarding & Tenant Provisioning). Step 6 —
     Services & Pricing. Seeds a fresh, organization-owned service catalog
     — never a reference to Manor's Cremation's (or any other
-    organization's) rows. */
+    organization's) rows. 2026-10: seeded prices start as "Price not set"
+    (null) unless the organization supplied them — they're entered later
+    in Settings › Services & Pricing, never copied from another tenant. */
 export function ServicesStep({
   onboardingSessionId,
   onSaved,
@@ -28,6 +30,7 @@ export function ServicesStep({
       <div className={styles.title}>Services &amp; Pricing</div>
       <div className={styles.description}>
         Seeds this organization&apos;s own starter service catalog — independent from every other organization&apos;s pricing.
+        Prices aren&apos;t copied from anywhere: set them afterwards in Settings › Services &amp; Pricing.
       </div>
 
       {saveServices.data && (
@@ -35,7 +38,7 @@ export function ServicesStep({
           {saveServices.data.catalog.map((item) => (
             <div key={item.id} className={styles.summaryRow}>
               <span>{item.displayName}</span>
-              <span>{formatCentsAsCurrency(item.defaultPrice, 'usd')}</span>
+              <span>{formatCatalogPrice(item.defaultPrice)}</span>
             </div>
           ))}
         </div>

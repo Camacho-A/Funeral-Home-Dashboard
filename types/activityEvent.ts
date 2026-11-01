@@ -134,6 +134,21 @@ export const ACTIVITY_EVENT_TYPES = {
       (2026-10): which steps, checked or unchecked, by whom. The case's
       stage is unchanged. */
   CASE_CHECKLIST_CORRECTED: 'case.checklist_corrected',
+  /** Interrupted order edits (2026-10, ported from Gus SOLIS). The operation
+      journal of every case order change (creation, edit, merchandise
+      add/return, and the restoring version a compensation appends) — one
+      append-only entry per step (`metadata.status`: prepared → activated →
+      completed | abandoned | compensated | failed, then `resolved` when an
+      administrator repairs or closes an interrupted one). `prepared` is
+      written BEFORE the first row write; if it can't be, the change is
+      refused. Category `system`, no caseId. Same type string as Gus SOLIS.
+      Read by services/orderOperationJournal.ts. */
+  CASE_ORDER_OPERATION_JOURNAL: 'case.order.operation.journal',
+  /** Service-specific completion (2026-10, ported from Gus SOLIS). A case
+      became Completed under its frozen completion policy — metadata carries
+      the policy's kind, required items, automatic vs a staff "Mark
+      completed" (with the reason), and the actor. */
+  CASE_COMPLETED: 'case.completed',
   /** Case concurrency (2026-10). A save refused because the case changed
       since the editor loaded it. Same type string as Gus SOLIS. */
   CASE_UPDATE_CONFLICT: 'case.update.conflict',
@@ -329,6 +344,14 @@ export const ACTIVITY_EVENT_TYPES = {
       `app/api/organization/case-sequence/route.ts`'s POST handler, the
       sole emitter. */
   CASE_SEQUENCE_INITIALIZED: 'case.sequence.initialized',
+
+  /** 2026-10 (Gus Camacho Jr. service catalog). An administrator set,
+      changed or cleared one service catalog row's price in Settings ›
+      Services & Pricing. `'administration'` category; emitted only by
+      services/pricingService.ts's updateServiceCatalogItemPrice. A price
+      change never rewrites an existing CaseOrder — it applies to the next
+      order calculated. */
+  SERVICE_CATALOG_PRICE_UPDATED: 'serviceCatalog.price.updated',
 
   /** Reserved — no reminder/automation engine exists in Solis at all yet. */
   SYSTEM_REMINDER_TRIGGERED: 'system.reminder.triggered',

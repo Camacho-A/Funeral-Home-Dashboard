@@ -16,7 +16,7 @@ import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
  */
 
 type FetchHandlers = {
-  order?: { order: unknown; lineItems: unknown[]; auditEntries: unknown[] };
+  order?: { order: unknown; lineItems: unknown[]; auditEntries: unknown[]; interruption?: unknown };
   payments?: unknown[];
   checkout?: { paymentId: string; checkoutUrl: string } | { error: string; status: number };
   manualPayment?: { payment: unknown } | { error: string; status: number };
@@ -127,6 +127,23 @@ describe('CaseOrderCard — no order yet', () => {
     renderCard({ order: { order: null, lineItems: [], auditEntries: [] } });
     await screen.findByText('No case order yet.');
     expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
+  });
+});
+
+describe('CaseOrderCard — an interrupted order change (Phase 5A.2)', () => {
+  const INTERRUPTION = { pendingOrderId: 'order-2', previousOrderId: 'order-1', since: '2026-10-16T15:00:00.000Z', stale: true };
+
+  it('shows the billed version read-only with a repair notice — no editing, no payment, no "set up" of a fresh order', async () => {
+    renderCard({ order: { order: { ...ACTIVE_ORDER, status: 'superseded', operationInterrupted: true }, lineItems: LINE_ITEMS, auditEntries: [], interruption: INTERRUPTION } });
+    expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/interrupted before it finished.*until an administrator repairs it/);
+    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Additional|Edit Services|Set Up Services/ })).not.toBeInTheDocument();
+  });
+
+  it('a change still being saved says so (retry shortly), not "call an administrator"', async () => {
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [], interruption: { ...INTERRUPTION, stale: false } } });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/being saved/);
   });
 });
 

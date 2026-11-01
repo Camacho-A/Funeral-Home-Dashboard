@@ -5,7 +5,7 @@ import { updateCaseWithRetry, writeMockCase } from './caseWriteService';
 import type { Case, CaseUpdate } from '../types/case';
 import { findPaymentConfirmationChecklistIndex } from '../domain/cases/paymentChecklist';
 import { checklistItemKey } from '../domain/workflow/checklistItemKey';
-import { getActiveCaseOrder, refreshBalanceForCase } from './pricingService';
+import { getActiveCaseOrder, getCaseOrderState, refreshBalanceForCase } from './pricingService';
 import { postPaymentTransaction } from './financialTransactionService';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
 import { recordCaseUpdated, type ActivityContext } from './activityService';
@@ -93,7 +93,16 @@ export async function markCasePaidIfVerified(
     );
   }
 
-  const activeOrder = await getActiveCaseOrder(organizationId, caseId, dataAdapterMode);
+  // Interrupted order edits (Phase 5A.2): while an unfinished change holds
+  // the case's order, whether this payment settles it can't be known — the
+  // payment itself is recorded (above), but the case is NOT marked paid.
+  // The administrator's repair refreshes the balance and marks it paid
+  // then, if settled (services/orderOperationRepair.ts).
+  const { active: activeOrder, interruption } = await getCaseOrderState(organizationId, caseId, dataAdapterMode);
+  if (interruption) {
+    console.warn(`[payments] case ${caseId} (organization ${organizationId}): payment recorded while an order change is unfinished (${interruption.pendingOrderId}); not marking the case paid until it is repaired.`);
+    return;
+  }
   if (activeOrder) {
     const refreshed = await refreshBalanceForCase(organizationId, caseId, dataAdapterMode);
     if ((refreshed?.balanceDue ?? 0) > 0) return; // still owes a balance — not fully paid yet

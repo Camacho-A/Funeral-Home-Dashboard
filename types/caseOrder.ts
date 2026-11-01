@@ -17,7 +17,21 @@
  * active when that payment was initiated, and that version's own totals
  * never change after the fact — only a *new* version reflects an edit.
  */
-export type CaseOrderStatus = 'active' | 'superseded';
+/**
+ * Interrupted order edits (2026-10, Phase 5A.2 — docs/ORDER_VERSIONING.md).
+ * Two statuses a version passes through or ends in WITHOUT ever being the
+ * case's order:
+ *  - `pending`: written before the version it replaces is superseded, made
+ *    `active` only as the last row write of the change. Never billed,
+ *    never listed as a version; while one exists the case's order is
+ *    locked (edits, creation and payments are refused) until the change
+ *    finishes or an administrator repairs it.
+ *  - `withdrawn`: a pending (or briefly active, for a racing first order)
+ *    version that never took effect — kept as history, never billed.
+ * Readers that know only 'active' | 'superseded' (older deployments) drop
+ * rows in these statuses when mapping, so they stay invisible to them.
+ */
+export type CaseOrderStatus = 'active' | 'superseded' | 'pending' | 'withdrawn';
 
 export type CaseOrder = {
   id: string;
@@ -48,6 +62,24 @@ export type CaseOrder = {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /** Non-destructive order versioning (2026-10, docs/ORDER_VERSIONING.md).
+      Set — together with `status: 'superseded'`, by one field-scoped
+      compare-and-swap patch — when a newer version replaces this one: when
+      it happened and which version replaced it. Optional: rows superseded
+      before 2026-10 (and every active row) have neither. Never part of an
+      order's totals. */
+  supersededAt?: string | null;
+  supersededByOrderId?: string | null;
+  /** Interrupted order edits (2026-10). On a `pending` version: the
+      version it is meant to replace (absent for a case's first order).
+      Lets a reader resolve the case's billing deterministically while the
+      change is unfinished. Optional, never part of the totals. */
+  supersedesOrderId?: string | null;
+  /** Interrupted order edits (2026-10). Never stored: set on the row a
+      read returns as the case's EFFECTIVE order while an order change is
+      unfinished (the version being replaced, still what the ledger
+      reflects), so a report can flag it instead of showing $0 owed. */
+  operationInterrupted?: true;
 };
 
 /**
@@ -131,6 +163,16 @@ export type WeightTier = 'under_200' | '201_250' | '251_300';
  * other field here.
  */
 export type ServiceSelections = {
+  /** 2026-10 (Gus Camacho Jr. service catalog). The serviceCode of the one
+      `category: 'service_type'` catalog row this order is for (e.g.
+      'CREMATION_WITH_VIEWING') — a radio-group choice, so at most one.
+      Optional/absent = none chosen, which is the only possible state for
+      an organization whose catalog has no service_type rows at all
+      (Manor's Cremation — its selections and orders are unchanged by this
+      field). Server-side, a code that doesn't name an ACTIVE service_type
+      row of the caller's own organization's catalog is treated as none
+      (domain/pricing/calculateOrder.ts's resolveServiceTypeCode). */
+  serviceTypeCode?: string | null;
   weightTier: WeightTier;
   extraDeathCertificateQuantity: number;
   mailCremated: boolean;

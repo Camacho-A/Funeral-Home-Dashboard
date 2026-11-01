@@ -1,8 +1,9 @@
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
 import type { CaseOrder, CaseOrderLineItem } from '../../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../../types/caseOrderAudit';
-import { DEFAULT_ORGANIZATION_ID } from './organizationIds';
+import { DEFAULT_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
 import { SERVICE_CODES } from '../../domain/pricing/serviceCodes';
+import { GUS_SERVICE_CATALOG } from '../../domain/onboarding/gusServiceCatalog';
 import { mockCollection } from './mockStore';
 import { sandboxCaseOrderLineItems, sandboxCaseOrders } from './sandboxFixtures';
 
@@ -19,6 +20,32 @@ import { sandboxCaseOrderLineItems, sandboxCaseOrders } from './sandboxFixtures'
 const NOW = '2026-07-20T00:00:00.000Z';
 
 export const MANORS_SERVICE_CATALOG_ID_PREFIX = `${DEFAULT_ORGANIZATION_ID}-svc`;
+
+/** 2026-10 (Gus Camacho Jr. service catalog). Gus's mock rows are built
+    straight from GUS_SERVICE_CATALOG — the same definition onboarding
+    seeds live — so local mock mode can never drift from it. Every price is
+    null ("price not set"); see domain/onboarding/gusServiceCatalog.ts. */
+export const GUS_SERVICE_CATALOG_ID_PREFIX = `${GUS_ORGANIZATION_ID}-svc`;
+
+export function gusServiceCatalogItemId(serviceCode: string): string {
+  return `${GUS_SERVICE_CATALOG_ID_PREFIX}-${serviceCode.toLowerCase().replace(/_/g, '-')}`;
+}
+
+function buildGusServiceCatalogFixtures(): ServiceCatalogItem[] {
+  return GUS_SERVICE_CATALOG.map((entry) => ({
+    id: gusServiceCatalogItemId(entry.serviceCode),
+    organizationId: GUS_ORGANIZATION_ID,
+    serviceCode: entry.serviceCode,
+    displayName: entry.displayName,
+    category: entry.category,
+    pricingType: entry.pricingType,
+    defaultPrice: entry.defaultPrice,
+    isActive: true,
+    sortOrder: entry.sortOrder,
+    createdAt: NOW,
+    updatedAt: NOW,
+  }));
+}
 
 export const serviceCatalogFixtures: ServiceCatalogItem[] = mockCollection('serviceCatalogFixtures', (): ServiceCatalogItem[] => [
   {
@@ -126,6 +153,7 @@ export const serviceCatalogFixtures: ServiceCatalogItem[] = mockCollection('serv
     createdAt: NOW,
     updatedAt: NOW,
   },
+  ...buildGusServiceCatalogFixtures(),
 ]);
 
 export const caseOrderFixtures: CaseOrder[] = mockCollection('caseOrderFixtures', (): CaseOrder[] => sandboxCaseOrders());

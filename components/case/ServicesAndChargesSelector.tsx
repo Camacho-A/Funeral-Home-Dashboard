@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useImperativeHandle, useState } from 'react';
+import { forwardRef, useImperativeHandle, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   calculateOrderTotals,
@@ -9,9 +9,10 @@ import {
   MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY,
   MAX_KEEPSAKE_TRANSFER_QUANTITY,
   MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH,
+  serviceTypeItems,
 } from '@/domain/pricing/calculateOrder';
 import { SERVICE_CODES } from '@/domain/pricing/serviceCodes';
-import { formatCentsAsCurrency } from '@/utils/format';
+import { formatCentsAsCurrency, formatCatalogPrice } from '@/utils/format';
 import type { ServiceCatalogItem } from '@/types/serviceCatalog';
 import type { ServiceSelections, WeightTier, CustomLineItemSelection } from '@/types/caseOrder';
 import styles from './ServicesAndChargesSelector.module.css';
@@ -64,6 +65,16 @@ type FlatAddonConfig = {
  * the submitted `selections` before ever persisting anything (see
  * services/pricingService.ts). See docs/adr/ADR-023's "client preview vs.
  * server authority" section.
+ *
+ * 2026-10 (Gus Camacho Jr. service catalog): when the catalog has
+ * `service_type` rows, a "Service" radio group picks exactly one of them
+ * (`selections.serviceTypeCode`; nothing is pre-selected — staff choose).
+ * The Weight and Additional Charges groups now render only when the
+ * catalog actually has rows for them (always true for Manors, so its UI is
+ * unchanged; Gus has neither). An unpriced row shows "Price not set" —
+ * never $0 — and is listed as such in the Live Itemized Summary, whose
+ * total then excludes it and says so; the server refuses to save an order
+ * containing it (see `unpricedNotice`).
  */
 export type ServicesAndChargesSelectorHandle = {
   /**
@@ -91,6 +102,7 @@ export const ServicesAndChargesSelector = forwardRef<
     onChange: (next: ServiceSelections) => void;
     customItems?: CustomLineItemSelection[];
     onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
+    unpricedNotice?: ReactNode;
   }
 >(function ServicesAndChargesSelector({
   catalog,
@@ -98,6 +110,7 @@ export const ServicesAndChargesSelector = forwardRef<
   onChange,
   customItems,
   onChangeCustomItems,
+  unpricedNotice,
 }: {
   catalog: ServiceCatalogItem[];
   selections: ServiceSelections;
@@ -111,10 +124,18 @@ export const ServicesAndChargesSelector = forwardRef<
       to attach it to. */
   customItems?: CustomLineItemSelection[];
   onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
+  /** 2026-10. What happens next when a selected item has no price set —
+      shown under the default "No price is set for …" warning. Defaults to
+      the server's own rule (the order can't be saved until the price is
+      set); NewCaseModal overrides it, since it creates the case without an
+      order in that situation. */
+  unpricedNotice?: ReactNode;
 }, ref) {
   const baseService = catalog.find((item) => item.category === 'base');
+  const serviceTypes = serviceTypeItems(catalog);
 
   const preview = calculateOrderTotals(catalog, selections);
+  const hasUnpricedSelection = preview.unpricedItems.length > 0;
   const customItemsTotal = (customItems ?? []).reduce((sum, item) => sum + item.amountCents, 0);
   const combinedTotal = preview.total + customItemsTotal;
 
@@ -175,6 +196,12 @@ export const ServicesAndChargesSelector = forwardRef<
     },
   ];
 
+  const surchargeTierItems = SURCHARGE_TIERS.flatMap((tier) => {
+    const serviceCode = weightTierServiceCode(tier);
+    const catalogItem = serviceCode ? catalog.find((item) => item.serviceCode === serviceCode) : undefined;
+    return catalogItem ? [{ tier, catalogItem }] : [];
+  });
+
   const flatAddons: FlatAddonConfig[] = [
     {
       serviceCode: SERVICE_CODES.MAIL_CREMATED_REMAINS,
@@ -193,6 +220,10 @@ export const ServicesAndChargesSelector = forwardRef<
     },
   ];
 
+  const hasAnyAddon = [...quantityAddons, ...flatAddons].some((addon) =>
+    catalog.some((item) => item.serviceCode === addon.serviceCode),
+  );
+
   return (
     <div className={styles.wrapper}>
       {baseService && (
@@ -202,22 +233,39 @@ export const ServicesAndChargesSelector = forwardRef<
         </div>
       )}
 
-      <fieldset className={styles.fieldset}>
-        <legend className={styles.legend}>Weight</legend>
-        <label className={styles.radioRow}>
-          <input
-            type="radio"
-            name="weightTier"
-            checked={selections.weightTier === 'under_200'}
-            onChange={() => setWeightTier('under_200')}
-          />
-          {weightTierLabel('under_200')}
-        </label>
-        {SURCHARGE_TIERS.map((tier) => {
-          const serviceCode = weightTierServiceCode(tier);
-          const catalogItem = serviceCode ? catalog.find((item) => item.serviceCode === serviceCode) : undefined;
-          if (!catalogItem) return null;
-          return (
+      {serviceTypes.length > 0 && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>Service</legend>
+          {serviceTypes.map((item) => (
+            <label key={item.serviceCode} className={styles.radioRow}>
+              <input
+                type="radio"
+                name="serviceTypeCode"
+                checked={selections.serviceTypeCode === item.serviceCode}
+                onChange={() => onChange({ ...selections, serviceTypeCode: item.serviceCode })}
+              />
+              {item.displayName}
+              <span className={item.defaultPrice === null ? styles.priceNotSet : styles.priceHint}>
+                {formatCatalogPrice(item.defaultPrice)}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+
+      {surchargeTierItems.length > 0 && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>Weight</legend>
+          <label className={styles.radioRow}>
+            <input
+              type="radio"
+              name="weightTier"
+              checked={selections.weightTier === 'under_200'}
+              onChange={() => setWeightTier('under_200')}
+            />
+            {weightTierLabel('under_200')}
+          </label>
+          {surchargeTierItems.map(({ tier, catalogItem }) => (
             <label key={tier} className={styles.radioRow}>
               <input
                 type="radio"
@@ -226,73 +274,77 @@ export const ServicesAndChargesSelector = forwardRef<
                 onChange={() => setWeightTier(tier)}
               />
               {weightTierLabel(tier)}
-              <span className={styles.priceHint}>{formatCentsAsCurrency(catalogItem.defaultPrice, 'usd')}</span>
+              <span className={styles.priceHint}>{formatCatalogPrice(catalogItem.defaultPrice)}</span>
             </label>
-          );
-        })}
-      </fieldset>
+          ))}
+        </fieldset>
+      )}
 
-      <fieldset className={styles.fieldset}>
-        <legend className={styles.legend}>Additional Charges</legend>
+      {hasAnyAddon && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>Additional Charges</legend>
 
-        {quantityAddons.map((addon) => {
-          const catalogItem = catalog.find((item) => item.serviceCode === addon.serviceCode);
-          if (!catalogItem) return null;
-          return (
-            <div key={addon.serviceCode} className={styles.stepperRow}>
-              <span className={styles.stepperLabel}>
-                {catalogItem.displayName}
-                <span className={styles.priceHint}>{formatCentsAsCurrency(catalogItem.defaultPrice, 'usd')} each</span>
-              </span>
-              <div className={styles.stepperControl}>
-                <button
-                  type="button"
-                  className={styles.stepperButton}
-                  onClick={() => addon.setQuantity(clampQuantity(addon.quantity - 1, addon.max))}
-                  disabled={addon.quantity <= 0}
-                  aria-label={`Decrease ${catalogItem.displayName} quantity`}
-                >
-                  −
-                </button>
-                <span className={styles.stepperValue} aria-label={`${catalogItem.displayName} quantity`}>
-                  {addon.quantity}
+          {quantityAddons.map((addon) => {
+            const catalogItem = catalog.find((item) => item.serviceCode === addon.serviceCode);
+            if (!catalogItem) return null;
+            return (
+              <div key={addon.serviceCode} className={styles.stepperRow}>
+                <span className={styles.stepperLabel}>
+                  {catalogItem.displayName}
+                  <span className={styles.priceHint}>
+                    {catalogItem.defaultPrice === null ? formatCatalogPrice(null) : `${formatCatalogPrice(catalogItem.defaultPrice)} each`}
+                  </span>
                 </span>
-                <button
-                  type="button"
-                  className={styles.stepperButton}
-                  onClick={() => addon.setQuantity(clampQuantity(addon.quantity + 1, addon.max))}
-                  disabled={addon.quantity >= addon.max}
-                  aria-label={`Increase ${catalogItem.displayName} quantity`}
-                >
-                  +
-                </button>
+                <div className={styles.stepperControl}>
+                  <button
+                    type="button"
+                    className={styles.stepperButton}
+                    onClick={() => addon.setQuantity(clampQuantity(addon.quantity - 1, addon.max))}
+                    disabled={addon.quantity <= 0}
+                    aria-label={`Decrease ${catalogItem.displayName} quantity`}
+                  >
+                    −
+                  </button>
+                  <span className={styles.stepperValue} aria-label={`${catalogItem.displayName} quantity`}>
+                    {addon.quantity}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.stepperButton}
+                    onClick={() => addon.setQuantity(clampQuantity(addon.quantity + 1, addon.max))}
+                    disabled={addon.quantity >= addon.max}
+                    aria-label={`Increase ${catalogItem.displayName} quantity`}
+                  >
+                    +
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
 
-        {flatAddons.map((addon) => {
-          const catalogItem = catalog.find((item) => item.serviceCode === addon.serviceCode);
-          if (!catalogItem) return null;
-          return (
-            <div key={addon.serviceCode} className={styles.stepperRow}>
-              <span className={styles.stepperLabel}>
-                {catalogItem.displayName}
-                <span className={styles.priceHint}>{formatCentsAsCurrency(catalogItem.defaultPrice, 'usd')}</span>
-              </span>
-              {addon.selected ? (
-                <Button variant="secondary" onClick={addon.toggle} aria-label={`Remove ${catalogItem.displayName}`}>
-                  Added ✕
-                </Button>
-              ) : (
-                <Button variant="secondary" onClick={addon.toggle} aria-label={`Add ${catalogItem.displayName}`}>
-                  Add
-                </Button>
-              )}
-            </div>
-          );
-        })}
-      </fieldset>
+          {flatAddons.map((addon) => {
+            const catalogItem = catalog.find((item) => item.serviceCode === addon.serviceCode);
+            if (!catalogItem) return null;
+            return (
+              <div key={addon.serviceCode} className={styles.stepperRow}>
+                <span className={styles.stepperLabel}>
+                  {catalogItem.displayName}
+                  <span className={styles.priceHint}>{formatCatalogPrice(catalogItem.defaultPrice)}</span>
+                </span>
+                {addon.selected ? (
+                  <Button variant="secondary" onClick={addon.toggle} aria-label={`Remove ${catalogItem.displayName}`}>
+                    Added ✕
+                  </Button>
+                ) : (
+                  <Button variant="secondary" onClick={addon.toggle} aria-label={`Add ${catalogItem.displayName}`}>
+                    Add
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </fieldset>
+      )}
 
       {onChangeCustomItems && (
         <fieldset className={styles.fieldset}>
@@ -355,6 +407,15 @@ export const ServicesAndChargesSelector = forwardRef<
             <span>{formatCentsAsCurrency(item.lineTotal, 'usd')}</span>
           </div>
         ))}
+        {preview.unpricedItems.map((item) => (
+          <div key={item.serviceCode} className={styles.summaryRow}>
+            <span>
+              {item.displayName}
+              {item.quantity > 1 ? ` x${item.quantity}` : ''}
+            </span>
+            <span className={styles.priceNotSet}>Price not set</span>
+          </div>
+        ))}
         {(customItems ?? []).map((item) => (
           <div key={item.id} className={styles.summaryRow}>
             <span>{item.description}</span>
@@ -362,10 +423,20 @@ export const ServicesAndChargesSelector = forwardRef<
           </div>
         ))}
         <div className={styles.summaryTotalRow}>
-          <span>Total</span>
+          <span>{hasUnpricedSelection ? 'Total (excludes items with no price set)' : 'Total'}</span>
           <span>{formatCentsAsCurrency(combinedTotal, 'usd')}</span>
         </div>
       </div>
+
+      {hasUnpricedSelection && (
+        <div className={styles.unpricedWarning} role="alert">
+          <div>
+            No price is set for {preview.unpricedItems.map((item) => item.displayName).join(', ')}. An administrator
+            can set it in Settings › Services &amp; Pricing.
+          </div>
+          <div>{unpricedNotice ?? 'This order can’t be saved until the price is set.'}</div>
+        </div>
+      )}
     </div>
   );
 });
