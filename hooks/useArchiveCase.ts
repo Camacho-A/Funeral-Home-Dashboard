@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { caseRevision } from '@/lib/wixCaseMapper';
+import { isCaseRevisionConflictError } from '@/domain/cases/caseRevisionConflict';
 import { useOrganization } from './useOrganization';
 
 /**
@@ -47,6 +48,14 @@ export function useArchiveCase() {
       return casesService.update(organization, caseId, { isDeleted: archived }, organization.dataAdapterMode, {
         expectedRevision: caseRevision(current),
       });
+    },
+    // A 409 (someone changed the case first): nothing was archived; the page
+    // shows the case as it is now, so staff decide again from that.
+    onError: (error, { caseId }) => {
+      if (!isCaseRevisionConflictError(error)) return;
+      if (error.current) queryClient.setQueryData(['case', organization.organizationId, caseId], error.current);
+      queryClient.invalidateQueries({ queryKey: ['case', organization.organizationId, caseId] });
+      queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
     },
     onSuccess: (_result, { caseId }) => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
