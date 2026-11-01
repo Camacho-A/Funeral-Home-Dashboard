@@ -19,6 +19,7 @@ import { useMutation } from '@tanstack/react-query';
 import { createCaseLogEntry } from '@/lib/caseLogClient';
 import { pricingClient } from '@/services/pricingClient';
 import { calculateOrderTotals } from '@/domain/pricing/calculateOrder';
+import { SERVICE_TYPE_CATEGORY } from '@/domain/pricing/serviceCodes';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
@@ -240,6 +241,13 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     urnTransfer: false,
     shipping: false,
   });
+  // Service-based workflows (2026-11): the Service chosen above is also the
+  // order's service when the catalog sells it as a service type (Gus), so
+  // staff choose it once.
+  const orderSelections: ServiceSelections =
+    chooseService && serviceTypeCode && serviceCatalog.some((item) => item.category === SERVICE_TYPE_CATEGORY && item.serviceCode === serviceTypeCode)
+      ? { ...servicesSelections, serviceTypeCode }
+      : servicesSelections;
   // Manors launch-prep: a fixed field, deliberately outside the
   // organization's configurable intake template — the same reasoning as
   // ServicesAndChargesSelector above (always rendered, never dependent on
@@ -503,10 +511,10 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     // Services & Charges" on the case page already handles — and staff add
     // services there once an administrator has set the price. The selector
     // tells them so before they submit (see its unpricedNotice below).
-    const hasUnpricedSelection = calculateOrderTotals(serviceCatalog, servicesSelections).unpricedItems.length > 0;
+    const hasUnpricedSelection = calculateOrderTotals(serviceCatalog, orderSelections).unpricedItems.length > 0;
     if (!hasUnpricedSelection) {
       try {
-        await createOrder.mutateAsync({ caseId: newCase.id, selections: servicesSelections });
+        await createOrder.mutateAsync({ caseId: newCase.id, selections: orderSelections });
       } catch {
         setSubmitError('Case created, but the case order failed to save — set up services from the case page.');
         goToCase(newCase.id);
@@ -984,8 +992,9 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className="sx-span-all">
                     <ServicesAndChargesSelector
                       catalog={serviceCatalog}
-                      selections={servicesSelections}
+                      selections={orderSelections}
                       onChange={setServicesSelections}
+                      hideServiceTypes={chooseService}
                       unpricedNotice="The case will still be created, without services — add them from the case page once the price is set."
                     />
                   </div>

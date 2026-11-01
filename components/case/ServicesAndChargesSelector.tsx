@@ -103,6 +103,7 @@ export const ServicesAndChargesSelector = forwardRef<
     customItems?: CustomLineItemSelection[];
     onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
     unpricedNotice?: ReactNode;
+    hideServiceTypes?: boolean;
   }
 >(function ServicesAndChargesSelector({
   catalog,
@@ -111,6 +112,7 @@ export const ServicesAndChargesSelector = forwardRef<
   customItems,
   onChangeCustomItems,
   unpricedNotice,
+  hideServiceTypes = false,
 }: {
   catalog: ServiceCatalogItem[];
   selections: ServiceSelections;
@@ -130,6 +132,10 @@ export const ServicesAndChargesSelector = forwardRef<
       set); NewCaseModal overrides it, since it creates the case without an
       order in that situation. */
   unpricedNotice?: ReactNode;
+  /** 2026-11. The service was already chosen elsewhere on the form (New
+      Case's Service field, which also picks the workflow), so the Service
+      group isn't asked twice; the chosen service still prices the order. */
+  hideServiceTypes?: boolean;
 }, ref) {
   const baseService = catalog.find((item) => item.category === 'base');
   const serviceTypes = serviceTypeItems(catalog);
@@ -233,7 +239,7 @@ export const ServicesAndChargesSelector = forwardRef<
         </div>
       )}
 
-      {serviceTypes.length > 0 && (
+      {serviceTypes.length > 0 && !hideServiceTypes && (
         <fieldset className={styles.fieldset}>
           <legend className={styles.legend}>Service</legend>
           {serviceTypes.map((item) => (
