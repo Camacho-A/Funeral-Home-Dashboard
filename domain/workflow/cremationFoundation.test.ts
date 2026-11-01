@@ -5,6 +5,7 @@ import { composeWorkflowStages, WorkflowCompositionError, type WorkflowExtension
 import {
   buildServiceWorkflowVersion,
   CREMATION_SERVICE_WORKFLOWS,
+  foundationOptionsFor,
   isWorkflowByServiceType,
   selectWorkflowTemplate,
   serviceOptionsFor,
@@ -47,6 +48,20 @@ describe('the cremation foundation IS the Manors cremation process', () => {
     );
     expect([...new Set(differences)].sort()).toEqual([CREMATION_STEPS.arrangementFormCompleted, 'cremation.first_call.certifier']);
     expect(foundation.flatMap((s) => s.checklist.items).find((i) => i.stepId === 'cremation.first_call.certifier')?.requiredCaseFields).toEqual(['certifierName', 'certifierPhone']);
+  });
+
+  it('the certifier requirement is each organization\'s own setting: Gus and Manors need name + fax, others the platform default', () => {
+    const certifierOf = (orgId: string) =>
+      buildCremationFoundationStages(foundationOptionsFor(orgId, { arrangementFormIntegrationId: null }))
+        .flatMap((s) => s.checklist.items)
+        .find((i) => i.stepId === 'cremation.first_call.certifier')?.requiredCaseFields;
+    expect(certifierOf(GUS_CAMACHO_ORGANIZATION_ID)).toEqual(['certifierName', 'certifierFax']);
+    expect(certifierOf(MANORS_ORGANIZATION_ID)).toEqual(CERTIFIER_FAX_REQUIRED_CASE_FIELDS);
+    expect(certifierOf('some-future-funeral-home')).toEqual(['certifierName', 'certifierPhone']);
+    // Gus's own service workflows are built with it.
+    const gusDirect = workflowTemplateFixtures.find((t) => t.organizationId === GUS_CAMACHO_ORGANIZATION_ID && t.name === 'Direct Cremation')!;
+    const certifier = gusDirect.versions.at(-1)!.stages.flatMap((s) => s.checklist.items).find((i) => i.stepId === 'cremation.first_call.certifier');
+    expect(certifier?.requiredCaseFields).toEqual(['certifierName', 'certifierFax']);
   });
 
   it('every stage and every item has a stable id, unique per display stage', () => {

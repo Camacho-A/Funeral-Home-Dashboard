@@ -14,7 +14,7 @@ import {
 import { getSlaTargetDays } from '../../domain/cases/sla';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
 import { mockCollection } from './mockStore';
-import { buildServiceWorkflowVersion, CREMATION_SERVICE_WORKFLOWS, type ServiceWorkflowDefinition } from '../../domain/workflow/serviceWorkflows';
+import { buildServiceWorkflowVersion, CREMATION_SERVICE_WORKFLOWS, foundationOptionsFor, type ServiceWorkflowDefinition } from '../../domain/workflow/serviceWorkflows';
 import { JOTFORM_INTEGRATION_ID } from './externalFormIntegrations';
 
 /**
@@ -539,9 +539,10 @@ export const gusWorkflowTemplateFixture: WorkflowTemplate = buildGusWorkflowTemp
  * repeated here. Direct Cremation keeps its existing template id and v1
  * (so existing demo cases keep their snapshot) and gains v2 composed from
  * the foundation. Gus's arrangement form is not connected yet, so its
- * requirement is fulfilled by staff confirmation (no integration id).
+ * requirement is fulfilled by staff confirmation (no integration id);
+ * Certifier Information needs name + fax, from Gus's profile.
  */
-const GUS_FOUNDATION_OPTIONS = { arrangementFormIntegrationId: null } as const;
+const GUS_FOUNDATION_OPTIONS = foundationOptionsFor(GUS_ORGANIZATION_ID, { arrangementFormIntegrationId: null });
 const GUS_SERVICE_TEMPLATE_CREATED_AT = '2026-11-01T00:00:00.000Z';
 
 export const GUS_VIEWING_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-cremation-with-viewing';

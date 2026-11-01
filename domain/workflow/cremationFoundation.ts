@@ -21,7 +21,9 @@ import { getSlaTargetDays } from '../cases/sla';
  * - how the arrangement form is fulfilled (an external form integration
  *   such as JotForm, or staff confirmation) — the requirement is the same;
  * - which Case fields complete "Certifier Information" (Manors requires
- *   name + fax since its template v7; the platform default is name + phone).
+ *   name + fax since its template v7; the platform default is name + phone;
+ *   each organization chooses in its profile, and an administrator can
+ *   still change it per workflow version).
  * Recipients, prices, forms, branding and integrations never live here.
  *
  * Services extend the foundation (domain/workflow/workflowComposition.ts):
@@ -91,6 +93,10 @@ export const CREMATION_STEPS = {
 } as const;
 
 export const PLATFORM_CERTIFIER_REQUIRED_CASE_FIELDS: readonly string[] = ['certifierName', 'certifierPhone'];
+/** Name + fax: the certifier requirement Manors adopted with its template
+    v7, and Gus's from the start (2026-11). An organization chooses it in its
+    profile (features.certifierRequiredCaseFields). */
+export const CERTIFIER_NAME_AND_FAX_CASE_FIELDS: readonly string[] = ['certifierName', 'certifierFax'];
 
 export type CremationFoundationOptions = {
   /** The organization's own external form integration that fulfils the

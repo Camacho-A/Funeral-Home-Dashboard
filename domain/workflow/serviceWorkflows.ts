@@ -80,6 +80,17 @@ export function buildServiceWorkflowVersion(params: {
   };
 }
 
+/** The foundation options an organization's service workflows are built
+    with: its own arrangement-form binding (or none) and its certifier
+    requirement from its profile (platform default when it sets none). */
+export function foundationOptionsFor(
+  organizationId: string,
+  options: { arrangementFormIntegrationId: string | null },
+): CremationFoundationOptions {
+  const certifier = getRegisteredOrganizationProfile(organizationId).features.certifierRequiredCaseFields;
+  return { arrangementFormIntegrationId: options.arrangementFormIntegrationId, ...(certifier ? { certifierRequiredCaseFields: certifier } : {}) };
+}
+
 /** The name staff see for a service code, or the code itself if unknown. */
 export function serviceTypeName(code: string | null | undefined): string | null {
   if (!code) return null;

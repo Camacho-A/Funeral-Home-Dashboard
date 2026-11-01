@@ -246,6 +246,12 @@ export type OrganizationFeaturePreferences = {
       service's workflow (domain/workflow/serviceWorkflows.ts). Platform
       default: off — one workflow for every case, as Manors runs today. */
   workflowByServiceType: boolean;
+  /** Certifier Information (2026-11): the Case fields that complete it in
+      workflows built from the shared cremation foundation
+      (domain/workflow/cremationFoundation.ts). Null = the platform default
+      (name + phone). An organization's existing templates are data and are
+      never changed by this; it applies when a workflow is built for it. */
+  certifierRequiredCaseFields: readonly string[] | null;
   /** Whether `hiddenModules` is also enforced SERVER-SIDE (pages + APIs
       answer 404), not just removed from navigation
       (lib/auth/hiddenModuleGuard.ts). Platform default: false — the
@@ -340,6 +346,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   manateeDeathCertificateApplication: false,
   caseSsn: false,
   workflowByServiceType: false,
+  certifierRequiredCaseFields: null,
   enforceHiddenModulesServerSide: false,
 });
 
@@ -410,6 +417,8 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     dymoCaseLabel: true,
     arrangementPageExtracts: true,
     sendToCrematory: { emailOrganizationName: 'Manors Cremation', authorizationWorkflowStage: 2 },
+    // Its template v7 rule (name + fax); its live templates already carry it.
+    certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
     manateeDeathCertificateApplication: true,
     caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the
@@ -522,6 +531,8 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
     workflowByServiceType: true,
     enforceHiddenModulesServerSide: true,
+    // Same certifier requirement as Manors, fax included (decided 2026-11).
+    certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
     sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
   },
   // Decided by the funeral home: no Family Portal or e-signatures, and these

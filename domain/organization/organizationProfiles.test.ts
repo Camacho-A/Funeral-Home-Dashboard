@@ -52,6 +52,7 @@ describe('organization profile registry', () => {
       hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
       workflowByServiceType: true,
       enforceHiddenModulesServerSide: true,
+      certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
       sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
     });
     expect(gus.pinnedFeatures).toEqual(['familyPortalEnabled', 'signatureRequestsEnabled', 'hiddenModules']);
