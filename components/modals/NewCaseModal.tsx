@@ -18,6 +18,7 @@ import { useStaff } from '@/hooks/useStaff';
 import { useMutation } from '@tanstack/react-query';
 import { createCaseLogEntry } from '@/lib/caseLogClient';
 import { pricingClient } from '@/services/pricingClient';
+import { calculateOrderTotals } from '@/domain/pricing/calculateOrder';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
@@ -495,12 +496,22 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
       return;
     }
 
-    try {
-      await createOrder.mutateAsync({ caseId: newCase.id, selections: servicesSelections });
-    } catch {
-      setSubmitError('Case created, but the case order failed to save — set up services from the case page.');
-      goToCase(newCase.id);
-      return;
+    // 2026-10 (Gus Camacho Jr. service catalog): a chosen service whose
+    // price isn't set yet can't be saved on an order (the server refuses it
+    // with 422 — never an invented amount). Rather than failing intake, the
+    // case is created WITHOUT a case order — exactly the state "Set Up
+    // Services & Charges" on the case page already handles — and staff add
+    // services there once an administrator has set the price. The selector
+    // tells them so before they submit (see its unpricedNotice below).
+    const hasUnpricedSelection = calculateOrderTotals(serviceCatalog, servicesSelections).unpricedItems.length > 0;
+    if (!hasUnpricedSelection) {
+      try {
+        await createOrder.mutateAsync({ caseId: newCase.id, selections: servicesSelections });
+      } catch {
+        setSubmitError('Case created, but the case order failed to save — set up services from the case page.');
+        goToCase(newCase.id);
+        return;
+      }
     }
 
     const noteText = (draft[NOTES_KEY] ?? '').trim();
@@ -975,6 +986,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                       catalog={serviceCatalog}
                       selections={servicesSelections}
                       onChange={setServicesSelections}
+                      unpricedNotice="The case will still be created, without services — add them from the case page once the price is set."
                     />
                   </div>
                 </div>
