@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
-import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockReadOnlyUser } from '@/services/__mocks__/authFixtures';
 import type { PaymentRecord } from '@/types/payment';
 
 let mockSession: { user: typeof mockDefaultUser } | null = { user: mockDefaultUser };
@@ -58,6 +58,13 @@ describe('POST .../payments/[paymentId]/cancel', () => {
 
   it('returns 403 for a forged organizationId', async () => {
     expect((await postCancel('case-1', 'payment-1', SECOND_MOCK_ORGANIZATION_ID)).status).toBe(403);
+  });
+
+  it('Phase 5C: returns 403 for a read-only member and leaves the payment pending', async () => {
+    mockSession = { user: mockReadOnlyUser };
+    expect((await postCancel('case-1', 'payment-1', DEFAULT_ORGANIZATION_ID)).status).toBe(403);
+    expect(paymentRecordFixtures[0].status).toBe('pending');
+    expect(activityEventFixtures).toHaveLength(0);
   });
 
   it('marks a pending payment cancelled', async () => {

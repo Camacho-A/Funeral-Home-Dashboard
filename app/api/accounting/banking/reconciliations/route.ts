@@ -8,6 +8,7 @@ import { listReconciliationHistory, startReconciliation, BankingServiceError } f
 import { getForOrganization } from '@/services/organizationsService';
 import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. `GET` lists a bank account's reconciliation history (gated
     `accounting.view`); `POST` starts a new one (gated
@@ -24,6 +25,10 @@ export async function GET(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  // Gus Phase 5C (2026-10): Banking hidden server-side wins, whatever the
+  // reconciliation module setting.
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   const organization = await getForOrganization(organizationId, dataAdapterMode);
   if (!isModuleEnabled(organization, 'reconciliation')) {
@@ -63,6 +68,10 @@ export async function POST(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  // Gus Phase 5C (2026-10): Banking hidden server-side wins, whatever the
+  // reconciliation module setting.
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   const organization = await getForOrganization(organizationId, dataAdapterMode);
   if (!isModuleEnabled(organization, 'reconciliation')) {

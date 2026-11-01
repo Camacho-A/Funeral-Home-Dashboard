@@ -246,6 +246,11 @@ export type OrganizationFeaturePreferences = {
       service's workflow (domain/workflow/serviceWorkflows.ts). Platform
       default: off — one workflow for every case, as Manors runs today. */
   workflowByServiceType: boolean;
+  /** Whether `hiddenModules` is also enforced SERVER-SIDE (pages + APIs
+      answer 404), not just removed from navigation
+      (lib/auth/hiddenModuleGuard.ts). Platform default: false — the
+      historical nav-only behaviour, kept for Manors. */
+  enforceHiddenModulesServerSide: boolean;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -335,6 +340,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   manateeDeathCertificateApplication: false,
   caseSsn: false,
   workflowByServiceType: false,
+  enforceHiddenModulesServerSide: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -515,8 +521,12 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     signatureRequestsEnabled: false,
     hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
     workflowByServiceType: true,
+    enforceHiddenModulesServerSide: true,
     sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
   },
+  // Decided by the funeral home: no Family Portal or e-signatures, and these
+  // modules hidden — an Organization record value can't switch them back on.
+  pinnedFeatures: ['familyPortalEnabled', 'signatureRequestsEnabled', 'hiddenModules'],
 };
 
 /**

@@ -5,6 +5,7 @@ import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canPostJournalEntry } from '@/services/authorizationPolicyService';
 import { voidDraftJournalEntry, GeneralLedgerServiceError } from '@/services/generalLedgerService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Voids (discards) a draft entry — the only way to discard
     one; gated `accounting.post` alongside posting itself, per ADR-035's
@@ -27,6 +28,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ ent
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-journal-entries', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canPostJournalEntry({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to void journal entries for this organization.' }, { status: 403 });

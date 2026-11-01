@@ -44,11 +44,11 @@ function makeEntry(overrides: Partial<JournalEntry> = {}): JournalEntry {
   };
 }
 
-function renderPanel() {
+function renderPanel(organizationId: string = DEFAULT_ORGANIZATION_ID) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+      <OrganizationProvider organizationId={organizationId}>
         <AccountingDashboardPanel />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -119,5 +119,27 @@ describe('AccountingDashboardPanel — permission gating', () => {
     vi.mocked(accountingClient.fetchJournalEntries).mockResolvedValue([makeEntry({ status: 'posted' })]);
     renderPanel();
     expect(await screen.findByText('No manual entries are waiting for review.')).toBeInTheDocument();
+  });
+});
+
+describe('AccountingDashboardPanel — Gus hides Journal Entries', () => {
+  it('shows cash and AR but no drafts KPI, section or Journal entries link, and never requests journal entries', async () => {
+    mockPermissions(['accounting.view']);
+    vi.mocked(accountingClient.fetchBalanceSheetReport).mockResolvedValue({
+      asOfDate: null,
+      assets: [],
+      liabilities: [],
+      equity: [],
+      netIncome: 0,
+      totalAssets: 0,
+      totalLiabilitiesAndEquity: 0,
+    });
+    vi.mocked(accountingClient.fetchArAgingReport).mockResolvedValue({ rows: [], totalOutstanding: 0, glAccountsReceivableBalance: 0, reconciles: true });
+    renderPanel('gus-camacho-jr');
+    expect(await screen.findByText('Cash position')).toBeInTheDocument();
+    expect(screen.getByText('Open accounts receivable')).toBeInTheDocument();
+    expect(screen.queryByText('Entries pending review')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Journal entries/)).not.toBeInTheDocument();
+    expect(accountingClient.fetchJournalEntries).not.toHaveBeenCalled();
   });
 });

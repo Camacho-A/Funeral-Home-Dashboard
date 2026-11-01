@@ -7,6 +7,7 @@ import { canReadFinancials, canPostJournalEntry } from '@/services/authorization
 import { postDepositTransaction, listBankDepositsForOrganization, FinancialTransactionServiceError } from '@/services/financialTransactionService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. `GET` lists bank deposits (gated `accounting.view`); `POST`
     sweeps one or more succeeded payments into a deposit (Dr Cash-Bank /
@@ -21,6 +22,8 @@ export async function GET(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canReadFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to view financial data for this organization.' }, { status: 403 });
@@ -52,6 +55,8 @@ export async function POST(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canPostJournalEntry({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to post deposits for this organization.' }, { status: 403 });

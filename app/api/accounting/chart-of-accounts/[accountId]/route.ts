@@ -5,6 +5,7 @@ import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canManageFinancials } from '@/services/authorizationPolicyService';
 import { updateAccount, deactivateAccount, ChartOfAccountsServiceError } from '@/services/chartOfAccountsService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Updates an existing account's name/description/parentAccountId,
     or (when body.deactivate is true) deactivates it — both gated
@@ -27,6 +28,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ac
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-chart-of-accounts', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canManageFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage the chart of accounts for this organization.' }, { status: 403 });

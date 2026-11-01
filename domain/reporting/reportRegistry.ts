@@ -420,3 +420,17 @@ export function isReportVisibleForOrganization(
   if (hideKey && isModuleHidden(organization, hideKey)) return false;
   return true;
 }
+
+/** Gus Phase 5C (2026-10). `GET /api/metrics/[metricKey]` serves one metric
+    of a report, so it must not reveal what the report itself hides: a
+    metric is visible while at least one report that uses it is visible to
+    the organization. A metric no report uses (`notifications.unread`) is
+    not tied to any report and stays visible, as before. */
+export function isMetricVisibleForOrganization(
+  metricKey: string,
+  organization: (Pick<Organization, 'enabledModules' | 'hiddenModules'> & { id: string }) | null | undefined,
+): boolean {
+  const reports = REPORT_REGISTRY.filter((report) => (report.metrics as readonly string[]).includes(metricKey));
+  if (reports.length === 0) return true;
+  return reports.some((report) => isReportVisibleForOrganization(report, organization));
+}

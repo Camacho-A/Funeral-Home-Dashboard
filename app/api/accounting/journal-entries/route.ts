@@ -6,6 +6,7 @@ import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canReadFinancials, canManageFinancials } from '@/services/authorizationPolicyService';
 import { listJournalEntriesForOrganization, createDraftJournalEntry, updateDraftJournalEntryLines, GeneralLedgerServiceError } from '@/services/generalLedgerService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /**
  * Phase 31 (Financial Management & General Ledger). `GET` lists journal
@@ -26,6 +27,8 @@ export async function GET(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-journal-entries', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canReadFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to view financial data for this organization.' }, { status: 403 });
@@ -68,6 +71,8 @@ export async function POST(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-journal-entries', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canManageFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage financial data for this organization.' }, { status: 403 });

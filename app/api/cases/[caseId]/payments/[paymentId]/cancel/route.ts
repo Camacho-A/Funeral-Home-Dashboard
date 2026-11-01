@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { canCollectPayment } from '@/services/authorizationPolicyService';
 import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsService';
 import { recordPaymentCancelled } from '@/services/activityService';
 
@@ -41,6 +42,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const { organizationId } = authResult.context;
 
   const dataAdapterMode = getDataAdapterMode();
+  // Phase 5C (2026-10): only a member who can take payments may cancel
+  // a checkout attempt; a read-only member could otherwise cancel one.
+  if (!(await canCollectPayment({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Not authorized to cancel payments for this organization.' }, { status: 403 });
+  }
+
   const record = await getPaymentRecordById(organizationId, paymentId, dataAdapterMode);
   if (!record || record.caseId !== caseId) {
     return NextResponse.json({ payment: null }, { status: 404 });

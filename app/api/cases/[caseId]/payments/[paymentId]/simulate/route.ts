@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { canCollectPayment } from '@/services/authorizationPolicyService';
 import { getPaymentRecordById, updatePaymentRecord } from '@/services/paymentsService';
 import { markCasePaidIfVerified } from '@/services/paymentWorkflow';
 
@@ -41,6 +42,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const authResult = await requireAuthorizedOrganization((body as Record<string, unknown>).organizationId as string);
   if (!authResult.authorized) return authResult.response;
   const { organizationId } = authResult.context;
+
+  // Phase 5C (2026-10): marking a payment succeeded is collecting it, so
+  // it takes the same `payment.collect` permission as a manual payment
+  // (a read-only member could otherwise mark a case paid).
+  if (!(await canCollectPayment({ identityId: authResult.context.userId, organizationId, roleKey: authResult.context.role }, dataAdapterMode))) {
+    return NextResponse.json({ error: 'Not authorized to simulate payment outcomes for this organization.' }, { status: 403 });
+  }
 
   const record = await getPaymentRecordById(organizationId, paymentId, dataAdapterMode);
   if (!record || record.caseId !== caseId) {

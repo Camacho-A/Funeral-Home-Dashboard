@@ -7,6 +7,7 @@ import { canReadFinancials, canManageFinancials } from '@/services/authorization
 import { listAccounts, createAccount, ChartOfAccountsServiceError } from '@/services/chartOfAccountsService';
 import { getDataAdapterMode } from '@/lib/env';
 import type { LedgerAccountType, LedgerAccountNormalBalance } from '@/types/ledgerAccount';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /**
  * Phase 31 (Financial Management & General Ledger). Chart of Accounts —
@@ -61,6 +62,8 @@ export async function POST(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-chart-of-accounts', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canManageFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage the chart of accounts for this organization.' }, { status: 403 });

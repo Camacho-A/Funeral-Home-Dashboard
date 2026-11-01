@@ -8,6 +8,7 @@ import { reverseJournalEntry, getJournalEntryWithLines, GeneralLedgerServiceErro
 import { recordJournalEntryReversed } from '@/services/activityService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Reverses a posted entry — the only way to correct one; never
     mutates the original (see `reverseJournalEntry`'s own comment). Gated
@@ -32,6 +33,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ ent
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-journal-entries', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canPostJournalEntry({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to reverse journal entries for this organization.' }, { status: 403 });

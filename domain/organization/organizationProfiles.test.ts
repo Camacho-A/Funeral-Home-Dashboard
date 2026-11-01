@@ -51,9 +51,10 @@ describe('organization profile registry', () => {
       signatureRequestsEnabled: false,
       hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
       workflowByServiceType: true,
+      enforceHiddenModulesServerSide: true,
       sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false },
     });
-    expect(gus.pinnedFeatures).toEqual([]);
+    expect(gus.pinnedFeatures).toEqual(['familyPortalEnabled', 'signatureRequestsEnabled', 'hiddenModules']);
     expect(gus.receiptFooter).toBeNull();
     expect(JSON.stringify(gus)).not.toMatch(/manors|commercial blvd|954-884-5770|broward|managed-cremations/i);
   });
@@ -97,10 +98,15 @@ describe('getOrganizationProfile precedence: record > profile > platform default
     expect(profile.features.hiddenModules).toEqual(['reports-staff']);
   });
 
-  it('record capability fields win for an unpinned profile (Gus)', () => {
-    const profile = getOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID, { signatureRequestsEnabled: false, hiddenModules: ['accounting-banking'] });
+  it('record capability fields win for an unpinned profile (unknown organization)', () => {
+    const profile = getOrganizationProfile(UNKNOWN, { signatureRequestsEnabled: false, hiddenModules: ['accounting-banking'] });
     expect(profile.features.signatureRequestsEnabled).toBe(false);
     expect(profile.features.hiddenModules).toEqual(['accounting-banking']);
+  });
+
+  it('Gus pins its hidden modules: a record value cannot un-hide them', () => {
+    const profile = getOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID, { hiddenModules: [] });
+    expect(profile.features.hiddenModules).toHaveLength(HIDEABLE_MODULE_KEYS.length);
   });
 
   it('PINNED profile features win over the record (Manors: the pre-existing override semantics)', () => {
@@ -123,15 +129,15 @@ describe('capabilities per organization (managed-cremations unchanged, Gus/unkno
     expect(isFamilyPortalEnabled({ id: GUS_CAMACHO_ORGANIZATION_ID })).toBe(false);
     expect(isFamilyPortalEnabled({ id: UNKNOWN })).toBe(true);
     expect(isFamilyPortalEnabled({ id: UNKNOWN, familyPortalEnabled: false })).toBe(false);
-    // The legacy compatibility map still names Manors alone; Gus comes from its profile.
-    expect(FAMILY_PORTAL_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false });
+    // The legacy compatibility map lists every organization that pins the feature.
+    expect(FAMILY_PORTAL_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false, [GUS_CAMACHO_ORGANIZATION_ID]: false });
   });
 
   it('Signature Requests (Gus off, 2026-11)', () => {
     expect(isSignatureRequestsEnabled({ id: MANORS_ORGANIZATION_ID })).toBe(false);
     expect(isSignatureRequestsEnabled({ id: GUS_CAMACHO_ORGANIZATION_ID })).toBe(false);
     expect(isSignatureRequestsEnabled({ id: UNKNOWN })).toBe(true);
-    expect(SIGNATURE_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false });
+    expect(SIGNATURE_OVERRIDES).toEqual({ [MANORS_ORGANIZATION_ID]: false, [GUS_CAMACHO_ORGANIZATION_ID]: false });
   });
 
   it('Document Archive', () => {
@@ -166,7 +172,7 @@ describe('capabilities per organization (managed-cremations unchanged, Gus/unkno
       expect(isModuleHidden({ id: GUS_CAMACHO_ORGANIZATION_ID, hiddenModules: null }, key)).toBe(true);
       expect(isModuleHidden({ id: UNKNOWN, hiddenModules: null }, key)).toBe(false);
     }
-    expect(Object.keys(HIDDEN_MODULE_OVERRIDES)).toEqual([MANORS_ORGANIZATION_ID]);
+    expect(Object.keys(HIDDEN_MODULE_OVERRIDES)).toEqual([MANORS_ORGANIZATION_ID, GUS_CAMACHO_ORGANIZATION_ID]);
   });
 
   it('Retired checklist items', () => {

@@ -9,6 +9,7 @@ import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getForOrganization } from '@/services/organizationsService';
 import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Imports a bank statement's already-parsed lines as
     `unmatched` `BankStatementLine`s — gated `accounting.reconcile`. */
@@ -37,6 +38,10 @@ export async function POST(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  // Gus Phase 5C (2026-10): Banking hidden server-side wins, whatever the
+  // reconciliation module setting.
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   const organization = await getForOrganization(organizationId, dataAdapterMode);
   if (!isModuleEnabled(organization, 'reconciliation')) {

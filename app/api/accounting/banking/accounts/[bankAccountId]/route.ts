@@ -5,6 +5,7 @@ import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { canManageFinancials } from '@/services/authorizationPolicyService';
 import { deactivateBankAccount, BankingServiceError } from '@/services/bankingService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Deactivates a bank account — the only lifecycle transition
     (never hard-deleted). Gated `accounting.manage`. */
@@ -28,6 +29,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ba
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canManageFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage bank accounts for this organization.' }, { status: 403 });

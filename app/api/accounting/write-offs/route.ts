@@ -7,6 +7,7 @@ import { canManageFinancials } from '@/services/authorizationPolicyService';
 import { postWriteOffTransaction, FinancialTransactionServiceError } from '@/services/financialTransactionService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Posts a write-off (Dr Bad Debt Expense / Cr Accounts
     Receivable) — gated `accounting.manage`. */
@@ -35,6 +36,10 @@ export async function POST(request: Request) {
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  // Gus Phase 5C (2026-10): these post journal entries, so they are
+  // unavailable wherever Journal Entries is hidden server-side.
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-journal-entries', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canManageFinancials({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to post write-offs for this organization.' }, { status: 403 });

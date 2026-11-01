@@ -6,7 +6,7 @@ import { paymentRecordFixtures } from '@/services/__mocks__/paymentFixtures';
 import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
 import { activityEventFixtures } from '@/services/__mocks__/activityEventFixtures';
 import { seedChartOfAccounts } from '@/services/chartOfAccountsService';
-import { mockDefaultUser } from '@/services/__mocks__/authFixtures';
+import { mockDefaultUser, mockAccountingUser, mockOfficeStaffUser, mockReadOnlyUser } from '@/services/__mocks__/authFixtures';
 import type { PaymentRecord } from '@/types/payment';
 
 let idCounter = 0;
@@ -100,6 +100,22 @@ describe('POST .../payments/[paymentId]/simulate', () => {
 
   it('returns 403 for a forged organizationId', async () => {
     expect((await postSimulate(knownCaseId, 'payment-1', SECOND_MOCK_ORGANIZATION_ID)).status).toBe(403);
+  });
+
+  it('Phase 5C: returns 403 for a member without payment.collect, and leaves the payment and case untouched', async () => {
+    for (const user of [mockReadOnlyUser, mockOfficeStaffUser]) {
+      mockSession = fixtureIdentitySession(user);
+      expect((await postSimulate(knownCaseId, 'payment-1', DEFAULT_ORGANIZATION_ID)).status).toBe(403);
+    }
+    expect(paymentRecordFixtures[0].status).toBe('pending');
+    expect(caseFixtures[caseFixtureIndex]).toBe(originalCaseFixture);
+  });
+
+  it('Phase 5C: a member with payment.collect (accounting) may simulate', async () => {
+    mockSession = fixtureIdentitySession(mockAccountingUser);
+    const response = await postSimulate(knownCaseId, 'payment-1', DEFAULT_ORGANIZATION_ID);
+    expect(response.status).toBe(200);
+    expect((await response.json()).payment.status).toBe('succeeded');
   });
 
   it('marks the payment succeeded with safe synthetic card metadata, and marks the case paid', async () => {

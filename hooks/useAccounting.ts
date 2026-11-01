@@ -77,8 +77,12 @@ export function useDeactivateLedgerAccount(organizationId: string) {
   });
 }
 
-export function useJournalEntries(organizationId: string) {
-  return useQuery({ queryKey: journalEntriesKey(organizationId), queryFn: () => fetchJournalEntries(organizationId), enabled: Boolean(organizationId) });
+export function useJournalEntries(organizationId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: journalEntriesKey(organizationId),
+    queryFn: () => fetchJournalEntries(organizationId),
+    enabled: Boolean(organizationId) && options.enabled !== false,
+  });
 }
 
 export function useJournalEntryDetail(organizationId: string, entryId: string | null) {

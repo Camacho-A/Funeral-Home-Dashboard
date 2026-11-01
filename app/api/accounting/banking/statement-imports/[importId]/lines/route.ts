@@ -5,6 +5,7 @@ import { getStatementLinesForImport } from '@/services/bankingService';
 import { getForOrganization } from '@/services/organizationsService';
 import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Every `BankStatementLine` belonging to one import — gated
     `accounting.view`. */
@@ -19,6 +20,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ impo
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  // Gus Phase 5C (2026-10): Banking hidden server-side wins, whatever the
+  // reconciliation module setting.
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-banking', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   const organization = await getForOrganization(organizationId, dataAdapterMode);
   if (!isModuleEnabled(organization, 'reconciliation')) {

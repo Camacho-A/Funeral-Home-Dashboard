@@ -3,6 +3,8 @@ import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrgan
 import { hasPermission } from '@/services/permissionService';
 import { canViewReports } from '@/services/authorizationPolicyService';
 import { getMetricDefinition } from '@/domain/reporting/metricRegistry';
+import { isMetricVisibleForOrganization } from '@/domain/reporting/reportRegistry';
+import { getForOrganization } from '@/services/organizationsService';
 import { getDataAdapterMode } from '@/lib/env';
 
 import { runSingleMetric } from '@/services/reportingService';
@@ -37,6 +39,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ metr
   }
   if (!(await hasPermission(policyParams, dataAdapterMode, definition.permission))) {
     return NextResponse.json({ error: `Not authorized to view the "${metricKey}" metric.` }, { status: 403 });
+  }
+  // Gus Phase 5C (2026-10): a metric is only served while a report that
+  // uses it is visible here — same answer as the single-report route.
+  const organization = await getForOrganization(organizationId, dataAdapterMode);
+  if (!isMetricVisibleForOrganization(metricKey, organization)) {
+    return NextResponse.json({ error: `The "${metricKey}" metric is not available for this organization.` }, { status: 403 });
   }
 
   const filters = {

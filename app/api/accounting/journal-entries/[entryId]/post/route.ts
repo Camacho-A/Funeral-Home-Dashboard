@@ -6,6 +6,7 @@ import { canPostJournalEntry } from '@/services/authorizationPolicyService';
 import { postJournalEntry, GeneralLedgerServiceError } from '@/services/generalLedgerService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { getDataAdapterMode } from '@/lib/env';
+import { rejectIfModuleHidden } from '@/lib/auth/hiddenModuleGuard';
 
 /** Phase 31. Posts a draft manual entry — gated `accounting.post`
     (deliberately separate from `accounting.manage`, per the RBAC tier
@@ -27,6 +28,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ ent
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
   const dataAdapterMode = getDataAdapterMode();
+  const hiddenModuleResponse = await rejectIfModuleHidden(organizationId, 'accounting-journal-entries', dataAdapterMode);
+  if (hiddenModuleResponse) return hiddenModuleResponse;
 
   if (!(await canPostJournalEntry({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to post journal entries for this organization.' }, { status: 403 });
