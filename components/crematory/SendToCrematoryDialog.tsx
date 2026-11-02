@@ -23,7 +23,7 @@ import {
   toCaseDate,
   type CrematorySourceKind,
 } from '@/domain/crematory/crematoryPackage';
-import { parseRecipientList, isCrematorySendingEnabled } from '@/domain/crematory/crematorySettings';
+import { parseRecipientList, isCrematorySendingEnabled, crematoryAuthorizationDocumentSource } from '@/domain/crematory/crematorySettings';
 import { formatTimestamp } from '@/utils/format';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { ReplacePermitButton } from './ReplacePermitButton';
@@ -808,6 +808,9 @@ function CaseRow({
           </button>
         );
       case 'crematory_form':
+        // No authorization document source set up for this organization
+        // (2026-11): explain, never offer Manors' page-3 extraction.
+        if (crematoryAuthorizationDocumentSource(organizationId) === 'not_configured') return <span className={styles.hint}>{r?.detail}</span>;
         return (
           <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={onExtract}>
             Extract page 3
@@ -915,7 +918,9 @@ function CaseRow({
                 <span className={styles.mark} aria-label={state === 'done' ? 'Done' : state === 'waiting' ? 'Waiting' : 'To do'}>
                   {state === 'done' ? '✓' : state === 'waiting' ? '○' : '●'}
                 </span>
-                <span className={styles.stepLabel}>{step.label}</span>
+                <span className={styles.stepLabel}>
+                  {step.key === 'crematory_form' && crematoryAuthorizationDocumentSource(organizationId) === 'not_configured' ? 'Authorization document' : step.label}
+                </span>
                 <span className={styles.stepContent}>{content(step.key)}</span>
               </li>
             );
