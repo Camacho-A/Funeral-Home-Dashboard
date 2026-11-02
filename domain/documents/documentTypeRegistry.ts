@@ -30,6 +30,10 @@ export const DOCUMENT_TYPES = {
   AUTHORIZATION_CREMATION: { key: 'authorization.cremation', category: 'authorization' as DocumentTemplateCategory, displayName: 'Cremation Authorization' },
   AUTHORIZATION_EMBALMING: { key: 'authorization.embalming', category: 'authorization' as DocumentTemplateCategory, displayName: 'Embalming Authorization' },
   AUTHORIZATION_DISPOSITION: { key: 'authorization.disposition', category: 'authorization' as DocumentTemplateCategory, displayName: 'Disposition Authorization' },
+  /** 2026-11. The next of kin authorizing someone else to make the
+      arrangements — typically their email, uploaded as a .eml file, or a
+      signed letter. */
+  AUTHORIZATION_NEXT_OF_KIN: { key: 'authorization.next_of_kin', category: 'authorization' as DocumentTemplateCategory, displayName: 'Next of Kin Authorization' },
 
   CREMATION_FORM_PERMIT_APPLICATION: { key: 'cremation_form.permit_application', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Cremation Permit Application' },
   CREMATION_FORM_WITNESS_STATEMENT: { key: 'cremation_form.witness_statement', category: 'cremation_form' as DocumentTemplateCategory, displayName: 'Cremation Witness Statement' },

@@ -26,6 +26,7 @@
     "next": "^15.0.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
+    "postal-mime": "3.0.1",
     "puppeteer-core": "^25.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

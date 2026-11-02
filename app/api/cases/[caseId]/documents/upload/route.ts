@@ -10,6 +10,7 @@ import { runAfterResponse } from '@/lib/afterResponse';
 import { addPermit, CrematoryError, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { getDataAdapterMode } from '@/lib/env';
+import { EMAIL_MIME_TYPE, EmailParseError, isEmailFile, parseEmail } from '@/domain/documents/emailMessage';
 
 /** 15MB — see this phase's Security section (file size/type limits). */
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
@@ -59,8 +60,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB limit.` }, { status: 400 });
   }
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    return NextResponse.json({ error: `Unsupported file type: ${file.type}. Allowed: PDF, JPEG, PNG, DOCX.` }, { status: 400 });
+  // Email (2026-11): a saved .eml is accepted when it really is an email;
+  // stored unchanged as message/rfc822 (browsers often give .eml no type).
+  const isEmail = isEmailFile(file.type, file.name);
+  if (!isEmail && !ALLOWED_MIME_TYPES.has(file.type)) {
+    return NextResponse.json({ error: `Unsupported file type: ${file.type || 'unknown'}. Allowed: PDF, JPEG, PNG, DOCX, EML (email).` }, { status: 400 });
+  }
+  if (isEmail && typeof documentTypeKey === 'string' && (documentTypeKey === DOCUMENT_TYPES.CREMATION_FORM_STATE_PERMIT.key || documentTypeKey === ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY)) {
+    return NextResponse.json({ error: 'An email can’t be used as this document type — upload the PDF itself, or choose another type for the email.' }, { status: 400 });
   }
   if (documentTypeKey !== null && (typeof documentTypeKey !== 'string' || !isValidDocumentTypeKey(documentTypeKey))) {
     return NextResponse.json({ error: 'Invalid documentTypeKey.' }, { status: 400 });
@@ -81,6 +88,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   }
 
   const fileBuffer = Buffer.from(await file.arrayBuffer());
+  if (isEmail) {
+    try {
+      await parseEmail(fileBuffer);
+    } catch (error) {
+      if (error instanceof EmailParseError) return NextResponse.json({ error: error.message }, { status: 400 });
+      throw error;
+    }
+  }
+  const storedMimeType = isEmail ? EMAIL_MIME_TYPE : file.type;
   const correlationId = crypto.randomUUID();
   const ctx = { organizationId: resolvedOrganizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId };
 
@@ -115,7 +131,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       {
         caseId,
         fileName: file.name,
-        mimeType: file.type,
+        mimeType: storedMimeType,
         documentTypeKey: typeof documentTypeKey === 'string' ? documentTypeKey : undefined,
         category: typeof category === 'string' ? (category as never) : undefined,
         idFactory: () => crypto.randomUUID(),
